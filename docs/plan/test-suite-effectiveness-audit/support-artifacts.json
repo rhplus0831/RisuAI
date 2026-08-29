@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "standaloneCount": 252,
-  "mixedProductionCount": 65,
+  "mixedProductionCount": 64,
   "groups": [
     {
       "role": "runner-config-ci",
@@ -297,7 +297,6 @@
     "src/lib/ChatScreens/DefaultChatScreen.composerDrafts.ts",
     "src/lib/ChatScreens/chatRowsBuildInstrumentation.ts",
     "src/ts/agentPresets.ts",
-    "src/ts/kei/backup.ts",
     "src/ts/model/llmgateway.ts",
     "src/ts/model/modellist.ts",
     "src/ts/model/nanogpt.ts",

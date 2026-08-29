@@ -55,10 +55,66 @@
       ]
     },
     {
+      "id": "reviewed-asset-adjacent-persistence-boundaries",
+      "category": "C",
+      "description": "First matching rule wins. Reviewed import and compatibility owners whose dominant contract is durable command sequencing and rollback.",
+      "pathPatterns": [
+        "/^src\\/ts\\/characters\\.importChat\\.test\\.ts$/",
+        "/^src\\/ts\\/chatImportPlanning\\.test\\.ts$/",
+        "/^src\\/ts\\/compatibilityAdapters\\.test\\.ts$/",
+        "/^src\\/ts\\/process\\/files\\/multisend\\.test\\.ts$/",
+        "/^src\\/ts\\/storage\\/database\\.importPreset\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-asset-adjacent-browser-state-boundaries",
+      "category": "B",
+      "description": "First matching rule wins. Reviewed catalog, hydration-safe export, and cache-ownership owners whose dominant contract is browser state synchronization.",
+      "pathPatterns": [
+        "/^src\\/ts\\/server\\/inlayCatalog\\.test\\.ts$/",
+        "/^src\\/ts\\/storage\\/database\\.downloadPreset\\.test\\.ts$/",
+        "/^src\\/ts\\/storage\\/risuSave\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-asset-adjacent-visible-boundaries",
+      "category": "D",
+      "description": "First matching rule wins. Reviewed backup feedback whose dominant contract is visible warning and salvage-result composition.",
+      "pathPatterns": [
+        "/^src\\/ts\\/storage\\/backup\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-asset-adjacent-authoring-boundaries",
+      "category": "E",
+      "description": "First matching rule wins. Reviewed file-backed settings and module/preset import owners whose dominant contract is stale-safe authoring.",
+      "pathPatterns": [
+        "/^src\\/ts\\/server\\/(?:biasImport|moduleAssetUpload|naiVibeImport|promptPresetIconUpload)\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-asset-adjacent-provider-boundaries",
+      "category": "G",
+      "description": "First matching rule wins. Reviewed PDF lifecycle owners whose dominant contract is media decoding and resource cleanup.",
+      "pathPatterns": [
+        "/^src\\/ts\\/process\\/dynamicutils\\/pdf\\.test\\.ts$/"
+      ]
+    },
+    {
+      "id": "reviewed-asset-adjacent-runtime-boundaries",
+      "category": "L",
+      "description": "First matching rule wins. Reviewed download, reference-shape, and native picker owners whose dominant contract is browser platform safety and lifecycle.",
+      "pathPatterns": [
+        "/^src\\/ts\\/globalApi\\.(?:downloadFile|getFileSrc)\\.test\\.ts$/",
+        "/^src\\/ts\\/util\\.filePicker\\.test\\.ts$/"
+      ]
+    },
+    {
       "id": "asset-save-boundary",
       "category": "K",
       "description": "First matching rule wins. Asset bytes and ownership, imports/exports, saves, backups, archive codecs, Realm staging, and historical formats.",
       "pathPatterns": [
+        "/^server\\/fastify\\/__tests__\\/localBackupDatabase\\.test\\.ts$/",
         "/^src\\/ts\\/characterCards\\.pngImport\\.svelte-node\\.test\\.ts$/",
         "/^src\\/ts\\/server\\/promptPresetIconUpload\\.test\\.ts$/",
         "/^src\\/ts\\/chatImportPlanning\\.test\\.ts$/",
@@ -693,22 +749,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "asset byte storage, metadata, references, garbage collection, hashing, and client/server transport",
+        "plausibleDefect": "Reference drift, hash disagreement, or weak cleanup could delete live bytes, leak orphans, or bind the wrong asset.",
+        "risk": "Critical/High durable asset loss, disclosure, or reference corruption.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -733,22 +790,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "asset byte storage, metadata, references, garbage collection, hashing, and client/server transport",
+        "plausibleDefect": "Reference drift, hash disagreement, or weak cleanup could delete live bytes, leak orphans, or bind the wrong asset.",
+        "risk": "Critical/High durable asset loss, disclosure, or reference corruption.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -778,22 +836,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (39 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "asset byte storage, metadata, references, garbage collection, hashing, and client/server transport",
+        "plausibleDefect": "Reference drift, hash disagreement, or weak cleanup could delete live bytes, leak orphans, or bind the wrong asset.",
+        "risk": "Critical/High durable asset loss, disclosure, or reference corruption.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -870,22 +929,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (48 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "backup snapshot, restore transactionality, journal recovery, and local compatibility rewrite",
+        "plausibleDefect": "A partial or ambiguous restore could mix database and asset generations or retain stale references.",
+        "risk": "Critical/High irreversible user-data loss or split-brain restore state.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -2907,22 +2967,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser/server import, export, inlay, ZIP, and backup composition",
+        "plausibleDefect": "A partial or stale composition could lose references, apply to a replacement owner, or retain resources after failure.",
+        "risk": "High data loss, stale-owner mutation, or resource leakage.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -3090,6 +3151,48 @@
         "action": "Retain the complete reviewed owner and its domain-specific evidence.",
         "validation": "Focused Phase 3 owners passed; aggregate commands and exact counts are recorded in latest-verification.md.",
         "state": "phase3-reviewed"
+      }
+    },
+    {
+      "file": "server/fastify/__tests__/localBackupDatabase.test.ts",
+      "lane": "fastify-node",
+      "capability": "Fastify Node",
+      "specializedOwnership": [
+        "server"
+      ],
+      "primaryCategory": "K",
+      "categoryRule": "asset-save-boundary",
+      "seamTags": [
+        "category-C"
+      ],
+      "kind": "storage integration",
+      "dependencySignals": [
+        "database"
+      ],
+      "caseCounts": {
+        "cases": 3,
+        "skipped": 0,
+        "parameterizedRows": 0,
+        "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
+      },
+      "audit": {
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
+        "valueClasses": [
+          "data integrity and recovery",
+          "protocol and integration"
+        ],
+        "productionOwnerOrContract": "backup snapshot, restore transactionality, journal recovery, and local compatibility rewrite",
+        "plausibleDefect": "A partial or ambiguous restore could mix database and asset generations or retain stale references.",
+        "risk": "Critical/High irreversible user-data loss or split-brain restore state.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "high",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-added"
       }
     },
     {
@@ -5278,28 +5381,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 27,
+        "cases": 30,
         "skipped": 1,
         "parameterizedRows": 1,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (30 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Realm and CharX import conversion, durable asset writes, rollback, and navigation identity",
+        "plausibleDefect": "A failed conversion or append could leak assets, retain partial history, or navigate to the wrong imported character.",
+        "risk": "High orphaned assets, partial character state, or wrong visible owner.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5581,22 +5685,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5620,22 +5725,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5666,22 +5772,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (10 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5705,28 +5812,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 25,
+        "cases": 29,
         "skipped": 0,
-        "parameterizedRows": 2,
+        "parameterizedRows": 5,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (29 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5746,28 +5854,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 34,
+        "cases": 39,
         "skipped": 0,
         "parameterizedRows": 8,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (39 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5791,28 +5900,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 12,
+        "cases": 13,
         "skipped": 0,
         "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -5837,28 +5947,29 @@
         "globals"
       ],
       "caseCounts": {
-        "cases": 40,
+        "cases": 41,
         "skipped": 0,
         "parameterizedRows": 11,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (41 cases)",
         "valueClasses": [
-          "pending"
+          "compatibility",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "portable save framing, bounded decoding, archive validation, asset references, and import/export projection",
+        "plausibleDefect": "Malformed, duplicate, or oversized framing could overwrite components, exhaust resources, or silently omit durable data.",
+        "risk": "Critical/High save corruption, ambiguous import, or resource exhaustion.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -16226,22 +16337,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (16 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Realm and CharX import conversion, durable asset writes, rollback, and navigation identity",
+        "plausibleDefect": "A failed conversion or append could leak assets, retain partial history, or navigate to the wrong imported character.",
+        "risk": "High orphaned assets, partial character state, or wrong visible owner.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -16414,22 +16526,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (12 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser/server import, export, inlay, ZIP, and backup composition",
+        "plausibleDefect": "A partial or stale composition could lose references, apply to a replacement owner, or retain resources after failure.",
+        "risk": "High data loss, stale-owner mutation, or resource leakage.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -16491,11 +16604,12 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "C",
+      "categoryRule": "reviewed-asset-adjacent-persistence-boundaries",
       "seamTags": [
         "category-D",
         "category-E",
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -16511,22 +16625,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (19 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "durable chat-import command planning, optimistic projection, and rollback",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category C with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -16723,10 +16838,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "C",
+      "categoryRule": "reviewed-asset-adjacent-persistence-boundaries",
       "seamTags": [
-        "category-D"
+        "category-D",
+        "category-K"
       ],
       "kind": "pure unit",
       "dependencySignals": [],
@@ -16740,20 +16856,20 @@
         "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
           "data integrity and recovery",
-          "compatibility"
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "imported transcript request chunking, payload boundaries, stable anchors, and prefix lengths",
-        "plausibleDefect": "An oversized imported transcript can exceed request limits, lose its stable append anchor, or produce an incomplete prefix.",
-        "risk": "High imported transcript integrity and compatibility risk.",
-        "companionEvidence": "Import parsers own source formats and Fastify routes own persistence; this planner uniquely proves request partitioning before transport.",
+        "productionOwnerOrContract": "durable chat-import sequencing and stable mutation targets",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
         "decision": "Reclassify",
         "confidence": "high",
-        "rationale": "The complete file remains valuable, but its dominant failure mode belongs to the corrected primary category recorded by the routing rules; seam tags retain cross-domain context.",
-        "findingId": "TSA-P04-017",
-        "severity": "Medium",
-        "action": "Retain the complete owner under its corrected product-risk category and revisit it in that phase without repeating this disposition review.",
-        "validation": "The exact live Phase 4 unit/component set passed 1,248/1,248 cases across 112 owners; browser validation is recorded in latest-verification.md.",
-        "state": "phase4-reclassified"
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category C with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -16807,9 +16923,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "C",
+      "categoryRule": "reviewed-asset-adjacent-persistence-boundaries",
       "seamTags": [
+        "category-K",
         "dom-component"
       ],
       "kind": "golden/compatibility",
@@ -16825,22 +16942,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (21 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "compatibility write adapters and durable command routing",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category C with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -16987,9 +17105,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "L",
+      "categoryRule": "reviewed-asset-adjacent-runtime-boundaries",
       "seamTags": [
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -17004,22 +17123,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "platform download boundary and browser object-URL lifecycle",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category L with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -17079,9 +17199,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "L",
+      "categoryRule": "reviewed-asset-adjacent-runtime-boundaries",
       "seamTags": [
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -17096,22 +17217,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "platform file-source and object-URL boundary",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category L with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -17188,22 +17310,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (13 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "asset byte storage, metadata, references, garbage collection, hashing, and client/server transport",
+        "plausibleDefect": "Reference drift, hash disagreement, or weak cleanup could delete live bytes, leak orphans, or bind the wrong asset.",
+        "risk": "Critical/High durable asset loss, disclosure, or reference corruption.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -17998,50 +18121,6 @@
         "action": "Route the owner from I to L and preserve its tests unchanged.",
         "validation": "The routing-policy matrix and regenerated 700-owner inventory assign the intended category.",
         "state": "phase9-reclassified"
-      }
-    },
-    {
-      "file": "src/ts/kei/backup.test.ts",
-      "lane": "frontend-node",
-      "capability": "N",
-      "specializedOwnership": [
-        "full-frontend",
-        "broad-frontend-coverage",
-        "ordinary-frontend",
-        "test-all-ordinary-frontend"
-      ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
-      "seamTags": [],
-      "kind": "storage integration",
-      "dependencySignals": [
-        "mocks",
-        "database",
-        "globals"
-      ],
-      "caseCounts": {
-        "cases": 5,
-        "skipped": 0,
-        "parameterizedRows": 0,
-        "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
-      },
-      "audit": {
-        "caseOrMatrixOwner": "pending",
-        "valueClasses": [
-          "pending"
-        ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
       }
     },
     {
@@ -22771,9 +22850,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "G",
+      "categoryRule": "reviewed-asset-adjacent-provider-boundaries",
       "seamTags": [
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -22782,28 +22862,29 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 4,
+        "cases": 7,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "PDF media decoding and page/canvas resource lifecycle",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category G with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -22816,9 +22897,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "C",
+      "categoryRule": "reviewed-asset-adjacent-persistence-boundaries",
       "seamTags": [
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -22835,22 +22917,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "multi-file chat import ordering, partial writes, and translation sequencing",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category C with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -22871,33 +22954,35 @@
       "kind": "property/fuzz",
       "dependencySignals": [
         "mocks",
+        "timers",
         "database",
         "globals",
         "browser"
       ],
       "caseCounts": {
-        "cases": 33,
+        "cases": 34,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (34 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser/server import, export, inlay, ZIP, and backup composition",
+        "plausibleDefect": "A partial or stale composition could lose references, apply to a replacement owner, or retain resources after failure.",
+        "risk": "High data loss, stale-owner mutation, or resource leakage.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -24138,22 +24223,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser/server import, export, inlay, ZIP, and backup composition",
+        "plausibleDefect": "A partial or stale composition could lose references, apply to a replacement owner, or retain resources after failure.",
+        "risk": "High data loss, stale-owner mutation, or resource leakage.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -26279,22 +26365,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (9 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "asset byte storage, metadata, references, garbage collection, hashing, and client/server transport",
+        "plausibleDefect": "Reference drift, hash disagreement, or weak cleanup could delete live bytes, leak orphans, or bind the wrong asset.",
+        "risk": "Critical/High durable asset loss, disclosure, or reference corruption.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -26323,22 +26410,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (17 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "backup snapshot, restore transactionality, journal recovery, and local compatibility rewrite",
+        "plausibleDefect": "A partial or ambiguous restore could mix database and asset generations or retain stale references.",
+        "risk": "Critical/High irreversible user-data loss or split-brain restore state.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -26351,9 +26439,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
-      "seamTags": [],
+      "primaryCategory": "E",
+      "categoryRule": "reviewed-asset-adjacent-authoring-boundaries",
+      "seamTags": [
+        "category-K"
+      ],
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
@@ -26363,22 +26453,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "stale-safe file-backed bias authoring",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category E with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -27560,10 +27651,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "B",
+      "categoryRule": "reviewed-asset-adjacent-browser-state-boundaries",
       "seamTags": [
-        "category-E"
+        "category-E",
+        "category-K"
       ],
       "kind": "pure unit",
       "dependencySignals": [
@@ -27576,22 +27668,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser inlay catalog migration, hydration, and cache ownership",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category B with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -28005,10 +28098,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "E",
+      "categoryRule": "reviewed-asset-adjacent-authoring-boundaries",
       "seamTags": [
-        "category-J"
+        "category-J",
+        "category-K"
       ],
       "kind": "pure unit",
       "dependencySignals": [],
@@ -28019,22 +28113,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (4 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "stale-safe module asset authoring and upload ownership",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category E with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -28095,9 +28190,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
-      "seamTags": [],
+      "primaryCategory": "E",
+      "categoryRule": "reviewed-asset-adjacent-authoring-boundaries",
+      "seamTags": [
+        "category-K"
+      ],
       "kind": "pure unit",
       "dependencySignals": [],
       "caseCounts": {
@@ -28107,22 +28204,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (7 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "stale-safe NAI vibe file authoring",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category E with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -28540,11 +28638,12 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "E",
+      "categoryRule": "reviewed-asset-adjacent-authoring-boundaries",
       "seamTags": [
         "category-D",
-        "category-F"
+        "category-F",
+        "category-K"
       ],
       "kind": "pure unit",
       "dependencySignals": [],
@@ -28557,21 +28656,21 @@
       "audit": {
         "caseOrMatrixOwner": "complete collected file (6 cases)",
         "valueClasses": [
-          "architecture policy",
-          "protocol and integration"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "dominant category-K product-risk contract, reassigned from prompt/generation by executable routing",
-        "plausibleDefect": "A UI, tokenizer, persistence bridge, allowlist, upload, or transport-policy failure could be obscured if reviewed only as prompt generation.",
-        "risk": "Medium audit blind spot and misplaced companion evidence.",
-        "companionEvidence": "Executable exact-path counterexamples keep the owner in its real runtime lane while assigning its dominant product-risk phase.",
+        "productionOwnerOrContract": "stale-safe prompt preset icon authoring",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
         "decision": "Reclassify",
         "confidence": "high",
-        "rationale": "The complete owner remains valuable, but its dominant failure mode belongs to the corrected primary category; cross-domain seams remain tagged.",
-        "findingId": "TSA-P06-011",
-        "severity": "Medium",
-        "action": "Retain the complete owner under its corrected category and consume it in that phase without repeating this disposition review.",
-        "validation": "8/8 routing-policy cases and both complete frontend/Fastify lanes passed; exact category and count deltas are recorded in latest-verification.md.",
-        "state": "phase6-reclassified"
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category E with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -28870,22 +28969,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (5 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "Realm and CharX import conversion, durable asset writes, rollback, and navigation identity",
+        "plausibleDefect": "A failed conversion or append could leak assets, retain partial history, or navigate to the wrong imported character.",
+        "risk": "High orphaned assets, partial character state, or wrong visible owner.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -30207,22 +30307,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (3 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "asset byte storage, metadata, references, garbage collection, hashing, and client/server transport",
+        "plausibleDefect": "Reference drift, hash disagreement, or weak cleanup could delete live bytes, leak orphans, or bind the wrong asset.",
+        "risk": "Critical/High durable asset loss, disclosure, or reference corruption.",
+        "companionEvidence": "Phase 11 cross-checked byte-level codecs, routes, repository transactions, browser adapters, failure injection, bounded decoding, cleanup, and compatibility fixtures; retained layers fail at distinct framing, ownership, or recovery boundaries.",
+        "decision": "Keep",
+        "confidence": "medium",
+        "rationale": "Complete case-family review found distinct asset, archive, save, import/export, or recovery protection; no retained owner met the mandatory merge/removal proof.",
+        "findingId": "TSA-P11-009",
+        "severity": "Informational",
+        "action": "Retain the complete reviewed owner and its independently meaningful framing, transaction, cleanup, compatibility, or visible-result evidence.",
+        "validation": "The exact Phase 11 opening set, focused regressions, complete frontend and Fastify lanes, direct Realm scale gate, compatibility-current harness, and inventory checks passed or are recorded with an explicit external-baseline block.",
+        "state": "phase11-reviewed"
       }
     },
     {
@@ -30370,10 +30471,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "D",
+      "categoryRule": "reviewed-asset-adjacent-visible-boundaries",
       "seamTags": [
         "category-C",
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -30388,22 +30490,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (8 cases)",
         "valueClasses": [
-          "pending"
+          "user-visible behavior",
+          "data integrity and recovery"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "visible backup salvage, warnings, and result composition",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category D with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -30416,10 +30519,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "B",
+      "categoryRule": "reviewed-asset-adjacent-browser-state-boundaries",
       "seamTags": [
         "category-C",
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -30434,22 +30538,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "hydration-safe preset export and browser download state",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category B with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -30462,10 +30567,10 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "C",
+      "categoryRule": "reviewed-asset-adjacent-persistence-boundaries",
       "seamTags": [
-        "category-C",
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -30483,22 +30588,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (16 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "preset import routing, accepted persistence, and rollback",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category C with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -30699,10 +30805,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "B",
+      "categoryRule": "reviewed-asset-adjacent-browser-state-boundaries",
       "seamTags": [
-        "category-C"
+        "category-C",
+        "category-K"
       ],
       "kind": "storage integration",
       "dependencySignals": [
@@ -30710,28 +30817,29 @@
         "database"
       ],
       "caseCounts": {
-        "cases": 1,
+        "cases": 2,
         "skipped": 0,
-        "parameterizedRows": 0,
+        "parameterizedRows": 2,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "data integrity and recovery",
+          "protocol and integration"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "browser save-mode selection and remote block-cache ownership",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category B with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -31194,10 +31302,11 @@
         "ordinary-frontend",
         "test-all-ordinary-frontend"
       ],
-      "primaryCategory": "K",
-      "categoryRule": "asset-save-boundary",
+      "primaryCategory": "L",
+      "categoryRule": "reviewed-asset-adjacent-runtime-boundaries",
       "seamTags": [
         "category-E",
+        "category-K",
         "dom-component"
       ],
       "kind": "component/DOM",
@@ -31212,22 +31321,23 @@
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"
       },
       "audit": {
-        "caseOrMatrixOwner": "pending",
+        "caseOrMatrixOwner": "complete collected file (2 cases)",
         "valueClasses": [
-          "pending"
+          "protocol and integration",
+          "user-visible behavior"
         ],
-        "productionOwnerOrContract": "pending",
-        "plausibleDefect": "pending",
-        "risk": "pending",
-        "companionEvidence": "pending",
-        "decision": "pending",
-        "confidence": "pending",
-        "rationale": "pending",
-        "findingId": "",
-        "severity": "pending",
-        "action": "pending",
-        "validation": "pending",
-        "state": "pending"
+        "productionOwnerOrContract": "platform file-picker capability and cancellation boundary",
+        "plausibleDefect": "An asset-adjacent filename could hide a stale UI, durable command, provider-media, or platform-boundary failure outside the asset/save category.",
+        "risk": "High wrong-owner mutation, lost durable state, stale visible output, or leaked platform resources.",
+        "companionEvidence": "Phase 11 traced the complete file through its asset/save companions and the dominant product contract; exact counterexamples lock the corrected first-match category.",
+        "decision": "Reclassify",
+        "confidence": "high",
+        "rationale": "Complete case-family review found that the dominant failure mode belongs to the corrected category while asset/import seams remain visible as tags and companion evidence.",
+        "findingId": "TSA-P11-007",
+        "severity": "Informational",
+        "action": "Retain the unchanged owner under category L with its asset-adjacent seam.",
+        "validation": "Executable routing counterexamples, regenerated 700-owner inventory, exact Phase 11 owner runs, and owning-lane gates passed.",
+        "state": "phase11-reclassified"
       }
     },
     {
@@ -31617,7 +31727,7 @@
         "browser"
       ],
       "caseCounts": {
-        "cases": 12,
+        "cases": 13,
         "skipped": 0,
         "parameterizedRows": 0,
         "source": "Vitest 4 list JSON plus Playwright 1.62 list JSON; skips from measured JSON results; parameterizedRows are collected cases beyond non-.each source registrations"

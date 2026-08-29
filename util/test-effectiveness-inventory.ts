@@ -269,6 +269,7 @@ export const categoryRules: readonly CategoryRule[] = [
     description:
       'Asset bytes and ownership, imports/exports, saves, backups, archive codecs, Realm staging, and historical formats.',
     patterns: [
+      /^server\/fastify\/__tests__\/localBackupDatabase\.test\.ts$/,
       /^src\/ts\/characterCards\.pngImport\.svelte-node\.test\.ts$/,
       /^src\/ts\/server\/promptPresetIconUpload\.test\.ts$/,
       /^src\/ts\/chatImportPlanning\.test\.ts$/,

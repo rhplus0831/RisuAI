@@ -93,7 +93,6 @@ export const mixedProductionTestSeams = [
   'src/lib/ChatScreens/DefaultChatScreen.composerDrafts.ts',
   'src/lib/ChatScreens/chatRowsBuildInstrumentation.ts',
   'src/ts/agentPresets.ts',
-  'src/ts/kei/backup.ts',
   'src/ts/model/llmgateway.ts',
   'src/ts/model/modellist.ts',
   'src/ts/model/nanogpt.ts',

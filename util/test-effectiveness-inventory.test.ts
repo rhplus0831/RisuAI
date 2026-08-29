@@ -96,6 +96,7 @@ describe('test effectiveness inventory', () => {
       ['src/ts/process/scripts.regexCache.test.ts', 'I'],
       ['src/ts/process/mcp/mcp.test.ts', 'J'],
       ['server/fastify/__tests__/realmImport.test.ts', 'K'],
+      ['server/fastify/__tests__/localBackupDatabase.test.ts', 'K'],
       ['server/fastify/__tests__/auth.test.ts', 'L'],
     ])
 
@@ -430,7 +431,7 @@ describe('test effectiveness inventory', () => {
 
     const document = createTestSupportInventoryDocument(root)
     expect(document.standaloneCount).toBeGreaterThan(30)
-    expect(document.mixedProductionCount).toBe(65)
+    expect(document.mixedProductionCount).toBe(64)
     expect(document.mixedProductionTestSeams).toContain('server/fastify/src/memoryEmbedJobHandler.ts')
     expect(document.groups.flatMap((group) => group.files)).not.toContain('src/example.test.ts')
 
