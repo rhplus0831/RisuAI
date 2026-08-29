@@ -486,6 +486,28 @@ describe('activateLorebook — keyword matching', () => {
     expect(report.actives).toHaveLength(1)
   })
 
+  it('parses slash-delimited regex keys with an empty flag set', () => {
+    const report = activateLorebook({
+      database: makeDb(),
+      currentChar: makeChar({
+        globalLore: [
+          makeLore({
+            alwaysActive: false,
+            useRegex: true,
+            key: '/cat.+sun/',
+            content: 'Sunlit cats.',
+          }),
+        ],
+      }),
+      currentChat: makeChat({
+        message: [makeMessage({ data: 'A cat naps under the sun.' })],
+      }),
+    })
+
+    expect(report.actives.map((entry) => entry.prompt)).toEqual(['Sunlit cats.'])
+    expect(report.matchLog.map((entry) => entry.activated)).toEqual(['/cat.+sun/'])
+  })
+
   it('valid imported lorebook useRegex output remains unchanged under bounds', () => {
     const report = activateLorebook({
       database: makeDb(),

@@ -6,6 +6,7 @@ import { openDatabase } from '../src/db.js'
 import { buildApp } from '../src/app.js'
 import {
   cancelMemoryJob,
+  claimNextMemoryJob,
   createMemoryJob,
   enqueueMemoryJob,
   getMemoryJob,
@@ -988,6 +989,64 @@ describe('memory worker lifecycle and dispatch', () => {
       expect(getMemoryJob(checkDb, 'job-app')).toMatchObject({ status: 'completed' })
     } finally {
       checkDb.close()
+    }
+  })
+
+  it('recovers an abandoned running job after a database reopen and executes it once', async () => {
+    vi.useFakeTimers()
+    process.env.LOG_LEVEL = 'silent'
+    const dataDir = makeDataDir()
+    const firstDb = openDatabase(dataDir)
+    enqueueMemoryJob(firstDb, {
+      id: 'job-reopened',
+      chatId: 'chat-1',
+      kind: 'chunk',
+      payload: {},
+      nextRunAt: '2026-08-30T00:00:00.000Z',
+    })
+    expect(claimNextMemoryJob(firstDb, { now: '2026-08-30T00:00:00.000Z' })).toMatchObject({
+      id: 'job-reopened',
+      status: 'running',
+      attemptCount: 1,
+    })
+    firstDb.close()
+
+    let executions = 0
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: {
+        pollIntervalMs: 10_000,
+        retry: { now: '2026-08-30T00:00:00.000Z', backoffBaseMs: 0 },
+        handlers: {
+          chunk: () => {
+            executions += 1
+          },
+        },
+      },
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    await flushMicrotasks()
+    expect(executions).toBe(1)
+    await app.close()
+
+    const reopenedDb = openDatabase(dataDir)
+    try {
+      expect(getMemoryJob(reopenedDb, 'job-reopened')).toMatchObject({
+        status: 'completed',
+        attemptCount: 2,
+        error: null,
+      })
+    } finally {
+      reopenedDb.close()
     }
   })
 })
