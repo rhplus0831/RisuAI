@@ -12,6 +12,7 @@ const BUNDLE_DATABASE_PATH = 'database.risu'
 const LEGACY_DATABASE_RECORD = 'database.risudat'
 export const LOCAL_BACKUP_ZIP_MAX_ENTRIES = 10_000
 export const LOCAL_BACKUP_ZIP_MAX_NAME_BYTES = 1_024
+export const LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES = 1_024
 // fflate emits at most once per compressed input push, but a highly compressed
 // push can still expand to a multi-megabyte Uint8Array owned by fflate. Keeping
 // pushes small bounds that library-owned transient; this importer neither
@@ -486,11 +487,17 @@ async function decodeLegacyLocalBackup(
     while (pos < size) {
       throwIfLocalBackupAborted(options.signal)
       const nameLength = (await readChunk(4, 'name length')).readUInt32LE(0)
+      if (nameLength > LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES) {
+        throw new ValidationError(`Legacy backup record name exceeds ${LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES} bytes`)
+      }
       const name = (await readChunk(nameLength, 'name')).toString('utf8')
       const dataLength = (await readChunk(4, 'data length')).readUInt32LE(0)
       sizeTracker.add(dataLength)
 
       if (name === LEGACY_DATABASE_RECORD) {
+        if (databaseBytes !== undefined) {
+          throw new ValidationError('Legacy backup contains a duplicate database.risudat record')
+        }
         // The downstream envelope decoder still consumes one contiguous
         // database payload, so reject its declared size before allocating it.
         new ByteLimitTracker(options.maxDatabaseBytes, 'Local backup database exceeds size limit').add(dataLength)

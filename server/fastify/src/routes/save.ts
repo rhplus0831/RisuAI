@@ -371,7 +371,7 @@ export function registerSaveRoutes(
         encodeMs,
         outputBytes: risuBytes.byteLength,
       })
-      const bundle = buildRepositoryRisuSaveBundleExport({
+      const bundle = await buildRepositoryRisuSaveBundleExport({
         dataDir,
         persisted,
         risuBytes,
@@ -420,7 +420,7 @@ export function registerSaveRoutes(
         encodeMs,
         outputBytes: risuBytes.byteLength,
       })
-      const localBackup = buildRepositoryRisuLocalBackupExport({
+      const localBackup = await buildRepositoryRisuLocalBackupExport({
         dataDir,
         persisted,
         databaseBytes: risuBytes,

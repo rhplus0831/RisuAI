@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { type PersistedAsset, getAllAssetMetadata, isValidAssetId, loadPersisted } from '../repository.js'
 import {
   CHARACTER_ASSET_REFERENCE_FIELDS,
+  CHARACTER_ASSET_REFERENCE_LIST_FIELDS,
   CHARACTER_ASSET_TUPLE_FIELDS,
   CHARACTER_TEXT_INLAY_FIELDS,
   COLLECTION_ASSET_IMAGE_OWNERS,
@@ -187,7 +188,9 @@ function collectRisuSaveAssetReferences(
     addChatInlayReferences(found, record.chats, `${prefix}.chats`)
     addCcAssetReferences(found, record.ccAssets, `${prefix}.ccAssets`)
     addVitsReferences(found, record.vits, `${prefix}.vits.files`)
-    addReferenceList(found, record.prebuiltAssetExclude, `${prefix}.prebuiltAssetExclude`)
+    for (const field of CHARACTER_ASSET_REFERENCE_LIST_FIELDS) {
+      addReferenceList(found, record[field], `${prefix}.${field}`)
+    }
     addGptSoVitsReference(found, record.gptSoVitsConfig, `${prefix}.gptSoVitsConfig`)
     addCharacterTextInlayReferences(found, record, prefix)
   })

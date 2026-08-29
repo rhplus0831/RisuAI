@@ -28,6 +28,7 @@ import { decodeRisuSaveImportSnapshot } from '../src/risuSave/importSnapshot.js'
 import { RISU_SERVER_DATA_KEY } from '../src/risuSave/portableMetadata.js'
 import {
   decodeLocalBackup,
+  LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES,
   LOCAL_BACKUP_ZIP_MAX_ENTRIES,
   LOCAL_BACKUP_ZIP_MAX_NAME_BYTES,
 } from '../src/risuSave/localBackupImport.js'
@@ -453,6 +454,54 @@ describe('repository .risu bundle import route', () => {
     expect(decoded.stagedAssets).toHaveLength(1)
     expect(decoded.stagedAssets[0]).toMatchObject({ id: assetId, size: assetBytes.length })
     expect(fs.readFileSync(decoded.stagedAssets[0].filePath)).toEqual(assetBytes)
+  })
+
+  it('rejects an oversized legacy record name before allocating it and cleans earlier staged assets', async () => {
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const oversizedName = Buffer.alloc(LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES + 1, 0x78)
+    const oversizedNameLength = Buffer.alloc(4)
+    oversizedNameLength.writeUInt32LE(oversizedName.byteLength, 0)
+    const emptyDataLength = Buffer.alloc(4)
+    const bundlePath = path.join(harness.dataDir, 'oversized-legacy-record-name.bin')
+    writeFileSync(
+      bundlePath,
+      Buffer.concat([
+        buildLegacyBin([{ name: `${ASSET_ID}.png`, data: ASSET_BYTES }]),
+        oversizedNameLength,
+        oversizedName,
+        emptyDataLength,
+        buildLegacyBin([{ name: 'database.risudat', data: databaseBytes }]),
+      ]),
+    )
+
+    const buffers = trackExplicitBufferMaterialization()
+    try {
+      await expect(
+        decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, maxDatabaseBytes: Infinity }),
+      ).rejects.toThrow(`Legacy backup record name exceeds ${LOCAL_BACKUP_LEGACY_MAX_NAME_BYTES} bytes`)
+      expect(buffers.maxBytes()).toBeLessThan(oversizedName.byteLength)
+    } finally {
+      buffers.restore()
+    }
+    expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
+  })
+
+  it('rejects duplicate legacy database records and cleans earlier staged assets', async () => {
+    const databaseBytes = encodeLegacyRisuSaveEnvelope({ characters: [] })
+    const bundlePath = path.join(harness.dataDir, 'duplicate-legacy-database.bin')
+    writeFileSync(
+      bundlePath,
+      buildLegacyBin([
+        { name: 'database.risudat', data: databaseBytes },
+        { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
+        { name: 'database.risudat', data: databaseBytes },
+      ]),
+    )
+
+    await expect(
+      decodeLocalBackup(bundlePath, { maxExpandedBytes: Infinity, maxDatabaseBytes: Infinity }),
+    ).rejects.toThrow('Legacy backup contains a duplicate database.risudat record')
+    expect(localAssetStageDirectories(harness.dataDir)).toEqual([])
   })
 
   it.each(['risu-bundle-zip', 'legacy-local-backup'] as const)(
