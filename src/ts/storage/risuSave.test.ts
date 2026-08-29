@@ -1,26 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const localForageState = vi.hoisted(() => ({
-  setItem: vi.fn(async () => undefined),
-  getItem: vi.fn(async () => undefined),
+const databaseState = vi.hoisted(() => ({
+  getDatabase: vi.fn(() => ({ enableRemoteSaving: true })),
 }))
 
-vi.mock('src/ts/platform', async (importActual) => {
-  const actual = await importActual<typeof import('src/ts/platform')>()
-  return {
-    ...actual,
-    isFastifyServer: true,
-  }
-})
-
-vi.mock('localforage', () => ({
-  default: {
-    createInstance: vi.fn(() => localForageState),
-  },
-}))
+vi.mock('src/ts/platform', () => ({ isFastifyServer: true }))
 
 vi.mock('./database.svelte', () => ({
-  getDatabase: vi.fn(() => ({ enableRemoteSaving: false })),
+  getDatabase: databaseState.getDatabase,
   presetTemplate: {},
 }))
 
@@ -41,22 +28,28 @@ vi.mock('../globalApi.svelte', () => ({
 import { RisuSaveEncoder } from './risuSave'
 
 beforeEach(() => {
-  localForageState.setItem.mockClear()
-  localForageState.getItem.mockClear()
+  databaseState.getDatabase.mockClear()
 })
 
-describe('Fastify RisuSave cache gate', () => {
-  it('does not write RISUSAVE block cache entries in server-backed web mode', async () => {
-    const encoder = new RisuSaveEncoder()
+describe('Fastify RisuSave remote-saving gate', () => {
+  it.each(['prefer', 'force'] as const)(
+    'encodes %s blocks inline without consulting remote-saving state or device-local storage',
+    async (remote) => {
+      const encoder = new RisuSaveEncoder()
 
-    const block = await encoder.encodeBlock({
-      compression: false,
-      data: '{"ok":true}',
-      type: 1 as any,
-      name: 'root',
-    })
+      const block = await encoder.encodeBlock(
+        {
+          compression: false,
+          data: '{"ok":true}',
+          type: 1 as any,
+          name: 'root',
+        },
+        { remote },
+      )
 
-    expect(block).toBeInstanceOf(Uint8Array)
-    expect(localForageState.setItem).not.toHaveBeenCalled()
-  })
+      expect(block).toBeInstanceOf(Uint8Array)
+      expect(block[0]).toBe(1)
+      expect(databaseState.getDatabase).not.toHaveBeenCalled()
+    },
+  )
 })

@@ -2,6 +2,7 @@ import { Packr, Unpackr, decode } from 'msgpackr/index-no-eval'
 import * as fflate from 'fflate'
 import { getDatabase, presetTemplate, type Database } from './database.svelte'
 import { forageStorage } from '../globalApi.svelte'
+import { isFastifyServer } from 'src/ts/platform'
 
 const packr = new Packr({
   useRecords: false,
@@ -332,7 +333,7 @@ export class RisuSaveEncoder {
   }
 
   async encodeBlock(arg: EncodeBlockArg, option: EncodeBlockOption = { remote: 'none' }) {
-    if (option.remote === 'force' || (option.remote === 'prefer' && !disableRemoteSaving())) {
+    if (!isFastifyServer && (option.remote === 'force' || (option.remote === 'prefer' && !disableRemoteSaving()))) {
       return await this.encodeRemoteBlock(arg)
     }
     return await this.encodeRawBlock(arg)
