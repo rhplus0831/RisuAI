@@ -268,6 +268,17 @@ describe('BardWiki revisioned commands', () => {
   })
 
   it('updates settings and creates, edits, and soft-deletes one document with one event/revision each', async () => {
+    for (const patch of [{ confirmationPolicyOverride: 'automatic' }, { canonicalUpdatesOverride: true }]) {
+      const unavailable = await app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/bardwiki/chats/chat-a/settings',
+        headers: authHeaders(),
+        payload: { baseRevision: 0, patch },
+      })
+      expect(unavailable.statusCode).toBe(400)
+      expect(unavailable.json()).toEqual({ error: 'BardWiki autonomous updates are not available yet' })
+    }
+
     const settings = await app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/bardwiki/chats/chat-a/settings',

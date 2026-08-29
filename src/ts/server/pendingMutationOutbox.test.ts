@@ -1189,6 +1189,10 @@ describe('pending mutation outbox', () => {
     ['PUT', '/chats/chat-a/lorebooks/entries/entry-a'],
     ['DELETE', '/modules/module-a/lorebooks/entries/entry-a'],
     ['POST', '/chats/chat-a/lorebooks/entries/reorder'],
+    ['PATCH', '/bardwiki/chats/chat-a/settings'],
+    ['POST', '/bardwiki/chats/chat-a/documents'],
+    ['PATCH', '/bardwiki/chats/chat-a/documents/document-a'],
+    ['DELETE', '/bardwiki/chats/chat-a/documents/document-a'],
   ] as const)('allowlists the durable bridge route %s %s', async (method, path) => {
     const handle = stagePendingMutation(`allowlist:${method}:${path}`, {
       version: 1,

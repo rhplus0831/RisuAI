@@ -37,6 +37,7 @@ import {
   createModuleCommand,
   createPersonaCommand,
   createPluginCommand,
+  createBardWikiDocumentCommand,
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
   completeOnboardingCommand,
@@ -69,6 +70,7 @@ import {
   deleteModuleLorebookEntryCommand,
   deletePersonaCommand,
   deletePluginCommand,
+  deleteBardWikiDocumentCommand,
   deletePluginStorageCommand,
   deferOwnServerCommandReconciliation,
   deletePromptItemCommand,
@@ -83,6 +85,7 @@ import {
   patchChatScriptstateCommand,
   patchServerBackedSettings,
   patchRuntimeSettings,
+  patchBardWikiChatSettingsCommand,
   patchSettingsGroup,
   patchSettingsObjectFieldsCommand,
   peekAppliedServerResourceRevision,
@@ -169,6 +172,7 @@ import {
   updateModuleCommand,
   updatePersonaCommand,
   updatePluginCommand,
+  updateBardWikiDocumentCommand,
   upsertCharacterLorebookEntryCommand,
   upsertChatLorebookEntryCommand,
   upsertGlobalLorebookEntryCommand,
@@ -288,6 +292,67 @@ afterEach(() => {
 })
 
 describe('server command API adapter', () => {
+  it('dispatches BardWiki settings and fenced document commands to their focused routes', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event: { type: 'bardwiki.updated', revision: 2, resource: 'bardWikiDocument' },
+      settings: {},
+      document: { id: 'document-a' },
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const fence = { expectedVersion: 3, expectedContentHash: 'a'.repeat(64) }
+
+    await patchBardWikiChatSettingsCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      patch: { enabledOverride: true },
+    })
+    await createBardWikiDocumentCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      document: { kind: 'event', title: 'Arrival', logicalPath: 'Events/Arrival', markdown: 'Hello.' },
+    })
+    await updateBardWikiDocumentCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      documentId: 'document/a',
+      ...fence,
+      patch: { title: 'Return' },
+    })
+    await deleteBardWikiDocumentCommand({
+      baseRevision: 1,
+      chatId: 'chat/a',
+      documentId: 'document/a',
+      ...fence,
+    })
+
+    expect(commandFetch.calls.map(({ url, method, body }) => ({ url, method, body }))).toEqual([
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/settings',
+        method: 'PATCH',
+        body: { baseRevision: 1, patch: { enabledOverride: true } },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          document: { kind: 'event', title: 'Arrival', logicalPath: 'Events/Arrival', markdown: 'Hello.' },
+        },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents/document%2Fa',
+        method: 'PATCH',
+        body: { baseRevision: 1, ...fence, patch: { title: 'Return' } },
+      },
+      {
+        url: '/api/v1/commands/bardwiki/chats/chat%2Fa/documents/document%2Fa',
+        method: 'DELETE',
+        body: { baseRevision: 1, ...fence },
+      },
+    ])
+  })
+
   it('blocks ordinary APIs before writer readiness while allowing only initialization and pending replay', async () => {
     resetStartupReadinessForTests()
     const command = vi.fn()

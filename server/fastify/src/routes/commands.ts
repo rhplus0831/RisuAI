@@ -9527,6 +9527,9 @@ function readBardWikiSettingsCommandBody(value: unknown): {
         ;(patch as Record<string, unknown>)[key] = raw
     }
   }
+  if (patch.confirmationPolicyOverride === 'automatic' || patch.canonicalUpdatesOverride === true) {
+    throw new ValidationError('BardWiki autonomous updates are not available yet')
+  }
   return { baseRevision: body.baseRevision, patch }
 }
 

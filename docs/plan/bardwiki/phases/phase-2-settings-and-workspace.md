@@ -24,6 +24,16 @@ actions. The responsive index/detail layout exposes source metadata, linked
 document aliases, Markdown, and version provenance, handles unavailable and
 retry states, and closes instead of crossing a chat switch.
 
+Slice 3 made the workspace writable through focused browser command adapters
+and encrypted durable-outbox intents. Users can set safe per-chat enablement,
+memory-mode, and token-budget overrides; create, rename, edit, and soft-delete
+documents; and edit kind, path, aliases, context, review state, and Markdown.
+Accepted, queued, failed, unavailable, and stale-version outcomes remain
+distinct. Queued drafts stay guarded until settlement, while conflicts offer
+both discard/reload and an explicit retry of the preserved draft against a
+fresh version/hash fence. Per-chat automatic confirmation and canonical
+updates remain rejected until Phase 5.
+
 Validation on 2026-08-29:
 
 ```text
@@ -60,6 +70,25 @@ pnpm exec vitest run --project frontend-dom \
 
 pnpm exec svelte-check --tsconfig ./tsconfig.json --output machine
 # 6,627 files, zero errors and warnings
+
+pnpm exec vitest run --project frontend-dom \
+  src/lib/ChatScreens/BardWikiWorkspace.svelte.test.ts
+# 1 file, 7 tests passed
+
+pnpm exec vitest run \
+  src/ts/server/bardWikiCommands.test.ts \
+  src/ts/server/commands.test.ts \
+  -t 'BardWiki|BardWiki durable commands'
+# 2 files, 4 focused tests passed
+
+pnpm exec vitest run --project frontend-dom \
+  src/ts/server/pendingMutationOutbox.test.ts \
+  -t 'allowlists the durable bridge route'
+# all 120 durable-route allowlist cases passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiRoutes.test.ts
+# 1 file, 6 tests passed
 ```
 
 ## Depends On

@@ -65,6 +65,13 @@ import {
   normalizePromptTemplate,
 } from '../process/promptTemplateNormalization'
 import { canMutate } from '../startupReadiness'
+import type {
+  BardWikiChatSettings,
+  BardWikiContextPolicy,
+  BardWikiDocument,
+  BardWikiDocumentKind,
+  BardWikiReviewState,
+} from '@risuai/protocol'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -543,6 +550,66 @@ export interface UpsertServerInlayCatalogInput {
   height?: number
   name: string
   width?: number
+}
+
+export type BardWikiChatSettingsPatch = Partial<
+  Pick<
+    BardWikiChatSettings,
+    | 'enabledOverride'
+    | 'memoryModeOverride'
+    | 'confirmationPolicyOverride'
+    | 'canonicalUpdatesOverride'
+    | 'totalTokenBudgetOverride'
+    | 'hybridHypaTokenBudgetOverride'
+    | 'hybridBardWikiTokenBudgetOverride'
+    | 'maxDocumentsOverride'
+    | 'maxLinkHopsOverride'
+    | 'recentMessageCountOverride'
+    | 'modelProfileIdOverride'
+    | 'modelProfileIdIsSet'
+    | 'promptPresetIdOverride'
+    | 'promptPresetIdIsSet'
+  >
+>
+
+export interface BardWikiDocumentCommandFields {
+  kind?: BardWikiDocumentKind
+  title?: string
+  logicalPath?: string
+  aliases?: string[]
+  contextPolicy?: BardWikiContextPolicy
+  reviewState?: BardWikiReviewState
+  markdown?: string
+}
+
+export interface PatchBardWikiChatSettingsCommandInput {
+  baseRevision: number
+  chatId: string
+  patch: BardWikiChatSettingsPatch
+}
+
+export interface CreateBardWikiDocumentCommandInput {
+  baseRevision: number
+  chatId: string
+  document: Required<Pick<BardWikiDocumentCommandFields, 'kind' | 'title' | 'logicalPath' | 'markdown'>> &
+    BardWikiDocumentCommandFields
+}
+
+export interface UpdateBardWikiDocumentCommandInput {
+  baseRevision: number
+  chatId: string
+  documentId: string
+  expectedVersion: number
+  expectedContentHash: string
+  patch: BardWikiDocumentCommandFields
+}
+
+export interface DeleteBardWikiDocumentCommandInput {
+  baseRevision: number
+  chatId: string
+  documentId: string
+  expectedVersion: number
+  expectedContentHash: string
 }
 
 export interface DeleteServerInlayCatalogInput {
@@ -5527,6 +5594,65 @@ export async function persistGenerationResultCommand(
     },
     signal,
   })
+}
+
+export async function patchBardWikiChatSettingsCommand(
+  input: PatchBardWikiChatSettingsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ settings: BardWikiChatSettings }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/settings`, {
+    method: 'PATCH',
+    body: { baseRevision: input.baseRevision, patch: input.patch },
+    signal,
+  })
+}
+
+export async function createBardWikiDocumentCommand(
+  input: CreateBardWikiDocumentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ document: BardWikiDocument }>> {
+  return requestCommandJson(`/bardwiki/chats/${encodeURIComponent(input.chatId)}/documents`, {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, document: input.document },
+    signal,
+  })
+}
+
+export async function updateBardWikiDocumentCommand(
+  input: UpdateBardWikiDocumentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ document: BardWikiDocument }>> {
+  return requestCommandJson(
+    `/bardwiki/chats/${encodeURIComponent(input.chatId)}/documents/${encodeURIComponent(input.documentId)}`,
+    {
+      method: 'PATCH',
+      body: {
+        baseRevision: input.baseRevision,
+        expectedVersion: input.expectedVersion,
+        expectedContentHash: input.expectedContentHash,
+        patch: input.patch,
+      },
+      signal,
+    },
+  )
+}
+
+export async function deleteBardWikiDocumentCommand(
+  input: DeleteBardWikiDocumentCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ document: BardWikiDocument }>> {
+  return requestCommandJson(
+    `/bardwiki/chats/${encodeURIComponent(input.chatId)}/documents/${encodeURIComponent(input.documentId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+        expectedVersion: input.expectedVersion,
+        expectedContentHash: input.expectedContentHash,
+      },
+      signal,
+    },
+  )
 }
 
 export async function upsertServerInlayCatalogCommand(
