@@ -34,6 +34,7 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
   ['openAIKey', 'openAIKey'],
   ['localNetworkMode', 'localNetworkMode'],
   ['localNetworkTimeoutSec', 'localNetworkTimeoutSec'],
+  ['additionalParams', 'additionalParams'],
   ['mainPrompt', 'mainPrompt'],
   ['jailbreak', 'jailbreak'],
   ['globalNote', 'globalNote'],

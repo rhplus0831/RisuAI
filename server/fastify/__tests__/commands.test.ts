@@ -4856,6 +4856,38 @@ describe('bot preset commands', () => {
     })
   })
 
+  it('saves and applies additionalParams when selecting a legacy preset', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', additionalParams: [['stale', 'value']] },
+        { id: 'preset-b', name: 'B', additionalParams: [['target', 'value']] },
+      ],
+      botPresetsId: 0,
+      additionalParams: [['current', 'value']],
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: true,
+      },
+    })
+
+    expect(selected.statusCode, selected.body).toBe(200)
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      additionalParams: Array<[string, string]>
+      botPresets: Array<{ id: string; additionalParams?: Array<[string, string]> }>
+    }
+    expect(persisted.additionalParams).toEqual([['target', 'value']])
+    expect(persisted.botPresets[0]?.additionalParams).toEqual([['current', 'value']])
+  })
+
   it('reports the exact resource shape for no-apply preset selection', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
