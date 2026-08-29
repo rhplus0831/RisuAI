@@ -1,5 +1,13 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { type PersistedAsset, getAllAssetMetadata, isValidAssetId, loadPersisted } from '../repository.js'
+import {
+  CHARACTER_ASSET_REFERENCE_FIELDS,
+  CHARACTER_ASSET_TUPLE_FIELDS,
+  CHARACTER_TEXT_INLAY_FIELDS,
+  COLLECTION_ASSET_IMAGE_OWNERS,
+  NESTED_ASSET_REFERENCE_FIELDS,
+  ROOT_ASSET_REFERENCE_FIELDS,
+} from './assetOwnerCatalog.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -127,18 +135,16 @@ function collectRisuSaveAssetReferences(
   const root = readRecord(database)
   if (!root) return []
 
-  addReference(found, root.userIcon, 'database.userIcon')
-  addReference(found, root.customBackground, 'database.customBackground')
-
-  const naiImgConfig = readRecord(root.NAIImgConfig)
-  if (naiImgConfig) {
-    addReference(found, naiImgConfig.image, 'database.NAIImgConfig.image')
-    addReference(found, naiImgConfig.character_image, 'database.NAIImgConfig.character_image')
+  for (const field of ROOT_ASSET_REFERENCE_FIELDS) {
+    addReference(found, root[field], `database.${field}`)
   }
 
-  const wavespeedImage = readRecord(root.wavespeedImage)
-  if (wavespeedImage) {
-    addReference(found, wavespeedImage.reference_image, 'database.wavespeedImage.reference_image')
+  for (const { owner, fields } of NESTED_ASSET_REFERENCE_FIELDS) {
+    const record = readRecord(root[owner])
+    if (!record) continue
+    for (const field of fields) {
+      addReference(found, record[field], `database.${owner}.${field}`)
+    }
   }
 
   readArray(root.personas).forEach((persona, index) => {
@@ -154,23 +160,13 @@ function collectRisuSaveAssetReferences(
     addReference(found, record.imgFile, `database.characterOrder[${index}].imgFile`)
   })
 
-  readArray(root.botPresets).forEach((preset, index) => {
-    const record = readRecord(preset)
-    if (!record) return
-    addReference(found, record.image, `database.botPresets[${index}].image`)
-  })
-
-  readArray(root.modelPresets).forEach((preset, index) => {
-    const record = readRecord(preset)
-    if (!record) return
-    addReference(found, record.image, `database.modelPresets[${index}].image`)
-  })
-
-  readArray(root.promptPresets).forEach((preset, index) => {
-    const record = readRecord(preset)
-    if (!record) return
-    addReference(found, record.image, `database.promptPresets[${index}].image`)
-  })
+  for (const owner of COLLECTION_ASSET_IMAGE_OWNERS) {
+    readArray(root[owner]).forEach((preset, index) => {
+      const record = readRecord(preset)
+      if (!record) return
+      addReference(found, record.image, `database.${owner}[${index}].image`)
+    })
+  }
 
   readArray(root.modules).forEach((module, index) => {
     const record = readRecord(module)
@@ -182,10 +178,12 @@ function collectRisuSaveAssetReferences(
     const record = readRecord(character)
     if (!record) return
     const prefix = `database.characters[${index}]`
-    addReference(found, record.image, `${prefix}.image`)
-    addReference(found, record.notificationImage, `${prefix}.notificationImage`)
-    addTupleReferences(found, record.emotionImages, `${prefix}.emotionImages`)
-    addTupleReferences(found, record.additionalAssets, `${prefix}.additionalAssets`)
+    for (const field of CHARACTER_ASSET_REFERENCE_FIELDS) {
+      addReference(found, record[field], `${prefix}.${field}`)
+    }
+    for (const field of CHARACTER_ASSET_TUPLE_FIELDS) {
+      addTupleReferences(found, record[field], `${prefix}.${field}`)
+    }
     addChatInlayReferences(found, record.chats, `${prefix}.chats`)
     addCcAssetReferences(found, record.ccAssets, `${prefix}.ccAssets`)
     addVitsReferences(found, record.vits, `${prefix}.vits.files`)
@@ -234,18 +232,7 @@ function addChatInlayReferences(found: Map<string, Set<string>>, value: unknown,
 function addCharacterTextInlayReferences(found: Map<string, Set<string>>, record: JsonRecord, label: string): void {
   // These fields are either rendered directly through ParseMarkdown or can be
   // interpolated by parser callbacks into a rendered greeting/background.
-  const textFields = [
-    'firstMessage',
-    'backgroundHTML',
-    'creatorNotes',
-    'name',
-    'nickname',
-    'desc',
-    'personality',
-    'scenario',
-    'exampleMessage',
-  ] as const
-  for (const field of textFields) {
+  for (const field of CHARACTER_TEXT_INLAY_FIELDS) {
     addReferenceSources(found, collectInlayAssetReferenceSources(record[field], `${label}.${field}`))
   }
   readArray(record.alternateGreetings).forEach((greeting, index) => {

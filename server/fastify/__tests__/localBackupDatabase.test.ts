@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PersistedAsset } from '../src/repository.js'
+import { buildRisuSaveAssetReport } from '../src/risuSave/assetReferences.js'
 import {
   normalizeLegacyLocalBackupImportDatabase,
   prepareLegacyLocalBackupExportDatabase,
@@ -83,6 +84,14 @@ describe('legacy local-backup database asset-reference rewriting', () => {
     const normalized = normalizeLegacyLocalBackupImportDatabase(databaseWithKnownReferences(ASSET_PATH))
 
     expect(normalized).toEqual(databaseWithKnownReferences(ASSET_ID))
+  })
+
+  it('keeps portable discovery and legacy rewriting aligned for the durable owner corpus', () => {
+    const database = databaseWithKnownReferences(ASSET_ID)
+    const prepared = prepareLegacyLocalBackupExportDatabase(database, [asset])
+
+    expect(buildRisuSaveAssetReport(prepared, [asset])).toEqual(buildRisuSaveAssetReport(database, [asset]))
+    expect(buildRisuSaveAssetReport({ unrelatedJson: { rawAssetId: ASSET_ID } }, [asset]).referenced).toEqual([])
   })
 
   it('applies custom record aliases in newly covered nested fields', () => {

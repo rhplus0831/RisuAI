@@ -1,4 +1,13 @@
 import { type PersistedAsset, isValidAssetId } from '../repository.js'
+import {
+  CHARACTER_ASSET_REFERENCE_FIELDS,
+  CHARACTER_ASSET_REFERENCE_LIST_FIELDS,
+  CHARACTER_ASSET_TUPLE_FIELDS,
+  CHARACTER_TEXT_INLAY_FIELDS,
+  COLLECTION_ASSET_IMAGE_OWNERS,
+  NESTED_ASSET_REFERENCE_FIELDS,
+  ROOT_ASSET_REFERENCE_FIELDS,
+} from './assetOwnerCatalog.js'
 
 type JsonRecord = Record<string, unknown>
 type AssetReferenceRewriter = (value: string) => string
@@ -48,18 +57,14 @@ export function normalizeLegacyLocalBackupImportDatabase(
 }
 
 function rewriteKnownAssetReferences(database: JsonRecord, rewrite: AssetReferenceRewriter): void {
-  rewriteField(database, 'userIcon', rewrite)
-  rewriteField(database, 'customBackground', rewrite)
-
-  const naiImgConfig = readRecord(database.NAIImgConfig)
-  if (naiImgConfig) {
-    rewriteField(naiImgConfig, 'image', rewrite)
-    rewriteField(naiImgConfig, 'character_image', rewrite)
+  for (const field of ROOT_ASSET_REFERENCE_FIELDS) {
+    rewriteField(database, field, rewrite)
   }
 
-  const wavespeedImage = readRecord(database.wavespeedImage)
-  if (wavespeedImage) {
-    rewriteField(wavespeedImage, 'reference_image', rewrite)
+  for (const { owner, fields } of NESTED_ASSET_REFERENCE_FIELDS) {
+    const record = readRecord(database[owner])
+    if (!record) continue
+    for (const field of fields) rewriteField(record, field, rewrite)
   }
 
   for (const persona of readRecords(database.personas)) {
@@ -71,7 +76,7 @@ function rewriteKnownAssetReferences(database: JsonRecord, rewrite: AssetReferen
     rewriteField(entry, 'imgFile', rewrite)
   }
 
-  for (const collectionName of ['botPresets', 'modelPresets', 'promptPresets']) {
+  for (const collectionName of COLLECTION_ASSET_IMAGE_OWNERS) {
     for (const preset of readRecords(database[collectionName])) {
       rewriteField(preset, 'image', rewrite)
     }
@@ -82,14 +87,12 @@ function rewriteKnownAssetReferences(database: JsonRecord, rewrite: AssetReferen
   }
 
   for (const character of readRecords(database.characters)) {
-    rewriteField(character, 'image', rewrite)
-    rewriteField(character, 'notificationImage', rewrite)
-    rewriteTupleReferences(character.emotionImages, rewrite)
-    rewriteTupleReferences(character.additionalAssets, rewrite)
+    for (const field of CHARACTER_ASSET_REFERENCE_FIELDS) rewriteField(character, field, rewrite)
+    for (const field of CHARACTER_ASSET_TUPLE_FIELDS) rewriteTupleReferences(character[field], rewrite)
     rewriteChatInlayReferences(character.chats, rewrite)
     rewriteCcAssetReferences(character.ccAssets, rewrite)
     rewriteVitsReferences(character.vits, rewrite)
-    rewriteReferenceList(character, 'prebuiltAssetExclude', rewrite)
+    for (const field of CHARACTER_ASSET_REFERENCE_LIST_FIELDS) rewriteReferenceList(character, field, rewrite)
     rewriteGptSoVitsReference(character.gptSoVitsConfig, rewrite)
     rewriteCharacterTextInlayReferences(character, rewrite)
   }
@@ -121,18 +124,7 @@ function rewriteChatInlayReferences(value: unknown, rewrite: AssetReferenceRewri
 }
 
 function rewriteCharacterTextInlayReferences(character: JsonRecord, rewrite: AssetReferenceRewriter): void {
-  const textFields = [
-    'firstMessage',
-    'backgroundHTML',
-    'creatorNotes',
-    'name',
-    'nickname',
-    'desc',
-    'personality',
-    'scenario',
-    'exampleMessage',
-  ] as const
-  for (const field of textFields) {
+  for (const field of CHARACTER_TEXT_INLAY_FIELDS) {
     rewriteInlayField(character, field, rewrite)
   }
 
