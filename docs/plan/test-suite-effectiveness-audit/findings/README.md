@@ -2,8 +2,8 @@
 
 Date: 2026-08-29
 
-Status: Active; sixty-four findings are done and five are deferred with
-concrete revisit triggers.
+Status: Active; 130 findings are done and 11 are deferred with concrete revisit
+triggers.
 
 This directory owns durable finding and decision records for the audit. Phase 0
 will decide whether the working ledger remains in this index, splits into
@@ -3214,3 +3214,261 @@ Every finding records:
 - Count delta: none.
 - Revisit condition: Phase 11 asset audit, Phase 12 security/runtime audit,
   Phase 13 bounded remediation, and mandatory Phase 14 closeout decision.
+
+## Phase 11 Findings
+
+### TSA-P11-001: Portable exports discarded reroll alternatives
+
+- State: Done.
+- Severity: High.
+- Category: K.
+- Decision: Strengthen, then Keep.
+- Tests/cases: ordinary save export/import route owners; two regressions.
+- Production owner: portable chat-message projection and alternate-message
+  restoration.
+- Protected contract or plausible defect: exporting only the active message
+  made other reroll candidates disappear after import.
+- Evidence: export now joins durable alternates and import restores alternate
+  rows; route round trips assert all candidates and active selection.
+- Companion/overlap analysis: browser swipe persistence proves reload behavior,
+  not portable serialization.
+- Action and rollback: retain explicit alternate projection in both directions.
+- Validation: focused routes, 568 exact opening-owner cases, complete lanes.
+- Count delta: two cases.
+- Revisit condition: any new message-variant representation.
+
+### TSA-P11-002: Malformed save directories could drive unbounded work
+
+- State: Done.
+- Severity: High.
+- Category: K/L.
+- Decision: Strengthen, then Keep.
+- Tests/cases: bounded inflate and codec framing regressions.
+- Production owner: legacy/current `.risu` directory and physical-block decoder.
+- Protected contract or plausible defect: invalid compression markers,
+  excessive directory references, or oversized synthetic names could consume
+  memory/CPU before normalized validation.
+- Evidence: marker validation, a 65,536-reference cap, 255-byte synthetic-name
+  cap, and cache-only dedupe now fail at the framing boundary.
+- Companion/overlap analysis: expanded-byte caps cannot bound entry metadata or
+  ambiguous physical directories.
+- Action and rollback: retain independent byte and cardinality bounds.
+- Validation: focused malformed matrices and complete Fastify lane passed.
+- Count delta: three codec regressions are included with TSA-P11-003.
+- Revisit condition: a new envelope family or deliberately raised cap.
+
+### TSA-P11-003: Duplicate blocks and archive entries were ambiguous
+
+- State: Done.
+- Severity: Critical.
+- Category: K.
+- Decision: Strengthen, then Keep.
+- Tests/cases: five codec and four bundle-import regressions.
+- Production owner: block-envelope assembly and bundle archive validation.
+- Protected contract or plausible defect: duplicate physical names, singleton
+  types, root keys, or ZIP entries could silently select one attacker-controlled
+  value through last-write-wins behavior.
+- Evidence: the decoder rejects every duplicate ownership class; bundle import
+  caps entries at 10,000, names at 1,024 bytes, rejects duplicates, and requires
+  exact `database.risu` cardinality.
+- Companion/overlap analysis: normalized-shape validation happens too late to
+  establish unambiguous physical ownership.
+- Action and rollback: fail closed before durable import.
+- Validation: codec/bundle matrices, exact server owners, complete lane passed.
+- Count delta: nine cases across TSA-P11-002/003.
+- Revisit condition: any archive layout or multi-component format change.
+
+### TSA-P11-004: Legacy portable backup rewrites omitted asset owners
+
+- State: Done.
+- Severity: High.
+- Category: K.
+- Decision: Add and Strengthen.
+- Tests/cases: new `localBackupDatabase.test.ts`, three cases.
+- Production owner: recursive legacy local-asset rewrite for portable backups.
+- Protected contract or plausible defect: known asset fields outside the old
+  allowlist remained machine-local and broke after restore elsewhere.
+- Evidence: the rewrite now traverses the complete persisted shape and rewrites
+  all legacy local references while preserving unrelated strings.
+- Companion/overlap analysis: current save walkers did not execute this legacy
+  browser backup path.
+- Action and rollback: keep the direct production owner; update it with future
+  persisted asset owners or replace it with a shared catalog/parity contract.
+- Validation: 3/3 direct cases and complete frontend/Fastify/inventory gates.
+- Count delta: one owner and three cases added.
+- Revisit condition: Phase 13 central asset-owner catalog decision.
+
+### TSA-P11-005: Failed Realm/CharX imports leaked newly written assets
+
+- State: Done.
+- Severity: High.
+- Category: K.
+- Decision: Strengthen, then Keep.
+- Tests/cases: three Realm import failure regressions.
+- Production owner: server CharX asset staging, conversion, append, and command
+  settlement.
+- Protected contract or plausible defect: mid-write, conversion, or append
+  failure left orphaned content-addressed bytes and metadata.
+- Evidence: failure cleanup tracks new writes, removes them on every terminal
+  path, and preserves pre-existing deduplicated assets.
+- Companion/overlap analysis: route rejection and GC grace periods could not
+  prove immediate transactional cleanup.
+- Action and rollback: retain per-import ownership cleanup until a repository
+  transaction spans asset bytes and character commit.
+- Validation: 30/30 Realm cases and isolated 7,000-asset owner passed.
+- Count delta: three cases.
+- Revisit condition: transactional asset/character repository composition.
+
+### TSA-P11-006: Background inlay and PDF failures leaked work or rejection
+
+- State: Done.
+- Severity: High.
+- Category: B/G with K seams.
+- Decision: Strengthen and Reclassify.
+- Tests/cases: one inlay-migration and three PDF lifecycle regressions.
+- Production owner: background legacy inlay migration and PDF page/canvas
+  rendering cleanup.
+- Protected contract or plausible defect: an unobserved migration rejection
+  escaped startup work; render, data-URL, or abort failures retained page/canvas
+  resources.
+- Evidence: background migration rejection is contained and every PDF exit path
+  closes the page and releases canvas state.
+- Companion/overlap analysis: happy-path media/import assertions could not
+  observe terminal resource ownership.
+- Action and rollback: keep explicit cleanup at the owning async boundary.
+- Validation: focused frontend owners and complete frontend lane passed.
+- Count delta: four cases.
+- Revisit condition: real-browser decoder composition in Phase 13.
+
+### TSA-P11-007: Asset-adjacent names hid seventeen dominant product risks
+
+- State: Done.
+- Severity: Medium.
+- Category: K to B/C/D/E/G/L.
+- Decision: Reclassify.
+- Tests/cases: 17 complete unchanged owners / 134 opening cases.
+- Production owner: durable imports, browser state, visible backup feedback,
+  stale-safe authoring, PDF lifecycle, and platform file capabilities.
+- Protected contract or plausible defect: broad import/export vocabulary could
+  hide the contract whose failure actually determines user risk.
+- Evidence: exact first-match rules and executable counterexamples preserve the
+  asset seam while assigning each owner to its dominant category.
+- Companion/overlap analysis: runtime lanes and specialized tags are unchanged.
+- Action and rollback: retain all owners unchanged under corrected categories.
+- Validation: 13/13 routing-policy cases and 700-owner inventory passed.
+- Count delta: one policy case; no owner removed.
+- Revisit condition: only if a complete owner's dominant contract changes.
+
+### TSA-P11-008: Fastify mode could emit unusable remote-block saves
+
+- State: Done.
+- Severity: High.
+- Category: B/K.
+- Decision: Strengthen and Reclassify.
+- Tests/cases: two browser save-mode cases, including one formerly vacuous case.
+- Production owner: RisuSave output-mode selection under Fastify ownership.
+- Protected contract or plausible defect: preferred or forced remote blocks
+  could create a save whose cache references were not portable from Fastify.
+- Evidence: Fastify mode always selects inline output and both preference paths
+  assert the production selection.
+- Companion/overlap analysis: codec classification could reject remote blocks
+  but did not prevent the browser from choosing them.
+- Action and rollback: retain the Fastify gate until a supported remote block
+  service exists.
+- Validation: focused owner and complete frontend lane passed.
+- Count delta: one effective case.
+- Revisit condition: an explicit portable remote-block product contract.
+
+### TSA-P11-009: Asset/save layers are intentional defense in depth
+
+- State: Done.
+- Severity: Informational.
+- Category: K.
+- Decision: Keep.
+- Tests/cases: 25 current K owners / 433 cases.
+- Production owner: asset bytes/index/references, backup transactions, codecs,
+  routes, browser adapters, Realm staging, and compatibility diagnostics.
+- Protected contract or plausible defect: merging by feature name would replace
+  physical framing, durable transaction, browser ownership, or recovery proof
+  with a non-equivalent layer.
+- Evidence: complete review found distinct failure oracles at every retained
+  boundary; destructive restore covers rollback, ambiguous commit, forward
+  completion, and boot recovery.
+- Companion/overlap analysis: current synthetic fixtures reduce historical
+  confidence but do not make byte, API, storage, and UI layers equivalent.
+- Action and rollback: retain reviewed owners and their isolated Realm scale
+  lane.
+- Validation: exact opening owners, full lanes, scale, smoke, and inventories.
+- Count delta: none beyond focused findings.
+- Revisit condition: consolidation requires the full mandatory replacement proof.
+
+### TSA-P11-010: The Kei backup adapter was test-only and unreachable
+
+- State: Done.
+- Severity: Low.
+- Category: K.
+- Decision: Remove.
+- Tests/cases: `src/ts/kei/backup.test.ts`, five cases; production seam
+  `src/ts/kei/backup.ts`.
+- Production owner: none; only the deleted test imported the adapter.
+- Protected contract or plausible defect: the suite maintained pagination,
+  retry, and UI state for a path with no app, route, component, or module caller.
+- Evidence: repository-wide static import and caller search found no production
+  reachability; active backup clients and routes protect supported behavior.
+- Companion/overlap analysis: removal does not claim equivalence; it records an
+  obsolete, unreachable contract.
+- Action and rollback: delete the test and seam and remove inventory/support
+  references. Restore only with a real product caller and current contract.
+- Validation: exact retained owners, complete frontend, discovery, support and
+  effectiveness inventories passed.
+- Count delta: one owner and five cases removed; one mixed seam removed.
+- Revisit condition: a deliberate Kei backup feature returns.
+
+### TSA-P11-011: Asset/save guidance did not describe current safety boundaries
+
+- State: Done.
+- Severity: Low.
+- Category: K/A.
+- Decision: Correct documentation.
+- Tests/cases: Phase 11 discovery guide and complete reviewed set.
+- Production owner: authoritative testing guidance for supported formats,
+  cleanup, caps, scale ownership, and fixture provenance.
+- Protected contract or plausible defect: stale guidance overstated historical
+  independence and retained a deleted Kei path while omitting new ambiguity and
+  rollback protection.
+- Evidence: source, fixture provenance, fresh collection, exact runs, and
+  generated inventories establish the current contracts.
+- Companion/overlap analysis: guidance is the durable boundary between strong
+  current evidence and intentionally bounded historical/browser claims.
+- Action and rollback: keep the guide aligned with material support changes.
+- Validation: documentation formatting, inventories, and linked commands.
+- Count delta: none.
+- Revisit condition: a format, cap, or fixture-provenance change.
+
+### TSA-P11-012: Large-corpus, abort, browser, and historical claims are bounded
+
+- State: Deferred with retained owners and explicit phase ownership.
+- Severity: High.
+- Category: K, with L and Phase 12/13/14 ownership.
+- Decision: Keep current bounded evidence; add only at named owners.
+- Tests/cases: archive/save routes, Realm/CharX, process ZIP, backup, smoke, and
+  compatibility fixtures.
+- Production owner: post-upload request cancellation, streaming export/import,
+  browser fallback archive conversion, central asset-owner parity, destructive
+  browser composition, and independent historical interoperability.
+- Protected contract or plausible defect: disconnect may not cancel decode or
+  destructive apply; large export/import paths can still materialize whole
+  corpora; browser ZIP/Realm fallback remains less bounded; current block/ZIP/
+  SQLite fixtures cannot independently prove historical compatibility.
+- Evidence: confirmed ambiguity, cleanup, portability, and reference defects
+  are fixed. Remaining claims require runtime policy, bounded browser
+  composition, or historical artifacts unavailable in this checkout.
+- Companion/overlap analysis: Phase 12 owns abort/limits/observability; Phase 13
+  owns streaming/parity/browser composition; Phase 14 owns the final historical
+  and residual-support verdict.
+- Action and rollback: retain bounded layers. Do not infer unsupported live or
+  historical behavior, substitute the pinned baseline, or refresh goldens.
+- Validation: exact/full/scale/smoke/current-compatibility gates bound current
+  claims; the differential harness reports the missing pinned worktree.
+- Count delta: none.
+- Revisit condition: Phases 12-13 remediation and mandatory Phase 14 closeout.

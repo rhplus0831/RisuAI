@@ -2,7 +2,7 @@
 
 Date: 2026-08-29
 
-Status: Active; Phases 0-10 are complete and Phase 11 is in progress.
+Status: Active; Phases 0-11 are complete and Phase 12 is in progress.
 
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
@@ -34,12 +34,14 @@ Start with:
 The frozen planning baseline contains 698 tracked `*.test.ts` and `*.spec.ts`
 files. The live checked universe is 700 after Phase 0 added an inventory owner,
 Phase 4 added a shared-Button owner while removing one unreachable legacy
-mobile-shell owner, and Phase 5 added a mounted PersonaSettings owner:
+mobile-shell owner, Phase 5 added a mounted PersonaSettings owner, and Phase 11
+replaced one unreachable Kei test seam with a direct legacy-backup rewrite
+owner:
 
 | Owner                               | Files | Notes                                                                    |
 | ----------------------------------- | ----: | ------------------------------------------------------------------------ |
-| Frontend Vitest                     |   539 | 195 Node, 17 Svelte+Node, 327 Happy-DOM in the full discovered universe. |
-| Fastify Vitest                      |   154 | Node/fork tests under `server/fastify/__tests__/`.                        |
+| Frontend Vitest                     |   538 | 194 Node, 17 Svelte+Node, 327 Happy-DOM in the full discovered universe. |
+| Fastify Vitest                      |   155 | Node/fork tests under `server/fastify/__tests__/`.                        |
 | Playwright browser smoke            |     7 | Built SPA with Chromium, Fastify, and SQLite.                             |
 | Compatibility and support artifacts |     — | Opt-in runners, goldens, fixtures, helpers, configs, and setup files.     |
 

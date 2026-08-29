@@ -9,11 +9,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0-10 complete and Phase 11 in progress.
-- Current phase: Phase 11 — Assets, Import, Export, And Backups.
-- Active slice: Phase 11 opens with 42 category-K owners and 554 asset, save,
-  import, export, Realm/CharX, and backup cases, including 54 parameterized rows:
-  29 frontend owners / 280 cases and 13 Fastify owners / 274 cases.
+- Plan state: Active; Phases 0-11 complete and Phase 12 in progress.
+- Current phase: Phase 12 — API Security, Runtime, And Observability.
+- Active slice: Phase 12 opens with 42 category-L owners and 432 authentication,
+  authorization, network-policy, request-limit, tracing, startup/shutdown, and
+  platform-runtime cases, including 81 parameterized rows: 21 Fastify owners /
+  270 cases, 11 frontend Node owners / 77 cases, and 10 frontend DOM owners / 85
+  cases.
 - Implementation state: exhaustive test/case/support manifests and their local,
   affected, aggregate, coverage, and CI checks are live. The protocol import
   policy uses recursive AST evidence and the Realm scale case has isolated local
@@ -33,13 +35,18 @@ in [`latest-verification.md`](latest-verification.md).
   cache identity while correcting four category boundaries. Phase 10 fixed
   delayed plugin callbacks, MCP body/frame/pagination bounds, RisuAccess stable
   mutation identity, module memo invalidation, image-translation teardown, and
-  internal tool support while correcting five category boundaries.
+  internal tool support while correcting five category boundaries. Phase 11
+  preserved portable rerolls, bounded and disambiguated save/archive framing,
+  rewrote all legacy backup references, rolled back failed CharX assets,
+  contained PDF/inlay cleanup, disabled unusable Fastify remote blocks,
+  corrected 17 category boundaries, and removed one proven-dead Kei adapter.
 - Blockers: the full differential compatibility harness cannot run because its
   pinned external worktree is absent. The new current-only owner is green; the
   blocker applies only to historical baseline claims.
-- Next action: audit asset transactionality and references, save/archive caps,
-  Realm/CharX/card/chat/preset import/export, backups and destructive restore,
-  then complete every Phase 11 disposition and fixture-family review.
+- Next action: audit authentication and route protection, proxy/egress policy,
+  request and decompression limits, abort propagation, tracing/redaction,
+  startup/shutdown, service workers, and production observability; then complete
+  every Phase 12 disposition.
 
 ## Planning Baseline
 
@@ -47,17 +54,17 @@ in [`latest-verification.md`](latest-verification.md).
 | ------------------------------------ | -------------------------------------------- |
 | Frozen tracked anchor                | 698 files at `56796fa5a2f651a791e19b4223337b98874efa97` |
 | Live tracked test/spec universe      | 700 files                                    |
-| Full frontend Vitest universe        | 539: 195 N / 17 S / 327 D                    |
-| Standalone ordinary frontend         | 537: 195 N / 17 S / 325 D                    |
-| `test:all` ordinary frontend         | 531: 194 N / 17 S / 320 D                    |
-| Fastify Vitest                       | 154 files                                    |
+| Full frontend Vitest universe        | 538: 194 N / 17 S / 327 D                    |
+| Standalone ordinary frontend         | 536: 194 N / 17 S / 325 D                    |
+| `test:all` ordinary frontend         | 530: 193 N / 17 S / 320 D                    |
+| Fastify Vitest                       | 155 files                                    |
 | Browser smoke                        | 7 files                                      |
 | Compatibility harness                | Current-only green; full differential blocked |
-| Collected cases                      | 10,152 total; 1 direct-only skip; 1,314 parameterized rows |
-| Support owners                       | 252 standalone; 65 mixed production seams   |
+| Collected cases                      | 10,170 total; 1 direct-only skip; 1,319 parameterized rows |
+| Support owners                       | 252 standalone; 64 mixed production seams   |
 | Primary-category assignments         | 700 of 700 ratified                          |
-| Complete file dispositions           | 563 Keep / 67 Reclassify; 1 removed historical owner |
-| Findings                             | 120 done / 10 deferred                       |
+| Complete file dispositions           | 586 Keep / 82 Reclassify; 2 removed historical owners |
+| Findings                             | 130 done / 11 deferred                       |
 
 The 698-file rows preserve the plan-creation anchor. The live counts, support
 owners, runtime evidence, and category totals are checked by the Phase 0
@@ -78,8 +85,8 @@ manifests and verification record.
 | [8](phases/phase-8-memory-embeddings-jobs-and-workers.md) | Complete | Audited memory, embeddings, summaries, jobs, and workers. |
 | [9](phases/phase-9-scripting-parsing-triggers-and-automation.md) | Complete | Audited scripting, parsing, triggers, Lua, and automation. |
 | [10](phases/phase-10-plugins-modules-mcp-and-specialized-tools.md) | Complete | Audited plugins, modules, MCP, Playground, and specialized tools. |
-| [11](phases/phase-11-assets-import-export-and-backups.md) | In progress | Audit assets, imports, exports, saves, and backups. |
-| [12](phases/phase-12-api-security-runtime-and-observability.md) | Pending | Audit API security, runtime, limits, tracing, and operations. |
+| [11](phases/phase-11-assets-import-export-and-backups.md) | Complete | Audited assets, imports, exports, saves, and backups. |
+| [12](phases/phase-12-api-security-runtime-and-observability.md) | In progress | Audit API security, runtime, limits, tracing, and operations. |
 | [13](phases/phase-13-cross-suite-consolidation-and-remediation.md) | Pending | Resolve cross-suite duplication, removals, replacements, and gaps. |
 | [14](phases/phase-14-verification-and-closeout.md) | Pending | Verify final effectiveness, counts, documentation, and closeout. |
 
@@ -89,17 +96,18 @@ See [`phases/README.md`](phases/README.md) for links and shared slice rules.
 
 | Decision   | Count | Meaning                                                    |
 | ---------- | ----: | ---------------------------------------------------------- |
-| Keep       |   563 | Distinct contract and suitable evidence layer.             |
+| Keep       |   586 | Distinct contract and suitable evidence layer.             |
 | Strengthen |     0 | Valuable intent, but insufficient or self-fulfilling proof. |
 | Merge      |     0 | Equivalent failure mode can move into a stronger owner.    |
-| Reclassify |    67 | Valuable test belongs to another category, lane, or type.  |
-| Remove     |     1 | Historical owner removed after mandatory replacement proof. |
-| Add        |     2 | Historical owner added for a material uncovered contract.  |
-| Pending    |    70 | Known live test owners awaiting their owning phase review.  |
+| Reclassify |    82 | Valuable test belongs to another category, lane, or type.  |
+| Remove     |     2 | Historical owner removed after mandatory replacement proof. |
+| Add        |     3 | Historical owner added for a material uncovered contract.  |
+| Pending    |    32 | Known live test owners awaiting their owning phase review.  |
 
 Keep, Reclassify, and Pending partition the 700 live rows. Remove and Add are
-durable action-ledger counts; the added Button and PersonaSettings owners are
-already included in Keep and the removed Mobile owner is no longer a live row.
+durable action-ledger counts; the added Button, PersonaSettings, and local
+backup owners are already included in Keep, while the removed Mobile and Kei
+owners are no longer live rows.
 
 ## Current Decisions
 
@@ -172,6 +180,11 @@ already included in Keep and the removed Mobile owner is no longer a live row.
   to Phase 11, plugin proxy/runtime threat modeling to Phase 12, bounded real
   browser/MCP composition and support policy to Phase 13, and historical
   compatibility plus the final residual decision to Phase 14.
+- Deferred asset/save fidelity: `TSA-P11-012` routes post-upload abort,
+  request-limit, and tracing ownership to Phase 12; streaming/materialization,
+  central asset-owner parity, and bounded browser import/restore composition to
+  Phase 13; and independent historical fixture plus final residual-support
+  verdicts to Phase 14.
 
 ## Maintenance Rules
 

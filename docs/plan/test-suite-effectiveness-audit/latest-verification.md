@@ -1117,3 +1117,92 @@ Ten Phase 10 findings are done. `TSA-P10-011` routes uploaded-asset cleanup to
 Phase 11, proxy/threat-model and runtime ownership to Phase 12, bounded live
 browser/MCP composition plus support policy to Phase 13, and historical
 compatibility plus the final residual decision to Phase 14.
+
+## Phase 11 Evidence
+
+### Opening set and remediation validation
+
+Phase 11 opened with 42 category-K owners and 554 cases: 29 frontend files /
+280 cases and 13 Fastify files / 274 cases, with 54 parameterized rows. Both
+opening sets passed before remediation. Twenty-three regressions were added.
+
+Seventeen unchanged owners / 134 opening cases moved to B/C/D/E/G/L after
+complete review. One unreachable Kei test/seam with five cases was removed and
+one three-case direct legacy-backup rewrite owner was added. Current category K
+is therefore 25 owners / 433 cases. The retained exact opening owners passed
+280/280 frontend cases across 28 files and 288/288 Fastify cases across 13
+files.
+
+Focused remediation commands passed throughout:
+
+- ordinary save export/import reroll round trip;
+- malformed/deduplicated block framing and bounded directories;
+- bundle entry/cardinality/name/duplicate validation;
+- legacy local-backup reference rewrite: 3/3;
+- Realm/CharX cleanup and isolated 7,000-asset scale: 30/30 plus the direct
+  single selected scale case;
+- inlay migration and PDF resource cleanup;
+- Fastify inline save-mode selection;
+- executable category boundaries and linked inventory: 13/13.
+
+### Complete gates
+
+Commands:
+
+```sh
+RISU_TEST_INCLUDE_GATES=true pnpm exec vitest run \
+  --reporter=json --outputFile=/tmp/phase11b-frontend-results.json
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  --reporter=json --outputFile=/tmp/phase11-server-results.json
+pnpm test:gates:perf
+pnpm test:server:realm-scale
+pnpm check
+pnpm check:server
+pnpm check:protocol
+pnpm test:smoke
+pnpm test:compat-current
+pnpm test:compat-harness
+pnpm test:affected --dry-run --include-smoke --base 378d9aa60
+pnpm check:test-inventories
+pnpm format:check
+git diff --check
+```
+
+The complete frontend universe passed 6,766/6,766 cases; the two isolated
+performance owners passed 6/6. Complete Fastify passed 3,368 cases with the one
+intentional direct-only Realm scale skip; the direct scale owner then passed
+with 29 ordinary cases filtered. Client, server, browser-smoke, and protocol
+typechecks passed with zero diagnostics.
+
+The first full frontend closeout run found one stale test-support count in the
+inventory policy after the intentional Kei seam removal: expected 65 versus the
+new 64 mixed production seams. The expectation and generated manifest were
+updated; its 13/13 focused policy cases and the complete 6,766-case repeat then
+passed. The bundle-report text printed during the performance policy's negative
+fixture is expected evidence; the gate itself passed.
+
+The production smoke build passed with the existing allowed CSS,
+externalization, plugin-timing, and chunk-size diagnostics. All 35/35 Chromium
+journeys passed in 1.0 minutes, including reroll persistence and old-lineage
+import recovery. Smoke establishes built-application regression evidence; it
+does not claim deep archive conversion or mid-import disconnect coverage.
+
+Affected selection chose inventory, frontend, performance, and Fastify lanes;
+smoke was run explicitly. Current-only compatibility passed 18/18 and matched
+16 cells plus the healthy cluster-10 regressions. Full differential
+compatibility remains prerequisite-blocked by the absent exact
+`/home/codex/risu-baseline-71c476e9c` worktree. No substitute checkout was used
+and no golden or compatibility fixture was refreshed.
+
+Fresh Vitest/Playwright listings and green measured results produce 700 live
+test/spec owners and 10,170 collected cases, with one direct-only skip and 1,319
+parameterized rows. Primary categories are A=21, B=39, C=62, D=111, E=101,
+F=84, G=108, H=26, I=39, J=42, K=25, and L=42. Live decisions are 586 Keep,
+82 Reclassify, and 32 Pending. Support artifacts are 252 standalone and 64
+mixed production seams.
+
+Eleven Phase 11 findings are done. `TSA-P11-012` routes request-abort, limits,
+and runtime observability to Phase 12; streaming/materialization, central
+asset-owner parity, and bounded browser import/restore composition to Phase 13;
+and independent historical fixture plus final residual-support decisions to
+Phase 14.
