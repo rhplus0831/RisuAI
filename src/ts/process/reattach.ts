@@ -800,13 +800,17 @@ function bootstrapRefreshError(result: { status: 'error'; error: string } | { st
 
 async function hydrateReconciledChats(
   jobs: readonly Pick<ActiveGenerationJob, 'chatId'>[],
-  options: { strict?: boolean } = {},
+  options: { strict?: boolean; signal?: AbortSignal | null } = {},
 ): Promise<boolean> {
   if (jobs.length === 0) return true
   const { hydrateChatMessages } = getChatHydrationRuntime()
   const results = await Promise.allSettled(
     [...new Set(jobs.map((job) => job.chatId))].map((chatId) =>
-      hydrateChatMessages(chatId, { force: true, strict: options.strict }),
+      hydrateChatMessages(chatId, {
+        force: true,
+        strict: options.strict,
+        ...(options.signal ? { signal: options.signal } : {}),
+      }),
     ),
   )
   return results.every((result) => result.status === 'fulfilled')
@@ -952,6 +956,7 @@ function settleBeforeAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise
 async function reconcileAbsentGenerationJobs(
   previousJobs: readonly ActiveGenerationJob[],
   source: GenerationJobProjectionSource,
+  signal?: AbortSignal | null,
 ): Promise<void> {
   const absentJobs = previousJobs.filter((job) => !authoritativeGenerationJobForChat(job.chatId))
   if (absentJobs.length === 0) return
@@ -963,7 +968,8 @@ async function reconcileAbsentGenerationJobs(
     })
   }
 
-  const hydrated = await hydrateReconciledChats(absentJobs, { strict: true })
+  const hydrated = await hydrateReconciledChats(absentJobs, { strict: true, signal })
+  if (signal?.aborted) return
   const { generationOperationProjections } = getGenerationOperationsRuntime()
   const operations = get(generationOperationProjections)
   for (const job of absentJobs) {
@@ -1047,6 +1053,7 @@ async function retireSupersededGenerationObservers(
 async function applyGenerationRecoveryBootstrap(
   runtime: { status: 'ok'; bootstrap: ServerBootstrapRuntime },
   source: GenerationJobProjectionSource,
+  signal?: AbortSignal | null,
 ): Promise<void> {
   const previousJobs = [...authoritativeGenerationJobsById.values()]
   const { applyGenerationOperationBootstrap } = getGenerationOperationsRuntime()
@@ -1055,10 +1062,13 @@ async function applyGenerationRecoveryBootstrap(
   if (runtime.bootstrap.generationFinalizations) {
     setGenerationFinalizationPersistences(runtime.bootstrap.generationFinalizations)
   }
-  await reconcileAbsentGenerationJobs(previousJobs, source)
+  // Once the foreground authority projection is accepted, the pre-suspension
+  // observer is stale. Retire it before strict transcript hydration so a hung
+  // post-resume resource read cannot keep its chat activity spinner alive.
   if (sourceRearmsObservation(source)) {
     await retireSupersededGenerationObservers(previousJobs, [...authoritativeGenerationJobsById.values()])
   }
+  await reconcileAbsentGenerationJobs(previousJobs, source, signal)
   if ((runtime.bootstrap.pendingGenerationEffects?.length ?? 0) > 0) {
     const recoveredGenerationEffects = getRecoveredEffectsRuntime()
     recoveredGenerationEffects.setPendingRecoveredGenerationEffects(runtime.bootstrap.pendingGenerationEffects ?? [])
@@ -1160,7 +1170,13 @@ async function refreshGenerationAuthority(
       // bootstrap revision rather than the older cached base. The separate
       // applied-resource cursor remains unchanged until event reconciliation.
       setCachedServerCommandRevision(runtime.bootstrap.revision)
-      await applyGenerationRecoveryBootstrap(runtime, source)
+      await applyGenerationRecoveryBootstrap(runtime, source, controller.signal)
+      if (epoch !== activeGenerationRecoveryEpoch || controller.signal.aborted) {
+        return {
+          status: 'error',
+          error: timedOut ? 'Generation authority refresh timed out.' : 'Generation authority refresh was superseded.',
+        }
+      }
       return { status: 'ok' }
     } catch (error) {
       return { status: 'error', error: error instanceof Error ? error.message : String(error) }

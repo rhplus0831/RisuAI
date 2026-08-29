@@ -53,7 +53,10 @@ const h = vi.hoisted(() => {
     ),
     fetchRuntimeJobs: vi.fn(),
     setCachedServerCommandRevision: vi.fn(),
-    hydrateChatMessages: vi.fn(async () => undefined),
+    hydrateChatMessages: vi.fn(
+      async (_chatId?: string, _options?: { force?: boolean; strict?: boolean; signal?: AbortSignal | null }) =>
+        undefined,
+    ),
     cancelServerChatGeneration: vi.fn(async () => undefined),
     retireGenerationJobViewers: vi.fn(),
     applyGenerationOperationBootstrap: vi.fn(),
@@ -731,7 +734,11 @@ describe('reattach open-chat generation', () => {
     await expect(refreshGenerationJobFromBootstrap('job-refresh')).resolves.toEqual({ status: 'absent' })
 
     expect(h.fetchRuntimeJobs).toHaveBeenCalledWith(expect.any(AbortSignal), { cacheRevision: false })
-    expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-1', { force: true, strict: true })
+    expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-1', {
+      force: true,
+      strict: true,
+      signal: expect.any(AbortSignal),
+    })
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-2', jobId: 'job-other' }])
     expect(get(generationJobLifecycles)['job-refresh']?.status).toBe('completed')
   })
@@ -786,7 +793,53 @@ describe('reattach open-chat generation', () => {
 
     expect(get(activeGenerationJobs)).toEqual([])
     expect(get(generationJobLifecycles)['job-stale']?.status).toBe('completed')
-    expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-stale', { force: true, strict: true })
+    expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-stale', {
+      force: true,
+      strict: true,
+      signal: expect.any(AbortSignal),
+    })
+  })
+
+  it('retires a stale foreground observer before a terminal transcript hydration settles', async () => {
+    openChat('chat-1')
+    const job = {
+      chatId: 'chat-1',
+      jobId: 'job-hung-hydration',
+      operationId: 'operation-hung-hydration',
+    }
+    setActiveGenerationJobs([job])
+    const activity = beginChatGenerationActivity({
+      target: { selectedCharID: 0, chatPage: 0, characterId: 'char-a', chatId: 'chat-1' },
+      kind: 'message',
+      operationId: job.operationId,
+    })!
+    let hydrationSignal: AbortSignal | null | undefined
+    h.hydrateChatMessages.mockImplementationOnce(
+      (_chatId, options) =>
+        new Promise<void>((_resolve, reject) => {
+          hydrationSignal = options?.signal
+          hydrationSignal?.addEventListener('abort', () => reject(new Error('hydration aborted')), { once: true })
+        }),
+    )
+    h.fetchRuntimeJobs.mockResolvedValueOnce({ status: 'ok', bootstrap: { activeGenerationJobs: [] } })
+    const controller = new AbortController()
+
+    try {
+      const refresh = refreshActiveGenerationJobsFromBootstrap(controller.signal, 'visibility')
+      await vi.waitFor(() => expect(h.hydrateChatMessages).toHaveBeenCalledTimes(1))
+
+      expect(h.retireGenerationJobViewers).toHaveBeenCalledWith(job.jobId)
+      expect(h.retireGenerationOperationViewers).toHaveBeenCalledWith(job.operationId)
+      expect(hydrationSignal).toBeInstanceOf(AbortSignal)
+      expect(hydrationSignal?.aborted).toBe(false)
+
+      controller.abort()
+      await expect(refresh).resolves.toBeUndefined()
+      expect(hydrationSignal?.aborted).toBe(true)
+      await flushMicrotasks()
+    } finally {
+      finishChatGenerationActivity(activity.id)
+    }
   })
 
   it('does not restore or retry a consumed job after abort while reattach is pending', async () => {
@@ -1013,7 +1066,11 @@ describe('reattach open-chat generation', () => {
       await flushMicrotasks()
 
       expect(h.fetchRuntimeJobs).toHaveBeenCalledTimes(2)
-      expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-1', { force: true, strict: true })
+      expect(h.hydrateChatMessages).toHaveBeenCalledWith('chat-1', {
+        force: true,
+        strict: true,
+        signal: expect.any(AbortSignal),
+      })
       expect(h.retireGenerationJobViewers).toHaveBeenCalledWith(job.jobId)
       expect(h.retireGenerationOperationViewers).toHaveBeenCalledWith(job.operationId)
       expect(vi.getTimerCount()).toBe(0)

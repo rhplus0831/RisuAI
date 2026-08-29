@@ -56,9 +56,12 @@ Important files:
   observation projection. Foreground bootstrap reads have a bounded deadline
   and recovery epoch: visibility, page-show, online, and focus wakeups coalesce,
   supersede pre-suspension reads, and reject late responses. A successful probe
-  re-arms the exact live attempt and can retire its old browser viewer without
-  issuing Stop. Absent jobs are cleared only after strict transcript hydration;
-  pending finalization/effect recovery comes from the same bootstrap snapshot.
+  re-arms the exact live attempt and retires its old browser viewer without
+  issuing Stop before it awaits transcript hydration, so a stalled resource
+  read cannot retain the old activity spinner. Strict recovery hydration shares
+  the foreground deadline and abort signal; absent-job lifecycles settle only
+  after that hydration. Pending finalization/effect recovery comes from the same
+  bootstrap snapshot.
   `generationJobLifecycles` records attached, retrying, exhausted-dead,
   completed, and cancelled observer state plus the last transport error. Retry,
   Refresh, and Stop resolve a stale control through its recorded operation/chat

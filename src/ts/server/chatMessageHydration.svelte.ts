@@ -297,11 +297,16 @@ interface ChatHydrationRequest {
   force?: boolean
   range?: ChatHydrationRangeRequest
   seedReroll?: boolean
+  signal?: AbortSignal | null
 }
 
 interface BulkHydrationOptions {
   strict?: boolean
   force?: boolean
+}
+
+interface ChatMessagesHydrationOptions extends BulkHydrationOptions {
+  signal?: AbortSignal | null
 }
 
 function chatHydrationRequestKey(chatId: string, request: ChatHydrationRequest): string {
@@ -395,7 +400,14 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
   requestPromise = (async (): Promise<boolean> => {
     try {
       const endRequest = beginHydrationRequest('chat')
-      const result = await fetchServerChatMessages(chatId, request.range ?? {}).finally(endRequest)
+      const result = await fetchServerChatMessages(chatId, {
+        ...(request.range ?? {}),
+        ...(request.signal ? { signal: request.signal } : {}),
+      }).finally(endRequest)
+      if (request.signal?.aborted) {
+        shouldMarkAttempted = false
+        return false
+      }
       if (generation !== chatHydrationGeneration) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
@@ -462,6 +474,10 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       refreshPendingFreshnessAfterHydration(chatId, freshness)
       return true
     } catch (error) {
+      if (request.signal?.aborted) {
+        shouldMarkAttempted = false
+        return false
+      }
       if (generation !== chatHydrationGeneration) {
         shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
@@ -633,12 +649,25 @@ export async function hydrateActiveChatFully(options: { force?: boolean } = {}):
 }
 
 /** Hydrate a specific chat's complete transcript by id. */
-export async function hydrateChatMessages(chatId: string, options: BulkHydrationOptions = {}): Promise<void> {
+export async function hydrateChatMessages(chatId: string, options: ChatMessagesHydrationOptions = {}): Promise<void> {
   if (!chatId || !canUseServerResourceReads()) return
-  const currentRequestApplied = await hydrateChat(chatId, {
-    force: options.force,
-    seedReroll: activeChatId() === chatId,
-  })
+  if (options.signal?.aborted) {
+    if (options.strict) throw new Error(`Chat hydration aborted for: ${chatId}`)
+    return
+  }
+  const hydration = await awaitUntilAborted(
+    hydrateChat(chatId, {
+      force: options.force,
+      seedReroll: activeChatId() === chatId,
+      signal: options.signal,
+    }),
+    options.signal,
+  )
+  if (hydration.status === 'aborted') {
+    if (options.strict) throw new Error(`Chat hydration aborted for: ${chatId}`)
+    return
+  }
+  const currentRequestApplied = hydration.value
   if (options.strict && !currentRequestApplied) {
     throw new Error(`Chat hydration incomplete for: ${chatId}`)
   }

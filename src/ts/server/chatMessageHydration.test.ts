@@ -341,6 +341,22 @@ describe('chat message hydration bridge', () => {
     expect(db().characters[0].chats[0].message).toEqual([])
   })
 
+  it('aborts strict single-chat hydration even when the resource read never settles', async () => {
+    projectionState.fetchChat.mockReturnValue(new Promise(() => {}))
+    const controller = new AbortController()
+
+    const hydration = hydrateChatMessages('chat-1', {
+      force: true,
+      strict: true,
+      signal: controller.signal,
+    })
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', { signal: controller.signal })
+
+    controller.abort()
+
+    await expect(hydration).rejects.toThrow('Chat hydration aborted for: chat-1')
+  })
+
   it('rejects a failed forced strict refresh even when an older hydration marker exists', async () => {
     projectionState.fetchChat.mockResolvedValueOnce(
       okResult('chat-1', [{ role: 'user', data: 'resident', chatId: 'm-resident' }]),
