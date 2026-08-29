@@ -6,6 +6,4655 @@
     "behavioralSyncCursor": "f3f0242fba297d82e0efcc2c31ca1428569b70f2",
     "planningAuditAnchor": "1933c43ff7b4d35b57b0852013d95f3881a8cb28"
   },
-  "state": "phase-0-initialization",
-  "rows": []
+  "state": "active",
+  "rows": [
+    {
+      "id": "ORC-SURFACE-001",
+      "title": "Legacy preset additional-parameter save, apply, and reset",
+      "primaryCategory": "E",
+      "seamTags": [
+        "C",
+        "G"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "The selected preset snapshots the outgoing global additionalParams value before switching.",
+        "The incoming preset applies its additionalParams value without aliasing the stored preset array.",
+        "Missing, null, empty, legacy, and non-default values remain distinguishable until the owning normalization rule applies.",
+        "The selected value survives SQLite persistence and bootstrap reload."
+      ],
+      "variants": [
+        "default empty additionalParams",
+        "missing preset field",
+        "explicit null preset field",
+        "legacy array of string pairs",
+        "non-default body and header parameters",
+        "saveCurrent false and apply false pointer-only selection"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c:src/ts/storage/database.svelte.ts#saveCurrentPreset",
+          "71c476e9c:src/ts/storage/database.svelte.ts#setPreset"
+        ],
+        "browser": [
+          "src/lib/Setting/botpreset.svelte",
+          "src/ts/presetSplit.ts"
+        ],
+        "protocol": [
+          "src/ts/server/commands.ts#selectLegacyPreset"
+        ],
+        "fastify": [
+          "server/fastify/src/commands/presets.ts#SNAPSHOT_KEYS"
+        ],
+        "persistence": [
+          "server/fastify/src/repository.ts#writePersistedWithMessages"
+        ]
+      },
+      "upstream": {
+        "commits": [
+          "70ad6538be9a748887105efe19d1f19bd2d5e55c",
+          "e76433e5bff5d8ab1364a9540de939a083190a2f",
+          "085dc5b6cbef8af4f0440d7148b83c64c8d5257b"
+        ],
+        "disposition": "ported",
+        "nativePortCommits": [
+          "c5fba556032a6818e94e24aafb7afb993b1b60b3"
+        ]
+      },
+      "normalization": [
+        "JSON object-key order is ignored.",
+        "Array order, missing, null, empty array, and default are semantic and must not be normalized together."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c:src/ts/storage/database.svelte.ts#saveCurrentPreset omits additionalParams",
+          "71c476e9c:src/ts/storage/database.svelte.ts#setPreset omits additionalParams"
+        ],
+        "current": [
+          "server/fastify/src/commands/presets.ts#SNAPSHOT_KEYS",
+          "9aa1a51640c8f2f764990b567d7ea95fe2e6bac0"
+        ],
+        "tests": [
+          "server/fastify/__tests__/commands.test.ts (legacy preset additionalParams selection)"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/commands.test.ts (preset-a/preset-b imported database fixture)"
+        ]
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "9aa1a51640c8f2f764990b567d7ea95fe2e6bac0",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "The baseline omitted this field; Phase 0 treats the preservation fix as a Fastify-only interaction and still requires the full missing/null/reset variant evidence."
+      },
+      "notes": "This pilot traces a recent field-completeness omission rather than claiming that the baseline itself preserved preset-scoped additional parameters."
+    },
+    {
+      "id": "ORC-SURFACE-002",
+      "title": "Translation preset and model-profile runtime dispatch",
+      "primaryCategory": "G",
+      "seamTags": [
+        "E",
+        "C",
+        "B"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Translation uses the selected global or chat-bound translator preset.",
+        "An LLM step resolves the selected model profile, model ID, endpoint, runtime options, and additional parameters.",
+        "Missing or invalid profile bindings follow the documented legacy/default path rather than a stale profile.",
+        "Provider failure returns the translation failure contract without caching a false success.",
+        "Preset and profile selection survive reload."
+      ],
+      "variants": [
+        "global translator preset",
+        "per-chat translator preset override",
+        "legacy preset without stable ID",
+        "missing profile binding",
+        "profile with non-default sampler and endpoint options",
+        "provider failure",
+        "reload and cache-key invalidation"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c:src/ts/translator/presets.ts#normalizeTranslatorPresetState",
+          "71c476e9c:src/ts/translator/translator.ts#runTranslator",
+          "71c476e9c:src/ts/translator/translator.ts#translateMain"
+        ],
+        "browser": [
+          "src/ts/translator/presets.ts",
+          "src/ts/translator/pipeline.ts",
+          "src/ts/translator/translator.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/generationSse.ts#PromptChatMessageTranslationSchema"
+        ],
+        "fastify": [
+          "server/fastify/src/translation/rawMessageTranslation.ts",
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/commands/translatorPresets.ts",
+          "server/fastify/src/commands/chats.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Credential bytes are redacted while credential selection and presence remain semantic.",
+        "Endpoint path/query, model ID, option values, step order, missing, null, and default are semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c:src/ts/translator/translator.ts#translateMain",
+          "71c476e9c:src/ts/translator/presets.ts"
+        ],
+        "current": [
+          "80155c26d7bd066a1269d219b031d38a03aa49b6",
+          "bc8b1891187ac6ba97e303ed36df841f09516ab3",
+          "c7563b7e5197ad8b59f3ab06334a9585c1396eaf"
+        ],
+        "tests": [
+          "server/fastify/__tests__/rawMessageTranslation.test.ts",
+          "src/ts/translator/translator.cache.svelte-node.test.ts",
+          "src/ts/translator/presets.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/rawMessageTranslation.test.ts (profile-bound LLM step fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "0d8f644f538ffa56b63b00769a9b64c1a0c5c169",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "The profile abstraction is post-baseline; Phase 0 still needs a single executable matrix that covers missing/default, failure, and reload together."
+      },
+      "notes": "The comparison preserves the baseline's selected translation intent while allowing the Fastify profile representation to differ physically."
+    },
+    {
+      "id": "ORC-SURFACE-003",
+      "title": "OpenAI Responses endpoint and request-shape preservation",
+      "primaryCategory": "G",
+      "seamTags": [
+        "F"
+      ],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "An explicit model endpoint overrides the generic custom URL.",
+        "An already complete Responses path and query string are preserved exactly.",
+        "Autofill appends /responses or /v1/responses without moving query parameters.",
+        "Request body, resolved model/options, streaming mode, and retry/fallback selection remain owned by the same resolved profile."
+      ],
+      "variants": [
+        "official default Responses endpoint",
+        "base URL ending in /v1",
+        "exact /responses URL",
+        "query-bearing Azure-style endpoint",
+        "model endpoint with autofill disabled",
+        "streaming and buffered request",
+        "retry and fallback profile"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c:src/ts/process/request/openAI/requests.ts#requestOpenAIResponse"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [
+          "packages/protocol/src/generationSse.ts"
+        ],
+        "fastify": [
+          "server/fastify/src/generation/openaiResponses.ts#resolveResponsesRequest",
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/commands/modelProfiles.ts"
+        ]
+      },
+      "upstream": {
+        "commits": [
+          "91902c0f9cfab60c23aed3cb9285bcf604ddbeb6",
+          "484026e37ad7a9ba731899f6bd02183ebc1e6cb2",
+          "5db846e3cf35ceab2614be8f924a013aadcfe91c"
+        ],
+        "disposition": "ported",
+        "nativePortCommits": [
+          "827720c439e792befd57dac6bd9919ac070fc549"
+        ]
+      },
+      "normalization": [
+        "Authorization values are redacted while header presence and credential selection remain semantic.",
+        "URL path/query, array order, body values, missing, null, and defaults are semantic; JSON object-key order alone is ignored."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c:src/ts/process/request/openAI/requests.ts:1053-1106"
+        ],
+        "current": [
+          "server/fastify/src/generation/openaiResponses.ts#resolveResponsesRequest",
+          "d49bdfa3e2d8e3e367ce08db0a4f2611f127ae55"
+        ],
+        "tests": [
+          "server/fastify/__tests__/openaiResponses.test.ts",
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/openaiResponses.test.ts (query-bearing endpoint fixtures)"
+        ]
+      },
+      "verification": {
+        "state": "verified",
+        "confidence": "high",
+        "lastFastifyCommit": "d49bdfa3e2d8e3e367ce08db0a4f2611f127ae55",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Live third-party retry behavior is fixture-proven rather than exercised against a paid endpoint."
+      },
+      "notes": "The explicit endpoint rule is byte-for-byte semantic; normalizers may not erase path or query differences."
+    },
+    {
+      "id": "ORC-SURFACE-004",
+      "title": "Portable reroll-candidate ordering and identity",
+      "primaryCategory": "K",
+      "seamTags": [
+        "C",
+        "D",
+        "F"
+      ],
+      "sourceObligation": "fastify-only-interaction",
+      "observables": [
+        "Every retained candidate is exported in newest-to-oldest navigation order.",
+        "Candidate role, text, message identity, generation metadata, and references survive supported round trips.",
+        "Portable import extracts candidates into durable alternate rows without duplicating them into the active transcript.",
+        "Hydration and reload reconstruct the candidate buffer so forward/back navigation restores the same displaced tail."
+      ],
+      "variants": [
+        "no candidates",
+        "one candidate",
+        "multiple ordered candidates",
+        "candidate with generationInfo and reference metadata",
+        "duplicate-looking text with distinct IDs",
+        "current .risu export/import round trip",
+        "Original-style block and local-backup codec round trip",
+        "standalone chat JSON boundary"
+      ],
+      "owners": {
+        "baseline": [
+          "71c476e9c:src/ts/process/prereroll.ts",
+          "71c476e9c:src/ts/process/index.svelte.ts#addRerolls",
+          "71c476e9c:src/ts/storage/risuSave.ts"
+        ],
+        "browser": [
+          "src/ts/process/rerollNavigation.svelte.ts",
+          "src/ts/characters.ts#exportChat"
+        ],
+        "protocol": [
+          "packages/protocol/src/generationSse.ts#alternates"
+        ],
+        "fastify": [
+          "server/fastify/src/risuSave/exportSnapshot.ts",
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/repository.ts"
+        ],
+        "persistence": [
+          "server/fastify/src/messageStore.ts#addAlternateMessage",
+          "server/fastify/src/messageStore.ts#getAlternateMessages"
+        ]
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Generated IDs may be normalized only when occurrence order and every identity/reference relationship remain intact.",
+        "Candidate order, role, repeated values, metadata presence, missing, null, and empty arrays are semantic."
+      ],
+      "evidence": {
+        "baseline": [
+          "71c476e9c:src/ts/process/prereroll.ts keeps candidates only in memory",
+          "71c476e9c:src/ts/storage/risuSave.ts"
+        ],
+        "current": [
+          "server/fastify/src/repository.ts#loadPersistedWithMessages",
+          "server/fastify/src/repository.ts#writePersistedWithMessages",
+          "9e7587afb83b8f0ee8fbce43fa5d500340ee06ed"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveExportRoute.test.ts",
+          "server/fastify/__tests__/risuSaveImportRoute.test.ts",
+          "src/ts/process/rerollNavigation.test.ts"
+        ],
+        "fixtures": [
+          "server/fastify/__tests__/risuSaveImportRoute.test.ts (alternate-newest/alternate-older fixture)"
+        ]
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "9e7587afb83b8f0ee8fbce43fa5d500340ee06ed",
+        "findingIds": [],
+        "decisionId": null,
+        "residual": "Current import and export are separately pinned, but an exported-byte round trip and direct Original-app execution proof remain to be recorded."
+      },
+      "notes": "Original retained candidates only in a process-local buffer; the Fastify-only persistence must remain additive and must not make shared saves unreadable."
+    },
+    {
+      "id": "ORC-SURFACE-005",
+      "title": "Historical decision CA-ST-1: V2 persistent character, persona, note, and lorebook effects remain explicit no-ops",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "standing-unsupported",
+      "observables": [
+        "V2 persistent character, persona, note, and lorebook effects remain explicit no-ops"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-001",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-006",
+      "title": "Historical decision CA-ST-2: V1/V2 command and privileged effect families remain explicit no-ops",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "standing-unsupported",
+      "observables": [
+        "V1/V2 command and privileged effect families remain explicit no-ops"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-002",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-007",
+      "title": "Historical decision D1: Whole-database portable exports retain credentials with a mandatory warning",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Whole-database portable exports retain credentials with a mandatory warning"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/data-loss-delta-audit-2026-08-05/CONSOLIDATED.md:179-209"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/data-loss-delta-audit-2026-08-05/CONSOLIDATED.md:179-209"
+        ],
+        "current": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-003",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-008",
+      "title": "Historical decision D2: Stale inline model-profile secrets are scrubbed without minting credentials",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Stale inline model-profile secrets are scrubbed without minting credentials"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/data-loss-delta-audit-2026-08-05/CONSOLIDATED.md:179-217"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/data-loss-delta-audit-2026-08-05/CONSOLIDATED.md:179-217"
+        ],
+        "current": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-004",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-009",
+      "title": "Historical decision CA-OR-2: Group-chat generation remains no-port",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "standing-unsupported",
+      "observables": [
+        "Group-chat generation remains no-port"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "decision-required",
+        "confidence": "low",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-005",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+    },
+    {
+      "id": "ORC-SURFACE-010",
+      "title": "Historical decision CA-PR-3: Non-server-routable providers remain unavailable",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "standing-unsupported",
+      "observables": [
+        "Non-server-routable providers remain unavailable"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "decision-required",
+        "confidence": "low",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-006",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+    },
+    {
+      "id": "ORC-SURFACE-011",
+      "title": "Historical decision cluster-3: Stop before acceptance may unsend the just-submitted user row",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Stop before acceptance may unsend the just-submitted user row"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:14-24,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:14-24,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-007",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-012",
+      "title": "Historical decision cluster-11: Append-mode streaming Continue uses a new assistant row",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Append-mode streaming Continue uses a new assistant row"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-008",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-013",
+      "title": "Historical decision cluster-12: Append-mode Continue keeps its boundary transient",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Append-mode Continue keeps its boundary transient"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-009",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-014",
+      "title": "Historical decision cluster-13: Extend-mode buffered Continue preserves row identity and runs editoutput once",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Extend-mode buffered Continue preserves row identity and runs editoutput once"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-010",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-015",
+      "title": "Historical decision cluster-14: Non-Hypa context truncation requires confirmation",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Non-Hypa context truncation requires confirmation"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-011",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-016",
+      "title": "Historical decision cluster-19: Reroll history is chat-scoped",
+      "primaryCategory": "D",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Reroll history is chat-scoped"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139"
+        ],
+        "current": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-012",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-017",
+      "title": "Historical decision cluster-20: Multisend retains the corrected sequential workflow",
+      "primaryCategory": "D",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Multisend retains the corrected sequential workflow"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-145"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-145"
+        ],
+        "current": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-013",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-018",
+      "title": "Historical decision cluster-22: CharX prebuilt-asset exclusions use the current inert round-trip representation",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "CharX prebuilt-asset exclusions use the current inert round-trip representation"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139"
+        ],
+        "current": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-014",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-019",
+      "title": "Historical decision cluster-23: Acknowledged failable Stop lifecycle",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Acknowledged failable Stop lifecycle"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-015",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-020",
+      "title": "Historical decision cluster-24: Pre-token Stop removes the empty assistant placeholder",
+      "primaryCategory": "D",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Pre-token Stop removes the empty assistant placeholder"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-016",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-021",
+      "title": "Historical decision cluster-25: Restart recovery marks work abandoned and confirms billing-aware retries",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Restart recovery marks work abandoned and confirms billing-aware retries"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-017",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-022",
+      "title": "Historical decision cluster-26: Completion may win during finalization and failed sends retain recovery UI",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Completion may win during finalization and failed sends retain recovery UI"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-018",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-023",
+      "title": "Historical decision cluster-27: Replay-gap and reconnect display follow durable replay semantics",
+      "primaryCategory": "B",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Replay-gap and reconnect display follow durable replay semantics"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/bootstrap.ts",
+          "src/ts/server/chatMessageHydration.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "src/ts/bootstrap.ts",
+          "src/ts/server/chatMessageHydration.svelte.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/ts/server/chatMessageHydration.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-019",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-024",
+      "title": "Historical decision cluster-28: Persisted generationInfo carries durable protocol metadata",
+      "primaryCategory": "C",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Persisted generationInfo carries durable protocol metadata"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/commands.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-020",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-025",
+      "title": "Historical decision cluster-29: Multisend rows carry timestamps and client-minted IDs",
+      "primaryCategory": "C",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Multisend rows carry timestamps and client-minted IDs"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/commands.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-021",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-026",
+      "title": "Historical decision cluster-30: Late recovery permanently skips ephemeral completion effects",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Late recovery permanently skips ephemeral completion effects"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-022",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-027",
+      "title": "Historical decision cluster-31: Lua durable writes use minted lore IDs and deferred visibility",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Lua durable writes use minted lore IDs and deferred visibility"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-023",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-028",
+      "title": "Historical decision cluster-32: Cold-storage stub chats cannot be exported",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Cold-storage stub chats cannot be exported"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-024",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-029",
+      "title": "Historical decision cluster-33: Incomplete bundle restore reports a qualified completion",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Incomplete bundle restore reports a qualified completion"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-025",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-030",
+      "title": "Historical decision cluster-34: Ooba Legacy WebSocket streaming remains retired",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Ooba Legacy WebSocket streaming remains retired"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-026",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-031",
+      "title": "Historical decision cluster-35: Different chats may generate concurrently",
+      "primaryCategory": "D",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Different chats may generate concurrently"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-027",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-032",
+      "title": "Historical decision cluster-36: Append boundary is applied even when the prior tail is a user row",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Append boundary is applied even when the prior tail is a user row"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-028",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-033",
+      "title": "Historical decision CA-ST-5: Lua globals reset for each isolated invocation",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Lua globals reset for each isolated invocation"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-029",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-034",
+      "title": "Historical decision CA-OR-10: Automatic continuation remains removed",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Automatic continuation remains removed"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-030",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-035",
+      "title": "Historical decision CA-LM-5: Lorebook regex keys use conventional parsing",
+      "primaryCategory": "H",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Lorebook regex keys use conventional parsing"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/memoryWorker.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-031",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-036",
+      "title": "Historical decision CA-PA-1: Stable template cards execute state-changing CBS",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Stable template cards execute state-changing CBS"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-032",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-037",
+      "title": "Historical decision CA-PR-5: Legacy non-ChatML instruct templates remain sunset on legacy transports",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Legacy non-ChatML instruct templates remain sunset on legacy transports"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-033",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-038",
+      "title": "Historical decision CA-OR-5: Legacy fallback lists run the primary model first",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Legacy fallback lists run the primary model first"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-034",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-039",
+      "title": "Historical decision CA-OR-6: Banned-script and blank-response policies may buffer streaming",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Banned-script and blank-response policies may buffer streaming"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-035",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-040",
+      "title": "Historical decision CA-PA-2: Global-note positional injection runs once",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Global-note positional injection runs once"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-036",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-041",
+      "title": "Historical decision CA-PA-3: Non-Hypa lastMemory advances only after a real trim",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Non-Hypa lastMemory advances only after a real trim"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-037",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-042",
+      "title": "Historical decision CA-PA-4: Depth-prompt CBS evaluates once",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Depth-prompt CBS evaluates once"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-038",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-043",
+      "title": "Historical decision CA-HC-1: setdefaultvar initializes truly missing variables",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "setdefaultvar initializes truly missing variables"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-039",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-044",
+      "title": "Historical decision CA-HC-2: Preview does not persist assembly-time chat mutations",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Preview does not persist assembly-time chat mutations"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-040",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-045",
+      "title": "Historical decision CA-HC-3: New-chat marker token cost is counted",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "New-chat marker token cost is counted"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-041",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-046",
+      "title": "Historical decision CA-OR-9: Multi-generation alternates use isolated cloned state",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Multi-generation alternates use isolated cloned state"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-042",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-047",
+      "title": "Historical decision CA-OR-11: Request-trigger rewrites are fresh on retry",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Request-trigger rewrites are fresh on retry"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/routes/generationChat.ts",
+          "src/ts/process/serverBackedSendChat.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-043",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-048",
+      "title": "Historical decision CA-ST-3: Global regex scripts execute",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Global regex scripts execute"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-044",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-049",
+      "title": "Historical decision CA-ST-6: Sticky-flag action regexes restart from zero",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Sticky-flag action regexes restart from zero"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-045",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-050",
+      "title": "Historical decision CA-ST-7: Unmatched replacement groups remain literal",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Unmatched replacement groups remain literal"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/luaRuntime.ts",
+          "src/ts/process/scripts.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-046",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-051",
+      "title": "Historical decision CA-PR-1: Tool execution uses browser-owned rounds",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Tool execution uses browser-owned rounds"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-047",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-052",
+      "title": "Historical decision CA-PR-2: Native Ollama forwards sampler options",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Native Ollama forwards sampler options"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-048",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-053",
+      "title": "Historical decision CA-PR-4: Bedrock stays buffered while Mistral streams incrementally",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Bedrock stays buffered while Mistral streams incrementally"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-049",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-054",
+      "title": "Historical decision CA-PR-6: Chat-card systemization uses independent clones",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Chat-card systemization uses independent clones"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-050",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-055",
+      "title": "Historical decision CA-PR-7: Missing prompt assets are dropped with an SSE warning",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Missing prompt assets are dropped with an SSE warning"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-051",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-056",
+      "title": "Historical decision CA-PR-8: Anthropic images preserve natural order and a final-part cache point",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Anthropic images preserve natural order and a final-part cache point"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-052",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-057",
+      "title": "Historical decision CA-PR-9: Equal-length repeated stream deltas are retained",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Equal-length repeated stream deltas are retained"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-053",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-058",
+      "title": "Historical decision CA-LM-1: Hypa V3 summaries are raw system rows",
+      "primaryCategory": "H",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Hypa V3 summaries are raw system rows"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/memoryWorker.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-054",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-059",
+      "title": "Historical decision CA-LM-2: New Hypa summaries are worker-deferred",
+      "primaryCategory": "H",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "New Hypa summaries are worker-deferred"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/memoryWorker.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-055",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-060",
+      "title": "Historical decision CA-LM-4: Invalid Hypa ratios clamp with diagnostics",
+      "primaryCategory": "H",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Invalid Hypa ratios clamp with diagnostics"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139"
+        ],
+        "current": [
+          "server/fastify/src/memoryWorker.ts",
+          "server/fastify/src/prompt/assemble.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/memoryWorker.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-056",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-061",
+      "title": "Historical decision cluster-15: Per-key script conflict fencing remains while local lore merges per entry",
+      "primaryCategory": "C",
+      "seamTags": [],
+      "sourceObligation": "signed-divergence",
+      "observables": [
+        "Per-key script conflict fencing remains while local lore merges per entry"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:29-34,97-103"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:29-34,97-103"
+        ],
+        "current": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/commands.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "medium",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-057",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Imported from explicit dated maintainer authority."
+    },
+    {
+      "id": "ORC-SURFACE-062",
+      "title": "Historical decision upstream-F1: Character and module interchangeability remains unported",
+      "primaryCategory": "J",
+      "seamTags": [],
+      "sourceObligation": "standing-unsupported",
+      "observables": [
+        "Character and module interchangeability remains unported"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149"
+        ],
+        "browser": [
+          "src/ts/plugins/apiV3/v3.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [
+          "80bd8cc27db831102e68ecdfdeb2ccc38938a2d3",
+          "0055f0cbe3cfe1a5b5dbb718add60e1d58f17a74",
+          "b2c83a31debe7b8aedcdcdb6ce057e568dc97906",
+          "f6d33c1c535654b9ce8f54f878cca51db8fc3e9d",
+          "3089fe31fc2b7f5d308a457dea9b9ebe48fa9f61",
+          "213819721ecfbb71921a4b04b62858750d2bc14f",
+          "1152fa36532eef81d8169c87bb1efe65bd204317",
+          "b042ba9a1a05fed042a65f1c4e62afa91f61ca98",
+          "dfdb79be199a98200807addbdf7fee666b760d95",
+          "8e6d376162e50da68c1d77559d2039ccccc305d7",
+          "912ecbbd1d63afb30dcbd992664089f8661fcc54",
+          "52bf04f7d3569245057514189f2ce78e1625244f"
+        ],
+        "disposition": "no-port",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149"
+        ],
+        "current": [
+          "src/ts/plugins/apiV3/v3.svelte.ts",
+          "docs/structure/plugins-and-mcp.md",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/ts/plugins/apiV3/v3.svelte.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "decision-required",
+        "confidence": "low",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-058",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+    },
+    {
+      "id": "ORC-SURFACE-063",
+      "title": "Historical decision upstream-81b: Dynamic OpenAI model registration remains unported",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "standing-unsupported",
+      "observables": [
+        "Dynamic OpenAI model registration remains unported"
+      ],
+      "variants": [
+        "historical compatibility fixture",
+        "current regression owner",
+        "reload or failure variant where applicable"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:112-149"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [
+          "316e430bedbe68c80060ce74c5a1fff88f3bdf97"
+        ],
+        "disposition": "no-port",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "Only generated identifiers and timestamps may be normalized, and only when ordering and identity relationships remain intact."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:112-149"
+        ],
+        "current": [
+          "server/fastify/src/prompt/chatDispatch.ts",
+          "src/ts/model/modelProfileResolver.ts",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "decision-required",
+        "confidence": "low",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [],
+        "decisionId": "ORC-DECISION-059",
+        "residual": "Historical authority is imported; the owning domain phase must independently re-verify current behavior at its recorded Fastify commit."
+      },
+      "notes": "Historical boundary imported as proposed because individual signer metadata is incomplete."
+    },
+    {
+      "id": "ORC-SURFACE-064",
+      "title": "Resolved historical finding cluster-1: Output-trigger resend used append-mode Continue",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "A trigger-requested resend must be a plain send without a say-nothing prefix."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-F-001"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-065",
+      "title": "Resolved historical finding cluster-2: Legacy monolithic preset imports dropped the model half",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Legacy model-bearing preset imports must give the user a model-half import choice."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-K-002"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-066",
+      "title": "Resolved historical finding cluster-4: Continue ignored non-empty composer text",
+      "primaryCategory": "D",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Continue with typed text must run input processing, append and consume the user row, then continue."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-D-003"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-067",
+      "title": "Resolved historical finding cluster-5: Kobold path-bearing endpoints were rewritten",
+      "primaryCategory": "G",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Legacy Kobold paths longer than the baseline root threshold must be posted verbatim."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/model/modelProfileResolver.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/chatDispatch.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-G-004"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-068",
+      "title": "Resolved historical finding cluster-6: Interrupted-send retry could transform the user turn twice",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Retry must key idempotency to the accepted message and not rerun committed input transforms."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "f256dd250d537e224e130a6a93c84878bba3d27c",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-F-005"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-069",
+      "title": "Resolved historical finding cluster-7: Stop ownership leaked across operations and shutdown lost partials",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Stop controls must bind to the active operation and shutdown must preserve replayable cancellation finalization."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "f256dd250d537e224e130a6a93c84878bba3d27c",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-F-006"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-070",
+      "title": "Resolved historical finding cluster-8: Durable effect and memory-job ownership gaps",
+      "primaryCategory": "I",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Lua description writes, claimed effects, terminal patches, and memory cancellation must have durable isolated ownership."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/process/scripts.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/prompt/luaRuntime.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "0cf091c2511d52171629124cdb9df3a4212e0823",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/triggers.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-I-007"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-071",
+      "title": "Resolved historical finding cluster-9: Half-streaming Stop diverged display from persistence",
+      "primaryCategory": "D",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "A stopped partial must reconcile the displayed and durable row."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/lib/ChatScreens/DefaultChatScreen.svelte",
+          "src/ts/process/rerollNavigation.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "0e46fed68c4c387788135d5232d2761c3f978d28",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-D-008"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-072",
+      "title": "Resolved historical finding cluster-10: Replay gaps could lose or duplicate visible continuation text",
+      "primaryCategory": "B",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Canonical terminal text must remain consumable after replay eviction without duplicate partial continuation."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/bootstrap.ts",
+          "src/ts/server/chatMessageHydration.svelte.ts"
+        ],
+        "protocol": [],
+        "fastify": [],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "0e46fed68c4c387788135d5232d2761c3f978d28",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "src/ts/server/chatMessageHydration.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-B-009"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-073",
+      "title": "Resolved historical finding cluster-15: Whole-array lore conflict fencing dropped unrelated script changes",
+      "primaryCategory": "C",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Concurrent local-lore changes must merge per entry while retaining per-key conflict safety."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/commands.ts",
+          "server/fastify/src/repository.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "0cf091c2511d52171629124cdb9df3a4212e0823",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/commands.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-C-010"
+        ],
+        "decisionId": "ORC-DECISION-057",
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-074",
+      "title": "Resolved historical finding cluster-16: A normal same-chat send could invalidate queued finalization",
+      "primaryCategory": "F",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Same-chat admission must fence a replayable finalization."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [
+          "src/ts/process/serverBackedSendChat.ts"
+        ],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/routes/generationChat.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "f256dd250d537e224e130a6a93c84878bba3d27c",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/generation.chat.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-F-011"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-075",
+      "title": "Resolved historical finding cluster-17: Fail-closed CharX imports discarded salvageable content",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Imports must salvage supported entries and visibly report dropped oversized content."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-K-012"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-076",
+      "title": "Resolved historical finding cluster-18: Standalone CHAT blocks rejected otherwise supported saves",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Imports must salvage supported blocks and report an unsupported CHAT block."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-K-013"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    },
+    {
+      "id": "ORC-SURFACE-077",
+      "title": "Resolved historical finding cluster-21: Agent-only lore exported as active Original-compatible lore",
+      "primaryCategory": "K",
+      "seamTags": [],
+      "sourceObligation": "fork-parity",
+      "observables": [
+        "Agent-only entries must be neutralized on cross-app export."
+      ],
+      "variants": [
+        "historical reproduction",
+        "current regression fixture",
+        "failure or recovery variant described by the source"
+      ],
+      "owners": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "browser": [],
+        "protocol": [],
+        "fastify": [
+          "server/fastify/src/risuSave/importSnapshot.ts",
+          "server/fastify/src/risuSave/exportSnapshot.ts"
+        ],
+        "persistence": []
+      },
+      "upstream": {
+        "commits": [],
+        "disposition": "not-applicable",
+        "nativePortCommits": []
+      },
+      "normalization": [
+        "The semantic difference described by the canonical finding must not be normalized away."
+      ],
+      "evidence": {
+        "baseline": [
+          ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+        ],
+        "current": [
+          "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+          "be74a491b954478a2719f38e85d061ca87bb562a"
+        ],
+        "tests": [
+          "server/fastify/__tests__/risuSaveCodec.test.ts"
+        ],
+        "fixtures": []
+      },
+      "verification": {
+        "state": "mapped",
+        "confidence": "high",
+        "lastFastifyCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+        "findingIds": [
+          "ORC-K-014"
+        ],
+        "decisionId": null,
+        "residual": "Historical fix and closure evidence are imported; current re-verification remains assigned to the owning domain phase."
+      },
+      "notes": "Canonical import of a resolved 2026-08 compatibility finding."
+    }
+  ]
 }

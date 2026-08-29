@@ -4,6 +4,16 @@
 machine-readable inventory for this workstream. Validate it against
 [`inventory.schema.json`](inventory.schema.json).
 
+[`upstream-units.json`](upstream-units.json) is the closed-world register for
+the 85 first-parent commits between the frozen compatibility baseline and the
+behavioral sync cursor. Validate it against
+[`upstream-units.schema.json`](upstream-units.schema.json). Every unit keeps its
+historical disposition separate from current Fastify verification.
+
+Run `pnpm validate:compat-registers` after changing either register. The
+validator checks schemas, stable IDs, bidirectional references, authority,
+commit shapes, raw-report uniqueness, and the exact Git-derived upstream range.
+
 Phase 0 owns schema ratification and initial population. Later phases may add or
 update rows only when they also update the row's evidence, verification commit,
 and residual owner.

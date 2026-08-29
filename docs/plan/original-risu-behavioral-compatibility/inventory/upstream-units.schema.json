@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://risuai.local/schemas/original-risu-upstream-units-v1.json",
+  "title": "Original RisuAI upstream disposition units",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "references", "sourceLedger", "units"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "references": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startExclusive", "endInclusive"],
+      "properties": {
+        "startExclusive": { "$ref": "#/$defs/commit" },
+        "endInclusive": { "$ref": "#/$defs/commit" }
+      }
+    },
+    "sourceLedger": { "$ref": "#/$defs/nonEmptyString" },
+    "units": {
+      "type": "array",
+      "minItems": 85,
+      "maxItems": 85,
+      "items": { "$ref": "#/$defs/unit" }
+    }
+  },
+  "$defs": {
+    "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "stringList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/nonEmptyString" },
+      "uniqueItems": true
+    },
+    "commitList": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/commit" },
+      "uniqueItems": true
+    },
+    "currentVerification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "lastFastifyCommit", "evidence", "inventoryIds"],
+      "properties": {
+        "state": {
+          "enum": ["pending", "verified", "finding", "decision-required", "not-applicable"]
+        },
+        "lastFastifyCommit": {
+          "anyOf": [{ "$ref": "#/$defs/commit" }, { "type": "null" }]
+        },
+        "evidence": { "$ref": "#/$defs/stringList" },
+        "inventoryIds": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^ORC-SURFACE-[0-9]{3,}$" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "sequence",
+        "upstreamCommit",
+        "committedDate",
+        "subject",
+        "historicalDisposition",
+        "sourceRefs",
+        "nativePortCommits",
+        "currentOwners",
+        "decisionId",
+        "currentVerification",
+        "notes"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^ORC-UPSTREAM-[0-9]{3}$" },
+        "sequence": { "type": "integer", "minimum": 1, "maximum": 85 },
+        "upstreamCommit": { "$ref": "#/$defs/commit" },
+        "committedDate": { "type": "string", "format": "date" },
+        "subject": { "$ref": "#/$defs/nonEmptyString" },
+        "historicalDisposition": {
+          "enum": [
+            "ported",
+            "already-covered",
+            "standing-no-port",
+            "not-applicable-dead",
+            "not-applicable-churn",
+            "reverted",
+            "mixed"
+          ]
+        },
+        "sourceRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "nativePortCommits": { "$ref": "#/$defs/commitList" },
+        "currentOwners": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "decisionId": {
+          "anyOf": [
+            { "type": "string", "pattern": "^ORC-DECISION-[0-9]{3,}$" },
+            { "type": "null" }
+          ]
+        },
+        "currentVerification": { "$ref": "#/$defs/currentVerification" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

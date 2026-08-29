@@ -1,6 +1,1719 @@
 {
   "$schema": "./decisions.schema.json",
   "schemaVersion": 1,
-  "state": "historical-import-pending",
-  "decisions": []
+  "state": "active",
+  "decisions": [
+    {
+      "id": "ORC-DECISION-001",
+      "state": "signed",
+      "title": "CA-ST-1: V2 persistent character, persona, note, and lorebook effects remain explicit no-ops",
+      "baselineBehavior": "The baseline executed V2 persistent character, persona, note, and lorebook effects.",
+      "decidedBehavior": "Fastify preserves imported definitions but does not execute those persistent mutations; editor notices and runtime warnings make the boundary visible.",
+      "observables": [
+        "V2 persistent character, persona, note, and lorebook effects remain explicit no-ops"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-005"
+      ],
+      "rationale": "The maintainer individually declined this unsafe persistence port on 2026-08-02.",
+      "parityAlternative": "Restore the baseline behavior described for CA-ST-1.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-02",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
+      ],
+      "revisitTrigger": "Revisit only with a separately designed durable, permissioned mutation contract."
+    },
+    {
+      "id": "ORC-DECISION-002",
+      "state": "signed",
+      "title": "CA-ST-2: V1/V2 command and privileged effect families remain explicit no-ops",
+      "baselineBehavior": "The baseline could execute command and privileged trigger effect families without the Fastify permission boundary.",
+      "decidedBehavior": "Fastify keeps the definitions inert and surfaces their unsupported status.",
+      "observables": [
+        "V1/V2 command and privileged effect families remain explicit no-ops"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-006"
+      ],
+      "rationale": "The same 2026-08-02 maintainer decision declined the privileged effect port.",
+      "parityAlternative": "Restore the baseline behavior described for CA-ST-2.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-02",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
+      ],
+      "revisitTrigger": "Revisit only with an explicit permission and durable-effect design."
+    },
+    {
+      "id": "ORC-DECISION-003",
+      "state": "signed",
+      "title": "D1: Whole-database portable exports retain credentials with a mandatory warning",
+      "baselineBehavior": "Whole-database exports included inline provider credentials without a dedicated warning.",
+      "decidedBehavior": "The whole-database export remains secret-bearing and requires a user-facing handling warning.",
+      "observables": [
+        "Whole-database portable exports retain credentials with a mandatory warning"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-007"
+      ],
+      "rationale": "The maintainer chose keep-and-warn rather than a new content-only format before beta.",
+      "parityAlternative": "Restore the baseline behavior described for D1.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-05",
+      "source": ".archived-docs/data-loss-delta-audit-2026-08-05/CONSOLIDATED.md:179-209",
+      "implementationOwners": [
+        "server/fastify/src/risuSave/importSnapshot.ts",
+        "server/fastify/src/risuSave/exportSnapshot.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": "Revisit when a content-only portable export flavor is designed."
+    },
+    {
+      "id": "ORC-DECISION-004",
+      "state": "signed",
+      "title": "D2: Stale inline model-profile secrets are scrubbed without minting credentials",
+      "baselineBehavior": "The fork-point baseline had no modelProfiles, so it had no equivalent inline profile-secret restore path.",
+      "decidedBehavior": "Fastify scrubs stale inline profile secrets; legacy scalar keys still mint credentials, but pre-credential-store fork-native profile secrets do not.",
+      "observables": [
+        "Stale inline model-profile secrets are scrubbed without minting credentials"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-008"
+      ],
+      "rationale": "The maintainer accepted the bounded pre-beta population and retained the destructive scrub.",
+      "parityAlternative": "Restore the baseline behavior described for D2.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-05",
+      "source": ".archived-docs/data-loss-delta-audit-2026-08-05/CONSOLIDATED.md:179-217",
+      "implementationOwners": [
+        "server/fastify/src/risuSave/importSnapshot.ts",
+        "server/fastify/src/risuSave/exportSnapshot.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": "Reopen if a pre-beta build containing inline model-profile secrets was distributed to another user."
+    },
+    {
+      "id": "ORC-DECISION-005",
+      "state": "proposed",
+      "title": "CA-OR-2: Group-chat generation remains no-port",
+      "baselineBehavior": "The baseline supported group-chat generation.",
+      "decidedBehavior": "Fastify does not expose or execute group-chat generation.",
+      "observables": [
+        "Group-chat generation remains no-port"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-009"
+      ],
+      "rationale": "The historical ledger labels this a standing boundary, but individual signer/date metadata was not reconstructed.",
+      "parityAlternative": "Restore the baseline behavior described for CA-OR-2.",
+      "authority": "Authority import pending; historical record is not individual signer proof",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
+      ],
+      "revisitTrigger": "Revisit only after a separate group-chat product decision."
+    },
+    {
+      "id": "ORC-DECISION-006",
+      "state": "proposed",
+      "title": "CA-PR-3: Non-server-routable providers remain unavailable",
+      "baselineBehavior": "The baseline could route NovelAI text, NovelList, non-legacy Ooba, plugin providers, and WebLLM in browser/native contexts.",
+      "decidedBehavior": "Fastify excludes those providers from live server routing and must keep the boundary hidden or explicit.",
+      "observables": [
+        "Non-server-routable providers remain unavailable"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-010"
+      ],
+      "rationale": "The historical ledger labels this standing platform scope, but individual signer/date metadata was not reconstructed.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-3.",
+      "authority": "Authority import pending; historical record is not individual signer proof",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:102-110",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
+      ],
+      "revisitTrigger": "Revisit when one of these providers gains an authenticated server execution design."
+    },
+    {
+      "id": "ORC-DECISION-007",
+      "state": "signed",
+      "title": "cluster-3: Stop before acceptance may unsend the just-submitted user row",
+      "baselineBehavior": "The baseline retained the submitted user turn when generation was stopped.",
+      "decidedBehavior": "Fastify may roll the unaccepted row back into the composer during stop-before-accept.",
+      "observables": [
+        "Stop before acceptance may unsend the just-submitted user row"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-011"
+      ],
+      "rationale": "The maintainer signed the cancel-first tombstone behavior while preserving the draft.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-3.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:14-24,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-008",
+      "state": "signed",
+      "title": "cluster-11: Append-mode streaming Continue uses a new assistant row",
+      "baselineBehavior": "The baseline extended the durable say-nothing user-role row in place.",
+      "decidedBehavior": "Fastify streams append-mode Continue into a new assistant row.",
+      "observables": [
+        "Append-mode streaming Continue uses a new assistant row"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-012"
+      ],
+      "rationale": "The maintainer accepted the clearer row-role model despite identity divergence.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-11.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-009",
+      "state": "signed",
+      "title": "cluster-12: Append-mode Continue keeps its boundary transient",
+      "baselineBehavior": "The baseline persisted the say-nothing boundary before dispatch and retained it on failure or cancel.",
+      "decidedBehavior": "Fastify keeps the boundary transient; the separately fixed cancel path reconciles display and persistence.",
+      "observables": [
+        "Append-mode Continue keeps its boundary transient"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-013"
+      ],
+      "rationale": "The maintainer accepted transient boundary semantics.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-12.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-010",
+      "state": "signed",
+      "title": "cluster-13: Extend-mode buffered Continue preserves row identity and runs editoutput once",
+      "baselineBehavior": "The baseline reminted the row and ran editoutput twice.",
+      "decidedBehavior": "Fastify preserves extend-mode row identity and applies editoutput once.",
+      "observables": [
+        "Extend-mode buffered Continue preserves row identity and runs editoutput once"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-014"
+      ],
+      "rationale": "The maintainer signed the explicit extend-mode design.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-13.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-011",
+      "state": "signed",
+      "title": "cluster-14: Non-Hypa context truncation requires confirmation",
+      "baselineBehavior": "The baseline silently trimmed non-Hypa context and continued.",
+      "decidedBehavior": "Fastify blocks for an explicit confirmation before truncating.",
+      "observables": [
+        "Non-Hypa context truncation requires confirmation"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-015"
+      ],
+      "rationale": "The maintainer retained the protective confirmation gate.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-14.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:25-40,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-012",
+      "state": "signed",
+      "title": "cluster-19: Reroll history is chat-scoped",
+      "baselineBehavior": "The baseline scoped reroll history at the character level.",
+      "decidedBehavior": "Fastify scopes reroll candidates to the owning chat.",
+      "observables": [
+        "Reroll history is chat-scoped"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-016"
+      ],
+      "rationale": "The maintainer accepted chat scoping for the multichat data model.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-19.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139",
+      "implementationOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/rerollNavigation.svelte.ts"
+      ],
+      "regressionOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-013",
+      "state": "signed",
+      "title": "cluster-20: Multisend retains the corrected sequential workflow",
+      "baselineBehavior": "The baseline used best-effort continuation, tail selection, unterminated-entry loss, and a line cap in its multisend paths.",
+      "decidedBehavior": "Fastify stops on failure, selects exact results, flushes final entries, recognizes plural Notes, and removes the arbitrary cap.",
+      "observables": [
+        "Multisend retains the corrected sequential workflow"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-017"
+      ],
+      "rationale": "The maintainer signed the cohesive multisend corrections.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-20.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-145",
+      "implementationOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/rerollNavigation.svelte.ts"
+      ],
+      "regressionOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-014",
+      "state": "signed",
+      "title": "cluster-22: CharX prebuilt-asset exclusions use the current inert round-trip representation",
+      "baselineBehavior": "Baseline exports used storage keys that became inert after an Original round trip.",
+      "decidedBehavior": "Fastify rewrites exclusion metadata for its own round trip while remaining equivalently inert in Original.",
+      "observables": [
+        "CharX prebuilt-asset exclusions use the current inert round-trip representation"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-018"
+      ],
+      "rationale": "The maintainer accepted the adjudicated no-observable-loss result.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-22.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:35-40,132-139",
+      "implementationOwners": [
+        "server/fastify/src/risuSave/importSnapshot.ts",
+        "server/fastify/src/risuSave/exportSnapshot.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-015",
+      "state": "signed",
+      "title": "cluster-23: Acknowledged failable Stop lifecycle",
+      "baselineBehavior": "The baseline treated Stop as an immediate local abort.",
+      "decidedBehavior": "Fastify exposes stopping and retry/refresh outcomes for the acknowledged server lifecycle.",
+      "observables": [
+        "Acknowledged failable Stop lifecycle"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-019"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-23.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-016",
+      "state": "signed",
+      "title": "cluster-24: Pre-token Stop removes the empty assistant placeholder",
+      "baselineBehavior": "The baseline retained an empty assistant placeholder.",
+      "decidedBehavior": "Fastify removes the placeholder before any token is produced.",
+      "observables": [
+        "Pre-token Stop removes the empty assistant placeholder"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-020"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-24.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/rerollNavigation.svelte.ts"
+      ],
+      "regressionOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-017",
+      "state": "signed",
+      "title": "cluster-25: Restart recovery marks work abandoned and confirms billing-aware retries",
+      "baselineBehavior": "The baseline retried locally without durable restart ownership.",
+      "decidedBehavior": "Fastify marks interrupted work abandoned and requires confirmation when a provider may have run.",
+      "observables": [
+        "Restart recovery marks work abandoned and confirms billing-aware retries"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-021"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-25.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-018",
+      "state": "signed",
+      "title": "cluster-26: Completion may win during finalization and failed sends retain recovery UI",
+      "baselineBehavior": "The baseline kept a narrow stop-wins window and only transient errors.",
+      "decidedBehavior": "Fastify can complete during finalization and renders a persistent recovery action after failure.",
+      "observables": [
+        "Completion may win during finalization and failed sends retain recovery UI"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-022"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-26.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-019",
+      "state": "signed",
+      "title": "cluster-27: Replay-gap and reconnect display follow durable replay semantics",
+      "baselineBehavior": "The baseline had no durable replay-gap lifecycle.",
+      "decidedBehavior": "Fastify may freeze incremental display across a gap and can transiently regress a bubble during replay before canonical terminal reconciliation.",
+      "observables": [
+        "Replay-gap and reconnect display follow durable replay semantics"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-023"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-27.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "src/ts/bootstrap.ts",
+        "src/ts/server/chatMessageHydration.svelte.ts"
+      ],
+      "regressionOwners": [
+        "src/ts/server/chatMessageHydration.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-020",
+      "state": "signed",
+      "title": "cluster-28: Persisted generationInfo carries durable protocol metadata",
+      "baselineBehavior": "The baseline did not write Fastify operation metadata.",
+      "decidedBehavior": "Fastify persists additive generation identifiers needed for durable recovery.",
+      "observables": [
+        "Persisted generationInfo carries durable protocol metadata"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-024"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-28.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/commands.ts",
+        "server/fastify/src/repository.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/commands.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-021",
+      "state": "signed",
+      "title": "cluster-29: Multisend rows carry timestamps and client-minted IDs",
+      "baselineBehavior": "The baseline multisend rows omitted these identifiers.",
+      "decidedBehavior": "Fastify gives multisend rows stable IDs and timestamps.",
+      "observables": [
+        "Multisend rows carry timestamps and client-minted IDs"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-025"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-29.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/commands.ts",
+        "server/fastify/src/repository.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/commands.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-022",
+      "state": "signed",
+      "title": "cluster-30: Late recovery permanently skips ephemeral completion effects",
+      "baselineBehavior": "The baseline had only live-process completion effects.",
+      "decidedBehavior": "Fastify skips notification, TTS, and sound after late effect claims, including watched queued-to-committed recovery.",
+      "observables": [
+        "Late recovery permanently skips ephemeral completion effects"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-026"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-30.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-023",
+      "state": "signed",
+      "title": "cluster-31: Lua durable writes use minted lore IDs and deferred visibility",
+      "baselineBehavior": "The baseline exposed immediate in-memory writes without minted lore identities.",
+      "decidedBehavior": "Fastify uses durable effect timing and stable minted lore IDs.",
+      "observables": [
+        "Lua durable writes use minted lore IDs and deferred visibility"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-027"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-31.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-024",
+      "state": "signed",
+      "title": "cluster-32: Cold-storage stub chats cannot be exported",
+      "baselineBehavior": "The baseline could export incomplete cold-storage stubs.",
+      "decidedBehavior": "Fastify refuses to export a stub that would produce a corrupt artifact.",
+      "observables": [
+        "Cold-storage stub chats cannot be exported"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-028"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-32.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/risuSave/importSnapshot.ts",
+        "server/fastify/src/risuSave/exportSnapshot.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-025",
+      "state": "signed",
+      "title": "cluster-33: Incomplete bundle restore reports a qualified completion",
+      "baselineBehavior": "The baseline did not report missing or orphaned bundle content in the completion result.",
+      "decidedBehavior": "Fastify surfaces the incomplete restore outcome.",
+      "observables": [
+        "Incomplete bundle restore reports a qualified completion"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-029"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-33.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/risuSave/importSnapshot.ts",
+        "server/fastify/src/risuSave/exportSnapshot.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-026",
+      "state": "signed",
+      "title": "cluster-34: Ooba Legacy WebSocket streaming remains retired",
+      "baselineBehavior": "The baseline exposed Ooba Legacy WebSocket streaming.",
+      "decidedBehavior": "Fastify exposes the provider as buffered-only and disables the incompatible streaming controls.",
+      "observables": [
+        "Ooba Legacy WebSocket streaming remains retired"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-030"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-34.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-027",
+      "state": "signed",
+      "title": "cluster-35: Different chats may generate concurrently",
+      "baselineBehavior": "The baseline serialized generation globally.",
+      "decidedBehavior": "Fastify permits independently owned generation in different chats.",
+      "observables": [
+        "Different chats may generate concurrently"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-031"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-35.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/rerollNavigation.svelte.ts"
+      ],
+      "regressionOwners": [
+        "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-028",
+      "state": "signed",
+      "title": "cluster-36: Append boundary is applied even when the prior tail is a user row",
+      "baselineBehavior": "The baseline skipped the append boundary when the last row was already user-role.",
+      "decidedBehavior": "Fastify applies the signed append-mode boundary consistently.",
+      "observables": [
+        "Append boundary is applied even when the prior tail is a user row"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-032"
+      ],
+      "rationale": "The maintainer signed all Tier-3 compatibility rows after reviewing their user-visible impact.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-36.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:42-59,132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-029",
+      "state": "signed",
+      "title": "CA-ST-5: Lua globals reset for each isolated invocation",
+      "baselineBehavior": "The baseline retained script globals per execution mode.",
+      "decidedBehavior": "Fastify creates isolated one-use Lua VMs; durable card state uses supported chat variables.",
+      "observables": [
+        "Lua globals reset for each isolated invocation"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-033"
+      ],
+      "rationale": "The maintainer retained VM isolation for server safety.",
+      "parityAlternative": "Restore the baseline behavior described for CA-ST-5.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-030",
+      "state": "signed",
+      "title": "CA-OR-10: Automatic continuation remains removed",
+      "baselineBehavior": "The baseline could automatically append follow-up generations.",
+      "decidedBehavior": "Fastify keeps one user action mapped to one append/generation.",
+      "observables": [
+        "Automatic continuation remains removed"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-034"
+      ],
+      "rationale": "The maintainer reconfirmed removal of autoContinueChat.",
+      "parityAlternative": "Restore the baseline behavior described for CA-OR-10.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-031",
+      "state": "signed",
+      "title": "CA-LM-5: Lorebook regex keys use conventional parsing",
+      "baselineBehavior": "The baseline treated a leading slash literally and skipped empty-flag regexes.",
+      "decidedBehavior": "Fastify uses conventional regex-key parsing.",
+      "observables": [
+        "Lorebook regex keys use conventional parsing"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-035"
+      ],
+      "rationale": "The maintainer accepted ecosystem-aligned regex semantics.",
+      "parityAlternative": "Restore the baseline behavior described for CA-LM-5.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/memoryWorker.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/memoryWorker.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-032",
+      "state": "signed",
+      "title": "CA-PA-1: Stable template cards execute state-changing CBS",
+      "baselineBehavior": "The baseline left stable-card state-changing CBS directives literal in the prompt.",
+      "decidedBehavior": "Fastify executes and strips supported state-changing CBS directives.",
+      "observables": [
+        "Stable template cards execute state-changing CBS"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-036"
+      ],
+      "rationale": "The maintainer retained the current scripted-card behavior.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PA-1.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-033",
+      "state": "signed",
+      "title": "CA-PR-5: Legacy non-ChatML instruct templates remain sunset on legacy transports",
+      "baselineBehavior": "The baseline applied non-ChatML instruct templates to Kobold, Ooba, and Horde.",
+      "decidedBehavior": "Fastify keeps the instruct-template sunset for those transports.",
+      "observables": [
+        "Legacy non-ChatML instruct templates remain sunset on legacy transports"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-037"
+      ],
+      "rationale": "The maintainer reconfirmed the provider policy.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-5.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-034",
+      "state": "signed",
+      "title": "CA-OR-5: Legacy fallback lists run the primary model first",
+      "baselineBehavior": "The baseline skipped the nominal primary when a fallback list existed.",
+      "decidedBehavior": "Fastify tries the selected primary before fallback models.",
+      "observables": [
+        "Legacy fallback lists run the primary model first"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-038"
+      ],
+      "rationale": "The maintainer signed the predictable primary-first billing/output choice.",
+      "parityAlternative": "Restore the baseline behavior described for CA-OR-5.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-035",
+      "state": "signed",
+      "title": "CA-OR-6: Banned-script and blank-response policies may buffer streaming",
+      "baselineBehavior": "The baseline exposed ordinary incremental streaming before these policies settled.",
+      "decidedBehavior": "Fastify may buffer until the response can be inspected by the enabled policy.",
+      "observables": [
+        "Banned-script and blank-response policies may buffer streaming"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-039"
+      ],
+      "rationale": "The maintainer accepted the bounded streaming-UX divergence.",
+      "parityAlternative": "Restore the baseline behavior described for CA-OR-6.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:12-61; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-036",
+      "state": "signed",
+      "title": "CA-PA-2: Global-note positional injection runs once",
+      "baselineBehavior": "The baseline could inject the global note twice around {{original}}.",
+      "decidedBehavior": "Fastify applies the position once.",
+      "observables": [
+        "Global-note positional injection runs once"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-040"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PA-2.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-037",
+      "state": "signed",
+      "title": "CA-PA-3: Non-Hypa lastMemory advances only after a real trim",
+      "baselineBehavior": "The baseline recorded a synthetic lastMemory marker without trimming.",
+      "decidedBehavior": "Fastify advances only when content is actually trimmed.",
+      "observables": [
+        "Non-Hypa lastMemory advances only after a real trim"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-041"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PA-3.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-038",
+      "state": "signed",
+      "title": "CA-PA-4: Depth-prompt CBS evaluates once",
+      "baselineBehavior": "The baseline could reroll CBS between preflight and insertion.",
+      "decidedBehavior": "Fastify reuses one deterministic evaluation.",
+      "observables": [
+        "Depth-prompt CBS evaluates once"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-042"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PA-4.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-039",
+      "state": "signed",
+      "title": "CA-HC-1: setdefaultvar initializes truly missing variables",
+      "baselineBehavior": "The baseline's null sentinel defeated missing-variable initialization.",
+      "decidedBehavior": "Fastify initializes the missing variable.",
+      "observables": [
+        "setdefaultvar initializes truly missing variables"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-043"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-HC-1.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-040",
+      "state": "signed",
+      "title": "CA-HC-2: Preview does not persist assembly-time chat mutations",
+      "baselineBehavior": "The baseline preview could mutate the live chat.",
+      "decidedBehavior": "Fastify keeps preview side-effect free.",
+      "observables": [
+        "Preview does not persist assembly-time chat mutations"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-044"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-HC-2.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-041",
+      "state": "signed",
+      "title": "CA-HC-3: New-chat marker token cost is counted",
+      "baselineBehavior": "The baseline omitted the marker from token accounting.",
+      "decidedBehavior": "Fastify includes it in the context budget.",
+      "observables": [
+        "New-chat marker token cost is counted"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-045"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-HC-3.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-042",
+      "state": "signed",
+      "title": "CA-OR-9: Multi-generation alternates use isolated cloned state",
+      "baselineBehavior": "The baseline allowed alternate generations to contaminate shared side-effect state.",
+      "decidedBehavior": "Fastify evaluates each alternate against an isolated clone.",
+      "observables": [
+        "Multi-generation alternates use isolated cloned state"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-046"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-OR-9.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-043",
+      "state": "signed",
+      "title": "CA-OR-11: Request-trigger rewrites are fresh on retry",
+      "baselineBehavior": "The baseline accumulated rewrites across same-model retries.",
+      "decidedBehavior": "Fastify starts each retry from the unmodified request state.",
+      "observables": [
+        "Request-trigger rewrites are fresh on retry"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-047"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-OR-11.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/routes/generationChat.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/generation.chat.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-044",
+      "state": "signed",
+      "title": "CA-ST-3: Global regex scripts execute",
+      "baselineBehavior": "The baseline stored globalscript without running it.",
+      "decidedBehavior": "Fastify executes configured global regex scripts.",
+      "observables": [
+        "Global regex scripts execute"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-048"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-ST-3.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-045",
+      "state": "signed",
+      "title": "CA-ST-6: Sticky-flag action regexes restart from zero",
+      "baselineBehavior": "The baseline could retain a sticky lastIndex across actions.",
+      "decidedBehavior": "Fastify restarts action matching from index zero.",
+      "observables": [
+        "Sticky-flag action regexes restart from zero"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-049"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-ST-6.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-046",
+      "state": "signed",
+      "title": "CA-ST-7: Unmatched replacement groups remain literal",
+      "baselineBehavior": "The baseline erased unmatched replacement-group references.",
+      "decidedBehavior": "Fastify follows JavaScript replacement semantics and preserves the literal token.",
+      "observables": [
+        "Unmatched replacement groups remain literal"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-050"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-ST-7.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scripts.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/triggers.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-047",
+      "state": "signed",
+      "title": "CA-PR-1: Tool execution uses browser-owned rounds",
+      "baselineBehavior": "The baseline could run a provider-side tool loop.",
+      "decidedBehavior": "Fastify coordinates tool rounds in the browser while preserving the conversation result.",
+      "observables": [
+        "Tool execution uses browser-owned rounds"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-051"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-1.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-048",
+      "state": "signed",
+      "title": "CA-PR-2: Native Ollama forwards sampler options",
+      "baselineBehavior": "The baseline omitted selected Ollama samplers.",
+      "decidedBehavior": "Fastify forwards the user's sampler choices.",
+      "observables": [
+        "Native Ollama forwards sampler options"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-052"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-2.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-049",
+      "state": "signed",
+      "title": "CA-PR-4: Bedrock stays buffered while Mistral streams incrementally",
+      "baselineBehavior": "The baseline transport timing differed across these adapters.",
+      "decidedBehavior": "Fastify retains its provider-specific buffered/incremental split.",
+      "observables": [
+        "Bedrock stays buffered while Mistral streams incrementally"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-053"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-4.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-050",
+      "state": "signed",
+      "title": "CA-PR-6: Chat-card systemization uses independent clones",
+      "baselineBehavior": "The baseline shared mutable state between card systemization passes.",
+      "decidedBehavior": "Fastify isolates each card.",
+      "observables": [
+        "Chat-card systemization uses independent clones"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-054"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-6.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-051",
+      "state": "signed",
+      "title": "CA-PR-7: Missing prompt assets are dropped with an SSE warning",
+      "baselineBehavior": "The baseline failed generation on missing prompt-asset bytes.",
+      "decidedBehavior": "Fastify drops the missing part and emits a visible warning.",
+      "observables": [
+        "Missing prompt assets are dropped with an SSE warning"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-055"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-7.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-052",
+      "state": "signed",
+      "title": "CA-PR-8: Anthropic images preserve natural order and a final-part cache point",
+      "baselineBehavior": "The baseline used a different image/cache placement.",
+      "decidedBehavior": "Fastify retains natural order and the final-part cache point.",
+      "observables": [
+        "Anthropic images preserve natural order and a final-part cache point"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-056"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-8.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-053",
+      "state": "signed",
+      "title": "CA-PR-9: Equal-length repeated stream deltas are retained",
+      "baselineBehavior": "The baseline cumulative heuristic could suppress equal-length repeats.",
+      "decidedBehavior": "Fastify preserves legitimate repeated deltas.",
+      "observables": [
+        "Equal-length repeated stream deltas are retained"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-057"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-PR-9.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-054",
+      "state": "signed",
+      "title": "CA-LM-1: Hypa V3 summaries are raw system rows",
+      "baselineBehavior": "The baseline wrapped summaries in a Past Events Summary marker.",
+      "decidedBehavior": "Fastify injects separate raw system rows.",
+      "observables": [
+        "Hypa V3 summaries are raw system rows"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-058"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-LM-1.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/memoryWorker.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/memoryWorker.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-055",
+      "state": "signed",
+      "title": "CA-LM-2: New Hypa summaries are worker-deferred",
+      "baselineBehavior": "The baseline blocked the crossing generation to summarize.",
+      "decidedBehavior": "Fastify schedules summary work and exposes it on a later generation.",
+      "observables": [
+        "New Hypa summaries are worker-deferred"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-059"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-LM-2.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/memoryWorker.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/memoryWorker.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-056",
+      "state": "signed",
+      "title": "CA-LM-4: Invalid Hypa ratios clamp with diagnostics",
+      "baselineBehavior": "The baseline aborted on invalid ratios.",
+      "decidedBehavior": "Fastify clamps the ratio and reports the invalid setting.",
+      "observables": [
+        "Invalid Hypa ratios clamp with diagnostics"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-060"
+      ],
+      "rationale": "The maintainer signed the Stage-1 recommended keep after the compatibility interview.",
+      "parityAlternative": "Restore the baseline behavior described for CA-LM-4.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/ADJUDICATION.md:76-100; .archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:132-139",
+      "implementationOwners": [
+        "server/fastify/src/memoryWorker.ts",
+        "server/fastify/src/prompt/assemble.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/memoryWorker.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-057",
+      "state": "signed",
+      "title": "cluster-15: Per-key script conflict fencing remains while local lore merges per entry",
+      "baselineBehavior": "The baseline used last-writer-wins script writes.",
+      "decidedBehavior": "Fastify retains per-key conflict fencing, but the coarse whole-array lore conflict was fixed to a per-entry semantic merge.",
+      "observables": [
+        "Per-key script conflict fencing remains while local lore merges per entry"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-061",
+        "ORC-SURFACE-073"
+      ],
+      "rationale": "The maintainer approved the narrow merge fix and retained the surrounding data-loss fence.",
+      "parityAlternative": "Restore the baseline behavior described for cluster-15.",
+      "authority": "RisuAI Fastify maintainer",
+      "authorityDate": "2026-08-12",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:29-34,97-103",
+      "implementationOwners": [
+        "server/fastify/src/routes/commands.ts",
+        "server/fastify/src/repository.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/commands.test.ts"
+      ],
+      "diagnostics": [
+        "The owning workflow and regression evidence expose the decided outcome."
+      ],
+      "revisitTrigger": null
+    },
+    {
+      "id": "ORC-DECISION-058",
+      "state": "proposed",
+      "title": "upstream-F1: Character and module interchangeability remains unported",
+      "baselineBehavior": "Post-fork upstream added character-module conversion and CharX module interchange.",
+      "decidedBehavior": "Fastify does not expose or partially execute the conversion surface.",
+      "observables": [
+        "Character and module interchangeability remains unported"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-062"
+      ],
+      "rationale": "The upstream sweep records a skip decision, but individual signer metadata was not reconstructed.",
+      "parityAlternative": "Restore the baseline behavior described for upstream-F1.",
+      "authority": "Authority import pending; historical record is not individual signer proof",
+      "authorityDate": "2026-08-07",
+      "source": ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:18-35,128-149",
+      "implementationOwners": [
+        "src/ts/plugins/apiV3/v3.svelte.ts",
+        "docs/structure/plugins-and-mcp.md"
+      ],
+      "regressionOwners": [
+        "src/ts/plugins/apiV3/v3.svelte.test.ts"
+      ],
+      "diagnostics": [
+        "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
+      ],
+      "revisitTrigger": "Revisit if users report module-format interoperability pain."
+    },
+    {
+      "id": "ORC-DECISION-059",
+      "state": "proposed",
+      "title": "upstream-81b: Dynamic OpenAI model registration remains unported",
+      "baselineBehavior": "Post-fork upstream can register arbitrary OpenAI models dynamically.",
+      "decidedBehavior": "Fastify retains a curated provider catalog.",
+      "observables": [
+        "Dynamic OpenAI model registration remains unported"
+      ],
+      "inventoryIds": [
+        "ORC-SURFACE-063"
+      ],
+      "rationale": "The upstream sweep records a skip decision, but individual signer metadata was not reconstructed.",
+      "parityAlternative": "Restore the baseline behavior described for upstream-81b.",
+      "authority": "Authority import pending; historical record is not individual signer proof",
+      "authorityDate": "2026-08-08",
+      "source": ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md:112-149",
+      "implementationOwners": [
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "regressionOwners": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts"
+      ],
+      "diagnostics": [
+        "The unsupported boundary must be hidden, rejected, or visibly diagnosed; silent partial behavior is forbidden."
+      ],
+      "revisitTrigger": "Revisit if users request unlisted OpenAI models."
+    }
+  ]
 }

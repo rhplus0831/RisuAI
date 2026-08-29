@@ -1,6 +1,939 @@
 {
   "$schema": "./findings.schema.json",
   "schemaVersion": 1,
-  "rawMappings": [],
-  "findings": []
+  "rawMappings": [
+    {
+      "sourceId": "A-1.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/A-prompt-payload.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-011",
+      "rationale": "Mapped to the deduplicated cluster-14 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "A-2.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/A-prompt-payload.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-D-003",
+      "rationale": "Mapped to the deduplicated cluster-4 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "A-3.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/A-prompt-payload.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-009",
+      "rationale": "Mapped to the deduplicated cluster-12 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "A-4.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/A-prompt-payload.claude.md",
+      "outcome": "not-a-finding",
+      "targetId": null,
+      "rationale": "The source explicitly records an adjudication correction or parity-restoring observation rather than a new divergence."
+    },
+    {
+      "sourceId": "A-5.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/A-prompt-payload.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-G-004",
+      "rationale": "Mapped to the deduplicated cluster-5 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "A-1.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/A-prompt-payload.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-010",
+      "rationale": "Mapped to the deduplicated cluster-13 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-1.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-008",
+      "rationale": "Mapped to the deduplicated cluster-11 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-2.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-028",
+      "rationale": "Mapped to the deduplicated cluster-36 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-3.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-009",
+      "rationale": "Mapped to the deduplicated cluster-12 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-4.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-010",
+      "rationale": "Mapped to the deduplicated cluster-13 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-5.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-010",
+      "rationale": "Mapped to the deduplicated cluster-13 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-6.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-020",
+      "rationale": "Mapped to the deduplicated cluster-28 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-7.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-021",
+      "rationale": "Mapped to the deduplicated cluster-29 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-8.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-013",
+      "rationale": "Mapped to the deduplicated cluster-20 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-9.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-013",
+      "rationale": "Mapped to the deduplicated cluster-20 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-10.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-013",
+      "rationale": "Mapped to the deduplicated cluster-20 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-1.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-010",
+      "rationale": "Mapped to the deduplicated cluster-13 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-2.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-010",
+      "rationale": "Mapped to the deduplicated cluster-13 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-3.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-008",
+      "rationale": "Mapped to the deduplicated cluster-11 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-4.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-009",
+      "rationale": "Mapped to the deduplicated cluster-12 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-5.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-007",
+      "rationale": "Mapped to the deduplicated cluster-3 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-6.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-013",
+      "rationale": "Mapped to the deduplicated cluster-20 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-7.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-013",
+      "rationale": "Mapped to the deduplicated cluster-20 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-8.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-012",
+      "rationale": "Mapped to the deduplicated cluster-19 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "B-9.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/B-transcript-mutation.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-027",
+      "rationale": "Mapped to the deduplicated cluster-35 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-1.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-008",
+      "rationale": "Mapped to the deduplicated cluster-11 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-2.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-D-008",
+      "rationale": "Mapped to the deduplicated cluster-9 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-3.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-019",
+      "rationale": "Mapped to the deduplicated cluster-27 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-4.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-019",
+      "rationale": "Mapped to the deduplicated cluster-27 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-1.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-008",
+      "rationale": "Mapped to the deduplicated cluster-11 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-2.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-009",
+      "rationale": "Mapped to the deduplicated cluster-12 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-3.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-B-009",
+      "rationale": "Mapped to the deduplicated cluster-10 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "C-4.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/C-streaming-display.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-B-009",
+      "rationale": "Mapped to the deduplicated cluster-10 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-1.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-015",
+      "rationale": "Mapped to the deduplicated cluster-23 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-2.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-007",
+      "rationale": "Mapped to the deduplicated cluster-3 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-3.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-011",
+      "rationale": "Mapped to the deduplicated cluster-14 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-4.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-018",
+      "rationale": "Mapped to the deduplicated cluster-26 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-5.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-018",
+      "rationale": "Mapped to the deduplicated cluster-26 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-6.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-017",
+      "rationale": "Mapped to the deduplicated cluster-25 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-1.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-F-005",
+      "rationale": "Mapped to the deduplicated cluster-6 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-2.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-F-006",
+      "rationale": "Mapped to the deduplicated cluster-7 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-3.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-F-006",
+      "rationale": "Mapped to the deduplicated cluster-7 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-4.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-016",
+      "rationale": "Mapped to the deduplicated cluster-24 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-5.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-007",
+      "rationale": "Mapped to the deduplicated cluster-3 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-6.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-015",
+      "rationale": "Mapped to the deduplicated cluster-23 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "D-7.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/D-lifecycle-stop-reattach.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-017",
+      "rationale": "Mapped to the deduplicated cluster-25 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-1.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-F-001",
+      "rationale": "Mapped to the deduplicated cluster-1 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-2.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-C-010",
+      "rationale": "Mapped to the deduplicated cluster-15 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-3.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-F-011",
+      "rationale": "Mapped to the deduplicated cluster-16 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-4.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-022",
+      "rationale": "Mapped to the deduplicated cluster-30 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-5.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-023",
+      "rationale": "Mapped to the deduplicated cluster-31 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-6.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-010",
+      "rationale": "Mapped to the deduplicated cluster-13 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-7.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.claude.md",
+      "outcome": "not-a-finding",
+      "targetId": null,
+      "rationale": "The source explicitly records an adjudication correction or parity-restoring observation rather than a new divergence."
+    },
+    {
+      "sourceId": "E-1.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-F-011",
+      "rationale": "Mapped to the deduplicated cluster-16 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-2.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-I-007",
+      "rationale": "Mapped to the deduplicated cluster-8 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-3.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-C-010",
+      "rationale": "Mapped to the deduplicated cluster-15 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-4.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-I-007",
+      "rationale": "Mapped to the deduplicated cluster-8 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-5.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-I-007",
+      "rationale": "Mapped to the deduplicated cluster-8 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-6.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-I-007",
+      "rationale": "Mapped to the deduplicated cluster-8 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "E-7.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/E-finalization-side-effects.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-023",
+      "rationale": "Mapped to the deduplicated cluster-31 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-1.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-012",
+      "rationale": "Mapped to the deduplicated cluster-17 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-2.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-002",
+      "rationale": "Mapped to the deduplicated cluster-2 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-3.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-024",
+      "rationale": "Mapped to the deduplicated cluster-32 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-4.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-G-004",
+      "rationale": "Mapped to the deduplicated cluster-5 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-5.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.claude.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-014",
+      "rationale": "Mapped to the deduplicated cluster-21 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-6.claude",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.claude.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-014",
+      "rationale": "Mapped to the deduplicated cluster-22 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-1.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-002",
+      "rationale": "Mapped to the deduplicated cluster-2 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-2.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-013",
+      "rationale": "Mapped to the deduplicated cluster-18 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-3.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-012",
+      "rationale": "Mapped to the deduplicated cluster-17 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-4.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-K-012",
+      "rationale": "Mapped to the deduplicated cluster-17 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-5.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "canonical-finding",
+      "targetId": "ORC-G-004",
+      "rationale": "Mapped to the deduplicated cluster-5 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-6.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-026",
+      "rationale": "Mapped to the deduplicated cluster-34 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-7.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-014",
+      "rationale": "Mapped to the deduplicated cluster-22 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-8.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-025",
+      "rationale": "Mapped to the deduplicated cluster-33 disposition in the authoritative consolidated ledger."
+    },
+    {
+      "sourceId": "F-9.codex",
+      "source": ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/reports/F-import-export-formats.codex.md",
+      "outcome": "existing-decision",
+      "targetId": "ORC-DECISION-024",
+      "rationale": "Mapped to the deduplicated cluster-32 disposition in the authoritative consolidated ledger."
+    }
+  ],
+  "findings": [
+    {
+      "id": "ORC-F-001",
+      "title": "Historical cluster-1: Output-trigger resend used append-mode Continue",
+      "category": "F",
+      "severity": "High",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "A trigger-requested resend must be a plain send without a say-nothing prefix.",
+      "actual": "The resend entered append-mode Continue and baked a boundary into transcript and payload.",
+      "userConsequence": "Output-trigger resend used append-mode Continue",
+      "inventoryIds": [
+        "ORC-SURFACE-064"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 1)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
+      "regressionEvidence": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-K-002",
+      "title": "Historical cluster-2: Legacy monolithic preset imports dropped the model half",
+      "category": "K",
+      "severity": "High",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Legacy model-bearing preset imports must give the user a model-half import choice.",
+      "actual": "The prompt half imported while provider/model and sampler intent were silently lost.",
+      "userConsequence": "Legacy monolithic preset imports dropped the model half",
+      "inventoryIds": [
+        "ORC-SURFACE-065"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 2)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+      "regressionEvidence": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-D-003",
+      "title": "Historical cluster-4: Continue ignored non-empty composer text",
+      "category": "D",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Continue with typed text must run input processing, append and consume the user row, then continue.",
+      "actual": "The typed text was neither sent nor consumed.",
+      "userConsequence": "Continue ignored non-empty composer text",
+      "inventoryIds": [
+        "ORC-SURFACE-066"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 4)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "9ce5df9fa5702b10441baa41b7acd693c253d2d9",
+      "regressionEvidence": [
+        "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-G-004",
+      "title": "Historical cluster-5: Kobold path-bearing endpoints were rewritten",
+      "category": "G",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Legacy Kobold paths longer than the baseline root threshold must be posted verbatim.",
+      "actual": "Segment overlap joining changed user-supplied paths.",
+      "userConsequence": "Kobold path-bearing endpoints were rewritten",
+      "inventoryIds": [
+        "ORC-SURFACE-067"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 5)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+      "regressionEvidence": [
+        "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-F-005",
+      "title": "Historical cluster-6: Interrupted-send retry could transform the user turn twice",
+      "category": "F",
+      "severity": "High",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Retry must key idempotency to the accepted message and not rerun committed input transforms.",
+      "actual": "Retry compared only ID and role, allowing append/transforms to repeat.",
+      "userConsequence": "Interrupted-send retry could transform the user turn twice",
+      "inventoryIds": [
+        "ORC-SURFACE-068"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 6)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "f256dd250d537e224e130a6a93c84878bba3d27c",
+      "regressionEvidence": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-F-006",
+      "title": "Historical cluster-7: Stop ownership leaked across operations and shutdown lost partials",
+      "category": "F",
+      "severity": "High",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Stop controls must bind to the active operation and shutdown must preserve replayable cancellation finalization.",
+      "actual": "Settled stop state could hide later controls and shutdown force-terminalized stopping work.",
+      "userConsequence": "Stop ownership leaked across operations and shutdown lost partials",
+      "inventoryIds": [
+        "ORC-SURFACE-069"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 7)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "f256dd250d537e224e130a6a93c84878bba3d27c",
+      "regressionEvidence": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-I-007",
+      "title": "Historical cluster-8: Durable effect and memory-job ownership gaps",
+      "category": "I",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Lua description writes, claimed effects, terminal patches, and memory cancellation must have durable isolated ownership.",
+      "actual": "Description writes were absent, claims could strand, patches omitted owners, and a batch shared one abort controller.",
+      "userConsequence": "Durable effect and memory-job ownership gaps",
+      "inventoryIds": [
+        "ORC-SURFACE-070"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 8)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "0cf091c2511d52171629124cdb9df3a4212e0823",
+      "regressionEvidence": [
+        "server/fastify/__tests__/triggers.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-D-008",
+      "title": "Historical cluster-9: Half-streaming Stop diverged display from persistence",
+      "category": "D",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "A stopped partial must reconcile the displayed and durable row.",
+      "actual": "The display removed an empty local row while the server retained a partial.",
+      "userConsequence": "Half-streaming Stop diverged display from persistence",
+      "inventoryIds": [
+        "ORC-SURFACE-071"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 9)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "0e46fed68c4c387788135d5232d2761c3f978d28",
+      "regressionEvidence": [
+        "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-B-009",
+      "title": "Historical cluster-10: Replay gaps could lose or duplicate visible continuation text",
+      "category": "B",
+      "severity": "Medium",
+      "evidenceState": "reproduced",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Canonical terminal text must remain consumable after replay eviction without duplicate partial continuation.",
+      "actual": "Replay caps could evict necessary context and reattach could duplicate the partial.",
+      "userConsequence": "Replay gaps could lose or duplicate visible continuation text",
+      "inventoryIds": [
+        "ORC-SURFACE-072"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 10)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "0e46fed68c4c387788135d5232d2761c3f978d28",
+      "regressionEvidence": [
+        "src/ts/server/chatMessageHydration.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-C-010",
+      "title": "Historical cluster-15: Whole-array lore conflict fencing dropped unrelated script changes",
+      "category": "C",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Concurrent local-lore changes must merge per entry while retaining per-key conflict safety.",
+      "actual": "Any unrelated lore edit could drop the entire scripted lore result.",
+      "userConsequence": "Whole-array lore conflict fencing dropped unrelated script changes",
+      "inventoryIds": [
+        "ORC-SURFACE-073"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 15)"
+      ],
+      "decisionId": "ORC-DECISION-057",
+      "implementationCommit": "0cf091c2511d52171629124cdb9df3a4212e0823",
+      "regressionEvidence": [
+        "server/fastify/__tests__/commands.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-F-011",
+      "title": "Historical cluster-16: A normal same-chat send could invalidate queued finalization",
+      "category": "F",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Same-chat admission must fence a replayable finalization.",
+      "actual": "Finalizing was excluded from the live-operation fence, allowing a second send to destroy the provisional result.",
+      "userConsequence": "A normal same-chat send could invalidate queued finalization",
+      "inventoryIds": [
+        "ORC-SURFACE-074"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 16)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "f256dd250d537e224e130a6a93c84878bba3d27c",
+      "regressionEvidence": [
+        "server/fastify/__tests__/generation.chat.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-K-012",
+      "title": "Historical cluster-17: Fail-closed CharX imports discarded salvageable content",
+      "category": "K",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Imports must salvage supported entries and visibly report dropped oversized content.",
+      "actual": "One oversized optional entry or data URI rejected the whole card.",
+      "userConsequence": "Fail-closed CharX imports discarded salvageable content",
+      "inventoryIds": [
+        "ORC-SURFACE-075"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 17)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+      "regressionEvidence": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-K-013",
+      "title": "Historical cluster-18: Standalone CHAT blocks rejected otherwise supported saves",
+      "category": "K",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Imports must salvage supported blocks and report an unsupported CHAT block.",
+      "actual": "The entire save was rejected.",
+      "userConsequence": "Standalone CHAT blocks rejected otherwise supported saves",
+      "inventoryIds": [
+        "ORC-SURFACE-076"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 18)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+      "regressionEvidence": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    },
+    {
+      "id": "ORC-K-014",
+      "title": "Historical cluster-21: Agent-only lore exported as active Original-compatible lore",
+      "category": "K",
+      "severity": "Medium",
+      "evidenceState": "code-verified",
+      "verificationState": "confirmed",
+      "disposition": "resolved",
+      "expected": "Agent-only entries must be neutralized on cross-app export.",
+      "actual": "Export preserved activation configuration that Original could execute.",
+      "userConsequence": "Agent-only lore exported as active Original-compatible lore",
+      "inventoryIds": [
+        "ORC-SURFACE-077"
+      ],
+      "sourceEvidence": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md"
+      ],
+      "reproduction": [
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md (verified cluster 21)"
+      ],
+      "decisionId": null,
+      "implementationCommit": "19fbcfb14deb1d9175443ec8e6937ea218431d92",
+      "regressionEvidence": [
+        "server/fastify/__tests__/risuSaveCodec.test.ts",
+        ".archived-docs/fastify-audits-2026-08-11-to-12/original-risu-compat-2026-08-12/CONSOLIDATED.md:147-179"
+      ],
+      "verificationCommit": "be74a491b954478a2719f38e85d061ca87bb562a",
+      "residualRisk": "Historical resolution imported; the owning domain phase must re-run current regression evidence."
+    }
+  ]
 }

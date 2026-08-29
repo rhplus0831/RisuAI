@@ -1,0 +1,2125 @@
+{
+  "$schema": "./upstream-units.schema.json",
+  "schemaVersion": 1,
+  "references": {
+    "startExclusive": "71c476e9c86263fe907105b011ca4dde0a619d66",
+    "endInclusive": "f3f0242fba297d82e0efcc2c31ca1428569b70f2"
+  },
+  "sourceLedger": ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md",
+  "units": [
+    {
+      "id": "ORC-UPSTREAM-001",
+      "sequence": 1,
+      "upstreamCommit": "738899ec50bbf32ca1224aa641ced9d9647f5f82",
+      "committedDate": "2026-05-20",
+      "subject": "Improve self-host server setup docs (#1451)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 1)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-002",
+      "sequence": 2,
+      "upstreamCommit": "fc7811d548784deb6db2f6946a19a5b2d7fe50be",
+      "committedDate": "2026-05-22",
+      "subject": "feat(plugin): add setChatPanel API (#1458)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 2)"
+      ],
+      "nativePortCommits": [
+        "c85783118605e8041df8422969b7b98e33976b0d"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/apiV3/v3.svelte.ts#setChatPanel",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-003",
+      "sequence": 3,
+      "upstreamCommit": "7d2cef52ada6b0fbf39a0c498d853178d7fcf32f",
+      "committedDate": "2026-05-31",
+      "subject": "feat: add configurable chat load counts (#1448)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 3)"
+      ],
+      "nativePortCommits": [
+        "6f8bb981e9923e32d90db8118712486965e5ca0a"
+      ],
+      "currentOwners": [
+        "src/ts/chatLoadPages.ts",
+        "src/ts/server/chatMessageHydration.svelte.ts",
+        "server/fastify/src/databaseDefaults.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-004",
+      "sequence": 4,
+      "upstreamCommit": "9891c0c7bbac0c4bfe39d861b3ab43105ffd0190",
+      "committedDate": "2026-06-03",
+      "subject": "chore: grant server.sh executable file permission (#1460)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 4)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-005",
+      "sequence": 5,
+      "upstreamCommit": "0999071b62cc216c7f3c738bded0cd2d00ddfcc9",
+      "committedDate": "2026-06-03",
+      "subject": "fix: cbs reverse, setdefaultvar (#1461)",
+      "historicalDisposition": "already-covered",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 5)"
+      ],
+      "nativePortCommits": [
+        "16842f066c32ce6474469e92c9b303bdd62ec6b3"
+      ],
+      "currentOwners": [
+        "src/ts/parser/cbs.ts",
+        "server/fastify/src/prompt/promptVariables.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical already-covered disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-006",
+      "sequence": 6,
+      "upstreamCommit": "b5740b3982b3aa2a3fa45440f95f17b3fef275e7",
+      "committedDate": "2026-06-04",
+      "subject": "feat: add GPT-5.5 model support and reasoning / verbosity enhancement (#1463)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 6)"
+      ],
+      "nativePortCommits": [
+        "b47cf30287b7c69939cc756f77f08f836d9b706b"
+      ],
+      "currentOwners": [
+        "src/ts/model/providers/openai.ts",
+        "server/fastify/src/prompt/chatDispatch.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-007",
+      "sequence": 7,
+      "upstreamCommit": "da9c514017dc254795bf5c306da5225a65791da4",
+      "committedDate": "2026-06-04",
+      "subject": "style: render checkbox inputs as toggle switches and optimize aesthetics (#1455)",
+      "historicalDisposition": "reverted",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 7)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical reverted disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-008",
+      "sequence": 8,
+      "upstreamCommit": "f4fef61ca014107283c0262b2d6d814a68573b07",
+      "committedDate": "2026-06-07",
+      "subject": "fix: restore cold storage entries from local backups (#1470)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 8)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-009",
+      "sequence": 9,
+      "upstreamCommit": "4b67148f26275ecc3a19a81a39a22414363c468f",
+      "committedDate": "2026-06-07",
+      "subject": "fix: handle Tauri cold storage path and remote persistence (#1468)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 9)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-010",
+      "sequence": 10,
+      "upstreamCommit": "e3a080b991a9385bbef3d61df729d4cd1b23525b",
+      "committedDate": "2026-06-07",
+      "subject": "feat: add openai flex processing toggle (#1465)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 10)"
+      ],
+      "nativePortCommits": [
+        "6553ba9229299fccfc620403cf096b31bd032a89"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/openai.ts",
+        "server/fastify/src/prompt/chatDispatch.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-011",
+      "sequence": 11,
+      "upstreamCommit": "83eb72aa75a9ddfad9d807f9adc62d1d09977eda",
+      "committedDate": "2026-06-07",
+      "subject": "feat: add Claude Opus 4.8 model (#1464)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 11)"
+      ],
+      "nativePortCommits": [
+        "6d2b5d7921021f2dbb36e0b966a6b18987638a94"
+      ],
+      "currentOwners": [
+        "src/ts/model/providers/anthropic.ts",
+        "server/fastify/src/prompt/chatDispatch.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-012",
+      "sequence": 12,
+      "upstreamCommit": "227270d9e83b8d1dea25e9b295b44e0be40dd828",
+      "committedDate": "2026-06-07",
+      "subject": "fix: Backup feature Chunk load error (#1462)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 12)"
+      ],
+      "nativePortCommits": [
+        "de4c1e3eca61a18ad7ab99b0212e89f8bcb6df29"
+      ],
+      "currentOwners": [
+        "src/main.ts",
+        "src/ts/globalApi.svelte.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-013",
+      "sequence": 13,
+      "upstreamCommit": "70ad6538be9a748887105efe19d1f19bd2d5e55c",
+      "committedDate": "2026-06-07",
+      "subject": "fix: Add Additional params settings for all models (#1453)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 13)"
+      ],
+      "nativePortCommits": [
+        "c5fba556032a6818e94e24aafb7afb993b1b60b3"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/additionalParams.ts",
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/setting/advancedSettingsData.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-001"
+        ]
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-014",
+      "sequence": 14,
+      "upstreamCommit": "146423773c473bcb90d864422ce1503ed94cbd3d",
+      "committedDate": "2026-06-07",
+      "subject": "feat: add current lorebook entries plugin api (#1450)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 14)"
+      ],
+      "nativePortCommits": [
+        "7a052b317c5f7ca1ffd2c0ff78b5985c45b99f0d"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/apiV3/v3.svelte.ts#getCurrentLorebookEntries"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-015",
+      "sequence": 15,
+      "upstreamCommit": "91902c0f9cfab60c23aed3cb9285bcf604ddbeb6",
+      "committedDate": "2026-06-07",
+      "subject": "feat: production-ready OpenAI Responses API support (#1446)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 15)"
+      ],
+      "nativePortCommits": [
+        "827720c439e792befd57dac6bd9919ac070fc549"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/openaiResponses.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-003"
+        ]
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-016",
+      "sequence": 16,
+      "upstreamCommit": "305b981e3b7f1e3c0874f9952394ff03795a2079",
+      "committedDate": "2026-06-08",
+      "subject": "feat: add request / response body logging to Claude batch API (#1304)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 16)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-017",
+      "sequence": 17,
+      "upstreamCommit": "ff4caa160a3ead4e0151bb02fbb2767ca879dc69",
+      "committedDate": "2026-06-08",
+      "subject": "fix: preserve error info from streamed_fetch parse failure (#1434)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 17)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-018",
+      "sequence": 18,
+      "upstreamCommit": "f46c459f4571ebbb9b579ecca6bc5f5a49b534eb",
+      "committedDate": "2026-06-08",
+      "subject": "chore: pin pnpm to latest v10 (#1440)",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 18)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-019",
+      "sequence": 19,
+      "upstreamCommit": "484026e37ad7a9ba731899f6bd02183ebc1e6cb2",
+      "committedDate": "2026-06-08",
+      "subject": "fix: remove duplicate OpenAI Responses API export (#1473)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 19)"
+      ],
+      "nativePortCommits": [
+        "827720c439e792befd57dac6bd9919ac070fc549"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/openaiResponses.ts",
+        "src/ts/model/modelProfileResolver.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-003"
+        ]
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-020",
+      "sequence": 20,
+      "upstreamCommit": "67fd6877d19614c9378fdb4f23718354f135af1f",
+      "committedDate": "2026-06-09",
+      "subject": "feat: Re-add automatic cleanchunks for non-coldstorage users",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 20)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-021",
+      "sequence": 21,
+      "upstreamCommit": "80bd8cc27db831102e68ecdfdeb2ccc38938a2d3",
+      "committedDate": "2026-06-09",
+      "subject": "feat: add interchangeability",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 21)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-022",
+      "sequence": 22,
+      "upstreamCommit": "0055f0cbe3cfe1a5b5dbb718add60e1d58f17a74",
+      "committedDate": "2026-06-09",
+      "subject": "feat: add embbeded modules on persona",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 22)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-023",
+      "sequence": 23,
+      "upstreamCommit": "b2c83a31debe7b8aedcdcdb6ce057e568dc97906",
+      "committedDate": "2026-06-09",
+      "subject": "feat: enhance interchangability of character",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 23)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-024",
+      "sequence": 24,
+      "upstreamCommit": "f6d33c1c535654b9ce8f54f878cca51db8fc3e9d",
+      "committedDate": "2026-06-09",
+      "subject": "feat: add moveInsteadOfCopyOnCMPConvert option in settings and database",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 24)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-025",
+      "sequence": 25,
+      "upstreamCommit": "3089fe31fc2b7f5d308a457dea9b9ebe48fa9f61",
+      "committedDate": "2026-06-10",
+      "subject": "feat: add conversion UI for module and char",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 25)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-026",
+      "sequence": 26,
+      "upstreamCommit": "213819721ecfbb71921a4b04b62858750d2bc14f",
+      "committedDate": "2026-06-10",
+      "subject": "feat: add module icon to preserve character icon - might add later for actual display",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 26)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-027",
+      "sequence": 27,
+      "upstreamCommit": "1152fa36532eef81d8169c87bb1efe65bd204317",
+      "committedDate": "2026-06-10",
+      "subject": "feat: working customModuleToggle in character",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 27)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-028",
+      "sequence": 28,
+      "upstreamCommit": "b042ba9a1a05fed042a65f1c4e62afa91f61ca98",
+      "committedDate": "2026-06-10",
+      "subject": "feat: change module format to charx and prepare loadout export support",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 28)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-029",
+      "sequence": 29,
+      "upstreamCommit": "dfdb79be199a98200807addbdf7fee666b760d95",
+      "committedDate": "2026-06-10",
+      "subject": "fix: character toggle issues",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 29)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-030",
+      "sequence": 30,
+      "upstreamCommit": "cf139cc8921f0e41594a363b36fc7da36ea5ae99",
+      "committedDate": "2026-06-10",
+      "subject": "chore: update version to 2026.6.100 across configuration files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 30)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-031",
+      "sequence": 31,
+      "upstreamCommit": "2c12b52addf64c041e35efc1b30d9b11ea369b47",
+      "committedDate": "2026-06-11",
+      "subject": "fix: revert checkinput and check toggle update",
+      "historicalDisposition": "reverted",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 31)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical reverted disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-032",
+      "sequence": 32,
+      "upstreamCommit": "88da12ef6c3fabad75b0259ce944151ec7a232e1",
+      "committedDate": "2026-06-11",
+      "subject": "chore: update version to 2026.6.101 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 32)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-033",
+      "sequence": 33,
+      "upstreamCommit": "d054826778f1af17488fa9a0f2688410c6756716",
+      "committedDate": "2026-06-11",
+      "subject": "feat: make skipping assets default and add encryption for sensitive data on backup on web sync",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 33)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-034",
+      "sequence": 34,
+      "upstreamCommit": "c03033ce3092167e167eb318e368cc5bcc14e538",
+      "committedDate": "2026-06-11",
+      "subject": "fix: remove unnecessary alerts for encryption metadata and decryption success in LoadLocalBackup",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 34)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-035",
+      "sequence": 35,
+      "upstreamCommit": "d0ca05570c24386d1b06011932128af8287dd62d",
+      "committedDate": "2026-06-11",
+      "subject": "feat: create 'remotes' directory if it doesn't exist in cleanChunks function",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 35)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-036",
+      "sequence": 36,
+      "upstreamCommit": "fbd5168710e1895aafd4103fc820dd88b496d252",
+      "committedDate": "2026-06-11",
+      "subject": "chore: update version to 2026.6.102 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 36)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-037",
+      "sequence": 37,
+      "upstreamCommit": "8e6d376162e50da68c1d77559d2039ccccc305d7",
+      "committedDate": "2026-06-11",
+      "subject": "fix: ensure lorebook is safely cloned in convertCharacterToModule function",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 37)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-038",
+      "sequence": 38,
+      "upstreamCommit": "d8420c081cb7de014403e1272412942243564030",
+      "committedDate": "2026-06-11",
+      "subject": "chore: update version to 2026.6.103 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 38)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-039",
+      "sequence": 39,
+      "upstreamCommit": "912ecbbd1d63afb30dcbd992664089f8661fcc54",
+      "committedDate": "2026-06-11",
+      "subject": "fix: clone global lore entries to prevent mutation in convertModuleToCharacter function",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 39)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-040",
+      "sequence": 40,
+      "upstreamCommit": "fab3ee5fe9a88a492b71e73f57cb0156b592a145",
+      "committedDate": "2026-06-11",
+      "subject": "feat: add translation for 'skipSavingAssetsOnWebSync' in English language file",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 40)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-041",
+      "sequence": 41,
+      "upstreamCommit": "26cf11e8bf065e437865a88a9024b082363feb86",
+      "committedDate": "2026-06-11",
+      "subject": "feat: cold by default",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 41)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-042",
+      "sequence": 42,
+      "upstreamCommit": "7a8dc2c29b845b4e580a703ea59f3aacd58b7840",
+      "committedDate": "2026-06-11",
+      "subject": "feat: update getUncleanables to async and enhance cleanChunks function with coldstorage options",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 42)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-043",
+      "sequence": 43,
+      "upstreamCommit": "e3619d4ad004178290b8eae7f60f5c22f22fa362",
+      "committedDate": "2026-06-11",
+      "subject": "chore: update version to 2026.6.110 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 43)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-044",
+      "sequence": 44,
+      "upstreamCommit": "4a9a4dc3c3318ac9c94b04712f69021106e4a48e",
+      "committedDate": "2026-06-11",
+      "subject": "feat: update coldstorage default to depend on plugin length",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 44)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-045",
+      "sequence": 45,
+      "upstreamCommit": "e80eb8e4999547522fbc6eca4a86a7731dc82a85",
+      "committedDate": "2026-06-11",
+      "subject": "chore: update version to 2026.6.111 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 45)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-046",
+      "sequence": 46,
+      "upstreamCommit": "7da550a329a97320075ed0966288f65a3a30b926",
+      "committedDate": "2026-06-12",
+      "subject": "fix: resolve V3 plugin providers always showing as Plugin Legacy (#1480)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 46)"
+      ],
+      "nativePortCommits": [
+        "3e096e5e052142e23408dc39b22039d4d991c581"
+      ],
+      "currentOwners": [
+        "src/ts/process/request/request.ts",
+        "src/ts/process/__tests__/dispatchRequest.test.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-047",
+      "sequence": 47,
+      "upstreamCommit": "e08e5461dca70dc36a56a882e84eef18a382b79e",
+      "committedDate": "2026-06-12",
+      "subject": "feat: implement session management in AccountStorage for secure data handling",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 47)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-048",
+      "sequence": 48,
+      "upstreamCommit": "40c10b0ee8d6712a7ba69fb155708930b41ac247",
+      "committedDate": "2026-06-12",
+      "subject": "chore: update version to 2026.6.112 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 48)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-049",
+      "sequence": 49,
+      "upstreamCommit": "e76433e5bff5d8ab1364a9540de939a083190a2f",
+      "committedDate": "2026-06-12",
+      "subject": "fix: revert part of additional params due to conflicts",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 49)"
+      ],
+      "nativePortCommits": [
+        "c5fba556032a6818e94e24aafb7afb993b1b60b3"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/additionalParams.ts",
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/setting/advancedSettingsData.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-001"
+        ]
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-050",
+      "sequence": 50,
+      "upstreamCommit": "79b25f3e11d8dcd4c73f510876112e2cbc5e54d2",
+      "committedDate": "2026-06-12",
+      "subject": "chore: update version to 2026.6.113 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 50)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-051",
+      "sequence": 51,
+      "upstreamCommit": "085dc5b6cbef8af4f0440d7148b83c64c8d5257b",
+      "committedDate": "2026-06-12",
+      "subject": "feat: add option to apply additional parameters to all models in settings and database",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 51)"
+      ],
+      "nativePortCommits": [
+        "c5fba556032a6818e94e24aafb7afb993b1b60b3"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/additionalParams.ts",
+        "server/fastify/src/prompt/chatDispatch.ts",
+        "src/ts/setting/advancedSettingsData.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-001"
+        ]
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-052",
+      "sequence": 52,
+      "upstreamCommit": "52bf04f7d3569245057514189f2ce78e1625244f",
+      "committedDate": "2026-06-12",
+      "subject": "feat: add option to select export format for modules in ModuleSettings",
+      "historicalDisposition": "standing-no-port",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 52)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-062"
+        ]
+      },
+      "notes": "Historical standing-no-port disposition imported without claiming current behavioral verification.",
+      "decisionId": "ORC-DECISION-058"
+    },
+    {
+      "id": "ORC-UPSTREAM-053",
+      "sequence": 53,
+      "upstreamCommit": "6765daa2d9503e453fcd7ee121cbf8766e3ffb24",
+      "committedDate": "2026-06-12",
+      "subject": "chore: update version to 2026.6.114 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 53)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-054",
+      "sequence": 54,
+      "upstreamCommit": "17e8b1ac464a243920ddce9b89a08ceb4b833076",
+      "committedDate": "2026-06-21",
+      "subject": "fix: decrypt local backup data before loading (#1488)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 54)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-055",
+      "sequence": 55,
+      "upstreamCommit": "02ee6d9d22c2432818874b7f407410a4a1305ead",
+      "committedDate": "2026-06-21",
+      "subject": "fix: avoid Tauri resource aborts in Auto Suggest (#1496)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 55)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-056",
+      "sequence": 56,
+      "upstreamCommit": "a3fbca29dc2311f4dde8967a5b05e9a60854a4f7",
+      "committedDate": "2026-06-21",
+      "subject": "chore: update version to 2026.6.210 in configuration and source files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 56)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-057",
+      "sequence": 57,
+      "upstreamCommit": "675ddbe01134e8c8350e8894543056ec143413d2",
+      "committedDate": "2026-07-10",
+      "subject": "feat: add coldstorage fallback on account",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 57)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-058",
+      "sequence": 58,
+      "upstreamCommit": "e17db94974c16fd7b6e80d2bc50f3b90d53e2f5e",
+      "committedDate": "2026-07-10",
+      "subject": "Merge branch 'main' of https://github.com/kwaroran/Risuai",
+      "historicalDisposition": "mixed",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 58)"
+      ],
+      "nativePortCommits": [
+        "6c361e00ed65220866293ddbb37d11e221fa569e",
+        "c47b662faff2112dfb414094609800ae31110f15"
+      ],
+      "currentOwners": [
+        "src/ts/process/promptTemplateNormalization.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "server/fastify/src/prompt/chatDispatch.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Merged upstream unit contains ported prompt-role and empty-system-role behavior plus dead plugin/cache/sync changes.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-059",
+      "sequence": 59,
+      "upstreamCommit": "1602e63cbfef34beb8e9b3d46852f538204cd3ca",
+      "committedDate": "2026-07-10",
+      "subject": "chore: bump version to 2026.6.211 in configuration files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 59)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-060",
+      "sequence": 60,
+      "upstreamCommit": "55661a4e30e4b8f571b62cb2c79d081f13dc5326",
+      "committedDate": "2026-07-10",
+      "subject": "Revert \"feat: add default role selection for lorebook entries\"",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 60)"
+      ],
+      "nativePortCommits": [
+        "6c361e00ed65220866293ddbb37d11e221fa569e"
+      ],
+      "currentOwners": [
+        "src/ts/process/promptTemplateNormalization.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "server/fastify/src/commands/prompts.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-061",
+      "sequence": 61,
+      "upstreamCommit": "2dfab9d3b8f553d0a795dbb45c9dc6c27b420d8d",
+      "committedDate": "2026-07-10",
+      "subject": "feat: remain compatability on blockroles",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 61)"
+      ],
+      "nativePortCommits": [
+        "6c361e00ed65220866293ddbb37d11e221fa569e"
+      ],
+      "currentOwners": [
+        "src/ts/process/promptTemplateNormalization.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "server/fastify/src/commands/prompts.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-062",
+      "sequence": 62,
+      "upstreamCommit": "78502ee236be37ed29e2ca4fc3317bbe02df19d2",
+      "committedDate": "2026-07-10",
+      "subject": "chore: update version to 2026.6.212 in configuration and related files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 62)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-063",
+      "sequence": 63,
+      "upstreamCommit": "6a41d6c1974f64e49e2f1d23b8892fe8e36c571d",
+      "committedDate": "2026-07-10",
+      "subject": "feat: add 'assistant' role to prompt role validation",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 63)"
+      ],
+      "nativePortCommits": [
+        "6c361e00ed65220866293ddbb37d11e221fa569e"
+      ],
+      "currentOwners": [
+        "src/ts/process/promptTemplateNormalization.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "server/fastify/src/commands/prompts.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-064",
+      "sequence": 64,
+      "upstreamCommit": "8593e67c9945b0102ab367a4ea63d60a239e6df8",
+      "committedDate": "2026-07-10",
+      "subject": "chore: bump version to 2026.6.213 in configuration and related files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 64)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-065",
+      "sequence": 65,
+      "upstreamCommit": "e5611f2002bb2bda8070fb684978be06e09e9664",
+      "committedDate": "2026-07-10",
+      "subject": "refactor: reorganize and duplicate role normalization functions for clarity",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 65)"
+      ],
+      "nativePortCommits": [
+        "6c361e00ed65220866293ddbb37d11e221fa569e"
+      ],
+      "currentOwners": [
+        "src/ts/process/promptTemplateNormalization.ts",
+        "server/fastify/src/prompt/assemble.ts",
+        "server/fastify/src/commands/prompts.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-066",
+      "sequence": 66,
+      "upstreamCommit": "9d8791ea842404ef3c7e6410c2359a2db7ca4bcd",
+      "committedDate": "2026-07-10",
+      "subject": "chore: bump version to 2026.6.214 in configuration and related files",
+      "historicalDisposition": "not-applicable-churn",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 66)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "package.json",
+        "version.json"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-churn disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-067",
+      "sequence": 67,
+      "upstreamCommit": "4ac6e4e891e8f22f9e9aa214f3c99c23c00052d6",
+      "committedDate": "2026-07-13",
+      "subject": "Add Risuai.readInlay(id) to plugin API v3 (#1454)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 67)"
+      ],
+      "nativePortCommits": [
+        "b4e585cbd54bdc35b2ffe2c4b8e6adf84a530c4b"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/apiV3/v3.svelte.ts#readInlay"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-068",
+      "sequence": 68,
+      "upstreamCommit": "64818472fe6491ad9e23533c54ffb16b6b90159c",
+      "committedDate": "2026-07-14",
+      "subject": "ci: Add rust build cache and update actions in Tauri release workflow (#1431)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 68)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-069",
+      "sequence": 69,
+      "upstreamCommit": "b9cfdff7c58717d2bc129c55db543ab1dd46aa22",
+      "committedDate": "2026-07-15",
+      "subject": "fix: clean up leaked resources on V3 plugin unload (#1307)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 69)"
+      ],
+      "nativePortCommits": [
+        "04d72b24fa7d7cb91f4eaeecea6d43c837bcc91f"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/apiV3/factory.ts",
+        "src/ts/plugins/apiV3/v3.svelte.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-070",
+      "sequence": 70,
+      "upstreamCommit": "80ad19ce99b78ffff13448304c33fabdeadaca1a",
+      "committedDate": "2026-07-16",
+      "subject": "fix: evaluate CBS before counting lorebook tokens for cutoff (#1490)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 70)"
+      ],
+      "nativePortCommits": [
+        "f6df8cb1e5d342581963ba32ddbe6d0bf839ba5f"
+      ],
+      "currentOwners": [
+        "server/fastify/src/prompt/lorebook.ts",
+        "src/ts/process/lorebook.svelte.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-071",
+      "sequence": 71,
+      "upstreamCommit": "8ff658f246101b0dc2f96b2832d41dbfca3f0fa0",
+      "committedDate": "2026-07-20",
+      "subject": "feat: optimize streaming display rendering (#1422)",
+      "historicalDisposition": "already-covered",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 71)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "src/ts/process/streamCoalescer.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical already-covered disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-072",
+      "sequence": 72,
+      "upstreamCommit": "4f0568ec2be7f93e575d0ed88949de3c3082931b",
+      "committedDate": "2026-07-21",
+      "subject": "perf: replace state snapshots with DB proxy layer for saveDb performance (#1233)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 72)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-073",
+      "sequence": 73,
+      "upstreamCommit": "7bd1120a6ad6ef8e2e8d52fcd7c8a325b4b896af",
+      "committedDate": "2026-07-22",
+      "subject": "feat: PR check workflow with svelte-check and vitest (#1474)",
+      "historicalDisposition": "already-covered",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 73)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        ".github/workflows/quality.yml"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical already-covered disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-074",
+      "sequence": 74,
+      "upstreamCommit": "14bcfb12f0d3f5dfbfaeb150515070c380b2d712",
+      "committedDate": "2026-07-23",
+      "subject": "fix: drag-and-drop reordering rework (#1398)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 74)"
+      ],
+      "nativePortCommits": [
+        "7e589434cd487d3fd42e74907316975d98b22535"
+      ],
+      "currentOwners": [
+        "src/ts/dragTypes.ts",
+        "src/lib/SideBars/sidebarDrag.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-075",
+      "sequence": 75,
+      "upstreamCommit": "56f56eecb5b169022f7bf184372908b7a3145ca4",
+      "committedDate": "2026-07-23",
+      "subject": "fix: remove leaked message event listener in SandboxHost.terminate() (#1301)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 75)"
+      ],
+      "nativePortCommits": [
+        "04d72b24fa7d7cb91f4eaeecea6d43c837bcc91f"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/apiV3/factory.ts",
+        "src/ts/plugins/apiV3/v3.svelte.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-076",
+      "sequence": 76,
+      "upstreamCommit": "004367c6dc39fe00d6f02188d57a2c955da515b2",
+      "committedDate": "2026-07-23",
+      "subject": "fix: handle stream callback response via MessagePort in SandboxHost (#1308)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 76)"
+      ],
+      "nativePortCommits": [
+        "04d72b24fa7d7cb91f4eaeecea6d43c837bcc91f"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/apiV3/factory.ts",
+        "src/ts/plugins/apiV3/v3.svelte.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-077",
+      "sequence": 77,
+      "upstreamCommit": "3d3dd1a0efbd32c30797ae3802a4dc080d638123",
+      "committedDate": "2026-07-25",
+      "subject": "fix: preserve cold storage during sync and backup (#1484)",
+      "historicalDisposition": "not-applicable-dead",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 77)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "docs/structure/generated-and-legacy.md"
+      ],
+      "currentVerification": {
+        "state": "not-applicable",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical not-applicable-dead disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-078",
+      "sequence": 78,
+      "upstreamCommit": "fff05b7a31e7369dbcf3528acb30d7bd58b25281",
+      "committedDate": "2026-07-28",
+      "subject": "feat: add Gemini 3.6 Flash and 3.5 Flash models (#1551)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 78)"
+      ],
+      "nativePortCommits": [
+        "63acf8dcde4d8e4e60c8ed590062dce06891d987"
+      ],
+      "currentOwners": [
+        "src/ts/model/providers/google.ts",
+        "server/fastify/src/generation/gemini.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-079",
+      "sequence": 79,
+      "upstreamCommit": "1ec620cf22bedf1327d0438ad1b96ca02f9327ba",
+      "committedDate": "2026-07-28",
+      "subject": "fix: Character deletion reliability (chaId based lookup) (#1549)",
+      "historicalDisposition": "already-covered",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 79)"
+      ],
+      "nativePortCommits": [],
+      "currentOwners": [
+        "src/ts/characters.ts#removeChar"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical already-covered disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-080",
+      "sequence": 80,
+      "upstreamCommit": "846c897bf56e3e0121ef12e7ba07f5c3912dfa78",
+      "committedDate": "2026-07-28",
+      "subject": "fix: use thinkingLevel for Gemini 3.x instead of thinkingBudget (#1475)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 80)"
+      ],
+      "nativePortCommits": [
+        "63acf8dcde4d8e4e60c8ed590062dce06891d987"
+      ],
+      "currentOwners": [
+        "src/ts/model/providers/google.ts",
+        "server/fastify/src/generation/gemini.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-081",
+      "sequence": 81,
+      "upstreamCommit": "316e430bedbe68c80060ce74c5a1fff88f3bdf97",
+      "committedDate": "2026-07-29",
+      "subject": "Patch v (#1569)",
+      "historicalDisposition": "mixed",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 81)"
+      ],
+      "nativePortCommits": [
+        "ada629f014bd50c2f95e9169e1e6a3e815f83858"
+      ],
+      "currentOwners": [
+        "src/ts/parser/parser.svelte.ts#trimMarkdown",
+        "server/fastify/src/routes/hub.ts",
+        "src/ts/model/providers/openai.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-063"
+        ]
+      },
+      "notes": "Upstream patch contains ported trimMarkdown/Realm proxy behavior and a separately skipped dynamic-model surface.",
+      "decisionId": "ORC-DECISION-059"
+    },
+    {
+      "id": "ORC-UPSTREAM-082",
+      "sequence": 82,
+      "upstreamCommit": "1fb2fb6fb09e20287f5ac0dda75ead7476d5a909",
+      "committedDate": "2026-07-30",
+      "subject": "Add visual color palette selector (#1481)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 82)"
+      ],
+      "nativePortCommits": [
+        "a616eacdf4f236a6116317995ee4a9720aef2ef9"
+      ],
+      "currentOwners": [
+        "src/ts/gui/colorscheme.ts",
+        "src/lib/Setting/Pages/Display/ColorSchemeSelect.svelte"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-083",
+      "sequence": 83,
+      "upstreamCommit": "9b2606944538f37b6a1d0089c787465a71197beb",
+      "committedDate": "2026-07-30",
+      "subject": "feat: add v3 chat output listener API (#1442)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 83)"
+      ],
+      "nativePortCommits": [
+        "044add8cd0453d69bb6aa7c73a26872b0d460fea"
+      ],
+      "currentOwners": [
+        "src/ts/plugins/chatOutputListeners.ts",
+        "src/ts/process/serverBackedSendChat.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-084",
+      "sequence": 84,
+      "upstreamCommit": "5db846e3cf35ceab2614be8f924a013aadcfe91c",
+      "committedDate": "2026-08-04",
+      "subject": "fix: preserve reasoning effort options with Responses API (#1516)",
+      "historicalDisposition": "already-covered",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 84)"
+      ],
+      "nativePortCommits": [
+        "b47cf30287b7c69939cc756f77f08f836d9b706b",
+        "827720c439e792befd57dac6bd9919ac070fc549"
+      ],
+      "currentOwners": [
+        "server/fastify/src/generation/openaiResponses.ts",
+        "server/fastify/src/prompt/chatDispatch.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": [
+          "ORC-SURFACE-003"
+        ]
+      },
+      "notes": "Historical already-covered disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    },
+    {
+      "id": "ORC-UPSTREAM-085",
+      "sequence": 85,
+      "upstreamCommit": "f3f0242fba297d82e0efcc2c31ca1428569b70f2",
+      "committedDate": "2026-08-04",
+      "subject": "perf: optimize Lua state writes and lightweight chat access (#1459)",
+      "historicalDisposition": "ported",
+      "sourceRefs": [
+        ".archived-docs/architecture-and-migration/upstream-sync/sweep-2026-08-07.md (unit 85)"
+      ],
+      "nativePortCommits": [
+        "0a43e639d43f1e0fa15d20cc5e7aeb804bd66369"
+      ],
+      "currentOwners": [
+        "server/fastify/src/prompt/luaRuntime.ts",
+        "src/ts/process/scriptings.ts"
+      ],
+      "currentVerification": {
+        "state": "pending",
+        "lastFastifyCommit": null,
+        "evidence": [],
+        "inventoryIds": []
+      },
+      "notes": "Historical ported disposition imported without claiming current behavioral verification.",
+      "decisionId": null
+    }
+  ]
+}

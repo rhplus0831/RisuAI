@@ -8,6 +8,11 @@ behavior; validate it against
 [`decisions.schema.json`](decisions.schema.json). The registers are separate so
 discovering a difference cannot implicitly approve it.
 
+Run `pnpm validate:compat-registers` after changing any inventory, finding, or
+decision register. The validator fails closed on schema errors, duplicate or
+dangling IDs, broken backlinks, unsigned accepted divergences, and duplicate
+historical raw-report mappings.
+
 Phase 0 imports prior individually signed decisions and maps historical reports.
 Historical prose remains source evidence; this directory owns the normalized
 current-workstream IDs.
