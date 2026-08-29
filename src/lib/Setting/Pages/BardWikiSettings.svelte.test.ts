@@ -52,10 +52,10 @@ describe('BardWiki settings', () => {
     expect(
       target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.automaticConfirmation}"]`)
         ?.disabled,
-    ).toBe(true)
+    ).toBe(false)
     expect(
       target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.canonicalUpdates}"]`)?.disabled,
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('projects user-controlled settings into the server-backed object draft', async () => {
@@ -63,6 +63,8 @@ describe('BardWiki settings', () => {
     await tick()
 
     target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.enabledByDefault}"]`)?.click()
+    target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.automaticConfirmation}"]`)?.click()
+    target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.canonicalUpdates}"]`)?.click()
     const mode = target.querySelector<HTMLSelectElement>('#bardwiki-memory-mode')!
     mode.value = 'hybrid'
     mode.dispatchEvent(new Event('change', { bubbles: true }))
@@ -75,8 +77,8 @@ describe('BardWiki settings', () => {
       enabledByDefault: true,
       memoryMode: 'hybrid',
       modelProfileId: 'profile-a',
-      confirmationPolicy: 'manual',
-      canonicalUpdates: false,
+      confirmationPolicy: 'automatic',
+      canonicalUpdates: true,
     })
   })
 })

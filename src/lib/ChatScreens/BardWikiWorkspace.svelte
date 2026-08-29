@@ -82,6 +82,8 @@
   let jobActionInstanceIds = $state<Set<string>>(new Set())
   let enabledOverrideDraft = $state<'inherit' | 'enabled' | 'disabled'>('inherit')
   let memoryModeOverrideDraft = $state<'inherit' | 'hypa' | 'bardwiki' | 'hybrid'>('inherit')
+  let confirmationPolicyOverrideDraft = $state<'inherit' | 'manual' | 'automatic'>('inherit')
+  let canonicalUpdatesOverrideDraft = $state<'inherit' | 'enabled' | 'disabled'>('inherit')
   let totalTokenBudgetOverrideDraft = $state('')
   let chatRequest = 0
   let documentRequest = 0
@@ -150,6 +152,13 @@
     enabledOverrideDraft =
       settings?.enabledOverride === true ? 'enabled' : settings?.enabledOverride === false ? 'disabled' : 'inherit'
     memoryModeOverrideDraft = settings?.memoryModeOverride ?? 'inherit'
+    confirmationPolicyOverrideDraft = settings?.confirmationPolicyOverride ?? 'inherit'
+    canonicalUpdatesOverrideDraft =
+      settings?.canonicalUpdatesOverride === true
+        ? 'enabled'
+        : settings?.canonicalUpdatesOverride === false
+          ? 'disabled'
+          : 'inherit'
     totalTokenBudgetOverrideDraft =
       settings?.totalTokenBudgetOverride === null || settings?.totalTokenBudgetOverride === undefined
         ? ''
@@ -450,6 +459,10 @@
     const outcome = await saveBardWikiChatSettings(chatId, {
       enabledOverride: enabledOverrideDraft === 'inherit' ? null : enabledOverrideDraft === 'enabled',
       memoryModeOverride: memoryModeOverrideDraft === 'inherit' ? null : memoryModeOverrideDraft,
+      confirmationPolicyOverride:
+        confirmationPolicyOverrideDraft === 'inherit' ? null : confirmationPolicyOverrideDraft,
+      canonicalUpdatesOverride:
+        canonicalUpdatesOverrideDraft === 'inherit' ? null : canonicalUpdatesOverrideDraft === 'enabled',
       totalTokenBudgetOverride: totalBudget === '' ? null : Number(totalBudget),
     })
     if (sequence !== settingsMutationSequence) return
@@ -563,7 +576,7 @@
     {:else if chatResource}
       <details class="border-b border-darkborderc px-4 py-2">
         <summary class="cursor-pointer font-medium">{language.bardWiki.chatOverrides}</summary>
-        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <label class="flex flex-col gap-1">
             <span>{language.bardWiki.enabledForChat}</span>
             <select
@@ -586,6 +599,31 @@
               <option value="hypa">{language.bardWiki.modeHypa}</option>
               <option value="bardwiki">{language.bardWiki.modeBardWiki}</option>
               <option value="hybrid">{language.bardWiki.modeHybrid}</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span>{language.bardWiki.automaticConfirmation}</span>
+            <select
+              class="rounded-md border border-darkborderc bg-darkbg p-2"
+              value={confirmationPolicyOverrideDraft}
+              onchange={(event) =>
+                (confirmationPolicyOverrideDraft = event.currentTarget
+                  .value as typeof confirmationPolicyOverrideDraft)}>
+              <option value="inherit">{language.bardWiki.inherit}</option>
+              <option value="manual">{language.bardWiki.disabled}</option>
+              <option value="automatic">{language.bardWiki.enabled}</option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1">
+            <span>{language.bardWiki.canonicalUpdates}</span>
+            <select
+              class="rounded-md border border-darkborderc bg-darkbg p-2"
+              value={canonicalUpdatesOverrideDraft}
+              onchange={(event) =>
+                (canonicalUpdatesOverrideDraft = event.currentTarget.value as typeof canonicalUpdatesOverrideDraft)}>
+              <option value="inherit">{language.bardWiki.inherit}</option>
+              <option value="enabled">{language.bardWiki.enabled}</option>
+              <option value="disabled">{language.bardWiki.disabled}</option>
             </select>
           </label>
           <label class="flex flex-col gap-1">
@@ -710,6 +748,9 @@
                     onclick={() => void selectDocument(document.id)}>
                     <span class="block truncate font-medium">{document.title}</span>
                     <span class="block truncate text-xs text-textcolor2">{document.logicalPath}</span>
+                    {#if document.reviewState === 'needs_review'}
+                      <span class="block text-xs text-red-400">{language.bardWiki.reviewStates.needs_review}</span>
+                    {/if}
                   </button>
                 </li>
               {/each}

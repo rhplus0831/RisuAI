@@ -41,6 +41,7 @@ vi.mock('src/ts/process/request/serverBardWikiJobs', () => ({
 
 import BardWikiWorkspace from './BardWikiWorkspace.svelte'
 import { resetBardWikiResource } from 'src/ts/server/bardWikiResource'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -379,7 +380,7 @@ describe('BardWiki workspace', () => {
     expect(target.textContent).toContain('Saved on the server')
   })
 
-  it('persists explicit per-chat overrides while leaving autonomous options absent', async () => {
+  it('persists explicit per-chat policy and budget overrides', async () => {
     component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
     await settle()
     const selects = target.querySelectorAll<HTMLSelectElement>('details select')
@@ -387,6 +388,10 @@ describe('BardWiki workspace', () => {
     selects[0]!.dispatchEvent(new Event('change', { bubbles: true }))
     selects[1]!.value = 'hybrid'
     selects[1]!.dispatchEvent(new Event('change', { bubbles: true }))
+    selects[2]!.value = 'automatic'
+    selects[2]!.dispatchEvent(new Event('change', { bubbles: true }))
+    selects[3]!.value = 'enabled'
+    selects[3]!.dispatchEvent(new Event('change', { bubbles: true }))
     const budget = target.querySelector<HTMLInputElement>('details input[type="number"]')!
     budget.value = '4096'
     budget.dispatchEvent(new Event('input', { bubbles: true }))
@@ -400,10 +405,25 @@ describe('BardWiki workspace', () => {
     expect(mutations.settings).toHaveBeenCalledWith('chat-a', {
       enabledOverride: false,
       memoryModeOverride: 'hybrid',
+      confirmationPolicyOverride: 'automatic',
+      canonicalUpdatesOverride: true,
       totalTokenBudgetOverride: 4096,
     })
-    expect(target.textContent).not.toContain('Automatic confirmation')
-    expect(target.textContent).not.toContain('canonical updates')
+    expect(target.textContent).toContain('Automatic confirmation')
+    expect(target.textContent).toContain('canonical updates')
+  })
+
+  it('marks documents that require review in the chat index', async () => {
+    reads.chat.mockResolvedValueOnce({
+      ...chatResource,
+      documents: [{ ...index, reviewState: 'needs_review' as const }],
+    })
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    expect(target.querySelector('[aria-label="Open Old Tavern"]')?.textContent).toContain(
+      language.bardWiki.reviewStates.needs_review,
+    )
   })
 
   it('shows receipt and failed-job errors and retries against the authoritative chat resource', async () => {

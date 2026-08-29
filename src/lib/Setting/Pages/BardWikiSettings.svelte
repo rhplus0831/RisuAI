@@ -140,8 +140,13 @@
   </label>
 
   <div class="rounded-md border border-darkborderc p-3">
-    <p class="mb-2 text-sm text-textcolor2">{language.bardWiki.autonomousUnavailable}</p>
-    <CheckInput check={false} disabled name={language.bardWiki.automaticConfirmation} />
-    <CheckInput check={false} disabled name={language.bardWiki.canonicalUpdates} />
+    <CheckInput
+      check={settings.value.confirmationPolicy === 'automatic'}
+      onChange={(enabled) => updateSetting('confirmationPolicy', enabled ? 'automatic' : 'manual')}
+      name={language.bardWiki.automaticConfirmation} />
+    <CheckInput
+      check={settings.value.canonicalUpdates}
+      onChange={(enabled) => updateSetting('canonicalUpdates', enabled)}
+      name={language.bardWiki.canonicalUpdates} />
   </div>
 </section>

@@ -253,7 +253,7 @@ describe('BardWiki revisioned commands', () => {
     expect(invalid.statusCode).toBe(400)
     expect(invalid.json()).toEqual({ error: 'bardWiki must match the BardWiki global settings contract' })
 
-    const unavailable = await app.inject({
+    const autonomous = await app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/settings/memory',
       headers: authHeaders(),
@@ -262,28 +262,28 @@ describe('BardWiki revisioned commands', () => {
         patch: { bardWiki: { ...bardWiki, confirmationPolicy: 'automatic', canonicalUpdates: true } },
       },
     })
-    expect(unavailable.statusCode).toBe(400)
-    expect(unavailable.json()).toEqual({ error: 'BardWiki autonomous updates are not available yet' })
-    expect(inspectRows('SELECT revision FROM schema_version WHERE id = 1')).toEqual([{ revision: 1 }])
+    expect(autonomous.statusCode).toBe(200)
+    expect(autonomous.json()).toMatchObject({
+      revision: 2,
+      event: { type: 'settings.updated', resource: 'settings', id: 'memory' },
+    })
+    expect(inspectRows('SELECT revision FROM schema_version WHERE id = 1')).toEqual([{ revision: 2 }])
   })
 
   it('updates settings and creates, edits, and soft-deletes one document with one event/revision each', async () => {
-    for (const patch of [{ confirmationPolicyOverride: 'automatic' }, { canonicalUpdatesOverride: true }]) {
-      const unavailable = await app.inject({
-        method: 'PATCH',
-        url: '/api/v1/commands/bardwiki/chats/chat-a/settings',
-        headers: authHeaders(),
-        payload: { baseRevision: 0, patch },
-      })
-      expect(unavailable.statusCode).toBe(400)
-      expect(unavailable.json()).toEqual({ error: 'BardWiki autonomous updates are not available yet' })
-    }
-
     const settings = await app.inject({
       method: 'PATCH',
       url: '/api/v1/commands/bardwiki/chats/chat-a/settings',
       headers: authHeaders(),
-      payload: { baseRevision: 0, patch: { enabledOverride: true, memoryModeOverride: 'bardwiki' } },
+      payload: {
+        baseRevision: 0,
+        patch: {
+          enabledOverride: true,
+          memoryModeOverride: 'bardwiki',
+          confirmationPolicyOverride: 'automatic',
+          canonicalUpdatesOverride: true,
+        },
+      },
     })
     expect(settings.statusCode).toBe(200)
     expect(settings.json()).toMatchObject({

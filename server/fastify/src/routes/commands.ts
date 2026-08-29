@@ -9570,9 +9570,6 @@ function readBardWikiSettingsCommandBody(value: unknown): {
         ;(patch as Record<string, unknown>)[key] = raw
     }
   }
-  if (patch.confirmationPolicyOverride === 'automatic' || patch.canonicalUpdatesOverride === true) {
-    throw new ValidationError('BardWiki autonomous updates are not available yet')
-  }
   return { baseRevision: body.baseRevision, patch }
 }
 
@@ -9852,13 +9849,6 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
 function validateSettingValue(key: string, value: unknown): void {
   if (key === 'bardWiki' && !isBardWikiGlobalSettings(value)) {
     throw new ValidationError('bardWiki must match the BardWiki global settings contract')
-  }
-  if (
-    key === 'bardWiki' &&
-    isBardWikiGlobalSettings(value) &&
-    (value.confirmationPolicy !== 'manual' || value.canonicalUpdates)
-  ) {
-    throw new ValidationError('BardWiki autonomous updates are not available yet')
   }
   if (key === 'hypaV3Presets') validateHypaV3PresetSummaryModels(value)
   if (key === 'complexRegexCompatibilityMode' && value !== 'strict' && value !== 'worker') {

@@ -276,7 +276,7 @@ describe('OtherBotSettings navigation semantics', () => {
     expect(
       target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.automaticConfirmation}"]`)
         ?.disabled,
-    ).toBe(true)
+    ).toBe(false)
   })
 
   it('switches mounted layouts when the authoritative legacy-GUI setting changes', async () => {
