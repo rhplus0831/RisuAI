@@ -66,6 +66,16 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 0 })
       expect(listTables(db)).toEqual([
         'assets',
+        'bardwiki_change_manifest',
+        'bardwiki_chat_settings',
+        'bardwiki_document_search',
+        'bardwiki_document_sources',
+        'bardwiki_document_versions',
+        'bardwiki_documents',
+        'bardwiki_jobs',
+        'bardwiki_links',
+        'bardwiki_rebuild_staging',
+        'bardwiki_turn_receipts',
         'bot_presets',
         'characters',
         'chat_hypa_v3',
@@ -509,6 +519,16 @@ describe('schema migrations', () => {
       expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 7 })
       expect(listTables(db)).toEqual([
         'assets',
+        'bardwiki_change_manifest',
+        'bardwiki_chat_settings',
+        'bardwiki_document_search',
+        'bardwiki_document_sources',
+        'bardwiki_document_versions',
+        'bardwiki_documents',
+        'bardwiki_jobs',
+        'bardwiki_links',
+        'bardwiki_rebuild_staging',
+        'bardwiki_turn_receipts',
         'bot_presets',
         'characters',
         'chat_hypa_v3',

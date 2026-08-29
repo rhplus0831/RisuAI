@@ -1,10 +1,32 @@
 # Phase 1: Persistence and Server Resources
 
-Status: pending.
+Status: in progress. Slice 1 (schema and low-level repository) is complete.
 
 Goal: establish authoritative BardWiki storage, narrow repositories, targeted
 reads, revisioned settings/document commands, and complete backup ownership
 without prompt retrieval or model-authored updates.
+
+## Progress
+
+Slice 1 added schema migration v33 and the locked BardWiki authoritative,
+operational, staging, and derived tables. `bardWikiRepository.ts` owns path,
+title, alias, Markdown, link, and settings validation; current-document and
+immutable-version reads; optimistic version/hash fences; soft deletion; and
+transaction-compatible document/version/link/search writes. Focused repository
+and migration tests cover normalization, unsafe paths, settings inheritance
+representation, versions, link resolution, stale writers, path isolation and
+reuse, caller rollback, and chat cascades.
+
+Validation on 2026-08-29:
+
+```text
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiRepository.test.ts \
+  server/fastify/__tests__/db.test.ts
+# 2 files, 33 tests passed
+```
+
+Production routes remain deliberately unregistered until Slice 2.
 
 ## Depends On
 

@@ -7,16 +7,21 @@ prompt, worker, or UI implementation has started. Phase 1 is current.
 
 ## Snapshot
 
-- Plan state: implementation contract locked; runtime implementation not started.
-- Current phase: Phase 1, schema/repository slice pending.
-- Current implementation cursor: add schema migration, constraints, row types,
-  and focused low-level repository tests from [`CONTRACT.md`](CONTRACT.md).
+- Plan state: runtime implementation in progress.
+- Current phase: Phase 1, slice 1 complete.
+- Current implementation cursor: add revisioned settings/document command
+  handlers with narrow targeted reads/writes and optimistic fences.
 - Blockers: none.
-- Runtime changes in this workstream: none.
+- Runtime changes in this workstream: schema v33 and the low-level BardWiki
+  settings/document/version/link/search repository.
 - Validation: Phase 0 Prettier contract check passed on 2026-08-29.
 - Phase 0 commit: the contract/status commit that records this completion.
-- Residual risk: runtime feasibility is proven only by architecture inspection;
-  every locked behavior still requires its owning implementation-phase tests.
+- Phase 1 slice 1 validation: focused migration/repository run passed 2 files,
+  33 tests on 2026-08-29; current-worktree watched check is recorded before the
+  slice commit.
+- Residual risk: routes, revisioned commands, browser resources, and backup
+  classification are still intentionally absent until the remaining Phase 1
+  slices.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -41,7 +46,7 @@ prompt, worker, or UI implementation has started. Phase 1 is current.
 | Phase | Status | Outcome |
 | --- | --- | --- |
 | [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Complete | Exact types, states, routes, events, inheritance, errors, and test matrix are locked in [`CONTRACT.md`](CONTRACT.md). |
-| [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Pending | SQLite schema, repositories, resources, commands, versions, sources, links, and backup ownership land. |
+| [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | In progress (1/4) | Schema v33 and low-level repository landed; commands, resources, and backup ownership remain. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Pending | Global BardWiki settings and a chat-scoped manual document workspace are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Pending | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Pending | Separate durable worker execution and explicit event-document generation are reliable. |
@@ -51,9 +56,8 @@ prompt, worker, or UI implementation has started. Phase 1 is current.
 
 ## Next Action
 
-Execute Phase 1, slice 1 only: implement the locked schema migration,
-constraints, row types, low-level repository, and focused repository tests.
-Do not register production routes until that slice passes.
+Execute Phase 1, slice 2: add manual document/settings command handlers with
+narrow targeted mutation reads/writes and optimistic hash/version checks.
 
 ## Maintenance Rules
 

@@ -13,6 +13,7 @@ import { createGreetingTranslationTable } from './translation/greetingTranslatio
 import { createRequestHistoryTable } from './requestHistory.js'
 import { createGenerationOperationTables } from './generationOperations.js'
 import { createGenerationEffectLedgerTable } from './generationEffects.js'
+import { createBardWikiTables } from './bardWikiRepository.js'
 import {
   createAssetMetadataTable,
   createInlayCatalogTable,
@@ -22,7 +23,7 @@ import {
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 32
+export const CURRENT_SCHEMA_VERSION = 33
 
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
@@ -378,6 +379,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createGenerationEffectLedgerTable(db)
     },
   },
+  {
+    version: 33,
+    name: 'bardwiki-authoritative-storage',
+    up: (db) => {
+      createBardWikiTables(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -451,6 +459,7 @@ export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {})
       createAssetMetadataTable(db)
       createInlayCatalogTable(db)
       createCharacterTables(db)
+      createBardWikiTables(db)
       createGreetingTranslationTable(db)
       createRequestHistoryTable(db)
       createCollectionTables(db)
