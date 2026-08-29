@@ -1,6 +1,6 @@
 # Phase 4: Durable Jobs and Explicit Confirmation
 
-Status: in progress (slices 1-4 of 5 complete).
+Status: complete.
 
 Goal: add restart-safe BardWiki background execution and explicit confirmation
 that creates one atomic event document per exact confirmed source version.
@@ -199,3 +199,22 @@ tests. The exact list belongs in the phase completion note.
 - The event schema, handler, crash/replay, prompt selection, BardWiki job/route,
   and isolated Hypa worker matrix passed 8 files and 63 tests;
   `pnpm run check:server` passed.
+
+### 2026-08-29: slice 5 — authoritative status and operational recovery UX
+
+- Extended the existing memory SSE channel with secret-free `bardwiki.job`
+  parsing and a reconnect snapshot containing every non-terminal BardWiki job
+  plus 50 recent terminal jobs. Snapshots omit payloads and sanitize bounded
+  terminal errors before delivery; targeted chat reads remain authoritative.
+- Added browser event/snapshot fanout and wired the chat workspace to refresh
+  only its targeted resource after live job transitions or reconnect. The
+  workspace presents receipt state, job kind/status/attempts, terminal receipt
+  and job errors, manual refresh, failed-job retry, and pending/running cancel.
+- Retry and cancel use authenticated active-writer operational adapters,
+  validate the complete returned job envelope, and replace status from a fresh
+  targeted read rather than optimistic mutation.
+- The full Phase 4 server matrix passed 18 files and 577 tests. Client event,
+  memory projection, operational adapter, command, workspace, lazy boundary,
+  and settings coverage passed 7 files and 37 tests. `svelte-check` reported
+  zero errors and warnings, `pnpm run check:server` passed, the production
+  browser smoke build succeeded, and all 37 Playwright smoke tests passed.

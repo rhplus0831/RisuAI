@@ -1,6 +1,6 @@
 # Phase 5: Automatic Confirmation and Canonical Updates
 
-Status: pending.
+Status: in progress.
 
 Goal: attach durable prior-turn confirmation to successful sends and safely
 maintain canonical wiki documents through validated, atomic model-authored

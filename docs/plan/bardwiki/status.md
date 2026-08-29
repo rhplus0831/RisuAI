@@ -2,18 +2,18 @@
 
 Date: 2026-08-29
 
-The workstream is open. Phases 0-3 are complete and Phase 4 is current.
+The workstream is open. Phases 0-4 are complete and Phase 5 is current.
 BardWiki persistence, manual commands, targeted resources, backup recovery,
 global settings, and the chat-scoped manual workspace are implemented; prompt
-retrieval are implemented; the isolated durable BardWiki worker lane and its
-operational controls are implemented.
+retrieval, explicit confirmation, isolated durable execution, exactly-once
+event commits, and workspace operational controls are implemented.
 
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 4, four of five slices complete.
-- Current implementation cursor: expose receipt/job status and retry/cancel
-  controls in the chat workspace, including terminal error presentation.
+- Current phase: Phase 5, implementation starting.
+- Current implementation cursor: attach exact prior-turn automatic
+  confirmation to the authoritative successful-send finalization transaction.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -62,9 +62,14 @@ operational controls are implemented.
   crash/replay, prompt retrieval, isolated BardWiki/Hypa worker, and status
   route coverage passed 8 files and 63 tests; all server-facing typechecks
   passed on 2026-08-29.
-- Residual risk: Phase 4 must isolate BardWiki job claiming, recovery, abort,
-  and retention from the existing Hypa lane while making event commits exactly
-  once across crashes.
+- Phase 4 slice 5 validation: the complete owning server matrix passed 18 files
+  and 577 tests; the client event/projection/adapter/workspace/settings matrix
+  passed 7 files and 37 tests; Svelte diagnostics reported zero errors and
+  warnings; all server-facing typechecks, the production smoke build, and all
+  37 Playwright browser smoke tests passed on 2026-08-29.
+- Residual risk: Phase 5 must schedule only the exact prior confirmed candidate
+  across every generation/replay path and must never overwrite concurrent
+  manual canon during model-authored updates or reconciliation.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -92,16 +97,17 @@ operational controls are implemented.
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Complete | Authoritative persistence, manual commands/resources, cascade lifecycle, and backup/restore recovery are proven. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Complete | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Complete | Committed documents are selected and injected deterministically under budget. |
-| [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | In progress (4/5) | Separate durable worker execution and explicit event-document generation are reliable. |
-| [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Pending | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
+| [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Complete | Separate durable worker execution, explicit event generation, status, and operational recovery are reliable. |
+| [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | In progress | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
 | [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Pending | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Pending | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
 
 ## Next Action
 
-Execute Phase 4 slice 5: add receipt/job status, retry/cancel controls, and
-clear retryable/terminal errors to the targeted chat workspace, then close the
-phase with the full owning regression matrix.
+Start Phase 5 at the authoritative send-finalization boundary: resolve the
+accepted operation lineage, identify only the exact preceding active
+user/assistant source pair, and insert/reuse its automatic receipt and job in
+the successful finalization transaction.
 
 ## Maintenance Rules
 
