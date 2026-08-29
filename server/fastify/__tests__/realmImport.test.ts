@@ -1,7 +1,7 @@
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import fs, { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { createHash, webcrypto } from 'node:crypto'
@@ -447,7 +447,31 @@ function respondRealmJsonCard(
   return false
 }
 
-function realmCharx(options: { lowLevelAccess?: boolean; moduleData?: Uint8Array } = {}): Uint8Array {
+function realmCharx(
+  options: {
+    lowLevelAccess?: boolean
+    moduleData?: Uint8Array
+    assetSuffix?: string
+    preserveMainAsset?: boolean
+    conversionFailure?: boolean
+  } = {},
+): Uint8Array {
+  const marker = options.assetSuffix ? ` ${options.assetSuffix}` : ''
+  const cardAssets = options.conversionFailure
+    ? [
+        {
+          type: 'x-risu-asset',
+          uri: `data:text/css;base64,${Buffer.from('inline conversion asset').toString('base64')}`,
+          name: 'inline',
+          ext: 'css',
+        },
+        { type: 'icon', uri: 'embeded://assets/missing.png', name: 'main', ext: 'png' },
+      ]
+    : [
+        { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
+        { type: 'emotion', uri: 'embeded://assets/happy.png', name: 'happy', ext: 'png' },
+        { type: 'x-risu-asset', uri: '__asset:assets/theme.css', name: 'theme', ext: 'css' },
+      ]
   const card = {
     spec: 'chara_card_v3',
     spec_version: '3.0',
@@ -466,18 +490,16 @@ function realmCharx(options: { lowLevelAccess?: boolean; moduleData?: Uint8Array
       creator: '',
       character_version: '1',
       extensions: { risuai: { lowLevelAccess: options.lowLevelAccess } },
-      assets: [
-        { type: 'icon', uri: 'embeded://assets/main.png', name: 'main', ext: 'png' },
-        { type: 'emotion', uri: 'embeded://assets/happy.png', name: 'happy', ext: 'png' },
-        { type: 'x-risu-asset', uri: '__asset:assets/theme.css', name: 'theme', ext: 'css' },
-      ],
+      assets: cardAssets,
     },
   }
   const files: Record<string, Uint8Array> = {
     'card.json': new TextEncoder().encode(JSON.stringify(card)),
-    'assets/main.png': new TextEncoder().encode('main image'),
-    'assets/happy.png': new TextEncoder().encode('happy image'),
-    'assets/theme.css': new TextEncoder().encode('body { color: red; }'),
+    'assets/main.png': new TextEncoder().encode(options.preserveMainAsset ? 'main image' : `main image${marker}`),
+    'assets/happy.png': new TextEncoder().encode(`happy image${marker}`),
+    'assets/theme.css': new TextEncoder().encode(
+      options.assetSuffix ? `body { color: red; } /* ${options.assetSuffix} */` : 'body { color: red; }',
+    ),
   }
   if (options.moduleData) {
     files['module.risum'] = options.moduleData
@@ -1613,6 +1635,143 @@ describe('Realm character import route', () => {
     expect(character.image).toMatch(/^[a-f0-9]{64}$/)
     expect(character.emotionImages).toEqual([['happy', expect.stringMatching(/^[a-f0-9]{64}$/)]])
     expect(character.additionalAssets).toEqual([['theme', expect.stringMatching(/^[a-f0-9]{64}$/), 'css']])
+  })
+
+  it('removes earlier CharX asset files when a later package asset write fails', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(realmCharx()))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const failingAssetId = assetIdFor('happy image')
+    const writeFileSync = fs.writeFileSync
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data) => {
+      if (String(file).endsWith(`${failingAssetId}.png`)) {
+        throw new Error('injected CharX asset write failure')
+      }
+      return writeFileSync(file, data)
+    })
+
+    try {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
+
+      expect(res.statusCode).toBe(500)
+    } finally {
+      writeSpy.mockRestore()
+    }
+
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    expect(assetFileNames(harness.dataDir)).toEqual([])
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('removes packaged and inline CharX assets when card conversion fails', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(Buffer.from(realmCharx({ conversionFailure: true })))
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const baseRevision = await importEmptyDatabase(harness.app, assertion)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/realm-character',
+      headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+      payload: { id: 'realm-id', baseRevision },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Embedded card asset not found: assets/missing.png' })
+    expect(queryAssets(harness.dataDir)).toHaveLength(0)
+    expect(assetFileNames(harness.dataDir)).toEqual([])
+    const persisted = loadPersistedFromDir(harness.dataDir)
+    expect((persisted.database as { characters: unknown[] }).characters).toHaveLength(0)
+  })
+
+  it('removes new CharX assets but preserves deduplicated assets when character append fails', async () => {
+    let assetSuffix = ''
+    echo.setResponder((req, res) => {
+      if (req.url?.startsWith('/api/v1/download/dynamic/realm-id')) {
+        res.writeHead(200, { 'content-type': 'application/charx' })
+        res.end(
+          Buffer.from(
+            realmCharx(
+              assetSuffix
+                ? {
+                    assetSuffix,
+                    preserveMainAsset: true,
+                  }
+                : {},
+            ),
+          ),
+        )
+        return
+      }
+      res.writeHead(404)
+      res.end()
+    })
+
+    const duplicateCharacterId = '11111111-1111-4111-8111-111111111111'
+    cryptoMock.randomUuidOverride = duplicateCharacterId
+
+    try {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const baseRevision = await importEmptyDatabase(harness.app, assertion)
+      const first = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision },
+      })
+
+      expect(first.statusCode).toBe(200)
+      const assetsAfterFirstImport = queryAssets(harness.dataDir)
+      const filesAfterFirstImport = assetFileNames(harness.dataDir)
+
+      assetSuffix = 'second'
+      const duplicate = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/realm-character',
+        headers: { 'risu-auth': assertion, 'risu-writer-session': 'writer-a' },
+        payload: { id: 'realm-id', baseRevision: currentRevision(harness.dataDir) },
+      })
+
+      expect(duplicate.statusCode).toBe(400)
+      expect(duplicate.json()).toEqual({
+        error: `Duplicate character id: ${duplicateCharacterId}`,
+      })
+      expect(queryAssets(harness.dataDir)).toEqual(assetsAfterFirstImport)
+      expect(assetFileNames(harness.dataDir)).toEqual(filesAfterFirstImport)
+      expect(existsSync(path.join(harness.dataDir, 'assets', `${assetIdFor('main image')}.png`))).toBe(true)
+
+      const newAssetFiles = [
+        `${assetIdFor('happy image second')}.png`,
+        `${assetIdFor('body { color: red; } /* second */')}.css`,
+      ]
+      for (const fileName of newAssetFiles) {
+        expect(existsSync(path.join(harness.dataDir, 'assets', fileName))).toBe(false)
+      }
+    } finally {
+      cryptoMock.randomUuidOverride = undefined
+    }
   })
 
   it('rejects known-length Realm charx downloads above the staging cap before reading the body', async () => {

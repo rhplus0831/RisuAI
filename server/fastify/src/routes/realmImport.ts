@@ -958,46 +958,66 @@ async function importRealmCharx(args: {
     start: 65,
     end: 82,
   })
-  const assetDict = saveStagedCharxAssets({
+  const persistedAssets = saveStagedCharxAssets({
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
     stagedAssets,
     onAssetSaved: persistProgress,
   })
+  const assetResults = [...persistedAssets.results]
 
-  args.reportProgress?.({ phase: 'convert', message: 'Converting character card', percent: 85 })
-  const character = await convertRealmCharacterCard(card, {
-    allowLowLevelAccess: args.allowLowLevelAccess,
-    assetDict,
-    storeAsset: (source) =>
-      saveFetchedAsset({
+  try {
+    args.reportProgress?.({ phase: 'convert', message: 'Converting character card', percent: 85 })
+    const character = await convertRealmCharacterCard(card, {
+      allowLowLevelAccess: args.allowLowLevelAccess,
+      assetDict: persistedAssets.assetDict,
+      storeAsset: (source) =>
+        saveFetchedAsset({
+          db: args.db,
+          dataDir: args.dataDir,
+          eventSink: args.eventSink,
+          source,
+          hubUrl: '',
+          maxExpandedImportBytes: args.maxExpandedImportBytes,
+          maxFetchedAssetBytes: args.maxFetchedAssetBytes,
+          maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
+          signal: args.signal,
+          onAssetSaved(result) {
+            assetResults.push(result)
+          },
+        }),
+    })
+    if (moduleMetadata?.lorebook) {
+      character.globalLore = repairLorebookEntries(
+        cloneJson(moduleMetadata.lorebook),
+        `character ${String(character.chaId)}.globalLore`,
+      )
+    }
+
+    args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })
+    return appendRealmCharacter({
+      db: args.db,
+      dataDir: args.dataDir,
+      eventSink: args.eventSink,
+      eventOrigin: args.eventOrigin,
+      character,
+    })
+  } catch (err) {
+    try {
+      cleanupCreatedAssetResults({
         db: args.db,
         dataDir: args.dataDir,
-        eventSink: args.eventSink,
-        source,
-        hubUrl: '',
-        maxExpandedImportBytes: args.maxExpandedImportBytes,
-        maxFetchedAssetBytes: args.maxFetchedAssetBytes,
-        maxFetchedAssetTotalBytes: args.maxFetchedAssetTotalBytes,
-        signal: args.signal,
-      }),
-  })
-  if (moduleMetadata?.lorebook) {
-    character.globalLore = repairLorebookEntries(
-      cloneJson(moduleMetadata.lorebook),
-      `character ${String(character.chaId)}.globalLore`,
-    )
+        results: assetResults,
+      })
+    } catch (cleanupErr) {
+      emitProtocolMetric('realm_import_asset_cleanup_failed', {
+        createdAssetCount: assetResults.filter((result) => result.created).length,
+        error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+      })
+    }
+    throw err
   }
-
-  args.reportProgress?.({ phase: 'commit', message: 'Saving character', percent: 92 })
-  return appendRealmCharacter({
-    db: args.db,
-    dataDir: args.dataDir,
-    eventSink: args.eventSink,
-    eventOrigin: args.eventOrigin,
-    character,
-  })
 }
 
 function appendRealmCharacter(args: {
@@ -1333,59 +1353,63 @@ function saveStagedCharxAssets(args: {
   eventSink: CommandEventSink
   stagedAssets: StagedCharxAsset[]
   onAssetSaved?: () => void
-}): Record<string, string> {
+}): { assetDict: Record<string, string>; results: AddAssetResult[] } {
   const createdAssets: PersistedAsset[] = []
   const createdFiles: Array<{ file: string; existedBefore: boolean }> = []
   const assetDict: Record<string, string> = {}
+  const results: AddAssetResult[] = []
+  const currentRevision = getSchemaState(args.db).revision
+  let transactionOpen = false
 
   fs.mkdirSync(assetsDir(args.dataDir), { recursive: true })
 
-  for (const staged of args.stagedAssets) {
-    const bytes = fs.readFileSync(staged.filePath)
-    if (bytes.length === 0) {
-      throw new ValidationError('Realm asset payload is empty')
-    }
-    const contentType = resolveAssetContentType({
-      kind: 'bytes',
-      fileName: staged.fileName,
-    })
-    const ext = CONTENT_TYPE_EXTENSIONS[contentType]
-    if (!ext) {
-      throw new ValidationError(`Unsupported content-type: ${contentType}`)
-    }
-
-    const id = createHash('sha256').update(bytes).digest('hex')
-    const existing = getAssetMetadataById(args.db, id)
-    if (existing) {
-      const file = assetPath(args.dataDir, existing)
-      if (!fs.existsSync(file)) {
-        fs.writeFileSync(file, bytes)
+  try {
+    for (const staged of args.stagedAssets) {
+      const bytes = fs.readFileSync(staged.filePath)
+      if (bytes.length === 0) {
+        throw new ValidationError('Realm asset payload is empty')
       }
-      assetDict[staged.fileName] = existing.id
+      const contentType = resolveAssetContentType({
+        kind: 'bytes',
+        fileName: staged.fileName,
+      })
+      const ext = CONTENT_TYPE_EXTENSIONS[contentType]
+      if (!ext) {
+        throw new ValidationError(`Unsupported content-type: ${contentType}`)
+      }
+
+      const id = createHash('sha256').update(bytes).digest('hex')
+      const existing = getAssetMetadataById(args.db, id)
+      if (existing) {
+        const file = assetPath(args.dataDir, existing)
+        if (!fs.existsSync(file)) {
+          fs.writeFileSync(file, bytes)
+        }
+        assetDict[staged.fileName] = existing.id
+        results.push({ entry: existing, created: false, revision: currentRevision })
+        args.onAssetSaved?.()
+        continue
+      }
+
+      const entry: PersistedAsset = {
+        id,
+        ext,
+        size: bytes.length,
+        contentType,
+      }
+      const file = path.join(assetsDir(args.dataDir), `${id}.${ext}`)
+      const existedBefore = fs.existsSync(file)
+      createdFiles.push({ file, existedBefore })
+      fs.writeFileSync(file, bytes)
+      createdAssets.push(entry)
+      results.push({ entry, created: true, revision: currentRevision })
+      assetDict[staged.fileName] = entry.id
       args.onAssetSaved?.()
-      continue
     }
 
-    const entry: PersistedAsset = {
-      id,
-      ext,
-      size: bytes.length,
-      contentType,
-    }
-    const file = path.join(assetsDir(args.dataDir), `${id}.${ext}`)
-    const existedBefore = fs.existsSync(file)
-    fs.writeFileSync(file, bytes)
-    createdFiles.push({ file, existedBefore })
-    createdAssets.push(entry)
-    assetDict[staged.fileName] = entry.id
-    args.onAssetSaved?.()
-  }
-
-  if (createdAssets.length > 0) {
-    let transactionOpen = false
-    args.db.exec('BEGIN IMMEDIATE')
-    transactionOpen = true
-    try {
+    if (createdAssets.length > 0) {
+      args.db.exec('BEGIN IMMEDIATE')
+      transactionOpen = true
       insertAssetMetadataBatch(args.db, createdAssets)
       const event = persistRevisionedCommandEvent(args.db, {
         ...COMMAND_EVENT_CATALOG.assetCreated,
@@ -1394,20 +1418,23 @@ function saveStagedCharxAssets(args: {
       args.db.exec('COMMIT')
       transactionOpen = false
       args.eventSink.emit(event)
-    } catch (err) {
-      if (transactionOpen) {
-        args.db.exec('ROLLBACK')
+      for (let index = 0; index < results.length; index += 1) {
+        results[index] = { ...results[index], revision: event.revision, event }
       }
-      for (const { file, existedBefore } of createdFiles) {
-        if (!existedBefore) {
-          fs.rmSync(file, { force: true })
-        }
-      }
-      throw err
     }
+  } catch (err) {
+    if (transactionOpen) {
+      args.db.exec('ROLLBACK')
+    }
+    for (const { file, existedBefore } of createdFiles) {
+      if (!existedBefore) {
+        fs.rmSync(file, { force: true })
+      }
+    }
+    throw err
   }
 
-  return assetDict
+  return { assetDict, results }
 }
 
 function concatBytes(chunks: Uint8Array[], byteLength: number): Uint8Array {
@@ -1590,6 +1617,7 @@ async function saveFetchedAsset(args: {
   maxFetchedAssetBytes?: number
   maxFetchedAssetTotalBytes?: number
   signal: AbortSignal
+  onAssetSaved?: (result: AddAssetResult) => void
 }): Promise<string> {
   if (args.source.kind === 'bytes') {
     const bytes = args.source.bytes ?? Buffer.alloc(0)
@@ -1599,6 +1627,7 @@ async function saveFetchedAsset(args: {
     const contentType = resolveAssetContentType(args.source)
     const result = addAsset(args.db, args.dataDir, { bytes, contentType })
     emitAssetEvent(args.eventSink, result)
+    args.onAssetSaved?.(result)
     return result.entry.id
   }
 
@@ -1621,6 +1650,7 @@ async function saveFetchedAsset(args: {
       eventSink: args.eventSink,
       assets: [staged],
     })
+    args.onAssetSaved?.(results[0])
     return results[0].entry.id
   } finally {
     await fs.promises.rm(stageDir, { recursive: true, force: true })

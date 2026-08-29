@@ -313,9 +313,10 @@ carry `percent` plus only changed fields.
 Operational guards include a request deadline and client-disconnect abort,
 dynamic JSON size caps, per-asset and cumulative fetched-asset caps, pending
 low-level-access confirmation tokens, and temporary staging cleanup. Rollback
-of newly created asset rows/files is guaranteed for the JSON-card path but not
-after the charx asset commit. Non-SSE JSON responses include success,
-low-level-access confirmation tokens, HTTP `415`
+of newly created asset rows/files is guaranteed for both JSON-card and CharX
+imports when later conversion or character commit fails; deduplicated assets
+that predate the failed import are preserved. Non-SSE JSON responses include
+success, low-level-access confirmation tokens, HTTP `415`
 `unsupported_realm_download` fallbacks, revision conflicts, and upstream/fetch
 errors.
 The `/api/v1/download/dynamic/` string in the route module is an upstream Realm
