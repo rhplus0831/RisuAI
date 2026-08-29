@@ -2,18 +2,19 @@
 
 Date: 2026-08-29
 
-The workstream is open. Phases 0-4 are complete and Phase 5 is current.
+The workstream is open. Phases 0-5 are complete and Phase 6 is current.
 BardWiki persistence, manual commands, targeted resources, backup recovery,
 global settings, and the chat-scoped manual workspace are implemented; prompt
-retrieval, explicit confirmation, isolated durable execution, exactly-once
-event commits, and workspace operational controls are implemented.
+retrieval, explicit and automatic confirmation, isolated durable execution,
+atomic event/canonical change sets, stale-source reconciliation, and workspace
+operational controls are implemented.
 
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 5, implementation starting.
-- Current implementation cursor: attach exact prior-turn automatic
-  confirmation to the authoritative successful-send finalization transaction.
+- Current phase: Phase 6, implementation starting.
+- Current implementation cursor: close lifecycle/interchange behavior with
+  explicit rebuild and deterministic vault import/export.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -67,9 +68,16 @@ event commits, and workspace operational controls are implemented.
   passed 7 files and 37 tests; Svelte diagnostics reported zero errors and
   warnings; all server-facing typechecks, the production smoke build, and all
   37 Playwright browser smoke tests passed on 2026-08-29.
-- Residual risk: Phase 5 must schedule only the exact prior confirmed candidate
-  across every generation/replay path and must never overwrite concurrent
-  manual canon during model-authored updates or reconciliation.
+- Phase 5 commits: `9b195797a` automatic successful-send confirmation;
+  `8c9ffccc8` bounded canonical change sets; `9ee87b48f` stale-source
+  reconciliation; `a3f549038` global/per-chat automation controls;
+  `4ed6744b9` post-commit worker wake/observation.
+- Phase 5 validation: the owning server matrix passed 10 files and 608 tests;
+  the client command/invalidation/settings/workspace matrix passed 5 files and
+  317 tests; client-library declarations, all server-facing typechecks, and
+  Svelte diagnostics passed with zero errors or warnings on 2026-08-29.
+- Residual risk: Phase 6 must keep import/export/rebuild bounded and preserve
+  user-authored documents across every restore and publish path.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -98,16 +106,15 @@ event commits, and workspace operational controls are implemented.
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Complete | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Complete | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Complete | Separate durable worker execution, explicit event generation, status, and operational recovery are reliable. |
-| [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | In progress | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
-| [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Pending | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
+| [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Complete | Successful sends confirm only their exact prior turn; bounded canonical change sets and safe stale-source reconciliation are live. |
+| [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | In progress | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Pending | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
 
 ## Next Action
 
-Start Phase 5 at the authoritative send-finalization boundary: resolve the
-accepted operation lineage, identify only the exact preceding active
-user/assistant source pair, and insert/reuse its automatic receipt and job in
-the successful finalization transaction.
+Start Phase 6 with deterministic vault export/import and an explicit rebuild
+job that stages derived output before one atomic publish while preserving every
+user-authored document.
 
 ## Maintenance Rules
 

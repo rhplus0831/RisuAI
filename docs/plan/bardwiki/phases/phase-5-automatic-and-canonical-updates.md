@@ -1,6 +1,6 @@
 # Phase 5: Automatic Confirmation and Canonical Updates
 
-Status: in progress.
+Status: complete.
 
 Goal: attach durable prior-turn confirmation to successful sends and safely
 maintain canonical wiki documents through validated, atomic model-authored
@@ -134,3 +134,36 @@ note.
   status and keep provider deadlines/bounds strict.
 - Fine-grained automatic rollback is unsafe after manual edits. Prefer explicit
   review over aggressive inversion.
+
+## Completion Note
+
+Completed on 2026-08-29 in five reviewable commits:
+
+- `9b195797a` schedules/reuses the exact preceding source tuple inside successful
+  inline, durable, and replayable finalization; first-send, continue,
+  regenerate, failure, and cancellation paths remain side-effect free.
+- `8c9ffccc8` adds strict JSON canonical compilation with at most 32 create or
+  named-H3 operations, complete preflight staging, version/hash fences, one
+  validation repair, one fresh-snapshot conflict recompilation, and one atomic
+  event/canonical revision/event commit.
+- `9ee87b48f` detects source edits/deletes/truncations/replacements at the
+  authoritative message boundary, cancels pending work, and either safely
+  inverts an unchanged manifest or marks affected live documents and the
+  receipt `needs_review` without changing Markdown.
+- `a3f549038` enables global and inherited per-chat automatic/canonical policy
+  controls and makes review state visible in the workspace.
+- `4ed6744b9` emits the queued job observation and wakes the isolated BardWiki
+  worker only after the generation transaction commits, including finalization
+  retry recovery.
+
+Crash/conflict proof: before-provider and provider failures leave no document
+rows; source mutation during provider work cancels the running job and prevents
+commit; a throw before commit rolls back the entire event/canonical set; a
+post-commit operational failure replays to the existing receipt/change-set
+identity; malformed output receives one repair and then fails atomically;
+concurrent canonical edits receive one fresh-snapshot compilation; later manual
+edits make inverse reconciliation visibly require review.
+
+Validation passed 10 server files/608 tests and 5 client files/317 tests, plus
+client-library declarations, all server-facing typechecks, and zero Svelte
+diagnostics.
