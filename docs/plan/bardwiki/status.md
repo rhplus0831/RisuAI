@@ -8,20 +8,19 @@ prompt, worker, or UI implementation has started. Phase 1 is current.
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 1, slice 1 complete.
-- Current implementation cursor: add revisioned settings/document command
-  handlers with narrow targeted reads/writes and optimistic fences.
+- Current phase: Phase 1, slices 1-2 complete.
+- Current implementation cursor: add targeted read routes, shared protocol and
+  browser resource reconciliation for chat/index/document/version state.
 - Blockers: none.
-- Runtime changes in this workstream: schema v33 and the low-level BardWiki
-  settings/document/version/link/search repository.
+- Runtime changes in this workstream: schema v33, low-level repository, and
+  revisioned settings/manual-document command routes with narrow events.
 - Validation: Phase 0 Prettier contract check passed on 2026-08-29.
 - Phase 0 commit: the contract/status commit that records this completion.
-- Phase 1 slice 1 validation: focused migration/repository run passed 2 files,
-  33 tests on 2026-08-29; current-worktree watched check is recorded before the
-  slice commit.
-- Residual risk: routes, revisioned commands, browser resources, and backup
-  classification are still intentionally absent until the remaining Phase 1
-  slices.
+- Phase 1 slices 1-2 validation: focused migration/repository/route run passed
+  3 files, 37 tests on 2026-08-29; current-worktree watched checks are recorded
+  before each slice commit.
+- Residual risk: targeted reads, browser resources, and backup classification
+  are still intentionally absent until the remaining Phase 1 slices.
 - Source investigation: complete for RisuBard semantics and the local settings,
   finalization, jobs/events, storage/API, and prompt-retrieval boundaries.
 
@@ -46,7 +45,7 @@ prompt, worker, or UI implementation has started. Phase 1 is current.
 | Phase | Status | Outcome |
 | --- | --- | --- |
 | [0. Contract and architecture](phases/phase-0-contract-and-architecture.md) | Complete | Exact types, states, routes, events, inheritance, errors, and test matrix are locked in [`CONTRACT.md`](CONTRACT.md). |
-| [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | In progress (1/4) | Schema v33 and low-level repository landed; commands, resources, and backup ownership remain. |
+| [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | In progress (2/4) | Schema/repository and revisioned manual commands landed; resources and backup ownership remain. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Pending | Global BardWiki settings and a chat-scoped manual document workspace are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Pending | Committed documents are selected and injected deterministically under budget. |
 | [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | Pending | Separate durable worker execution and explicit event-document generation are reliable. |
@@ -56,8 +55,8 @@ prompt, worker, or UI implementation has started. Phase 1 is current.
 
 ## Next Action
 
-Execute Phase 1, slice 2: add manual document/settings command handlers with
-narrow targeted mutation reads/writes and optimistic hash/version checks.
+Execute Phase 1, slice 3: add targeted resource reads, shared protocol/client
+decoders, manifest declarations, event invalidation, and cache application.
 
 ## Maintenance Rules
 

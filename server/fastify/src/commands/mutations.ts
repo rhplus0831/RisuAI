@@ -163,6 +163,7 @@ export const TARGETED_MUTATION_PATHS = {
   collection: 'targeted-collection',
   pluginStorage: 'targeted-plugin-storage',
   inlayCatalog: 'targeted-inlay-catalog',
+  bardWiki: 'targeted-bardwiki',
 } as const
 
 export type TargetedMutationPath = (typeof TARGETED_MUTATION_PATHS)[keyof typeof TARGETED_MUTATION_PATHS]

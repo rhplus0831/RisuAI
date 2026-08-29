@@ -209,6 +209,22 @@ function validateCommandEventForPersistence(event: CommandEvent): void {
 }
 
 export const COMMAND_EVENT_CATALOG = {
+  bardWikiSettingsUpdated: {
+    type: 'bardwiki.settings.updated',
+    resource: 'bardWikiChat',
+  },
+  bardWikiDocumentCreated: {
+    type: 'bardwiki.document.created',
+    resource: 'bardWikiDocument',
+  },
+  bardWikiDocumentUpdated: {
+    type: 'bardwiki.document.updated',
+    resource: 'bardWikiDocument',
+  },
+  bardWikiDocumentDeleted: {
+    type: 'bardwiki.document.deleted',
+    resource: 'bardWikiDocument',
+  },
   settingsUpdated: {
     type: 'settings.updated',
     resource: 'settings',

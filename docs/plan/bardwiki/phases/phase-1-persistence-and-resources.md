@@ -26,7 +26,25 @@ pnpm exec vitest run --config server/fastify/vitest.config.ts \
 # 2 files, 33 tests passed
 ```
 
-Production routes remain deliberately unregistered until Slice 2.
+At the Slice 1 boundary, production routes remained deliberately unregistered.
+
+Slice 2 added active-writer BardWiki chat-settings and manual document
+create/update/delete commands through the targeted SQLite mutation path. Each
+command validates a narrow body, participates in durable mutation-receipt
+replay, writes its document version/projections inside the command transaction,
+bumps the global revision once, and persists one narrow BardWiki event. Focused
+route tests cover auth, the complete manual command sequence, revision and
+document conflicts, invalid-path rollback, and mutation-id replay.
+
+Additional validation on 2026-08-29:
+
+```text
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/bardWikiRepository.test.ts \
+  server/fastify/__tests__/bardWikiRoutes.test.ts \
+  server/fastify/__tests__/db.test.ts
+# 3 files, 37 tests passed
+```
 
 ## Depends On
 

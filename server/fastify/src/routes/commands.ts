@@ -383,6 +383,23 @@ import type { MessageTranslationJobRegistry } from '../messageTranslationJobs.js
 import { runServerMessageTranslation } from '../translation/serverMessageTranslation.js'
 import type { GreetingTranslationJobRegistry } from '../greetingTranslationJobs.js'
 import { runServerGreetingTranslation } from '../translation/serverGreetingTranslation.js'
+import {
+  BARDWIKI_CONTEXT_POLICIES,
+  BARDWIKI_DOCUMENT_KINDS,
+  BARDWIKI_MEMORY_MODES,
+  BARDWIKI_CONFIRMATION_POLICIES,
+  BARDWIKI_REVIEW_STATES,
+  BardWikiConflictError,
+  BardWikiValidationError,
+  createBardWikiDocument,
+  deleteBardWikiDocument,
+  updateBardWikiChatSettings,
+  updateBardWikiDocument,
+  type BardWikiChatSettingsPatch,
+  type BardWikiDocumentKind,
+  type BardWikiContextPolicy,
+  type BardWikiReviewState,
+} from '../bardWikiRepository.js'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -9281,6 +9298,350 @@ export function registerCommandRoutes(
       return sendCommandError(reply, err)
     }
   })
+
+  app.patch('/api/v1/commands/bardwiki/chats/:chatId/settings', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiSettingsCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const settings = updateBardWikiChatSettings(innerDb, chatId, body.patch)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.bardWikiSettingsUpdated, id: chatId },
+            extra: { settings },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/bardwiki/chats/:chatId/documents', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const chatId = readBardWikiId((req.params as { chatId?: unknown }).chatId, 'chatId')
+      const body = readBardWikiCreateDocumentCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const document = createBardWikiDocument(innerDb, {
+            chatId,
+            ...body.document,
+            commandRevision: baseRevision + 1,
+          })
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiDocumentCreated,
+              id: document.id,
+              parentId: chatId,
+            },
+            extra: { document },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/bardwiki/chats/:chatId/documents/:documentId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { chatId?: unknown; documentId?: unknown }
+      const chatId = readBardWikiId(params.chatId, 'chatId')
+      const documentId = readBardWikiId(params.documentId, 'documentId')
+      const body = readBardWikiUpdateDocumentCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const document = updateBardWikiDocument(innerDb, chatId, documentId, {
+            expectedVersion: body.expectedVersion,
+            expectedContentHash: body.expectedContentHash,
+            ...body.patch,
+            commandRevision: baseRevision + 1,
+          })
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiDocumentUpdated,
+              id: document.id,
+              parentId: chatId,
+            },
+            extra: { document },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/bardwiki/chats/:chatId/documents/:documentId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { chatId?: unknown; documentId?: unknown }
+      const chatId = readBardWikiId(params.chatId, 'chatId')
+      const documentId = readBardWikiId(params.documentId, 'documentId')
+      const body = readBardWikiDeleteDocumentCommandBody(req.body)
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.bardWiki,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const document = deleteBardWikiDocument(innerDb, chatId, documentId, {
+            expectedVersion: body.expectedVersion,
+            expectedContentHash: body.expectedContentHash,
+            commandRevision: baseRevision + 1,
+          })
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.bardWikiDocumentDeleted,
+              id: document.id,
+              parentId: chatId,
+            },
+            extra: { document },
+          }
+        },
+      })
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+}
+
+function readBardWikiId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 200 || /[\u0000-\u001f\u007f]/u.test(value)) {
+    throw new ValidationError(`${label} must be a valid non-empty string`)
+  }
+  return value
+}
+
+function readBardWikiObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ValidationError(`${label} must be an object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function rejectUnsupportedBardWikiFields(
+  value: Record<string, unknown>,
+  allowed: readonly string[],
+  label: string,
+): void {
+  const allowedSet = new Set(allowed)
+  const unsupported = Object.keys(value).find((key) => !allowedSet.has(key))
+  if (unsupported) throw new ValidationError(`Unsupported ${label} field: ${unsupported}`)
+}
+
+function readBardWikiSettingsCommandBody(value: unknown): {
+  baseRevision?: unknown
+  patch: BardWikiChatSettingsPatch
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(body, ['baseRevision', 'patch'], 'BardWiki settings command')
+  const source = readBardWikiObject(body.patch, 'patch')
+  const allowed = [
+    'enabledOverride',
+    'memoryModeOverride',
+    'confirmationPolicyOverride',
+    'canonicalUpdatesOverride',
+    'totalTokenBudgetOverride',
+    'hybridHypaTokenBudgetOverride',
+    'hybridBardWikiTokenBudgetOverride',
+    'maxDocumentsOverride',
+    'maxLinkHopsOverride',
+    'recentMessageCountOverride',
+    'modelProfileIdOverride',
+    'modelProfileIdIsSet',
+    'promptPresetIdOverride',
+    'promptPresetIdIsSet',
+  ] as const
+  rejectUnsupportedBardWikiFields(source, allowed, 'BardWiki settings patch')
+  if (Object.keys(source).length === 0) throw new ValidationError('patch must include at least one setting')
+  const patch: BardWikiChatSettingsPatch = {}
+  for (const [key, raw] of Object.entries(source)) {
+    switch (key) {
+      case 'enabledOverride':
+      case 'canonicalUpdatesOverride':
+        if (raw !== null && typeof raw !== 'boolean') throw new ValidationError(`${key} must be boolean or null`)
+        patch[key] = raw as boolean | null
+        break
+      case 'memoryModeOverride':
+        if (raw !== null && (typeof raw !== 'string' || !BARDWIKI_MEMORY_MODES.includes(raw as never))) {
+          throw new ValidationError('memoryModeOverride is unsupported')
+        }
+        patch.memoryModeOverride = raw as BardWikiChatSettingsPatch['memoryModeOverride']
+        break
+      case 'confirmationPolicyOverride':
+        if (raw !== null && (typeof raw !== 'string' || !BARDWIKI_CONFIRMATION_POLICIES.includes(raw as never))) {
+          throw new ValidationError('confirmationPolicyOverride is unsupported')
+        }
+        patch.confirmationPolicyOverride = raw as BardWikiChatSettingsPatch['confirmationPolicyOverride']
+        break
+      case 'modelProfileIdIsSet':
+      case 'promptPresetIdIsSet':
+        if (typeof raw !== 'boolean') throw new ValidationError(`${key} must be a boolean`)
+        patch[key] = raw
+        break
+      case 'modelProfileIdOverride':
+      case 'promptPresetIdOverride':
+        if (raw !== null && typeof raw !== 'string') throw new ValidationError(`${key} must be string or null`)
+        patch[key] = raw as string | null
+        break
+      default:
+        if (raw !== null && !Number.isSafeInteger(raw)) throw new ValidationError(`${key} must be integer or null`)
+        ;(patch as Record<string, unknown>)[key] = raw
+    }
+  }
+  return { baseRevision: body.baseRevision, patch }
+}
+
+function readBardWikiCreateDocumentCommandBody(value: unknown): {
+  baseRevision?: unknown
+  document: BardWikiDocumentCommandFields &
+    Required<Pick<BardWikiDocumentCommandFields, 'kind' | 'title' | 'logicalPath' | 'markdown'>>
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(body, ['baseRevision', 'document'], 'BardWiki create command')
+  return {
+    baseRevision: body.baseRevision,
+    document: readBardWikiDocumentFields(body.document, false) as BardWikiDocumentCommandFields &
+      Required<Pick<BardWikiDocumentCommandFields, 'kind' | 'title' | 'logicalPath' | 'markdown'>>,
+  }
+}
+
+function readBardWikiUpdateDocumentCommandBody(value: unknown): {
+  baseRevision?: unknown
+  expectedVersion: number
+  expectedContentHash: string
+  patch: BardWikiDocumentCommandFields
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'expectedVersion', 'expectedContentHash', 'patch'],
+    'BardWiki update command',
+  )
+  const expectedVersion = readBardWikiExpectedVersion(body.expectedVersion)
+  const expectedContentHash = readBardWikiExpectedHash(body.expectedContentHash)
+  const patch = readBardWikiDocumentFields(body.patch, true)
+  if (Object.keys(patch).length === 0) throw new ValidationError('patch must include at least one document field')
+  return { baseRevision: body.baseRevision, expectedVersion, expectedContentHash, patch }
+}
+
+function readBardWikiDeleteDocumentCommandBody(value: unknown): {
+  baseRevision?: unknown
+  expectedVersion: number
+  expectedContentHash: string
+} {
+  const body = readBardWikiObject(value ?? {}, 'body')
+  rejectUnsupportedBardWikiFields(
+    body,
+    ['baseRevision', 'expectedVersion', 'expectedContentHash'],
+    'BardWiki delete command',
+  )
+  return {
+    baseRevision: body.baseRevision,
+    expectedVersion: readBardWikiExpectedVersion(body.expectedVersion),
+    expectedContentHash: readBardWikiExpectedHash(body.expectedContentHash),
+  }
+}
+
+interface BardWikiDocumentCommandFields {
+  kind?: BardWikiDocumentKind
+  title?: string
+  logicalPath?: string
+  aliases?: string[]
+  contextPolicy?: BardWikiContextPolicy
+  reviewState?: BardWikiReviewState
+  markdown?: string
+}
+
+function readBardWikiDocumentFields(value: unknown, partial: boolean): BardWikiDocumentCommandFields {
+  const source = readBardWikiObject(value, partial ? 'patch' : 'document')
+  const allowed = ['kind', 'title', 'logicalPath', 'aliases', 'contextPolicy', 'reviewState', 'markdown'] as const
+  rejectUnsupportedBardWikiFields(source, allowed, partial ? 'BardWiki document patch' : 'BardWiki document')
+  const result: Record<string, unknown> = {}
+  for (const key of allowed) {
+    const raw = source[key]
+    if (raw === undefined) continue
+    if (key === 'aliases') {
+      if (!Array.isArray(raw) || !raw.every((alias) => typeof alias === 'string')) {
+        throw new ValidationError('aliases must be an array of strings')
+      }
+      result.aliases = raw
+    } else if (key === 'kind') {
+      if (typeof raw !== 'string' || !BARDWIKI_DOCUMENT_KINDS.includes(raw as never)) {
+        throw new ValidationError('kind is unsupported')
+      }
+      result.kind = raw
+    } else if (key === 'contextPolicy') {
+      if (typeof raw !== 'string' || !BARDWIKI_CONTEXT_POLICIES.includes(raw as never)) {
+        throw new ValidationError('contextPolicy is unsupported')
+      }
+      result.contextPolicy = raw
+    } else if (key === 'reviewState') {
+      if (typeof raw !== 'string' || !BARDWIKI_REVIEW_STATES.includes(raw as never)) {
+        throw new ValidationError('reviewState is unsupported')
+      }
+      result.reviewState = raw
+    } else {
+      if (typeof raw !== 'string') throw new ValidationError(`${key} must be a string`)
+      result[key] = raw
+    }
+  }
+  if (!partial) {
+    for (const required of ['kind', 'title', 'logicalPath', 'markdown'] as const) {
+      if (result[required] === undefined) throw new ValidationError(`document.${required} is required`)
+    }
+  }
+  return result as BardWikiDocumentCommandFields
+}
+
+function readBardWikiExpectedVersion(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new ValidationError('expectedVersion must be a positive integer')
+  }
+  return value as number
+}
+
+function readBardWikiExpectedHash(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-f0-9]{64}$/u.test(value)) {
+    throw new ValidationError('expectedContentHash must be a SHA-256 hex string')
+  }
+  return value
 }
 
 function readSettingsGroup(group: unknown): SettingsGroup {
@@ -9715,6 +10076,16 @@ function sendCommandError(
   }
   if (err instanceof InitializeConflictError) {
     reply.code(409)
+    return { error: err.code }
+  }
+  if (err instanceof BardWikiConflictError) {
+    reply.code(409)
+    return { error: err.code }
+  }
+  if (err instanceof BardWikiValidationError) {
+    if (err.code === 'bardwiki_chat_not_found' || err.code === 'bardwiki_document_not_found') reply.code(404)
+    else if (err.code === 'bardwiki_limit_exceeded') reply.code(413)
+    else reply.code(400)
     return { error: err.code }
   }
   if (err instanceof ValidationError) {
