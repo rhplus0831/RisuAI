@@ -414,6 +414,73 @@ test('authored settings survive local backup restore and a full reload', async (
   await expect(page.getByRole('checkbox', { name: 'Show Memory Limit', exact: true })).toBeChecked()
 })
 
+test('authored character identity fields survive command acceptance and a full reload', async ({ page }) => {
+  test.setTimeout(60_000)
+  const database = browserSmokeDatabase()
+  const character = (database.characters as Array<Record<string, unknown>>)[0]
+  character.desc = 'Original description'
+  character.firstMessage = 'Original greeting'
+  await importDatabase(harness.app, browserSmokeAssertion, database)
+
+  await page.goto(`${harness.baseUrl}/character/char-smoke/chat-smoke`)
+  await waitForBrowserSmokeLoaded(page)
+  await page.locator('[data-risu-sidebar-tab="character"]').click()
+  const characterEditor = page.locator('[data-risu-lazy-surface="character-editor"]')
+  await expect(characterEditor).toHaveAttribute('data-risu-lazy-state', 'ready')
+
+  const name = page.getByRole('textbox', { name: 'Character Name', exact: true })
+  const description = page.getByRole('textbox', { name: 'Description', exact: true })
+  const firstMessage = page.getByRole('textbox', { name: 'First Message', exact: true })
+  await expect(name).toHaveValue('Smoke Character')
+  await expect(description).toHaveValue('Original description')
+  await expect(firstMessage).toHaveValue('Original greeting')
+
+  const acceptedPatch = page.waitForResponse((response) => {
+    if (
+      response.request().method() !== 'PATCH' ||
+      new URL(response.url()).pathname !== '/api/v1/commands/characters/char-smoke'
+    ) {
+      return false
+    }
+    const body = response.request().postDataJSON() as { patch?: Record<string, unknown> } | null
+    return body?.patch?.firstMessage === 'Authored greeting'
+  })
+  await name.fill('Authored Character')
+  await description.fill('Authored description')
+  await firstMessage.fill('Authored greeting')
+  expect((await acceptedPatch).ok()).toBe(true)
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const character = window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().characters[0]
+        return {
+          chaId: character.chaId,
+          desc: character.desc,
+          firstMessage: character.firstMessage,
+          name: character.name,
+        }
+      }),
+    )
+    .toEqual({
+      chaId: 'char-smoke',
+      desc: 'Authored description',
+      firstMessage: 'Authored greeting',
+      name: 'Authored Character',
+    })
+
+  await page.reload()
+  await waitForBrowserSmokeLoaded(page)
+  await page.locator('[data-risu-sidebar-tab="character"]').click()
+  await expect(characterEditor).toHaveAttribute('data-risu-lazy-state', 'ready')
+  await expect(page.getByRole('textbox', { name: 'Character Name', exact: true })).toHaveValue('Authored Character')
+  await expect(page.getByRole('textbox', { name: 'Description', exact: true })).toHaveValue('Authored description')
+  await expect(page.getByRole('textbox', { name: 'First Message', exact: true })).toHaveValue('Authored greeting')
+  await expect
+    .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().characters[0].chaId))
+    .toBe('char-smoke')
+})
+
 test('translator preset bindings persist independently across chats', async ({ page }) => {
   test.setTimeout(60_000)
   const database = browserSmokeDatabase()
