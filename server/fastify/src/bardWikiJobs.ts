@@ -260,7 +260,10 @@ export function claimNextBardWikiJob(
        RETURNING *`,
     )
     .get(now, ...values) as unknown as BardWikiJobRow | undefined
-  return row ? mapBardWikiJobRow(row) : null
+  if (!row) return null
+  const job = mapBardWikiJobRow(row)
+  updateReceiptForJob(db, job, 'processing', null, null, ['queued'])
+  return job
 }
 
 export function completeBardWikiJob(db: DatabaseSync, id: string): BardWikiJob | null {
@@ -273,7 +276,9 @@ export function failBardWikiJob(
   errorCode: string,
   errorSummary: string,
 ): BardWikiJob | null {
-  return transitionBardWikiJob(db, id, ['running'], 'failed', errorCode, errorSummary)
+  const job = transitionBardWikiJob(db, id, ['running'], 'failed', errorCode, errorSummary)
+  if (job) updateReceiptForJob(db, job, 'failed', errorCode, errorSummary, ['processing', 'queued'])
+  return job
 }
 
 export function retryOrFailBardWikiJob(
@@ -300,7 +305,10 @@ export function retryOrFailBardWikiJob(
     .get(normalizeErrorCode(errorCode), normalizeErrorSummary(errorSummary), nextRunAt, now, id) as unknown as
     | BardWikiJobRow
     | undefined
-  return row ? mapBardWikiJobRow(row) : null
+  if (!row) return null
+  const retried = mapBardWikiJobRow(row)
+  updateReceiptForJob(db, retried, 'queued', errorCode, errorSummary, ['processing'])
+  return retried
 }
 
 export function retryFailedBardWikiJob(
@@ -320,11 +328,18 @@ export function retryFailedBardWikiJob(
     .get(options.instanceId ?? randomUUID(), now, now, requireBoundedString(id, 'job id')) as
     | (BardWikiJobRow & {})
     | undefined
-  return row ? mapBardWikiJobRow(row) : null
+  if (!row) return null
+  const retried = mapBardWikiJobRow(row)
+  updateReceiptForJob(db, retried, 'queued', null, null, ['failed'])
+  return retried
 }
 
 export function cancelBardWikiJob(db: DatabaseSync, id: string): BardWikiJob | null {
-  return transitionBardWikiJob(db, id, ['pending', 'running'], 'cancelled', 'cancelled', 'BardWiki job cancelled')
+  const job = transitionBardWikiJob(db, id, ['pending', 'running'], 'cancelled', 'cancelled', 'BardWiki job cancelled')
+  if (job) {
+    updateReceiptForJob(db, job, 'failed', 'cancelled', 'BardWiki job cancelled', ['queued', 'processing'])
+  }
+  return job
 }
 
 export function recoverRunningBardWikiJobs(db: DatabaseSync, options: BardWikiJobRetryOptions = {}): BardWikiJob[] {
@@ -392,6 +407,29 @@ function transitionBardWikiJob(
       ...statuses,
     ) as unknown as BardWikiJobRow | undefined
   return row ? mapBardWikiJobRow(row) : null
+}
+
+function updateReceiptForJob(
+  db: DatabaseSync,
+  job: BardWikiJob,
+  state: 'queued' | 'processing' | 'failed',
+  errorCode: string | null,
+  errorSummary: string | null,
+  fromStates: readonly string[],
+): void {
+  if (job.kind !== 'apply_turn' || !job.receiptId) return
+  db.prepare(
+    `UPDATE bardwiki_turn_receipts
+     SET state = ?, error_code = ?, error_summary = ?,
+         updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE id = ? AND state IN (${fromStates.map(() => '?').join(', ')})`,
+  ).run(
+    state,
+    errorCode === null ? null : normalizeErrorCode(errorCode),
+    errorSummary === null ? null : normalizeErrorSummary(errorSummary),
+    job.receiptId,
+    ...fromStates,
+  )
 }
 
 function mapBardWikiJobRow(row: BardWikiJobRow): BardWikiJob {

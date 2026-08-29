@@ -1,6 +1,6 @@
 # Phase 4: Durable Jobs and Explicit Confirmation
 
-Status: in progress (slices 1-3 of 5 complete).
+Status: in progress (slices 1-4 of 5 complete).
 
 Goal: add restart-safe BardWiki background execution and explicit confirmation
 that creates one atomic event document per exact confirmed source version.
@@ -171,4 +171,31 @@ tests. The exact list belongs in the phase completion note.
   requests serialize to one accepted initial tuple.
 - Explicit confirmation plus job/command regressions passed 238 server tests;
   the browser command and complete durable outbox allowlist passed 234 tests;
+  `pnpm run check:server` passed.
+
+### 2026-08-29: slice 4 — strict analysis and exactly-once event commit
+
+- Added the built-in exact-pair event prompt, effective memory-profile
+  resolution (including explicit profile ids), provider deadline/abort scope,
+  request-history metadata, and a strict JSON schema with a 64 KiB output cap.
+- Model output can carry only `title`, `logicalPath`, `aliases`, and `markdown`.
+  The server normalizes and validates every field, allows one bounded repair
+  call only after schema/content validation failure, and never repairs
+  transport, timeout, cancellation, credential, source, or commit conflicts.
+- The handler rereads the source before provider work and again inside its
+  final transaction. Changed/deleted/disabled source becomes `obsolete`
+  without a document; provider and invalid-output failures flow through
+  bounded retry and visible receipt/job error states.
+- One final `BEGIN IMMEDIATE` commit forces kind `event`, context `relevant`,
+  and review `active`; collision-suffixes the path; writes the current
+  document, immutable version, user/assistant provenance, parsed links, search
+  projection, change manifest, applied receipt, one revision, and one persisted
+  targeted command event; or rolls every row back.
+- Receipt identity makes commit-before-job-completion replay a no-op that only
+  completes the operational job. Tests cover crashes after provider, during
+  commit, and after commit, plus source mutation before/after provider,
+  cancellation, repair success/failure, model unavailability, provenance, and
+  immediate prompt retrieval.
+- The event schema, handler, crash/replay, prompt selection, BardWiki job/route,
+  and isolated Hypa worker matrix passed 8 files and 63 tests;
   `pnpm run check:server` passed.

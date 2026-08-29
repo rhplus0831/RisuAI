@@ -11,9 +11,9 @@ operational controls are implemented.
 ## Snapshot
 
 - Plan state: runtime implementation in progress.
-- Current phase: Phase 4, three of five slices complete.
-- Current implementation cursor: execute `apply_turn` with strict event-draft
-  validation and an exactly-once atomic event-document commit.
+- Current phase: Phase 4, four of five slices complete.
+- Current implementation cursor: expose receipt/job status and retry/cancel
+  controls in the chat workspace, including terminal error presentation.
 - Blockers: none.
 - Runtime changes in this workstream: schema v33, low-level repository,
   revisioned settings/manual-document commands, shared wire schemas, targeted
@@ -58,6 +58,10 @@ operational controls are implemented.
   passed 238 server tests; the durable browser command and full outbox
   allowlist passed 234 tests; all server-facing typechecks passed on
   2026-08-29.
+- Phase 4 slice 4 validation: event schema, analysis/repair, atomic commit,
+  crash/replay, prompt retrieval, isolated BardWiki/Hypa worker, and status
+  route coverage passed 8 files and 63 tests; all server-facing typechecks
+  passed on 2026-08-29.
 - Residual risk: Phase 4 must isolate BardWiki job claiming, recovery, abort,
   and retention from the existing Hypa lane while making event commits exactly
   once across crashes.
@@ -88,16 +92,16 @@ operational controls are implemented.
 | [1. Persistence and resources](phases/phase-1-persistence-and-resources.md) | Complete | Authoritative persistence, manual commands/resources, cascade lifecycle, and backup/restore recovery are proven. |
 | [2. Settings and workspace](phases/phase-2-settings-and-workspace.md) | Complete | Global/per-chat settings and conflict-safe durable manual document editing are usable. |
 | [3. Prompt retrieval](phases/phase-3-prompt-retrieval.md) | Complete | Committed documents are selected and injected deterministically under budget. |
-| [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | In progress (3/5) | Separate durable worker execution and explicit event-document generation are reliable. |
+| [4. Jobs and explicit confirmation](phases/phase-4-jobs-and-explicit-confirmation.md) | In progress (4/5) | Separate durable worker execution and explicit event-document generation are reliable. |
 | [5. Automatic and canonical updates](phases/phase-5-automatic-and-canonical-updates.md) | Pending | Prior-turn automatic confirmation, canonical patches, and stale reconciliation land. |
 | [6. Lifecycle and interchange](phases/phase-6-lifecycle-and-interchange.md) | Pending | Edit/delete/fork/import/export/restore/rebuild and operational edges are complete. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Pending | Full regression, recovery, performance, browser, docs, and rollout proof closes the workstream. |
 
 ## Next Action
 
-Execute Phase 4 slice 4: add the event-analysis adapter, strict validation and
-one repair call, then atomically commit one provenance-backed event document
-and applied receipt across crash/replay boundaries.
+Execute Phase 4 slice 5: add receipt/job status, retry/cancel controls, and
+clear retryable/terminal errors to the targeted chat workspace, then close the
+phase with the full owning regression matrix.
 
 ## Maintenance Rules
 

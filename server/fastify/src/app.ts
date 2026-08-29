@@ -76,6 +76,7 @@ import { buildMemoryJobEvent, createMemoryEventBus, type MemoryEventSink } from 
 import { backfillLegacyHypaV3MemoryRows } from './memoryLegacyImport.js'
 import { MemoryWorker, type MemoryWorkerOptions } from './memoryWorker.js'
 import { BardWikiWorker, type BardWikiWorkerOptions } from './bardWikiWorker.js'
+import { createBardWikiApplyTurnHandler } from './bardWikiApplyTurnHandler.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
@@ -226,6 +227,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const memoryEventBus = createMemoryEventBus(app.log)
   if (opts.memoryEvents) memoryEventBus.subscribe(opts.memoryEvents)
   const emitMemoryEvent: MemoryEventSink = (event) => memoryEventBus.emit(event)
+  const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const defaultSummarizeOptions = { db, dataDir: config.dataDir }
   const defaultEmbedOptions = { db, dataDir: config.dataDir }
   const defaultMemoryHandlers = {
@@ -266,13 +268,20 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
           db,
           onEvent: emitMemoryEvent,
           ...bardWikiWorkerOptions,
+          handlers: {
+            apply_turn: createBardWikiApplyTurnHandler({
+              db,
+              dataDir: config.dataDir,
+              eventSink: commandEventSink,
+            }),
+            ...bardWikiWorkerOptions.handlers,
+          },
         })
   bardWikiWorker?.start()
   const authState = createAuthState(config.dataDir, {
     agentDevAuthBypass: config.agentDevAuthBypass === true,
   })
   const pushNotifications = createPushNotificationService(db, config.dataDir)
-  const commandEventSink = opts.commandEvents ?? createCommandEventSink()
   const displaySourceService = new DisplaySourceService({
     db,
     dataDir: config.dataDir,

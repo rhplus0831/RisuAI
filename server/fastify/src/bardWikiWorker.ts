@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import {
   claimNextBardWikiJob,
   completeBardWikiJob,
+  failBardWikiJob,
   listPendingBardWikiJobChatIds,
   pruneTerminalBardWikiJobs,
   recoverRunningBardWikiJobs,
@@ -31,6 +32,18 @@ export interface BardWikiWorkerOptions {
   onError?: (error: unknown) => void
   retry?: BardWikiJobRetryOptions
   terminalRetention?: false | (PruneTerminalBardWikiJobsOptions & { intervalMs?: number })
+}
+
+export class BardWikiJobHandlerError extends Error {
+  readonly code: string
+  readonly retryable: boolean
+
+  constructor(code: string, message: string, options: { retryable?: boolean } = {}) {
+    super(message)
+    this.name = 'BardWikiJobHandlerError'
+    this.code = code
+    this.retryable = options.retryable ?? true
+  }
 }
 
 export class BardWikiWorker {
@@ -193,13 +206,11 @@ export class BardWikiWorker {
       if (completed) this.emitJob(completed)
     } catch (error) {
       const summary = error instanceof Error && error.message ? error.message : String(error)
-      const next = retryOrFailBardWikiJob(
-        this.db,
-        job.id,
-        'bardwiki_job_handler_failed',
-        summary || 'BardWiki job handler failed',
-        this.retry,
-      )
+      const code = error instanceof BardWikiJobHandlerError ? error.code : 'bardwiki_job_handler_failed'
+      const next =
+        error instanceof BardWikiJobHandlerError && !error.retryable
+          ? failBardWikiJob(this.db, job.id, code, summary || 'BardWiki job handler failed')
+          : retryOrFailBardWikiJob(this.db, job.id, code, summary || 'BardWiki job handler failed', this.retry)
       if (next) this.emitJob(next)
     } finally {
       if (this.runningJobAbortControllers.get(job.id) === controller) {

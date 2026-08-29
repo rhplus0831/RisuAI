@@ -53,6 +53,21 @@ export function resolveExplicitBardWikiSourcePair(
   db: DatabaseSync,
   input: ExplicitBardWikiConfirmationInput,
 ): BardWikiSourcePair {
+  return resolveBardWikiSourcePair(db, input, { requireCurrentAssistant: true })
+}
+
+export function resolveBardWikiReceiptSourcePair(
+  db: DatabaseSync,
+  input: ExplicitBardWikiConfirmationInput,
+): BardWikiSourcePair {
+  return resolveBardWikiSourcePair(db, input, { requireCurrentAssistant: false })
+}
+
+function resolveBardWikiSourcePair(
+  db: DatabaseSync,
+  input: ExplicitBardWikiConfirmationInput,
+  options: { requireCurrentAssistant: boolean },
+): BardWikiSourcePair {
   if (!db.prepare('SELECT 1 FROM chats WHERE id = ?').get(input.chatId)) {
     throw new BardWikiValidationError('bardwiki_chat_not_found')
   }
@@ -64,8 +79,11 @@ export function resolveExplicitBardWikiSourcePair(
        ORDER BY seq DESC`,
     )
     .all(input.chatId) as unknown as ActiveMessageRow[]
-  const assistant = rows[0]
-  const user = rows[1]
+  const assistantIndex = options.requireCurrentAssistant
+    ? 0
+    : rows.findIndex((row) => row.uid === input.assistantMessageId)
+  const assistant = assistantIndex < 0 ? undefined : rows[assistantIndex]
+  const user = assistantIndex < 0 ? undefined : rows[assistantIndex + 1]
   if (
     !assistant ||
     !user ||
@@ -99,7 +117,7 @@ export function createOrReuseExplicitBardWikiConfirmation(
   input: ExplicitBardWikiConfirmationInput,
 ): ExplicitBardWikiConfirmationResult {
   const source = resolveExplicitBardWikiSourcePair(db, input)
-  const settings = resolveCurrentBardWikiSettings(db, input.chatId)
+  const settings = resolveEffectiveBardWikiSettingsForChat(db, input.chatId)
   if (!settings.enabledByDefault) throw new BardWikiValidationError('bardwiki_disabled')
 
   const existing = findExactReceipt(db, source)
@@ -154,7 +172,7 @@ function isSelectionBoundary(row: ActiveMessageRow): boolean {
   return message.disabled === true || message.disabled === 'allBefore' || message.isComment === true
 }
 
-function resolveCurrentBardWikiSettings(db: DatabaseSync, chatId: string): BardWikiGlobalSettings {
+export function resolveEffectiveBardWikiSettingsForChat(db: DatabaseSync, chatId: string): BardWikiGlobalSettings {
   const settings = loadSettingsFromSqlite(db)
   const global = readBardWikiGlobalSettings(
     settings && typeof settings === 'object' && !Array.isArray(settings)
