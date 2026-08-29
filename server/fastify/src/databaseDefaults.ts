@@ -33,6 +33,7 @@ import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '../.
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@risuai/protocol'
 
 type JsonRecord = Record<string, unknown>
 
@@ -473,6 +474,10 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'OaiCompAPIKeys', {})
   setDefault(database, 'reasoningEffort', 0)
   setDefault(database, 'verbosity', 1)
+  setDefault(database, 'bardWiki', DEFAULT_BARDWIKI_GLOBAL_SETTINGS)
+  if (!isBardWikiGlobalSettings(database.bardWiki)) {
+    database.bardWiki = cloneJson(DEFAULT_BARDWIKI_GLOBAL_SETTINGS)
+  }
   normalizeHypaV3Presets(database)
   normalizeTranslatorPresets(database)
   setDefault(database, 'showDeprecatedTriggerV2', false)

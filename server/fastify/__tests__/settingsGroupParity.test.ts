@@ -71,6 +71,7 @@ describe('settings group parity', () => {
       ['display', 'autoTranslateNotificationDeferCapSeconds'],
       ['display', 'paragraphBreakBySentences'],
       ['display', 'paragraphBreakSentenceCount'],
+      ['memory', 'bardWiki'],
     ] as const
 
     for (const [group, key] of expectedSettings) {

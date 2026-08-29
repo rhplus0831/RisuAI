@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createInitialDatabase, normalizeDatabaseDefaults } from '../src/databaseDefaults.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 import { LLMFlags } from '../../../src/ts/model/types.js'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 
 describe('database defaults', () => {
   it('normalizes prompt roles at top-level, legacy-preset, and modern-preset entry points', () => {
@@ -71,6 +72,7 @@ describe('database defaults', () => {
     expect(database.translatorExcludeThoughts).toBe(false)
     expect(database.reasoningEffort).toBe(0)
     expect(database.verbosity).toBe(1)
+    expect(database.bardWiki).toEqual(DEFAULT_BARDWIKI_GLOBAL_SETTINGS)
     expect(database.showSavingIcon).toBe(true)
     expect(database.useMonacoEditorOnDesktop).toBe(false)
     expect(database.useMonacoEditorOnMobile).toBe(false)
@@ -115,6 +117,21 @@ describe('database defaults', () => {
       scriptAux: {},
       overrides: {},
     })
+  })
+
+  it('preserves valid BardWiki defaults and resets malformed imported settings', () => {
+    expect(
+      normalizeDatabaseDefaults(
+        { bardWiki: { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS, memoryMode: 'hybrid' } },
+        { providerDefaults: false },
+      ).bardWiki,
+    ).toEqual({ ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS, memoryMode: 'hybrid' })
+    expect(
+      normalizeDatabaseDefaults(
+        { bardWiki: { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS, maxLinkHops: 99 } },
+        { providerDefaults: false },
+      ).bardWiki,
+    ).toEqual(DEFAULT_BARDWIKI_GLOBAL_SETTINGS)
   })
 
   it('normalizes local character and module script model overrides', () => {

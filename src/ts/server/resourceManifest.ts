@@ -243,7 +243,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
   },
   'settings:other-bots': {
     family: 'settings',
-    owners: ['src/lib/Setting/Pages/OtherBotSettings.svelte'],
+    owners: ['src/lib/Setting/Pages/OtherBotSettings.svelte', 'src/lib/Setting/Pages/BardWikiSettings.svelte'],
     requirements: [
       group('media', ['render', 'interact', 'mutate']),
       group('memory', ['render', 'interact', 'mutate']),
@@ -252,6 +252,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
       group('runtime', ['render', 'interact']),
       group('display', ['render'], ['useLegacyGUI']),
       collection('hypaV3Presets', ['render', 'interact', 'mutate']),
+      collection('promptPresets', ['render', 'interact']),
       projection('selected-character', ['interact', 'editor-prefill']),
       collection('promptTemplate', ['interact', 'editor-prefill']),
     ],

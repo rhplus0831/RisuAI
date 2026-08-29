@@ -61,6 +61,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   allowAllExtentionFiles: 'advanced',
   auxModelUnderModelSettings: 'advanced',
   banCharacterset: 'advanced',
+  bardWiki: 'memory',
   bias: 'providers',
   blockquoteStyling: 'display',
   botSettingAtStart: 'sidebar',

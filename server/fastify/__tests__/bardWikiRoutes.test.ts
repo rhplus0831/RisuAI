@@ -7,6 +7,8 @@ import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { getDatabaseLineage } from '../src/databaseLineage.js'
+import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { createInitialDatabase } from '../src/databaseDefaults.js'
 
 const subtle = webcrypto.subtle
 
@@ -205,6 +207,64 @@ describe('BardWiki revisioned commands', () => {
       headers: authHeaders(),
     })
     expect(wrongChat.statusCode).toBe(404)
+  })
+
+  it('persists strict global defaults through the canonical memory settings group', async () => {
+    const bardWiki = {
+      ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+      enabledByDefault: true,
+      memoryMode: 'hybrid' as const,
+      totalTokenBudget: 4096,
+      hybridHypaTokenBudget: 2048,
+      hybridBardWikiTokenBudget: 2048,
+    }
+    const db = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(createInitialDatabase()))
+    } finally {
+      db.close()
+    }
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: authHeaders(),
+      payload: { baseRevision: 0, patch: { bardWiki } },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      revision: 1,
+      event: { type: 'settings.updated', resource: 'settings', id: 'memory' },
+      acknowledgedKeys: ['bardWiki'],
+    })
+
+    const resource = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bardwiki/chats/chat-a',
+      headers: authHeaders(),
+    })
+    expect(resource.json()).toMatchObject({ globalSettings: bardWiki, effectiveSettings: bardWiki })
+
+    const invalid = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: authHeaders(),
+      payload: { baseRevision: 1, patch: { bardWiki: { ...bardWiki, maxDocuments: 1000 } } },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json()).toEqual({ error: 'bardWiki must match the BardWiki global settings contract' })
+
+    const unavailable = await app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: authHeaders(),
+      payload: {
+        baseRevision: 1,
+        patch: { bardWiki: { ...bardWiki, confirmationPolicy: 'automatic', canonicalUpdates: true } },
+      },
+    })
+    expect(unavailable.statusCode).toBe(400)
+    expect(unavailable.json()).toEqual({ error: 'BardWiki autonomous updates are not available yet' })
+    expect(inspectRows('SELECT revision FROM schema_version WHERE id = 1')).toEqual([{ revision: 1 }])
   })
 
   it('updates settings and creates, edits, and soft-deletes one document with one event/revision each', async () => {

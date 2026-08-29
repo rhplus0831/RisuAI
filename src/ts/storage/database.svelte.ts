@@ -56,6 +56,11 @@ import { normalizeTranslatorPresetState, type TranslatorPreset } from '../transl
 import { safeStructuredClone } from '../polyfill'
 import { SERVER_CHARACTER_SHELL_MARKER } from '../server/characterSummaryProtocol'
 import {
+  DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
+  isBardWikiGlobalSettings,
+  type BardWikiGlobalSettings,
+} from '@risuai/protocol'
+import {
   canUseServerCommands,
   createModelPresetCommand,
   createPromptPresetCommand,
@@ -3325,6 +3330,9 @@ export function setDatabase(data: Database) {
   data.providerCredentials ??= []
   data.reasoningEffort ??= 0
   data.verbosity ??= 1
+  if (!isBardWikiGlobalSettings(data.bardWiki)) {
+    data.bardWiki = { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS }
+  }
   data.hypaV3Presets ??= [
     createHypaV3Preset('Default', {
       summarizationPrompt: (data as { supaMemoryPrompt?: string }).supaMemoryPrompt ?? '',
@@ -4191,6 +4199,7 @@ export interface Database {
   banCharacterset: string[]
   showPromptComparison: boolean
   hypaV3: boolean
+  bardWiki: BardWikiGlobalSettings
   memoryAlgorithmType?: string
   supaModelType?: string
   hypaMemory?: boolean

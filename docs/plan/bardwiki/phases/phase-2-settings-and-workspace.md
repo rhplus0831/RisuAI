@@ -5,6 +5,38 @@ Status: in progress.
 Goal: make BardWiki manually usable through global settings and a chat-scoped
 document workspace while autonomous model updates remain disabled.
 
+## Progress
+
+Slice 1 added the strict global `bardWiki` object to canonical server and
+browser defaults and assigned it to the `memory` settings group. Generic
+settings writes now validate the shared TypeBox contract and reject automatic
+confirmation/canonical updates until their owning phase. The existing Memory
+page has a lazy fifth BardWiki tab with accessible enablement, mode, budget,
+selection, model-profile, and prompt-preset controls; unavailable autonomous
+controls remain visibly disabled. English and Korean define the complete new
+language contract, and the settings resource manifest owns the component's
+provider, memory, and prompt-preset dependencies.
+
+Validation on 2026-08-29:
+
+```text
+pnpm exec vitest run \
+  src/lib/Setting/Pages/BardWikiSettings.svelte.test.ts \
+  src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts \
+  src/ts/server/resourceManifest.test.ts \
+  src/lang/index.test.ts
+# 4 files, 77 tests passed
+
+pnpm exec vitest run --config server/fastify/vitest.config.ts \
+  server/fastify/__tests__/databaseDefaults.test.ts \
+  server/fastify/__tests__/settingsGroupParity.test.ts \
+  server/fastify/__tests__/bardWikiRoutes.test.ts
+# 3 files, 35 tests passed
+
+pnpm check:server
+# protocol, client-library, browser-smoke, and Fastify typechecks passed
+```
+
 ## Depends On
 
 - Phase 1 authoritative resources and manual commands are complete.

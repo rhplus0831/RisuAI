@@ -400,6 +400,7 @@ import {
   type BardWikiContextPolicy,
   type BardWikiReviewState,
 } from '../bardWikiRepository.js'
+import { isBardWikiGlobalSettings } from '@risuai/protocol'
 
 function commandEventOrigin(req: FastifyRequest): CommandEventOrigin | undefined {
   const writerSessionId = readActiveWriterSessionId(req)
@@ -1586,6 +1587,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'emotionProcesser',
   ],
   memory: [
+    'bardWiki',
     'supaMemoryKey',
     'hypaV3Key',
     'hypaMemoryKey',
@@ -9777,6 +9779,16 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
 }
 
 function validateSettingValue(key: string, value: unknown): void {
+  if (key === 'bardWiki' && !isBardWikiGlobalSettings(value)) {
+    throw new ValidationError('bardWiki must match the BardWiki global settings contract')
+  }
+  if (
+    key === 'bardWiki' &&
+    isBardWikiGlobalSettings(value) &&
+    (value.confirmationPolicy !== 'manual' || value.canonicalUpdates)
+  ) {
+    throw new ValidationError('BardWiki autonomous updates are not available yet')
+  }
   if (key === 'hypaV3Presets') validateHypaV3PresetSummaryModels(value)
   if (key === 'complexRegexCompatibilityMode' && value !== 'strict' && value !== 'worker') {
     throw new ValidationError('complexRegexCompatibilityMode must be strict or worker')

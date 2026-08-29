@@ -258,14 +258,25 @@ describe('OtherBotSettings navigation semantics', () => {
 
     const memory = buttonNamed(language.longTermMemory)
     const image = buttonNamed(language.imageGeneration)
+    const bardWiki = buttonNamed(language.bardWiki.title)
     expect(memory.getAttribute('aria-pressed')).toBe('true')
     expect(image.getAttribute('aria-pressed')).toBe('false')
+    expect(bardWiki.getAttribute('aria-pressed')).toBe('false')
+    expect(target.querySelector('[data-risu-bardwiki-settings]')).toBeNull()
 
-    image.click()
-    await tick()
+    bardWiki.click()
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bardwiki-settings]')).toBeTruthy())
 
     expect(memory.getAttribute('aria-pressed')).toBe('false')
-    expect(image.getAttribute('aria-pressed')).toBe('true')
+    expect(image.getAttribute('aria-pressed')).toBe('false')
+    expect(bardWiki.getAttribute('aria-pressed')).toBe('true')
+    expect(
+      target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.enabledByDefault}"]`),
+    ).toBeTruthy()
+    expect(
+      target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.automaticConfirmation}"]`)
+        ?.disabled,
+    ).toBe(true)
   })
 
   it('switches mounted layouts when the authoritative legacy-GUI setting changes', async () => {
