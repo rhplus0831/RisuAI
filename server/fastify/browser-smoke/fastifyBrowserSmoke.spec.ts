@@ -414,6 +414,85 @@ test('authored settings survive local backup restore and a full reload', async (
   await expect(page.getByRole('checkbox', { name: 'Show Memory Limit', exact: true })).toBeChecked()
 })
 
+test('translator preset bindings persist independently across chats', async ({ page }) => {
+  test.setTimeout(60_000)
+  const database = browserSmokeDatabase()
+  Object.assign(database, {
+    translator: 'ko',
+    translatorInputLanguage: 'en',
+    translatorType: 'llm',
+    translatorPresetId: 0,
+    translatorPrompt: 'Global translator',
+    translatorMaxResponse: 128,
+    translatorPresets: [
+      { id: 'translator-smoke-a', name: 'Translator Smoke A', prompt: 'Global translator', maxResponse: 128 },
+      { id: 'translator-smoke-b', name: 'Translator Smoke B', prompt: 'Chat translator', maxResponse: 256 },
+    ],
+  })
+  const character = database.characters as Array<{ chats: Array<Record<string, unknown>> }>
+  character[0].chats.push({
+    id: 'chat-smoke-b',
+    name: 'Smoke Chat B',
+    note: '',
+    localLore: [],
+    message: [],
+  })
+  await importDatabase(harness.app, browserSmokeAssertion, database)
+
+  const openChat = async (chatId: string) => {
+    await page.goto(`${harness.baseUrl}/character/char-smoke/${chatId}`)
+    await waitForBrowserSmokeLoaded(page)
+    await expect
+      .poll(() =>
+        page.evaluate(
+          (expectedChatId) =>
+            window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().characters[0].chats[
+              window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot().characters[0].chatPage
+            ].id === expectedChatId,
+          chatId,
+        ),
+      )
+      .toBe(true)
+  }
+  const presetSelect = () => page.locator('[data-risu-chat-translation-setting="translatorPresetId"] select').first()
+
+  await openChat('chat-smoke')
+  await expect(presetSelect()).toBeVisible()
+  await expect(presetSelect()).toHaveValue('')
+  const firstBindingSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === '/api/v1/commands/chats/chat-smoke',
+  )
+  await presetSelect().selectOption('translator-smoke-b')
+  expect((await firstBindingSaved).ok()).toBe(true)
+
+  await openChat('chat-smoke-b')
+  await expect(presetSelect()).toHaveValue('')
+  const secondBindingSaved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      new URL(response.url()).pathname === '/api/v1/commands/chats/chat-smoke-b',
+  )
+  await presetSelect().selectOption('translator-smoke-a')
+  expect((await secondBindingSaved).ok()).toBe(true)
+
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.fromEntries(
+          window
+            .__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot()
+            .characters[0].chats.map((chat) => [chat.id, chat.translatorPresetId ?? null]),
+        ),
+      ),
+    )
+    .toEqual({ 'chat-smoke': 'translator-smoke-b', 'chat-smoke-b': 'translator-smoke-a' })
+
+  await openChat('chat-smoke')
+  await expect(presetSelect()).toHaveValue('translator-smoke-b')
+})
+
 test('flagged observer shell survives denial and cross-tab writer takeover without mutation', async ({ browser }) => {
   test.setTimeout(60_000)
   await importDatabase(harness.app, browserSmokeAssertion, browserSmokeDatabase())

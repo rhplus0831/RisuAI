@@ -197,6 +197,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
       projection('selected-chat', ['render', 'interact', 'mutate', 'generate']),
       projection('selected-prompt-template', ['generate']),
       collection('promptTemplate', ['interact', 'generate']),
+      collection('translatorPresets', ['render', 'interact']),
     ],
   },
   'route:inlay': {
