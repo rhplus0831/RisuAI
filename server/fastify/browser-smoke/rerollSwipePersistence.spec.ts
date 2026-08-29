@@ -75,7 +75,7 @@ test('rerolled candidates survive a reload and stay swipe-recoverable', async ({
     (response) =>
       new URL(response.url()).pathname === '/api/v1/generation-operations' && response.request().method() === 'POST',
   )
-  await page.locator('.default-chat-screen .risu-chat[data-chat-index="1"] .button-icon-reroll').click()
+  await page.locator('.default-chat-screen .risu-chat[data-chat-index="1"] [data-risu-message-action="reroll"]').click()
   expect((await operationResponse).ok(), diagnostics.slice(-15).join('\n')).toBe(true)
   const projectionRow = page.locator(
     '.default-chat-screen .chat-message-container[data-generation-display-projection="regenerate"]',

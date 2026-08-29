@@ -39,7 +39,7 @@ describe('SideBarArrow accessible names', () => {
     component = mount(SideBarArrow, { target })
     await tick()
 
-    const collapseButton = target.querySelector<HTMLButtonElement>('button')
+    const collapseButton = target.querySelector<HTMLButtonElement>('[data-risu-sidebar-toggle="collapse"]')
     expect(collapseButton?.getAttribute('aria-label')).toBe(languageKorean.collapseSidebar)
 
     collapseButton?.click()
@@ -50,7 +50,7 @@ describe('SideBarArrow accessible names', () => {
     sideBarStore.set(false)
     await tick()
 
-    const expandButton = target.querySelector<HTMLButtonElement>('button')
+    const expandButton = target.querySelector<HTMLButtonElement>('[data-risu-sidebar-toggle="expand"]')
     expect(expandButton?.getAttribute('aria-label')).toBe(languageKorean.expandSidebar)
 
     expandButton?.click()

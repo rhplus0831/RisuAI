@@ -2428,6 +2428,7 @@
   <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
     {#if isComment}
       <button
+        data-risu-message-action="remove"
         aria-label={language.remove}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-remove ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
@@ -2468,6 +2469,7 @@
 {#snippet majorIconButtonsBody(showNames: boolean)}
   {#if getDatabase().useChatCopy && !blankMessage}
     <button
+      data-risu-message-action="copy"
       aria-label={language.copy}
       class="flex items-center hover:text-blue-500 transition-colors button-icon-copy"
       onclick={async () => {
@@ -2775,6 +2777,7 @@
   {#if idx > -1}
     {#if getDatabase().characters[selIdState.selId].ttsMode !== 'none' && getDatabase().characters[selIdState.selId].ttsMode}
       <button
+        data-risu-message-action="tts"
         aria-label={language.readMessageAloud}
         class="flex items-center hover:text-blue-500 transition-colors button-icon-tts"
         onclick={() => {
@@ -2787,6 +2790,7 @@
       </button>
     {/if}
     <button
+      data-risu-message-action="remove"
       aria-label={language.remove}
       class={'flex items-center hover:text-blue-500 transition-colors button-icon-remove ' +
         (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
@@ -2811,6 +2815,7 @@
 {#snippet translationButton(showNames = false)}
   {#if getDatabase().translator !== '' && getDatabase().translatorType !== 'none' && !blankMessage}
     <button
+      data-risu-message-action="translate"
       class={'flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate ' +
         (translated && !translationInProgress ? 'text-blue-400' : '') +
         (translationInProgress ? ' cursor-wait opacity-70' : '')}
@@ -2850,6 +2855,7 @@
   {/if}
   {#if idx > -1}
     <button
+      data-risu-message-action="edit"
       aria-label={editMode ? language.save : language.edit}
       class={'flex items-center hover:text-blue-500 transition-colors button-icon-edit ' +
         (editMode ? 'text-blue-400' : '') +
@@ -2876,6 +2882,7 @@
   {#if rerollIcon || altGreeting}
     {#if altGreeting}
       <button
+        data-risu-message-action="unreroll"
         aria-label={language.hotkeyDesc.unreroll}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-unreroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
@@ -2891,6 +2898,7 @@
         <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
       {/if}
       <button
+        data-risu-message-action="reroll"
         aria-label={language.reroll}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
@@ -2904,6 +2912,7 @@
       </button>
     {:else if getDatabase().swipe}
       <button
+        data-risu-message-action="reroll"
         aria-label={language.reroll}
         aria-haspopup="menu"
         aria-controls="risu-popup-menu"
@@ -2920,6 +2929,7 @@
       </button>
     {:else}
       <button
+        data-risu-message-action="reroll"
         aria-label={language.reroll}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
@@ -2947,6 +2957,7 @@
 {#snippet minorIconButtonsBody(showNames: boolean)}
   {#if getDatabase().enableBookmark}
     <button
+      data-risu-message-action="bookmark"
       aria-label={language.bookmark}
       class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked
         ? 'text-yellow-400'
@@ -2962,6 +2973,7 @@
   {/if}
 
   <button
+    data-risu-message-action="branch"
     aria-label={language.branch}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={async () => {
@@ -2977,6 +2989,7 @@
   </button>
 
   <button
+    data-risu-message-action="toggle-disabled"
     aria-label={language.disableMessage}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
@@ -3015,6 +3028,7 @@
   </button>
 
   <button
+    data-risu-message-action="disable-above"
     aria-label={language.disableAbove}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
@@ -3339,6 +3353,7 @@
                   ? 'Assistant'
                   : 'User'}</span>
               <button
+                data-risu-message-action="switch-role"
                 aria-label={language.switchMessageRole}
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {

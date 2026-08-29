@@ -842,7 +842,9 @@ describe('App route/refreeze mounted DOM behavior', () => {
     await tick()
     await Promise.resolve()
 
-    const dialog = target.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+    const dialog = target.querySelector<HTMLElement>(
+      '[data-risu-responsive-shell="shared-sidebar-dialog"][role="dialog"][aria-modal="true"]',
+    )
     expect(get(DynamicGUI)).toBe(true)
     expect(get(sideBarStore)).toBe(true)
     expect(dialog, target.innerHTML).toBeTruthy()
@@ -863,7 +865,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     await tick()
     await Promise.resolve()
 
-    expect(target.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+    expect(target.querySelector('[data-risu-responsive-shell="shared-sidebar-dialog"]')).toBeNull()
     expect(get(sideBarStore)).toBe(false)
     expect(opener.inert).toBe(false)
     expect(document.activeElement).toBe(opener)

@@ -1,0 +1,167 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { parseRoute } from './routerRoute'
+import {
+  phase4ControlInventory,
+  phase4ResponsiveShellClassification,
+  phase4RouteInventory,
+} from './uiCompatibilityInventory'
+
+const root = path.resolve('.')
+
+function read(relativePath: string): string {
+  return fs.readFileSync(path.join(root, relativePath), 'utf8')
+}
+
+function sortedUnique(values: Iterable<string>): string[] {
+  return [...new Set(values)].sort()
+}
+
+function quotedAttributeValues(source: string, attribute: string): string[] {
+  return sortedUnique([...source.matchAll(new RegExp(`${attribute}="([^"]+)"`, 'gu'))].map((match) => match[1]))
+}
+
+function testIdValues(source: string): string[] {
+  const values: string[] = []
+  for (const match of source.matchAll(/data-testid=(?:"([^"]+)"|\{([^}]+)\})/gu)) {
+    if (match[1]) values.push(match[1])
+    if (match[2]) values.push(...[...match[2].matchAll(/'([^']+)'/gu)].map((literal) => literal[1]))
+  }
+  return sortedUnique(values)
+}
+
+function routeKindValues(source: string): string[] {
+  const start = source.indexOf('export type AppRoute =')
+  const end = source.indexOf('export interface StateRouteInput', start)
+  expect(start, 'AppRoute declaration').toBeGreaterThanOrEqual(0)
+  expect(end, 'StateRouteInput declaration').toBeGreaterThan(start)
+  return sortedUnique([...source.slice(start, end).matchAll(/kind: '([^']+)'/gu)].map((match) => match[1]))
+}
+
+function mapKeys(source: string, declaration: string, nextDeclaration: string): string[] {
+  const start = source.indexOf(`const ${declaration}`)
+  const end = source.indexOf(`const ${nextDeclaration}`, start)
+  expect(start, `${declaration} declaration`).toBeGreaterThanOrEqual(0)
+  expect(end, `${nextDeclaration} declaration`).toBeGreaterThan(start)
+  return sortedUnique([...source.slice(start, end).matchAll(/\['([^']+)',/gu)].map((match) => match[1]))
+}
+
+function productionFiles(directory: string): string[] {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      if (['__fixtures__', '__tests__', 'docs', 'testHarness', 'tests'].includes(entry.name)) return []
+      return productionFiles(entryPath)
+    }
+    if (!/\.(?:svelte|ts)$/u.test(entry.name) || /(?:\.test\.|testStub)/u.test(entry.name)) return []
+    return [entryPath]
+  })
+}
+
+const semanticControlAttributes = [
+  'data-risu-bookmark-action',
+  'data-risu-chat-action',
+  'data-risu-grid-action',
+  'data-risu-message-action',
+  'data-risu-mobile-character-action',
+  'data-risu-responsive-shell',
+  'data-risu-sidebar-tab',
+  'data-risu-sidebar-toggle',
+] as const
+
+function markerName(attribute: (typeof semanticControlAttributes)[number]): string {
+  return attribute.slice('data-risu-'.length)
+}
+
+function productionControlKeys(): string[] {
+  const keys: string[] = []
+  for (const file of productionFiles(path.join(root, 'src'))) {
+    const source = fs.readFileSync(file, 'utf8')
+    const relativeFile = path.relative(root, file)
+    for (const attribute of semanticControlAttributes) {
+      for (const value of quotedAttributeValues(source, attribute)) {
+        keys.push(`${relativeFile}\0${markerName(attribute)}:${value}`)
+      }
+    }
+  }
+
+  const testIdSources = sortedUnique(
+    phase4ControlInventory
+      .filter(({ controls }) => controls.some((control) => control.startsWith('testid:')))
+      .map(({ source }) => source),
+  )
+  for (const relativeFile of testIdSources) {
+    for (const value of testIdValues(read(relativeFile))) {
+      keys.push(`${relativeFile}\0testid:${value}`)
+    }
+  }
+  return sortedUnique(keys)
+}
+
+describe('Phase 4 UI compatibility inventory', () => {
+  it('classifies every route family and registered settings/playground slug', () => {
+    const routerSource = read('src/ts/routerRoute.ts')
+    const rootSegments = sortedUnique([...routerSource.matchAll(/parts\[0\] === '([^']+)'/gu)].map((match) => match[1]))
+
+    expect(rootSegments).toEqual([...phase4RouteInventory.rootSegments])
+    expect(routeKindValues(routerSource)).toEqual([...phase4RouteInventory.routeKinds].sort())
+    expect(mapKeys(routerSource, 'settingIndexBySlug', 'settingSlugByIndex')).toEqual([
+      ...phase4RouteInventory.settingsSections,
+    ])
+    expect(mapKeys(routerSource, 'playgroundIndexBySlug', 'playgroundSlugByIndex')).toEqual([
+      ...phase4RouteInventory.playgroundTools,
+    ])
+    expect(sortedUnique(phase4RouteInventory.examples.map(({ kind }) => kind))).toEqual(
+      [...phase4RouteInventory.routeKinds].sort(),
+    )
+
+    for (const routeCase of phase4RouteInventory.examples) {
+      expect(parseRoute(routeCase.path).kind, routeCase.path).toBe(routeCase.kind)
+    }
+  })
+
+  it('requires an explicit owner for every stable primary UI control marker', () => {
+    const classifiedControls = phase4ControlInventory.flatMap(({ controls, source }) =>
+      controls.map((control) => `${source}\0${control}`),
+    )
+
+    expect(sortedUnique(classifiedControls)).toEqual(productionControlKeys())
+    expect(classifiedControls).toHaveLength(new Set(classifiedControls).size)
+    expect(phase4ControlInventory.every(({ owner, source }) => owner.length > 0 && source.length > 0)).toBe(true)
+  })
+
+  it('pins the shared responsive shell while leaving the baseline mobile-shell difference unresolved', () => {
+    const appSource = read('src/App.svelte')
+    const storesSource = read('src/ts/stores.svelte.ts')
+    const legacyImports = productionFiles(path.join(root, 'src')).filter((file) => {
+      if (phase4ResponsiveShellClassification.baselineShell.some((component) => file.endsWith(`${component}.svelte`))) {
+        return false
+      }
+      const source = fs.readFileSync(file, 'utf8')
+      return phase4ResponsiveShellClassification.baselineShell.some((component) =>
+        source.includes(`/Mobile/${component}.svelte`),
+      )
+    })
+    const betaMobileGuiOwners = productionFiles(path.join(root, 'src'))
+      .filter((file) => !file.endsWith('uiCompatibilityInventory.ts'))
+      .filter((file) => fs.readFileSync(file, 'utf8').includes(phase4ResponsiveShellClassification.baselineControl))
+
+    expect(phase4ResponsiveShellClassification).toMatchObject({
+      sourceObligation: 'fork-parity',
+      disposition: 'unresolved',
+      signedDecisionId: null,
+    })
+    expect(legacyImports).toEqual([])
+    expect(betaMobileGuiOwners).toEqual([])
+    expect(storesSource).toContain(`DynamicGUI.set(${phase4ResponsiveShellClassification.currentBreakpoint})`)
+    expect(appSource).toContain('{:else if $sideBarStore}')
+    expect(appSource).toContain(`data-risu-responsive-shell="${phase4ResponsiveShellClassification.currentShell}"`)
+    expect(appSource).toContain('use:modalFocusTrap')
+    expect(appSource).toContain('<Sidebar')
+    expect(appSource).toContain('<ChatScreen')
+    for (const component of phase4ResponsiveShellClassification.baselineShell) {
+      expect(appSource).not.toContain(component)
+    }
+  })
+})

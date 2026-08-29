@@ -7,6 +7,7 @@
 {#if !$MobileGUI}
   {#if $sideBarStore && !$DynamicGUI}
     <button
+      data-risu-sidebar-toggle="collapse"
       aria-label={language.collapseSidebar}
       onclick={() => {
         sideBarClosing.set(true)
@@ -16,6 +17,7 @@
     </button>
   {:else}
     <button
+      data-risu-sidebar-toggle="expand"
       aria-label={language.expandSidebar}
       onclick={() => {
         sideBarClosing.set(false)

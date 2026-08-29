@@ -467,6 +467,7 @@
     {:else if $sideBarStore}
       <div
         data-modal-root
+        data-risu-responsive-shell="shared-sidebar-dialog"
         use:modalFocusTrap
         role="dialog"
         aria-modal="true"
