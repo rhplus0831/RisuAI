@@ -131,7 +131,7 @@ describe('Phase 4 UI compatibility inventory', () => {
     expect(phase4ControlInventory.every(({ owner, source }) => owner.length > 0 && source.length > 0)).toBe(true)
   })
 
-  it('pins the shared responsive shell while leaving the baseline mobile-shell difference unresolved', () => {
+  it('pins the signed shared responsive shell in place of the unmounted baseline mobile shell', () => {
     const appSource = read('src/App.svelte')
     const storesSource = read('src/ts/stores.svelte.ts')
     const legacyImports = productionFiles(path.join(root, 'src')).filter((file) => {
@@ -149,8 +149,8 @@ describe('Phase 4 UI compatibility inventory', () => {
 
     expect(phase4ResponsiveShellClassification).toMatchObject({
       sourceObligation: 'fork-parity',
-      disposition: 'unresolved',
-      signedDecisionId: null,
+      disposition: 'signed-divergence',
+      signedDecisionId: 'ORC-DECISION-060',
     })
     expect(legacyImports).toEqual([])
     expect(betaMobileGuiOwners).toEqual([])

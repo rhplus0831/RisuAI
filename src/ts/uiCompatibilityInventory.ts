@@ -299,6 +299,6 @@ export const phase4ResponsiveShellClassification = {
   baselineShell: ['MobileHeader', 'MobileBody', 'MobileFooter'],
   currentShell: 'shared-sidebar-dialog',
   currentBreakpoint: 'window.innerWidth <= 1024',
-  signedDecisionId: null,
-  disposition: 'unresolved',
+  signedDecisionId: 'ORC-DECISION-060',
+  disposition: 'signed-divergence',
 } as const
