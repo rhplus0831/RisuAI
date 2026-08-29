@@ -77,9 +77,10 @@ storage is the deliberate arbitrary-JSON exception: GC loads only its
 the same sha256-id/`assets/<id>.<ext>` validation used everywhere else.
 
 The shared walker is authoritative for current portable-save and GC database
-fields. Legacy `.bin` rewriting uses a separate field list in
-`server/fastify/src/risuSave/localBackupDatabase.ts`; keep it synchronized or
-raw asset IDs can survive that conversion. Operational-only references
+fields. Portable discovery and legacy `.bin` rewriting consume the declarative
+owner vocabulary in `server/fastify/src/risuSave/assetOwnerCatalog.ts`; their
+shape-specific handlers remain separate and are exercised against the same
+positive corpus plus an arbitrary-JSON negative. Operational-only references
 (pending finalization rows and catalog membership) are appended only in the GC
 report because they are not part of an exported database; message-table scans
 are shared by repository export reports and GC. A grace window protects
@@ -161,9 +162,13 @@ the original app's legacy `.bin` local backup. Bundle zip import reads
 `manifest.json` version `1`, accepts a `.risu` database payload entry, validates
 `assets/<sha>.<ext>` entries by extension and content hash, ignores unrelated
 zip entries, and still caps inner `.risu` expansion even when the outer upload
-limit is unlimited. Legacy `.bin` import keeps recognized media records plus
-all hash-named supported asset records, including ONNX, CSS, and inlay-signature
-JSON, while skipping unrelated non-media/cold-storage records. Original-Risu
+limit is unlimited. Asset entries are hashed and written directly to temporary
+staging files instead of being concatenated in memory; the embedded database is
+the only large entry retained for the existing envelope decoder, and its
+buffering is guarded by that same inner `.risu` ceiling. Legacy `.bin` import
+streams recognized media records plus all hash-named supported asset records,
+including ONNX, CSS, and inlay-signature JSON, while seeking past unrelated
+non-media/cold-storage records without allocating their payloads. Original-Risu
 asset paths in the embedded database are canonicalized back to server asset ids
 before persistence, including custom or fallback non-sha256 media filenames.
 `src/ts/server/backups.ts` uses the `x-risu-estimated-backup-bytes` progress
