@@ -494,7 +494,7 @@ export async function exportChat(target: ChatExportTarget): Promise<void> {
       v = parseMarkdownSafe(v)
 
       if (doTranslate) {
-        v = await translateHTML(v, false, '', -1)
+        v = await translateHTML(v, false, '', -1, false, { translatorPresetId: chat.translatorPresetId })
       }
 
       if (anonymous) {

@@ -41,6 +41,20 @@ describe('translator pipeline resolution', () => {
       },
     ])
   })
+
+  it('resolves a stable chat binding before the global preset index', () => {
+    const state = {
+      translatorPresets: [
+        createTranslatorPreset('Global', { id: 'global', prompt: 'Global {{slot::content}}' }),
+        createTranslatorPreset('Chat', { id: 'chat', prompt: 'Chat {{slot::content}}' }),
+      ],
+      translatorPresetId: 0,
+    }
+
+    expect(resolveTranslatorPipeline(state, 'chat')[0].prompt).toBe('Chat {{slot::content}}')
+    expect(resolveTranslatorPipeline(state, 'missing')[0].prompt).toBe('Global {{slot::content}}')
+    expect(state.translatorPresetId).toBe(0)
+  })
 })
 
 describe('buildTranslatorStepMessages', () => {

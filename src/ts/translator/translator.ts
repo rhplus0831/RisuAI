@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { getDatabase, type character, type customscript } from '../storage/database.svelte'
-import { getCurrentTranslatorPresetFromState, type TranslatorPreset } from './presets'
+import { getTranslatorPresetFromState, type TranslatorPreset } from './presets'
 import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
@@ -26,6 +26,12 @@ const EDITTRANS_REGEX_CACHE_MAX_ENTRIES = 1000
 const LLM_CACHE_INDEX_KEY = '__risu_llm_translate_cache_index_v1__'
 export const DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS = 8
 
+export type TranslatorPresetScope = 'global' | { translatorPresetId?: string | null }
+
+interface CapturedTranslatorPresetScope {
+  translatorPresetId: string | null
+}
+
 const translateCache = new Map<string, string>()
 const pendingTranslateCache = new Map<string, Promise<string>>()
 const translateHTMLMemo = new Map<string, string>()
@@ -37,11 +43,34 @@ let activeTranslateCacheScope: string | null = null
 let llmCacheIndex: string[] | null = null
 let llmCacheIndexLoad: Promise<string[]> | null = null
 
-function getTranslateCacheKey(reverse: boolean, text: string) {
+function activeChatTranslatorPresetId(db = getDatabase()): string | null {
+  const character = db.characters?.[get(selectedCharID)]
+  const chatPage = character?.chatPage
+  const presetId = typeof chatPage === 'number' ? character?.chats?.[chatPage]?.translatorPresetId : undefined
+  return typeof presetId === 'string' && presetId.trim() ? presetId : null
+}
+
+function captureTranslatorPresetScope(
+  db = getDatabase(),
+  scope?: TranslatorPresetScope,
+): CapturedTranslatorPresetScope {
+  if (scope === 'global') return { translatorPresetId: null }
+  if (scope) {
+    const presetId = scope.translatorPresetId
+    return { translatorPresetId: typeof presetId === 'string' && presetId.trim() ? presetId : null }
+  }
+  return { translatorPresetId: activeChatTranslatorPresetId(db) }
+}
+
+function getTranslateCacheKey(
+  reverse: boolean,
+  text: string,
+  scope: CapturedTranslatorPresetScope = captureTranslatorPresetScope(),
+) {
   return JSON.stringify({
     reverse,
     text,
-    settings: getTranslatorSettingsSignature(getDatabase()),
+    settings: getTranslatorSettingsSignature(getDatabase(), scope),
   })
 }
 
@@ -71,8 +100,8 @@ function syncTranslateCacheScope(db = getDatabase()) {
   return scope
 }
 
-function readTranslateCache(reverse: boolean, text: string): string | undefined {
-  const key = getTranslateCacheKey(reverse, text)
+function readTranslateCache(reverse: boolean, text: string, scope: CapturedTranslatorPresetScope): string | undefined {
+  const key = getTranslateCacheKey(reverse, text, scope)
   if (!translateCache.has(key)) {
     return undefined
   }
@@ -83,13 +112,7 @@ function readTranslateCache(reverse: boolean, text: string): string | undefined 
   return translated
 }
 
-function writeTranslateCache(
-  reverse: boolean,
-  text: string,
-  translated: string,
-  scope: string,
-  cacheKey = getTranslateCacheKey(reverse, text),
-) {
+function writeTranslateCache(reverse: boolean, text: string, translated: string, scope: string, cacheKey: string) {
   if (syncTranslateCacheScope() !== scope) {
     return
   }
@@ -151,7 +174,7 @@ export const __translatorTestHooks = {
     const db = getDatabase()
     const currentCharacter = db.characters?.[get(selectedCharID)]
     if (!currentCharacter) return null
-    return getTranslateHTMLMemoKey(html, false, '', 0, currentCharacter)
+    return getTranslateHTMLMemoKey(html, false, '', 0, currentCharacter, captureTranslatorPresetScope(db))
   },
 }
 
@@ -177,9 +200,13 @@ function safeStringify(value: unknown) {
   }
 }
 
-export function getTranslatorSettingsSignature(db = getDatabase()) {
+export function getTranslatorSettingsSignature(
+  db = getDatabase(),
+  scope: TranslatorPresetScope | CapturedTranslatorPresetScope = captureTranslatorPresetScope(db),
+) {
   const selectedCharacter = db.characters?.[get(selectedCharID)]
-  const pipeline = db.translatorType === 'llm' ? resolveTranslatorPipeline(db) : null
+  const capturedScope = captureTranslatorPresetScope(db, scope)
+  const pipeline = db.translatorType === 'llm' ? resolveTranslatorPipeline(db, capturedScope.translatorPresetId) : null
   return {
     translatorType: db.translatorType,
     translator: db.translator,
@@ -209,8 +236,8 @@ export function getTranslatorSettingsSignature(db = getDatabase()) {
   }
 }
 
-export function getTranslatorSettingsSignatureKey(db = getDatabase()): string {
-  return safeStringify(getTranslatorSettingsSignature(db))
+export function getTranslatorSettingsSignatureKey(db = getDatabase(), scope?: TranslatorPresetScope): string {
+  return safeStringify(getTranslatorSettingsSignature(db, scope))
 }
 
 function getTranslateProfileCacheSignature(db = getDatabase()) {
@@ -303,9 +330,10 @@ function getTranslateHTMLMemoKey(
   charArg: simpleCharacterArgument | string,
   chatID: number,
   alwaysExistChar: character | simpleCharacterArgument,
+  scope: CapturedTranslatorPresetScope,
 ) {
   const db = getDatabase()
-  const preset = db.translatorType === 'llm' ? getCurrentTranslatorPreset() : null
+  const preset = db.translatorType === 'llm' ? getCurrentTranslatorPreset(scope.translatorPresetId) : null
   return safeStringify({
     version: 1,
     html,
@@ -317,7 +345,7 @@ function getTranslateHTMLMemoKey(
     chatID,
     chatScope: getCurrentTranslateCacheScope(db),
     translator: {
-      ...getTranslatorSettingsSignature(db),
+      ...getTranslatorSettingsSignature(db, scope),
       htmlTranslation: db.htmlTranslation,
       combineTranslation: db.combineTranslation,
       playMessageOnTranslateEnd: db.playMessageOnTranslateEnd,
@@ -602,7 +630,8 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
   }
 
   const currentChar = db.characters?.[get(selectedCharID)]
-  const preset = getCurrentTranslatorPreset()
+  const scope = captureTranslatorPresetScope(db)
+  const preset = getCurrentTranslatorPreset(scope.translatorPresetId)
   const translatorNote = resolveTranslatorNote(undefined, currentChar)
   const translateProfile = getTranslateProfileCacheSignature(db)
   return getLLMTranslationCacheKey(
@@ -620,25 +649,28 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
 
 let waitTrans = 0
 
-export function getCurrentTranslatorPreset(): TranslatorPreset {
-  return getCurrentTranslatorPresetFromState(getDatabase({ snapshot: true }))
+export function getCurrentTranslatorPreset(boundPresetId = activeChatTranslatorPresetId()): TranslatorPreset {
+  return getTranslatorPresetFromState(getDatabase({ snapshot: true }), boundPresetId)
 }
 
-export async function translate(text: string, reverse: boolean) {
-  let db = getDatabase()
+export async function translate(text: string, reverse: boolean, presetScope?: TranslatorPresetScope) {
+  const db = getDatabase()
+  const capturedPresetScope = captureTranslatorPresetScope(db, presetScope)
   syncTranslateCacheScope(db)
-  const cached = readTranslateCache(reverse, text)
+  const cached = readTranslateCache(reverse, text, capturedPresetScope)
   if (cached !== undefined) {
     return cached
   }
 
-  const key = getTranslateCacheKey(reverse, text)
+  const key = getTranslateCacheKey(reverse, text, capturedPresetScope)
   const pending = pendingTranslateCache.get(key)
   if (pending) {
     return pending
   }
 
-  const promise = runTranslator(text, reverse, db.translator, db.aiModel.startsWith('novellist') ? 'ja' : 'en')
+  const promise = runTranslator(text, reverse, db.translator, db.aiModel.startsWith('novellist') ? 'ja' : 'en', {
+    translatorPresetId: capturedPresetScope.translatorPresetId,
+  })
   pendingTranslateCache.set(key, promise)
 
   try {
@@ -655,10 +687,16 @@ export async function runTranslator(
   reverse: boolean,
   from: string,
   target: string,
-  exarg?: { translatorNote?: string },
+  exarg?: { translatorNote?: string; translatorPresetId?: string | null },
 ) {
+  const capturedPresetScope = captureTranslatorPresetScope(
+    getDatabase(),
+    exarg && Object.prototype.hasOwnProperty.call(exarg, 'translatorPresetId')
+      ? { translatorPresetId: exarg.translatorPresetId }
+      : undefined,
+  )
   const cacheScope = syncTranslateCacheScope()
-  const cacheKey = getTranslateCacheKey(reverse, text)
+  const cacheKey = getTranslateCacheKey(reverse, text, capturedPresetScope)
   const arg = {
     from: reverse ? from : target,
 
@@ -667,6 +705,7 @@ export async function runTranslator(
     host: 'translate.googleapis.com',
 
     translatorNote: exarg?.translatorNote,
+    translatorPresetId: capturedPresetScope.translatorPresetId,
   }
   const db = getDatabase()
   if (db.translatorType === 'llm' && db.translatorSendTextAsIs === true) {
@@ -719,11 +758,25 @@ export async function runTranslator(
   return result
 }
 
-async function translateMain(text: string, arg: { from: string; to: string; host: string; translatorNote?: string }) {
+async function translateMain(
+  text: string,
+  arg: {
+    from: string
+    to: string
+    host: string
+    translatorNote?: string
+    translatorPresetId: string | null
+  },
+) {
   let db = getDatabase()
   if (db.translatorType === 'llm') {
     const tr = arg.to || 'en'
-    return translateLLM(text, { to: tr, from: arg.from, translatorNote: arg.translatorNote })
+    return translateLLM(text, {
+      to: tr,
+      from: arg.from,
+      translatorNote: arg.translatorNote,
+      translatorPresetId: arg.translatorPresetId,
+    })
   }
   if (db.translatorType === 'deepl') {
     try {
@@ -838,6 +891,7 @@ export async function translateHTML(
   charArg: simpleCharacterArgument | string = '',
   chatID: number,
   regenerate = false,
+  presetScope?: TranslatorPresetScope,
 ): Promise<string> {
   const translationTarget = captureActiveChatTarget()
   let alwaysExistChar: character | simpleCharacterArgument
@@ -859,13 +913,14 @@ export async function translateHTML(
     }
   }
   let db = getDatabase()
+  const capturedPresetScope = captureTranslatorPresetScope(db, presetScope)
   const sendTextAsIs = db.translatorType === 'llm' && db.translatorSendTextAsIs === true
   if (findChatGenerationActivity(translationTarget)) {
     if (!(db.translatorType === 'llm' && (await getLLMCache(html)) !== null)) {
       return html
     }
   }
-  const initialMemoKey = getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar)
+  const initialMemoKey = getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar, capturedPresetScope)
   if (!regenerate) {
     const memoized = readTranslateHTMLMemo(initialMemoKey)
     if (memoized !== undefined) {
@@ -873,13 +928,21 @@ export async function translateHTML(
     }
   }
   const cacheTranslateHTMLResult = (translated: string) => {
-    writeTranslateHTMLMemo(getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar), translated)
+    writeTranslateHTMLMemo(
+      getTranslateHTMLMemoKey(html, reverse, charArg, chatID, alwaysExistChar, capturedPresetScope),
+      translated,
+    )
     return translated
   }
   if (db.translatorType === 'llm') {
     const tr = db.translator || 'en'
     const from = db.translatorInputLanguage
-    const r = await translateLLM(html, { to: tr, from: from, regenerate })
+    const r = await translateLLM(html, {
+      to: tr,
+      from: from,
+      regenerate,
+      translatorPresetId: capturedPresetScope.translatorPresetId,
+    })
     if (db.playMessageOnTranslateEnd) {
       playCompletionDing()
     }
@@ -938,7 +1001,7 @@ export async function translateHTML(
     }
 
     try {
-      const translated = await translate(text, reverse)
+      const translated = await translate(text, reverse, capturedPresetScope)
 
       const split = translated.split('■')
 
@@ -948,7 +1011,7 @@ export async function translateHTML(
         const fallbackCount = Math.min(currentChunk.chunks.length, fallbackRemaining)
         deeplXFallbackSegmentsUsed += fallbackCount
         for (let i = 0; i < fallbackCount; i++) {
-          currentChunk.deferreds[i].resolve(await translate(currentChunk.chunks[i], reverse))
+          currentChunk.deferreds[i].resolve(await translate(currentChunk.chunks[i], reverse, capturedPresetScope))
         }
         for (let i = fallbackCount; i < currentChunk.chunks.length; i++) {
           currentChunk.deferreds[i].resolve(currentChunk.chunks[i])
@@ -985,7 +1048,7 @@ export async function translateHTML(
       const translateChunks = combineAsSingleChunk ? [node.textContent || ''] : (node.textContent || '').split(/\n\n+/g)
       let translatedChunksPromises: Promise<string>[] = []
       for (const chunk of translateChunks) {
-        const translatedPromise = translate(chunk, reverse)
+        const translatedPromise = translate(chunk, reverse, capturedPresetScope)
         translatedChunksPromises.push(translatedPromise)
       }
 
@@ -1081,7 +1144,13 @@ function needSuperChunkedTranslate() {
 
 async function translateLLM(
   text: string,
-  arg: { to: string; from: string; regenerate?: boolean; translatorNote?: string },
+  arg: {
+    to: string
+    from: string
+    regenerate?: boolean
+    translatorNote?: string
+    translatorPresetId?: string | null
+  },
 ): Promise<string> {
   const originalText = text
   const db = getDatabase()
@@ -1089,7 +1158,11 @@ async function translateLLM(
   const charIndex = get(selectedCharID)
   const currentChar = db.characters[charIndex]
   const translatorNote = resolveTranslatorNote(arg.translatorNote, currentChar)
-  const preset = getCurrentTranslatorPreset()
+  const preset = getCurrentTranslatorPreset(
+    Object.prototype.hasOwnProperty.call(arg, 'translatorPresetId')
+      ? (arg.translatorPresetId ?? null)
+      : activeChatTranslatorPresetId(db),
+  )
   const translateProfile = getTranslateProfileCacheSignature(db)
   const cacheKey = getLLMTranslationCacheKey(originalText, arg, preset, translatorNote, currentChar, translateProfile)
   if (!arg.regenerate) {

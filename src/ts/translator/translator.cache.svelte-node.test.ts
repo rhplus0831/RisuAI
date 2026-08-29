@@ -323,6 +323,39 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(3)
   })
 
+  it('uses the active chat binding in browser pipeline and cache signatures', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorPresets = [
+      createTranslatorPreset('Global', {
+        id: 'global-preset',
+        prompt: 'Global {{slot::content}}',
+        maxResponse: 100,
+      }),
+      createTranslatorPreset('Chat', {
+        id: 'chat-preset',
+        prompt: 'Chat {{slot::content}}',
+        maxResponse: 100,
+      }),
+    ]
+    testState.db.translatorPresetId = 0
+    testState.db.characters[0].chats[0].translatorPresetId = 'chat-preset'
+    testState.requestChatData.mockImplementation(async () => ({
+      type: 'success',
+      result: `translation-${testState.requestChatData.mock.calls.length}`,
+    }))
+
+    const chatSignature = getTranslatorSettingsSignatureKey(testState.db)
+    await translate('same text', false)
+    testState.db.characters[0].chatPage = 1
+    const globalSignature = getTranslatorSettingsSignatureKey(testState.db)
+    await translate('same text', false)
+
+    expect(chatSignature).not.toBe(globalSignature)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+    expect(testState.requestChatData.mock.calls[0][0].formated[0].content).toBe('Chat same text')
+    expect(testState.requestChatData.mock.calls[1][0].formated[0].content).toBe('Global same text')
+  })
+
   it('does not share an in-flight LLM translation after the active prompt changes', async () => {
     testState.db.translatorType = 'llm'
     testState.db.translatorPresets = [

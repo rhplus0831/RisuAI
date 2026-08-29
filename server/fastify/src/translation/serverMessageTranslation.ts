@@ -84,7 +84,7 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
     const { character, chat } = requireChatLocation(characters, source.chatId)
     const greeting = selectedGreeting(character, chat)
     const characterId = typeof character.chaId === 'string' ? character.chaId : ''
-    const translatorIdentity = resolveRawMessageTranslatorIdentity({ settings, character })
+    const translatorIdentity = resolveRawMessageTranslatorIdentity({ settings, character, chat })
     const greetingTranslation = characterId
       ? getSourceValidGreetingTranslation(
           input.db,
@@ -97,6 +97,7 @@ export async function runServerMessageTranslation(input: RunServerMessageTransla
     const translation = await translateRawMessageData({
       settings,
       character,
+      chat,
       text: source.data,
       historyContext: {
         messages: getChatMessages(input.db, source.chatId),

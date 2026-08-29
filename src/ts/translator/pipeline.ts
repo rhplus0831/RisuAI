@@ -2,6 +2,7 @@ import type { OpenAIChat } from '../process/index.svelte'
 import { stripInternalReasoning } from '../process/internalReasoning'
 import {
   defaultTranslatorPrompt,
+  getTranslatorPresetFromState,
   normalizeTranslatorPresetState,
   type TranslatorPresetStateLike,
   type TranslatorPresetStep,
@@ -99,9 +100,12 @@ function stepsToRun(steps: readonly TranslatorPresetStep[]): TranslatorPresetSte
   return steps.length > 0 ? [steps[0]] : []
 }
 
-export function resolveTranslatorPipeline(stateLike: TranslatorPresetStateLike): TranslatorPresetStep[] {
+export function resolveTranslatorPipeline(
+  stateLike: TranslatorPresetStateLike,
+  boundPresetId?: string | null,
+): TranslatorPresetStep[] {
   const normalized = normalizeTranslatorPresetState(cloneStateLike(stateLike))
-  const preset = normalized.translatorPresets?.[normalized.translatorPresetId ?? 0]
+  const preset = getTranslatorPresetFromState(normalized, boundPresetId)
   if (!preset || typeof preset !== 'object' || !Array.isArray((preset as { steps?: unknown }).steps)) return []
   return (preset as { steps: TranslatorPresetStep[] }).steps.map((step) => ({
     ...step,

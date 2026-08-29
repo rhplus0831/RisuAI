@@ -35,6 +35,7 @@ export interface RawMessageTranslation {
 export interface RawMessageTranslationInput {
   settings: Record<string, unknown>
   character?: Record<string, unknown>
+  chat?: Record<string, unknown>
   text: string
   historyContext?: RawMessageTranslationHistoryContext
   signal: AbortSignal
@@ -105,6 +106,11 @@ function translatorNote(character: Record<string, unknown> | undefined): string 
   return stringValue(character?.translatorNote)
 }
 
+function boundTranslatorPresetId(chat: Record<string, unknown> | undefined): string | null {
+  const presetId = chat?.translatorPresetId
+  return typeof presetId === 'string' && presetId.trim() ? presetId : null
+}
+
 function translatorHistoryMaxTokens(settings: Record<string, unknown>): number {
   const value = settings.translatorHistoryMaxTokens ?? DEFAULT_TRANSLATOR_HISTORY_MAX_TOKENS
   return typeof value === 'number' && Number.isFinite(value) && value > 0
@@ -115,6 +121,7 @@ function translatorHistoryMaxTokens(settings: Record<string, unknown>): number {
 function translatorSettingsHash(input: {
   settings: Record<string, unknown>
   character?: Record<string, unknown>
+  chat?: Record<string, unknown>
   translatorType: RawMessageTranslatorType
   targetLanguage: string
   inputLanguage: string
@@ -124,7 +131,9 @@ function translatorSettingsHash(input: {
       translatorType: input.translatorType,
       targetLanguage: input.targetLanguage,
       inputLanguage: input.inputLanguage,
-      translatorPipeline: translatorPipelineSignature(resolveTranslatorPipeline(input.settings)),
+      translatorPipeline: translatorPipelineSignature(
+        resolveTranslatorPipeline(input.settings, boundTranslatorPresetId(input.chat)),
+      ),
       translatorSendTextAsIs: input.settings.translatorSendTextAsIs === true,
       translatorExcludeThoughts:
         input.settings.translatorSendTextAsIs === true && input.settings.translatorExcludeThoughts === true,
@@ -150,6 +159,7 @@ function translatorSettingsHash(input: {
 export function resolveRawMessageTranslatorIdentity(input: {
   settings: Record<string, unknown>
   character?: Record<string, unknown>
+  chat?: Record<string, unknown>
 }): RawMessageTranslatorIdentity {
   const translatorType = translatorTypeFromSettings(input.settings)
   const { targetLanguage, inputLanguage } = translationLanguages(input.settings)
@@ -160,6 +170,7 @@ export function resolveRawMessageTranslatorIdentity(input: {
     settingsHash: translatorSettingsHash({
       settings: input.settings,
       character: input.character,
+      chat: input.chat,
       translatorType,
       targetLanguage,
       inputLanguage,
@@ -350,6 +361,7 @@ async function collectFrames(frames: AsyncIterable<CompletionStreamFrame>): Prom
 async function translateWithLlm(
   settings: Record<string, unknown>,
   character: Record<string, unknown> | undefined,
+  chat: Record<string, unknown> | undefined,
   text: string,
   inputLanguage: string,
   targetLanguage: string,
@@ -363,7 +375,7 @@ async function translateWithLlm(
     halfStreaming: false,
     useStreaming: false,
   } as unknown as Database
-  const steps = resolveTranslatorPipeline(settings)
+  const steps = resolveTranslatorPipeline(settings, boundTranslatorPresetId(chat))
   return runTranslatorPipeline(
     {
       steps,
@@ -429,6 +441,7 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
     return translateWithLlm(
       input.settings,
       input.character,
+      input.chat,
       chunk,
       inputLanguage,
       targetLanguage,
@@ -446,6 +459,7 @@ export async function translateRawMessageData(input: RawMessageTranslationInput)
       ? await translateWithLlm(
           input.settings,
           input.character,
+          input.chat,
           translatorInputText(input.settings, input.text),
           inputLanguage,
           targetLanguage,

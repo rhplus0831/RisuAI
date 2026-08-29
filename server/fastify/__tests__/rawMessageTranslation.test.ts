@@ -421,6 +421,47 @@ describe('translateRawMessageData', () => {
     expect(result.text).toBe(rawResponse)
   })
 
+  it('resolves the chat-bound translator pipeline and settings hash', async () => {
+    rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
+    const settings = {
+      ...llmSettings(true),
+      translatorPresets: [
+        {
+          id: 'global-preset',
+          name: 'Global',
+          prompt: 'Global {{slot::content}}',
+          maxResponse: 100,
+        },
+        {
+          id: 'chat-preset',
+          name: 'Chat',
+          prompt: 'Chat {{slot::content}}',
+          maxResponse: 200,
+        },
+      ],
+      translatorPresetId: 0,
+    }
+
+    const globalIdentity = resolveRawMessageTranslatorIdentity({ settings })
+    const boundIdentity = resolveRawMessageTranslatorIdentity({
+      settings,
+      chat: { translatorPresetId: 'chat-preset' },
+    })
+    const result = await translateRawMessageData({
+      settings,
+      chat: { translatorPresetId: 'chat-preset' },
+      text: 'source',
+      signal: new AbortController().signal,
+    })
+
+    expect(boundIdentity.settingsHash).not.toBe(globalIdentity.settingsHash)
+    expect(result.settingsHash).toBe(boundIdentity.settingsHash)
+    expect(rawTranslationMocks.dispatchChatProvider.mock.calls[0][0]).toMatchObject({
+      formated: [{ role: 'system', content: 'Chat source' }],
+      outputTokens: 200,
+    })
+  })
+
   it('materializes durable profile runtime samplers for LLM translation dispatch', async () => {
     rawTranslationMocks.dispatchChatProvider.mockImplementation(async () => textFrames('translated'))
     const settings = {
