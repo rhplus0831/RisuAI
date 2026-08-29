@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "trackedFileCount": 700,
+  "trackedFileCount": 701,
   "categoryRules": [
     {
       "id": "assurance-tooling",
@@ -15,7 +15,7 @@
         "/^src\\/ts\\/__tests__\\/(?:renderCostHarness|sendCloneCountProbe)\\.test\\.ts$/",
         "/^src\\/ts\\/stores\\.importSafety\\.svelte\\.test\\.ts$/",
         "/^server\\/fastify\\/__tests__\\/(?:protocolPackage|serverLoadCostHarness|terminalFrameAssertions)\\.test\\.ts$/",
-        "/^util\\/(?:affected-tests|bundle-boundary-report|check-server|frontend-test-inventory|initial-preload-report|test-all|test-effectiveness-inventory|vite-warning-policy)\\.test\\.ts$/"
+        "/^util\\/(?:affected-tests|bundle-boundary-report|check-server|frontend-test-inventory|initial-preload-report|test-all|test-effectiveness-inventory|test-watch|vite-warning-policy)\\.test\\.ts$/"
       ]
     },
     {
@@ -31792,6 +31792,50 @@
         "action": "Retain and extend exact manifest assertions whenever a new support or audit dimension is introduced.",
         "validation": "7/7 focused cases and the complete inventory check passed in Phase 1",
         "state": "phase1-reviewed"
+      }
+    },
+    {
+      "file": "util/test-watch.test.ts",
+      "lane": "frontend-node",
+      "capability": "N",
+      "specializedOwnership": [
+        "full-frontend",
+        "broad-frontend-coverage",
+        "ordinary-frontend",
+        "test-all-ordinary-frontend"
+      ],
+      "primaryCategory": "A",
+      "categoryRule": "assurance-tooling",
+      "seamTags": [
+        "client-fastify"
+      ],
+      "kind": "architecture policy",
+      "dependencySignals": [
+        "filesystem"
+      ],
+      "caseCounts": {
+        "cases": null,
+        "skipped": null,
+        "parameterizedRows": null,
+        "source": "pending"
+      },
+      "audit": {
+        "caseOrMatrixOwner": "pending",
+        "valueClasses": [
+          "pending"
+        ],
+        "productionOwnerOrContract": "pending",
+        "plausibleDefect": "pending",
+        "risk": "pending",
+        "companionEvidence": "pending",
+        "decision": "pending",
+        "confidence": "pending",
+        "rationale": "pending",
+        "findingId": "",
+        "severity": "pending",
+        "action": "pending",
+        "validation": "pending",
+        "state": "pending"
       }
     },
     {

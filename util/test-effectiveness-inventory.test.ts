@@ -102,6 +102,7 @@ describe('test effectiveness inventory', () => {
     ])
 
     for (const [file, category] of examples) expect(categoryForTestFile(file).category, file).toBe(category)
+    expect(categoryForTestFile('util/test-watch.test.ts').ruleId).toBe('assurance-tooling')
 
     const documented = documentedCategoryRules()
     expect(new Set(documented.map((rule) => rule.id)).size).toBe(documented.length)

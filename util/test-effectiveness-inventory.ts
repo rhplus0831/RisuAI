@@ -171,7 +171,7 @@ export const categoryRules: readonly CategoryRule[] = [
       /^src\/ts\/__tests__\/(?:renderCostHarness|sendCloneCountProbe)\.test\.ts$/,
       /^src\/ts\/stores\.importSafety\.svelte\.test\.ts$/,
       /^server\/fastify\/__tests__\/(?:protocolPackage|serverLoadCostHarness|terminalFrameAssertions)\.test\.ts$/,
-      /^util\/(?:affected-tests|bundle-boundary-report|check-server|frontend-test-inventory|initial-preload-report|test-all|test-effectiveness-inventory|vite-warning-policy)\.test\.ts$/,
+      /^util\/(?:affected-tests|bundle-boundary-report|check-server|frontend-test-inventory|initial-preload-report|test-all|test-effectiveness-inventory|test-watch|vite-warning-policy)\.test\.ts$/,
     ],
   },
   {
