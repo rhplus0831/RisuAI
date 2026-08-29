@@ -74,7 +74,7 @@ describe('@risuai/protocol import boundary', () => {
   it('keeps every runtime module browser-safe and inside the protocol package', () => {
     const { runtimeFiles, violations } = auditImportBoundary(sourceRoot)
 
-    expect(runtimeFiles).toEqual(['generationSse.ts', 'index.ts', 'startupTelemetry.ts'])
+    expect(runtimeFiles).toEqual(['bardWiki.ts', 'generationSse.ts', 'index.ts', 'startupTelemetry.ts'])
     expect(violations).toEqual([])
   })
 

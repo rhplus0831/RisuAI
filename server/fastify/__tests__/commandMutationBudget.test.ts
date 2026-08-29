@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { TARGETED_MUTATION_PATHS } from '../src/commands/mutations.js'
 import {
+  BARDWIKI_WRITE_TABLES,
   BROAD_WRITE_TABLES,
   COMMAND_METRIC_REVIEW_GATES,
   assertCommandMetricGate,
@@ -190,7 +191,13 @@ describe('command mutation-range budgets', () => {
   })
 
   it('no table budget escapes the known physical-table universe', () => {
-    const universe = new Set<string>([...BROAD_WRITE_TABLES, 'chat_hypa_v3', 'inlay_catalog', 'messages'])
+    const universe = new Set<string>([
+      ...BARDWIKI_WRITE_TABLES,
+      ...BROAD_WRITE_TABLES,
+      'chat_hypa_v3',
+      'inlay_catalog',
+      'messages',
+    ])
     for (const [key, gate] of GATE_ENTRIES) {
       for (const field of ['expectedTables', 'maxTables', 'forbiddenTables'] as const) {
         for (const table of gate[field] ?? []) {

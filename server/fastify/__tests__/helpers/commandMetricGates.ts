@@ -39,6 +39,19 @@ export const BROAD_WRITE_TABLES = [
 
 const MESSAGE_STORE_TABLES = ['chat_hypa_v3', 'messages'] as const
 
+export const BARDWIKI_WRITE_TABLES = [
+  'bardwiki_change_manifest',
+  'bardwiki_chat_settings',
+  'bardwiki_document_search',
+  'bardwiki_document_sources',
+  'bardwiki_document_versions',
+  'bardwiki_documents',
+  'bardwiki_jobs',
+  'bardwiki_links',
+  'bardwiki_rebuild_staging',
+  'bardwiki_turn_receipts',
+] as const
+
 export interface CommandMetricGate {
   reviewGate: string
   sections: readonly CommandMetricSection[]
@@ -147,6 +160,12 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
     expectedTables: ['greeting_translations'],
+  },
+  'targeted-bardwiki': {
+    reviewGate: 'BardWiki commands write only the normalized per-chat wiki, receipt, and job tables',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: BARDWIKI_WRITE_TABLES,
   },
 } satisfies Record<string, CommandMetricGate>
 

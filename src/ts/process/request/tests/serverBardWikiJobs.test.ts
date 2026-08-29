@@ -23,6 +23,8 @@ const job = {
   errorSummary: null,
   attemptCount: 0,
   maxAttempts: 3,
+  progressCurrent: null,
+  progressTotal: null,
   nextRunAt: '2026-08-29T00:00:00.000Z',
   createdAt: '2026-08-29T00:00:00.000Z',
   updatedAt: '2026-08-29T00:00:00.000Z',
