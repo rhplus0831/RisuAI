@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
@@ -265,6 +265,32 @@ const RECOVERY_OWNERS: Record<string, Owner> = {
   },
 }
 
+const SIGNED_PLATFORM_NO_PORT_BOUNDARIES = {
+  wrapper_runtimes: {
+    absentPaths: ['src-tauri', 'capacitor.config.ts', 'server/hono', 'server.sh', 'server.bat'],
+    absentPackages: ['@tauri-apps/api', '@tauri-apps/cli', '@capacitor/core', 'electron'],
+  },
+  peerjs_multi_user: {
+    absentPaths: ['src/ts/sync/multiuser.ts'],
+    absentPackages: ['peerjs'],
+  },
+  account_and_drive_sync: {
+    absentPaths: [
+      'src/ts/storage/accountStorage.ts',
+      'src/ts/drive/drive.ts',
+      'src/ts/drive/accounter.ts',
+      'src/ts/sionyw.ts',
+      'src/lib/Setting/Pages/FilesSettings.svelte',
+      'public/functions/drive.js',
+    ],
+    absentPackages: ['openid-client'],
+  },
+  browser_local_authority: {
+    absentPaths: ['src/ts/storage/opfsStorage.ts', 'src/ts/storage/persistant.ts', 'src/preload.ts', 'public/sw.js'],
+    absentPackages: [],
+  },
+} as const
+
 describe('Phase 12 runtime, platform, limit, and diagnostic structure', () => {
   it('closes every auth, route-policy, runtime, startup, and push vocabulary', () => {
     for (const [relativePath, vocabularies] of Object.entries(CLOSED_STRING_VOCABULARIES)) {
@@ -342,6 +368,36 @@ describe('Phase 12 runtime, platform, limit, and diagnostic structure', () => {
       appSource.indexOf('registerGenerationRoutes(app'),
     )
     expect(appSource.indexOf("app.addHook('onClose'")).toBeLessThan(appSource.indexOf('db.close()'))
+  })
+
+  it('keeps each signed platform no-port boundary absent without removing supported web and recovery surfaces', () => {
+    const packageJson = JSON.parse(readRepoFile('package.json')) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+    const packageNames = new Set([
+      ...Object.keys(packageJson.dependencies ?? {}),
+      ...Object.keys(packageJson.devDependencies ?? {}),
+    ])
+
+    for (const [boundary, policy] of Object.entries(SIGNED_PLATFORM_NO_PORT_BOUNDARIES)) {
+      for (const relativePath of policy.absentPaths) {
+        expect(existsSync(path.join(REPO_ROOT, relativePath)), `${boundary}: ${relativePath}`).toBe(false)
+      }
+      for (const packageName of policy.absentPackages) {
+        expect(packageNames.has(packageName), `${boundary}: ${packageName}`).toBe(false)
+      }
+    }
+
+    expect(readRepoFile('src/ts/storage/autoStorage.ts')).toContain('this.realStorage = new FastifyStorage()')
+    expect(existsSync(path.join(REPO_ROOT, 'src/ts/storage/backup.ts'))).toBe(true)
+    expect(existsSync(path.join(REPO_ROOT, 'server/fastify/src/routes/backups.ts'))).toBe(true)
+    expect(existsSync(path.join(REPO_ROOT, 'public/service-worker.js'))).toBe(true)
+
+    const manifest = JSON.parse(readRepoFile('public/manifest.json')) as Record<string, unknown>
+    expect(manifest.display).toBe('standalone')
+    expect(manifest).not.toHaveProperty('share_target')
+    expect(manifest).not.toHaveProperty('file_handlers')
   })
 })
 
