@@ -229,6 +229,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'bardwiki.document.deleted',
     resource: 'bardWikiDocument',
   },
+  bardWikiChangeSetApplied: {
+    type: 'bardwiki.change_set.applied',
+    resource: 'bardWikiChat',
+  },
   settingsUpdated: {
     type: 'settings.updated',
     resource: 'settings',

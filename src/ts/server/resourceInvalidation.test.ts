@@ -2731,7 +2731,27 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase().language).toBe('en')
   })
 
-  it('refreshes only resident BardWiki indexes and document bodies after a document event', async () => {
+  it.each([
+    {
+      boundary: 'targeted document',
+      changedEvent: {
+        type: 'bardwiki.document.updated',
+        revision: 2,
+        resource: 'bardWikiDocument',
+        id: 'document-a',
+        parentId: 'chat-a',
+      },
+    },
+    {
+      boundary: 'chat-wide change-set',
+      changedEvent: {
+        type: 'bardwiki.change_set.applied',
+        revision: 2,
+        resource: 'bardWikiChat',
+        id: 'chat-a',
+      },
+    },
+  ])('refreshes resident BardWiki indexes and document bodies after a $boundary event', async ({ changedEvent }) => {
     const document = {
       id: 'document-a',
       chatId: 'chat-a',
@@ -2787,18 +2807,11 @@ describe('API-backed resource invalidation', () => {
       links: [],
     })
 
-    await expect(
-      refreshInvalidatedServerResources(
-        {
-          type: 'bardwiki.document.updated',
-          revision: 2,
-          resource: 'bardWikiDocument',
-          id: 'document-a',
-          parentId: 'chat-a',
-        },
-        { appliedRevision: 1, hooks },
-      ),
-    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    await expect(refreshInvalidatedServerResources(changedEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 2,
+      scope: 'targeted',
+    })
 
     expect(api.bardWikiChat).toHaveBeenCalledOnce()
     expect(api.bardWikiDocument).toHaveBeenCalledOnce()

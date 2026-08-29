@@ -131,7 +131,13 @@ export async function refreshLoadedBardWikiChat(
   }
   if (!applyBardWikiChatResource(chat)) return { status: 'error', error: 'BardWiki chat response was superseded' }
   let revision = chat.revision
-  for (const documentId of documentIds) {
+  const refreshedDocumentIds =
+    documentIds.length > 0
+      ? documentIds
+      : Object.keys(get(bardWikiResource).documents)
+          .filter((key) => key.startsWith(`${chatId}\u0000`))
+          .map((key) => key.slice(chatId.length + 1))
+  for (const documentId of refreshedDocumentIds) {
     if (!isBardWikiDocumentResourceLoaded(chatId, documentId)) continue
     if (!chat.documents.some((document) => document.id === documentId)) {
       removeBardWikiDocumentResource(chatId, documentId)

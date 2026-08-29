@@ -13,8 +13,10 @@ import { createOrReuseExplicitBardWikiConfirmation, hashBardWikiMessageContent }
 import {
   createBardWikiDocument,
   getBardWikiReceiptSummary,
+  getBardWikiDocument,
   listBardWikiDocuments,
   listBardWikiLinks,
+  updateBardWikiDocument,
 } from '../src/bardWikiRepository.js'
 import { BardWikiWorker } from '../src/bardWikiWorker.js'
 import { buildBardWikiQuery } from '../src/prompt/bardWikiQuery.js'
@@ -35,7 +37,7 @@ afterEach(() => {
   for (const dataDir of dataDirs.splice(0)) rmSync(dataDir, { recursive: true, force: true })
 })
 
-function createHarness(options: { maxAttempts?: number; pathCollision?: boolean } = {}) {
+function createHarness(options: { maxAttempts?: number; pathCollision?: boolean; canonicalUpdates?: boolean } = {}) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-bardwiki-apply-turn-'))
   dataDirs.push(dataDir)
   const db = openDatabase(dataDir)
@@ -44,6 +46,7 @@ function createHarness(options: { maxAttempts?: number; pathCollision?: boolean 
     ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
     enabledByDefault: true,
     memoryMode: 'bardwiki',
+    canonicalUpdates: options.canonicalUpdates ?? false,
   }
   db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(initial))
   db.prepare("INSERT INTO characters (id, position, data_json) VALUES ('character-a', 0, '{}')").run()
@@ -186,6 +189,171 @@ describe('BardWiki apply-turn handler', () => {
       expect(requests[1].repair).toMatchObject({ validationErrors: expect.any(Array) })
       expect(listBardWikiDocuments(harness.db, 'chat-a')).toHaveLength(1)
       expect(getBardWikiJob(harness.db, harness.confirmation.job.id)?.status).toBe('completed')
+    } finally {
+      harness.db.close()
+    }
+  })
+
+  it('commits the event and bounded canonical creates/section updates as one versioned change set', async () => {
+    const harness = createHarness({ canonicalUpdates: true })
+    const commandEvents = createCommandEventSink()
+    try {
+      const existing = createBardWikiDocument(harness.db, {
+        id: 'character-mira',
+        chatId: 'chat-a',
+        kind: 'character',
+        title: 'Mira',
+        logicalPath: 'Characters/Mira',
+        aliases: [],
+        markdown: '## Profile\n\nA traveler.\n\n### Traits\n\nOld traits.\n\n### History\n\nOld history.',
+        commandRevision: 0,
+      })
+      const worker = workerFor(harness, {
+        db: harness.db,
+        dataDir: harness.dataDir,
+        eventSink: commandEvents,
+        loadDatabase: () => createInitialDatabase(),
+        analyze: async () => VALID_DRAFT,
+        compileCanonical: async () =>
+          JSON.stringify([
+            {
+              op: 'upsert_h3',
+              documentId: existing.id,
+              baseVersion: existing.version,
+              baseHash: existing.contentHash,
+              heading: 'Traits',
+              markdown: 'Carries a lantern and watches the [[Old Tavern]].',
+            },
+            {
+              op: 'create',
+              kind: 'location',
+              title: 'Old Tavern',
+              logicalPath: 'Locations/Old Tavern',
+              aliases: ['The Tavern'],
+              sections: [{ heading: 'Overview', markdown: 'An old tavern with a lantern by the door.' }],
+            },
+          ]),
+      })
+
+      await expect(worker.tick()).resolves.toBe(true)
+
+      const documents = listBardWikiDocuments(harness.db, 'chat-a')
+      expect(documents).toHaveLength(3)
+      expect(getBardWikiDocument(harness.db, 'chat-a', existing.id)).toMatchObject({
+        version: 2,
+        markdown: expect.stringContaining('### Traits\n\nCarries a lantern'),
+      })
+      expect(getBardWikiDocument(harness.db, 'chat-a', existing.id)?.markdown).toContain('### History\n\nOld history.')
+      expect(documents.find((document) => document.kind === 'location')).toMatchObject({
+        contextPolicy: 'relevant',
+        reviewState: 'active',
+        markdown: '### Overview\n\nAn old tavern with a lantern by the door.',
+      })
+      expect(harness.db.prepare('SELECT COUNT(*) AS count FROM bardwiki_change_manifest').get()).toEqual({ count: 3 })
+      expect(harness.db.prepare('SELECT COUNT(*) AS count FROM bardwiki_document_sources').get()).toEqual({ count: 6 })
+      expect(getSchemaState(harness.db).revision).toBe(1)
+      expect(harness.db.prepare('SELECT COUNT(*) AS count FROM command_events').get()).toEqual({ count: 1 })
+      expect(commandEvents.list()).toMatchObject([
+        {
+          type: 'bardwiki.change_set.applied',
+          resource: 'bardWikiChat',
+          revision: 1,
+          id: 'chat-a',
+          jobId: harness.confirmation.job.id,
+          sourceMessageId: 'assistant-a',
+        },
+      ])
+    } finally {
+      harness.db.close()
+    }
+  })
+
+  it('recompiles once from a fresh snapshot when a concurrent manual edit changes a canonical fence', async () => {
+    const harness = createHarness({ canonicalUpdates: true })
+    try {
+      const existing = createBardWikiDocument(harness.db, {
+        id: 'character-mira',
+        chatId: 'chat-a',
+        kind: 'character',
+        title: 'Mira',
+        logicalPath: 'Characters/Mira',
+        markdown: '### Traits\n\nOld traits.\n\n### Notes\n\nKeep this.',
+        commandRevision: 0,
+      })
+      let compileCalls = 0
+      let manualEditApplied = false
+      const worker = workerFor(harness, {
+        db: harness.db,
+        dataDir: harness.dataDir,
+        loadDatabase: () => createInitialDatabase(),
+        analyze: async () => VALID_DRAFT,
+        compileCanonical: async (request) => {
+          compileCalls += 1
+          const snapshot = request.documents.find((document) => document.id === existing.id)!
+          return JSON.stringify([
+            {
+              op: 'upsert_h3',
+              documentId: snapshot.id,
+              baseVersion: snapshot.version,
+              baseHash: snapshot.contentHash,
+              heading: 'Traits',
+              markdown: `Compiler pass ${compileCalls}.`,
+            },
+          ])
+        },
+        hooks: {
+          afterProvider: () => {
+            if (manualEditApplied) return
+            manualEditApplied = true
+            updateBardWikiDocument(harness.db, 'chat-a', existing.id, {
+              expectedVersion: existing.version,
+              expectedContentHash: existing.contentHash,
+              markdown: '### Traits\n\nManual interim.\n\n### Notes\n\nManual note survives.',
+              commandRevision: 0,
+            })
+          },
+        },
+      })
+
+      await worker.tick()
+
+      expect(compileCalls).toBe(2)
+      expect(getBardWikiDocument(harness.db, 'chat-a', existing.id)).toMatchObject({
+        version: 3,
+        markdown: expect.stringContaining('### Traits\n\nCompiler pass 2.'),
+      })
+      expect(getBardWikiDocument(harness.db, 'chat-a', existing.id)?.markdown).toContain(
+        '### Notes\n\nManual note survives.',
+      )
+      expect(getSchemaState(harness.db).revision).toBe(1)
+    } finally {
+      harness.db.close()
+    }
+  })
+
+  it('rolls back the event when canonical output remains invalid after one repair', async () => {
+    const harness = createHarness({ canonicalUpdates: true, maxAttempts: 1 })
+    let compilerCalls = 0
+    try {
+      const worker = workerFor(harness, {
+        db: harness.db,
+        dataDir: harness.dataDir,
+        loadDatabase: () => createInitialDatabase(),
+        analyze: async () => VALID_DRAFT,
+        compileCanonical: async () => {
+          compilerCalls += 1
+          return '[{"op":"replace_all"}]'
+        },
+      })
+      await worker.tick()
+      expect(compilerCalls).toBe(2)
+      expect(getBardWikiJob(harness.db, harness.confirmation.job.id)).toMatchObject({
+        status: 'failed',
+        errorCode: 'bardwiki_model_output_invalid',
+      })
+      expect(listBardWikiDocuments(harness.db, 'chat-a')).toEqual([])
+      expect(harness.db.prepare('SELECT * FROM bardwiki_change_manifest').all()).toEqual([])
+      expect(getSchemaState(harness.db).revision).toBe(0)
     } finally {
       harness.db.close()
     }

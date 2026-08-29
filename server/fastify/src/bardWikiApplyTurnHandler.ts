@@ -8,10 +8,12 @@ import {
 } from './commands/events.js'
 import { bumpRevision, getSchemaState } from './db.js'
 import {
+  BardWikiConflictError,
   createBardWikiDocument,
   getBardWikiDocument,
   getBardWikiReceiptSummary,
   normalizeBardWikiPath,
+  updateBardWikiDocument,
   type BardWikiReceiptSummary,
 } from './bardWikiRepository.js'
 import {
@@ -28,6 +30,16 @@ import {
   type BardWikiEventAnalyzer,
   type BardWikiEventDraft,
 } from './bardWikiEventModel.js'
+import {
+  BARDWIKI_CANONICAL_MODEL_OUTPUT_MAX_BYTES,
+  compileBardWikiCanonical,
+  snapshotBardWikiCanonicalDocuments,
+  stageBardWikiCanonicalChanges,
+  validateBardWikiCanonicalOperations,
+  type BardWikiCanonicalCompiler,
+  type BardWikiCanonicalDocumentSnapshot,
+  type BardWikiStagedCanonicalChange,
+} from './bardWikiCanonicalModel.js'
 import { BardWikiJobHandlerError, type BardWikiJobHandlerContext } from './bardWikiWorker.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 
@@ -36,6 +48,7 @@ export interface BardWikiApplyTurnHandlerOptions {
   dataDir: string
   eventSink?: CommandEventSink
   analyze?: BardWikiEventAnalyzer
+  compileCanonical?: BardWikiCanonicalCompiler
   loadDatabase?: (chatId: string) => unknown
   providerFetchDeadlineMs?: number
   hooks?: {
@@ -47,6 +60,7 @@ export interface BardWikiApplyTurnHandlerOptions {
 
 export function createBardWikiApplyTurnHandler(options: BardWikiApplyTurnHandlerOptions) {
   const analyze = options.analyze ?? analyzeBardWikiEvent
+  const compileCanonical = options.compileCanonical ?? compileBardWikiCanonical
   return async (job: BardWikiJob, context: BardWikiJobHandlerContext): Promise<void> => {
     if (job.kind !== 'apply_turn') throw new BardWikiJobHandlerError('bardwiki_invalid_job', 'Expected apply_turn job')
     const payload = job.payload as BardWikiApplyTurnJobPayload
@@ -133,8 +147,41 @@ export function createBardWikiApplyTurnHandler(options: BardWikiApplyTurnHandler
       }
     }
 
+    let canonicalChanges =
+      payload.canonicalEnabled && settings.canonicalUpdates
+        ? await compileCanonicalChanges({
+            options,
+            compileCanonical,
+            database,
+            settings,
+            job,
+            receipt,
+            payload,
+            draft,
+            context,
+          })
+        : []
     options.hooks?.afterProvider?.()
-    const committedEvent = commitEventDraft(options, job, receipt, payload, draft)
+    let committedEvent: CommandEvent | null
+    try {
+      committedEvent = commitChangeSet(options, job, receipt, payload, draft, canonicalChanges)
+    } catch (error) {
+      if (!(error instanceof BardWikiConflictError) || canonicalChanges.length === 0) throw error
+      canonicalChanges = await compileCanonicalChanges({
+        options,
+        compileCanonical,
+        database,
+        settings,
+        job,
+        receipt,
+        payload,
+        draft,
+        context,
+        allowRepair: false,
+      })
+      options.hooks?.afterProvider?.()
+      committedEvent = commitChangeSet(options, job, receipt, payload, draft, canonicalChanges)
+    }
     if (!committedEvent) return
     options.hooks?.afterCommit?.()
     try {
@@ -143,6 +190,95 @@ export function createBardWikiApplyTurnHandler(options: BardWikiApplyTurnHandler
       // The persisted command event and targeted read remain authoritative.
     }
   }
+}
+
+async function compileCanonicalChanges(args: {
+  options: BardWikiApplyTurnHandlerOptions
+  compileCanonical: BardWikiCanonicalCompiler
+  database: Database
+  settings: ReturnType<typeof resolveEffectiveBardWikiSettingsForChat>
+  job: BardWikiJob
+  receipt: BardWikiReceiptSummary
+  payload: BardWikiApplyTurnJobPayload
+  draft: BardWikiEventDraft
+  context: BardWikiJobHandlerContext
+  allowRepair?: boolean
+}): Promise<BardWikiStagedCanonicalChange[]> {
+  const snapshot = snapshotBardWikiCanonicalDocuments(args.options.db, args.job.chatId)
+  let originalOutput: string
+  try {
+    originalOutput = await args.compileCanonical({
+      db: args.options.db,
+      chatId: args.job.chatId,
+      database: args.database,
+      settings: args.settings,
+      eventDraft: args.draft,
+      documents: snapshot,
+      jobId: args.job.id,
+      receiptId: args.receipt.id,
+      promptVersion: args.payload.promptVersion,
+      signal: args.context.signal,
+      providerFetchDeadlineMs: args.options.providerFetchDeadlineMs,
+    })
+  } catch (error) {
+    if (args.context.signal.aborted) throw args.context.signal.reason ?? error
+    throw new BardWikiJobHandlerError(
+      'bardwiki_model_unavailable',
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+  try {
+    return validateAndStageCanonical(originalOutput, snapshot)
+  } catch (validationError) {
+    if (args.allowRepair === false) {
+      throw new BardWikiJobHandlerError(
+        'bardwiki_model_output_invalid',
+        validationError instanceof Error ? validationError.message : String(validationError),
+      )
+    }
+    const validationErrors = [validationError instanceof Error ? validationError.message : String(validationError)]
+    let repairedOutput: string
+    try {
+      repairedOutput = await args.compileCanonical({
+        db: args.options.db,
+        chatId: args.job.chatId,
+        database: args.database,
+        settings: args.settings,
+        eventDraft: args.draft,
+        documents: snapshot,
+        jobId: args.job.id,
+        receiptId: args.receipt.id,
+        promptVersion: args.payload.promptVersion,
+        repair: {
+          originalOutput: truncateUtf8(originalOutput, BARDWIKI_CANONICAL_MODEL_OUTPUT_MAX_BYTES),
+          validationErrors,
+        },
+        signal: args.context.signal,
+        providerFetchDeadlineMs: args.options.providerFetchDeadlineMs,
+      })
+    } catch (error) {
+      if (args.context.signal.aborted) throw args.context.signal.reason ?? error
+      throw new BardWikiJobHandlerError(
+        'bardwiki_model_unavailable',
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+    try {
+      return validateAndStageCanonical(repairedOutput, snapshot)
+    } catch (repairError) {
+      throw new BardWikiJobHandlerError(
+        'bardwiki_model_output_invalid',
+        repairError instanceof Error ? repairError.message : String(repairError),
+      )
+    }
+  }
+}
+
+function validateAndStageCanonical(
+  output: string,
+  snapshot: readonly BardWikiCanonicalDocumentSnapshot[],
+): BardWikiStagedCanonicalChange[] {
+  return stageBardWikiCanonicalChanges(validateBardWikiCanonicalOperations(output, snapshot), snapshot)
 }
 
 function truncateUtf8(value: string, maxBytes: number): string {
@@ -204,12 +340,13 @@ function loadAnalysisDatabase(options: BardWikiApplyTurnHandlerOptions, chatId: 
   return loaded as Database
 }
 
-function commitEventDraft(
+function commitChangeSet(
   options: BardWikiApplyTurnHandlerOptions,
   job: BardWikiJob,
   receipt: BardWikiReceiptSummary,
   payload: BardWikiApplyTurnJobPayload,
   draft: BardWikiEventDraft,
+  canonicalChanges: readonly BardWikiStagedCanonicalChange[],
 ): CommandEvent | null {
   const db = options.db
   let transactionOpen = false
@@ -263,32 +400,51 @@ function commitEventDraft(
       jobId: job.id,
       commandRevision: nextRevision,
     })
-    const insertSource = db.prepare(
-      `INSERT INTO bardwiki_document_sources (
-        document_id, document_version, receipt_id, message_id, role, content_hash
-      ) VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-    insertSource.run(
-      document.id,
-      document.version,
-      currentReceipt.id,
-      source.userMessageId,
-      'user',
-      source.userContentHash,
-    )
-    insertSource.run(
-      document.id,
-      document.version,
-      currentReceipt.id,
-      source.assistantMessageId,
-      'assistant',
-      source.assistantContentHash,
-    )
-    db.prepare(
-      `INSERT INTO bardwiki_change_manifest (
-        receipt_id, document_id, before_version, before_hash, after_version, after_hash
-      ) VALUES (?, ?, NULL, NULL, ?, ?)`,
-    ).run(currentReceipt.id, document.id, document.version, document.contentHash)
+    insertDocumentSources(db, document.id, document.version, currentReceipt.id, source)
+    insertChangeManifest(db, currentReceipt.id, document.id, null, null, document.version, document.contentHash)
+    for (const change of canonicalChanges) {
+      if (change.type === 'create') {
+        const created = createBardWikiDocument(db, {
+          id: change.id,
+          chatId: job.chatId,
+          kind: change.kind,
+          title: change.title,
+          logicalPath: change.logicalPath,
+          aliases: change.aliases,
+          contextPolicy: 'relevant',
+          reviewState: 'active',
+          markdown: change.markdown,
+          actor: 'model',
+          reason: 'canonical',
+          receiptId: currentReceipt.id,
+          jobId: job.id,
+          commandRevision: nextRevision,
+        })
+        insertDocumentSources(db, created.id, created.version, currentReceipt.id, source)
+        insertChangeManifest(db, currentReceipt.id, created.id, null, null, created.version, created.contentHash)
+        continue
+      }
+      const updated = updateBardWikiDocument(db, job.chatId, change.documentId, {
+        expectedVersion: change.beforeVersion,
+        expectedContentHash: change.beforeHash,
+        markdown: change.markdown,
+        actor: 'model',
+        reason: 'canonical',
+        receiptId: currentReceipt.id,
+        jobId: job.id,
+        commandRevision: nextRevision,
+      })
+      insertDocumentSources(db, updated.id, updated.version, currentReceipt.id, source)
+      insertChangeManifest(
+        db,
+        currentReceipt.id,
+        updated.id,
+        change.beforeVersion,
+        change.beforeHash,
+        updated.version,
+        updated.contentHash,
+      )
+    }
     db.prepare(
       `UPDATE bardwiki_turn_receipts
        SET state = 'applied', event_document_id = ?, error_code = NULL, error_summary = NULL,
@@ -298,14 +454,23 @@ function commitEventDraft(
     ).run(document.id, currentReceipt.id)
     const revision = bumpRevision(db)
     if (revision !== nextRevision) throw new Error('BardWiki event revision changed during commit')
-    event = {
-      ...COMMAND_EVENT_CATALOG.bardWikiDocumentCreated,
-      revision,
-      id: document.id,
-      parentId: job.chatId,
-      jobId: job.id,
-      sourceMessageId: source.assistantMessageId,
-    }
+    event =
+      canonicalChanges.length > 0
+        ? {
+            ...COMMAND_EVENT_CATALOG.bardWikiChangeSetApplied,
+            revision,
+            id: job.chatId,
+            jobId: job.id,
+            sourceMessageId: source.assistantMessageId,
+          }
+        : {
+            ...COMMAND_EVENT_CATALOG.bardWikiDocumentCreated,
+            revision,
+            id: document.id,
+            parentId: job.chatId,
+            jobId: job.id,
+            sourceMessageId: source.assistantMessageId,
+          }
     persistCommandEvent(db, event)
     options.hooks?.beforeCommit?.()
     db.exec('COMMIT')
@@ -315,6 +480,45 @@ function commitEventDraft(
     if (transactionOpen) db.exec('ROLLBACK')
     throw error
   }
+}
+
+function insertDocumentSources(
+  db: DatabaseSync,
+  documentId: string,
+  documentVersion: number,
+  receiptId: string,
+  source: BardWikiSourcePair,
+): void {
+  const insert = db.prepare(
+    `INSERT INTO bardwiki_document_sources (
+      document_id, document_version, receipt_id, message_id, role, content_hash
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+  )
+  insert.run(documentId, documentVersion, receiptId, source.userMessageId, 'user', source.userContentHash)
+  insert.run(
+    documentId,
+    documentVersion,
+    receiptId,
+    source.assistantMessageId,
+    'assistant',
+    source.assistantContentHash,
+  )
+}
+
+function insertChangeManifest(
+  db: DatabaseSync,
+  receiptId: string,
+  documentId: string,
+  beforeVersion: number | null,
+  beforeHash: string | null,
+  afterVersion: number,
+  afterHash: string,
+): void {
+  db.prepare(
+    `INSERT INTO bardwiki_change_manifest (
+      receipt_id, document_id, before_version, before_hash, after_version, after_hash
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(receiptId, documentId, beforeVersion, beforeHash, afterVersion, afterHash)
 }
 
 function resolveEventLogicalPath(db: DatabaseSync, chatId: string, requestedPath: string, documentId: string): string {
