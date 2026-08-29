@@ -40,7 +40,6 @@ const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
 const performanceTestFileSet = new Set<string>(performanceTestFiles)
 const rootRunnerFiles = new Set([
-  '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
   'package.json',
   'pnpm-lock.yaml',
   'pnpm-workspace.yaml',
@@ -48,7 +47,6 @@ const rootRunnerFiles = new Set([
   'vitest.config.ts',
   'vitest.setup.ts',
   'vitest.setup.test.ts',
-  'util/frontend-test-inventory.ts',
 ])
 const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts', 'util/test-watch.ts'])
 
@@ -166,17 +164,6 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     deletedServerTestSupport ||
     deletedServerTest
   const runFullGates = rootRunnerChanged
-  const frontendRoutingRelevant =
-    runFullFrontend ||
-    frontendSourceChanged ||
-    directFrontendTests.length > 0 ||
-    runFullGates ||
-    directGateTests.length > 0
-
-  if (frontendRoutingRelevant) {
-    commands.push({ label: 'frontend test routing', args: ['check:frontend-test-inventory'] })
-  }
-
   if (protocolSourceChanged || deletedProtocolSource) {
     commands.push({ label: 'protocol typecheck', args: ['check:protocol'] })
   }

@@ -4,10 +4,9 @@ Date: 2026-08-29
 
 Status: Complete; all 15 phases are closed and the intact workstream is archived.
 
-Retirement note: the case-count, effectiveness, and support inventory tooling
-was retired after closeout. Their JSON manifests remain frozen historical
-evidence. `frontend-routing-inventory.tsv` remains an operational capability
-routing input.
+Retirement note: the case-count, effectiveness, support inventory, and frontend
+routing inventory tooling was retired after closeout. The retained JSON
+manifests remain frozen historical evidence.
 
 This workstream audits the complete test system for effectiveness, not merely
 for presence or coverage percentage. It asks whether each test can catch a
@@ -53,13 +52,8 @@ owner:
 These are file-owner counts, not test-case counts or an effectiveness verdict.
 Phase 0 froze the exact commit, discovered case counts, inventoried support
 artifacts, and assigned every test file to one primary product-risk category.
-See the Phase 0 slice and live machine-readable manifests for the current
+See the Phase 0 slice and frozen machine-readable manifests for the closeout
 counts and the intentional `+1` assurance-infrastructure delta.
-
-[`frontend-routing-inventory.tsv`](frontend-routing-inventory.tsv) is the live
-checked N/S/D/B capability manifest. It is intentionally separate from the
-effectiveness inventory because runtime placement and audit disposition are
-different contracts.
 
 ## Working Principle
 

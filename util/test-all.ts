@@ -30,12 +30,6 @@ const defaultJobs = 2
 
 export const qualityLanes: readonly QualityLane[] = [
   {
-    id: 'frontend-routing',
-    label: 'frontend test routing',
-    args: ['check:frontend-test-inventory'],
-    priority: 0,
-  },
-  {
     id: 'server-check',
     label: 'server and browser-smoke typecheck',
     args: ['check:server'],

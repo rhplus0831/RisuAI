@@ -21,9 +21,7 @@ are authoritative.
 The completed
 [Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
 preserves the review decisions and verification history. Its case-count,
-effectiveness, and support manifests are frozen historical records. The
-separate frontend capability-routing manifest remains a checked operational
-input.
+effectiveness, and support manifests are frozen historical records.
 
 ## Index
 
@@ -81,11 +79,9 @@ All Vitest projects reject focused tests. Pre-suffix DOM files that cannot be
 renamed without broad churn are explicitly registered in
 `vitest.frontend-routing.ts`; these are probe-backed retainers, not an implicit
 fallback. Do not add a registration without execution evidence and a reviewed
-reason. The exhaustive gate rejects omitted, unclassified, multiply assigned,
-stale, or filename/project-mismatched files and reliable DOM-only imports in
-zero-DOM projects. Legitimate dependency-injected tests may use
-`// @frontend-test-capability-override: <reviewed reason>`. Use runner discovery
-and the checked capability manifest for the current exact file distribution.
+reason. Explicit suffixes and legacy registrations determine Svelte+Node and DOM
+ownership; other `*.test.ts` files default to Node. Use runner discovery for the
+current exact file distribution.
 
 Playwright keeps each spec serial, uses two local file workers (one in CI),
 retains traces on failure, and sets `forbidOnly` in CI. The normally skipped

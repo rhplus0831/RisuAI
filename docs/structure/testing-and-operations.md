@@ -17,11 +17,8 @@ truth for the resulting commands, routing, setup, and lane behavior.
 
 The completed
 [Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
-is historical. Its case-count, effectiveness, and support manifests are frozen
-records rather than live gates. The separate frontend capability-routing
-manifest remains operational and is updated through the reviewed
-`update:frontend-test-inventory` script; current commands and behavior stay
-authoritative here.
+is historical. Its retained manifests are frozen records rather than live gates;
+current commands and behavior stay authoritative here.
 
 ## Scripts
 
@@ -46,9 +43,8 @@ authoritative here.
 | `pnpm test:quick`, `pnpm test:affected` | Run changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD`.                            |
 | `pnpm test:watch:agent`            | Watch the worktree, run each affected-test plan automatically, keep ordinary frontend/server Vitest contexts warm, and publish ignored status/log artifacts under `.test-watch/`. |
 | `pnpm test:watch:status`           | Validate the watched result's live heartbeat and exact worktree fingerprint; exits `0` for a fresh pass, `1` for a fresh failure, and `2` when running, stale, stopped, or unavailable. |
-| `pnpm check:frontend-test-inventory`, `pnpm update:frontend-test-inventory` | Verify or intentionally regenerate the final exhaustive/disjoint frontend capability manifest and routing registrations. |
-| `pnpm test:frontend`               | Check frontend routing, then run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                  |
-| `pnpm test:frontend:all`           | Check frontend routing, then run all root/browser Vitest tests, including explicit performance gates.                                                                         |
+| `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                                              |
+| `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit performance gates.                                                                                                       |
 | `pnpm test:gates`                  | Run the UI-audit and explicit performance gates together; UI-audit coverage is also present in `test:frontend`.                                                              |
 | `pnpm test:gates:audit`            | Run only the UI-audit tests for focused debugging; they are already part of `test:frontend`.                                                                                  |
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
@@ -64,7 +60,7 @@ authoritative here.
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output.               |
 | `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames.                                                     |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                         |
-| `pnpm coverage:frontend`           | Check frontend routing, then run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                                                            |
+| `pnpm coverage:frontend`           | Run root/browser Vitest tests with broad frontend coverage under `coverage/frontend`.                                                                                          |
 | `pnpm coverage:backend`            | Run Fastify/server Vitest tests with broad backend coverage under `coverage/backend`.                                                                                         |
 | `pnpm coverage:all`                | Run frontend and backend coverage, preserving a failing exit code if either side fails.                                                                                       |
 
@@ -91,9 +87,8 @@ uses exact paths when only tests changed and dependency-aware `--changed`
 selection when source changed. `--base <git-ref>` selects a branch diff,
 `--dry-run` prints the plan, `--include-smoke` opts into relevant Playwright
 work, and `--all` selects `test:all`. Deleted tests/source and runner changes
-conservatively widen to their complete lanes. Frontend plans run the routing
-gate before direct or dependency-aware execution; aggregate/affected runner and
-CI changes widen to `test:all`. On a fresh machine, run
+conservatively widen to their complete lanes. Aggregate/affected runner and CI
+changes widen to `test:all`. On a fresh machine, run
 `pnpm exec playwright install --with-deps chromium` before browser smoke.
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
@@ -106,7 +101,7 @@ affected-test feedback loop into a persistent process. It debounces edit bursts,
 captures the complete Git diff plus untracked files, hashes the contents and
 metadata of every changed path, and builds the same plan as
 `pnpm test:affected`. Ordinary direct/dependency-aware frontend and server runs
-reuse long-lived Vitest/Vite contexts. Inventory, protocol, performance,
+reuse long-lived Vitest/Vite contexts. Protocol, performance,
 browser-smoke, compatibility, Realm-scale, and full-quality commands retain
 their package-script process and environment behavior. Full-lane runs recreate
 their warm context first so deleted files or runner changes cannot use an old
@@ -159,9 +154,8 @@ actual JSON under ignored `fast-bootstrap-results/compat-harness/` for review.
 Compatibility is excluded from `pnpm test:all` because the external worktree is
 not a normal checkout prerequisite.
 
-`pnpm test:all` runs up to two ordinary lanes concurrently by default. Its
-explicit routing lane independently verifies ownership while the other regular
-checks continue, and any failure is preserved in the final aggregate result. Set
+`pnpm test:all` runs up to two ordinary lanes concurrently by default and
+preserves any failure in the final aggregate result. Set
 `RISU_TEST_ALL_JOBS` or pass `--jobs <count>` to tune that outer limit, and use
 `--dry-run` to inspect the lane graph. Browser smoke runs outside that pool and
 waits for `check:server` because declaration checking and the smoke build both
@@ -181,8 +175,8 @@ contract. Plain `*.test.ts` files default to Node; `*.svelte-node.test.ts` uses
 client-mode Svelte transformation against Node globals; `.svelte.test.ts` and
 `.dom.test.ts` use Svelte/Happy-DOM. The DOM project also positively includes
 187 reviewed pre-suffix owners whose Phase 3-5 probes proved transitive browser
-requirements. This registration avoids rename-only churn and is stale-checked;
-there is no unclassified-to-DOM fallback. The Svelte+Node custom environment
+requirements. This registration avoids rename-only churn; there is no
+unclassified-to-DOM fallback. The Svelte+Node custom environment
 delegates to Vitest's Node setup while selecting Vite's client transform so
 `$effect` retains client semantics.
 
@@ -216,18 +210,6 @@ The frontend and server Vitest configs set `allowOnly: false`. Directly selectin
 `realmImport.test.ts` enables its otherwise skipped 7,000-asset stress case.
 `test:server:realm-scale`, `test:all`, and CI own that selection as an isolated
 single-worker gate.
-
-`pnpm check:frontend-test-inventory` compares independent filesystem discovery
-with resolved Vitest project discovery for the full, standalone ordinary, and
-`test:all` ordinary views. It rejects unclassified names, missing, multiply
-assigned, unexpected, filename/project-mismatched, duplicate/stale/redundant
-registration, and stale manifest entries, and tracks browser-smoke specs
-separately. It also rejects statically reliable DOM-only imports in N/S files
-with an actionable rename or
-`// @frontend-test-capability-override: <reviewed reason>` path for legitimate
-dependency-injected tests. Static signals supplement execution proof and never
-silently move a file. Use `pnpm update:frontend-test-inventory` only for an
-intentional reviewed refresh.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
 reporting and enforce no thresholds. `pnpm coverage:all` runs both sides and still executes backend
@@ -379,8 +361,8 @@ flags include `--project`, `--absolute`, `--compact`, and `--timeout-ms`. Set
 
 `.github/workflows/quality.yml` is the only current workflow. Pull requests and
 pushes to `main` use Node 24 and the exact pnpm version declared by
-`packageManager` in `package.json`. Formatting, both typecheck lanes,
-frontend routing, frontend tests (including UI audit probes), focused UI
+`packageManager` in `package.json`. Formatting, both typecheck lanes, frontend
+tests (including UI audit probes), focused UI
 coverage, isolated performance gates, server tests, and serial browser smoke run
 as independent jobs; only the smoke job installs Chromium. The ordinary
 frontend job always omits the six sentinel files because the unconditional

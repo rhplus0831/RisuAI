@@ -25,10 +25,6 @@ describe('affected test planning', () => {
 
     expect(result.commands).toEqual([
       {
-        label: 'frontend test routing',
-        args: ['check:frontend-test-inventory'],
-      },
-      {
         label: 'changed frontend tests',
         args: ['exec', 'vitest', 'run', 'src/ts/model/modelProfileResolver.test.ts', '--bail=1'],
       },
@@ -52,10 +48,6 @@ describe('affected test planning', () => {
 
     expect(result.commands).toEqual([
       {
-        label: 'frontend test routing',
-        args: ['check:frontend-test-inventory'],
-      },
-      {
         label: 'changed frontend tests',
         args: ['exec', 'vitest', 'run', 'src/lib/_audit/optimisticTogglePaint.dom.test.ts', '--bail=1'],
       },
@@ -66,7 +58,6 @@ describe('affected test planning', () => {
     const result = plan([{ path: 'src/ts/model/modelProfileResolver.ts', status: 'M' }])
 
     expect(result.commands.map((command) => command.label)).toEqual([
-      'frontend test routing',
       'affected frontend tests',
       'affected server tests',
     ])
@@ -79,23 +70,6 @@ describe('affected test planning', () => {
     const result = plan([{ path: 'vitest.svelte-node.config.ts', status: 'M' }])
 
     expect(result.commands).toEqual([
-      { label: 'frontend test routing', args: ['check:frontend-test-inventory'] },
-      { label: 'frontend tests', args: ['test:frontend:run'] },
-      { label: 'frontend performance gates', args: ['test:gates:perf'] },
-      { label: 'server tests', args: ['test:server'] },
-    ])
-  })
-
-  it('runs complete lanes when a live archived test inventory changes', () => {
-    const result = plan([
-      {
-        path: '.archived-docs/performance-and-stability/test-suite-effectiveness-audit/frontend-routing-inventory.tsv',
-        status: 'M',
-      },
-    ])
-
-    expect(result.commands).toEqual([
-      { label: 'frontend test routing', args: ['check:frontend-test-inventory'] },
       { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'frontend performance gates', args: ['test:gates:perf'] },
       { label: 'server tests', args: ['test:server'] },
@@ -112,7 +86,6 @@ describe('affected test planning', () => {
     const result = plan([{ path: 'packages/protocol/src/generationSse.ts', status: 'M' }])
 
     expect(result.commands.map((command) => command.label)).toEqual([
-      'frontend test routing',
       'protocol typecheck',
       'affected frontend tests',
       'affected server tests',
@@ -161,7 +134,6 @@ describe('affected test planning', () => {
     const changes = parseNameStatus('R100\0src/removed.test.ts\0docs/removed.md\0')
 
     expect(plan(changes).commands).toEqual([
-      { label: 'frontend test routing', args: ['check:frontend-test-inventory'] },
       { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'server tests', args: ['test:server'] },
     ])
@@ -174,7 +146,6 @@ describe('affected test planning', () => {
     ])
 
     expect(result.commands).toEqual([
-      { label: 'frontend test routing', args: ['check:frontend-test-inventory'] },
       { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'server tests', args: ['test:server'] },
     ])

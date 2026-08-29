@@ -22,7 +22,6 @@ describe('test:all orchestration', () => {
     const byId = new Map(qualityLanes.map((lane) => [lane.id, lane]))
 
     expect(byId.get('browser-smoke')).toMatchObject({ after: ['server-check'], isolated: true })
-    expect(byId.get('frontend-routing')?.args).toEqual(['check:frontend-test-inventory'])
     expect(byId.get('frontend-tests')?.args).toEqual(['test:frontend:run'])
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('ui-coverage')?.after).toContain('frontend-tests')
@@ -98,7 +97,6 @@ describe('test:all orchestration', () => {
   it('keeps every local aggregate owner required by CI', () => {
     const workflow = readFileSync('.github/workflows/quality.yml', 'utf8')
     const ciOwners = new Map([
-      ['frontend-routing', ['frontend-routing', 'pnpm check:frontend-test-inventory']],
       ['server-check', ['check-server', 'pnpm check:server']],
       ['frontend-tests', ['frontend', 'pnpm test:frontend:run']],
       ['server-tests', ['server', 'pnpm test:server']],

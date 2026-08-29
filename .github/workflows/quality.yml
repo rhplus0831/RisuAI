@@ -59,21 +59,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check:server
 
-  frontend-routing:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.23.0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check:frontend-test-inventory
-
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -213,7 +198,6 @@ jobs:
       - format
       - check
       - check-server
-      - frontend-routing
       - frontend
       - initial-preload
       - gates-perf
@@ -228,7 +212,6 @@ jobs:
           FORMAT_RESULT: ${{ needs.format.result }}
           CHECK_RESULT: ${{ needs.check.result }}
           CHECK_SERVER_RESULT: ${{ needs['check-server'].result }}
-          FRONTEND_ROUTING_RESULT: ${{ needs['frontend-routing'].result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           INITIAL_PRELOAD_RESULT: ${{ needs['initial-preload'].result }}
           GATES_PERF_RESULT: ${{ needs['gates-perf'].result }}
@@ -240,7 +223,6 @@ jobs:
           test "$FORMAT_RESULT" = success
           test "$CHECK_RESULT" = success
           test "$CHECK_SERVER_RESULT" = success
-          test "$FRONTEND_ROUTING_RESULT" = success
           test "$FRONTEND_RESULT" = success
           test "$INITIAL_PRELOAD_RESULT" = success
           test "$GATES_PERF_RESULT" = success
