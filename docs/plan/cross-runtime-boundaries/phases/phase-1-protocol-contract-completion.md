@@ -52,4 +52,4 @@ behavior mismatch becomes a separate remediation slice.
 Focused protocol tests, `pnpm check:protocol`, both typecheck families, affected
 frontend/server lanes, formatting, and diff checks.
 
-Active slice: [MCP OAuth refresh contract](slices/phase-1-protocol-contract-completion/mcp-oauth-refresh-contract.md).
+Active slice: [Standalone-settings contract](slices/phase-1-protocol-contract-completion/standalone-settings-contract.md).

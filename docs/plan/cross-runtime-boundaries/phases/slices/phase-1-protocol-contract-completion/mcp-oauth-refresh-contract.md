@@ -1,6 +1,6 @@
 # MCP OAuth Refresh Contract
 
-Status: ready.
+Status: complete at `4f6e0ef1bd812bc025a7e4ac126938e241fd02f9`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -46,3 +46,17 @@ check`, affected tests, formatting, and `git diff --check`.
 
 Stop if extraction exposes a stored secret, changes request/response acceptance,
 or requires identity, egress, rotation, or error policy to move.
+
+## Result
+
+- `@risuai/protocol/mcp-oauth-refresh` now owns exact TypeBox request and success
+  schemas, derived DTOs, and runtime shape guards.
+- Contract fixtures prove both valid identities at the shape layer and reject
+  missing, malformed, and additive request/success fields, including attempts to
+  return a refresh token.
+- Browser and Fastify consumers use the explicit package subpath and the old
+  application-tree DTO module is removed.
+- Credentials, identity/URL validation, egress, rotation, timeouts, bounds,
+  response parsing, error codes, cancellation, and masking did not move.
+- The boundary cursor fell by exactly one production type-only edge, from 338 to
+  337.
