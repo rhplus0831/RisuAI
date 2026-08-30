@@ -7,7 +7,8 @@ Date: 2026-08-31
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
   `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`,
   `07576969c`, `d8275c5e9`, `3cff93cd6`, `fd0764744`, `c24cdd16d`,
-  `e663269de`, and `f610c11a1`
+  `e663269de`, `f610c11a1`, `6006b08cb`, `c389535d3`, `cc3a469cf`, and
+  `1853a3fd3`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
@@ -18,7 +19,8 @@ Date: 2026-08-31
   and image capability, canonical custom-sidebar model authoring, Fastify
   server-intent completion projection, browser request sampling,
   provider-specific thinking overrides, and effective prompt/generation model
-  identity, plus translation cache and source-language identity.
+  identity, translation cache/source-language identity, settings metadata,
+  HypaV3 budgeting, and display-source model context.
 
 ## Consumer-Cutover Proof
 
@@ -68,6 +70,13 @@ Date: 2026-08-31
   resolved translate profile remains authoritative. Non-LLM cache identity and
   NovelList source-language selection share one effective translate-role
   provider check, with legacy `subModel` fallback retained.
+- Seed-control visibility uses resolved model metadata rather than the flat
+  aggregate selection.
+- Both HypaV3 implementations reserve the resolved `chatMain` response budget;
+  explicit legacy selections retain the flat fallback.
+- Lorebook activation no longer accepts or threads an unused model mirror.
+- Display-source Lua and trigger stages receive one resolved `chatMain` model
+  through an existing Fastify prompt-model boundary.
 
 ## Commands And Results
 
@@ -91,21 +100,27 @@ Date: 2026-08-31
   V3 plugin, 3 generation-label, and 3 closed ownership tests.
 - Translation cache/locale identity passed 26 cache and 4 closed model-runtime
   ownership tests.
+- Seed metadata passed 4 behavior and 5 closed ownership tests. HypaV3 budget
+  ownership passed 2 behavior and 6 closed ownership tests.
+- Lorebook mirror removal passed 1 ownership, 79 lorebook, 25 Agent execution,
+  135 assembly, and 52 Lua runtime tests.
+- Display-source identity passed 1 ownership and 3 route/service tests.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at the current 165 cross-runtime edges after
+- Architecture inventory passed at the current 160 cross-runtime edges after
   interleaved Workstream 1 server-input migrations, 20 compatibility
   surfaces/42 probes, 9,899 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `f610c11a1`. Selected legacy
+The normal-consumer checkpoint passes through `1853a3fd3`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
 canonical presets; server-intent completion projects durable runtime fields;
 ordinary provider request samplers and provider-specific thinking overrides use
 resolved runtime options; prompt-visible identity, plugin recursion protection,
-default generation labels, and translation cache/locale identity use the
-effective profile. The broader normal
+default generation labels, translation cache/locale identity, settings
+metadata, HypaV3 response reservation, and display-source identity use the
+effective profile. The unused lorebook model mirror is gone. The broader normal
 consumer cutover remains active; the model-owner cursor is not released yet.

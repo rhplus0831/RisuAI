@@ -7,18 +7,16 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Classify the remaining direct auxiliary model reads in Agent prepared input,
-   trigger/display-source contexts, settings metadata, and tokenizer helpers as
-   effective projections, context-free fallbacks, or ordinary owner bypasses.
-2. Replace each ordinary bypass with an already-resolved role/profile input and
-   add conflicting flat/profile fixtures before removing it.
-3. Add a closed-world allowlist for the remaining static, import/export,
+1. Add a closed-world allowlist for the remaining effective request
+   projections, context-free fallbacks, static, import/export,
    conversion, rollback, and explicit legacy-reader surfaces.
-4. Preserve the named clone-only selected-preset seam for legacy inline
+2. Replace any unclassified ordinary bypass found by that gate with an
+   already-resolved role/profile input and a conflicting flat/profile fixture.
+3. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
-5. Prove provider/model/options/fallback parity in browser reload and request
+4. Prove provider/model/options/fallback parity in browser reload and request
    lanes while retaining explicit legacy conversion/import/export.
-6. Isolate the remaining legacy-reader removal and prepare the Phase 2
+5. Isolate the remaining legacy-reader removal and prepare the Phase 2
    model-owner release cursor for Workstream 3.
 
 ## Phase 0 Release

@@ -1,6 +1,6 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; translation cache/locale checkpoint through `f610c11a1`.
+Status: in progress; auxiliary-consumer checkpoint through `1853a3fd3`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -99,8 +99,19 @@ classified static/legacy boundary removed to complete the cutover.
   and the NovelList source-language heuristic resolves the effective translate
   role at `f610c11a1`. Conflicting chat-main/translate/flat fixtures preserve
   legacy `subModel` fallback while proving durable translate ownership.
+- Parameter settings derive seed visibility from resolved model metadata at
+  `6006b08cb`; conflicting flat `aiModel` values cannot change the control.
+- Both HypaV3 implementations reserve response tokens from the resolved
+  `chatMain` runtime profile at `c389535d3`, with legacy flat fallback only
+  when that profile supplies no value.
+- Lorebook activation no longer carries its unused flat model mirror through
+  assembly, Agent prepared input, or Lua at `cc3a469cf`.
+- Display-source Lua and trigger stages receive one resolved `chatMain` identity
+  through the existing Fastify prompt-model boundary at `1853a3fd3`, without
+  adding a new browser-tree dependency.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar
-  authoring owners pass; ordinary flat runtime/authoring consumers remain to be
-  cut over before this slice can close.
+  authoring owners pass. The remaining flat readers now need a closed-world
+  effective-projection/static/import/export/legacy classification before the
+  ordinary resolver fallback can be isolated.
