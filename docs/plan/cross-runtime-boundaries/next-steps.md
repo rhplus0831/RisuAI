@@ -4,20 +4,18 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [server-tool contract
-slice](phases/slices/phase-1-protocol-contract-completion/server-tool-contract.md).
+Execute the [client-context contract
+slice](phases/slices/phase-1-protocol-contract-completion/client-context-contract.md).
 
-1. Define schema-first server-tool definitions, calls, results, rounds, limits,
-   and validation results at an explicit protocol subpath.
-2. Preserve provider-safe names, duplicate detection, JSON cloning, byte
-   limits, thought signatures, allowed-tool checks, and call/result matching;
-   add fixtures for accepted and rejected boundary cases.
-3. Migrate browser completion callers and Fastify generation routes/providers
-   without moving tool execution, provider translation, prompt construction,
-   authorization, or active-writer policy.
-4. Remove the superseded application-tree protocol module after every consumer
-   moves.
-5. Refresh the boundary baseline for the exact eight removed cross-runtime edges
+1. Define the schema-derived reported-client-context DTO and behavior-preserving
+   normalizer at an explicit protocol subpath.
+2. Preserve language trimming and syntax, finite positive dimension checks,
+   rounding, clamping, ignored fields, and undefined-empty normalization.
+3. Migrate Fastify route/prompt consumers and the display-source contract to the
+   package owner while leaving browser environment capture in its browser adapter.
+4. Keep the browser adapter as the only `navigator`/`window` reader and add
+   package fixtures for normalization boundaries.
+5. Refresh the boundary baseline for the exact four removed cross-runtime edges
    and record the contract release.
 
 ## Boundary Conventions Released
@@ -38,14 +36,14 @@ Workstream 2's compatibility inventory.
 - Do not introduce the route operation catalog yet.
 - Do not move aggregate `Database`, character state, or Svelte state into a
   shared package.
-- Do not alter tool limits, payload validation, provider behavior, tool
-  execution, authentication, active-writer policy, or authoritative recovery.
-- Do not combine unrelated generation, OAuth, display-source, or prompt contract
-  families.
+- Do not move `navigator`, `window`, prompt assembly, CBS behavior, route
+  authorization, active-writer policy, or authoritative recovery into protocol.
+- Do not combine unrelated display-source, OAuth, standalone-settings, or prompt
+  contract families.
 
 ## Handoff
 
 After the slice passes, update [`status.md`](status.md) with exact edge counts
-and the server-tool release cursor, refresh
+and the client-context release cursor, refresh
 [`latest-verification.md`](latest-verification.md), then select the next
 wire-contract family from [`baseline.json`](baseline.json).

@@ -1,6 +1,6 @@
 # Server-Tool Contract
 
-Status: ready.
+Status: complete at `8a1084a53f638860bb7f1a151f2e8fc98f0356a1`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -55,3 +55,18 @@ check:server`, `pnpm check`, affected tests, formatting, and `git diff --check`.
 Stop if extraction changes an accepted payload or error, weakens any size or
 identity check, broadens provider-safe names, or requires execution/security
 behavior to move into the protocol package.
+
+## Result
+
+- `@risuai/protocol/server-tool` now owns TypeBox schemas and derived types for
+  definitions, calls, results, and rounds plus every existing compatibility
+  limit and normalizing validator.
+- Contract fixtures prove normalized round trips, all count and byte bounds,
+  provider-safe names, duplicate detection, JSON safety, allowed-tool checks,
+  thought signatures, and exact call/result matching.
+- Browser UI/completion and Fastify route, prompt, frame, provider, and tool
+  consumers use the explicit package subpath; the old application-tree module
+  is removed and the provider/model guide names the new owner.
+- Tool execution, provider translation, prompt construction, authorization,
+  active-writer authority, persistence, and error policy did not move.
+- The boundary cursor fell by exactly eight production edges, from 353 to 345.
