@@ -228,7 +228,7 @@ describe('client resource ownership gate', () => {
     expect(matrix.foundations['lorebook-page-standalone']).toMatchObject({
       status: 'implemented',
       resource: 'loreBookPage',
-      capabilities: ['selectors', 'resourceState', 'contractTests'],
+      capabilities: ['selectors', 'resourceState', 'commands', 'draftRecovery', 'contractTests'],
     })
   })
 
