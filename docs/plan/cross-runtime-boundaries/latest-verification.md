@@ -4,52 +4,56 @@ Date: 2026-08-30
 
 ## Candidate
 
-- Implementation commit: `d798740f7f266ffd6db6298d9b0e4285822f8e95`
-- Historical-oracle proof commit: `d78c67a3a`
-- Phase 2 predecessor: `6a6d0ac1f`
+- Implementation commit: `c12e807a5`
+- Shared-core predecessor: `d798740f7` with historical-oracle proof at
+  `d78c67a3a`
 - Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 3 shared-core foundation and first chat-page normalization leaf;
+- Scope: Phase 3 chat load-page normalization leaf;
   no route, payload, persistence, revision, event, authentication,
   active-writer, credential, host, generation, or UI behavior changed.
 
-## Shared-Core And Parity Proof
+## Shared-Core And Consumer Proof
 
 - `@risuai/shared-core` is private, side-effect-free, independently typechecked,
   and guarded against bare, dynamic, require, and package-escape runtime
   imports.
-- `normalizeChatPageIndex` is the sole production implementation. It has no
-  imports or side effects and accepts only the raw pointer plus chat count.
-- Three browser call sites and one Fastify call site use the explicit
-  `./chat-page` subpath; an ownership test prevents either local body from
-  returning.
-- Test-only copies of the exact pre-extraction browser and Fastify algorithms
-  execute beside the shared helper across malformed, fractional, string,
-  negative, boundary, oversized, and empty-chat fixtures.
-- The architecture inventory remains at 336 direct root-`src` edges: 233
-  production, 95 server-test, and 8 browser-smoke; 173 are runtime/mixed. This
-  duplicated-helper extraction introduced no new edge.
+- `DEFAULT_CHAT_LOAD_INITIAL_PAGES`, `DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES`,
+  `normalizeChatLoadPages`, and the two narrow settings getters have one owner
+  at `@risuai/shared-core/chat-load-pages`.
+- The shared implementation has no imports, side effects, runtime-specific
+  inputs, or host behavior. Existing fixtures preserve coercion, flooring,
+  invalid-value fallback, and default behavior.
+- Fastify database defaulting and all five browser storage, route, hydration,
+  and rendering consumers use the explicit subpath; a closed-world ownership
+  test prevents the browser-tree implementation from returning.
+- The architecture inventory now records 335 direct root-`src` edges: 232
+  production, 95 server-test, and 8 browser-smoke; 172 are runtime/mixed.
 
 ## Commands And Results
 
 - `pnpm check:shared-core` passed.
-- The shared-core import, ownership, and differential suites passed: 3 files and
-  17 tests.
-- `pnpm exec tsx util/architecture-inventory.ts` passed the 336-edge boundary,
+- Focused shared-core, storage, route, hydration, and rendering suites passed: 6
+  files and 323 tests. Fastify defaulting passed 24 tests.
+- `pnpm exec tsx util/architecture-inventory.ts` passed the 335-edge boundary,
   19-surface/38-probe compatibility, and 9,917-reference/325-group client
   ownership inventories.
-- `pnpm test:affected -- --base d798740f7^` passed test topology, 566 frontend
-  files with 7,063 tests, 179 server files with 3,655 passing tests and one
+- `pnpm test:affected` passed 567 frontend files with 7,064 tests, 179 server
+  files with 3,655 passing tests and one
   intentional skip, and 18 current compatibility tests covering 16 cells and
   the healthy cluster-10 regression gate.
+- `pnpm check` passed with zero diagnostics. `pnpm check:server` passed protocol,
+  shared-core, architecture, client-declaration, Fastify, and browser-smoke
+  checks.
 - The affected runner correctly reported
-  `TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED` because later test-runner
-  and CI commits are included in that historical base range. The portfolio
-  closeout still owns the single `pnpm test:all` run.
+  `TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED` because shared-core package
+  metadata changed. The portfolio closeout still owns the single
+  `pnpm test:all` run.
 - Focused Prettier and `git diff --check` passed.
 
 ## Dependency Release And Verdict
 
-The shared-core package boundary and first duplicated leaf are released. Phase
-3 continues with chat load-page normalization; server/browser declaration
-decoupling and the remaining 336 root-`src` edges remain explicitly open.
+Chat load-page normalization is released without changing settings, payloads,
+persistence, or rendering. Phase 3 continues with chat display-tail
+normalization; declaration decoupling and the remaining 335 root-`src` edges
+remain explicitly open.

@@ -40,4 +40,6 @@ affected client/server tests, both typechecks, formatting, and diff checks.
 
 Completed slice: [Shared-core foundation and first leaf](slices/phase-3-pure-shared-core/shared-core-foundation-and-first-leaf.md).
 
-Active slice: [Chat load-page normalization](slices/phase-3-pure-shared-core/chat-load-page-normalization.md).
+Completed slice: [Chat load-page normalization](slices/phase-3-pure-shared-core/chat-load-page-normalization.md).
+
+Active slice: [Chat display-tail normalization](slices/phase-3-pure-shared-core/chat-display-tail-normalization.md).

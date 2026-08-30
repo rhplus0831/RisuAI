@@ -1,6 +1,6 @@
 # Chat Load-Page Normalization
 
-Status: ready.
+Status: complete at `c12e807a5`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -47,3 +47,17 @@ server lanes, both typechecks, architecture inventory, formatting, and
 
 Stop if the helper needs browser reactivity, aggregate state, route policy,
 persistence, or a host-specific dependency.
+
+## Result
+
+- Moved both defaults, the value normalizer, and narrow settings getters to
+  `@risuai/shared-core/chat-load-pages` without changing their inputs or
+  results.
+- Migrated Fastify defaulting plus every browser storage, hydration, route, and
+  render consumer, then removed the browser-tree module.
+- Added a closed-world production-consumer probe and extended the shared-core
+  import audit. The reviewed boundary fell from 336 to 335 edges, with
+  production edges falling from 233 to 232.
+- Focused tests, complete frontend/server lanes, current compatibility, both
+  typecheck families, architecture inventory, formatting, and diff checks
+  passed. The final aggregate remains owned by portfolio closeout.

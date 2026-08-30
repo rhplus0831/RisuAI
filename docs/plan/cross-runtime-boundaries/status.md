@@ -9,21 +9,20 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; the first Phase 3 slice is
+- Plan state: Active; Phases 0 through 2 complete; two Phase 3 leaf slices are
   complete.
 - Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [Chat load-page normalization](phases/slices/phase-3-pure-shared-core/chat-load-page-normalization.md), ready.
+- Active slice: [Chat display-tail normalization](phases/slices/phase-3-pure-shared-core/chat-display-tail-normalization.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: shared-core foundation and chat-page leaf at
-  `d798740f7`, with preserved historical browser/Fastify oracle proof at
-  `d78c67a3a`; the shared-core checks, 566-file frontend lane, 179-file server
-  lane, current compatibility harness, architecture inventory, and focused
-  parity proof passed; see
+- Latest implementation candidate: chat load-page normalization at
+  `c12e807a5`; the shared-core checks, 567-file frontend lane, 179-file server
+  lane, current compatibility harness, both typecheck families, architecture
+  inventory, and focused owner/consumer proof passed; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -47,6 +46,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Shared durable command operation catalog | `3f275e9dc` | Released with 129 stable identifiers, an exact opening-matcher fingerprint, fail-closed duplicate/ambiguity checks, and generation intent links to shared route IDs. |
 | Browser operation metadata reconciliation | `6a6d0ac1f` | Released with 55 reviewed shared-route relations, seven explicit non-overlaps, and fail-closed owner/transport parity. |
 | Shared-core foundation and first leaf | `d798740f7` (`d78c67a3a` parity proof) | Released with an independently checked package boundary and one shared chat-page normalizer used by three browser and one Fastify call sites. |
+| Chat load-page normalization | `c12e807a5` | Released through `@risuai/shared-core/chat-load-pages`; every production consumer uses the shared leaf and one production root-`src` edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -71,11 +71,12 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 336 direct root-`src` edges remain: 233 production, 95 server-test, and 8
-  browser-smoke, spanning 132 importers and 68 targets.
-- Usage is 134 runtime, 39 mixed, and 163 type-only; 173 runtime/mixed edges
+- 335 direct root-`src` edges remain: 232 production, 95 server-test, and 8
+  browser-smoke, spanning 132 importers and 67 targets.
+- Usage is 133 runtime, 39 mixed, and 163 type-only; 172 runtime/mixed edges
   remain.
-- The completed Phase 1 slices removed 39 edges and 11 source targets.
+- The completed Phase 1 and Phase 3 slices removed 40 edges and 12 source
+  targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
@@ -86,7 +87,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and first duplicated leaf complete; chat load-page normalization is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation, first duplicated leaf, and chat-load normalization complete; chat display-tail normalization is next. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
@@ -108,6 +109,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move only chat load-page normalization and
-its constants into the audited shared-core owner while preserving every
-coercion and fallback result.
+Use [`next-steps.md`](next-steps.md). Move only chat display-tail normalization
+and its constants into the audited shared-core owner while preserving every
+coercion, rounding, clamp, and fallback result.
