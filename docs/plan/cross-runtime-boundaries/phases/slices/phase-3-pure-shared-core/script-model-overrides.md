@@ -1,6 +1,6 @@
 # Script-Model Overrides
 
-Status: ready.
+Status: complete at `2831411d1`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -55,3 +55,14 @@ and Lua-runtime tests; both typechecks; architecture inventory; formatting; and
 Stop if the leaf needs model-profile resolution, aggregate database types,
 browser stores, DOM/Svelte, Fastify, filesystem, process-global state,
 credentials, persistence, or host policy.
+
+## Release Evidence
+
+- `@risuai/shared-core/script-model-overrides` owns the types, normalizer,
+  strict reader/error, role lookup, and immutable update behavior; seven browser
+  and four Fastify production consumers import it directly.
+- Differential, ownership, and import-boundary files passed 5, 1, and 2 tests;
+  affected selector, module, scripting, character-bridge, database-default, Lua,
+  and command owners passed 1, 40, 28, 25, 27, 52, and 230 tests.
+- Four production runtime root-`src` edges and one source target left the checked
+  inventory.

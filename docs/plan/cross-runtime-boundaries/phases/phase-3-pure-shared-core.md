@@ -66,4 +66,6 @@ Completed slice: [Model-role resolution](slices/phase-3-pure-shared-core/model-r
 
 Completed slice: [Agent-only lorebook predicate](slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).
 
-Active slice: [Script-model overrides](slices/phase-3-pure-shared-core/script-model-overrides.md).
+Completed slice: [Script-model overrides](slices/phase-3-pure-shared-core/script-model-overrides.md).
+
+Active slice: [Module-integration normalization](slices/phase-3-pure-shared-core/module-integration-normalization.md).

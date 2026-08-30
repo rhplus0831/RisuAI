@@ -9,8 +9,8 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 script-model overrides](cross-runtime-boundaries/status.md) | Fourteen neutral leaves are released through `4162150ec`; 302 direct root-`src` edges remain. |
-| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Migration is durable and normal prompt-shape/tokenizer consumers resolve durable profiles through `c0b8776b3`; each resource-family closeout releases the matching Workstream 3 phase. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 module-integration normalization](cross-runtime-boundaries/status.md) | Fifteen neutral leaves are released through `2831411d1`; 298 direct root-`src` edges remain. |
+| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Migration is durable; prompt shape, tokenizer, output budget, and normal sidebar authoring resolve durable owners through `f986cf1ff`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat dependency gate](client-resource-ownership/status.md) | Phase 2 closed the standalone page pointer at `aaf66b75d`; the next runtime slice waits for matching Workstream 1/2 releases. |
 
 The portfolio-level dependency model and the conditional fourth workstream are

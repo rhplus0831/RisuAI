@@ -4,19 +4,20 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [script-model overrides
-slice](phases/slices/phase-3-pure-shared-core/script-model-overrides.md).
+Execute the [module-integration normalization
+slice](phases/slices/phase-3-pure-shared-core/module-integration-normalization.md).
 
-1. Move the zero-import override types, normalizer, strict reader, role lookup,
-   updater, and validation error into an explicit shared-core subpath.
-2. Preserve exact field/role names, trimming and blank omission, object-only
-   handling, unknown-key rejection, path-qualified errors, and error identity.
-3. Preserve main/aux selection, blank deletion, fresh return objects, and input
-   non-mutation.
-4. Migrate all browser and four Fastify production consumers, then delete the
-   browser-tree owner after differential and closed-world ownership proof.
-5. Keep model-profile resolution, Lua execution, database repair, persistence,
-   command policy, and settings orchestration unchanged.
+1. Move the zero-import parser, stable combiner, Agent-preset reference shape,
+   and selected-preset lookup into an explicit shared-core subpath.
+2. Preserve comma splitting, trimming, empty removal, parser duplicate order,
+   combiner first-occurrence deduplication, and `", "` joining.
+3. Preserve trimmed selected IDs, exact stored-ID matching, first-match
+   selection, explicit disabled-preset exclusion, and verbatim integration
+   output.
+4. Migrate the two browser and one Fastify production consumers, then delete
+   the browser-tree owner after differential and ownership proof.
+5. Keep module activation, generation composition, persistence, command policy,
+   and Agent execution unchanged.
 
 ## Foundations Released
 
@@ -58,14 +59,15 @@ slice](phases/slices/phase-3-pure-shared-core/script-model-overrides.md).
   Fastify production consumers share one implementation.
 - The Agent-only lorebook predicate is released at `4162150ec`; all four
   production consumers use the shared marker logic.
+- Script-model overrides are released at `2831411d1`; seven browser and four
+  Fastify production consumers share one implementation.
 
 ## Not In This Slice
 
-- Do not move model-profile resolution, Lua execution, database repair,
-  persistence, character/module command policy, or settings UI into shared
-  core.
-- Do not rename the durable override fields or broaden this slice into profile
-  records, role resolution, or provider behavior.
+- Do not move module activation, effective generation composition, database
+  state, persistence, command policy, or Agent execution into shared core.
+- Do not correct the persisted `moduleIntergration` spelling or broaden this
+  slice into module records or Agent Preset normalization.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 
