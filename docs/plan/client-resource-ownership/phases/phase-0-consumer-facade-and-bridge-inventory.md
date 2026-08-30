@@ -1,6 +1,6 @@
 # Phase 0: Consumer, Facade, And Bridge Inventory
 
-Status: ready.
+Status: complete at `0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f`.
 
 Depends on: portfolio activation; coordinate gate conventions with Workstream 1
 Phase 0.
@@ -35,3 +35,14 @@ Focused gate tests, existing facade/guard/bridge/resource structural tests,
 affected tests, typechecks if orchestration changes, formatting, and diff checks.
 
 Active slice: [Facade and bridge consumer baseline](slices/phase-0-consumer-facade-and-bridge-inventory/facade-and-bridge-consumer-baseline.md).
+
+## Result
+
+- The checked-in baseline classifies 9,917 references in 325 consumer groups,
+  56 family/role policies, six bridge families, and 20 temporary-seam rows.
+- The mandatory architecture gate rejects unreviewed aggregate reads or
+  replacements, snapshots/proxies, broad epochs, trusted writes, write-guard
+  control, bridge registry/lifecycle, flush infrastructure, and temporary-seam
+  growth.
+- Production, server, and test lanes are distinguished, and every group names a
+  target owner, Workstream 1/2 dependency, migration phase, and removal trigger.

@@ -1,6 +1,6 @@
 # Facade, Trusted-Write, And Bridge Consumer Baseline
 
-Status: ready.
+Status: complete at `0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f`.
 
 Parent: [Phase 0](../../phase-0-consumer-facade-and-bridge-inventory.md)
 
@@ -59,3 +59,16 @@ tests, `pnpm test:affected`, typechecks if orchestration changes, formatting, an
 Stop if a gate would require replacing a consumer, if parsing cannot distinguish
 tests from runtime, or if a target owner depends on an unreleased Workstream 1/2
 decision.
+
+## Result
+
+- `client-resource-baseline.json` records 9,917 exact references across 325
+  grouped consumer records and 56 resource-family/role policies.
+- Lane totals are 3,346 production, 6 server, and 6,565 test references.
+- The inventory covers six bridge families and 20 temporary-seam rows containing
+  28 exact references.
+- `check:server` now runs the AST-backed client ownership check through the
+  shared mandatory architecture gate; baseline changes require reviewed policy
+  metadata rather than an inline allowlist.
+- No runtime consumer, bridge, payload, persistence, revision, event, or
+  hydration behavior changed in this slice.

@@ -4,49 +4,46 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [facade, trusted-write, and bridge consumer baseline](phases/slices/phase-0-consumer-facade-and-bridge-inventory/facade-and-bridge-consumer-baseline.md).
+Execute the [owner API gap matrix and first foundations](phases/slices/phase-1-resource-owner-foundation/owner-api-gap-matrix-and-first-foundations.md).
 
-1. Inventory production, test, and browser-smoke uses of `getDatabase()`,
-   resource snapshots, facade/resource epochs, trusted writes, write-guard
-   control, bridge registration/flushing, lifecycle flushing, and temporary
-   broad endpoints/rollout aliases.
-2. Group each consumer by resource family and classify read, mutation, render,
-   hydration, draft, generation, recovery, diagnostic, or test-fixture use.
-3. Assign a target owner API and Workstream 1/2 dependency cursor.
-4. Add fail-closed gates that reject new aggregate reads, trusted writes, bridge
-   families, and broad compatibility seams.
-5. Record initial consumer counts and identify Phase 1 API gaps without moving a
-   runtime consumer in the same slice.
+1. Project the frozen 325 consumer groups onto their target owner APIs and name
+   missing selector, hydration, command, optimistic, draft, rollback, error,
+   outbox, writer-loss, and recovery capabilities.
+2. Distinguish implementation gaps from owner-contract test gaps and from
+   consumers that can already migrate after their Workstream 1/2 cursors release.
+3. Reject any common API that returns multiple unrelated resource families or
+   publishes an any-resource epoch.
+4. Implement and test the first narrow foundation only after its matching
+   protocol and canonical-owner cursor is recorded.
+5. Keep every compatibility bridge and fallback path until the later family
+   migration proves accepted/queued/failed, rollback, reload, and recovery.
 
 ## Required Scope Before Editing
 
-The slice must name the inventory format, parsing/gate method, baseline update
-rule, target-owner fields, test/fixture exception policy, affected-selection
-integration, validation commands, and documentation-only/runtime-neutral
-behavior contract.
+Each foundation slice must name source consumer groups, the exact target owner
+API, payload/lazy-body boundary, read and hydration state, command outcomes,
+optimistic projection and current-attempt rollback, drafts and writer fencing,
+outbox behavior, authoritative refresh, tests, and dependency commits.
 
-## Likely Starting Anchors
+## First Dependency Candidates
 
-- `src/ts/storage/database.svelte.ts`
-- `src/ts/server/resourceState.svelte.ts`
-- `src/ts/server/resourceWriteGuard.svelte.ts`
-- `src/ts/server/pendingBridgeFlushRegistry.ts` and `bridgeFlush.ts`
-- `src/ts/server/*Bridge.svelte.ts`
-- `server/fastify/__tests__/phase3CompatibilityStructure.test.ts`
-- `server/fastify/src/routeManifest.ts` and resource-read routes
+- Shell and character-summary owner gaps may be refined while Workstream 1
+  extracts their wire contracts.
+- Leaf settings/collection owners may proceed only where the persisted owner is
+  already singular and the matching operation contract is released.
+- Prompt, model/translator, and bridge-removal work remains held by Workstream 2.
 
 ## Not First
 
-- Do not migrate settings, characters, chats, prompts, lorebooks, or scripts in
-  the inventory slice.
-- Do not remove a bridge, trusted-write path, write guard, or lifecycle flush.
-- Do not replace `getDatabase()` with an all-resource owner or generic snapshot.
+- Do not replace `getDatabase()` with a common snapshot or common epoch.
+- Do not migrate a production consumer before its complete owner contract and
+  Workstream 1/2 cursors exist.
+- Do not remove trusted writes, write guards, bridges, or lifecycle flushes.
 - Do not widen the shell/bootstrap/resource payload.
 - Do not add event deltas.
 
 ## Handoff
 
-After Phase 0 acceptance, update [`status.md`](status.md) with exact counts and
-dependency holds, refresh [`latest-verification.md`](latest-verification.md),
-then open only the Phase 1 owner-API gaps that unblock a released resource
-family.
+After a narrow owner foundation passes its contract tests, record its exact
+release cursor in `status.md` and open only the matching resource-family
+consumer migration.

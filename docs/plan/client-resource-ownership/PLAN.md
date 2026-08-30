@@ -2,8 +2,8 @@
 
 Date: 2026-08-30
 
-Status: active. Phase 0 inventory may proceed concurrently; runtime migration is
-dependency-gated per resource family.
+Status: active. Phase 0 closed at `0432b32ba`; Phase 1 owner-foundation work is
+active and runtime migration remains dependency-gated per resource family.
 
 ## Goal
 
@@ -37,8 +37,9 @@ the server-resource guide, and the client-runtime guide until slices land.
   `/api/v1/characters/aggregate`, while the temporary observer-shell rollout has
   explicit flag/override aliases.
 
-Phase 0 must create the authoritative consumer/facade/bridge inventory and
-prevent it from growing.
+Phase 0 created the authoritative consumer/facade/bridge inventory and prevents
+it from growing through the mandatory architecture gate. Phase 1 now turns the
+recorded owner API gaps into narrow, tested foundations.
 
 ## End State
 
@@ -100,7 +101,7 @@ prevent it from growing.
 | Cursor | Initial value | Meaning |
 | --- | --- | --- |
 | Opening Fastify code anchor | `c0df82d5240a29a33efa5995e08cc970e0147573` | Code state inspected for plan activation. |
-| Workstream 1 Phase 0 gate | Not established | Phase 0 inventory should integrate with its no-new-debt conventions. |
+| Workstream 1 Phase 0 gate | `b01e88b03461753afe8f573029ce2e5ab47892ef` | Phase 0 inventory uses the shared mandatory architecture-gate conventions. |
 | Workstream 1 contract releases | Per family, not established | Blocks matching owner API/runtime migration. |
 | Workstream 2 model owner | Not released | Blocks model compatibility consumer retirement. |
 | Workstream 2 prompt owner | Not released | Blocks prompt-template bridge retirement. |

@@ -1,6 +1,6 @@
 # Phase 1: Resource-Owner Foundation
 
-Status: queued.
+Status: active.
 
 Depends on: Phase 0 inventory and per-family Workstream 1 contract availability.
 
@@ -42,3 +42,5 @@ refresh. They may not broaden bootstrap or route requirements.
 Focused owner/resource/command/outbox tests, affected frontend tests, contract
 gates, typechecks, browser smoke for startup-sensitive foundations, formatting,
 and diff checks.
+
+Active slice: [Owner API gap matrix and first foundations](slices/phase-1-resource-owner-foundation/owner-api-gap-matrix-and-first-foundations.md).
