@@ -1,7 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database, Message } from '../../../src/ts/storage/database.svelte'
 import { embedTextGroups, embedTexts } from './memoryEmbeddingAdapter.js'
-import { resolveMemoryEmbeddingModel } from './memoryEmbeddingModel.js'
+import { resolveMemoryEmbeddingModel, type MemoryEmbeddingSettings } from './memoryEmbeddingModel.js'
 import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js'
 import { armMemoryProviderFetchDeadline, resolveMemoryProviderFetchDeadlineMs } from './memoryProviderDeadline.js'
 import { listMemoryEmbeddings, listMemorySummaries } from './memoryRepository.js'
@@ -39,9 +38,37 @@ export interface PromptMemoryQuerySourceInput {
   userMessage?: string
 }
 
+export interface PromptMemoryQueryMessage {
+  role: 'user' | 'char'
+  data: string
+  chatId?: string
+  name?: string
+  disabled?: false | true | 'allBefore'
+  saying?: string
+}
+
+export interface PromptMemoryQueryChat {
+  id?: string
+  message: readonly PromptMemoryQueryMessage[]
+}
+
+export interface PromptMemoryQueryCharacter {
+  chaId: string
+  supaMemory?: boolean
+  chats: readonly PromptMemoryQueryChat[]
+}
+
+export interface PromptMemoryQueryDatabase extends MemoryEmbeddingSettings {
+  characters: readonly PromptMemoryQueryCharacter[]
+  hypaV3?: boolean
+  hypaV3PresetId?: number
+  hypaV3Presets?: readonly { settings?: Partial<HypaV3Settings> }[]
+  hypaV3Settings?: Partial<HypaV3Settings> | null
+}
+
 export interface PrefetchPromptMemoryQueryInput {
   db: DatabaseSync
-  database: Database
+  database: PromptMemoryQueryDatabase
   input: PromptMemoryQuerySourceInput
   signal?: AbortSignal
   deadlineMs?: number
@@ -249,7 +276,7 @@ export async function prefetchPromptMemoryQueryVectors(
 }
 
 export function buildPromptMemoryQueryTexts(
-  database: Database,
+  database: PromptMemoryQueryDatabase,
   input: PromptMemoryQuerySourceInput,
   queryChatCount: number,
 ): string[] {
@@ -267,9 +294,9 @@ export function buildPromptMemoryQueryTexts(
 }
 
 function prepareQueryMessages(
-  source: readonly Message[],
+  source: readonly PromptMemoryQueryMessage[],
   input: PromptMemoryQuerySourceInput,
-): Array<Pick<Message, 'role' | 'data' | 'chatId' | 'name' | 'disabled' | 'saying'>> {
+): PromptMemoryQueryMessage[] {
   const messages = source.map((message) => ({
     role: message.role,
     data: message.data,
@@ -313,7 +340,7 @@ function prepareQueryMessages(
   return messages
 }
 
-function messagesFromLastReset<T extends Pick<Message, 'disabled'>>(messages: readonly T[]): T[] {
+function messagesFromLastReset<T extends Pick<PromptMemoryQueryMessage, 'disabled'>>(messages: readonly T[]): T[] {
   const enabled: T[] = []
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -324,7 +351,7 @@ function messagesFromLastReset<T extends Pick<Message, 'disabled'>>(messages: re
   return enabled
 }
 
-function resolveHypaV3PresetSettings(database: Database): Partial<HypaV3Settings> | null | undefined {
+function resolveHypaV3PresetSettings(database: PromptMemoryQueryDatabase): Partial<HypaV3Settings> | null | undefined {
   const presetId = typeof database.hypaV3PresetId === 'number' ? database.hypaV3PresetId : 0
   const preset = database.hypaV3Presets?.[presetId]
   if (preset && typeof preset === 'object' && 'settings' in preset) {
