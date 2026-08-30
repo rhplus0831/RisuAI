@@ -4,33 +4,32 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [leaf setting owner contract](phases/slices/phase-1-resource-owner-foundation/leaf-setting-owner-contract.md).
+Execute the [lorebook page consumer migration](phases/slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
 
-1. Rank low-fanout standalone settings by exact production consumers and choose
-   one with a released read and durable command operation.
-2. Prove it is one singular persisted settings row with no competing canonical
-   owner or editor-body boundary.
-3. Complete its narrow lifecycle, mutation settlement, outbox, optimistic,
-   rollback, writer-loss, reload, and recovery contract.
-4. Mark drafts explicitly owner-scoped or not applicable and update the checked
-   gap matrix evidence.
-5. Keep all production consumers and compatibility paths unchanged until the
-   Phase 2 migration slice.
+1. Feed the owner from the existing route hydration result without issuing a
+   duplicate standalone-setting request.
+2. Split page reads from lorebook collection/body reads in each in-scope UI and
+   prompt-processing consumer.
+3. Route explicit selection through the owner and preserve stable-id mapping,
+   queued/failure UI, current-attempt rollback, and authoritative reload.
+4. Preserve structural create/delete/reorder selection repair until it can use
+   the same owner contract safely.
+5. Classify plugin/legacy exposures explicitly if they cannot migrate without
+   changing external behavior.
 
 ## Required Scope Before Editing
 
-The next implementation must name source consumer rows, the exact target owner
-API, read state, command outcomes, optimistic/current-attempt rollback, outbox
-identity, draft disposition, reload/recovery tests, and dependency commits.
+The implementation must retain the existing lorebook collection/body owner and
+prove there is no duplicate fetch, payload widening, selection drift, or extra
+reactive fanout.
 
-## First Dependency Candidates
+## Released Dependency
 
-- Standalone settings are the first candidate pool because their read contract
-  is released at `33d1643ae`; the exact durable command must also be present in
-  the `3f275e9dc` catalog.
-- `lorebookPageOwner` at `1727cbe35` is evidence for the narrow read lifecycle,
-  but it does not release the broader lorebook/editor family.
-- Prompt, model/translator, and bridge-removal work remains held by Workstream 2.
+- `lorebookPageOwner` is complete at `e751edc69`.
+- The standalone read is released at `33d1643ae`, durable command at
+  `3f275e9dc`, and route relation at `6a6d0ac1f`.
+- The page pointer is an already-singular settings row. Broader lorebook bodies,
+  prompt/model/translator owners, and bridge removal remain held.
 
 ## Not First
 
@@ -43,5 +42,5 @@ identity, draft disposition, reload/recovery tests, and dependency commits.
 
 ## Handoff
 
-After one leaf has a complete owner contract, close Phase 1 and open Phase 2
-only for that exact leaf.
+After page consumers and page-selection persistence migrate with browser proof,
+record retained external holds and open the next dependency-released leaf only.

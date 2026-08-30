@@ -9,17 +9,17 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 ## Current Snapshot
 
-- Plan state: Active; Phase 0 inventory and the first Phase 1 foundation slice
-  are complete. Runtime consumer migration has not started.
-- Current phase: [Phase 1 resource-owner foundation](phases/phase-1-resource-owner-foundation.md).
-- Active slice: [Leaf setting owner contract](phases/slices/phase-1-resource-owner-foundation/leaf-setting-owner-contract.md).
+- Plan state: Active; Phases 0 and 1 are complete. Runtime consumer migration
+  has not started.
+- Current phase: [Phase 2 leaf settings and collections](phases/phase-2-leaf-settings-and-collections.md).
+- Active slice: [Lorebook page consumer migration](phases/slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Phase 0 implementation: `0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f`.
-- Runtime changes through the first Phase 1 slice: an unused, scoped
-  `lorebookPageOwner` foundation was added; no production consumer, bridge,
-  payload, or persistence path changed.
-- Latest implementation: owner gap matrix and first foundation at
-  `1727cbe35`; see [`latest-verification.md`](latest-verification.md).
+- Runtime changes through Phase 1: an unused, scoped `lorebookPageOwner` and its
+  durable selection persistence were added; no production consumer, bridge,
+  payload, or server persistence path changed.
+- Latest implementation: complete lorebook-page owner contract at
+  `e751edc69`; see [`latest-verification.md`](latest-verification.md).
 
 ## Inventory Cursor
 
@@ -40,7 +40,7 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 | Resource family | Workstream 1 contract | Workstream 2 owner | Workstream 3 state |
 | --- | --- | --- | --- |
 | Inventory/gates | Phase 0 convention released at `b01e88b03` | Not required for read-only inventory | Complete at `0432b32ba`. |
-| Lorebook page standalone pointer | Standalone setting at `33d1643ae`; route metadata at `6a6d0ac1f` | Already-singular settings row; lorebook bodies remain held | Read-owner foundation released at `1727cbe35`; no consumer moved. |
+| Lorebook page standalone pointer | Standalone setting at `33d1643ae`; durable operation at `3f275e9dc`; route metadata at `6a6d0ac1f` | Already-singular settings row; lorebook bodies remain held | Complete owner contract at `e751edc69`; Phase 2 consumer migration active. |
 | Leaf settings/collections | Per owner pending | Per family pending or already singular, to prove | Runtime blocked. |
 | Character/chat | Character-summary read contract released at `159b6eccf`; remaining resource/command contracts pending | Canonical state must be confirmed | Runtime blocked. |
 | Prompt templates | Prompt contract pending | Phase 3 not released | Runtime blocked. |
@@ -68,8 +68,8 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 | Phase | Status | Opens when |
 | ---: | --- | --- |
 | [0. Consumer/facade/bridge inventory](phases/phase-0-consumer-facade-and-bridge-inventory.md) | Complete | Closed at `0432b32ba`. |
-| [1. Resource-owner foundation](phases/phase-1-resource-owner-foundation.md) | Active | Gap matrix and first read foundation released; complete one migratable leaf owner. |
-| [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Blocked | Matching Workstream 1/2 cursors release. |
+| [1. Resource-owner foundation](phases/phase-1-resource-owner-foundation.md) | Complete | Closed at `e751edc69`. |
+| [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Active | Migrate only the released lorebook-page pointer. |
 | [3. Character/chat](phases/phase-3-character-and-chat-ownership.md) | Blocked | Matching Workstream 1/2 cursors release. |
 | [4. Prompt/lorebook/scripts](phases/phase-4-prompt-lorebook-and-script-ownership.md) | Blocked | Workstream 2 canonical owner closes per family. |
 | [5. Broad settings/shell](phases/phase-5-broad-settings-and-shell-ownership.md) | Blocked | Narrow owner paths exist for all remaining consumers. |
@@ -90,5 +90,5 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Complete one dependency-released leaf
-setting owner contract without moving its production consumers.
+Use [`next-steps.md`](next-steps.md). Migrate only the standalone lorebook page
+pointer; keep lorebook collections and bodies on their existing owners.

@@ -1,6 +1,6 @@
 # Phase 1: Resource-Owner Foundation
 
-Status: active.
+Status: complete at `e751edc69`.
 
 Depends on: Phase 0 inventory and per-family Workstream 1 contract availability.
 
@@ -46,4 +46,5 @@ and diff checks.
 Completed slice: [Owner API gap matrix and first foundations](slices/phase-1-resource-owner-foundation/owner-api-gap-matrix-and-first-foundations.md)
 at `1727cbe35`.
 
-Active slice: [Leaf setting owner contract](slices/phase-1-resource-owner-foundation/leaf-setting-owner-contract.md).
+Completed slice: [Leaf setting owner contract](slices/phase-1-resource-owner-foundation/leaf-setting-owner-contract.md)
+at `e751edc69`.

@@ -1,6 +1,6 @@
 # Leaf Setting Owner Contract
 
-Status: active; implementation candidate under verification.
+Status: complete at `e751edc69`.
 
 Parent: [Phase 1](../../phase-1-resource-owner-foundation.md)
 
@@ -68,3 +68,15 @@ and `git diff --check`.
 One leaf setting is marked dependency-released and complete for selectors,
 resource state, commands, draft disposition, and contract tests. Phase 2 may
 then open only for that exact setting.
+
+## Release
+
+- `lorebookPageOwner` owns the focused read lifecycle and the standalone page
+  projection with stable subscription identity.
+- `lorebookPageSelectionPersistence` uses the reviewed `lorebook-select`
+  operation, deterministic selection/owner keys, encrypted outbox staging,
+  active-writer retention, and replay settlement.
+- Owner tests prove optimistic success, queued settlement, current-attempt-only
+  rollback, supersession, stale revision rejection, and authoritative reload.
+- Drafts are explicitly not applicable to the page pointer. Lorebook bodies and
+  their editor drafts remain separate.

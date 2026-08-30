@@ -11,7 +11,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 | --- | --- | --- | --- |
 | [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 shared-core foundation and first leaf](cross-runtime-boundaries/status.md) | Phase 2 closed at `6a6d0ac1f` with 103 route operations, 129 durable command operations, and 55 reviewed browser relations; 336 direct root-`src` edges remain. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 legacy flat model configuration migration](canonical-state-and-compatibility/status.md) | Phase 1 migration/recovery foundation closed at `1e758cd22`; each resource-family closeout releases the matching Workstream 3 phase. |
-| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 1 leaf setting owner contract](client-resource-ownership/status.md) | The 56-row owner gap matrix and first read foundation released at `1727cbe35`; one fully migratable leaf owner is next. |
+| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 2 lorebook page consumer migration](client-resource-ownership/status.md) | The complete page owner released at `e751edc69`; migrate only that standalone pointer while retaining lorebook bodies/collections. |
 
 The portfolio-level dependency model and the conditional fourth workstream are
 defined in the [Architecture Modernization Roadmap](../architecture-modernization/PLAN.md).

@@ -1,6 +1,6 @@
 # Phase 2: Leaf Settings And Collection Resources
 
-Status: dependency-blocked.
+Status: active for the standalone `loreBookPage` pointer.
 
 Depends on: Phase 1 owner APIs and per-family Workstream 1/2 releases.
 
@@ -37,3 +37,5 @@ contracts remain unchanged.
 Focused owner/command/resource tests, settings/collection UI tests, affected
 frontend/server lanes, browser smoke for visible reload, payload/reactivity
 measurements, typechecks, formatting, and diff checks.
+
+Active slice: [Lorebook page consumer migration](slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
