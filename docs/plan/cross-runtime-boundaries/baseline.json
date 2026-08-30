@@ -647,19 +647,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/agentLorebookInputs.js",
-      "target": "src/ts/agentLorebookInputs.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "resolveAgentLorebookInput"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
       "specifier": "../../../../src/ts/agentPresetResolver.js",
       "target": "src/ts/agentPresetResolver.ts",
       "kind": "static",
