@@ -771,19 +771,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/embeddingOperations.ts",
-      "specifier": "../../../src/ts/storage/database.svelte.js",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/generation/providerMessages.ts",
       "specifier": "../../../../src/ts/model/types",
       "target": "src/ts/model/types.ts",
@@ -831,58 +818,6 @@
       "usage": "type-only",
       "symbols": [
         "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memoryEmbeddingModel.ts",
-      "specifier": "../../../src/ts/process/memory/hypamemory",
-      "target": "src/ts/process/memory/hypamemory.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "HypaModel"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memoryEmbeddingModel.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memoryEmbedJobHandler.ts",
-      "specifier": "../../../src/ts/process/memory/hypamemory",
-      "target": "src/ts/process/memory/hypamemory.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "HypaModel"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memoryEmbedJobHandler.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -3402,19 +3337,6 @@
       "usage": "type-only",
       "symbols": [
         "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memoryEmbeddingModel.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
       ],
       "count": 1,
       "policy": "browser-application-model"

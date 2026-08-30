@@ -235,8 +235,11 @@ describe('Phase 8 compatibility structure', () => {
       typeAliasStringUnion(readRepoFile('server/fastify/src/memoryPlanner.ts'), 'HypaV3PlannerMode').sort(),
     )
     expect(Object.keys(HYPA_EMBEDDING_MODEL_OWNERS).sort()).toEqual(
-      typeAliasStringUnion(readRepoFile('src/ts/process/memory/hypamemory.ts'), 'HypaModel').sort(),
+      typeAliasStringUnion(readRepoFile('server/fastify/src/memoryEmbeddingModel.ts'), 'MemoryEmbeddingModel').sort(),
     )
+    expect(
+      typeAliasStringUnion(readRepoFile('server/fastify/src/memoryEmbeddingModel.ts'), 'MemoryEmbeddingModel'),
+    ).toEqual(typeAliasStringUnion(readRepoFile('src/ts/process/memory/hypamemory.ts'), 'HypaModel'))
     expect(Object.keys(RETIRED_MEMORY_ALGORITHM_OWNERS).sort()).toEqual(
       typeAliasStringUnion(
         readRepoFile('src/ts/process/legacyMemoryMigrationNotice.ts'),

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
 import {
   MEMORY_EMBEDDING_APPROX_CHARS_PER_TOKEN,
   MEMORY_EMBEDDING_FALLBACK_MAX_INPUT_BYTES,
@@ -12,10 +11,11 @@ import {
   findMemoryEmbeddingLimitViolation,
   formatMemoryEmbeddingLimitViolation,
   resolveMemoryEmbeddingModel,
+  type MemoryEmbeddingSettings,
 } from '../src/memoryEmbeddingModel.js'
 
-function db(overrides: Partial<Database>): Database {
-  return overrides as Database
+function db(overrides: MemoryEmbeddingSettings & Record<string, unknown>): MemoryEmbeddingSettings {
+  return overrides
 }
 
 describe('memory embedding model resolver', () => {
@@ -46,9 +46,9 @@ describe('memory embedding model resolver', () => {
         hypaModel: 'openai3small',
         hypaV3Key: ' embed-key ',
         subModel: 'conflicting-submodel',
-        modelRoles: { memory: 'gpt41-mini' } as Database['modelRoles'],
+        modelRoles: { memory: 'gpt41-mini' },
         seperateModelsForAxModels: true,
-        seperateModels: { memory: 'claude-3-5-sonnet-latest' } as Database['seperateModels'],
+        seperateModels: { memory: 'claude-3-5-sonnet-latest' },
       }),
     )
 

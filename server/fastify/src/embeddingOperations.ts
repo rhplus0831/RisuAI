@@ -1,4 +1,3 @@
-import type { Database } from '../../../src/ts/storage/database.svelte.js'
 import type {
   CustomEmbeddingConfiguration,
   EmbeddingInputType,
@@ -14,7 +13,11 @@ import {
   MEMORY_EMBEDDING_MAX_RESPONSE_BYTES,
   MEMORY_EMBEDDING_MAX_VECTOR_VALUES,
 } from './memoryEmbeddingAdapter.js'
-import { resolveMemoryEmbeddingModel, type MemoryEmbeddingModelRequest } from './memoryEmbeddingModel.js'
+import {
+  resolveMemoryEmbeddingModel,
+  type MemoryEmbeddingModelRequest,
+  type MemoryEmbeddingSettings,
+} from './memoryEmbeddingModel.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'
 
@@ -137,7 +140,7 @@ export function resolveEmbeddingOperationModel(
     effective.hypaV3Key = resolveCredential(request.credential, readUsableSecret(settings.hypaV3Key))
   }
 
-  const resolved = resolveMemoryEmbeddingModel(effective as unknown as Database, model)
+  const resolved = resolveMemoryEmbeddingModel(effective as MemoryEmbeddingSettings, model)
   if (resolved.ok === false) {
     if (resolved.error.includes('requires') && resolved.error.toLowerCase().includes('key')) {
       throw credentialUnavailable()

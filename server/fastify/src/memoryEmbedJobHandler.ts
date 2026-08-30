@@ -1,7 +1,5 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { HypaModel } from '../../../src/ts/process/memory/hypamemory'
 import { embedTextGroups, embedTexts, type MemoryEmbeddingAdapterResult } from './memoryEmbeddingAdapter.js'
 import {
   effectiveMemoryEmbeddingLimits,
@@ -10,7 +8,9 @@ import {
   findMemoryEmbeddingLimitViolation,
   formatMemoryEmbeddingLimitViolation,
   resolveMemoryEmbeddingModel,
+  type MemoryEmbeddingModel,
   type MemoryEmbeddingModelRequest,
+  type MemoryEmbeddingSettings,
 } from './memoryEmbeddingModel.js'
 import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js'
 import {
@@ -46,7 +46,7 @@ interface HypaV3EmbedJobPayload {
   model: string
 }
 
-interface DatabaseLike {
+interface MemoryEmbeddingJobDatabase extends MemoryEmbeddingSettings {
   hypaV3Presets?: unknown
   hypaV3PresetId?: unknown
   hypaV3Settings?: unknown
@@ -211,7 +211,7 @@ interface ContextualSubBatchPlan {
 async function executeEmbedJob(input: {
   opts: EmbedMemoryJobHandlerOptions
   job: MemoryJob
-  database: Database
+  database: MemoryEmbeddingJobDatabase
   settings: HypaV3Settings
   embed: NonNullable<EmbedMemoryJobHandlerOptions['embed']>
   embedGroups: NonNullable<EmbedMemoryJobHandlerOptions['embedGroups']>
@@ -238,7 +238,7 @@ async function executeEmbedJob(input: {
     return { kind: 'existing', job: input.job, payload, chunkId: chunk.id }
   }
 
-  const modelRequest = resolveMemoryEmbeddingModel(input.database, payload.model as HypaModel)
+  const modelRequest = resolveMemoryEmbeddingModel(input.database, payload.model as MemoryEmbeddingModel)
   if (modelRequest.ok === false) {
     throw new Error(modelRequest.error)
   }
@@ -672,13 +672,15 @@ function compareEmbedJobs(left: MemoryJob, right: MemoryJob): number {
   return left.id.localeCompare(right.id)
 }
 
-function contextualVoyageBatchModel(jobs: readonly MemoryJob[]): HypaModel | null {
+function contextualVoyageBatchModel(jobs: readonly MemoryJob[]): MemoryEmbeddingModel | null {
   const model = tryParseEmbedPayload(jobs[0]?.payload)?.model
   if (!isVoyageContextualModel(model)) return null
   return jobs.every((job) => tryParseEmbedPayload(job.payload)?.model === model) ? model : null
 }
 
-function isVoyageContextualModel(model: unknown): model is Extract<HypaModel, 'voyageContext3' | 'voyageContext4'> {
+function isVoyageContextualModel(
+  model: unknown,
+): model is Extract<MemoryEmbeddingModel, 'voyageContext3' | 'voyageContext4'> {
   return model === 'voyageContext3' || model === 'voyageContext4'
 }
 
@@ -706,7 +708,7 @@ function parseEmbedPayload(payload: unknown): HypaV3EmbedJobPayload {
   }
 }
 
-function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
+function loadDatabase(opts: EmbedMemoryJobHandlerOptions): MemoryEmbeddingJobDatabase {
   // Memory-job-scoped read settings + hypa presets + chat-id
   // stubs only — never the whole characters/chats/collections payload parse.
   const database = opts.loadDatabase
@@ -717,11 +719,11 @@ function loadDatabase(opts: EmbedMemoryJobHandlerOptions): Database {
   if (!isRecord(database)) {
     throw new Error('persisted database is missing')
   }
-  return database as unknown as Database
+  return database as MemoryEmbeddingJobDatabase
 }
 
-function resolveHypaV3Settings(database: Database): HypaV3Settings {
-  const db = database as DatabaseLike
+function resolveHypaV3Settings(database: MemoryEmbeddingJobDatabase): HypaV3Settings {
+  const db = database
   let rawSettings: unknown = db.hypaV3Settings
   const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
   if (Array.isArray(db.hypaV3Presets)) {
