@@ -4,5 +4,10 @@ One slice migrates one resource family or removes one now-unused infrastructure
 layer. Keep the compatibility bridge until the family's full behavior proof
 passes. Link the active slice from `../../status.md`.
 
-The initial slice is
-[Facade and bridge consumer baseline](phase-0-consumer-facade-and-bridge-inventory/facade-and-bridge-consumer-baseline.md).
+Completed slices:
+
+- [Facade and bridge consumer baseline](phase-0-consumer-facade-and-bridge-inventory/facade-and-bridge-consumer-baseline.md).
+- [Owner API gap matrix and first foundations](phase-1-resource-owner-foundation/owner-api-gap-matrix-and-first-foundations.md).
+
+Active slice:
+[Leaf setting owner contract](phase-1-resource-owner-foundation/leaf-setting-owner-contract.md).

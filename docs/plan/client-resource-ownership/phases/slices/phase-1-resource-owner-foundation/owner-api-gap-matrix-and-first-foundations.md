@@ -1,6 +1,6 @@
 # Owner API Gap Matrix And First Foundations
 
-Status: active.
+Status: complete at `1727cbe35`.
 
 Parent: [Phase 1](../../phase-1-resource-owner-foundation.md)
 
@@ -64,3 +64,16 @@ startup-sensitive foundations, formatting, and `git diff --check`.
 Stop if a proposed API spans unrelated resource families, a persisted owner is
 ambiguous, the wire/operation contract is unreleased, or a foundation would
 require changing a production consumer.
+
+## Release
+
+- `owner-api-gap-matrix.json` maps all 56 frozen policy rows to nine narrow
+  owner families, classifies all five required capabilities, records the exact
+  dependency state, and is enforced by the mandatory architecture inventory.
+- `lorebookPageOwner` is the first dependency-released foundation. It owns only
+  the standalone `loreBookPage` pointer and its focused
+  unloaded/loading/ready/stale/error, retry, revision-fence, failure, and
+  supersession lifecycle.
+- No production consumer moved. The Phase 0 inventory remains exactly 9,917
+  references across 325 consumer groups, six bridge families, and 20 temporary
+  seam rows.

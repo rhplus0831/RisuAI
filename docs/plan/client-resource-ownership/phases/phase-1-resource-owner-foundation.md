@@ -43,4 +43,7 @@ Focused owner/resource/command/outbox tests, affected frontend tests, contract
 gates, typechecks, browser smoke for startup-sensitive foundations, formatting,
 and diff checks.
 
-Active slice: [Owner API gap matrix and first foundations](slices/phase-1-resource-owner-foundation/owner-api-gap-matrix-and-first-foundations.md).
+Completed slice: [Owner API gap matrix and first foundations](slices/phase-1-resource-owner-foundation/owner-api-gap-matrix-and-first-foundations.md)
+at `1727cbe35`.
+
+Active slice: [Leaf setting owner contract](slices/phase-1-resource-owner-foundation/leaf-setting-owner-contract.md).
