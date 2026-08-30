@@ -9,7 +9,6 @@ export type UiCompatibilityOwner =
   | 'speech-operation'
   | 'read-only-export'
   | 'local-ui'
-  | 'unmounted-legacy-ui'
 
 export interface UiCompatibilityControlGroup {
   controls: readonly string[]
@@ -202,8 +201,13 @@ export const phase4ControlInventory: readonly UiCompatibilityControlGroup[] = [
   },
   {
     source: 'src/lib/Mobile/MobileCharacters.svelte',
-    owner: 'unmounted-legacy-ui',
-    controls: ['mobile-character-action:create', 'mobile-character-action:open'],
+    owner: 'route-state',
+    controls: ['mobile-character-action:open'],
+  },
+  {
+    source: 'src/lib/Mobile/MobileCharacters.svelte',
+    owner: 'character-command',
+    controls: ['mobile-character-action:create'],
   },
   {
     source: 'src/lib/ChatScreens/Chat.svelte',

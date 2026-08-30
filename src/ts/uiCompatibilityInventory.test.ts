@@ -131,6 +131,26 @@ describe('Phase 4 UI compatibility inventory', () => {
     expect(phase4ControlInventory.every(({ owner, source }) => owner.length > 0 && source.length > 0)).toBe(true)
   })
 
+  it('classifies the live MobileCharacters controls by their current owners', () => {
+    const mobileControls = phase4ControlInventory.filter(
+      ({ source }) => source === 'src/lib/Mobile/MobileCharacters.svelte',
+    )
+
+    expect(mobileControls).toEqual([
+      {
+        source: 'src/lib/Mobile/MobileCharacters.svelte',
+        owner: 'route-state',
+        controls: ['mobile-character-action:open'],
+      },
+      {
+        source: 'src/lib/Mobile/MobileCharacters.svelte',
+        owner: 'character-command',
+        controls: ['mobile-character-action:create'],
+      },
+    ])
+    expect(read('src/lib/Others/GridCatalog.svelte')).toContain('<MobileCharacters')
+  })
+
   it('pins the signed shared responsive shell in place of the unmounted baseline mobile shell', () => {
     const appSource = read('src/App.svelte')
     const storesSource = read('src/ts/stores.svelte.ts')
