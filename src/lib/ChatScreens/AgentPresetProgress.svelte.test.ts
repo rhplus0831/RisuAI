@@ -32,6 +32,7 @@ import {
 } from 'src/ts/process/agentPresetProgress'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 import AgentPresetProgress from './AgentPresetProgress.svelte'
 
 databaseMocks.getDatabase.mockImplementation(() => testDatabaseState.db)
@@ -46,7 +47,8 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   testDatabaseState.db = {
-    characters: [{ chatPage: 0, chats: [{ id: 'chat-1' }] }],
+    characters: [{ chaId: 'character-1', chatPage: 0, chats: [{ id: 'chat-1' }] }],
+    currentChar: 0,
   } as never
   selectedCharID.set(0)
   progressSession = beginAgentPresetProgress('chat-1')
@@ -87,6 +89,45 @@ describe('AgentPresetProgress', () => {
     expect(target.textContent).toContain('Critique, Fact Check')
     expect(target.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('50')
     expect(target.querySelectorAll('.risu-ongoing-pulse')).toHaveLength(2)
+  })
+
+  it('fails closed when the ready character projection has no unique owner', async () => {
+    charactersResourceState.currentChar = 99
+    component = mount(AgentPresetProgress, { target })
+    updateAgentPresetProgress(progressSession, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-1',
+      presetId: 'preset-1',
+      presetName: 'Aggregate-only progress',
+      phase: 'beforeMain',
+      status: 'running',
+      totalSteps: 1,
+      completedSteps: 0,
+      activeSteps: [],
+    })
+    await tick()
+
+    expect(target.querySelector('[role="status"]')).toBeNull()
+  })
+
+  it('retains the aggregate chat fallback before character readiness', async () => {
+    charactersResourceState.currentChar = 99
+    charactersResourceState.status = 'loading'
+    component = mount(AgentPresetProgress, { target })
+    updateAgentPresetProgress(progressSession, {
+      type: 'agent_preset_progress',
+      chatId: 'chat-1',
+      presetId: 'preset-1',
+      presetName: 'Bootstrap progress',
+      phase: 'beforeMain',
+      status: 'running',
+      totalSteps: 1,
+      completedSteps: 0,
+      activeSteps: [],
+    })
+    await tick()
+
+    expect(target.querySelector('[role="status"]')).toBeTruthy()
   })
 
   it('hides progress for a different chat and after a terminal snapshot', async () => {

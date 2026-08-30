@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import { ParseMarkdown, risuChatParser } from 'src/ts/parser/parser.svelte'
   import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import { getDatabase, type character } from 'src/ts/storage/database.svelte'
   import {
     moduleBackgroundEmbedding,
@@ -49,11 +50,15 @@
 
   let backgroundHTML = $state('')
   let backgroundCharacterKey = $state('')
+  let selectedCharacter = $derived(
+    getSelectedCharacterOwner() ??
+      (charactersResourceState.status === 'ready'
+        ? undefined
+        : (getDatabase().characters?.[selIdState.selId] as character | undefined)),
+  )
 
   $effect(() => {
     const selectedId = selIdState.selId
-    const selectedCharacter =
-      getSelectedCharacterOwner() ?? (getDatabase().characters?.[selectedId] as character | undefined)
     const nextHTML = selectedCharacter?.backgroundHTML ?? ''
     const nextCharacterKey = backgroundCharacterSignature(selectedId, selectedCharacter)
 
@@ -68,16 +73,12 @@
   let moduleEmbedding = $derived($moduleBackgroundEmbedding ?? '')
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
-      characterId: getDatabase().characters?.[selIdState.selId]?.chaId,
-      chatId:
-        getDatabase().characters?.[selIdState.selId]?.chats?.[getDatabase().characters?.[selIdState.selId]?.chatPage]
-          ?.id,
+      characterId: selectedCharacter?.chaId,
+      chatId: selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id,
     }),
   )
   let backgroundReloadKey = $derived(`${$ReloadGUIPointer}|${$VariableReloadGUIPointer}|${regexDisplayReloadToken}`)
-  let backgroundOwner = $derived(
-    backgroundOwnerKey(selIdState.selId, getDatabase().characters?.[selIdState.selId] as character | undefined),
-  )
+  let backgroundOwner = $derived(backgroundOwnerKey(selIdState.selId, selectedCharacter))
   let backgroundParseInput: BackgroundParseInput = $derived({
     selectedId: selIdState.selId,
     ownerKey: backgroundOwner,
@@ -94,7 +95,7 @@
   function parseBackground(input: BackgroundParseInput): Promise<string> {
     latestBackgroundParseInput = input
     return untrack(() => {
-      const currentChar = getDatabase().characters?.[input.selectedId] as character | undefined
+      const currentChar = selectedCharacter
       const source = (input.html || '') + '\n' + (input.moduleEmbedding || '')
       return ParseMarkdown(risuChatParser(source, { chara: currentChar }), currentChar, 'back')
     }).then((parsed) => {

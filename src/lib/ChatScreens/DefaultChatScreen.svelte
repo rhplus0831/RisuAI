@@ -68,6 +68,7 @@
   } from '../../ts/storage/database.svelte'
   import { getCharImage } from '../../ts/characterImage'
   import { getSelectedCharacterOwner } from '../../ts/characterState'
+  import { charactersResourceState } from '../../ts/server/resourceState.svelte'
   import {
     abortActiveGeneration,
     clearActiveGenerationAbortController,
@@ -323,8 +324,11 @@
 
   // The owner projection is authoritative once character resources are ready;
   // retain the aggregate only for the pre-readiness bootstrap gap.
-  let currentCharacter = $derived(getSelectedCharacterOwner() ?? getDatabase().characters[$selectedCharID])
-  let selectedCharacterOwner = $derived(getSelectedCharacterOwner() ?? currentCharacter)
+  let currentCharacter = $derived(
+    getSelectedCharacterOwner() ??
+      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters[$selectedCharID]),
+  )
+  let selectedCharacterOwner = $derived(currentCharacter)
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: currentCharacter?.chaId,

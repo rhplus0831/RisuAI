@@ -232,7 +232,11 @@ vi.mock('html-to-image', () => ({ toCanvas: shellMocks.toCanvas }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
 import { PlaygroundStore, ScrollToMessageStore, selectedCharID } from 'src/ts/stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+} from 'src/ts/server/resourceState.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type Database } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -324,6 +328,7 @@ function seedDatabase(character: Record<string, unknown>) {
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
     characters: [character],
+    currentChar: 0,
     chatDisplayTailCount: 30,
     enableRisuaiProTools: false,
     fixedChatTextarea: false,
@@ -415,6 +420,29 @@ describe('bootstrap shell greeting render (DOM oracle)', () => {
     // ...and the greeting bubble must be suppressed until hydration lands (no
     // complete-but-empty greeting painted for a shell).
     expect(greetingBubble(), 'greeting bubble must be absent for an un-hydrated shell').toBeNull()
+  })
+
+  it('fails closed when the ready projection has no selected owner', async () => {
+    seedDatabase(makeHydratedCharacter())
+    charactersResourceState.currentChar = 99
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    expect(greetingBubble()).toBeNull()
+  })
+
+  it('fails closed when the ready projection has duplicate selected owners', async () => {
+    const character = makeHydratedCharacter()
+    seedDatabase(character)
+    charactersResourceState.characters = [character as never, structuredClone(character) as never]
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    expect(greetingBubble()).toBeNull()
   })
 })
 

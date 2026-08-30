@@ -49,7 +49,11 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import BackgroundDom from './BackgroundDom.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+} from '../../ts/server/resourceState.svelte'
 import {
   ReloadGUIPointer,
   VariableReloadGUIPointer,
@@ -114,6 +118,7 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
         type: 'character',
       },
     ],
+    currentChar: 0,
     enabledModules: [],
     moduleIntergration: '',
     modules: [],
@@ -163,6 +168,29 @@ afterEach(() => {
 })
 
 describe('BackgroundDom parser dependencies', () => {
+  it('fails closed when a ready projection has no selected owner', async () => {
+    seedDatabase()
+    charactersResourceState.currentChar = 99
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('fails closed when a ready projection has duplicate selected owners', async () => {
+    seedDatabase()
+    charactersResourceState.characters = [
+      charactersResourceState.characters[0],
+      { ...charactersResourceState.characters[0] },
+    ]
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
   it('does not re-run background parsing on unrelated guarded projection writes', async () => {
     seedDatabase()
     component = mount(BackgroundDom, { target })

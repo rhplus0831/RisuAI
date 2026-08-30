@@ -1,7 +1,18 @@
+<script lang="ts" module>
+  export function resolveSelectedCharacterForDisplay<T>(
+    owner: T | undefined,
+    resourceStatus: string,
+    aggregate: T | undefined,
+  ): T | undefined {
+    return owner ?? (resourceStatus === 'ready' ? undefined : aggregate)
+  }
+</script>
+
 <script lang="ts">
   import { getCustomBackground, getEmotionForCharacter, getSelectedCharacterOwner } from '../../ts/characterState'
 
   import { getDatabase, isServerCharacterShell } from 'src/ts/storage/database.svelte'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import { CharEmotion, selectedCharID } from '../../ts/stores.svelte'
   import ResizeBox from './ResizeBox.svelte'
   import DefaultChatScreen from './DefaultChatScreen.svelte'
@@ -26,7 +37,13 @@
   let openBardWiki = $state(false)
   let bardWikiChatId = $state<string | null>(null)
   let selectedCharacter = $derived(
-    $selectedCharID >= 0 ? (getSelectedCharacterOwner() ?? getDatabase().characters?.[$selectedCharID]) : undefined,
+    $selectedCharID >= 0
+      ? resolveSelectedCharacterForDisplay(
+          getSelectedCharacterOwner(),
+          charactersResourceState.status,
+          getDatabase().characters?.[$selectedCharID],
+        )
+      : undefined,
   )
   let selectedChatId = $derived(selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id ?? null)
   let selectedCharacterShellId = $derived(

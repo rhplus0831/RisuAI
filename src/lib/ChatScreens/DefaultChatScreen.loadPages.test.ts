@@ -367,7 +367,11 @@ import {
 } from './DefaultChatScreen.composerDrafts'
 import { initializeDraftRecoveryScope, resetDraftRecoveryScopeForTests } from 'src/ts/server/draftRecoveryScope'
 import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+} from 'src/ts/server/resourceState.svelte'
 import {
   additionalChatMenu,
   additionalFloatingActionButtons,
@@ -525,6 +529,7 @@ function seedDatabase(messageCounts: number[]) {
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
     characters: messageCounts.map((count, index) => makeCharacter(index, count)),
+    currentChar: 0,
     chatLoadInitialPages: 30,
     chatLoadAdditionalPages: 15,
     chatScreenWidth: 900,
@@ -704,6 +709,7 @@ function expectedActiveTarget(characterIndex: number) {
 
 function switchToCharacterChat(characterIndex: number) {
   selectedCharID.set(characterIndex)
+  charactersResourceState.currentChar = characterIndex
   loadPageMocks.setCurrentRoute({
     kind: 'character',
     path: `/character/character-${characterIndex}/chat-${characterIndex}`,
@@ -2413,6 +2419,7 @@ describe('DefaultChatScreen transcript window state', () => {
     })
 
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     loadPageMocks.setCurrentRoute({
       kind: 'character',
       path: '/character/character-1/chat-1',
@@ -4002,6 +4009,7 @@ describe('DefaultChatScreen transcript window state', () => {
     await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
 
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     loadPageMocks.setCurrentRoute({
       kind: 'character',
       path: '/character/character-1/chat-1',
@@ -4199,6 +4207,7 @@ describe('DefaultChatScreen transcript window state', () => {
     await waitFor(() => expect(loadPageMocks.postChatFile).toHaveBeenCalledWith('First chat draft'))
 
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     loadPageMocks.setCurrentRoute({
       kind: 'character',
       path: '/character/character-1/chat-1',
