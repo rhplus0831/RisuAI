@@ -26,6 +26,7 @@
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
     "./prompt-settings": "./src/promptSettings.ts",
+    "./provider-secret-mask": "./src/providerSecretMask.ts",
     "./punctuation": "./src/punctuation.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts",
     "./risuchat-parser-helpers": "./src/risuChatParserHelpers.ts",

@@ -11,7 +11,7 @@ import {
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { Database } from '../../../src/ts/storage/database.svelte'
-import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask'
+import { MASKED_PROVIDER_SECRET } from '@risuai/shared-core/provider-secret-mask'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../src/prompt/chatDispatch.js'
 import type { PromptRowSummary } from '../src/prompt/promptSummary.js'

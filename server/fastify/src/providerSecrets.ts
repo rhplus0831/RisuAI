@@ -5,7 +5,7 @@ import {
   PROVIDER_SECRET_PATH_WILDCARD,
   maskRegisteredProviderSecretsInPlace,
   type ProviderSecretPathSegment,
-} from '../../../src/ts/providerSecretMask.js'
+} from '@risuai/shared-core/provider-secret-mask'
 
 export { MASKED_PROVIDER_SECRET }
 

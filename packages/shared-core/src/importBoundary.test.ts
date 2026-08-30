@@ -85,6 +85,7 @@ describe('@risuai/shared-core import boundary', () => {
         'mutationCertificates.ts',
         'parseKeyValue.ts',
         'promptSettings.ts',
+        'providerSecretMask.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',
         'risuChatParserHelpers.ts',

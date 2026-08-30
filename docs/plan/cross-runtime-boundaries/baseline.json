@@ -458,19 +458,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/providerCredentials.ts",
-      "specifier": "../../../../src/ts/providerSecretMask.js",
-      "target": "src/ts/providerSecretMask.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isMaskedProviderSecret"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/splitPresets.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
@@ -1679,23 +1666,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/providerSecrets.ts",
-      "specifier": "../../../src/ts/providerSecretMask.js",
-      "target": "src/ts/providerSecretMask.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "MASKED_PROVIDER_SECRET",
-        "PROVIDER_SECRET_PATHS",
-        "PROVIDER_SECRET_PATH_WILDCARD",
-        "ProviderSecretPathSegment",
-        "maskRegisteredProviderSecretsInPlace"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/requestHistory.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -2113,19 +2083,6 @@
         "LLMProvider",
         "LLMTokenizer",
         "OpenAIParameters"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-      "specifier": "../../../src/ts/providerSecretMask",
-      "target": "src/ts/providerSecretMask.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "MASKED_PROVIDER_SECRET"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

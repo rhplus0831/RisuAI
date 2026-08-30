@@ -7,7 +7,7 @@ import {
   readProviderCredentials,
   type ProviderCredentialRecord,
 } from '../../../../src/ts/model/providerCredentialRecords.js'
-import { isMaskedProviderSecret } from '../../../../src/ts/providerSecretMask.js'
+import { isMaskedProviderSecret } from '@risuai/shared-core/provider-secret-mask'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   EntityNotFoundError,
