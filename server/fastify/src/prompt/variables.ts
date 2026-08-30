@@ -8,7 +8,7 @@ import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
 import { AgentPresetGenerationError } from './agentPresetErrors.js'
 import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences'
-import type { ReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
+import type { ReportedClientContext } from '@risuai/protocol/client-context'
 import type { ServerCbsCallbackDiagnosticReason } from './promptScope.js'
 
 /**

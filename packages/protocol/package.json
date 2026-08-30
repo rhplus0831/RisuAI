@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./character-summary-resource": "./src/characterSummaryResource.ts",
+    "./client-context": "./src/clientContext.ts",
     "./embedding-operation": "./src/embeddingOperation.ts",
     "./generation-sse": "./src/generationSse.ts",
     "./image-generation-operation": "./src/imageGenerationOperation.ts",

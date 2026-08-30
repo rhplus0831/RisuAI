@@ -138,7 +138,7 @@ import {
   handleGeneratedChatCompletion,
   type ServerMessageTranslationRunner,
 } from '../translation/generationCompletionTranslation.js'
-import { normalizeReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
+import { normalizeReportedClientContext } from '@risuai/protocol/client-context'
 import {
   GenerationOperationAttemptConflictError,
   assertGenerationOperationDispatchable,

@@ -1,4 +1,4 @@
-import { normalizeReportedClientContext, type ReportedClientContext } from './request/clientContext'
+import { normalizeReportedClientContext, type ReportedClientContext } from '@risuai/protocol/client-context'
 
 export const DISPLAY_SOURCE_PROTOCOL_VERSION = 1 as const
 export const DISPLAY_SOURCE_TRANSFORM_VERSION = 'editdisplay-v2-ephemeral-state' as const

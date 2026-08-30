@@ -3,7 +3,7 @@ import type { ChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
 import type { LLMModel } from '../../../../src/ts/model/types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver'
 import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
-import type { ReportedClientContext } from '../../../../src/ts/process/request/clientContext.js'
+import type { ReportedClientContext } from '@risuai/protocol/client-context'
 
 /**
  * Request-local prompt scope used by CBS callbacks to read and mutate chat

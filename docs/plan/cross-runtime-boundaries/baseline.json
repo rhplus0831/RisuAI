@@ -1654,19 +1654,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/assemble.ts",
-      "specifier": "../../../../src/ts/process/request/clientContext.js",
-      "target": "src/ts/process/request/clientContext.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ReportedClientContext"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/assemble.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -2557,19 +2544,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/promptScope.ts",
-      "specifier": "../../../../src/ts/process/request/clientContext.js",
-      "target": "src/ts/process/request/clientContext.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ReportedClientContext"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/promptScope.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3096,19 +3070,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/variables.ts",
-      "specifier": "../../../../src/ts/process/request/clientContext.js",
-      "target": "src/ts/process/request/clientContext.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ReportedClientContext"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/variables.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3443,19 +3404,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/generationChat.ts",
-      "specifier": "../../../../src/ts/process/request/clientContext.js",
-      "target": "src/ts/process/request/clientContext.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeReportedClientContext"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",
