@@ -13,6 +13,12 @@ import {
   type CompatibilityBaseline,
   type CrossRuntimeBaseline,
 } from './architecture-inventory.js'
+import {
+  collectClientResourceObservation,
+  compareClientResourceBaseline,
+  createClientResourceBaseline,
+  type ClientResourceBaseline,
+} from './client-resource-inventory.js'
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const temporaryDirectories: string[] = []
@@ -199,5 +205,75 @@ describe('compatibility disposition gate', () => {
       'compatibility surface legacy-mirror fixture does not exist: fixture.ts',
       'compatibility surface legacy-mirror probe drifted: src/compatibility.ts identifier "legacyMirror" expected 1, observed 2',
     ])
+  })
+})
+
+describe('client resource ownership gate', () => {
+  it('matches every reviewed consumer, bridge family, and temporary seam', () => {
+    const observation = collectClientResourceObservation(REPO_ROOT)
+    const baseline = JSON.parse(
+      fs.readFileSync(
+        path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/client-resource-baseline.json'),
+        'utf8',
+      ),
+    ) as ClientResourceBaseline
+
+    expect(compareClientResourceBaseline(observation, baseline)).toEqual([])
+    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(9917)
+    expect(observation.consumers).toHaveLength(1168)
+    expect(baseline.consumers).toHaveLength(325)
+    expect(observation.bridgeFamilies.map((bridge) => bridge.family)).toEqual([
+      'character',
+      'chat',
+      'lorebook',
+      'promptTemplate',
+      'scriptDefinition',
+      'settings',
+    ])
+    expect(observation.temporarySeams).toHaveLength(20)
+  })
+
+  it('parses Svelte scripts and rejects a new aggregate consumer or bridge family', () => {
+    const root = fixtureRoot()
+    fs.writeFileSync(
+      path.join(root, 'src/Panel.svelte'),
+      `<script lang="ts">
+        const current = getDatabase()
+      </script>
+      <p>{current.version}</p>`,
+    )
+    fs.mkdirSync(path.join(root, 'src/ts/server'), { recursive: true })
+    fs.writeFileSync(
+      path.join(root, 'src/ts/server/exampleBridge.svelte.ts'),
+      'export function watchServerBackedExample() {}\nexport function flushPendingServerBackedExamplePatches() {}\n',
+    )
+    const observation = collectClientResourceObservation(root)
+    const baseline = createClientResourceBaseline(observation, 'test-anchor', 'test-release')
+
+    expect(compareClientResourceBaseline(observation, baseline)).toEqual([])
+    expect(observation.consumers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file: 'src/Panel.svelte', detector: 'aggregate-read', symbol: 'getDatabase' }),
+      ]),
+    )
+    expect(observation.bridgeFamilies).toEqual([
+      {
+        file: 'src/ts/server/exampleBridge.svelte.ts',
+        family: 'example',
+        exportedWatchers: ['watchServerBackedExample'],
+        exportedFlushers: ['flushPendingServerBackedExamplePatches'],
+      },
+    ])
+
+    fs.writeFileSync(
+      path.join(root, 'src/Panel.svelte'),
+      `<script lang="ts">
+        const current = getDatabase()
+        const second = getDatabase()
+      </script>`,
+    )
+    expect(compareClientResourceBaseline(collectClientResourceObservation(root), baseline)).toContain(
+      'client resource ownership inventory drifted; regenerate and review the baseline',
+    )
   })
 })

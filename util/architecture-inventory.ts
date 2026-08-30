@@ -3,6 +3,12 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import {
+  collectClientResourceObservation,
+  compareClientResourceBaseline,
+  createClientResourceBaseline,
+  type ClientResourceBaseline,
+} from './client-resource-inventory.js'
 
 export type CrossRuntimeLane = 'production' | 'server-test' | 'browser-smoke'
 export type ImportKind = 'static' | 're-export' | 'import-equals' | 'dynamic' | 'require' | 'import-type'
@@ -765,12 +771,20 @@ function loadCompatibilityBaseline(file: string): CompatibilityBaseline {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as CompatibilityBaseline
 }
 
+function loadClientResourceBaseline(file: string): ClientResourceBaseline {
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as ClientResourceBaseline
+}
+
 async function run(): Promise<void> {
   const repoRoot = process.cwd()
   const baselinePath = path.join(repoRoot, 'docs/plan/cross-runtime-boundaries/baseline.json')
   const compatibilityBaselinePath = path.join(
     repoRoot,
     'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json',
+  )
+  const clientResourceBaselinePath = path.join(
+    repoRoot,
+    'docs/plan/client-resource-ownership/client-resource-baseline.json',
   )
   const observation = collectCrossRuntimeObservation(repoRoot)
   if (process.argv.includes('--print-cross-runtime')) {
@@ -788,14 +802,32 @@ async function run(): Promise<void> {
     )
     return
   }
+  const clientResourceObservation = collectClientResourceObservation(repoRoot)
+  if (process.argv.includes('--print-client-resources')) {
+    process.stdout.write(
+      stableJson(
+        createClientResourceBaseline(
+          clientResourceObservation,
+          'c0df82d5240a29a33efa5995e08cc970e0147573',
+          'b01e88b03461753afe8f573029ce2e5ab47892ef',
+        ),
+      ),
+    )
+    return
+  }
   if (!fs.existsSync(baselinePath)) throw new Error(`Missing cross-runtime architecture baseline: ${baselinePath}`)
   if (!fs.existsSync(compatibilityBaselinePath)) {
     throw new Error(`Missing compatibility baseline: ${compatibilityBaselinePath}`)
   }
+  if (!fs.existsSync(clientResourceBaselinePath)) {
+    throw new Error(`Missing client resource baseline: ${clientResourceBaselinePath}`)
+  }
   const compatibilityBaseline = loadCompatibilityBaseline(compatibilityBaselinePath)
+  const clientResourceBaseline = loadClientResourceBaseline(clientResourceBaselinePath)
   const errors = [
     ...compareCrossRuntimeBaseline(observation, loadBaseline(baselinePath)),
     ...validateCompatibilityBaseline(repoRoot, compatibilityBaseline),
+    ...compareClientResourceBaseline(clientResourceObservation, clientResourceBaseline),
   ]
   if (errors.length > 0) {
     for (const error of errors) console.error(`[architecture-inventory] ${error}`)
@@ -819,6 +851,13 @@ async function run(): Promise<void> {
   const probeCount = compatibilityBaseline.surfaces.reduce((total, surface) => total + surface.probes.length, 0)
   console.log(
     `[architecture-inventory] PASS ${compatibilityBaseline.surfaces.length} compatibility surfaces with ${probeCount} closed-world probes`,
+  )
+  const clientConsumerCount = clientResourceBaseline.consumers.reduce(
+    (total, consumer) => total + consumer.files.reduce((fileTotal, file) => fileTotal + file.count, 0),
+    0,
+  )
+  console.log(
+    `[architecture-inventory] PASS ${clientConsumerCount} client compatibility references across ${clientResourceBaseline.consumers.length} consumer groups, ${clientResourceBaseline.bridgeFamilies.length} bridge families, and ${clientResourceBaseline.temporarySeams.length} temporary seam markers`,
   )
 }
 
