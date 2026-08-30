@@ -1845,20 +1845,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/promptSummary.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "MultiModal",
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/promptVariablesBoot.ts",
       "specifier": "../../../../src/ts/cbs",
       "target": "src/ts/cbs.ts",

@@ -17,6 +17,7 @@ describe('prompt message server type ownership', () => {
       'server/fastify/src/prompt/budgetFinalize.ts',
       'server/fastify/src/prompt/preflight.ts',
       'server/fastify/src/prompt/templates.ts',
+      'server/fastify/src/prompt/promptSummary.ts',
     ]
 
     for (const consumer of consumers) {

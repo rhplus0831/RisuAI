@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage, PromptMultimodal } from './promptMessage.js'
 
 export interface PromptContentSummary {
   kind: string
@@ -11,7 +11,7 @@ export interface PromptContentSummary {
 }
 
 export interface PromptMultimodalSummary {
-  type: MultiModal['type'] | string
+  type: PromptMultimodal['type'] | string
   width?: number
   height?: number
   base64Bytes: number
@@ -20,7 +20,7 @@ export interface PromptMultimodalSummary {
 
 export interface PromptRowSummary {
   index: number
-  role: OpenAIChat['role'] | string
+  role: PromptMessage['role'] | string
   content: PromptContentSummary
   nameBytes?: number
   nameSha256?: string
@@ -119,7 +119,7 @@ function summarizeStringArray(value: unknown): { count: number; hashes?: string[
 function summarizeMultimodals(value: unknown): { count: number; multimodals?: PromptMultimodalSummary[] } {
   if (!Array.isArray(value) || value.length === 0) return { count: 0 }
   const multimodals = value.map((item) => {
-    const modal = item && typeof item === 'object' ? (item as Partial<MultiModal>) : {}
+    const modal = item && typeof item === 'object' ? (item as Partial<PromptMultimodal>) : {}
     const base64 = typeof modal.base64 === 'string' ? modal.base64 : ''
     const summary: PromptMultimodalSummary = {
       type: typeof modal.type === 'string' ? modal.type : 'unknown',
@@ -133,9 +133,9 @@ function summarizeMultimodals(value: unknown): { count: number; multimodals?: Pr
   return { count: multimodals.length, multimodals }
 }
 
-export function summarizePromptRows(rows: readonly OpenAIChat[]): PromptRowsSummary {
+export function summarizePromptRows(rows: readonly PromptMessage[]): PromptRowsSummary {
   const canonicalRows = rows.map((row, index): PromptRowSummary => {
-    const raw = row as OpenAIChat & Record<string, unknown>
+    const raw = row as PromptMessage & Record<string, unknown>
     const attr = summarizeStringArray(raw.attr)
     const thoughts = summarizeStringArray(raw.thoughts)
     const multimodal = summarizeMultimodals(raw.multimodals)
@@ -168,7 +168,7 @@ export function summarizePromptRows(rows: readonly OpenAIChat[]): PromptRowsSumm
   }
 }
 
-export function hashPromptRows(rows: readonly OpenAIChat[]): string {
+export function hashPromptRows(rows: readonly PromptMessage[]): string {
   return summarizePromptRows(rows).promptHash
 }
 
