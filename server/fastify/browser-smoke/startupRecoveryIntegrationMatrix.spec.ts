@@ -2,7 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
 import {
   PLAYGROUND_RESOURCE_SURFACE_BY_INDEX,
   SETTINGS_RESOURCE_SURFACE_BY_INDEX,

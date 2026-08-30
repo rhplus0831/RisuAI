@@ -4,7 +4,7 @@ import { expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
 import { registerRisuChatParserMatcher } from '../../risuChatParser'
 import { cbs, trimVarPrefix, validCBSArgProp } from './lib'
-import { PHASE9_CBS_COMPATIBILITY_CORPUS } from './phase9CompatibilityCorpus'
+import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../../../../test/fixtures/phase9CompatibilityCorpus'
 
 //#region module mocks
 

@@ -11,7 +11,7 @@ import { applyTargetedCommandMutation } from '../src/commands/mutations.js'
 import { normalizeAllCharacterChats } from '../src/commands/chats.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertScopedLoadOnHotPath, withServerLoadInstrumentation } from './helpers/loadCostHarness.js'
-import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
 
 // Command-mutation read narrowing: targeted message/scriptstate/generation
 // command routes locate one chat row and mutate it (or write the message store

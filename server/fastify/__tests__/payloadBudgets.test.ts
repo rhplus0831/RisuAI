@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
 import { isServerCharactersSummaryPayload } from '@risuai/protocol/character-summary-resource'
 import { isServerShellPayload } from '@risuai/protocol/shell-resource'
 

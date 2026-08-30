@@ -81,19 +81,6 @@
     {
       "lane": "browser-smoke",
       "importer": "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts",
-      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
-      "target": "src/ts/__tests__/largeCorpusFixture.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "buildLargeCorpusFixture"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
-    },
-    {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts",
       "specifier": "../../../src/ts/startupReadiness.js",
       "target": "src/ts/startupReadiness.ts",
       "kind": "static",
@@ -103,19 +90,6 @@
       ],
       "count": 1,
       "policy": "accidental-browser-support"
-    },
-    {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
-      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
-      "target": "src/ts/__tests__/largeCorpusFixture.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "buildLargeCorpusFixture"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
     },
     {
       "lane": "browser-smoke",
@@ -2403,19 +2377,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/commandMutationReadNarrowing.test.ts",
-      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
-      "target": "src/ts/__tests__/largeCorpusFixture.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "buildLargeCorpusFixture"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/commands.test.ts",
       "specifier": "../../../src/ts/chatGenerationSettings.js",
       "target": "src/ts/chatGenerationSettings.ts",
@@ -2701,19 +2662,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/payloadBudgets.test.ts",
-      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
-      "target": "src/ts/__tests__/largeCorpusFixture.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "buildLargeCorpusFixture"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
       "specifier": "../../../src/ts/moduleActivation.js",
       "target": "src/ts/moduleActivation.ts",
@@ -2852,38 +2800,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/promptVariables.test.ts",
-      "specifier": "../../../src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.js",
-      "target": "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "PHASE9_BASELINE_DRIFT_FIXTURES",
-        "PHASE9_OVER_BUDGET_EACH_COUNT",
-        "phase9DriftCharacter",
-        "phase9DriftChat",
-        "phase9DriftDatabase",
-        "phase9DriftGroup",
-        "phase9OverBudgetEachInput"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/promptVariables.test.ts",
-      "specifier": "../../../src/ts/parser/tests/cbs/phase9CompatibilityCorpus.js",
-      "target": "src/ts/parser/tests/cbs/phase9CompatibilityCorpus.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "PHASE9_CBS_COMPATIBILITY_CORPUS"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/promptVariables.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -2976,20 +2892,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/serverLoadCostHarness.test.ts",
-      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
-      "target": "src/ts/__tests__/largeCorpusFixture.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "LargeCorpusFixture",
-        "buildLargeCorpusFixture"
-      ],
-      "count": 1,
-      "policy": "test-fixture"
     },
     {
       "lane": "server-test",

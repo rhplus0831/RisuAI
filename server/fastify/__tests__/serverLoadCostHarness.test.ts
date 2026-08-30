@@ -47,7 +47,7 @@ import {
   withServerLoadInstrumentation,
 } from './helpers/loadCostHarness.js'
 import type { GenerationChatRouteOptions } from '../src/routes/generationChat.js'
-import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
+import { buildLargeCorpusFixture, type LargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
 import { isServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
 
 // Prove the server load-count harness can pass a genuinely scoped hot path and

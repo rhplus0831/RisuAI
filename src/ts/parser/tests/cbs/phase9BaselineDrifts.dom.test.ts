@@ -8,7 +8,7 @@ import {
   phase9DriftDatabase,
   phase9DriftGroup,
   phase9OverBudgetEachInput,
-} from './phase9BaselineDriftFixtures'
+} from '../../../../../test/fixtures/phase9BaselineDriftFixtures'
 
 const state = vi.hoisted(() => ({ database: {} as any }))
 

@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../src/ts/parser/tests/cbs/phase9CompatibilityCorpus'
+import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../fixtures/phase9CompatibilityCorpus'
 import {
   PHASE9_BASELINE_DRIFT_FIXTURES,
   PHASE9_OVER_BUDGET_EACH_COUNT,
@@ -9,7 +9,7 @@ import {
   phase9DriftDatabase,
   phase9DriftGroup,
   phase9OverBudgetEachInput,
-} from '../../src/ts/parser/tests/cbs/phase9BaselineDriftFixtures'
+} from '../fixtures/phase9BaselineDriftFixtures'
 
 const fixtureState = vi.hoisted(() => {
   const variables = new Proxy({} as Record<string, unknown>, {

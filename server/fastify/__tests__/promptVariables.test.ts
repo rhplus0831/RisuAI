@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
-import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../../src/ts/parser/tests/cbs/phase9CompatibilityCorpus.js'
+import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../../test/fixtures/phase9CompatibilityCorpus.js'
 import {
   PHASE9_BASELINE_DRIFT_FIXTURES,
   PHASE9_OVER_BUDGET_EACH_COUNT,
@@ -9,7 +9,7 @@ import {
   phase9DriftDatabase,
   phase9DriftGroup,
   phase9OverBudgetEachInput,
-} from '../../../src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.js'
+} from '../../../test/fixtures/phase9BaselineDriftFixtures.js'
 import { RisuParserBudgetError } from '../../../src/ts/parser/risuChatParser.js'
 import { expandVariables, type ExpandContext } from '../src/prompt/variables.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'

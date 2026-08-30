@@ -21,7 +21,7 @@ aggregate owns both contracts together.
 | `cloneCostHarness.ts` | Shared snapshot-shape, rollback, and clone-instrumentation helpers used by focused regression tests across `src/`. |
 | `renderCostHarness*.ts` | DOM/render-cost regression probes for GUI reload behavior. |
 | `sendCloneCountProbe*.ts` | Send-path clone-count regression probe. |
-| `largeCorpusFixture.ts` | Shared large-corpus fixture used by client and server cost regressions. |
+| `test/fixtures/largeCorpusFixture.ts` | Shared large-corpus fixture used by client and server cost regressions. |
 
 Keep new performance gates here and add their exact paths to
 `vitest.performance-tests.ts`. UI audit probes belong in `src/lib/_audit`.
