@@ -1,6 +1,9 @@
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import type { Database } from '../storage/database.svelte'
+import { LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from './types'
+import { resolveModelProfile } from './modelProfileResolver'
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 
@@ -66,6 +69,47 @@ describe('browser model-runtime consumer ownership', () => {
 
     expect(parameters).not.toContain('ctx.db.aiModel')
     expect(parameters).toContain('ctx.modelInfo.id')
+  })
+
+  it('routes BotSettings metadata through durable chat profiles over conflicting flat models', () => {
+    const database = {
+      aiModel: 'flat-main-model',
+      subModel: 'flat-aux-model',
+      modelRoles: {},
+      modelProfiles: [
+        { id: 'main-profile', name: 'Main', providerId: 'openai', modelId: 'durable-main-model' },
+        { id: 'aux-profile', name: 'Aux', providerId: 'anthropic', modelId: 'durable-aux-model' },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'main-profile' },
+        chatAux: { mode: 'profile', profileId: 'aux-profile' },
+      },
+    } as unknown as Database
+    const lookupModelInfo = (_database: Database, id: string): LLMModel => ({
+      id,
+      name: id,
+      provider: id === 'durable-main-model' ? LLMProvider.OpenAI : LLMProvider.Anthropic,
+      format: id === 'durable-main-model' ? LLMFormat.OpenAICompatible : LLMFormat.Anthropic,
+      flags: [],
+      parameters: OpenAIParameters,
+      tokenizer: LLMTokenizer.Unknown,
+    })
+
+    const mainProfile = resolveModelProfile({ database, role: 'chatMain', lookupModelInfo })
+    const auxProfile = resolveModelProfile({ database, role: 'chatAux', lookupModelInfo })
+    expect(mainProfile).toMatchObject({ modelId: 'durable-main-model', source: { kind: 'durable-profile' } })
+    expect(auxProfile).toMatchObject({ modelId: 'durable-aux-model', source: { kind: 'durable-profile' } })
+    expect(mainProfile.modelInfo.format).toBe(LLMFormat.OpenAICompatible)
+    expect(auxProfile.modelInfo.format).toBe(LLMFormat.Anthropic)
+
+    const botSettings = source('src/lib/Setting/Pages/BotSettings.svelte')
+    expect(botSettings).toContain("role: 'chatMain'")
+    expect(botSettings).toContain("role: 'chatAux'")
+    expect(botSettings).toContain('let modelInfo = $derived(mainProfile.modelInfo)')
+    expect(botSettings).toContain('let subModelInfo = $derived(auxProfile.modelInfo)')
+    expect(botSettings).not.toContain('getModelInfo(getDatabase().aiModel)')
+    expect(botSettings).not.toContain('getModelInfo(getDatabase().subModel)')
+    expect(botSettings).not.toContain('getDatabase().aiModel ===')
   })
 
   it('budgets low-level lore loading through the scriptMain profile', () => {

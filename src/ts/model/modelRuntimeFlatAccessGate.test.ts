@@ -475,20 +475,6 @@ const inventory: readonly InventoryEntry[] = [
     reason: 'legacy settings fallback after profile read',
   },
   {
-    path: 'src/lib/Setting/Pages/BotSettings.svelte',
-    marker: 'getDatabase().aiModel',
-    classification: 'ordinary-pending',
-    expectedCount: 5,
-    reason: 'legacy provider/settings authoring surface still reads flat models',
-  },
-  {
-    path: 'src/lib/Setting/Pages/BotSettings.svelte',
-    marker: 'getDatabase().subModel',
-    classification: 'ordinary-pending',
-    expectedCount: 1,
-    reason: 'legacy provider/settings authoring surface still reads flat models',
-  },
-  {
     path: 'src/ts/storage/database.svelte.ts',
     marker: 'db.aiModel',
     classification: 'static-import-export',
@@ -705,9 +691,6 @@ describe('flat model/runtime access closed world', () => {
     const ordinaryPending = inventory
       .filter((entry) => entry.classification === 'ordinary-pending')
       .map((entry) => `${entry.path}:${entry.marker} (${entry.reason})`)
-    expect(ordinaryPending).toEqual([
-      'src/lib/Setting/Pages/BotSettings.svelte:getDatabase().aiModel (legacy provider/settings authoring surface still reads flat models)',
-      'src/lib/Setting/Pages/BotSettings.svelte:getDatabase().subModel (legacy provider/settings authoring surface still reads flat models)',
-    ])
+    expect(ordinaryPending).toEqual([])
   })
 })

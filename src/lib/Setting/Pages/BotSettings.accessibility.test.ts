@@ -90,7 +90,7 @@ describe('BotSettings direct slider names', () => {
 
     const sections = [
       source.slice(
-        source.indexOf("{#if getDatabase().aiModel === 'textgen_webui'"),
+        source.indexOf("{#if mainProfile.modelId === 'textgen_webui'"),
         source.indexOf('{:else if modelInfo.format === LLMFormat.NovelAI}'),
       ),
       source.slice(

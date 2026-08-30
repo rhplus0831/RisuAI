@@ -45,6 +45,7 @@
   } from 'src/ts/storage/database.svelte'
   import { alertError, alertNormal } from 'src/ts/alert'
   import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
+  import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
@@ -1292,8 +1293,22 @@
     flushPendingPromptFieldPatch()
   })
 
-  let modelInfo = $derived(getModelInfo(getDatabase().aiModel))
-  let subModelInfo = $derived(getModelInfo(getDatabase().subModel))
+  let mainProfile = $derived.by(() =>
+    resolveModelProfile({
+      database: getDatabase(),
+      role: 'chatMain',
+      lookupModelInfo: (_database, id) => getModelInfo(id),
+    }),
+  )
+  let auxProfile = $derived.by(() =>
+    resolveModelProfile({
+      database: getDatabase(),
+      role: 'chatAux',
+      lookupModelInfo: (_database, id) => getModelInfo(id),
+    }),
+  )
+  let modelInfo = $derived(mainProfile.modelInfo)
+  let subModelInfo = $derived(auxProfile.modelInfo)
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
       database: getDatabase(),
@@ -1894,7 +1909,7 @@
       {modelInfo}
       {subModelInfo}
       presetMirrorTarget={promptParameterOverrideMode ? 'promptModelOverrides' : 'auto'} />
-    {#if getDatabase().aiModel === 'textgen_webui' || getDatabase().aiModel === 'mancer' || getDatabase().aiModel.startsWith('local_') || getDatabase().aiModel.startsWith('hf:::')}
+    {#if mainProfile.modelId === 'textgen_webui' || mainProfile.modelId === 'mancer' || mainProfile.modelId.startsWith('local_') || mainProfile.modelId.startsWith('hf:::')}
       <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenalty}</span>
       <SliderInput
         min={1}
