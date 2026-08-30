@@ -3,6 +3,14 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { SERVER_CHARACTER_SUMMARY_VERSION } from '@risuai/protocol/character-summary-resource'
 import {
+  isServerCharacterDetailResource,
+  isServerCharacterOrderResource,
+  isServerCharacterSelectionResource,
+  type ServerCharacterDetailResource,
+  type ServerCharacterOrderResource,
+  type ServerCharacterSelectionResource,
+} from '@risuai/protocol/character-resource'
+import {
   SERVER_SHELL_PROTOCOL_VERSION,
   SERVER_SHELL_SETTINGS_KEYS,
   isServerShellSettings,
@@ -493,10 +501,12 @@ export function registerResourceReadRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder'])
-    return metricResourceResponse(req, reply, 'characterOrder', revision, {
+    const payload: ServerCharacterOrderResource = {
       revision,
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
-    })
+    }
+    if (!isServerCharacterOrderResource(payload)) throw new Error('Invalid character order resource')
+    return metricResourceResponse(req, reply, 'characterOrder', revision, payload)
   })
 
   app.get<{ Params: { id: string } }>(
@@ -513,14 +523,9 @@ export function registerResourceReadRoutes(
         return
       }
       const { revision } = getSchemaState(db)
-      return metricResourceResponse(
-        req,
-        reply,
-        'characterSelection',
-        revision,
-        { revision, ...selection },
-        { detailRead: true },
-      )
+      const payload: ServerCharacterSelectionResource = { revision, ...selection }
+      if (!isServerCharacterSelectionResource(payload)) throw new Error('Invalid character selection resource')
+      return metricResourceResponse(req, reply, 'characterSelection', revision, payload, { detailRead: true })
     },
   )
 
@@ -536,14 +541,12 @@ export function registerResourceReadRoutes(
     }
     const { revision } = getSchemaState(db)
     const envelope = maskProviderSecretsInPlace({ characters: [character] })
-    return metricResourceResponse(
-      req,
-      reply,
-      'character',
+    const payload: ServerCharacterDetailResource = {
       revision,
-      { revision, character: envelope.characters[0] },
-      { detailRead: true },
-    )
+      character: envelope.characters[0] as ServerCharacterDetailResource['character'],
+    }
+    if (!isServerCharacterDetailResource(payload)) throw new Error('Invalid character detail resource')
+    return metricResourceResponse(req, reply, 'character', revision, payload, { detailRead: true })
   })
 
   app.get<{ Params: { characterId: string }; Querystring: GreetingTranslationQuery }>(

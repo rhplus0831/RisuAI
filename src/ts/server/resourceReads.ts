@@ -6,6 +6,11 @@ import {
   type ServerCharacterSummary,
   type ServerCharactersSummaryPayload,
 } from '@risuai/protocol/character-summary-resource'
+import {
+  isServerCharacterDetailResource,
+  isServerCharacterOrderResource,
+  isServerCharacterSelectionResource,
+} from '@risuai/protocol/character-resource'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   isResourceCacheMetadata,
@@ -319,7 +324,11 @@ export async function fetchServerCharacter(
   if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
-  if (!record || !isMessageFreeCharacter(record.character) || record.character.chaId !== characterId) {
+  if (
+    !isServerCharacterDetailResource(result.body) ||
+    !isMessageFreeCharacter(record.character) ||
+    record.character.chaId !== characterId
+  ) {
     return { status: 'error', error: 'Invalid character response' }
   }
   return {
@@ -336,7 +345,7 @@ export async function fetchServerCharacterOrder(
   if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
-  if (!record || !Array.isArray(record.characterOrder)) {
+  if (!isServerCharacterOrderResource(result.body)) {
     return { status: 'error', error: 'Invalid character order response' }
   }
   return {
@@ -361,7 +370,7 @@ export async function fetchServerCharacterSelection(
 
   const record = readRevisionEnvelope(result.body)
   if (
-    !record ||
+    !isServerCharacterSelectionResource(result.body) ||
     record.characterId !== characterId ||
     !Number.isInteger(record.currentChar) ||
     (record.currentChar as number) < 0 ||

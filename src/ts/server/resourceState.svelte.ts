@@ -1,5 +1,9 @@
 import type { Database, character } from '../storage/databaseTypes'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import type {
+  ServerCharacterOrderResource,
+  ServerCharacterSelectionResource,
+} from '@risuai/protocol/character-resource'
 import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPresetRecords'
 import {
   isValidTranslatorPresetOutputKey,
@@ -477,17 +481,9 @@ export interface ServerCharacterResourcePayload {
   character: character
 }
 
-export interface ServerCharacterOrderResourcePayload {
-  revision: number
-  characterOrder: Database['characterOrder']
-}
+export type ServerCharacterOrderResourcePayload = ServerCharacterOrderResource
 
-export interface ServerCharacterSelectionResourcePayload {
-  revision: number
-  characterId: string
-  currentChar: number
-  lastInteraction?: number
-}
+export type ServerCharacterSelectionResourcePayload = ServerCharacterSelectionResource
 
 export interface ServerChatGenerationSettingsLocalEffectPayload {
   revision: number
