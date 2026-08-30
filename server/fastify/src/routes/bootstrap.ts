@@ -31,7 +31,7 @@ import {
 } from '../generationOperations.js'
 import { listGenerationFinalizationRetryProjections } from '../generationFinalizationRetry.js'
 import { listPendingClientGenerationEffects } from '../generationEffects.js'
-import { DISPLAY_SOURCE_PROTOCOL_VERSION } from '../../../../src/ts/process/displaySourceProtocol.js'
+import { DISPLAY_SOURCE_PROTOCOL_VERSION } from '@risuai/protocol/display-source'
 import { STARTUP_TELEMETRY_PROTOCOL_VERSION } from '@risuai/protocol/startup-telemetry'
 
 export const ASSET_BASE_URL = '/api/v1/assets'

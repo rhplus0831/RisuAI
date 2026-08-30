@@ -1000,26 +1000,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/displaySourceService.ts",
-      "specifier": "../../../src/ts/process/displaySourceProtocol.js",
-      "target": "src/ts/process/displaySourceProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "DISPLAY_SOURCE_PROTOCOL_VERSION",
-        "DISPLAY_SOURCE_TRANSFORM_VERSION",
-        "DisplaySourceRequest",
-        "DisplaySourceResponse",
-        "DisplaySourceResponseEntry",
-        "DisplaySourceTarget",
-        "displaySourceNamespaceJson",
-        "stableDisplayDependencyJson"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/displaySourceService.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3153,19 +3133,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/routes/bootstrap.ts",
-      "specifier": "../../../../src/ts/process/displaySourceProtocol.js",
-      "target": "src/ts/process/displaySourceProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "DISPLAY_SOURCE_PROTOCOL_VERSION"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/routes/commands.ts",
       "specifier": "../../../../src/ts/agentPresetRecords.js",
       "target": "src/ts/agentPresetRecords.ts",
@@ -3288,24 +3255,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/displaySources.ts",
-      "specifier": "../../../../src/ts/process/displaySourceProtocol.js",
-      "target": "src/ts/process/displaySourceProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "DISPLAY_SOURCE_LIMITS",
-        "DISPLAY_SOURCE_PROTOCOL_VERSION",
-        "DisplaySourceLayer",
-        "DisplaySourceRequest",
-        "DisplaySourceTarget",
-        "normalizeDisplayRequestContext"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",

@@ -16,7 +16,7 @@ import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
 import { processScriptFull } from '../process/scripts'
 import { requestServerDisplaySource, type DisplaySourcePriority } from '../server/displaySources'
-import type { DisplaySourceLayer } from '../process/displaySourceProtocol'
+import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
 import { get } from 'svelte/store'
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
 import { selectedCharID } from '../stores.svelte'

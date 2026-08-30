@@ -27,7 +27,7 @@
     getChatBodyParseMemoKey,
     memoizedChatBodyParse,
   } from './ChatBodyParseMemo'
-  import type { DisplaySourceLayer } from 'src/ts/process/displaySourceProtocol'
+  import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
   import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
 
   interface Props {

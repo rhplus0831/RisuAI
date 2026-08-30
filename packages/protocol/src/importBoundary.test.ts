@@ -78,6 +78,7 @@ describe('@risuai/protocol import boundary', () => {
       'bardWiki.ts',
       'characterSummaryResource.ts',
       'clientContext.ts',
+      'displaySource.ts',
       'embeddingOperation.ts',
       'generationSse.ts',
       'imageGenerationOperation.ts',

@@ -21,8 +21,8 @@ import { getActivePromptPresetRegexScripts } from '../../ts/process/promptPreset
 import {
   normalizeDisplayDependencyValue as normalizeForSignature,
   stableDisplayDependencyJson as stableStringify,
-} from '../../ts/process/displaySourceProtocol'
-import type { DisplaySourceLayer } from '../../ts/process/displaySourceProtocol'
+} from '@risuai/protocol/display-source'
+import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
 import type { DisplaySourcePriority } from '../../ts/server/displaySources'
 
 type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'

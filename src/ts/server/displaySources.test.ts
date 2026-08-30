@@ -9,7 +9,7 @@ import {
   setCachedServerCommandRevision,
 } from './commands'
 import { resetWriterAccessLostForTests } from './activeWriterSession'
-import { displaySourceNamespaceJson } from '../process/displaySourceProtocol'
+import { displaySourceNamespaceJson } from '@risuai/protocol/display-source'
 import { reloadRegexDisplay, resetRegexDisplayReloadForTests } from '../process/regexDisplayReload'
 import {
   activateDisplaySourceChat,

@@ -17,7 +17,7 @@ import {
   type DisplaySourceLayer,
   type DisplaySourceResponse,
   type DisplaySourceTarget,
-} from '../process/displaySourceProtocol'
+} from '@risuai/protocol/display-source'
 import { currentRegexDisplayReloadToken } from '../process/regexDisplayReload'
 
 const SERVER_DATABASE_LINEAGE_HEADER = 'risu-database-lineage'

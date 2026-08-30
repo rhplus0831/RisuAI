@@ -13,7 +13,7 @@ import {
   type DisplaySourceResponse,
   type DisplaySourceResponseEntry,
   type DisplaySourceTarget,
-} from '../../../src/ts/process/displaySourceProtocol.js'
+} from '@risuai/protocol/display-source'
 import { getSchemaState } from './db.js'
 import { getDatabaseLineage, getDatabaseWriterMetadata } from './databaseLineage.js'
 import { loadPersistedForDisplaySource } from './repository.js'

@@ -10,7 +10,7 @@ import {
   type DisplaySourceLayer,
   type DisplaySourceRequest,
   type DisplaySourceTarget,
-} from '../../../../src/ts/process/displaySourceProtocol.js'
+} from '@risuai/protocol/display-source'
 import type { DisplaySourceService } from '../displaySourceService.js'
 
 const DISPLAY_SOURCE_LAYERS: ReadonlySet<DisplaySourceLayer> = new Set([
