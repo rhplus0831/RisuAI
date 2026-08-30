@@ -210,6 +210,16 @@ describe('runServerMessageTranslation', () => {
         translatorPrompt:
           'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
         translatorMaxResponse: 111,
+        translatorPresetId: 0,
+        translatorPresets: [
+          {
+            id: 'history-pipeline',
+            name: 'History pipeline',
+            prompt:
+              'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
+            maxResponse: 111,
+          },
+        ],
         characters: [
           {
             chaId: 'char-a',
