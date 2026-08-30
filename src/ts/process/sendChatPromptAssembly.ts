@@ -122,7 +122,9 @@ export async function assembleLocalSendChatPrompt(args: {
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(args.currentChar, {
     chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
   })
-  const mainModelId = resolveModelProfile({ database: getDatabase(), role: 'chatMain' }).modelId
+  const mainProfile = resolveModelProfile({ database: getDatabase(), role: 'chatMain' })
+  const mainModelId = mainProfile.modelId
+  const maxResponseTokens = mainProfile.runtimeOptions.maxResponse ?? getDatabase().maxResponse
 
   if (!args.currentChar.utilityBot && !promptTemplate) {
     const sections = buildPlainPromptSections(args.currentChar)
@@ -143,7 +145,7 @@ export async function assembleLocalSendChatPrompt(args: {
   const { resolvePosition, positionParser, depthPrompts } = lore
   const descriptionBaseIndex = unformated.description.indexOf(descriptionBasePrompt)
 
-  let currentTokens = getDatabase().maxResponse + 50
+  let currentTokens = maxResponseTokens + 50
 
   const preflight = await preflightTemplateTokens(
     promptTemplate,
@@ -253,12 +255,7 @@ export async function assembleLocalSendChatPrompt(args: {
     args.promptInfo.promptText = render.promptText
   }
 
-  const budget = await finalizeRequestBudget(
-    render.formated,
-    args.maxContextTokens,
-    getDatabase().maxResponse,
-    args.tokenizer,
-  )
+  const budget = await finalizeRequestBudget(render.formated, args.maxContextTokens, maxResponseTokens, args.tokenizer)
   if (!budget.ok) {
     args.throwError(language.errors.toomuchtoken + '\n\nAt token rechecking. Required Tokens: ' + budget.inputTokens)
     return { status: 'stopped' }

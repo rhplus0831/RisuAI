@@ -14,6 +14,13 @@ const assemblyState = vi.hoisted(() => ({
     currentChat: args.currentChat,
     triggerResult: undefined,
   })),
+  buildMemoryWindow: vi.fn(async (args: { currentChat: Chat; chats: OpenAIChat[] }) => ({
+    stopSending: false,
+    chats: args.chats,
+    currentTokens: 0,
+    currentChat: args.currentChat,
+    memories: [],
+  })),
   renderFinalPrompt: vi.fn(async () => ({
     formated: [{ role: 'system', content: 'assembled' }],
   })),
@@ -63,13 +70,7 @@ vi.mock('../promptAssembly/buildHistoryWindow', () => ({
 }))
 
 vi.mock('../promptAssembly/buildMemoryWindow', () => ({
-  buildMemoryWindow: async (args: { currentChat: Chat; chats: OpenAIChat[] }) => ({
-    stopSending: false,
-    chats: args.chats,
-    currentTokens: 0,
-    currentChat: args.currentChat,
-    memories: [],
-  }),
+  buildMemoryWindow: assemblyState.buildMemoryWindow,
 }))
 
 vi.mock('../promptAssembly/renderFinalPrompt', () => ({
@@ -146,6 +147,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     projectionState.fetchResource.mockReset()
     assemblyState.renderFinalPrompt.mockClear()
     assemblyState.buildHistoryWindow.mockClear()
+    assemblyState.buildMemoryWindow.mockClear()
     assemblyState.finalizeRequestBudget.mockClear()
   })
 
@@ -211,7 +213,14 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
       },
       formatingOrder: [],
       aiModel: 'gpt-4',
-      modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: 'novelai:durable' }],
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'novelai:durable',
+          runtimeOptions: { maxResponse: 700 },
+        },
+      ],
       modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'durable-main' } },
       chainOfThought: false,
       personaPrompt: false,
@@ -228,13 +237,14 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     })
     const throwError = vi.fn()
 
+    const tokenizer = {} as never
     const result = await assembleLocalSendChatPrompt({
       currentChar,
       currentChat: chat,
       nowChatroom: currentChar,
       selectedChar: 0,
       selectedChat: 0,
-      tokenizer: {} as never,
+      tokenizer,
       promptInfo: {} as never,
       maxContextTokens: 4000,
       stageTimings: stageTimings(),
@@ -261,6 +271,13 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     )
     expect(assemblyState.buildHistoryWindow).toHaveBeenCalledWith(
       expect.objectContaining({ modelId: 'novelai:durable' }),
+    )
+    expect(assemblyState.buildMemoryWindow).toHaveBeenCalledWith(expect.objectContaining({ currentTokens: 750 }))
+    expect(assemblyState.finalizeRequestBudget).toHaveBeenCalledWith(
+      [{ role: 'system', content: 'assembled' }],
+      4000,
+      700,
+      tokenizer,
     )
     expect(throwError).not.toHaveBeenCalled()
   })
