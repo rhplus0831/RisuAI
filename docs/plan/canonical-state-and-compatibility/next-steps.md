@@ -4,41 +4,37 @@ Date: 2026-08-30
 
 ## Current Task
 
-Workstream 1 released the Phase 0 package/dependency conventions at
-`b01e88b03`. Migration schemas and persistence-specific normalization stay
-server-owned; serialized contracts use `@risuai/protocol`; neutral shared
-normalizers require an audited shared-runtime slice.
+Execute the [transactional migration and historical-fixture
+harness](phases/slices/phase-1-migration-and-recovery-foundation/transactional-migration-fixture-harness.md).
 
-Execute the [compatibility surface inventory and disposition matrix](phases/slices/phase-0-compatibility-inventory-and-retention-policy/compatibility-surface-inventory.md).
+1. Make the domain migration runner expose focused, contiguous named steps with
+   test-only failure injection at a transaction boundary.
+2. Prove immediate-transaction rollback, schema/domain-version advancement,
+   completed-step idempotency, interrupted retry, and reopen behavior.
+3. Reuse the Phase 0 historical fixtures for model, prompt, translator, stable
+   ids, legacy db.json, RisuSave, and backup/restore starting states.
+4. Prove the pre-migration backup/restore and database-lineage behavior needed
+   by Phases 2–4.
+5. Keep damaged-database recovery explicit; the automatic migration runner must
+   refuse corruption it cannot transactionally normalize.
 
-1. Inventory fields, tables, routes, commands, adapters, fallback reads,
-   projections, boot repairs, import normalizers, exports, backups, and recovery
-   actions for model, prompt, translator, and candidate smaller mirrors.
-2. Assign exactly one disposition to every surface.
-3. Record current precedence plus missing/null/malformed, downgrade/export,
-   failure, interrupted-migration, and damaged-database behavior.
-4. Name real historical fixtures and their provenance; do not substitute newly
-   invented fixtures for all history.
-5. Record the Workstream 3 hold/release cursor for every resource family.
+## Phase 0 Release
 
-## Required Scope Before Editing
+`cd04b0e11` established 19 compatibility surfaces and 38 live probes. Runtime
+rewrites may implement only the recorded disposition, precedence, failure,
+fixture, rollback, and Workstream 3 hold/release for their row.
 
-The slice must identify inventory schema/path, classification vocabulary,
-historical references, decision owner, validation commands, and why it makes no
-runtime mutation. Runtime migration belongs in later slices.
+## Not In This Slice
 
-## Not First
-
-- Do not invoke or extend the legacy model-conversion command as an automatic
-  migration before precedence and rollback are locked.
-- Do not remove resolver fallback, aggregate `promptTemplate`, translator
-  scalars, SQLite tables, or `ensure*` helpers.
-- Do not remove a Workstream 3 bridge for the same resource family.
-- Do not treat import/export compatibility as normal-runtime ownership.
-- Do not activate Workstream 4.
+- Do not migrate flat model configuration, prompt mirrors, or translator
+  mirrors yet.
+- Do not remove a compatibility reader, exporter, table, field, or route.
+- Do not turn legacy conversion or damaged-state repair into an implicit normal
+  command.
+- Do not remove a Workstream 3 bridge for any resource family.
 
 ## Handoff
 
-After Phase 0 acceptance, update [`status.md`](status.md), refresh
-[`latest-verification.md`](latest-verification.md), then open the migration and
-recovery foundation before any resource-family data rewrite.
+After the foundation passes, update [`status.md`](status.md), refresh
+[`latest-verification.md`](latest-verification.md), and open the model
+configuration migration as the first persisted-owner rewrite.

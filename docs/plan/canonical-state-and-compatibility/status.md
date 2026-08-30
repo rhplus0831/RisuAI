@@ -9,13 +9,12 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Current Snapshot
 
-- Plan state: Active; Workstream 1 convention gate released, implementation not started.
-- Current phase: [Phase 0 compatibility inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md), ready.
-- Active slice: [Compatibility surface inventory and disposition matrix](phases/slices/phase-0-compatibility-inventory-and-retention-policy/compatibility-surface-inventory.md), ready.
-- Prepared first slice: [Compatibility surface inventory and disposition matrix](phases/slices/phase-0-compatibility-inventory-and-retention-policy/compatibility-surface-inventory.md).
+- Plan state: Active; Phase 0 complete.
+- Current phase: [Phase 1 migration and recovery foundation](phases/phase-1-migration-and-recovery-foundation.md).
+- Active slice: [Transactional migration and historical-fixture harness](phases/slices/phase-1-migration-and-recovery-foundation/transactional-migration-fixture-harness.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes in this activation: none.
-- Latest verification: no implementation run yet.
+- Runtime changes through Phase 0: none; only the read-only inventory gate changed.
+- Latest verification: Phase 0 passed at `cd04b0e11f2c8629e988af1ef6c99a2646a746f1`.
 
 ## Dependency Cursors
 
@@ -47,8 +46,8 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 | Phase | Status | Opens when |
 | ---: | --- | --- |
-| [0. Inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md) | Ready | Current execution cursor. |
-| [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Queued | Phase 0 policies and fixtures are accepted. |
+| [0. Inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md) | Complete | Closed at `cd04b0e11`. |
+| [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Ready | Current execution cursor. |
 | [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Queued | Foundation passes model historical fixtures. |
 | [3. Prompt templates](phases/phase-3-prompt-template-ownership.md) | Queued | Foundation passes prompt historical fixtures. |
 | [4. Translator/smaller mirrors](phases/phase-4-translator-and-smaller-mirrors.md) | Queued | Foundation and per-family dispositions are complete. |
@@ -58,7 +57,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Blockers And Risks
 
-- No blocker prevents the Phase 0 inventory and disposition matrix.
+- No blocker prevents the Phase 1 migration foundation slice.
 - A field may be an explicit export projection, not a removable mirror; Phase 0
   must decide before implementation.
 - Command-time repair may currently make damaged historical data usable. Moving
@@ -70,5 +69,5 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Apply the conventions released at
-`b01e88b03`; do not begin runtime migration in the inventory slice.
+Use [`next-steps.md`](next-steps.md). Establish transaction, retry, fixture,
+backup, restore, and lineage proof before a resource-family rewrite begins.

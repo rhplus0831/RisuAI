@@ -1,6 +1,6 @@
 # Phase 1: Migration And Recovery Foundation
 
-Status: queued.
+Status: active.
 
 Depends on: Phase 0 retention policies and historical fixtures.
 

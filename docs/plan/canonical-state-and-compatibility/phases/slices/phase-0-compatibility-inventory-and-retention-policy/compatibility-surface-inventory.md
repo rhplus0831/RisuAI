@@ -1,6 +1,6 @@
 # Compatibility Surface Inventory And Disposition Matrix
 
-Status: ready; dependency released at `b01e88b03`.
+Status: complete at `cd04b0e11f2c8629e988af1ef6c99a2646a746f1`.
 
 Parent: [Phase 0](../../phase-0-compatibility-inventory-and-retention-policy.md)
 
@@ -57,3 +57,11 @@ focused structural tests, affected tests, formatting, and `git diff --check`.
 Stop if a disposition requires an unsigned compatibility/product decision, if a
 historical input cannot be reproduced, or if the Workstream 1 convention would
 be bypassed.
+
+## Result
+
+The reviewed [`compatibility-baseline.json`](../../../compatibility-baseline.json)
+contains 19 unambiguous surfaces and 38 fail-closed identifier/table/route
+probes. Existing tests provide local provenance for every row. Runtime ownership,
+persistence, revisions, receipts, events, imports, exports, and recovery behavior
+did not change in this inventory slice.

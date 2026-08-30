@@ -2,9 +2,8 @@
 
 Date: 2026-08-30
 
-Status: active. Workstream 1 released the package, protocol, and
-pure-shared-boundary conventions at `b01e88b03`; Phase 0 is ready and does not
-wait for every Workstream 1 contract family to migrate.
+Status: active. Phase 0 closed at `cd04b0e11`; Phase 1 migration and recovery
+foundation is the execution cursor.
 
 ## Goal
 
