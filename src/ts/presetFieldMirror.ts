@@ -55,7 +55,7 @@ export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPre
   if (modelPresetKey) {
     const index = getDatabase().modelPresetsId
     const presetId = Number.isInteger(index) && index >= 0 ? getDatabase().modelPresets?.[index]?.id : undefined
-    if (!presetId) return null
+    if (!presetId || uniquePresetIndex(getDatabase().modelPresets, presetId) < 0) return null
     return { kind: 'model', databaseKey: key, presetKey: modelPresetKey, presetId }
   }
 
@@ -63,7 +63,7 @@ export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPre
   if (promptPresetKey) {
     const index = getDatabase().promptPresetsId
     const presetId = Number.isInteger(index) && index >= 0 ? getDatabase().promptPresets?.[index]?.id : undefined
-    if (!presetId) return null
+    if (!presetId || uniquePresetIndex(getDatabase().promptPresets, presetId) < 0) return null
     return { kind: 'prompt', databaseKey: key, presetKey: promptPresetKey, presetId }
   }
   return null
@@ -71,8 +71,9 @@ export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPre
 
 export function currentTopLevelPresetFieldMirrorValue(target: TopLevelPresetFieldMirrorTarget): unknown {
   const presets = target.kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets
-  const preset = presets?.find((candidate) => candidate?.id === target.presetId) as Record<string, unknown> | undefined
-  if (!preset) return undefined
+  const index = uniquePresetIndex(presets, target.presetId)
+  if (index < 0) return undefined
+  const preset = presets[index] as Record<string, unknown>
   return cloneJsonValue(preset[target.presetKey])
 }
 
@@ -85,14 +86,14 @@ export function mirrorTopLevelPresetFieldToTargetWithOutcome(
   value: unknown,
 ): Promise<PresetMutationOutcome> | null {
   if (target.kind === 'model') {
-    const index = getDatabase().modelPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+    const index = uniquePresetIndex(getDatabase().modelPresets, target.presetId)
     if (index < 0) return null
     const preset = getDatabase().modelPresets[index] as Record<string, unknown>
     if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
     return updateModelPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<ModelPreset>)
   }
 
-  const index = getDatabase().promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+  const index = uniquePresetIndex(getDatabase().promptPresets, target.presetId)
   if (index < 0) return null
   const preset = getDatabase().promptPresets[index] as Record<string, unknown>
   if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return null
@@ -113,6 +114,12 @@ function promptPresetKeyForDatabaseKey(key: string): string | null {
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function uniquePresetIndex(presets: ReadonlyArray<{ id?: unknown }> | undefined, presetId: unknown): number {
+  if (!Array.isArray(presets) || typeof presetId !== 'string' || presetId.trim() === '') return -1
+  const matches = presets.map((preset, index) => ({ preset, index })).filter(({ preset }) => preset?.id === presetId)
+  return matches.length === 1 ? matches[0].index : -1
 }
 
 function cloneJsonValue<T>(value: T): T {

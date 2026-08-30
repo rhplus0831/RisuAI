@@ -57,6 +57,20 @@ describe('mirrorTopLevelPresetField', () => {
     expect(presetUpdateState.updateModelPreset).not.toHaveBeenCalled()
   })
 
+  it.each(['missing', 'duplicate'])('fails closed for a %s selected prompt owner', (kind) => {
+    ;(dbState.db as any).promptPresets =
+      kind === 'missing'
+        ? []
+        : [
+            { id: 'prompt-a', name: 'Prompt A' },
+            { id: 'prompt-a', name: 'Duplicate Prompt A' },
+          ]
+
+    expect(resolveTopLevelPresetFieldMirrorTarget('mainPrompt')).toBeNull()
+    expect(mirrorTopLevelPresetField('mainPrompt', 'should not write')).toBe(false)
+    expect(presetUpdateState.updatePromptPreset).not.toHaveBeenCalled()
+  })
+
   it('keeps a delayed mirror bound to the preset id captured before selection changes', () => {
     ;(dbState.db as any).modelPresets.push({ id: 'model-b', name: 'Model B', temperature: 0.2 })
     const target = resolveTopLevelPresetFieldMirrorTarget('temperature')
