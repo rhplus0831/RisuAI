@@ -5,8 +5,8 @@ Date: 2026-08-31
 ## Candidate
 
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
-  `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`, and
-  `07576969c`, and `d8275c5e9`
+  `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`,
+  `07576969c`, `d8275c5e9`, and `3cff93cd6`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
@@ -14,8 +14,9 @@ Date: 2026-08-31
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
 - Scope: Phase 2 normal-consumer checkpoint for selected model-preset
   composition, browser prompt shape, durable-profile tokenizer/output budgeting
-  and image capability, canonical custom-sidebar model authoring, and Fastify
-  server-intent completion projection plus browser request sampling.
+  and image capability, canonical custom-sidebar model authoring, Fastify
+  server-intent completion projection, browser request sampling, and
+  provider-specific thinking overrides.
 
 ## Consumer-Cutover Proof
 
@@ -52,6 +53,9 @@ Date: 2026-08-31
   parameter builders receive the resolved profile runtime options. Those values
   outrank conflicting flat samplers, while explicit separate-parameter settings
   retain their compatibility precedence.
+- Anthropic adaptive thinking, DeepSeek thinking/tool-round reasoning, and the
+  legacy plugin fallback source their post-parameter values from the resolved
+  runtime profile. Flat behavior remains only for callers with no model context.
 
 ## Commands And Results
 
@@ -69,19 +73,21 @@ Date: 2026-08-31
   profile/flat sampling values.
 - Browser request role routing, parameter ownership, OpenAI, Anthropic, and
   Google provider files passed 19, 1, 16, 5, and 11 tests.
+- The provider-thinking checkpoint passed 7 Anthropic, 18 OpenAI, 2 closed
+  parameter-ownership, and 19 role-routing tests.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at 271 cross-runtime edges after interleaved
+- Architecture inventory passed at 258 cross-runtime edges after interleaved
   Workstream 1 server-input migrations, 20 compatibility
-  surfaces/42 probes, 9,892 client references/326 groups, and 56 owner-gap rows.
+  surfaces/42 probes, 9,896 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `d8275c5e9`. Selected legacy
+The normal-consumer checkpoint passes through `3cff93cd6`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
-canonical presets; server-intent completion projects durable runtime fields; and
-ordinary provider request samplers use resolved runtime options. The broader
-normal consumer cutover remains active; the model-owner cursor is not released
-yet.
+canonical presets; server-intent completion projects durable runtime fields;
+ordinary provider request samplers and provider-specific thinking overrides use
+resolved runtime options. The broader normal consumer cutover remains active;
+the model-owner cursor is not released yet.

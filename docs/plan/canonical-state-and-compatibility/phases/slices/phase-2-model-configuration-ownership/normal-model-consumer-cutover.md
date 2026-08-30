@@ -1,7 +1,7 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; profile-owned request-sampling checkpoint through
-`d8275c5e9`.
+Status: in progress; provider-specific thinking checkpoint through
+`3cff93cd6`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -86,6 +86,9 @@ classified static/legacy boundary removed to complete the cutover.
   the shared parameter builder at `d8275c5e9`; conflicting flat sampling values
   no longer override durable profiles, while explicit separate-parameter
   settings retain their classified precedence.
+- Anthropic adaptive thinking, DeepSeek thinking and tool-round reasoning, and
+  the legacy plugin fallback read resolved runtime options at `3cff93cd6`;
+  context-free callers retain the classified flat fallback.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar
