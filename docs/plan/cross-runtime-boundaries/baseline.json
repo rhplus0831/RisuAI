@@ -563,32 +563,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/prompts.ts",
-      "specifier": "../../../../src/ts/promptSettings.js",
-      "target": "src/ts/promptSettings.ts",
-      "kind": "re-export",
-      "usage": "runtime",
-      "symbols": [
-        "PROMPT_SETTINGS_KEYS"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/prompts.ts",
-      "specifier": "../../../../src/ts/promptSettings.js",
-      "target": "src/ts/promptSettings.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "PROMPT_SETTINGS_KEYS"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/providerCredentials.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
@@ -4015,19 +3989,6 @@
       "usage": "type-only",
       "symbols": [
         "ResolvedModelProfile"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/resourceReads.test.ts",
-      "specifier": "../../../src/ts/promptSettings.js",
-      "target": "src/ts/promptSettings.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "PROMPT_SETTINGS_KEYS"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

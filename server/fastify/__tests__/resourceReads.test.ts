@@ -9,7 +9,7 @@ import { buildApp } from '../src/app.js'
 import { COLLECTION_FIELDS } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import { PROMPT_SETTINGS_KEYS } from '../../../src/ts/promptSettings.js'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 import { BULK_RESOURCE_MAX_BODY_BYTES, BULK_RESOURCE_MAX_IDS } from '../src/routes/resourceReads.js'
 import { addAlternateMessage, replaceChatMessages } from '../src/messageStore.js'
 import {

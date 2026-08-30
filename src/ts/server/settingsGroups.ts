@@ -1,4 +1,4 @@
-import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 
 export const SETTINGS_GROUPS = [
   'providers',

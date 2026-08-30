@@ -55,7 +55,7 @@
   import ModelRoleList from './Model/ModelRoleList.svelte'
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
-  import { PROMPT_SETTINGS_KEYS } from 'src/ts/promptSettings'
+  import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {

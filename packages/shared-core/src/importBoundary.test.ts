@@ -78,6 +78,7 @@ describe('@risuai/shared-core import boundary', () => {
         'loreHash.ts',
         'modelRoles.ts',
         'moduleIntegration.ts',
+        'promptSettings.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',
         'scriptModelOverrides.ts',

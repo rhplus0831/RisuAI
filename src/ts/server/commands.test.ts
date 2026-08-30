@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { serializeChatGenerationSettingsDigestInput } from '../chatGenerationSettings'
-import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 import {
   serializePersonaCollectionDigestInput,
   serializePersonaIdsDigestInput,

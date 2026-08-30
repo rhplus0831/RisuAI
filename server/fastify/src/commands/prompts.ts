@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
+import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 import { normalizePromptTemplate } from '../../../../src/ts/process/promptTemplateNormalization.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
-export { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
+export { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 
 type JsonRecord = Record<string, unknown>
 
