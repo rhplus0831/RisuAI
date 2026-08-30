@@ -42,7 +42,7 @@ import {
  * Prompt-template editor projection helpers.
  *
  * The prompt-template editor keeps a local `promptTemplate` draft and mirrors
- * edits into resource-backed state (`getDatabase().promptTemplate`). These
+ * edits into the selected prompt-template owner in resource-backed state. These
  * helpers avoid two per-keystroke costs:
  *
  * - the optimistic projection write cloned the WHOLE `promptTemplate` array on
@@ -256,20 +256,28 @@ const pendingPromptTemplateStructuralAttempts: PendingPromptTemplateStructuralAt
  * id yet (rare: the projection has drifted from the draft); that path is still
  * correct, just not narrowed.
  */
-export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId: string): PromptItem | null {
-  if (!isPromptTemplateHydrated()) return null
+export function applyPromptItemProjectionWrite(
+  draftItems: PromptItem[],
+  itemId: string,
+  ownerId: string | null = currentPromptTemplateOwnerId(),
+): PromptItem | null {
+  if (!isPromptTemplateHydrated(ownerId)) return null
   const draftItem = (draftItems ?? []).find((item) => item.id === itemId)
   if (!draftItem) return null
+  if (ownerId !== null && !findCanonicalPromptTemplatePreset(ownerId)) return null
   const snapshot = cloneJsonValue(draftItem)
   withTrustedResourceWrite(() => {
-    const template = getDatabase().promptTemplate
+    const owner = ownerId === null ? null : findCanonicalPromptTemplatePreset(ownerId)
+    const template = ownerId === null ? getDatabase().promptTemplate : owner?.promptTemplate
     if (!Array.isArray(template)) {
-      getDatabase().promptTemplate = cloneJsonValue(draftItems)
+      if (ownerId === null) getDatabase().promptTemplate = cloneJsonValue(draftItems)
+      else if (owner) owner.promptTemplate = cloneJsonValue(draftItems)
       return
     }
     const index = template.findIndex((item) => item.id === itemId)
     if (index === -1) {
-      getDatabase().promptTemplate = cloneJsonValue(draftItems)
+      if (ownerId === null) getDatabase().promptTemplate = cloneJsonValue(draftItems)
+      else if (owner) owner.promptTemplate = cloneJsonValue(draftItems)
       return
     }
     template[index] = snapshot
@@ -282,9 +290,14 @@ export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId:
  * rollback), leaving every other item untouched. The former rollback re-cloned
  * the whole `promptTemplate` array.
  */
-export function restorePromptItemProjectionWrite(itemId: string, previousItem: PromptItem): void {
+export function restorePromptItemProjectionWrite(
+  itemId: string,
+  previousItem: PromptItem,
+  ownerId: string | null = currentPromptTemplateOwnerId(),
+): void {
   withTrustedResourceWrite(() => {
-    const template = getDatabase().promptTemplate
+    const owner = ownerId === null ? null : findCanonicalPromptTemplatePreset(ownerId)
+    const template = ownerId === null ? getDatabase().promptTemplate : owner?.promptTemplate
     if (!Array.isArray(template)) return
     const index = template.findIndex((item) => item.id === itemId)
     if (index !== -1) template[index] = cloneJsonValue(previousItem)
@@ -619,12 +632,6 @@ function writePromptTemplateStructuralOwnerState(
   const preset = matches[0] as unknown as Record<string, unknown>
   if (state.enabled) preset.promptTemplate = cloneJsonValue(state.items ?? [])
   else delete preset.promptTemplate
-
-  const selectedIndex = database.promptPresetsId
-  const selectedPreset = Number.isInteger(selectedIndex) && selectedIndex >= 0 ? presets[selectedIndex] : undefined
-  if (selectedPreset?.id !== ownerId) return
-  if (state.enabled) database.promptTemplate = cloneJsonValue(state.items ?? [])
-  else delete (database as unknown as Record<string, unknown>).promptTemplate
 }
 
 export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTemplateItemCreateRollback): void {
@@ -696,7 +703,7 @@ export function queuePromptItemProjectionUpdate(
   const existing = pendingPromptItemUpdates.get(pendingKey)
   const effectiveProjectionFence =
     existing?.projectionFence ?? projectionFence ?? capturePromptTemplateOwnerMutationFence(promptPresetId)
-  const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId)
+  const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId, promptPresetId)
   if (!attemptedItem) return
   markDirtyPromptItemFields(promptPresetId, itemId, previousItem, attemptedItem)
   if (!canUseServerCommands()) return
@@ -1205,18 +1212,15 @@ function restorePromptItemProjectionFields(
   withTrustedResourceWrite(() => {
     const database = getDatabase()
     const targets: PromptItem[][] = []
-    if (Array.isArray(database.promptTemplate)) {
-      targets.push(database.promptTemplate as PromptItem[])
+    if (ownerId === null) {
+      if (Array.isArray(database.promptTemplate)) targets.push(database.promptTemplate as PromptItem[])
+      else complete = false
     } else {
-      complete = false
-    }
-
-    if (ownerId !== null) {
       const owner = findCanonicalPromptTemplatePreset(ownerId)
       const ownerTemplate = owner?.promptTemplate
       if (!Array.isArray(ownerTemplate)) {
         complete = false
-      } else if (!targets.includes(ownerTemplate as PromptItem[])) {
+      } else {
         targets.push(ownerTemplate as PromptItem[])
       }
     }
@@ -1304,13 +1308,13 @@ export interface PromptTemplateReconcileResult {
  * server push / command response. The whole-template stringify only happens on
  * such a revision advance, never per keystroke.
  *
- * Reads `getDatabase().promptTemplate` first so a caller `$effect` registers the
+ * Reads the current owner's projection so a caller `$effect` registers the
  * resource-state dependency and re-runs on a server push.
  */
 export function reconcilePromptTemplateDraft(
   draftItems: PromptItem[],
   previousRevision: number | null,
-  projectedItems: PromptItem[] = (getDatabase().promptTemplate ?? []) as PromptItem[],
+  projectedItems: PromptItem[] = readPromptTemplateOwnerItems(currentPromptTemplateOwnerId()),
 ): PromptTemplateReconcileResult {
   const ownerId = currentPromptTemplateOwnerId()
   if (!isPromptTemplateHydrated(ownerId)) {
@@ -1651,8 +1655,10 @@ function applyPromptTemplateCollectionRollback(
   binding.setItems(nextItems)
   let complete = true
   withTrustedResourceWrite(() => {
-    getDatabase().promptTemplate = cloneJsonValue(nextItems)
-    if (ownerId === null) return
+    if (ownerId === null) {
+      getDatabase().promptTemplate = cloneJsonValue(nextItems)
+      return
+    }
     const owner = findCanonicalPromptTemplatePreset(ownerId)
     if (!owner) {
       complete = false
@@ -1661,4 +1667,10 @@ function applyPromptTemplateCollectionRollback(
     owner.promptTemplate = cloneJsonValue(nextItems)
   })
   return complete
+}
+
+function readPromptTemplateOwnerItems(ownerId: string | null): PromptItem[] {
+  if (ownerId === null) return (getDatabase().promptTemplate ?? []) as PromptItem[]
+  const owner = findCanonicalPromptTemplatePreset(ownerId)
+  return (Array.isArray(owner?.promptTemplate) ? owner.promptTemplate : []) as PromptItem[]
 }

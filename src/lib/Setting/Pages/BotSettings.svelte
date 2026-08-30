@@ -970,13 +970,17 @@
 
   function setSelectedPromptPresetTemplateProjection(enabled: boolean, template: unknown = []): void {
     withTrustedResourceWrite(() => {
+      const ownerId = currentPromptTemplateOwnerId()
       const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-      if (preset) {
+      if (ownerId !== null) {
+        const ownerMatches = (getDatabase().promptPresets ?? []).filter((candidate) => candidate?.id === ownerId)
+        if (!preset || preset.id !== ownerId || ownerMatches.length !== 1) return
         if (enabled) {
           preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
         } else {
           delete preset.promptTemplate
         }
+        return
       }
       if (enabled) {
         getDatabase().promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])

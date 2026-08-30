@@ -290,11 +290,17 @@
   function syncSelectedPromptPresetTemplateProjection(templates: PromptItem[]): void {
     const nextTemplate = cloneJsonValue(templates)
     withTrustedResourceWrite(() => {
+      const ownerId = currentPromptTemplateOwnerId()
       const selectedIndex = selectedPromptPresetIndex()
       const preset =
         selectedIndex >= 0 ? (getResourceDatabase().promptPresets?.[selectedIndex] as Record<string, unknown>) : null
-      if (preset) {
+      if (ownerId !== null) {
+        const ownerMatches = (getResourceDatabase().promptPresets ?? []).filter(
+          (candidate) => candidate?.id === ownerId,
+        )
+        if (!preset || preset.id !== ownerId || ownerMatches.length !== 1) return
         preset.promptTemplate = cloneJsonValue(nextTemplate)
+        return
       }
       getResourceDatabase().promptTemplate = cloneJsonValue(nextTemplate)
     })
@@ -302,8 +308,14 @@
 
   function syncSelectedPromptPresetItemProjection(itemId: string, promptItem: PromptItem): void {
     withTrustedResourceWrite(() => {
+      const ownerId = currentPromptTemplateOwnerId()
       const preset = selectedPromptPreset()
-      if (!preset || !Array.isArray(preset.promptTemplate)) return
+      const ownerMatches =
+        ownerId === null
+          ? []
+          : (getResourceDatabase().promptPresets ?? []).filter((candidate) => candidate?.id === ownerId)
+      if (!preset || ownerId === null || preset.id !== ownerId || ownerMatches.length !== 1) return
+      if (!Array.isArray(preset.promptTemplate)) return
       const template = preset.promptTemplate as PromptItem[]
       const index = template.findIndex((item) => item.id === itemId)
       if (index === -1) {
@@ -318,15 +330,10 @@
     const preset = selectedPromptPreset()
     if (!preset) return
     withTrustedResourceWrite(() => {
-      if (Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
-        getResourceDatabase().promptTemplate = cloneJsonValue(
-          Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [],
-        )
-      } else if (promptTemplateOwnerUsesSelectedFallback(selectedPromptPresetId())) {
+      if (Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) return
+      if (promptTemplateOwnerUsesSelectedFallback(selectedPromptPresetId())) {
         const fallback = clonePromptTemplateSelectedFallback(selectedPromptPresetId())
         if (Array.isArray(fallback)) getResourceDatabase().promptTemplate = fallback
-      } else {
-        delete (getResourceDatabase() as unknown as Record<string, unknown>).promptTemplate
       }
     })
   }
@@ -1173,7 +1180,7 @@
     if (!promptTemplateHydrated) return
     // Reconcile the draft from the projection only when the cached server command
     // revision advances (a real server push / command response), not on every
-    // keystroke. `reconcilePromptTemplateDraft` reads `getResourceDatabase().promptTemplate`
+    // keystroke. The reconcile call below reads the selected owner projection
     // so this effect still re-runs on a projection change; the whole-template
     // stringify now happens only on a revision advance, never per keystroke.
     const { revision, nextDraft, structuralAdoption } = reconcilePromptTemplateDraft(

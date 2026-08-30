@@ -367,8 +367,11 @@ function textOf(value: PromptItem | undefined): string | undefined {
 // One tiny edited item plus several large items, so a single-item clone is
 // distinguishable from a whole-`promptTemplate` clone by serialized size.
 function seedTemplate(): void {
+  const template = [item('p-0', 'small'), item('p-1', BIG), item('p-2', BIG), item('p-3', BIG)]
   resourceDatabase.current = {
-    promptTemplate: [item('p-0', 'small'), item('p-1', BIG), item('p-2', BIG), item('p-3', BIG)],
+    promptTemplate: template,
+    promptPresetsId: 0,
+    promptPresets: [{ id: 'prompt-a', promptTemplate: cloneJsonValue(template) }],
   }
 }
 
@@ -641,6 +644,48 @@ describe('applyPromptItemProjectionWrite', () => {
 
     expect(result).toBeNull()
     expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
+  })
+
+  it('writes only the selected preset owner when the aggregate projection is stale', () => {
+    hydrationState.setOwner('preset-a')
+    const aggregate = [item('p-0', 'stale aggregate')]
+    const ownerTemplate = [item('p-0', 'owner text')]
+    resourceDatabase.current = {
+      promptTemplate: aggregate,
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', promptTemplate: ownerTemplate }],
+    }
+
+    const result = applyPromptItemProjectionWrite([item('p-0', 'edited owner')], 'p-0', 'preset-a')
+
+    expect(result).toEqual(item('p-0', 'edited owner'))
+    expect(getResourceDatabase().promptPresets[0].promptTemplate).toEqual([item('p-0', 'edited owner')])
+    expect(getResourceDatabase().promptTemplate).toEqual(aggregate)
+  })
+
+  it.each([
+    ['missing', []],
+    [
+      'duplicated',
+      [
+        { id: 'preset-a', promptTemplate: [item('p-0', 'owner one')] },
+        { id: 'preset-a', promptTemplate: [item('p-0', 'owner two')] },
+      ],
+    ],
+    ['mismatched', [{ id: 'preset-b', promptTemplate: [item('p-0', 'mismatch')] }]],
+  ])('fails closed without an aggregate write when the selected owner is %s', (_label, presets) => {
+    hydrationState.setOwner('preset-a')
+    const aggregate = [item('p-0', 'stale aggregate')]
+    resourceDatabase.current = {
+      promptTemplate: aggregate,
+      promptPresetsId: 0,
+      promptPresets: presets,
+    }
+
+    const result = applyPromptItemProjectionWrite([item('p-0', 'edited owner')], 'p-0', 'preset-a')
+
+    expect(result).toBeNull()
+    expect(getResourceDatabase().promptTemplate).toEqual(aggregate)
   })
 })
 
@@ -939,7 +984,10 @@ describe('prompt template collection rollback guards', () => {
     })
 
     expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0'])
-    expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-0'])
+    expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual([
+      'p-0',
+      'created',
+    ])
     expect(
       (getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[]).map((promptItem) => promptItem.id),
     ).toEqual(['p-0'])
@@ -1460,7 +1508,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(draftItems[0]).toMatchObject({ text: 'server text', role: 'user' })
     expect((getResourceDatabase().promptTemplate as PromptItem[])[0]).toMatchObject({
       text: 'server text',
-      role: 'user',
+      role: 'system',
     })
     expect((getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[])[0]).toMatchObject({
       text: 'server text',
@@ -2300,6 +2348,42 @@ describe('flushPendingPromptTemplatePatches', () => {
     }
   })
 
+  it('PromptSettings edits only the selected preset owner and preserves a stale aggregate projection', async () => {
+    hydrationState.setOwner('preset-a')
+    const ownerRow = promptItemFixture({ ...item('owner-row', 'owner text'), name: 'Owner row' })
+    const staleAggregate = [promptItemFixture({ ...item('stale-row', 'stale text'), name: 'Stale aggregate row' })]
+    resourceDatabase.current = {
+      promptSettings: { ...minimalPromptSettings },
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A', promptTemplate: [ownerRow] }],
+      promptTemplate: staleAggregate,
+    }
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+      promptRowToggle(target, 'Owner row').click()
+      await tick()
+      await editPromptSettingsTextarea(target, 'edited owner')
+
+      expect(getResourceDatabase().promptPresets[0].promptTemplate).toEqual([
+        expect.objectContaining({ text: 'edited owner' }),
+      ])
+      expect(getResourceDatabase().promptTemplate).toEqual(staleAggregate)
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
   it('PromptSettings includes sibling id-less rows in an in-flight selected preset id sync', async () => {
     hydrationState.setOwner('preset-a')
     let resolvePresetSync: ((value: { kind: string } & Record<string, unknown>) => void) | null = null
@@ -2568,6 +2652,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
   it('PromptSettings immediately adopts a newly selected preset template even when the top-level projection is stale', async () => {
     commandState.revision = 5
+    hydrationState.setOwner('preset-a')
     resourceDatabase.current = {
       promptSettings: { ...minimalPromptSettings },
       promptTemplate: [promptItemFixture({ ...item('old-row', 'old text'), name: 'Old preset row' })],
@@ -2607,6 +2692,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(oldRowToggle?.getAttribute('aria-expanded')).toBe('true')
 
       getResourceDatabase().promptPresetsId = 1
+      hydrationState.setOwner('preset-b')
       getResourceDatabase().promptTemplate = [
         promptItemFixture({ ...item('stale-row', 'stale text'), name: 'Stale top-level row' }),
       ]
@@ -2623,7 +2709,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       )
       expect(newRowToggle?.getAttribute('aria-expanded')).toBe('false')
       expect(getResourceDatabase().promptTemplate).toEqual([
-        promptItemFixture({ ...item('new-row', 'new text'), name: 'New preset row' }),
+        promptItemFixture({ ...item('stale-row', 'stale text'), name: 'Stale top-level row' }),
       ])
 
       await vi.advanceTimersByTimeAsync(300)
