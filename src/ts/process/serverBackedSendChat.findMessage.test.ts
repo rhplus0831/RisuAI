@@ -54,7 +54,7 @@ import {
   findGeneratedAssistantMessage,
 } from './serverBackedSendChat'
 import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from '@risuai/protocol/generation-sse'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
@@ -293,6 +293,31 @@ describe('server-backed terminal stable chat target', () => {
     })
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('fails closed when a ready owner collection contains duplicate character ids', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    testDatabaseState.db = {
+      characters: [char, char],
+    } as typeof testDatabaseState.db
+    charactersResourceState.status = 'ready'
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: { postGeneration: { finalText: 'must not write' } },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(target.message[0].data).toBe('target original')
   })
 
   it('hydrates regenerate authority before removing its transient target projection', async () => {

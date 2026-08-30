@@ -1,4 +1,4 @@
-import { getDatabase, type Message } from '../storage/database.svelte'
+import { getDatabase, type Message, type character } from '../storage/database.svelte'
 import { chatOutputListeners, isChatOutputRuntimeReady, runChatOutputListeners } from '../plugins/chatOutputListeners'
 import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { PendingGenerationEffect } from '../server/bootstrap'
@@ -18,6 +18,7 @@ import {
 import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import type { ActiveChatTarget } from '../chatCommands'
 import { registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
+import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
 
 let bootstrapPendingEffects: PendingGenerationEffect[] = []
 
@@ -193,42 +194,87 @@ function legacyGenerationEffectRef(
   }
 }
 
+/**
+ * Recovered effects must address the character-row owner after the collection
+ * is ready. The aggregate remains a startup compatibility projection only.
+ */
+function characterRowsForRecovery(): readonly character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
+function characterOwnerAt(index: number): character | undefined {
+  const rows = characterRowsForRecovery()
+  const candidate = rows[index]
+  if (!candidate?.chaId) return undefined
+  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(candidate.chaId) : candidate
+}
+
+function characterOwnerById(characterId: string): character | undefined {
+  if (!characterId) return undefined
+  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+  const matches = characterRowsForRecovery().filter((candidate) => candidate?.chaId === characterId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function uniqueChatOwner(character: character | undefined, chatId: string): ChatOwner | undefined {
+  if (!character || !chatId) return undefined
+  const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+  return matches.length === 1 ? { chat: matches[0], chatIndex: character.chats.indexOf(matches[0]) } : undefined
+}
+
+interface ChatOwner {
+  chat: character['chats'][number]
+  chatIndex: number
+}
+
 function resolveGeneration(ref: ServerGenerationEffectLedgerRef): RecoveredGenerationResolution | undefined {
-  const characters = getDatabase().characters ?? []
+  const characters = characterRowsForRecovery()
+  const resolutions: RecoveredGenerationResolution[] = []
   for (let characterIndex = 0; characterIndex < characters.length; characterIndex++) {
     const character = characters[characterIndex]
+    if (
+      charactersResourceState.status === 'ready' &&
+      (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character)
+    ) {
+      continue
+    }
+    if (ref.characterId && character.chaId !== ref.characterId) continue
     for (let chatIndex = 0; chatIndex < (character.chats?.length ?? 0); chatIndex++) {
       const chat = character.chats[chatIndex]
+      if (ref.chatId && chat.id !== ref.chatId) continue
       const messageIndex = chat.message?.findIndex((message) => message.chatId === ref.messageId) ?? -1
       if (messageIndex < 0) continue
       const message = chat.message[messageIndex]
       if (message.role !== 'char' || message.generationInfo?.generationId !== ref.generationId) continue
-      return { character, chat, message, characterIndex, chatIndex, messageIndex }
+      resolutions.push({ character, chat, message, characterIndex, chatIndex, messageIndex })
     }
   }
-  return undefined
+  return resolutions.length === 1 ? resolutions[0] : undefined
 }
 
 function findAcceptedAssistant(
   target: ActiveChatTarget,
   acceptedMessageId: string,
 ): RecoveredGenerationResolution | undefined {
-  const characters = getDatabase().characters ?? []
-  const characterIndex = characters.findIndex((character) =>
-    target.characterId
-      ? character.chaId === target.characterId
-      : characters.indexOf(character) === target.selectedCharID,
-  )
-  const character = characters[characterIndex]
+  const character = target.characterId
+    ? characterOwnerById(target.characterId)
+    : characterOwnerAt(target.selectedCharID)
   if (!character) return undefined
-  const chatIndex = character.chats.findIndex((chat) =>
-    target.chatId ? chat.id === target.chatId : character.chats.indexOf(chat) === target.chatPage,
-  )
-  const chat = character.chats[chatIndex]
-  if (!chat) return undefined
-  const acceptedIndex = chat.message.findIndex(
-    (message) => message.chatId === acceptedMessageId && message.role === 'user',
-  )
+  const characterIndex = characterRowsForRecovery().indexOf(character)
+  const chatOwner = target.chatId
+    ? uniqueChatOwner(character, target.chatId)
+    : character.chats[target.chatPage]
+      ? { chat: character.chats[target.chatPage], chatIndex: target.chatPage }
+      : undefined
+  if (!chatOwner) return undefined
+  const { chat, chatIndex } = chatOwner
+  const acceptedMatches = chat.message
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => message.chatId === acceptedMessageId && message.role === 'user')
+  if (acceptedMatches.length !== 1) return undefined
+  const acceptedIndex = acceptedMatches[0].index
   const messageIndex = acceptedIndex + 1
   const message = chat.message[messageIndex]
   if (acceptedIndex < 0 || message?.role !== 'char') return undefined

@@ -52,6 +52,7 @@ import {
 } from './generationPersistenceState'
 import { clearRetainedChatProjections, reapplyRetainedChatBodyProjections } from '../server/chatRetainedProjection'
 import { registerGenerationOperationsRuntime, registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
+import { charactersResourceState } from '../server/resourceState.svelte'
 
 function seedMessages(messages: Message[]): void {
   persistenceStateMocks.database = {
@@ -86,6 +87,8 @@ beforeEach(() => {
   persistenceStateMocks.setPendingRecoveredGenerationEffects.mockReset()
   persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockReset()
   persistenceStateMocks.reconcilePendingRecoveredGenerationEffects.mockResolvedValue(undefined)
+  charactersResourceState.characters = []
+  charactersResourceState.status = 'idle'
   clearRetainedChatProjections()
   resetGenerationFinalizationPersistencesForTests()
 })
@@ -94,6 +97,8 @@ afterEach(() => {
   resetGenerationFinalizationPersistencesForTests()
   clearRetainedChatProjections()
   persistenceStateMocks.database = { characters: [] }
+  charactersResourceState.characters = []
+  charactersResourceState.status = 'idle'
   vi.useRealTimers()
 })
 
@@ -223,6 +228,46 @@ describe('generation finalization persistence projection', () => {
     expect(generationPersistenceStateForMessage(get(generationFinalizationPersistences), 'chat-a', newer)).toBe(
       'stalled',
     )
+  })
+
+  it('reapplies a retained projection through the ready character owner', () => {
+    const aggregateTail: Message = { role: 'user', data: 'aggregate tail', chatId: 'aggregate-tail' }
+    seedMessages([aggregateTail])
+    const ownerTail: Message = { role: 'user', data: 'owner tail', chatId: 'owner-tail' }
+    const ownerChat = { id: 'chat-a', message: [ownerTail] }
+    charactersResourceState.characters = [
+      { chaId: 'character-a', chats: [ownerChat] } as unknown as (typeof charactersResourceState.characters)[number],
+    ]
+    charactersResourceState.status = 'ready'
+
+    setGenerationFinalizationPersistences([
+      {
+        generationId: 'generation-a',
+        chatId: 'chat-a',
+        messageId: 'generation-a',
+        state: 'queued',
+        provisionalMessage: {
+          role: 'char',
+          data: 'owner projection',
+          chatId: 'generation-a',
+          generationInfo: { generationId: 'generation-a' },
+        },
+        projectionFence: {
+          mode: 'send',
+          kind: 'tail',
+          transcriptLength: 1,
+          tail: { message: ownerTail },
+        },
+      },
+    ])
+
+    reapplyRetainedChatBodyProjections('chat-a')
+
+    expect(ownerChat.message).toEqual([
+      ownerTail,
+      expect.objectContaining({ chatId: 'generation-a', data: 'owner projection' }),
+    ])
+    expect(currentMessages()).toEqual([aggregateTail])
   })
 
   it('matches terminal legacy state only to its exact affected row', () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 
 const state = vi.hoisted(() => ({
@@ -90,6 +90,7 @@ import {
   reconcileRecoveredGenerationEffects,
   setPendingRecoveredGenerationEffects,
 } from './recoveredGenerationEffects'
+import { charactersResourceState } from '../server/resourceState.svelte'
 
 const ref: ServerGenerationEffectLedgerRef = {
   version: 1,
@@ -103,6 +104,25 @@ const ref: ServerGenerationEffectLedgerRef = {
 }
 
 beforeEach(() => {
+  state.db.characters = [
+    {
+      ...state.db.characters[0],
+      chats: [
+        {
+          ...state.db.characters[0].chats[0],
+          message: [
+            { role: 'user', data: 'hello', chatId: 'user-a' },
+            {
+              role: 'char',
+              data: 'reply',
+              chatId: 'message-a',
+              generationInfo: { generationId: 'generation-a', databaseLineage: 'lineage-a' },
+            },
+          ],
+        },
+      ],
+    },
+  ]
   state.order = []
   state.pluginRuntimeReady = true
   ledger.calls = []
@@ -110,6 +130,13 @@ beforeEach(() => {
   ledger.unavailableKinds.clear()
   hydration.hydrateChatMessages.mockReset()
   hydration.hydrateChatMessages.mockResolvedValue(undefined)
+  charactersResourceState.characters = []
+  charactersResourceState.status = 'idle'
+})
+
+afterEach(() => {
+  charactersResourceState.characters = []
+  charactersResourceState.status = 'idle'
 })
 
 describe('late recovered generation effects', () => {
@@ -147,6 +174,24 @@ describe('late recovered generation effects', () => {
     })
 
     expect(state.order).toEqual(['plugin_output', 'emotion_image_state'])
+  })
+
+  it('reconciles from the ready character owner when the aggregate mirror is stale', async () => {
+    const aggregate = state.db.characters[0]
+    const owner = structuredClone(aggregate)
+    owner.chats[0].message[1].data = 'owner reply'
+    state.db = {
+      ...state.db,
+      characters: [{ ...aggregate, chats: [{ ...aggregate.chats[0], message: [] }] }],
+    }
+    charactersResourceState.characters = [owner as never]
+    charactersResourceState.status = 'ready'
+
+    await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({
+      durableEffectsReconciled: true,
+      allEffectsReconciled: true,
+    })
+    expect(state.order).toEqual(['plugin_output', 'igp', 'emotion_image_state'])
   })
 
   it('does not receipt recovered plugin output while the plugin runtime is incoherent', async () => {

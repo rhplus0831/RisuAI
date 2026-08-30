@@ -179,7 +179,7 @@ export function findGeneratedAssistantMessage(chat: Chat, generationId: string):
 }
 
 function activeChatId(): string | undefined {
-  const character = charactersResourceState.characters?.[get(selectedCharID)]
+  const character = characterOwnerAt(get(selectedCharID))
   return character?.chats?.[character.chatPage]?.id
 }
 
@@ -293,6 +293,37 @@ function hasStableChatTarget(target: ServerBackedStableChatTarget | undefined): 
   return nonEmptyTargetId(target?.characterId) && nonEmptyTargetId(target?.chatId)
 }
 
+/**
+ * The character collection is the generation target owner once it is ready.
+ * Keep the aggregate only as a startup compatibility projection; stable ids
+ * still have to identify exactly one row before a terminal effect may write.
+ */
+function characterOwnerAt(index: number): character | undefined {
+  const characters = characterRowsForGeneration()
+  const candidate = characters[index]
+  if (!candidate?.chaId) return undefined
+  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(candidate.chaId) : candidate
+}
+
+function characterRowsForGeneration(): readonly character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
+function characterOwnerById(characterId: string): character | undefined {
+  if (!characterId) return undefined
+  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+  const matches = characterRowsForGeneration().filter((candidate) => candidate?.chaId === characterId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function uniqueChatOwner(character: character | undefined, chatId: string): Chat | undefined {
+  if (!character || !chatId) return undefined
+  const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 function targetFromPayloadOrContext(
   payload: ServerBackedStableChatTarget | undefined,
   context: ServerBackedStableChatTarget,
@@ -302,19 +333,16 @@ function targetFromPayloadOrContext(
 }
 
 function resolveServerBackedLiveChat(target: ServerBackedLiveChatTarget): ServerBackedLiveChatResolution | undefined {
-  const characters = charactersResourceState.characters
-  if (!Array.isArray(characters)) return undefined
-
   if (hasStableChatTarget(target)) {
     // Stable ids are resolved through the character-row owner. The aggregate
     // database remains a compatibility mirror, and its position can change
     // while a detached generation is still delivering terminal effects.
-    const character = getCharacterResourceOwner(target.characterId!)
-    const chat = character?.chats?.find((candidate) => candidate?.id === target.chatId)
+    const character = characterOwnerById(target.characterId!)
+    const chat = uniqueChatOwner(character, target.chatId!)
     return character && chat ? { character, chat } : undefined
   }
 
-  const character = characters[target.selectedChar]
+  const character = characterOwnerAt(target.selectedChar)
   const chat = character?.chats?.[target.selectedChat]
   return character && chat ? { character, chat } : undefined
 }
@@ -1306,7 +1334,7 @@ export async function applyServerBackedTerminal(args: {
           // the active primary candidate so it remains swipe index zero.
           [...alternates.reverse(), assistant],
           {
-            selectedCharID: charactersResourceState.characters.indexOf(resolution.character),
+            selectedCharID: characterRowsForGeneration().indexOf(resolution.character),
             chatPage: resolution.character.chats.indexOf(liveChat),
             characterId: resolution.character.chaId,
             chatId: liveChat.id,
@@ -1332,7 +1360,7 @@ export async function applyServerBackedTerminal(args: {
   if (chatOutputListeners.size > 0) await yieldBeforeCompletionEffect()
   await runLedgeredGenerationEffect(effectLedger, 'plugin_output', 'live_terminal', async (effectContext) => {
     if (!finalResolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
-    const characters = charactersResourceState.characters
+    const characters = characterRowsForGeneration()
     await runChatOutputListeners({
       char: finalResolution.character,
       chat: finalChat,

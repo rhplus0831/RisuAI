@@ -3,9 +3,10 @@ import type { Writable } from 'svelte/store'
 import { createSubscriber } from 'svelte/reactivity'
 import { registerRetainedChatProjection } from '../server/chatRetainedProjection'
 import type { GenerationFinalizationProjectionFence, GenerationFinalizationState } from '../server/bootstrap'
-import { getDatabase, type Message } from '../storage/database.svelte'
+import { getDatabase, type Message, type character } from '../storage/database.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getGenerationOperationsRuntime, getRecoveredEffectsRuntime } from './generationRuntimeBridge'
+import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
 
 export interface QueuedGenerationPersistence {
   chatId: string
@@ -194,9 +195,20 @@ function messageMatches(left: Message | undefined, right: Message | undefined): 
   return sameStructuredValue(left, right)
 }
 
+function characterRowsForGenerationPersistence(): readonly character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
 function findChatMessages(chatId: string): Message[] | null {
-  const matches = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
+  const matches = characterRowsForGenerationPersistence()
+    .flatMap((character) => {
+      if (charactersResourceState.status === 'ready') {
+        if (!character.chaId || getCharacterResourceOwner(character.chaId) !== character) return []
+      }
+      return character.chats ?? []
+    })
     .filter((chat) => chat.id === chatId)
   if (matches?.length !== 1) return null
   return matches[0].message ?? null
