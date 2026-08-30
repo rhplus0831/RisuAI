@@ -500,10 +500,10 @@ function collectMetadata(repoRoot: string): MetadataObservation[] {
     },
     {
       id: 'browser-resource-surfaces',
-      owner: 'Browser hydration and cache resource metadata',
-      path: 'src/ts/server/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST',
+      owner: 'Shared browser hydration and cache resource metadata',
+      path: 'packages/shared-core/src/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST',
       count: collectionSize(
-        namedInitializer(repoRoot, 'src/ts/server/resourceManifest.ts', 'RESOURCE_SURFACE_MANIFEST'),
+        namedInitializer(repoRoot, 'packages/shared-core/src/resourceManifest.ts', 'RESOURCE_SURFACE_MANIFEST'),
       ),
     },
     {

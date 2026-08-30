@@ -726,14 +726,14 @@ export const BROWSER_OPERATION_NON_OVERLAPS = [
     id: 'resource-purpose-vocabulary',
     family: 'resource',
     reason: 'browser-state-semantics',
-    owner: 'src/ts/server/resourceManifest.ts#RESOURCE_PURPOSES',
+    owner: 'packages/shared-core/src/resourceManifest.ts#RESOURCE_PURPOSES',
     detail: 'Render, interaction, mutation, generation, and editor-prefill purposes describe browser use.',
   },
   {
     id: 'resource-requirement-identity',
     family: 'resource',
     reason: 'browser-state-semantics',
-    owner: 'src/ts/server/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST',
+    owner: 'packages/shared-core/src/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST',
     detail: 'Surface requirement keys compose browser hydration and are not HTTP route identifiers.',
   },
   {

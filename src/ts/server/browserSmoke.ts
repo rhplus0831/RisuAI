@@ -1,23 +1,22 @@
 import { get } from 'svelte/store'
 import { selectedCharID } from '../stores/coreStores.svelte'
-import { getDatabase, type Database } from '../storage/database.svelte'
+import { getDatabase } from '../storage/database.svelte'
 import { getRerollBuffer, unReroll } from '../process/rerollNavigation.svelte'
 import { acceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
 import { activeChatGenerations } from '../process/generationActivity.svelte'
 import { generationFinalizationPersistences } from '../process/generationPersistenceState'
 import { activeGenerationJobs, generationJobLifecycles } from '../process/reattach'
 import { activeWriterSessionHeader } from './activeWriterSession'
-import { peekAppliedServerResourceRevision, type ServerCommandResult } from './commands'
+import { peekAppliedServerResourceRevision } from './commands'
 import { dispatchDurableServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
 import { currentRoute, navigate } from '../router'
-import type { AppRoute } from '../routerRoute'
 import { QuickSettings } from '../stores.svelte'
 import { generationOperationCancellations, generationOperationProjections } from './generationOperations'
 import { listPendingMutationReceiptAcknowledgements, listPendingMutations } from './pendingMutationOutbox'
 import { clearResourceCache } from './resourceCache'
-import { currentRouteResourceLoadState, type RouteResourceLoadState } from './routeResourceLoader'
+import { currentRouteResourceLoadState } from './routeResourceLoader'
 import {
   backgroundReady,
   getStartupCoordinatorSnapshot,
@@ -27,53 +26,13 @@ import {
   type StartupMilestone,
   type StartupReadinessSnapshot,
 } from '../startupReadiness'
+import type { FastifyBrowserSmokeHook as SharedFastifyBrowserSmokeHook } from '@risuai/shared-core/browser-smoke'
 
-export interface FastifyBrowserSmokeLifecycleSnapshot {
-  acceptedSendRecoveries: unknown[]
-  activeGenerationJobs: unknown[]
-  activeChatGenerations: unknown[]
-  generationFinalizations: unknown[]
-  generationJobLifecycles: Record<string, unknown>
-  generationOperationCancellations: unknown[]
-  generationOperations: unknown[]
-  receiptAcknowledgements: Array<{
-    mutationId: string
-    requestCount: number
-    databaseLineage: string
-  }>
-  outbox: Array<{
-    key: string
-    mutationId: string
-    phase: string
-    kind?: string
-    requests: unknown[]
-  }>
-}
-
-export interface FastifyBrowserSmokeHook {
-  assertDirectProjectionWriteRejected: () => boolean
-  activeWriterHeaders: () => Promise<Record<string, string>>
-  clearResourceCache: () => Promise<void>
-  getAppliedServerResourceRevision: () => number | null
-  getDatabaseSnapshot: () => Database
-  getCurrentRoute: () => AppRoute
-  getLifecycleSnapshot: () => Promise<FastifyBrowserSmokeLifecycleSnapshot>
-  getRouteResourceLoadState: () => RouteResourceLoadState
-  getStartupCoordinatorSnapshot: () => StartupCoordinatorSnapshot
-  getStartupSnapshot: () => StartupReadinessSnapshot
-  isLoaded: () => boolean
-  patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<ServerCommandResult>
-  waitForLoaded: (timeoutMs?: number) => Promise<void>
-  waitForStartupMilestone: (milestone: StartupMilestone, timeoutMs?: number) => Promise<void>
-  // Swipe-persistence E2E: open a character (drives chat hydration), read the
-  // reconstructed reroll candidates, and drive the swipe controls.
-  selectCharacter: (index: number) => void
-  getRerollCandidates: () => string[]
-  swipeRerollBack: () => Promise<void>
-  showAlert: (message: string) => void
-  navigateTo: (path: string) => void
-  setQuickSettingsOpen: (open: boolean) => void
-}
+export type FastifyBrowserSmokeHook = SharedFastifyBrowserSmokeHook<
+  StartupCoordinatorSnapshot,
+  StartupReadinessSnapshot,
+  StartupMilestone
+>
 
 declare global {
   interface Window {

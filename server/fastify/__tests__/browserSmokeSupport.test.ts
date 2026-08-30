@@ -40,4 +40,20 @@ describe('browser-smoke support boundaries', () => {
       expect(smokeSource).toContain('@risuai/protocol/startup-telemetry')
     }
   })
+
+  it('keeps the browser-smoke hook, route, and resource contracts on neutral owners', () => {
+    const globals = source('server/fastify/browser-smoke/globals.d.ts')
+    expect(globals).not.toContain('../../../src/')
+    expect(globals).toContain('@risuai/shared-core/browser-smoke')
+
+    const startupRecovery = source('server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts')
+    expect(startupRecovery).not.toContain('../../../src/')
+    expect(startupRecovery).toContain('@risuai/shared-core/router-route')
+    expect(startupRecovery).toContain('@risuai/shared-core/resource-manifest')
+
+    expect(source('src/ts/routerRoute.ts').trim()).toBe("export * from '@risuai/shared-core/router-route'")
+    expect(source('src/ts/server/resourceManifest.ts').trim()).toBe(
+      "export * from '@risuai/shared-core/resource-manifest'",
+    )
+  })
 })

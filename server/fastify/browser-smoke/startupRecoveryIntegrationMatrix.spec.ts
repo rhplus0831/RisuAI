@@ -9,8 +9,8 @@ import {
   resolveResourceRequirements,
   resourceSurfacesForRoute,
   type ResourceRequirement,
-} from '../../../src/ts/server/resourceManifest.js'
-import { parseRoute, routeKey, routePathFromState, type AppRoute } from '../../../src/ts/routerRoute.js'
+} from '@risuai/shared-core/resource-manifest'
+import { parseRoute, routeKey, routePathFromState, type AppRoute } from '@risuai/shared-core/router-route'
 import { STARTUP_TELEMETRY_FAILURE_CODES, STARTUP_TELEMETRY_MILESTONES } from '@risuai/protocol/startup-telemetry'
 import type { StartupCoordinatorSnapshot, StartupReadinessSnapshot } from '@risuai/protocol/startup-telemetry'
 import { subscribeProtocolMetrics } from '../src/protocolMetrics.js'

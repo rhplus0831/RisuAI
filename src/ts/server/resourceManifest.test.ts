@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { parseRoute } from '../routerRoute'
 import {
   PLAYGROUND_RESOURCE_SURFACE_BY_INDEX,
+  RESOURCE_COLLECTION_NAMES,
   RESOURCE_PROJECTION_NAMES,
   RESOURCE_PURPOSES,
   RESOURCE_SURFACE_MANIFEST,
@@ -17,6 +18,7 @@ import {
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
 import { SERVER_SETTINGS_GROUP_BY_KEY, SERVER_SETTINGS_KEYS_BY_GROUP, SETTINGS_GROUPS } from './settingsGroups'
 import { SERVER_SHELL_SETTINGS_KEYS } from '@risuai/protocol/shell-resource'
+import { SERVER_STANDALONE_SETTING_NAMES } from '@risuai/protocol/standalone-settings'
 
 const canonicalSettingsRoutes = [
   ['/settings/backup', 0],
@@ -62,6 +64,11 @@ const canonicalPlaygroundRoutes = [
 ] as const
 
 describe('route resource manifest', () => {
+  it('keeps shared resource vocabularies aligned with their application and protocol owners', () => {
+    expect(RESOURCE_COLLECTION_NAMES).toEqual(SERVER_COLLECTION_NAMES)
+    expect(STANDALONE_SETTING_NAMES).toEqual(SERVER_STANDALONE_SETTING_NAMES)
+  })
+
   it('declares valid resources, purposes, and source owners for every surface', () => {
     const purposes = new Set(RESOURCE_PURPOSES)
     const settingsGroups = new Set(SETTINGS_GROUPS)
