@@ -67,6 +67,7 @@
     alertWait,
   } from '../../ts/alert'
   import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
+  import { getSelectedCharacterOwner } from '../../ts/characterState'
   import {
     getCurrentCharacter,
     getCurrentChat,
@@ -1569,8 +1570,14 @@
     }
     return character.chats?.[chatPage]?.id ?? ''
   })
+  // Agent-progress visibility is render-only; mutation and translation targets
+  // continue to use the compatibility currentChatId above.
+  let renderChatId = $derived.by(() => {
+    const owner = getSelectedCharacterOwner()
+    return owner?.chats?.[owner.chatPage]?.id ?? ''
+  })
   let hasActiveAgentPresetProgress = $derived(
-    $agentPresetProgress.some((progress) => progress.chatId === currentChatId),
+    $agentPresetProgress.some((progress) => progress.chatId === (renderChatId || currentChatId)),
   )
   let serverTranslationJob = $derived.by(() => {
     const target = captureRawTranslationTarget()
