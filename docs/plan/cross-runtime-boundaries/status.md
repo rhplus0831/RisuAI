@@ -11,15 +11,17 @@ in [`latest-verification.md`](latest-verification.md).
 
 - Plan state: Active; Phases 0 and 1 complete.
 - Current phase: [Phase 2 route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md).
-- Active slice: [Operation catalog foundation](phases/slices/phase-2-route-operation-and-policy-catalog/operation-catalog-foundation.md), ready to start.
+- Active slice: [Durable command operation catalog](phases/slices/phase-2-route-operation-and-policy-catalog/durable-command-operation-catalog.md), ready to start.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest verification: Phase 1 closeout passed at
-  `33d1643aedcf74aecf3f0d8b549b0313a061c6b1`; see
+- Latest implementation candidate: the operation-catalog foundation at
+  `00e49d880797e248b967051c5c81a7d8208d231d`; focused catalog, route-parity,
+  typecheck, architecture, and formatting evidence passed before the final
+  affected suite was stopped at user request; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -39,6 +41,7 @@ in [`latest-verification.md`](latest-verification.md).
 | MCP OAuth refresh contract | `4f6e0ef1b` | Released through `@risuai/protocol/mcp-oauth-refresh`; credentials, identity/URL checks, egress, rotation, timeouts, bounds, parsing, errors, and masking remain in their current owners. |
 | Standalone-settings contract | `33d1643ae` | Released through `@risuai/protocol/standalone-settings`; storage, projection, revision, repair, invalidation, authentication, and writer policy remain in their current owners. |
 | Phase 1 protocol conventions | `33d1643ae` | Released; the inventoried `protocol-wire-contract` policy is empty and Phase 2 may build on the package conventions. |
+| Shared route operation catalog | `00e49d880` | Implemented with 103 browser-safe transport descriptors and exact ID parity with 103 Fastify-owned auth/writer policies; final full-suite rerun is deferred. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -86,7 +89,10 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Blockers And Risks
 
-- No blocker prevents the operation-catalog foundation slice.
+- No implementation blocker prevents the durable-command catalog slice.
+- Final full-suite verification of the operation-catalog foundation is deferred
+  because the affected runner is known to take an unusually long time in this
+  session.
 - Existing imports mix runtime and type-only edges, tests and fixtures, wire
   contracts and application models; `baseline.json` keeps those distinctions
   fail-closed.
@@ -98,6 +104,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Establish the reviewed transport metadata
-catalog and exact live-route parity before migrating browser durability or
-resource metadata.
+Use [`next-steps.md`](next-steps.md). Replace the browser-local durable-command
+allowlist with stable shared operation identifiers while preserving every
+accepted and rejected request shape.

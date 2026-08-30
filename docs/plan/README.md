@@ -9,7 +9,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 2 route operation and policy catalog](cross-runtime-boundaries/status.md) | Phase 1 released all inventoried wire contracts through standalone settings at `33d1643ae`; 336 direct root-`src` edges remain. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 2 durable command operation catalog](cross-runtime-boundaries/status.md) | The 103-entry shared route catalog is implemented at `00e49d880`; 336 direct root-`src` edges remain and final full-suite verification is deferred. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 1 migration and recovery foundation](canonical-state-and-compatibility/status.md) | Phase 0 classified 19 surfaces at `cd04b0e11`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 1 resource-owner foundation](client-resource-ownership/status.md) | Phase 0 froze 9,917 compatibility references at `0432b32ba`; runtime migration waits for the relevant Workstream 1 contract and Workstream 2 canonical-owner cursor. |
 

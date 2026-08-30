@@ -4,19 +4,19 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [operation catalog foundation
-slice](phases/slices/phase-2-route-operation-and-policy-catalog/operation-catalog-foundation.md).
+Execute the [durable command operation catalog
+slice](phases/slices/phase-2-route-operation-and-policy-catalog/durable-command-operation-catalog.md).
 
-1. Publish closed, browser-safe transport metadata taxonomies and stable route
-   operation identifiers from an explicit protocol subpath.
-2. Record one reviewed descriptor per registered API method/path template with
-   stream class, cache behavior, durability tag, and response class.
-3. Bind Fastify's server-owned auth and active-writer policy entries to shared
-   operation identifiers without moving policy authority.
-4. Make live `app.printRoutes()` coverage bidirectional and reject missing,
-   stale, duplicate, or ambiguous catalog/manifest coverage.
-5. Preserve every route, method, path, response, cache header, stream, policy,
-   rate limit, and handler decision; run the complete Phase 2 foundation gates.
+1. Give every browser-durable command pattern a stable operation identifier in
+   a browser-safe protocol subpath.
+2. Match queued request method/path pairs through that catalog instead of the
+   private `ALLOWED_DURABLE_COMMANDS` regular-expression array.
+3. Prove exact parity with the existing 129 accepted patterns, including
+   adversarial near misses, and reject duplicate operation identifiers.
+4. Relate generation submit, cancel, and retry intents to the stable route
+   identifiers already published by the shared route operation catalog.
+5. Preserve queueing, replay, retry, and rejection behavior. Record validation
+   that remains deferred under the session's no-test constraint.
 
 ## Boundary Conventions Released
 
@@ -31,19 +31,26 @@ slice](phases/slices/phase-2-route-operation-and-policy-catalog/operation-catalo
 These conventions and every inventoried Phase 1 wire contract were released at
 `33d1643ae`.
 
+## Foundation Released
+
+- `@risuai/protocol/route-operation` publishes 103 stable route IDs and reviewed
+  transport descriptors at `00e49d880`.
+- Fastify owns a separate 103-entry auth/writer policy catalog joined by ID.
+- Live-route parity rejects missing, stale, duplicate, and ambiguous catalog or
+  policy coverage.
+
 ## Not In This Slice
 
-- Do not derive the browser durable-command allowlist until exact server/live
-  route parity is established.
-- Do not move authentication, active-writer, credential, rate-limit, host,
-  persistence, cache storage, or handler-validation policy into protocol.
+- Do not move queue storage, replay scheduling, authentication, active-writer,
+  credential, rate-limit, host, persistence, cache storage, or handler policy
+  into protocol.
 - Do not reconcile resource-surface or raw-generation caller metadata yet.
-- Do not rename routes or runtime generation UUIDs while introducing stable
-  catalog identifiers.
+- Do not change routes, request bodies, or runtime generation UUIDs while
+  introducing stable durable-operation identifiers.
 
 ## Handoff
 
-After the foundation passes, update [`status.md`](status.md) and
-[`latest-verification.md`](latest-verification.md), then derive the durable
-browser operation allowlist by catalog identifier while preserving adversarial
-near-miss coverage.
+After this slice, update [`status.md`](status.md) and
+[`latest-verification.md`](latest-verification.md), then reconcile browser
+resource, cache, generation, and raw-generation metadata against the shared
+operation catalog.

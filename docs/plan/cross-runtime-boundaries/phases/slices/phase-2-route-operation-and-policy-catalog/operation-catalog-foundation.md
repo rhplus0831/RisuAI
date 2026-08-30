@@ -1,6 +1,7 @@
 # Operation Catalog Foundation
 
-Status: ready.
+Status: implemented at `00e49d880797e248b967051c5c81a7d8208d231d`;
+focused evidence passed and final full-suite verification is deferred.
 
 Parent: [Phase 2](../../phase-2-route-operation-and-policy-catalog.md)
 

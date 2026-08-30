@@ -4,47 +4,50 @@ Date: 2026-08-30
 
 ## Candidate
 
-- Implementation commit: `33d1643aedcf74aecf3f0d8b549b0313a061c6b1`
+- Implementation commit: `00e49d880797e248b967051c5c81a7d8208d231d`
 - Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: standalone-setting taxonomy, state, payload, and runtime-guard
-  ownership plus Phase 1 closeout; no storage, projection, revision, repair,
-  invalidation, authentication, or active-writer behavior changed.
+- Scope: Phase 2 operation-catalog foundation; no route, handler, authentication,
+  active-writer, persistence, credential, rate-limit, or cache implementation
+  behavior changed.
 
-## Contract And Inventory Proof
+## Catalog And Inventory Proof
 
-- `@risuai/protocol/standalone-settings` owns the exact eight-name taxonomy,
-  schema-derived present/absent state, revisioned payload, and runtime guards.
-- Contract fixtures exercise every name and absent state, unknown present
-  values, the maximum safe revision, additive outer metadata, and malformed
-  revisions or exact state variants; the protocol import audit remains clean.
-- Browser and Fastify consumers use the package contract; the old
-  application-tree DTO module was removed.
+- `@risuai/protocol/route-operation` owns 103 stable route identifiers and the
+  browser-safe method, path matching, stream, cache, durability, and response
+  metadata taxonomies.
+- Fastify retains a separate 103-entry policy catalog containing authentication
+  and active-writer decisions. Module initialization rejects missing, stale, or
+  duplicate IDs across the catalogs.
+- Live route coverage resolves exact matches ahead of parameter patterns and
+  prefixes, and the route-protection proof rejects missing, stale, duplicate,
+  or ambiguous coverage in both directions.
 - 336 direct root-`src` edges remain across 132 importers and 68 targets.
 - Lanes: 233 production, 95 server-test, 8 browser-smoke. Usage: 134 runtime, 39
   mixed, 163 type-only.
-- The exact reduction is one production mixed edge. Across Phase 1, 39 edges
-  and 11 application-tree targets were removed, leaving no
-  `protocol-wire-contract` policy entry.
+- The catalog move does not change the edge cursor. Architecture metadata now
+  records the shared operation catalog separately from Fastify-owned policy.
 
 ## Commands And Results
 
-- Focused protocol/browser/resource/import-boundary/architecture suite —
-  passed, 7 files and 266 tests.
-- Focused Fastify resource-read suite — passed, 1 file and 21 tests.
-- `pnpm check:protocol`, `pnpm check:server`, and `pnpm check` — passed; the
+- Focused protocol catalog, import-boundary, architecture-inventory,
+  route-protection, and structural suites passed: 5 files and 36 tests.
+- `pnpm check:protocol`, `pnpm check:server`, and `pnpm check` passed; the
   mandatory architecture gate reported 336 cross-runtime edges and both runtime
   typecheck families were clean.
-- `pnpm test:affected` correctly escalated package-export changes to
-  `pnpm test:all` and passed every lane in 4m49.8s: 6,818 frontend tests; 3,650
-  server tests with one skip; 41 browser-smoke tests; 206 UI coverage tests; 18
-  compatibility-harness tests; the Realm scale test; six frontend performance
-  tests; register, typecheck, formatting, and coverage gates.
-- `git diff --check` and exact generated-baseline comparison — passed.
+- Formatting, `git diff --check`, and exact generated-baseline comparison passed.
+- Two full-matrix attempts exposed only test-infrastructure issues after prior
+  lanes passed: one stale structural source-owner assertion, then the repository
+  inventory test exceeding its default five-second ceiling under concurrent
+  load. The assertion was updated and passed focused; the unchanged inventory
+  assertion received a 15-second ceiling after completing in 5.03 seconds.
+- A third full-matrix run passed typecheck, architecture, frontend-check, and
+  formatting lanes before it was stopped at user request. No further tests will
+  run in this session; final full-suite verification is explicitly deferred.
 
 ## Dependency Release And Verdict
 
-The standalone-settings contract and Phase 1 protocol conventions are released
-at `33d1643ae`. Storage, projection, revision, repair, invalidation,
-authentication, and active-writer policy remain with their existing owners. The
-slice and Phase 1 pass; Phase 2 begins with the operation catalog foundation.
+The operation-catalog foundation is implemented at `00e49d880` and is available
+to the next Phase 2 slice. Authentication and active-writer policy remain
+Fastify-owned. The focused evidence is green; the final full-suite release proof
+remains deferred under the session's no-test constraint.
