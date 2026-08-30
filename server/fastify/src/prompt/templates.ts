@@ -1,6 +1,6 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { PromptItem } from './promptTemplate.js'
-import { applyDescriptionPromptRole, applyPromptBlockRole } from '../../../../src/ts/process/promptBlockRole.js'
+import { applyDescriptionPromptRole, applyPromptBlockRole } from '@risuai/shared-core/prompt-block-role'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import {
   resolveEffectivePromptTemplate,

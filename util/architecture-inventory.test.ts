@@ -110,7 +110,7 @@ describe('cross-runtime baseline gate', () => {
     ) as CrossRuntimeBaseline
 
     expect(compareCrossRuntimeBaseline(observation, baseline)).toEqual([])
-    expect(observation.edges.reduce((total, edge) => total + edge.count, 0)).toBe(160)
+    expect(observation.edges.reduce((total, edge) => total + edge.count, 0)).toBe(158)
     expect(
       Object.fromEntries(
         (['production', 'server-test', 'browser-smoke'] as const).map((lane) => [
@@ -118,7 +118,7 @@ describe('cross-runtime baseline gate', () => {
           observation.edges.filter((edge) => edge.lane === lane).reduce((total, edge) => total + edge.count, 0),
         ]),
       ),
-    ).toEqual({ production: 105, 'server-test': 52, 'browser-smoke': 3 })
+    ).toEqual({ production: 103, 'server-test': 52, 'browser-smoke': 3 })
   }, 15_000)
 
   it('rejects inventory drift and incomplete policy ownership', () => {

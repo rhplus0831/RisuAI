@@ -308,19 +308,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/prompts.ts",
-      "specifier": "../../../../src/ts/process/promptTemplateNormalization.js",
-      "target": "src/ts/process/promptTemplateNormalization.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizePromptTemplate"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/providerCredentials.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
@@ -1277,20 +1264,6 @@
       "symbols": [
         "EffectivePromptTemplateOptions",
         "resolveEffectivePromptTemplate"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/templates.ts",
-      "specifier": "../../../../src/ts/process/promptBlockRole.js",
-      "target": "src/ts/process/promptBlockRole.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "applyDescriptionPromptRole",
-        "applyPromptBlockRole"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

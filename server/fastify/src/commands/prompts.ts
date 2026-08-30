@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
-import { normalizePromptTemplate } from '../../../../src/ts/process/promptTemplateNormalization.js'
+import { normalizePromptTemplate } from '@risuai/shared-core/prompt-template-normalization'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
 export { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
