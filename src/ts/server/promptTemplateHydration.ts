@@ -185,8 +185,7 @@ export async function ensurePromptTemplateHydrated(
     return resolved
   }
   const applyProjection = options.applyProjection ?? true
-  const includeCompatibilityProjection =
-    ownerId === null || (applyProjection && ownerId === currentPromptTemplateOwnerId())
+  const includeCompatibilityProjection = ownerId === null
   const ownerSnapshot = promptTemplateOwnerSnapshot(ownerId, includeCompatibilityProjection)
   const request = (async () => {
     const result = await fetchServerPromptPresetTemplate(ownerId)
@@ -211,7 +210,7 @@ export async function ensurePromptTemplateHydrated(
       | undefined
     if (
       !applyPromptTemplateProjectionFields(fields, ownerId, {
-        applyCompatibilityProjection: applyProjection && ownerIsCurrent,
+        applyCompatibilityProjection: applyProjection && ownerIsCurrent && selectedFallbackPromptTemplate !== undefined,
         ...(selectedFallbackPromptTemplate !== undefined ? { selectedFallbackPromptTemplate } : {}),
       })
     ) {
@@ -256,7 +255,7 @@ function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
     promptTemplate: hasPromptTemplate ? JSON.parse(JSON.stringify(preset.promptTemplate)) : null,
   } as Partial<Database>
   const applied = applyPromptTemplateProjectionFields(fields, ownerId, {
-    applyCompatibilityProjection: true,
+    applyCompatibilityProjection: usesSelectedFallback,
     ...(usesSelectedFallback
       ? { selectedFallbackPromptTemplate: JSON.parse(JSON.stringify(selectedFallbackPromptTemplate)) }
       : {}),
@@ -317,9 +316,9 @@ function snapshotJson(value: unknown): string {
 }
 
 /**
- * Apply a prompt-template resource to its explicit preset owner. A background
- * preset event must update that preset row without replacing the selected
- * preset's top-level compatibility mirror.
+ * Apply a prompt-template resource to its explicit preset owner. Modern owner
+ * bodies update only the preset row; the aggregate field is touched only for
+ * an explicit legacy owner or selected default-scaffold fallback.
  */
 export function applyPromptTemplateProjectionFields(
   fields: Partial<Database>,
@@ -360,7 +359,7 @@ export function applyPromptTemplateProjectionFields(
     }
 
     if (
-      (options.applyCompatibilityProjection ?? true) &&
+      (options.applyCompatibilityProjection ?? false) &&
       ownerId === currentPromptTemplateOwnerId() &&
       hasPromptTemplate
     ) {

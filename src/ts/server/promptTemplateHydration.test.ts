@@ -174,10 +174,10 @@ describe('promptTemplate hydration', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([true, true])
 
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
-    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-1', 'once')])
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
   })
 
-  it('applies the visible compatibility projection when a visible caller joins a background request', async () => {
+  it('keeps the aggregate compatibility projection unchanged when a visible caller joins a background request', async () => {
     ;(testDatabaseState as { db: unknown }).db = {
       promptTemplate: [],
       promptPresetsId: 0,
@@ -204,7 +204,7 @@ describe('promptTemplate hydration', () => {
     await expect(Promise.all([background, visible])).resolves.toEqual([true, true])
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
     expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([item('p-1', 'visible')])
-    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-1', 'visible')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([])
   })
 
   it('accepts a hydration response after an unrelated projection advances the known revision', async () => {
@@ -234,10 +234,39 @@ describe('promptTemplate hydration', () => {
 
     await expect(pending).resolves.toBe(true)
 
-    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-current', 'current template')])
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
     expect(testDatabaseState.db.language).toBe('ko')
     expect(isPromptTemplateHydrated()).toBe(true)
     expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('accepts a modern owner response when the aggregate compatibility projection changes independently', async () => {
+    setCachedServerCommandRevision(7)
+    ;(testDatabaseState as { db: unknown }).db = {
+      promptTemplate: [item('stale-root', 'stale aggregate body')],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      promptPresetId: string
+      promptTemplate: PromptItem[]
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = ensurePromptTemplateHydrated()
+    testDatabaseState.db.promptTemplate = [item('legacy-live', 'new aggregate body')]
+    response.resolve({
+      status: 'ok',
+      revision: 7,
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('preset-row', 'canonical owner body')],
+    })
+
+    await expect(pending).resolves.toBe(true)
+    expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([item('preset-row', 'canonical owner body')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('legacy-live', 'new aggregate body')])
   })
 
   it('rejects a hydration response after the same prompt owner changes', async () => {
@@ -317,7 +346,7 @@ describe('promptTemplate hydration', () => {
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
     expect(projectionState.fetchResource).toHaveBeenCalledWith('preset-a')
-    expect(testDatabaseState.db.promptTemplate).toEqual([item('preset-row', 'preset body')])
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
     expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([item('preset-row', 'preset body')])
     expect(peekPromptTemplateOwnerRevision('preset-a')).toBe(7)
   })
@@ -340,7 +369,7 @@ describe('promptTemplate hydration', () => {
     expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([
       { id: 'role-row', type: 'memory', role2: 'bot' },
     ])
-    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'role-row', type: 'memory', role2: 'bot' }])
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
   })
 
   it('rejects hydration when the local preset owner id is duplicated', async () => {
@@ -509,7 +538,7 @@ describe('promptTemplate hydration', () => {
 
     const ownerEpoch = capturePromptTemplateOwnerProjectionEpoch('preset-a')
     await expect(ensurePromptTemplateHydrated({ promptPresetId: 'preset-a' })).resolves.toBe(true)
-    expect(testDatabaseState.db.promptTemplate).toEqual([item('preset-row', 'export body')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([])
     expect(hasPromptTemplateOwnerProjectionEpochChanged('preset-a', ownerEpoch)).toBe(false)
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
   })
@@ -601,7 +630,7 @@ describe('promptTemplate hydration', () => {
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
   })
 
-  it('clears stale compatibility promptTemplate when the selected preset has no promptTemplate', async () => {
+  it('leaves a stale compatibility promptTemplate untouched when the selected preset has no promptTemplate', async () => {
     setCachedServerCommandRevision(7)
     ;(testDatabaseState as { db: unknown }).db = {
       characters: [],
@@ -620,7 +649,8 @@ describe('promptTemplate hydration', () => {
     try {
       await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
 
-      expect(testDatabaseState.db.promptTemplate).toBeUndefined()
+      expect(testDatabaseState.db.promptTemplate).toEqual([item('stale', 'stale compatibility body')])
+      expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
       expect(isPromptTemplateHydrated()).toBe(true)
       expect(() => {
         testDatabaseState.db.promptTemplate = []
