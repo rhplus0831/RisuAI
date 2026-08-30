@@ -74,6 +74,7 @@ describe('@risuai/shared-core import boundary', () => {
         'inlayTokens.ts',
         'internalReasoning.ts',
         'legacyOpenAIModelAliases.ts',
+        'loreHash.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',
       ],

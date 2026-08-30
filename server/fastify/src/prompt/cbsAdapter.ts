@@ -12,6 +12,7 @@ import {
   reportActiveCbsCallbackDiagnostic,
 } from './promptScope.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
+import { pickHashRand } from '@risuai/shared-core/lore-hash'
 
 /**
  * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
@@ -30,38 +31,6 @@ import { getActiveModules, getModuleLorebooks } from './modules.js'
  * Model metadata is read lazily from the active prompt scope so CBS sees the
  * same resolved profile/request model that assembly sends to dispatch.
  */
-
-// In-process pseudo-random generator, ported from src/ts/util/loreHash.ts.
-function sfc32(a: number, b: number, c: number, d: number): () => number {
-  return () => {
-    a |= 0
-    b |= 0
-    c |= 0
-    d |= 0
-    const t = (((a + b) | 0) + d) | 0
-    d = (d + 1) | 0
-    a = b ^ (b >>> 9)
-    b = (c + (c << 3)) | 0
-    c = (c << 21) | (c >>> 11)
-    c = (c + t) | 0
-    return (t >>> 0) / 4294967296
-  }
-}
-
-// Deterministic hash-seeded RNG, ported from src/ts/util/loreHash.ts.
-function pickHashRand(cid: number, word: string): number {
-  let hashAddress = 5515
-  const rand = (w: string) => {
-    for (let i = 0; i < w.length; i++) {
-      hashAddress = (hashAddress << 5) + hashAddress + w.charCodeAt(i)
-    }
-    return hashAddress
-  }
-  const randF = sfc32(rand(word), rand(word), rand(word), rand(word))
-  const v = cid % 1000
-  for (let i = 0; i < v; i++) randF()
-  return randF()
-}
 
 function getScopedModules() {
   const database = getActiveDatabase()

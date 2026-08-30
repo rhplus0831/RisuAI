@@ -2,7 +2,7 @@ import { CCardLib } from '@risuai/ccardlib'
 import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
 import { isAgentOnlyLorebookEntry } from '../../../../src/ts/agentLorebookInputs.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { pickHashRand } from '../../../../src/ts/util/loreHash'
+import { pickHashRand } from '@risuai/shared-core/lore-hash'
 import { getActiveModules } from './modules.js'
 import {
   type BoundedRegexCompatibilityOptions,

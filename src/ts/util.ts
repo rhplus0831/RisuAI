@@ -293,7 +293,7 @@ export const languageCodes = [
   'zu',
 ]
 
-export { sfc32 } from './util/loreHash'
+export { sfc32 } from '@risuai/shared-core/lore-hash'
 
 export function uuidtoNumber(uuid: string) {
   let result = 0
@@ -723,7 +723,7 @@ export const sortableOptions = {
   },
 } as const
 
-export { pickHashRand } from './util/loreHash'
+export { pickHashRand } from '@risuai/shared-core/lore-hash'
 
 export async function replaceAsync(
   string: string,

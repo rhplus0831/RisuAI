@@ -1966,19 +1966,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/lorebook.ts",
-      "specifier": "../../../../src/ts/util/loreHash",
-      "target": "src/ts/util/loreHash.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "pickHashRand"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/luaPostGenerationTrace.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",

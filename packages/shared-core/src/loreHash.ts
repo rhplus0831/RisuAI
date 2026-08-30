@@ -1,19 +1,4 @@
-/**
- * Svelte-free copies of `sfc32` + `pickHashRand`. Lifted out of
- * `src/ts/util.ts` so the Fastify lorebook activation path can compute stable
- * chat-var keys for `keep_activate_after_match` / `dont_activate_after_match`
- * without pulling in `getDatabase` or any Svelte stores.
- *
- * `src/ts/util.ts` re-exports both names so existing SPA callers
- * (`cbs.ts`, `process/mcp/risuaccess/characters.ts`,
- * `process/lorebook.svelte.ts`) keep working unchanged.
- *
- * The math is identical to the SPA's pre-lift implementation — same
- * sfc32 constants, same `5515` hashAddress seed inside
- * `pickHashRand`, same `cid % 1000` advance — so chat-var keys
- * computed by the server bit-for-bit match keys computed by the
- * browser path.
- */
+/** Dependency-free deterministic randomization shared by browser and server lore/CBS paths. */
 
 export function sfc32(a: number, b: number, c: number, d: number) {
   return function () {
