@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./chat-display-tail-count": "./src/chatDisplayTailCount.ts",
     "./chat-load-pages": "./src/chatLoadPages.ts",
     "./chat-page": "./src/chatPage.ts"
   }

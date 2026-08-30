@@ -63,6 +63,7 @@ describe('database defaults', () => {
     expect(database.reducedMotion).toBe(false)
     expect(database.floatingChatInput).toBe(true)
     expect(database.chatScreenWidth).toBe(900)
+    expect(database.chatDisplayTailCount).toBe(30)
     expect(database.chatLoadInitialPages).toBe(30)
     expect(database.chatLoadAdditionalPages).toBe(15)
     expect(database.autoTranslateNotificationDeferCapSeconds).toBe(180)

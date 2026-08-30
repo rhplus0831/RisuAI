@@ -130,7 +130,10 @@ import {
   createDestructiveRefreshToken,
 } from '../server/staleStateGuards'
 import { isServerChatMessagePlaceholder, SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from '../server/chatMessagePlaceholders'
-import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
+import {
+  DEFAULT_CHAT_DISPLAY_TAIL_COUNT,
+  normalizeChatDisplayTailCount,
+} from '@risuai/shared-core/chat-display-tail-count'
 import {
   DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,

@@ -2,7 +2,7 @@ import { createDefaultInputHooks, defaultAutoSuggestPrompt } from '../../../src/
 import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/templates/templates.js'
 import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
-import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../../src/ts/chatDisplayTailCount.js'
+import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '@risuai/shared-core/chat-display-tail-count'
 import {
   DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
