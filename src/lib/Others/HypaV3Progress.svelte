@@ -1,15 +1,45 @@
+<script lang="ts" module>
+  import type { character } from 'src/ts/storage/database.svelte'
+
+  export function resolveOpenChatId(characterOwner: character | undefined): string | null {
+    return characterOwner?.chats?.[characterOwner.chatPage]?.id ?? null
+  }
+
+  export function resolveUniqueChatLabel(
+    characters: readonly character[],
+    chatId: string,
+    unnamedChatLabel: string,
+    unknownChatLabel: string,
+  ): string {
+    const matches = characters.flatMap((character) =>
+      (character.chats ?? []).filter((chat) => chat.id === chatId).map((chat) => ({ character, chat })),
+    )
+    if (matches.length !== 1) return unknownChatLabel
+    const { character, chat } = matches[0]
+    if (!character.chaId || characters.filter((candidate) => candidate.chaId === character.chaId).length !== 1) {
+      return unknownChatLabel
+    }
+    const characterName = character.displayName || character.name
+    return `${characterName} — ${chat.name || unnamedChatLabel}`
+  }
+</script>
+
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { memoryJobProjectionStore, selectMemoryProgress } from 'src/ts/server/memoryJobProjection.svelte'
   import { groupMemoryJobsForPresentation, type MemoryProgressGroup } from 'src/ts/server/memoryJobPresentation'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import type { ServerMemoryJob } from 'src/ts/process/request/serverMemory'
 
   let isExpanded = $state(false)
+  const selectedCharacter = $derived(
+    getSelectedCharacterOwner() ??
+      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters?.[$selectedCharID]),
+  )
   const openChatId = $derived.by(() => {
-    const character = getDatabase().characters?.[$selectedCharID]
-    return character?.chats?.[character.chatPage]?.id ?? null
+    return resolveOpenChatId(selectedCharacter)
   })
   const openChatOnly = $derived(getDatabase().hypaV3ProgressOpenChatOnly === true)
   const progress = $derived(selectMemoryProgress($memoryJobProjectionStore, openChatId, openChatOnly))
@@ -22,13 +52,14 @@
   }
 
   function chatLabel(chatId: string): string {
-    for (const character of getDatabase().characters ?? []) {
-      const chat = character.chats?.find((candidate) => candidate.id === chatId)
-      if (!chat) continue
-      const characterName = character.displayName || character.name
-      return `${characterName} — ${chat.name || language.hypaV3Progress.unnamedChat}`
-    }
-    return language.hypaV3Progress.unknownChat(shortJobId(chatId))
+    return resolveUniqueChatLabel(
+      charactersResourceState.status === 'ready'
+        ? charactersResourceState.characters
+        : (getDatabase().characters ?? []),
+      chatId,
+      language.hypaV3Progress.unnamedChat,
+      language.hypaV3Progress.unknownChat(shortJobId(chatId)),
+    )
   }
 
   function kindLabel(kind: ServerMemoryJob['kind']): string {
