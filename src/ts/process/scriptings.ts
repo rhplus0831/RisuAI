@@ -37,6 +37,7 @@ import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { parseKeyValue } from '../util'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { safeStructuredClone } from '../polyfill'
+import { resolveModelProfile } from '../model/modelProfileResolver'
 import type { PyWorkerRequest, PyWorkerResponse } from './pyworker'
 import {
   captureActiveChatTarget,
@@ -968,7 +969,11 @@ export async function runScripted(
         }
 
         const fullLoreBooks = (await loadLoreBookV3Prompt()).actives
-        const maxContext = db.maxContext - reserve
+        // This is a low-level scripting API, so its budget follows the scriptMain
+        // execution role (the same owner as LLM/simpleLLM), not chatMain. The
+        // resolver keeps the legacy db.maxContext fallback for un-migrated data.
+        const scriptProfile = resolveModelProfile({ database: db, role: 'scriptMain' })
+        const maxContext = (scriptProfile.runtimeOptions.maxContext ?? db.maxContext) - reserve
         if (maxContext < 0) {
           return JSON.stringify([])
         }

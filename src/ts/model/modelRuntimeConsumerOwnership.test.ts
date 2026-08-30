@@ -68,6 +68,13 @@ describe('browser model-runtime consumer ownership', () => {
     expect(parameters).toContain('ctx.modelInfo.id')
   })
 
+  it('budgets low-level lore loading through the scriptMain profile', () => {
+    const scriptings = source('src/ts/process/scriptings.ts')
+
+    expect(scriptings).toContain("resolveModelProfile({ database: db, role: 'scriptMain' })")
+    expect(scriptings).not.toContain('const maxContext = db.maxContext - reserve')
+  })
+
   it('routes HypaV3 response reservation through the resolved chat profile', () => {
     const hypaV3 = source('src/ts/process/memory/hypav3.ts')
     const otherBotSettings = source('src/lib/Setting/Pages/OtherBotSettings.svelte')

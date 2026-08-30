@@ -136,6 +136,12 @@ const mediaMock = vi.hoisted(() => ({
   writeInlayImage: vi.fn(async () => 'inlay-id'),
 }))
 const requestChatData = vi.hoisted(() => vi.fn(async () => ({ type: 'success', result: 'ok' })))
+const lorebookMock = vi.hoisted(() => ({
+  loadLoreBookV3Prompt: vi.fn(async () => ({ actives: [] as Array<{ prompt: string; role: string }> })),
+}))
+const tokenizerMock = vi.hoisted(() => ({
+  tokenize: vi.fn(async (text: string) => text.length),
+}))
 
 vi.mock('wasmoon', () => ({
   LuaFactory: luaMock.LuaFactory,
@@ -172,6 +178,22 @@ vi.mock('./files/inlays', () => ({
 vi.mock('./stableDiff', () => ({
   generateAIImage: mediaMock.generateAIImage,
 }))
+
+vi.mock('./lorebook.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('./lorebook.svelte')>()
+  return {
+    ...actual,
+    loadLoreBookV3Prompt: lorebookMock.loadLoreBookV3Prompt,
+  }
+})
+
+vi.mock('../tokenizer', async (importActual) => {
+  const actual = await importActual<typeof import('../tokenizer')>()
+  return {
+    ...actual,
+    tokenize: tokenizerMock.tokenize,
+  }
+})
 
 vi.mock('./request/request', () => ({
   requestChatData,
@@ -434,6 +456,8 @@ beforeEach(() => {
   mediaMock.getUserName.mockReturnValue('User')
   mediaMock.readImage.mockResolvedValue(new Uint8Array([1, 2, 3]))
   mediaMock.writeInlayImage.mockResolvedValue('inlay-id')
+  lorebookMock.loadLoreBookV3Prompt.mockResolvedValue({ actives: [] })
+  tokenizerMock.tokenize.mockClear()
   requestChatData.mockClear()
   vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch)
   vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -501,6 +525,80 @@ describe('client scripting lightweight chat and changed-setter APIs', () => {
     expect(unchangedResult).toBeUndefined()
     expect(changedResult).toBe(true)
     expect(result.stopSending).toBe(false)
+  })
+})
+
+describe('client scripting lorebook loading', () => {
+  it('uses the scriptMain profile context budget instead of the conflicting chat and flat budgets', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    selectedCharID.set(0)
+    replaceResourceDatabase({
+      characters: [char],
+      maxContext: 100,
+      modelProfiles: [
+        {
+          id: 'chat-profile',
+          name: 'Chat profile',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          runtimeOptions: { maxContext: 100 },
+        },
+        {
+          id: 'script-profile',
+          name: 'Script profile',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          runtimeOptions: { maxContext: 2 },
+        },
+      ],
+      modelRoleProfiles: {
+        chatMain: { mode: 'profile', profileId: 'chat-profile' },
+        scriptMain: { mode: 'profile', profileId: 'script-profile' },
+      },
+    } as any)
+    lorebookMock.loadLoreBookV3Prompt.mockResolvedValueOnce({
+      actives: [
+        { prompt: 'aa', role: 'system' },
+        { prompt: 'bb', role: 'user' },
+      ],
+    })
+    luaMock.setDispatchArgs('loadLoreBooksMain', [0])
+
+    const result = await runScripted('-- script-owned lore budget', {
+      char,
+      chat,
+      mode: 'loadLoreBooksMain',
+      lowLevelAccess: true,
+    })
+
+    expect(JSON.parse(result.res)).toEqual([{ data: 'aa', role: 'system' }])
+    expect(tokenizerMock.tokenize).toHaveBeenCalledTimes(2)
+  })
+
+  it('retains the legacy flat maxContext fallback when no durable script budget exists', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    selectedCharID.set(0)
+    replaceResourceDatabase({
+      characters: [char],
+      maxContext: 2,
+      modelProfiles: [],
+      modelRoleProfiles: {},
+    } as any)
+    lorebookMock.loadLoreBookV3Prompt.mockResolvedValueOnce({
+      actives: [{ prompt: 'aa', role: 'system' }],
+    })
+    luaMock.setDispatchArgs('loadLoreBooksMain', [0])
+
+    const result = await runScripted('-- legacy lore budget', {
+      char,
+      chat,
+      mode: 'loadLoreBooksMain',
+      lowLevelAccess: true,
+    })
+
+    expect(JSON.parse(result.res)).toEqual([{ data: 'aa', role: 'system' }])
   })
 })
 
