@@ -4,12 +4,13 @@ import { TaskRateLimiter } from './taskRateLimiter'
 import { type EmbeddingText, type EmbeddingResult, HypaProcessorV2 } from './hypamemoryv2'
 import { type DisplayMode as ModalDisplayMode } from 'src/lib/Others/HypaV3Modal/types'
 import { parseChatML } from 'src/ts/parser/chatML'
-import { type Chat, type character, getDatabase } from 'src/ts/storage/database.svelte'
+import { type Chat, type character, type Database, getDatabase } from 'src/ts/storage/database.svelte'
 import { type OpenAIChat } from '../index.svelte'
 import { requestChatData } from '../request/request'
 import { chatCompletion, unloadEngine } from '../webllm'
 import { type ChatTokenizer } from 'src/ts/tokenizer'
 import { inlayTokenRegex } from '@risuai/shared-core/inlay-tokens'
+import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import {
   startLocalMemoryJob,
   updateLocalMemoryJob,
@@ -96,6 +97,10 @@ export interface HypaV3Result {
 const logPrefix = '[HypaV3]'
 const memoryPromptTag = 'Past Events Summary'
 const summarySeparator = '\n\n'
+
+export function resolveHypaV3ResponseTokenReservation(database: Database): number {
+  return resolveModelProfile({ database, role: 'chatMain' }).runtimeOptions.maxResponse ?? database.maxResponse
+}
 
 async function runLocalMemoryOperation<T>(
   room: Chat,
@@ -192,7 +197,7 @@ async function hypaMemoryV3MainExp(
   }
 
   // Initial token correction
-  currentTokens -= db.maxResponse
+  currentTokens -= resolveHypaV3ResponseTokenReservation(db)
 
   // Load existing hypa data if available
   const data: HypaV3Data = room.hypaV3Data
@@ -838,7 +843,7 @@ async function hypaMemoryV3Main(
   }
 
   // Initial token correction
-  currentTokens -= db.maxResponse
+  currentTokens -= resolveHypaV3ResponseTokenReservation(db)
 
   // Load existing hypa data if available
   const data: HypaV3Data = room.hypaV3Data
