@@ -1,7 +1,15 @@
 import { checkNullish } from './util'
 import { sha256Hex } from './sha256Fallback'
 import { get } from 'svelte/store'
-import { type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter } from './storage/database.svelte'
+import {
+  type Chat,
+  type character,
+  type Database,
+  defaultSdDataFunc,
+  getDatabase,
+  appVer,
+  getCurrentCharacter,
+} from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
 import { reloadGuiDisplay, bodyIntercepterStore } from './stores.svelte'
 import { selIdState } from './stores/coreStores.svelte'
@@ -28,7 +36,7 @@ import {
 import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './server/activeWriterSession'
 import { setCachedServerCommandRevision } from './server/commands'
-import { currentChatSelectionSnapshot, dispatchSelectChat } from './chatCommands'
+import { dispatchSelectChat } from './chatCommands'
 import {
   readServerAssetBytes,
   serverAssetContentType,
@@ -41,11 +49,17 @@ import {
   type ServerBackupProgress,
   type ServerBackupProgressCallback,
 } from './server/backups'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
 import { triggerOpenChatGenerationReattach } from './process/reattach'
 import { language } from '../lang'
 import { persistenceSavingState } from './server/persistenceActivity.svelte'
+import { getSelectedCharacterOwner, selectCharacterOwner } from './characterState'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+} from './server/resourceState.svelte'
+import { getChatMessageOwnerState } from './server/chatMessageHydration.svelte'
 
 export { getFileSrc } from './fileSource'
 
@@ -2076,18 +2090,74 @@ export let chatFoldedStateMessageIndex = $state({
   index: -1,
 })
 
+function globalApiCharacterOwners(): readonly character[] {
+  if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+    return getDatabase().characters ?? []
+  }
+  return []
+}
+
+function selectedGlobalApiCharacterOwner(): { character: character; selectedIndex: number } | undefined {
+  if (charactersResourceState.status === 'ready') {
+    const character = getSelectedCharacterOwner()
+    if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return undefined
+    const selectedIndex = charactersResourceState.characters.indexOf(character)
+    return selectedIndex >= 0 ? { character, selectedIndex } : undefined
+  }
+
+  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+
+  const selectedIndex = selIdState.selId
+  const character = selectCharacterOwner(globalApiCharacterOwners(), selectedIndex)
+  return character ? { character, selectedIndex } : undefined
+}
+
+function uniqueGlobalApiChatOwner(character: character, chatId: string): Chat | undefined {
+  if (!chatId) return undefined
+  const matches = (character.chats ?? []).filter((candidate) => candidate?.id === chatId)
+  if (matches.length !== 1) return undefined
+
+  if (charactersResourceState.status === 'ready') {
+    return getChatMetadataOwnerState(chatId) ? matches[0] : undefined
+  }
+
+  let matchCount = 0
+  for (const candidateCharacter of globalApiCharacterOwners()) {
+    for (const candidateChat of candidateCharacter.chats ?? []) {
+      if (candidateChat?.id === chatId) matchCount += 1
+      if (matchCount > 1) return undefined
+    }
+  }
+  return matchCount === 1 ? matches[0] : undefined
+}
+
+function selectedGlobalApiChatOwner(): { character: character; selectedIndex: number; chat: Chat } | undefined {
+  const selected = selectedGlobalApiCharacterOwner()
+  if (!selected) return undefined
+  const candidate = selected.character.chats?.[selected.character.chatPage]
+  if (!candidate?.id) return undefined
+  const chat = uniqueGlobalApiChatOwner(selected.character, candidate.id)
+  return chat ? { ...selected, chat } : undefined
+}
+
+function clearChatFoldTarget(): void {
+  chatFoldedState.data = null
+  chatFoldedStateMessageIndex.index = -1
+}
+
 $effect.root(() => {
   $effect(() => {
     if (!chatFoldedState.data) {
       return
     }
-    const char = getDatabase().characters[selIdState.selId]
-    const chat = char.chats[char.chatPage]
-    if (chatFoldedState.data.targetCharacterId !== char.chaId) {
-      chatFoldedState.data = null
-    }
-    if (chatFoldedState.data.targetChatId !== chat.id) {
-      chatFoldedState.data = null
+    const owner = selectedGlobalApiChatOwner()
+    if (
+      !owner ||
+      chatFoldedState.data.targetCharacterId !== owner.character.chaId ||
+      chatFoldedState.data.targetChatId !== owner.chat.id
+    ) {
+      clearChatFoldTarget()
     }
   })
 
@@ -2096,36 +2166,50 @@ $effect.root(() => {
       chatFoldedStateMessageIndex.index = -1
       return
     }
-    const char = getDatabase().characters[selIdState.selId]
-    const chat = char.chats[char.chatPage]
-    const messageIndex = chat.message.findIndex((v) => {
-      return chatFoldedState.data?.targetMessageId === v.chatId
-    })
-    if (messageIndex === -1) {
+    const owner = selectedGlobalApiChatOwner()
+    const transcript = owner ? getChatMessageOwnerState(owner.chat.id) : undefined
+    const targetMessageId = chatFoldedState.data.targetMessageId
+    const matchingIndexes = transcript?.messages.reduce<number[]>((indexes, message, index) => {
+      if (message.chatId === targetMessageId) indexes.push(index)
+      return indexes
+    }, [])
+    if (!matchingIndexes || matchingIndexes.length !== 1) {
       console.warn('Target message for folding id' + chatFoldedState.data?.targetMessageId + ' not found')
-      chatFoldedStateMessageIndex.index = -1
+      clearChatFoldTarget()
       return
     }
-    chatFoldedStateMessageIndex.index = messageIndex
+    chatFoldedStateMessageIndex.index = matchingIndexes[0]
   })
 })
 
 export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
-  let targetMessageId = ''
+  const owner = selectedGlobalApiChatOwner()
+  const transcript = owner ? getChatMessageOwnerState(owner.chat.id) : undefined
+  if (!owner || !transcript) {
+    clearChatFoldTarget()
+    return
+  }
+
+  let targetMessageId: string | undefined
   if (typeof targetMessageIdOrIndex === 'number') {
-    const char = getCurrentCharacter()
-    const chat = char.chats[char.chatPage]
-    const message = chat.message[targetMessageIdOrIndex]
-    targetMessageId = message.chatId
+    if (!Number.isInteger(targetMessageIdOrIndex) || targetMessageIdOrIndex < 0) {
+      clearChatFoldTarget()
+      return
+    }
+    targetMessageId = transcript.messages[targetMessageIdOrIndex]?.chatId
   } else {
     targetMessageId = targetMessageIdOrIndex
   }
-  const char = getCurrentCharacter()
-  const chat = char.chats[char.chatPage]
+
+  if (!targetMessageId || transcript.messages.filter((message) => message.chatId === targetMessageId).length !== 1) {
+    clearChatFoldTarget()
+    return
+  }
+
   chatFoldedState.data = {
-    targetCharacterId: char.chaId,
-    targetChatId: chat.id,
-    targetMessageId: targetMessageId,
+    targetCharacterId: owner.character.chaId,
+    targetChatId: owner.chat.id,
+    targetMessageId,
   }
 }
 
@@ -2133,31 +2217,27 @@ export function changeChatTo(IdOrIndex: string | number) {
   // Scalar rollback: selecting a chat only flips `chatPage`, so capturing
   // the whole-characters ChatStateSnapshot here deep-cloned every hydrated
   // transcript on the UI thread per chat click.
-  const previous = currentChatSelectionSnapshot()
-  const currentCharacter = getCurrentCharacter()
-  let index = -1
-  if (typeof IdOrIndex === 'number') {
-    index = IdOrIndex
-  }
+  const selected = selectedGlobalApiCharacterOwner()
+  if (!selected) return
 
-  if (typeof IdOrIndex === 'string') {
-    index = currentCharacter.chats.findIndex((v) => {
-      return v.id === IdOrIndex
-    })
-  }
-
-  if (!Number.isInteger(index) || index < 0 || index >= currentCharacter.chats.length) {
+  const index =
+    typeof IdOrIndex === 'number'
+      ? IdOrIndex
+      : selected.character.chats.findIndex((candidate) => candidate.id === IdOrIndex)
+  if (!Number.isInteger(index) || index < 0 || index >= selected.character.chats.length) {
     return
   }
 
-  withTrustedResourceWrite(() => {
-    getDatabase().characters[selIdState.selId].chatPage = index
+  const candidate = selected.character.chats[index]
+  const chat = candidate?.id ? uniqueGlobalApiChatOwner(selected.character, candidate.id) : undefined
+  if (!chat) return
+
+  dispatchSelectChat(chat.id, {
+    characterId: selected.character.chaId,
+    selectedCharID: selected.selectedIndex,
+    chatPage: selected.character.chatPage,
   })
   triggerOpenChatGenerationReattach()
-  const chatId = currentCharacter.chats[index]?.id
-  if (chatId) {
-    dispatchSelectChat(chatId, previous)
-  }
   reloadGuiDisplay()
 }
 
