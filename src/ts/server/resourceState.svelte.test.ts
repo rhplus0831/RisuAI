@@ -54,7 +54,11 @@ import {
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
+  getChatFolderMetadataOwnerSnapshot,
   getChatMetadataOwnerState,
+  getChatMetadataOwnerSnapshot,
+  applyChatFolderMetadataOwnerPatch,
+  applyChatMetadataOwnerPatch,
   hasCharacterRowProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
@@ -70,6 +74,8 @@ import {
   markSettingsGroupAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
+  restoreChatFolderMetadataOwnerSnapshot,
+  restoreChatMetadataOwnerSnapshot,
   resetServerResourceRevisionFencesForDatabaseReplacement,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
@@ -204,6 +210,104 @@ describe('resource-scoped database state', () => {
       autoTranslate: true,
     })
     expect(getChatMetadataOwnerState('chat-a')).not.toHaveProperty('message')
+  })
+
+  it('mutates and restores only uniquely-owned chat and folder metadata', () => {
+    const owner = metadataCharacter('char-a', 'Owner')
+    owner.chats = [{ id: 'chat-a', name: 'Before', message: [{ role: 'user' }] }] as never
+    owner.chatFolders = [{ id: 'folder-a', name: 'Folder', color: '#fff', folded: false }] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 4,
+      characters: [owner],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    const chatBefore = getChatMetadataOwnerSnapshot('char-a', 'chat-a')
+    const folderBefore = getChatFolderMetadataOwnerSnapshot('char-a', 'folder-a')
+    expect(chatBefore?.metadata).toEqual({ name: 'Before' })
+    expect(folderBefore?.metadata).toEqual({ name: 'Folder', color: '#fff', folded: false })
+    expect(chatBefore?.metadata).not.toHaveProperty('message')
+    expect(chatBefore?.revision).toBe(4)
+
+    expect(applyChatMetadataOwnerPatch('char-a', 'chat-a', { name: 'After' })).toBe(true)
+    expect(applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', { folded: true })).toBe(true)
+    expect(applyChatMetadataOwnerPatch('char-a', 'chat-a', { note: 'Concurrent note' })).toBe(true)
+    expect(applyChatFolderMetadataOwnerPatch('char-a', 'folder-a', { color: '#000' })).toBe(true)
+    expect(getChatMetadataOwnerSnapshot('char-a', 'chat-a')?.metadata).toEqual({
+      name: 'After',
+      note: 'Concurrent note',
+    })
+    expect(getChatFolderMetadataOwnerSnapshot('char-a', 'folder-a')?.metadata).toEqual({
+      name: 'Folder',
+      color: '#000',
+      folded: true,
+    })
+    expect(
+      restoreChatMetadataOwnerSnapshot({
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        metadata: chatBefore!.metadata,
+        attempted: { name: 'After' },
+      }),
+    ).toBe(true)
+    expect(
+      restoreChatFolderMetadataOwnerSnapshot({
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: folderBefore!.metadata,
+        attempted: { folded: true },
+      }),
+    ).toBe(true)
+    expect(getChatMetadataOwnerSnapshot('char-a', 'chat-a')?.metadata).toEqual({
+      name: 'Before',
+      note: 'Concurrent note',
+    })
+    expect(getChatFolderMetadataOwnerSnapshot('char-a', 'folder-a')?.metadata).toEqual({
+      name: 'Folder',
+      color: '#000',
+      folded: false,
+    })
+  })
+
+  it('fails closed for missing or duplicate stable chat and folder owners', () => {
+    const owner = metadataCharacter('char-a', 'Owner')
+    owner.chats = [
+      { id: 'duplicate-chat', name: 'A' },
+      { id: 'duplicate-chat', name: 'B' },
+    ] as never
+    owner.chatFolders = [
+      { id: 'duplicate-folder', name: 'A', folded: false },
+      { id: 'duplicate-folder', name: 'B', folded: true },
+    ] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 1,
+      characters: [owner],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(getChatMetadataOwnerSnapshot('char-a', 'missing-chat')).toBeUndefined()
+    expect(getChatMetadataOwnerSnapshot('char-a', 'duplicate-chat')).toBeUndefined()
+    expect(applyChatMetadataOwnerPatch('char-a', 'duplicate-chat', { name: 'Unsafe' })).toBe(false)
+    expect(getChatFolderMetadataOwnerSnapshot('char-a', 'duplicate-folder')).toBeUndefined()
+    expect(applyChatFolderMetadataOwnerPatch('char-a', 'duplicate-folder', { name: 'Unsafe' })).toBe(false)
+    expect(getResourceDatabase().characters[0].chats[0].name).toBe('A')
+    expect(getResourceDatabase().characters[0].chatFolders[0].name).toBe('A')
+
+    const duplicateCharacter = metadataCharacter('char-a', 'Duplicate')
+    duplicateCharacter.chats = [{ id: 'chat-a', name: 'Duplicate' }] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 2,
+      characters: [owner, duplicateCharacter],
+      characterOrder: ['char-a', 'char-a'],
+      currentChar: 0,
+    })
+    expect(getChatMetadataOwnerSnapshot('char-a', 'duplicate-chat')).toBeUndefined()
+    expect(applyChatMetadataOwnerPatch('char-a', 'duplicate-chat', { name: 'Unsafe' })).toBe(false)
   })
 
   it('accepts a lower full snapshot after database replacement fences are reset', () => {

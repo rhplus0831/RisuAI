@@ -725,6 +725,256 @@ export function getChatMetadataOwnerState(chatId: string): ChatMetadataOwnerStat
   return match
 }
 
+// Chat metadata is intentionally a closed, scalar owner surface. Keep this
+// list in sync with the fields the metadata bridge is allowed to persist; do
+// not widen it into a generic chat/database snapshot.
+export const CHAT_METADATA_OWNER_KEYS = [
+  'name',
+  'note',
+  'sdData',
+  'lastMemory',
+  'hypaContextTruncationAcknowledged',
+  'suggestMessages',
+  'bindedPersona',
+  'fmIndex',
+  'selectedDraftHookId',
+  'translatorPresetId',
+  'autoTranslate',
+  'autoTranslateBotOnly',
+  'bilingualDisplay',
+  'bilingualEmphasis',
+  'folderId',
+  'lastDate',
+  'bookmarks',
+  'bookmarkNames',
+  'modules',
+  'pinned',
+] as const
+
+export const CHAT_FOLDER_METADATA_OWNER_KEYS = ['name', 'color', 'folded'] as const
+
+export type ChatMetadataOwnerKey = (typeof CHAT_METADATA_OWNER_KEYS)[number]
+export type ChatFolderMetadataOwnerKey = (typeof CHAT_FOLDER_METADATA_OWNER_KEYS)[number]
+export type ChatMetadataOwnerFields = Partial<Record<ChatMetadataOwnerKey, unknown>>
+export type ChatFolderMetadataOwnerFields = Partial<Record<ChatFolderMetadataOwnerKey, unknown>>
+
+export interface ChatMetadataOwnerSnapshot {
+  characterId: string
+  chatId: string
+  metadata: ChatMetadataOwnerFields
+  projectionEpoch: number
+  revision: number | null
+}
+
+export interface ChatFolderMetadataOwnerSnapshot {
+  characterId: string
+  folderId: string
+  metadata: ChatFolderMetadataOwnerFields
+  projectionEpoch: number
+  revision: number | null
+}
+
+/** Read one uniquely-owned chat metadata row without exposing transcript data. */
+export function getChatMetadataOwnerSnapshot(
+  characterId: string,
+  chatId: string,
+): ChatMetadataOwnerSnapshot | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  const chat = uniqueChatOwner(character, chatId)
+  if (!character || !chat) return undefined
+  return {
+    characterId,
+    chatId,
+    metadata: snapshotOwnerFields(chat as unknown as Record<string, unknown>, CHAT_METADATA_OWNER_KEYS),
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    revision: charactersResourceState.rowRevisions[characterId] ?? null,
+  }
+}
+
+/** Read one uniquely-owned chat-folder metadata row without exposing chat bodies. */
+export function getChatFolderMetadataOwnerSnapshot(
+  characterId: string,
+  folderId: string,
+): ChatFolderMetadataOwnerSnapshot | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  const folder = uniqueFolderOwner(character, folderId)
+  if (!character || !folder) return undefined
+  return {
+    characterId,
+    folderId,
+    metadata: snapshotOwnerFields(folder as unknown as Record<string, unknown>, CHAT_FOLDER_METADATA_OWNER_KEYS),
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    revision: charactersResourceState.rowRevisions[characterId] ?? null,
+  }
+}
+
+/** Apply a closed-set optimistic chat metadata patch to its unique owner. */
+export function applyChatMetadataOwnerPatch(
+  characterId: string,
+  chatId: string,
+  patch: ChatMetadataOwnerFields,
+): boolean {
+  const character = getCharacterResourceOwner(characterId)
+  const chat = uniqueChatOwner(character, chatId)
+  if (!character || !chat || !hasOnlyOwnerFields(patch, CHAT_METADATA_OWNER_KEYS)) return false
+  applyOwnerFields(chat as unknown as Record<string, unknown>, patch, CHAT_METADATA_OWNER_KEYS)
+  advanceCharacterRowProjectionEpoch(characterId)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/** Restore a failed optimistic chat metadata patch only if its attempted fields still match. */
+export function restoreChatMetadataOwnerSnapshot(snapshot: {
+  characterId: string
+  chatId: string
+  metadata: ChatMetadataOwnerFields
+  attempted?: ChatMetadataOwnerFields
+}): boolean {
+  const character = getCharacterResourceOwner(snapshot.characterId)
+  const chat = uniqueChatOwner(character, snapshot.chatId)
+  if (
+    !character ||
+    !chat ||
+    !hasOnlyOwnerFields(snapshot.metadata, CHAT_METADATA_OWNER_KEYS) ||
+    (snapshot.attempted !== undefined && !hasOnlyOwnerFields(snapshot.attempted, CHAT_METADATA_OWNER_KEYS))
+  ) {
+    return false
+  }
+  const target = chat as unknown as Record<string, unknown>
+  if (
+    snapshot.attempted &&
+    Object.entries(snapshot.attempted).some(([key, value]) => !ownerFieldMatches(target, key, value))
+  ) {
+    return false
+  }
+  if (snapshot.attempted) {
+    restoreAttemptedOwnerFields(target, snapshot.metadata, snapshot.attempted, CHAT_METADATA_OWNER_KEYS)
+  } else {
+    applyOwnerFields(target, snapshot.metadata, CHAT_METADATA_OWNER_KEYS, true)
+  }
+  advanceCharacterRowProjectionEpoch(snapshot.characterId)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/** Apply a closed-set optimistic chat-folder metadata patch to its unique owner. */
+export function applyChatFolderMetadataOwnerPatch(
+  characterId: string,
+  folderId: string,
+  patch: ChatFolderMetadataOwnerFields,
+): boolean {
+  const character = getCharacterResourceOwner(characterId)
+  const folder = uniqueFolderOwner(character, folderId)
+  if (!character || !folder || !hasOnlyOwnerFields(patch, CHAT_FOLDER_METADATA_OWNER_KEYS)) return false
+  applyOwnerFields(folder as unknown as Record<string, unknown>, patch, CHAT_FOLDER_METADATA_OWNER_KEYS)
+  advanceCharacterRowProjectionEpoch(characterId)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/** Restore a failed optimistic chat-folder metadata patch only if still current. */
+export function restoreChatFolderMetadataOwnerSnapshot(snapshot: {
+  characterId: string
+  folderId: string
+  metadata: ChatFolderMetadataOwnerFields
+  attempted?: ChatFolderMetadataOwnerFields
+}): boolean {
+  const character = getCharacterResourceOwner(snapshot.characterId)
+  const folder = uniqueFolderOwner(character, snapshot.folderId)
+  if (
+    !character ||
+    !folder ||
+    !hasOnlyOwnerFields(snapshot.metadata, CHAT_FOLDER_METADATA_OWNER_KEYS) ||
+    (snapshot.attempted !== undefined && !hasOnlyOwnerFields(snapshot.attempted, CHAT_FOLDER_METADATA_OWNER_KEYS))
+  ) {
+    return false
+  }
+  const target = folder as unknown as Record<string, unknown>
+  if (
+    snapshot.attempted &&
+    Object.entries(snapshot.attempted).some(([key, value]) => !ownerFieldMatches(target, key, value))
+  ) {
+    return false
+  }
+  if (snapshot.attempted) {
+    restoreAttemptedOwnerFields(target, snapshot.metadata, snapshot.attempted, CHAT_FOLDER_METADATA_OWNER_KEYS)
+  } else {
+    applyOwnerFields(target, snapshot.metadata, CHAT_FOLDER_METADATA_OWNER_KEYS, true)
+  }
+  advanceCharacterRowProjectionEpoch(snapshot.characterId)
+  markResourceDatabaseChanged()
+  return true
+}
+
+function uniqueChatOwner(character: character | undefined, chatId: string): character['chats'][number] | undefined {
+  if (!character || !nonEmptyString(chatId)) return undefined
+  const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function uniqueFolderOwner(
+  character: character | undefined,
+  folderId: string,
+): NonNullable<character['chatFolders']>[number] | undefined {
+  if (!character || !nonEmptyString(folderId)) return undefined
+  const matches = (character.chatFolders ?? []).filter((folder) => folder?.id === folderId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function snapshotOwnerFields(target: Record<string, unknown>, keys: readonly string[]): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(target, key) && target[key] !== undefined) {
+      snapshot[key] = cloneJsonValue(target[key])
+    }
+  }
+  return snapshot
+}
+
+function hasOnlyOwnerFields(patch: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys)
+  return Object.keys(patch).every((key) => allowed.has(key))
+}
+
+function applyOwnerFields(
+  target: Record<string, unknown>,
+  fields: Record<string, unknown>,
+  keys: readonly string[],
+  deleteMissing = false,
+): void {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(fields, key)) {
+      const value = fields[key]
+      if (value === undefined) delete target[key]
+      else target[key] = cloneJsonValue(value)
+    } else if (deleteMissing) {
+      delete target[key]
+    }
+  }
+}
+
+function restoreAttemptedOwnerFields(
+  target: Record<string, unknown>,
+  metadata: Record<string, unknown>,
+  attempted: Record<string, unknown>,
+  keys: readonly string[],
+): void {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(attempted, key)) continue
+    if (Object.prototype.hasOwnProperty.call(metadata, key)) {
+      applyOwnerFields(target, { [key]: metadata[key] }, [key])
+    } else {
+      delete target[key]
+    }
+  }
+}
+
+function ownerFieldMatches(target: Record<string, unknown>, key: string, expected: unknown): boolean {
+  const present = Object.prototype.hasOwnProperty.call(target, key) && target[key] !== undefined
+  if (expected === undefined) return !present
+  return present && JSON.stringify(target[key]) === JSON.stringify(expected)
+}
+
 const collectionNameSet = new Set<string>(SERVER_COLLECTION_NAMES)
 const guardedResourceValueMemo = new WeakMap<object, object>()
 let resourceDatabaseWriteDepth = 0

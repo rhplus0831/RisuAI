@@ -19,12 +19,20 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import { selectedCharID } from '../stores.svelte'
-import type { Chat, ChatFolder } from '../storage/database.svelte'
+import type { ChatFolder } from '../storage/database.svelte'
 import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import {
+  applyChatFolderMetadataOwnerPatch,
+  applyChatMetadataOwnerPatch,
+  type ChatFolderMetadataOwnerFields,
+  type ChatMetadataOwnerFields,
   charactersResourceState,
+  getChatFolderMetadataOwnerSnapshot,
+  getChatMetadataOwnerSnapshot,
   getCharacterResourceOwner,
   getResourceDatabase as getDatabase,
+  restoreChatFolderMetadataOwnerSnapshot,
+  restoreChatMetadataOwnerSnapshot,
 } from './resourceState.svelte'
 import { dispatchDurableMutation } from './durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
@@ -87,6 +95,16 @@ export interface ChatMetadataBaselines {
   characterId: string | undefined
   chats: Map<string, ChatSnapshot>
   folders: Map<string, ChatFolderSnapshot>
+}
+
+interface ChatMetadataBaselineRow {
+  id: string
+  metadata: ChatSnapshot
+}
+
+interface ChatFolderMetadataBaselineRow {
+  id: string
+  metadata: ChatFolderSnapshot
 }
 
 export function watchServerBackedChatMetadata(options: WatchServerBackedChatMetadataOptions = {}): () => void {
@@ -461,8 +479,15 @@ function applyChatMetadataPatch(
   patch: ChatSnapshot,
 ): void {
   const character = resolveMetadataCharacter(characterId, selectedChar)
-  const chat = character?.chats?.find((candidate) => candidate.id === chatId)
-  if (chat) applyMetadataPatch(chat as unknown as Record<string, unknown>, patch)
+  if (!character?.chaId) return
+  if (charactersResourceState.status === 'ready') {
+    applyChatMetadataOwnerPatch(character.chaId, chatId, patch)
+    return
+  }
+  withTrustedResourceWrite(() => {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (chat) applyLegacyMetadataPatch(chat as unknown as Record<string, unknown>, patch)
+  })
 }
 
 function applyFolderMetadataPatch(
@@ -472,8 +497,15 @@ function applyFolderMetadataPatch(
   patch: ChatFolderSnapshot,
 ): void {
   const character = resolveMetadataCharacter(characterId, selectedChar)
-  const folder = character?.chatFolders?.find((candidate) => candidate.id === folderId)
-  if (folder) applyMetadataPatch(folder as unknown as Record<string, unknown>, patch)
+  if (!character?.chaId) return
+  if (charactersResourceState.status === 'ready') {
+    applyChatFolderMetadataOwnerPatch(character.chaId, folderId, patch)
+    return
+  }
+  withTrustedResourceWrite(() => {
+    const folder = character.chatFolders?.find((candidate) => candidate.id === folderId)
+    if (folder) applyLegacyMetadataPatch(folder as unknown as Record<string, unknown>, patch)
+  })
 }
 
 function resolveMetadataCharacter(characterId: string | undefined, selectedChar: number) {
@@ -489,16 +521,6 @@ function resolveMetadataCharacter(characterId: string | undefined, selectedChar:
     return candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
   }
   return getDatabase().characters?.[selectedChar]
-}
-
-function applyMetadataPatch(target: Record<string, unknown>, patch: Record<string, unknown>): void {
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === undefined) {
-      delete target[key]
-    } else {
-      target[key] = cloneJsonValue(value)
-    }
-  }
 }
 
 // Build the scalar metadata snapshot for one chat without ever serializing its
@@ -525,24 +547,40 @@ function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {
   }
 }
 
+function applyLegacyMetadataPatch(target: Record<string, unknown>, patch: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) delete target[key]
+    else target[key] = cloneJsonValue(value)
+  }
+}
+
 export function currentChatMetadataBaselines(previous?: ChatMetadataBaselines): ChatMetadataBaselines {
   const selectedChar = get(selectedCharID)
   const character = resolveMetadataCharacter(undefined, selectedChar)
   const characterId = character?.chaId
-  const chats = (character?.chats ?? []).filter(hasStringId)
-  const folders = (character?.chatFolders ?? []).filter(hasStringId)
+  const chats = (character?.chats ?? []).flatMap((chat): ChatMetadataBaselineRow[] => {
+    if (!hasStringId(chat)) return []
+    const owner = characterId ? getChatMetadataOwnerSnapshot(characterId, chat.id) : undefined
+    if (owner) return [{ id: chat.id, metadata: owner.metadata as ChatSnapshot }]
+    return charactersResourceState.status === 'ready'
+      ? []
+      : [{ id: chat.id, metadata: scalarChatMetadata(chat as unknown as ChatSnapshot) }]
+  })
+  const folders = (character?.chatFolders ?? []).flatMap((folder): ChatFolderMetadataBaselineRow[] => {
+    if (!hasStringId(folder)) return []
+    const owner = characterId ? getChatFolderMetadataOwnerSnapshot(characterId, folder.id) : undefined
+    if (owner) return [{ id: folder.id, metadata: owner.metadata as ChatFolderSnapshot }]
+    return charactersResourceState.status === 'ready'
+      ? []
+      : [{ id: folder.id, metadata: scalarChatFolderMetadata(folder as unknown as ChatFolder) }]
+  })
   if (!previous || previous.selectedChar !== selectedChar || previous.characterId !== characterId) {
     return {
       selectedChar,
       characterId,
-      chats: new Map<string, ChatSnapshot>(
-        chats.map((chat): [string, ChatSnapshot] => [chat.id, scalarChatMetadata(chat as unknown as ChatSnapshot)]),
-      ),
+      chats: new Map<string, ChatSnapshot>(chats.map((chat): [string, ChatSnapshot] => [chat.id, chat.metadata])),
       folders: new Map<string, ChatFolderSnapshot>(
-        folders.map((folder): [string, ChatFolderSnapshot] => [
-          folder.id,
-          scalarChatFolderMetadata(folder as unknown as ChatFolder),
-        ]),
+        folders.map((folder): [string, ChatFolderSnapshot] => [folder.id, folder.metadata]),
       ),
     }
   }
@@ -561,16 +599,16 @@ function hasStringId<T extends { id?: unknown }>(row: T): row is T & { id: strin
 
 function reconcileChatMetadataMap(
   previous: Map<string, ChatSnapshot>,
-  chats: Array<Chat & { id: string }>,
+  chats: ChatMetadataBaselineRow[],
 ): Map<string, ChatSnapshot> {
   let next: Map<string, ChatSnapshot> | null = null
   const liveIds = new Set<string>()
   for (const chat of chats) {
     liveIds.add(chat.id)
     const previousSnapshot = previous.get(chat.id)
-    if (previousSnapshot && chatMetadataMatches(previousSnapshot, chat)) continue
+    if (previousSnapshot && chatMetadataMatches(previousSnapshot, chat.metadata)) continue
     next ??= new Map(previous)
-    next.set(chat.id, scalarChatMetadata(chat as unknown as ChatSnapshot))
+    next.set(chat.id, chat.metadata)
   }
   if (liveIds.size !== previous.size) {
     next ??= new Map(previous)
@@ -583,16 +621,16 @@ function reconcileChatMetadataMap(
 
 function reconcileFolderMetadataMap(
   previous: Map<string, ChatFolderSnapshot>,
-  folders: Array<ChatFolder & { id: string }>,
+  folders: ChatFolderMetadataBaselineRow[],
 ): Map<string, ChatFolderSnapshot> {
   let next: Map<string, ChatFolderSnapshot> | null = null
   const liveIds = new Set<string>()
   for (const folder of folders) {
     liveIds.add(folder.id)
     const previousSnapshot = previous.get(folder.id)
-    if (previousSnapshot && folderMetadataMatches(previousSnapshot, folder)) continue
+    if (previousSnapshot && folderMetadataMatches(previousSnapshot, folder.metadata)) continue
     next ??= new Map(previous)
-    next.set(folder.id, scalarChatFolderMetadata(folder as unknown as ChatFolder))
+    next.set(folder.id, folder.metadata)
   }
   if (liveIds.size !== previous.size) {
     next ??= new Map(previous)
@@ -603,10 +641,9 @@ function reconcileFolderMetadataMap(
   return next ?? previous
 }
 
-function chatMetadataMatches(previous: ChatSnapshot, chat: Chat): boolean {
-  const row = chat as unknown as Record<string, unknown>
+function chatMetadataMatches(previous: ChatSnapshot, metadata: ChatSnapshot): boolean {
   for (const key of CHAT_PATCH_ALLOWED_KEYS) {
-    const currentValue = row[key]
+    const currentValue = metadata[key]
     if (currentValue === undefined) {
       if (key in previous) return false
       continue
@@ -616,7 +653,7 @@ function chatMetadataMatches(previous: ChatSnapshot, chat: Chat): boolean {
   return true
 }
 
-function folderMetadataMatches(previous: ChatFolderSnapshot, folder: ChatFolder): boolean {
+function folderMetadataMatches(previous: ChatFolderSnapshot, folder: ChatFolderSnapshot): boolean {
   return (
     snapshotJson(previous.name) === snapshotJson(folder.name) &&
     snapshotJson(previous.color) === snapshotJson(folder.color) &&
@@ -655,7 +692,18 @@ export function rollbackServerBackedChatMetadata(snapshot: ChatStateSnapshot): v
 export function rollbackServerBackedChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
   suppressRollbackDispatch = true
   try {
-    restoreChatRowMetadata(snapshot)
+    if (charactersResourceState.status === 'ready') {
+      if (snapshot.characterId) {
+        restoreChatMetadataOwnerSnapshot({
+          characterId: snapshot.characterId,
+          chatId: snapshot.chatId,
+          metadata: snapshot.metadata as ChatMetadataOwnerFields,
+          attempted: snapshot.attempted as ChatMetadataOwnerFields | undefined,
+        })
+      }
+    } else {
+      restoreChatRowMetadata(snapshot)
+    }
     resetActiveChatMetadataBaselines?.()
   } finally {
     queueMicrotask(() => {
@@ -667,7 +715,18 @@ export function rollbackServerBackedChatRowMetadata(snapshot: ChatRowMetadataSna
 export function rollbackServerBackedChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
   suppressRollbackDispatch = true
   try {
-    restoreChatFolderRowMetadata(snapshot)
+    if (charactersResourceState.status === 'ready') {
+      if (snapshot.characterId) {
+        restoreChatFolderMetadataOwnerSnapshot({
+          characterId: snapshot.characterId,
+          folderId: snapshot.folderId,
+          metadata: snapshot.metadata as ChatFolderMetadataOwnerFields,
+          attempted: snapshot.attempted as ChatFolderMetadataOwnerFields | undefined,
+        })
+      }
+    } else {
+      restoreChatFolderRowMetadata(snapshot)
+    }
     resetActiveChatMetadataBaselines?.()
   } finally {
     queueMicrotask(() => {
