@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -24,7 +25,7 @@ beforeEach(() => {
     aiModel: 'test-model',
     subModel: 'test-model',
     lastLoadedLoadoutName: '',
-    customSidebarItems: [],
+    customSidebarItems: [{ id: 'model-picker', type: 'model', subType: '', label: 'Model' }],
   } as any)
 })
 
@@ -38,6 +39,17 @@ afterEach(() => {
 })
 
 describe('CustomSidebar', () => {
+  it('routes the model control to the canonical picker instead of the flat model field', async () => {
+    component = mount(CustomSidebar, { target })
+    await tick()
+    const button = target.querySelector('button')
+    expect(button?.textContent).toContain('Model presets')
+
+    const source = fs.readFileSync('src/lib/SideBars/CustomSidebar.svelte', 'utf8')
+    expect(source).toContain("openPresetListModal('global', 'model')")
+    expect(source).not.toContain("createServerBackedSettingDraft<string>('aiModel'")
+  })
+
   it('skips malformed setting rows instead of passing undefined into SettingRenderer', async () => {
     setDatabaseLite({
       aiModel: 'test-model',

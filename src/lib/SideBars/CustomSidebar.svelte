@@ -1,14 +1,11 @@
 <script lang="ts">
-  import { loadoutModalStore } from 'src/ts/stores.svelte'
+  import { loadoutModalStore, openPresetListModal } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { language } from 'src/lang'
   import { getFullSettingsData } from 'src/ts/setting/utils'
-  import ModelList from '../UI/ModelList.svelte'
   import SettingRenderer from '../Setting/SettingRenderer.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { getDatabase, type CustomSideBarItem } from 'src/ts/storage/database.svelte'
 
-  const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
   const settingsById = $derived.by(() => new Map(getFullSettingsData().map((setting) => [setting.id, setting])))
   const sidebarItems = $derived.by(() => {
     const items = getDatabase().customSidebarItems
@@ -28,7 +25,7 @@
 <div class="rounded-sm flex flex-col w-full gap-2">
   {#each sidebarItems as item}
     {#if item.type === 'model'}
-      <ModelList bind:value={aiModelDraft.value} noMargin />
+      <Button onclick={() => openPresetListModal('global', 'model')}>{language.modelPresets}</Button>
     {:else if item.type === 'loadout'}
       <Button
         onclick={() => {
