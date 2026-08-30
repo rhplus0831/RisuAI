@@ -2223,23 +2223,32 @@ describe('beginAssembly context + template normalization', () => {
   })
 
   it('injects effective profile/request model metadata into CBS', () => {
+    const profile = {
+      id: 'prompt-metadata-profile',
+      name: 'Prompt Metadata',
+      providerId: 'debug-echo',
+      modelId: 'debug-echo',
+      providerOptions: {
+        baseUrl: 'debug://prompt-metadata',
+        requestModel: 'profile-request-model',
+      },
+    }
+    const roleBindings = {
+      chatMain: { mode: 'profile' as const, profileId: 'prompt-metadata-profile' },
+    }
     const db = makeDatabase({
       aiModel: 'echo_model',
-      modelProfiles: [
+      modelProfiles: [profile],
+      modelRoleProfiles: roleBindings,
+      modelPresets: [
         {
-          id: 'prompt-metadata-profile',
-          name: 'Prompt Metadata',
-          providerId: 'debug-echo',
-          modelId: 'debug-echo',
-          providerOptions: {
-            baseUrl: 'debug://prompt-metadata',
-            requestModel: 'profile-request-model',
-          },
+          id: 'model-preset-default',
+          name: 'Default Model',
+          modelProfiles: [profile],
+          modelProfileOrder: ['prompt-metadata-profile'],
+          modelRoleProfiles: roleBindings,
         },
       ],
-      modelRoleProfiles: {
-        chatMain: { mode: 'profile', profileId: 'prompt-metadata-profile' },
-      },
     } as unknown as Partial<Database>)
     const state = beginAssembly(baseInput(), depsFor(db))
 
