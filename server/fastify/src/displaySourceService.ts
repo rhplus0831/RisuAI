@@ -1,7 +1,13 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Chat, Database, Message, character, customscript } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyCustomScript as customscript,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from './prompt/serverTypes.js'
 import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
 import { resolvePromptPresetRegexField } from '../../../src/ts/presetSplit.js'
 import {
@@ -73,15 +79,17 @@ function installScriptstate(chat: Chat, value: Chat['scriptstate']): void {
 function activePromptPresetRegex(database: Database, chat: Chat): customscript[] {
   const promptPresetId = chat.generationSettings?.promptPresetId?.trim()
   if (!promptPresetId) return Array.isArray(database.presetRegex) ? database.presetRegex : []
-  const preset = database.promptPresets?.find((candidate) => candidate?.id === promptPresetId)
+  const presets = database.promptPresets as Array<{ id?: string }> | undefined
+  const preset = presets?.find((candidate) => candidate?.id === promptPresetId)
   const resolved = resolvePromptPresetRegexField(preset)
   return resolved.present && Array.isArray(resolved.value) ? (resolved.value as customscript[]) : []
 }
 
 function displayScope(database: Database, characterId: string, chatId: string): DisplayScope | null {
-  const selectedCharID = database.characters.findIndex((candidate) => candidate?.chaId === characterId)
+  const characters = database.characters as character[]
+  const selectedCharID = characters.findIndex((candidate) => candidate?.chaId === characterId)
   if (selectedCharID < 0) return null
-  const character = database.characters[selectedCharID]
+  const character = characters[selectedCharID]
   const chatPage = character.chats?.findIndex((candidate) => candidate?.id === chatId) ?? -1
   if (chatPage < 0) return null
   const chat = character.chats[chatPage]

@@ -7,7 +7,13 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isIP } from 'node:net'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from './serverTypes.js'
 import type { PromptMessage } from './promptMessage.js'
 import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 import type { ModelRole } from '@risuai/shared-core/model-roles'
@@ -1112,7 +1118,8 @@ function resolveLuaLlmProfile(state: RuntimeState, role: ModelRole): ResolvedMod
   const source = state.source
   const overrides =
     source?.ownerType === 'module'
-      ? state.ctx.database.modules?.find((module) => module.id === source.ownerId)?.scriptModelOverrides
+      ? state.ctx.database.modules?.find((module: Record<string, any>) => module.id === source.ownerId)
+          ?.scriptModelOverrides
       : asCharacter(state.ctx)?.scriptModelOverrides
   const profileId =
     role === 'scriptMain' || role === 'scriptAux' ? scriptModelOverrideProfileId(overrides, role) : undefined
@@ -1437,8 +1444,11 @@ function buildLuaImageGenerationRequest(
       const config = database.wavespeedImage
       const loras = Array.isArray(config.loras)
         ? config.loras
-            .filter((lora) => lora?.path?.trim())
-            .map((lora) => ({ path: lora.path, scale: typeof lora.scale === 'number' ? lora.scale : 1 }))
+            .filter((lora: { path?: string; scale?: number }) => lora?.path?.trim())
+            .map((lora: { path?: string; scale?: number }) => ({
+              path: lora.path,
+              scale: typeof lora.scale === 'number' ? lora.scale : 1,
+            }))
         : undefined
       return {
         provider: 'wavespeed',
@@ -1624,7 +1634,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     const safeCount = Math.max(0, Math.floor(count || 0))
     const start = Math.max(0, chats.length - safeCount)
     return JSON.stringify(
-      chats.slice(start).map((message) => ({
+      chats.slice(start).map((message: Message) => ({
         role: message.role,
         data: message.data,
         time: message.time ?? 0,
@@ -1800,7 +1810,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('getChatLength', (_id: string) => state.ctx.chat.message.length)
   declare('getFullChatMain', (_id: string) =>
-    JSON.stringify(state.ctx.chat.message.map((v) => ({ role: v.role, data: v.data, time: v.time ?? 0 }))),
+    JSON.stringify(state.ctx.chat.message.map((v: Message) => ({ role: v.role, data: v.data, time: v.time ?? 0 }))),
   )
   declare('setFullChatMain', (id: string, value: string) => {
     if (!canWrite(id)) return
@@ -1912,9 +1922,9 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       if (!char) return
       const { alwaysActive = false, insertOrder = 100, key = '', regex = false, secondKey = '' } = options ?? {}
       const chat = state.ctx.chat
-      const previous = (chat.localLore ?? []).find((book) => book.comment === name)
+      const previous = (chat.localLore ?? []).find((book: loreBook) => book.comment === name)
       const entryId = typeof previous?.id === 'string' && previous.id.trim().length > 0 ? previous.id : randomUUID()
-      chat.localLore = (chat.localLore ?? []).filter((book) => book.comment !== name)
+      chat.localLore = (chat.localLore ?? []).filter((book: loreBook) => book.comment !== name)
       chat.localLore.push({
         id: entryId,
         alwaysActive,

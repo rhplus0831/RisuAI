@@ -1,4 +1,4 @@
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from './serverTypes.js'
 import type { DatabaseSync } from 'node:sqlite'
 import type { PromptMessage } from './promptMessage.js'
 import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '@risuai/shared-core/model-types'
@@ -1621,7 +1621,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
       banEosToken: ooba?.ban_eos_token,
       skipSpecialTokens: ooba?.skip_special_tokens,
       stoppingStrings:
-        db.localStopStrings?.map((value) => value.replace(/\\n/gu, '\n')) ??
+        db.localStopStrings?.map((value: string) => value.replace(/\\n/gu, '\n')) ??
         buildOobaLegacyStopStrings(ooba?.formating?.userPrefix ?? '', db.username ?? 'User'),
       additionalParams: dispatchAdditionalParams,
       signal,

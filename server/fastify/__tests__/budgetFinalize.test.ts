@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { finalizeRequestBudget } from '../src/prompt/budgetFinalize.js'
 import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'

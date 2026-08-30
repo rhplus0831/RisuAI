@@ -3,7 +3,12 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { AgentPresetRecord, AgentPresetStepRecord } from '@risuai/shared-core/agent-preset-records'
 import { planAgentPreset } from '../../../src/ts/agentPresetResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
-import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
 import { createRequestHistoryTable, getRequestHistoryRecord, listRequestHistory } from '../src/requestHistory.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import {

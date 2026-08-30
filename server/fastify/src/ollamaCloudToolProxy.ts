@@ -3,7 +3,7 @@ import { finished } from 'node:stream/promises'
 import { StringDecoder } from 'node:string_decoder'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import type { Database } from '../../../src/ts/storage/database.svelte.js'
+import type { FastifyDatabase as Database } from './prompt/serverTypes.js'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { LLMFormat } from '@risuai/shared-core/model-types'
 import {
@@ -267,7 +267,8 @@ function resolveTarget(database: Database, query: OllamaCloudToolQuery): Resolve
   const profile = selectedProfile(database, query)
   assertModelProfileGenerationReady(profile)
   const durableProviderOptions = query.profileId
-    ? database.modelProfiles?.find((candidate) => candidate.id === query.profileId)?.providerOptions
+    ? database.modelProfiles?.find((candidate: Record<string, any>) => candidate.id === query.profileId)
+        ?.providerOptions
     : undefined
   const ollama = profile.providerOptions.ollama
   const cloud = ollama?.cloud ?? profile.modelId === 'ollama-cloud'

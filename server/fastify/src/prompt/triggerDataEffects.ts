@@ -1,4 +1,4 @@
-import type { Chat, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyMessage as Message } from './serverTypes.js'
 import type { PromptMessage } from './promptMessage.js'
 import type { ServerTriggerEffect as triggerEffect } from './triggerDescriptors.js'
 import { calculateString } from '@risuai/shared-core/calculation'
@@ -171,7 +171,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       const last = chat.message
         .slice()
         .reverse()
-        .find((v) => v.role === 'user')
+        .find((v: Message) => v.role === 'user')
       engine.setVar(expand(effect.outputVar), last?.data ?? 'null')
       return true
     }
@@ -179,7 +179,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       const last = chat.message
         .slice()
         .reverse()
-        .find((v) => v.role === 'char')
+        .find((v: Message) => v.role === 'char')
       engine.setVar(expand(effect.outputVar), last?.data ?? 'null')
       return true
     }
@@ -618,7 +618,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           ? getRecentTranscriptStrictWords(deps.triggerCache, chat, depth).has(value)
           : chat.message
               .slice(0 - depth)
-              .map((v) => v.data)
+              .map((v: Message) => v.data)
               .join(' ')
               .split(' ')
               .includes(value)
@@ -627,7 +627,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           ? getRecentTranscriptLower(deps.triggerCache, chat, depth).includes(value.toLowerCase())
           : chat.message
               .slice(0 - depth)
-              .map((v) => v.data)
+              .map((v: Message) => v.data)
               .join(' ')
               .toLowerCase()
               .includes(value.toLowerCase())
@@ -636,7 +636,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           ? getRecentTranscriptRaw(deps.triggerCache, chat, depth)
           : chat.message
               .slice(0 - depth)
-              .map((v) => v.data)
+              .map((v: Message) => v.data)
               .join(' ')
         const regex = deps.triggerCache
           ? getCachedTriggerRegex(deps.triggerCache, value, '', 'trigger v2QuickSearchChat pattern')
@@ -860,7 +860,7 @@ export async function applyV2DataEffectAsync(
       ? getRecentTranscriptRaw(deps.triggerCache, chat, depth)
       : chat.message
           .slice(0 - depth)
-          .map((v) => v.data)
+          .map((v: Message) => v.data)
           .join(' ')
     const regex = compileTriggerRegexWithCompatibility(deps, value, '', 'trigger v2QuickSearchChat pattern')
     const pass = options?.enabled

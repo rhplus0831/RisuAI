@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { AgentPresetStepRecord } from '@risuai/shared-core/agent-preset-records'
 import { openDatabase } from '../src/db.js'
@@ -172,7 +178,7 @@ function makeDatabase(overrides: Partial<Database> = {}): Database {
     ] as unknown as Database['modelPresets']
   }
   if (!overrides.promptPresets) {
-    database.promptPresets = (database.botPresets ?? []).map((preset) =>
+    database.promptPresets = (database.botPresets ?? []).map((preset: Record<string, unknown>) =>
       structuredClone(preset),
     ) as unknown as Database['promptPresets']
   }

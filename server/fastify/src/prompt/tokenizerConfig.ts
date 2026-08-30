@@ -1,4 +1,4 @@
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from './serverTypes.js'
 import { LLMFlags, LLMTokenizer } from '@risuai/shared-core/model-types'
 import { resolveModelProfile, resolveServerSafeTokenizerFamily } from '../../../../src/ts/model/modelProfileResolver.js'
 import { encodingForModel, ensureTokenizerLoaded, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'

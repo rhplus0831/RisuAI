@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { Chat, Message, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyMessage as Message } from './serverTypes.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { processScriptAsync, type ScriptInjectMutation, type ScriptMutationHooks } from './scripts.js'
 import { getDepthPrompts, resolvePosition, type LoreEntryActive, type LorebookActivationReport } from './lorebook.js'

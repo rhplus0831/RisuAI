@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+} from '../src/prompt/serverTypes.js'
 import { buildPlainPromptSections } from '../src/prompt/plainSections.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'

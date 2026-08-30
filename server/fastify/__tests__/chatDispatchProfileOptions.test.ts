@@ -10,7 +10,7 @@ import {
 } from '@risuai/shared-core/model-types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { MASKED_PROVIDER_SECRET } from '@risuai/shared-core/provider-secret-mask'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../src/prompt/chatDispatch.js'

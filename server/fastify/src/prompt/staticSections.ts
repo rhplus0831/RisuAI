@@ -1,4 +1,4 @@
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { PromptMessage } from './promptMessage.js'
 import { resolveEffectivePromptTemplate } from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
@@ -108,7 +108,7 @@ export function buildInlayViewInstruction(currentChar: character): PromptMessage
         role: 'system',
         content: (currentChar.newGenData?.emotionInstructions ?? '').replaceAll(
           '{{slot}}',
-          currentChar.emotionImages.map((v) => v[0]).join(', '),
+          currentChar.emotionImages.map((v: [string, string]) => v[0]).join(', '),
         ),
       },
     ]

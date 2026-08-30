@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,

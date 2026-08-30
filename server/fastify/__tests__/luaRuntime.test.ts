@@ -3,7 +3,12 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, character, loreBook } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+} from '../src/prompt/serverTypes.js'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'

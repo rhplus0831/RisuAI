@@ -1,5 +1,10 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
 import { applyDepthPrompts, buildHistoryWindow, exampleMessage, type AssetLookup } from '../src/prompt/history.js'
 import type { LoreEntryActive, LorebookActivationReport } from '../src/prompt/lorebook.js'
 import type { PromptMessage, PromptMultimodal } from '../src/prompt/promptMessage.js'

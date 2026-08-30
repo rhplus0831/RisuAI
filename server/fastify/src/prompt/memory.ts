@@ -1,4 +1,4 @@
-import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyDatabase as Database, FastifyMessage as Message } from './serverTypes.js'
 import type { PromptItem } from './promptTemplate.js'
 import type { UnformatedPromptSlots } from './templates.js'
 import { tokenizeChat } from './tokens.js'
@@ -58,8 +58,10 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   const currentChat = input.currentChat
   const stableMessageIds = new Set(
     (currentChat.message ?? [])
-      .map((message) => message.chatId)
-      .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.length > 0),
+      .map((message: Message) => message.chatId)
+      .filter(
+        (messageId: string | undefined): messageId is string => typeof messageId === 'string' && messageId.length > 0,
+      ),
   )
   let trimmedStableMessage = false
 

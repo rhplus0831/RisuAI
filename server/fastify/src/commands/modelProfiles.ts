@@ -6,7 +6,7 @@ import {
   type FirstClassModelProfileProviderId,
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
-import type { Database } from '../../../../src/ts/storage/database.svelte.js'
+import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
 import {
   MODEL_ROLES,
   modelRoleProfileInheritSource,

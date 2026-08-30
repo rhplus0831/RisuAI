@@ -1,4 +1,4 @@
-import type { Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { LLMModel } from '@risuai/shared-core/model-types'
 import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'

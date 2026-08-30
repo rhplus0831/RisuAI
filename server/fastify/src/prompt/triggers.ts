@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import type { ServerModule as RisuModule } from './moduleDescriptors.js'

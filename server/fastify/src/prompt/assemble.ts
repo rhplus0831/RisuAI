@@ -3,13 +3,13 @@ import type { DatabaseSync } from 'node:sqlite'
 import { performance } from 'node:perf_hooks'
 import { isDeepStrictEqual } from 'node:util'
 import type {
-  Chat,
-  Database,
-  Message,
-  MessagePresetInfo,
-  character,
-  loreBook,
-} from '../../../../src/ts/storage/database.svelte'
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+  FastifyMessagePresetInfo as MessagePresetInfo,
+} from './serverTypes.js'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from './promptTemplate.js'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
@@ -708,11 +708,12 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     throw new EntityNotFoundError('database not found')
   }
 
-  const selectedCharID = database.characters.findIndex((c) => c.chaId === input.characterId)
+  const characters = database.characters as character[]
+  const selectedCharID = characters.findIndex((c) => c.chaId === input.characterId)
   if (selectedCharID === -1) {
     throw new EntityNotFoundError(`character not found: ${input.characterId}`)
   }
-  const currentChar = database.characters[selectedCharID]
+  const currentChar = characters[selectedCharID]
 
   const chatPage = currentChar.chats.findIndex((ch) => ch.id === input.chatId)
   if (chatPage === -1) {

@@ -1,4 +1,4 @@
-import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyDatabase as Database } from './serverTypes.js'
 import { readChatVariable } from './chatVarDefaults.js'
 
 /**

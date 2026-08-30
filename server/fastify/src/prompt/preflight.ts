@@ -1,4 +1,4 @@
-import type { character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyCharacter as character } from './serverTypes.js'
 import type { PromptItem } from './promptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { createPositionParser, type LorebookActivationReport } from './lorebook.js'

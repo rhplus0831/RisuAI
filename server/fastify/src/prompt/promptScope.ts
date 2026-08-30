@@ -1,4 +1,4 @@
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from './serverTypes.js'
 import type { ChatVarBackend } from './chatVarBackend.js'
 import type { LLMModel } from '@risuai/shared-core/model-types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver'

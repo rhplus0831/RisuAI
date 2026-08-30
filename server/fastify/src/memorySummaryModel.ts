@@ -1,6 +1,6 @@
 import type { ModelProfileProviderOptions } from '../../../src/ts/model/modelProfileResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from './prompt/serverTypes.js'
 import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
 import { type OpenAICompatibleOptions, type OpenAICompatibleProvider } from './generation/openaiCompatible.js'
 import { getProfileAdditionalParameters } from './generation/additionalParams.js'

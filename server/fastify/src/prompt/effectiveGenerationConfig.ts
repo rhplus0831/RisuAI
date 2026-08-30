@@ -1,4 +1,9 @@
-import type { Chat, Database, MessagePresetInfo, character } from '../../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessagePresetInfo as MessagePresetInfo,
+} from './serverTypes.js'
 import {
   createChatGenerationSettingsIncompleteError,
   resolveChatGenerationSettingsReadiness,

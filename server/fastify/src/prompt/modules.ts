@@ -1,4 +1,4 @@
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 import type {
   ServerModule as RisuModule,
@@ -72,8 +72,8 @@ export function getActiveModules(
     modules: database.modules ?? [],
     identifiers: activationIdentifiers,
   }).map((state) => state.module)
-  activeModulesMemo.set(database, { key, modulesRef: database.modules, result })
-  return result
+  activeModulesMemo.set(database, { key, modulesRef: database.modules, result: result as RisuModule[] })
+  return result as RisuModule[]
 }
 
 export function getModuleRegexScripts(modules: RisuModule[]): customscript[] {

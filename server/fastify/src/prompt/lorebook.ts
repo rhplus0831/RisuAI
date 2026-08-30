@@ -1,6 +1,12 @@
 import { CCardLib } from '@risuai/ccardlib'
 import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
-import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+  FastifyMessage as Message,
+} from './serverTypes.js'
 import type { PromptMessage } from './promptMessage.js'
 import { pickHashRand } from '@risuai/shared-core/lore-hash'
 import { getActiveModules } from './modules.js'
@@ -147,7 +153,7 @@ function collectEntries(input: ActivateLorebookInput): loreBook[] {
 
 function findCharByChaId(database: Database, chaId: string | undefined): character | undefined {
   if (!chaId) return undefined
-  return database.characters?.find((c) => c?.chaId === chaId)
+  return database.characters?.find((c: character) => c?.chaId === chaId)
 }
 
 function readChatVar(input: ActivateLorebookInput, key: string): string {

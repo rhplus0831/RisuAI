@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { Chat, Database, character, customscript, loreBook } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyCustomScript as customscript,
+  FastifyDatabase as Database,
+  FastifyLoreBook as loreBook,
+} from '../src/prompt/serverTypes.js'
 import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import { getActiveModules, getModuleLorebooks, getModuleRegexScripts } from '../src/prompt/modules.js'
 

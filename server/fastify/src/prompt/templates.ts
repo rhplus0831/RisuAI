@@ -1,4 +1,4 @@
-import type { Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { PromptItem } from './promptTemplate.js'
 import { applyDescriptionPromptRole, applyPromptBlockRole } from '@risuai/shared-core/prompt-block-role'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
@@ -89,7 +89,7 @@ export function normalizeTemplate(
   const usingPromptTemplate = !!promptTemplate
 
   if (promptTemplate) {
-    const hasPostEverything = promptTemplate.some((card) => card.type === 'postEverything')
+    const hasPostEverything = promptTemplate.some((card: PromptItem) => card.type === 'postEverything')
     if (!hasPostEverything) {
       promptTemplate.push({ type: 'postEverything' })
     }

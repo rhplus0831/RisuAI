@@ -17,7 +17,12 @@ import {
 import type { PromptMessage } from './promptMessage.js'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
-import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from './serverTypes.js'
 import type { DatabaseSync } from 'node:sqlite'
 import { expandAgentPresetOutputCbs } from '@risuai/shared-core/agent-preset-output-references'
 import type { CompletionStreamFrame } from '../generation/frames.js'
@@ -507,12 +512,13 @@ function isPreparedInputScopeName(value: string): value is AgentPresetStepInputS
 }
 
 function agentPromptLocation(input: AgentPresetPreparedInputContext): { selectedCharID?: number; chatPage?: number } {
-  const selectedCharID = input.database.characters.findIndex(
+  const characters = input.database.characters as character[]
+  const selectedCharID = characters.findIndex(
     (candidate) => candidate === input.currentChar || candidate.chaId === input.currentChar.chaId,
   )
   if (selectedCharID < 0) return {}
 
-  const character = input.database.characters[selectedCharID]
+  const character = characters[selectedCharID]
   const chatPage = character.chats.findIndex(
     (candidate) =>
       candidate === input.currentChat ||

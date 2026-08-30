@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
 import type { PromptMessage } from '../prompt/promptMessage.js'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import {

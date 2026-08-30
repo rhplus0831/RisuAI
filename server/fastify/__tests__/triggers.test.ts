@@ -1,5 +1,10 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from '../src/prompt/serverTypes.js'
 import { serverUnsupportedTriggerEffectTypes } from '../src/prompt/triggerCompatibility.js'
 import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import type {
@@ -376,8 +381,8 @@ describe('trigger clone narrowing', () => {
 
     expect(result?.chat).not.toBe(chat)
     expect(result?.chat.message).not.toBe(chat.message)
-    expect(result?.chat.message.map((message) => message.data)).toEqual(['edited', 'added'])
-    expect(chat.message.map((message) => message.data)).toEqual(['original'])
+    expect(result?.chat.message.map((message: Message) => message.data)).toEqual(['edited', 'added'])
+    expect(chat.message.map((message: Message) => message.data)).toEqual(['original'])
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.output).toBe(1)
   })
 
@@ -453,7 +458,7 @@ describe('trigger clone narrowing', () => {
     })
 
     expect(result?.chat).toBe(chat)
-    expect(chat.message.map((message) => message.data)).toEqual(['shown'])
+    expect(chat.message.map((message: Message) => message.data)).toEqual(['shown'])
     expect(getTriggerCloneInstrumentation().fullTranscriptClones.display).toBe(0)
     expect(getTriggerCloneInstrumentation().messageSharingEnvelopeClones.display).toBe(0)
   })

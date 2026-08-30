@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+} from '../src/prompt/serverTypes.js'
 import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../../test/fixtures/phase9CompatibilityCorpus.js'
 import {
   PHASE9_BASELINE_DRIFT_FIXTURES,

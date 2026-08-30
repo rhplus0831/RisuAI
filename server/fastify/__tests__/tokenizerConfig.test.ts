@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { LLMTokenizer } from '@risuai/shared-core/model-types'
 import {
   serverTokenizerUnsupportedReason,

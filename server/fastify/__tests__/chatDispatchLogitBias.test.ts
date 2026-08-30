@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
 import {
   dispatchChatProvider,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LLMFormat } from '@risuai/shared-core/model-types'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import {
   resolveModelProfile,
   resolveModelProfileWithLegacyCompatibility,

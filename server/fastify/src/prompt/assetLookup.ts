@@ -1,4 +1,4 @@
-import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { PromptMultimodal } from './promptMessage.js'
 import type { AssetLookup } from './history.js'
 import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'

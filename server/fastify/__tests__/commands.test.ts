@@ -25,7 +25,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } from '../src/repository.js'
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
-import type { Database } from '../../../src/ts/storage/database.svelte.js'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { LLMFlags, LLMFormat } from '@risuai/shared-core/model-types'
 import {
   serializeChatGenerationSettingsDigestInput,

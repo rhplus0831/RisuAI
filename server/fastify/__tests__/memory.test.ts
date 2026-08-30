@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Chat, Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import type { PromptItem } from '../src/prompt/promptTemplate.js'
 import { buildMemoryWindow } from '../src/prompt/memory.js'
 import { createEmptyUnformatedSlots } from '../src/prompt/assemble.js'

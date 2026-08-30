@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { Chat, Database, Message, character, customscript } from '../../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyCustomScript as customscript,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from './serverTypes.js'
 import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
 import type { ServerModule as RisuModule } from './moduleDescriptors.js'
 import {
@@ -163,7 +169,7 @@ function parseScripts(rawScripts: customscript[]): {
       let order = 0
       let malformedOrder = false
       const actions: string[] = []
-      cloned.flag = (cloned.flag ?? '').replace(META_RE, (_match, body: string) => {
+      cloned.flag = (cloned.flag ?? '').replace(META_RE, (_match: string, body: string) => {
         const tokens = body.split(',').map((t) => t.trim())
         for (const t of tokens) {
           if (t.startsWith('order ')) {

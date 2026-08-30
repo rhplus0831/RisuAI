@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
+import type { FastifyChat as Chat, FastifyDatabase as Database } from './prompt/serverTypes.js'
 import { buildHypaV3SummaryPrompt } from './memorySummaryPrompt.js'
 import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js'
 import {
@@ -293,7 +293,7 @@ function memoryRequestHistoryScope(
   chatId: string,
 ): { context: RequestHistoryContext; toggles?: Record<string, string> } {
   for (const character of database.characters ?? []) {
-    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    const chat = character.chats?.find((candidate: Chat) => candidate.id === chatId)
     if (!chat) continue
     return {
       context: {
@@ -423,14 +423,14 @@ function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Dat
   const modelPresetId = chat?.generationSettings?.modelPresetId?.trim()
   if (!modelPresetId) return database
 
-  const modelPreset = database.modelPresets?.find((preset) => preset?.id === modelPresetId)
+  const modelPreset = database.modelPresets?.find((preset: Record<string, any>) => preset?.id === modelPresetId)
   if (!modelPreset) {
     throw new Error(`model preset ${modelPresetId} bound to chat ${chatId} was not found`)
   }
 
   const promptPresetId = chat?.generationSettings?.promptPresetId?.trim()
   const promptPreset = promptPresetId
-    ? database.promptPresets?.find((preset) => preset?.id === promptPresetId)
+    ? database.promptPresets?.find((preset: Record<string, any>) => preset?.id === promptPresetId)
     : undefined
   if (promptPresetId && !promptPreset) {
     throw new Error(`prompt preset ${promptPresetId} bound to chat ${chatId} was not found`)
@@ -446,7 +446,7 @@ function resolveChatBoundMemoryDatabase(database: Database, chatId: string): Dat
 
 function findChatById(database: Database, chatId: string): ChatLike | undefined {
   for (const character of database.characters ?? []) {
-    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    const chat = character.chats?.find((candidate: Chat) => candidate.id === chatId)
     if (chat) return chat
   }
   return undefined

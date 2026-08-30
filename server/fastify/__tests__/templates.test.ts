@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { Database, character } from '../../../src/ts/storage/database.svelte'
+import type { FastifyCharacter as character, FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import type { PromptItem } from '../src/prompt/promptTemplate.js'
 import {
   buildFormatOrder,

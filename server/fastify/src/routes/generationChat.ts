@@ -3,7 +3,12 @@ import { isDeepStrictEqual } from 'node:util'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database, Message } from '../../../../src/ts/storage/database.svelte'
+import type {
+  FastifyChat as Chat,
+  FastifyCharacter as character,
+  FastifyDatabase as Database,
+  FastifyMessage as Message,
+} from '../prompt/serverTypes.js'
 import type { PromptMultimodal, PromptMessage } from '../prompt/promptMessage.js'
 import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
 import type { CompletionStreamFrame } from '../generation/frames.js'
@@ -1066,7 +1071,7 @@ function inspectChatGenerationSettings(
       return { status: 'defer', failure: { error: new EntityNotFoundError('database not found') } }
     }
 
-    const selectedCharID = database.characters.findIndex((c) => c.chaId === input.characterId)
+    const selectedCharID = database.characters.findIndex((c: character) => c.chaId === input.characterId)
     if (selectedCharID === -1) {
       return {
         status: 'defer',
@@ -1081,7 +1086,7 @@ function inspectChatGenerationSettings(
       }
     }
 
-    const chatPage = currentChar.chats.findIndex((ch) => ch.id === input.chatId)
+    const chatPage = currentChar.chats.findIndex((ch: Chat) => ch.id === input.chatId)
     if (chatPage === -1) {
       return {
         status: 'defer',
