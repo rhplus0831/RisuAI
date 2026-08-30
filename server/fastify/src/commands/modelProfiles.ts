@@ -5,7 +5,7 @@ import {
   resolveModelProfile,
   type FirstClassModelProfileProviderId,
 } from '../../../../src/ts/model/modelProfileResolver.js'
-import { resolveMemoryModelCapability } from '../../../../src/ts/model/memoryModelCapability.js'
+import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
 import type { Database } from '../../../../src/ts/storage/database.svelte.js'
 import {
   MODEL_ROLES,

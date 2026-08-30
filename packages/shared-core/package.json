@@ -24,6 +24,7 @@
     "./model-roles": "./src/modelRoles.ts",
     "./module-integration": "./src/moduleIntegration.ts",
     "./mcp-identifier": "./src/mcpIdentifier.ts",
+    "./memory-model-capability": "./src/memoryModelCapability.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
     "./prompt-settings": "./src/promptSettings.ts",

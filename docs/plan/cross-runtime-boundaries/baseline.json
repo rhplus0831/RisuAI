@@ -210,19 +210,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/commands/modelProfiles.ts",
-      "specifier": "../../../../src/ts/model/memoryModelCapability.js",
-      "target": "src/ts/model/memoryModelCapability.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "resolveMemoryModelCapability"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/modelProfiles.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
       "kind": "static",
@@ -628,19 +615,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memorySummaryModel.ts",
-      "specifier": "../../../src/ts/model/memoryModelCapability.js",
-      "target": "src/ts/model/memoryModelCapability.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "resolveMemoryModelCapability"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",

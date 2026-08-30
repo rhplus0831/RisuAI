@@ -81,6 +81,7 @@ describe('@risuai/shared-core import boundary', () => {
         'legacyOpenAIModelAliases.ts',
         'loreHash.ts',
         'mcpIdentifier.ts',
+        'memoryModelCapability.ts',
         'modelRoles.ts',
         'moduleIntegration.ts',
         'mutationCertificates.ts',
