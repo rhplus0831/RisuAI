@@ -8,6 +8,7 @@ import { clearCharacterShellHydrationState } from './server/characterShellHydrat
 import { resetChatHydration } from './server/chatMessageHydration.svelte'
 import { clearAppliedServerResourceRevision, clearCachedServerCommandRevision } from './server/commands'
 import { resetLorebookHydration } from './server/lorebookBridge.svelte'
+import { lorebookPageOwner } from './server/lorebookPageOwner.svelte'
 import { resetPromptTemplateHydration } from './server/promptTemplateHydration'
 import { clearResourceCache } from './server/resourceCache'
 import { resetServerResourceState } from './server/resourceState.svelte'
@@ -25,6 +26,7 @@ export async function discardObserverProjectionState(reason: ObserverProjectionD
   clearCharacterShellHydrationState()
   resetChatHydration()
   resetLorebookHydration()
+  lorebookPageOwner.reset()
   resetPromptTemplateHydration()
   await clearResourceCache()
 

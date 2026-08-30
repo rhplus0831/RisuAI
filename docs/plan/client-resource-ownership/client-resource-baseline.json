@@ -1322,7 +1322,7 @@
       "files": [
         {
           "file": "src/ts/process/lorebook.svelte.ts",
-          "count": 44
+          "count": 40
         }
       ]
     },
@@ -1334,7 +1334,7 @@
       "files": [
         {
           "file": "src/ts/server/lorebookBridge.svelte.ts",
-          "count": 80
+          "count": 73
         }
       ]
     },
@@ -1344,10 +1344,6 @@
       "symbol": "getDatabase",
       "policy": "lorebook:render",
       "files": [
-        {
-          "file": "src/lib/Setting/Pages/GlobalLoreBookSettings.svelte",
-          "count": 1
-        },
         {
           "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte",
           "count": 1
@@ -2798,7 +2794,7 @@
       "files": [
         {
           "file": "src/ts/server/lorebookBridge.svelte.ts",
-          "count": 4
+          "count": 3
         }
       ]
     },
@@ -3358,7 +3354,7 @@
       "files": [
         {
           "file": "src/ts/server/lorebookBridge.svelte.ts",
-          "count": 4
+          "count": 3
         }
       ]
     },
@@ -3903,6 +3899,18 @@
         {
           "file": "src/ts/server/lorebookBridge.svelte.ts",
           "count": 1
+        }
+      ]
+    },
+    {
+      "lane": "production",
+      "detector": "resource-facade-read",
+      "symbol": "getResourceDatabase",
+      "policy": "lorebook:render",
+      "files": [
+        {
+          "file": "src/lib/Setting/Pages/GlobalLoreBookSettings.svelte",
+          "count": 2
         }
       ]
     },
@@ -4866,19 +4874,19 @@
       "files": [
         {
           "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts",
-          "count": 2
+          "count": 3
         },
         {
           "file": "src/ts/process/__tests__/lorebook.resourceGuard.test.ts",
-          "count": 21
+          "count": 24
         },
         {
           "file": "src/ts/server/lorebookBridge.svelte.test.ts",
-          "count": 267
+          "count": 259
         },
         {
           "file": "src/ts/server/lorebookBridge.test.ts",
-          "count": 78
+          "count": 72
         }
       ]
     },
@@ -5398,7 +5406,7 @@
       "files": [
         {
           "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts",
-          "count": 19
+          "count": 20
         },
         {
           "file": "src/lib/SideBars/LoreBook/LoreBookSetting.svelte.test.ts",
@@ -7369,6 +7377,10 @@
           "count": 8
         },
         {
+          "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts",
+          "count": 2
+        },
+        {
           "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
           "count": 5
         },
@@ -7434,7 +7446,7 @@
         },
         {
           "file": "src/ts/process/__tests__/lorebook.resourceGuard.test.ts",
-          "count": 7
+          "count": 8
         },
         {
           "file": "src/ts/process/__tests__/sendChatErrors.test.ts",
@@ -7670,7 +7682,7 @@
         },
         {
           "file": "src/ts/process/__tests__/lorebook.resourceGuard.test.ts",
-          "count": 12
+          "count": 13
         },
         {
           "file": "src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts",

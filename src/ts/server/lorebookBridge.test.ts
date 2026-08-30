@@ -21,7 +21,6 @@ import {
   deleteGlobalLorebookById,
   deleteGlobalLorebookByIdWithOutcome,
   dispatchCreateGlobalLorebook,
-  dispatchSelectGlobalLorebook,
   dispatchUpdateGlobalLorebook,
   ensureGlobalLorebookListIds,
   getGlobalLorebookDeleteState,
@@ -34,8 +33,8 @@ import {
   restoreLorebookState,
   restoreScopedLorebookState,
   scopedLorebookStateSnapshot,
-  selectGlobalLorebook,
 } from './lorebookBridge.svelte'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, globalLorebookOwnerMutationKey } from './lorebookMutationKeys'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
 import {
@@ -81,6 +80,12 @@ beforeEach(() => {
   setDatabaseLite(seedCloneCostDb() as any)
   getDatabase().loreBook = [{ id: 'g1', name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
   getDatabase().loreBookPage = 0
+  lorebookPageOwner.reset()
+  lorebookPageOwner.hydrate({
+    revision: 0,
+    setting: 'loreBookPage',
+    state: { present: true, value: 0 },
+  })
 })
 
 afterEach(() => {
@@ -151,50 +156,6 @@ describe('exported scoped-lorebook pair', () => {
 
     expect(getDatabase().characters[0].globalLore).toEqual([{ key: 'orig', content: 'original' }])
     expect(getDatabase().characters[1].globalLore).toEqual([{ key: 'sibling', content: 'sibling' }])
-  })
-})
-
-describe('global-lorebook scoped dispatch', () => {
-  it('dispatchSelectGlobalLorebook restores only the lorebook pointer on failure', async () => {
-    getDatabase().loreBook = [
-      { id: 'g1', name: 'Global', data: [] },
-      { id: 'g2', name: 'Second', data: [] },
-    ] as any
-    getDatabase().loreBookPage = 0
-
-    const calls: CapturedFetch[] = []
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
-        const url = String(input)
-        calls.push({
-          url,
-          method: init.method ?? 'GET',
-          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
-        })
-        if (url === '/api/v1/bootstrap') return new Response(JSON.stringify({ revision: 10 }))
-        if (url === '/api/v1/commands/lorebooks/g2/select') {
-          return new Response(JSON.stringify({ error: 'nope' }), { status: 500 })
-        }
-        return new Response(JSON.stringify({ error: `unexpected ${url}` }), { status: 404 })
-      }) as unknown as typeof fetch,
-    )
-
-    const previous = currentGlobalLorebookStateSnapshot()
-    // the snapshot must not carry the whole characters / modules collections
-    assertSnapshotOmitsCollections(previous)
-
-    // optimistic local select + a concurrent, unrelated character edit a whole-array
-    // rollback would have wiped
-    getDatabase().loreBookPage = 1
-    getDatabase().characters[0].name = 'Concurrent edit'
-
-    dispatchSelectGlobalLorebook('g2', previous)
-    await waitForCallCount(calls, 2)
-
-    // only the lorebook pointer is restored; the sibling character edit survives
-    expect(getDatabase().loreBookPage).toBe(0)
-    expect(getDatabase().characters[0].name).toBe('Concurrent edit')
   })
 })
 
@@ -1171,7 +1132,7 @@ describe('lorebook durable generation ordering', () => {
       const beforeRename = currentLorebookStateSnapshot()
       created.name = 'Renamed before recovery'
       dispatchUpdateGlobalLorebook('book-new', { name: created.name }, beforeRename)
-      expect(selectGlobalLorebook(1)).toBe(true)
+      void lorebookPageOwner.select({ lorebookId: 'book-new', index: 1 })
       firstCreate.resolve(
         new Response(JSON.stringify({ error: 'temporarily unavailable' }), {
           status: 503,
@@ -1412,7 +1373,7 @@ describe('lorebook durable generation ordering', () => {
       )
 
       const selectIndex = (getDatabase().loreBook as any[]).findIndex((book) => book.id === 'book-select-c')
-      expect(selectGlobalLorebook(selectIndex)).toBe(true)
+      void lorebookPageOwner.select({ lorebookId: 'book-select-c', index: selectIndex })
       await waitForCallCount(calls, 2)
       expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
         'DELETE /api/v1/commands/lorebooks/book-delete-a',

@@ -1,5 +1,5 @@
 <script>
-  import { alertConfirm } from '../../ts/alert'
+  import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -12,10 +12,14 @@
     deleteGlobalLorebookWithOutcome,
     renameGlobalLorebook,
     renameGlobalLorebookById,
-    selectGlobalLorebook,
     subscribeGlobalLorebookDeleteStates,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
+  import {
+    lorebookPageIndexFromSnapshot,
+    lorebookPageOwner,
+    lorebookPageOwnerState,
+  } from 'src/ts/server/lorebookPageOwner.svelte'
   let editMode = $state(false)
   /** @type {Map<string, import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState>} */
   let globalLorebookDeleteStates = $state(new Map())
@@ -29,10 +33,50 @@
 
   /** @param {{id?: unknown}} lorebook */
   function lorebookRenderKey(lorebook) {
+    return selectableLorebookId(lorebook) ?? lorebook
+  }
+
+  function selectedLorebookPage() {
+    return lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
+  }
+
+  /** @param {{id?: unknown}} lorebook */
+  function selectableLorebookId(lorebook) {
     const lorebookId = stableLorebookId(lorebook.id)
-    if (!lorebookId) return lorebook
-    const matches = getDatabase().loreBook.filter((candidate) => candidate.id === lorebookId)
-    return matches.length === 1 ? lorebookId : lorebook
+    if (!lorebookId) return null
+    return getDatabase().loreBook.filter((candidate) => candidate.id === lorebookId).length === 1 ? lorebookId : null
+  }
+
+  /** @param {{id?: unknown}} lorebook @param {number} index */
+  async function selectLorebook(lorebook, index) {
+    const lorebookId = selectableLorebookId(lorebook)
+    if (!lorebookId) {
+      alertError(language.globalLorebookSelection.invalid)
+      return
+    }
+
+    const result = await lorebookPageOwner.select({ lorebookId, index })
+    if (result.status === 'failed') {
+      alertError(language.globalLorebookSelection.failed(result.error))
+      return
+    }
+    if (result.status !== 'queued') return
+
+    alertNormal(language.globalLorebookSelection.queued)
+    const settlement = await result.settlement
+    if (settlement === 'failed') {
+      alertError(language.globalLorebookSelection.failed(''))
+      return
+    }
+    const reload = await lorebookPageOwner.retry()
+    if (reload.status !== 'ok') {
+      alertError(language.globalLorebookSelection.reloadFailed)
+    }
+  }
+
+  function selectionStatus(lorebookId) {
+    const mutation = $lorebookPageOwnerState.mutation
+    return mutation.status !== 'idle' && mutation.lorebookId === lorebookId ? mutation.status : undefined
   }
 
   /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState | undefined} state */
@@ -94,12 +138,15 @@
       {@const lorebookId = stableLorebookId(lore.id)}
       {@const deleteState = lorebookId ? globalLorebookDeleteStates.get(lorebookId) : undefined}
       {@const deletePending = isDeletePending(deleteState)}
+      {@const pageSelectionStatus = lorebookId ? selectionStatus(lorebookId) : undefined}
+      {@const pageSelectionPending = pageSelectionStatus === 'pending' || pageSelectionStatus === 'queued'}
       <div
         class="flex flex-col items-stretch text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2"
-        class:bg-selected={ind === getDatabase().loreBookPage}
-        class:opacity-70={deletePending}
-        aria-busy={deletePending}
-        data-risu-global-lorebook-delete-status={deleteState?.status}>
+        class:bg-selected={ind === selectedLorebookPage()}
+        class:opacity-70={deletePending || pageSelectionPending}
+        aria-busy={deletePending || pageSelectionPending}
+        data-risu-global-lorebook-delete-status={deleteState?.status}
+        data-risu-global-lorebook-selection-status={pageSelectionStatus}>
         <div class="flex items-center gap-2">
           {#if editMode && !deletePending}
             <TextInput
@@ -118,8 +165,8 @@
           {:else}
             <button
               class="grow text-left disabled:cursor-not-allowed"
-              disabled={deletePending}
-              onclick={() => selectGlobalLorebook(ind)}>{lore.name}</button>
+              disabled={deletePending || pageSelectionPending}
+              onclick={() => selectLorebook(lore, ind)}>{lore.name}</button>
           {/if}
           <div class="grow flex justify-end">
             <button
@@ -152,6 +199,20 @@
             role={deleteState.status === 'failed' ? 'alert' : 'status'}
             aria-live={deleteState.status === 'failed' ? 'assertive' : 'polite'}>
             {deleteStatusText(deleteState)}
+          </p>
+        {/if}
+        {#if pageSelectionStatus}
+          <p
+            class="m-0 mt-1 text-xs"
+            class:text-red-400={pageSelectionStatus === 'failed'}
+            class:text-textcolor2={pageSelectionStatus !== 'failed'}
+            role={pageSelectionStatus === 'failed' ? 'alert' : 'status'}
+            aria-live={pageSelectionStatus === 'failed' ? 'assertive' : 'polite'}>
+            {pageSelectionStatus === 'pending'
+              ? language.globalLorebookSelection.selecting
+              : pageSelectionStatus === 'queued'
+                ? language.globalLorebookSelection.queued
+                : language.globalLorebookSelection.failed($lorebookPageOwnerState.mutation.error)}
           </p>
         {/if}
       </div>

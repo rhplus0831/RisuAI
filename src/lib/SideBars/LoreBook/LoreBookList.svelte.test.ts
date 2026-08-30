@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database, loreBook } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { lorebookPageOwner } from 'src/ts/server/lorebookPageOwner.svelte'
+import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
   type Deferred<T> = {
@@ -323,6 +325,7 @@ describe('LoreBookList', () => {
     target.remove()
     document.body.innerHTML = ''
     selectedCharID.set(-1)
+    lorebookPageOwner.reset()
     setDatabaseLite({} as Database)
     resetScopedLorebookMutationUiStateForTests()
   })
@@ -949,6 +952,39 @@ describe('LoreBookList', () => {
     expect(entryARow.textContent).toContain('Prompt')
   })
 
+  it('renders the owner-selected global collection when the compatibility pointer is stale', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'compatibility-book',
+          name: 'Compatibility Book',
+          data: [makeLoreBook({ id: 'compatibility-entry', comment: 'Compatibility Entry' })],
+        },
+        {
+          id: 'owner-book',
+          name: 'Owner Book',
+          data: [makeLoreBook({ id: 'owner-entry', comment: 'Owner Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    lorebookPageOwner.reset()
+    lorebookPageOwner.hydrate({
+      revision: 2,
+      setting: 'loreBookPage',
+      state: { present: true, value: 1 },
+    })
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBookPage = 0
+    })
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows().map((row) => row.dataset.risuLorebookId)).toEqual(['owner-entry'])
+  })
+
   it('dispatches global entry edits and deletion to the captured lorebook id', async () => {
     const initialEntries = [
       makeLoreBook({ id: 'global-entry-a', comment: 'Global Entry A' }),
@@ -962,6 +998,12 @@ describe('LoreBookList', () => {
       ],
       loreBookPage: 1,
     } as unknown as Database)
+    lorebookPageOwner.reset()
+    lorebookPageOwner.hydrate({
+      revision: 1,
+      setting: 'loreBookPage',
+      state: { present: true, value: 1 },
+    })
 
     resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
     await tick()
@@ -1005,6 +1047,7 @@ describe('LoreBookList', () => {
       ],
       loreBookPage: 0,
     } as unknown as Database)
+    lorebookPageOwner.projectStructuralSelection(0)
     await tick()
 
     confirm.resolve(true)

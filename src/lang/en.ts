@@ -2354,6 +2354,13 @@ export const languageEnglish = {
     queued: 'Deletion is queued on this device and will retry automatically.',
     failed: 'This lorebook could not be deleted. Try again.',
   },
+  globalLorebookSelection: {
+    selecting: 'Selecting this lorebook…',
+    queued: 'Selection is queued on this device and will retry automatically.',
+    failed: (detail: string) => `This lorebook could not be selected.${detail ? ` ${detail}` : ''}`,
+    reloadFailed: 'The selection was saved, but its authoritative reload failed. Try again.',
+    invalid: 'This legacy lorebook has no unique stable id and cannot be selected yet.',
+  },
   scopedLorebookMutation: {
     pending: 'Saving lorebook changes…',
     queued: 'This lorebook change is queued on this device and will retry automatically.',

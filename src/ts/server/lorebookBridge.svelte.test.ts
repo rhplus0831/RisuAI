@@ -174,7 +174,6 @@ import {
   dispatchReplaceCharacterLorebooks,
   dispatchReplaceGlobalLorebookEntries,
   dispatchReplaceModuleLorebooks,
-  dispatchSelectGlobalLorebook,
   dispatchUpdateGlobalLorebook,
   flushPendingLorebookEntryDraftEdit,
   flushPendingServerBackedLorebookPatches,
@@ -193,7 +192,6 @@ import {
   renameGlobalLorebook,
   renameGlobalLorebookById,
   scopedLorebookStateSnapshot,
-  selectGlobalLorebook,
   setActiveChatLorebookLocalActivation,
   setActiveChatLorebookLocalActivationWithOutcome,
   setChatLorebookLocalActivationWithOutcome,
@@ -285,10 +283,6 @@ function globalUpdateCommands(): Array<Record<string, unknown> & { a?: unknown; 
 
 function globalReorderCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'reorderGlobal')
-}
-
-function globalSelectCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
-  return recorded.commands.filter((c) => c.kind === 'selectGlobal')
 }
 
 async function flushServerCommandRecording(): Promise<void> {
@@ -870,25 +864,6 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
         },
       },
       {
-        label: 'select',
-        commandKind: 'selectGlobal',
-        run: () => {
-          setupGlobalLorebooks(
-            [
-              { id: 'g1', name: 'Initial', data: [] },
-              { id: 'g2', name: 'Second', data: [] },
-            ],
-            0,
-          )
-          const previous = currentGlobalLorebookStateSnapshot()
-          getDatabase().loreBookPage = 1
-          dispatchSelectGlobalLorebook('g2', previous)
-        },
-        expectRestored: () => {
-          expect(getDatabase().loreBookPage).toBe(0)
-        },
-      },
-      {
         label: 'update',
         commandKind: 'updateGlobal',
         run: () => {
@@ -1015,75 +990,6 @@ describe('global lorebook modal bridge helpers', () => {
     expect(getDatabase().loreBook[0].name).toBe('Sibling Edit')
     expect(getDatabase().loreBook[1].name).toBe('Later Append')
     expect(getDatabase().loreBookPage).toBe(1)
-  })
-
-  it('selects a global lorebook optimistically before the command response', async () => {
-    setupGlobalLorebooks(
-      [
-        { id: 'g1', name: 'Initial', data: [] },
-        { id: 'g2', name: 'Second', data: [] },
-      ],
-      0,
-    )
-
-    expect(selectGlobalLorebook(1)).toBe(true)
-
-    expect(getDatabase().loreBookPage).toBe(1)
-    expect(globalSelectCommands()).toHaveLength(0)
-
-    await flushServerCommandRecording()
-
-    const selects = globalSelectCommands()
-    expect(selects).toHaveLength(1)
-    expect(selects[0].a).toMatchObject({
-      lorebookId: 'g2',
-      acknowledgeOptimistic: true,
-      optimisticPageEpoch: expect.any(Number),
-    })
-    expect(getDatabase().loreBookPage).toBe(1)
-  })
-
-  it('rolls back an optimistic global lorebook selection to the previous page', async () => {
-    setupGlobalLorebooks(
-      [
-        { id: 'g1', name: 'Initial', data: [] },
-        { id: 'g2', name: 'Second', data: [] },
-      ],
-      0,
-    )
-
-    expect(selectGlobalLorebook(1)).toBe(true)
-    expect(getDatabase().loreBookPage).toBe(1)
-
-    await flushServerCommandRecording()
-
-    const selects = globalSelectCommands()
-    expect(selects).toHaveLength(1)
-
-    selects[0].rollback?.()
-    expect(getDatabase().loreBookPage).toBe(0)
-    expect(globalLorebookIds()).toEqual(['g1', 'g2'])
-  })
-
-  it('failed select does not revert a newer selected lorebook page', async () => {
-    setupGlobalLorebooks(
-      [
-        { id: 'g1', name: 'Initial', data: [] },
-        { id: 'g2', name: 'Second', data: [] },
-        { id: 'g3', name: 'Third', data: [] },
-      ],
-      0,
-    )
-
-    expect(selectGlobalLorebook(1)).toBe(true)
-    await flushServerCommandRecording()
-
-    getDatabase().loreBookPage = 2
-    const selects = globalSelectCommands()
-    expect(selects).toHaveLength(1)
-
-    selects[0].rollback?.()
-    expect(getDatabase().loreBookPage).toBe(2)
   })
 
   it('deletes a global lorebook, resets page, dispatches delete, and rolls back list/page', async () => {

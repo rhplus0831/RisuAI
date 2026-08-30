@@ -1,4 +1,6 @@
 import { fetchServerStandaloneSetting } from './resourceReads'
+import { readable } from 'svelte/store'
+import type { ServerStandaloneSettingPayload } from '@risuai/protocol/standalone-settings'
 import {
   persistLorebookPageSelection,
   type LorebookPageSelectionFinalSettlement,
@@ -48,8 +50,11 @@ export interface LorebookPageOwner {
   readonly resource: typeof RESOURCE
   readonly drafts: 'not-applicable'
   snapshot(): LorebookPageOwnerSnapshot
+  hydrate(payload: ServerStandaloneSettingPayload): boolean
   invalidate(minimumRevision?: number): void
+  projectStructuralSelection(index: number): boolean
   refresh(options?: { minimumRevision?: number; signal?: AbortSignal | null }): Promise<LorebookPageOwnerRefreshResult>
+  reset(): void
   retry(signal?: AbortSignal | null): Promise<LorebookPageOwnerRefreshResult>
   select(input: {
     lorebookId: string
@@ -98,6 +103,21 @@ export function createLorebookPageOwner(dependencies: Partial<LorebookPageOwnerD
     return { status: 'error', error: errorMessage }
   }
 
+  const applyAuthoritativePayload = (payload: ServerStandaloneSettingPayload): boolean => {
+    if (payload.setting !== RESOURCE || !Number.isInteger(payload.revision) || payload.revision < 0) return false
+    if (revision !== null && payload.revision <= revision) return false
+
+    status = 'ready'
+    revision = payload.revision
+    state = payload.state.present ? { present: true, value: structuredClone(payload.state.value) } : { present: false }
+    error = null
+    projectionEpoch += 1
+    stale = false
+    staleMinimumRevision = undefined
+    publish()
+    return true
+  }
+
   const refresh: LorebookPageOwner['refresh'] = async (options = {}) => {
     const attempt = ++requestAttempt
     const minimumRevision = Math.max(options.minimumRevision ?? -1, staleMinimumRevision ?? -1)
@@ -126,22 +146,13 @@ export function createLorebookPageOwner(dependencies: Partial<LorebookPageOwnerD
       return fail(`Lorebook page response revision ${result.revision} is older than ${minimumRevision}`)
     }
 
-    if (revision !== null && revision > result.revision) {
+    if (!applyAuthoritativePayload(result)) {
       status = 'ready'
       stale = false
       staleMinimumRevision = undefined
       publish()
-      return { status: 'ok', revision }
+      return { status: 'ok', revision: revision ?? result.revision }
     }
-
-    status = 'ready'
-    revision = result.revision
-    state = result.state.present ? { present: true, value: structuredClone(result.state.value) } : { present: false }
-    error = null
-    projectionEpoch += 1
-    stale = false
-    staleMinimumRevision = undefined
-    publish()
     return { status: 'ok', revision: result.revision }
   }
 
@@ -244,6 +255,12 @@ export function createLorebookPageOwner(dependencies: Partial<LorebookPageOwnerD
     resource: RESOURCE,
     drafts: 'not-applicable',
     snapshot,
+    hydrate(payload) {
+      if (payload.setting !== RESOURCE || !Number.isInteger(payload.revision) || payload.revision < 0) return false
+      if (revision !== null && payload.revision <= revision) return false
+      requestAttempt += 1
+      return applyAuthoritativePayload(payload)
+    },
     invalidate(minimumRevision) {
       stale = true
       if (minimumRevision !== undefined) {
@@ -251,7 +268,30 @@ export function createLorebookPageOwner(dependencies: Partial<LorebookPageOwnerD
       }
       publish()
     },
+    projectStructuralSelection(index) {
+      if (!Number.isInteger(index) || index < 0) return false
+      status = 'ready'
+      state = { present: true, value: index }
+      error = null
+      projectionEpoch += 1
+      stale = false
+      publish()
+      return true
+    },
     refresh,
+    reset() {
+      requestAttempt += 1
+      mutationAttempt += 1
+      projectionEpoch += 1
+      status = 'unloaded'
+      revision = null
+      state = { present: false }
+      error = null
+      stale = false
+      staleMinimumRevision = undefined
+      mutation = { status: 'idle' }
+      publish()
+    },
     retry: (signal) => refresh({ signal }),
     select,
     subscribe(listener) {
@@ -264,3 +304,23 @@ export function createLorebookPageOwner(dependencies: Partial<LorebookPageOwnerD
 
 /** Stable owner identity for the standalone lorebook-page pointer. */
 export const lorebookPageOwner = createLorebookPageOwner()
+
+/** Shared reactive view; multiple UI consumers do not add owner subscriptions. */
+export const lorebookPageOwnerState = readable(lorebookPageOwner.snapshot(), (set) => lorebookPageOwner.subscribe(set))
+
+export function lorebookPageIndexFromSnapshot(snapshot: LorebookPageOwnerSnapshot): number | null {
+  if (!snapshot.state.present || !Number.isInteger(snapshot.state.value) || (snapshot.state.value as number) < 0) {
+    return null
+  }
+  return snapshot.state.value as number
+}
+
+/** Non-reactive action-time lookup with a named compatibility fallback for cold legacy flows. */
+export function currentLorebookPageIndex(compatibilityFallback?: unknown): number | null {
+  return (
+    lorebookPageIndexFromSnapshot(lorebookPageOwner.snapshot()) ??
+    (Number.isInteger(compatibilityFallback) && (compatibilityFallback as number) >= 0
+      ? (compatibilityFallback as number)
+      : null)
+  )
+}

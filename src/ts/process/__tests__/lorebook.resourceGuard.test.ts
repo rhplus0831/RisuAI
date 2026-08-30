@@ -53,6 +53,7 @@ import { resetLorebookHydration } from '../../server/lorebookBridge.svelte'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { getDatabase, setDatabaseLite } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
+import { lorebookPageOwner } from '../../server/lorebookPageOwner.svelte'
 
 interface CapturedFetch {
   url: string
@@ -174,6 +175,12 @@ function seedDatabase(): void {
     modules: [],
     characterOrder: [],
   } as any)
+  lorebookPageOwner.reset()
+  lorebookPageOwner.hydrate({
+    revision: 1,
+    setting: 'loreBookPage',
+    state: { present: true, value: 0 },
+  })
 }
 
 const isGlobalEntries = (call: CapturedFetch) =>
@@ -244,6 +251,28 @@ describe('global lorebook durable writes under the resource guard', () => {
 
     const cmd = await waitForCommand(calls, isGlobalEntries)
     expect(cmd.body.entry).toMatchObject({ comment: 'New Folder', mode: 'folder' })
+  })
+
+  it('targets the owner-selected global lorebook instead of a stale compatibility pointer', async () => {
+    const calls = stubCommandFetch()
+    lorebookPageOwner.hydrate({
+      revision: 2,
+      setting: 'loreBookPage',
+      state: { present: true, value: 1 },
+    })
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBookPage = 0
+    })
+    setResourceWriteGuardEnabled(true)
+
+    expect(() => addLorebook(-1)).not.toThrow()
+    expect((getDatabase().loreBook[0] as { data: unknown[] }).data).toHaveLength(0)
+    expect((getDatabase().loreBook[1] as { data: unknown[] }).data).toHaveLength(1)
+
+    await waitForCommand(
+      calls,
+      (call) => /\/api\/v1\/commands\/lorebooks\/lore-2\/entries\/[^/]+$/.test(call.url) && call.method === 'PUT',
+    )
   })
 
   it('importLoreBook(sglobal) merges imported entries and dispatches the entries command', async () => {

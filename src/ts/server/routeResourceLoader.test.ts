@@ -69,6 +69,7 @@ import {
   settingsResourceState,
 } from './resourceState.svelte'
 import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 
 function requirement<T extends ResourceRequirement>(value: T): T {
   return value
@@ -84,6 +85,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   stopRouteResourceLoader()
+  lorebookPageOwner.reset()
   withTrustedResourceWrite(resetServerResourceState)
   clearAppliedServerResourceRevision()
   setAppliedServerResourceRevision(4)
@@ -109,6 +111,33 @@ afterEach(() => {
 })
 
 describe('route resource loader', () => {
+  it('hydrates the lorebook page owner from the route read without a duplicate request', async () => {
+    loaderMocks.requirements = [
+      requirement({ kind: 'standalone-setting', setting: 'loreBookPage', purposes: ['render', 'mutate'] }),
+    ]
+    loaderMocks.standalone.mockResolvedValue({
+      status: 'ok',
+      revision: 5,
+      setting: 'loreBookPage',
+      state: { present: true, value: 2 },
+    })
+    const route = {
+      kind: 'settings',
+      path: '/settings/global-lorebook',
+      section: 'global-lorebook',
+      index: 8,
+    } as const
+
+    await expect(prepareRouteResources(route)).resolves.toBe(true)
+
+    expect(loaderMocks.standalone).toHaveBeenCalledTimes(1)
+    expect(lorebookPageOwner.snapshot()).toMatchObject({
+      status: 'ready',
+      revision: 5,
+      state: { present: true, value: 2 },
+    })
+  })
+
   it('loads granular declarations with the request-start revision', async () => {
     loaderMocks.requirements = [
       requirement({ kind: 'settings-group', group: 'display', purposes: ['render'] }),

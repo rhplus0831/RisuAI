@@ -28,6 +28,11 @@ import { isAgentOnlyLorebookEntry, lorebookEntriesForOriginalRisuExport } from '
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 import { risuChatParser } from '../parser/parser.svelte'
+import { currentLorebookPageIndex } from '../server/lorebookPageOwner.svelte'
+
+function selectedGlobalLorebookPage(): number {
+  return currentLorebookPageIndex(getDatabase().loreBookPage) ?? 0
+}
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
 // Snapshot only the one collection the action edits (`type`/`mode`
@@ -45,7 +50,7 @@ function scopedLorebookEditorSnapshot(type: number, selectedID: number): Loreboo
     // The open global book may predate id-assign; ensure the global list's ids
     // (only that list — not the whole DB) so the edit can be dispatched.
     ensureGlobalLorebookListIds()
-    const lorebookId = (getDatabase().loreBook?.[getDatabase().loreBookPage] as { id?: string } | undefined)?.id
+    const lorebookId = (getDatabase().loreBook?.[selectedGlobalLorebookPage()] as { id?: string } | undefined)?.id
     return lorebookId ? currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId }) : null
   }
   const character = getDatabase().characters[selectedID]
@@ -63,7 +68,7 @@ function captureLorebookImportTarget(mode: 'global' | 'local' | 'sglobal'): Stab
     // Match the global editor snapshot behavior: assign missing book ids before
     // the picker so the pending import is tied to the page that was open.
     ensureGlobalLorebookListIds()
-    const lorebook = (getDatabase().loreBook?.[getDatabase().loreBookPage] as { id?: string } | undefined) ?? null
+    const lorebook = (getDatabase().loreBook?.[selectedGlobalLorebookPage()] as { id?: string } | undefined) ?? null
     return lorebook?.id ? { mode: 'sglobal', lorebookId: lorebook.id } : null
   }
 
@@ -179,7 +184,7 @@ export function addLorebook(type: number): ScopedLorebookMutationOperation | nul
     }
     return null
   } else if (type === -1) {
-    const lorePage = getDatabase().loreBookPage
+    const lorePage = selectedGlobalLorebookPage()
     const current = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
     if (!current) return null
     // Build the next entries from a mutable snapshot and assign it inside the
@@ -257,7 +262,7 @@ export function addLorebookFolder(type: number): ScopedLorebookMutationOperation
     }
     return null
   } else if (type === -1) {
-    const lorePage = getDatabase().loreBookPage
+    const lorePage = selectedGlobalLorebookPage()
     const current = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
     if (!current) return null
     // Assign a freshly-built array inside the trusted write; pushing into the
@@ -998,7 +1003,7 @@ export async function exportLoreBook(mode: 'global' | 'local' | 'sglobal') {
   try {
     let lore: loreBook[]
     if (mode === 'sglobal') {
-      lore = getDatabase().loreBook[getDatabase().loreBookPage].data
+      lore = getDatabase().loreBook[selectedGlobalLorebookPage()].data
     } else {
       const selectedID = get(selectedCharID)
       const selectedCharacter = getDatabase().characters[selectedID]

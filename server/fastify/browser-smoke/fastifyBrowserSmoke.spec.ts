@@ -103,6 +103,11 @@ function browserSmokeDatabase(includeDragFixtures = false): Record<string, unkno
         }
       : {}),
     loadouts: [],
+    loreBook: [
+      { id: 'lore-smoke-a', name: 'Lore Smoke A', data: [] },
+      { id: 'lore-smoke-b', name: 'Lore Smoke B', data: [] },
+    ],
+    loreBookPage: 0,
     modules: [],
     personas: [],
     plugins: [],
@@ -1100,6 +1105,36 @@ test('prompt presets and model profiles reorder from an immediate mobile touch d
   } finally {
     await context.close()
   }
+})
+
+test('global lorebook page owner hydrates once, selects by stable id, and survives reload', async ({ page }) => {
+  await importDatabase(harness.app, browserSmokeAssertion, browserSmokeDatabase())
+  const focusedReads: string[] = []
+  page.on('request', (request) => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/v1/resources/settings/loreBookPage') focusedReads.push(url.pathname)
+  })
+
+  await page.goto(`${harness.baseUrl}/settings/global-lorebook`)
+  await waitForBrowserSmokeLoaded(page)
+  await expect(page.getByRole('button', { name: 'Lore Smoke A', exact: true })).toBeVisible()
+  expect(focusedReads).toHaveLength(1)
+
+  await page.getByRole('button', { name: 'Lore Smoke A', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Lorebook' })
+  await expect(dialog).toBeVisible()
+  const selectionResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname === '/api/v1/commands/lorebooks/lore-smoke-b/select',
+  )
+  await dialog.getByRole('button', { name: 'Lore Smoke B', exact: true }).click()
+  expect((await selectionResponse).ok()).toBe(true)
+  await expect(dialog.locator('.bg-selected').getByRole('button', { name: 'Lore Smoke B', exact: true })).toBeVisible()
+
+  await page.reload()
+  await waitForBrowserSmokeLoaded(page)
+  await expect(page.getByRole('button', { name: 'Lore Smoke B', exact: true })).toBeVisible()
 })
 
 async function waitForBrowserSmokeLoaded(page: Page): Promise<void> {

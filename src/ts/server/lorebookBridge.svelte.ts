@@ -23,7 +23,6 @@ import {
   replaceGlobalLorebookEntriesCommand,
   replaceModuleLorebooksCommand,
   runServerCommand,
-  selectGlobalLorebookCommand,
   updateGlobalLorebookCommand,
   upsertCharacterLorebookEntryCommand,
   upsertChatLorebookEntryCommand,
@@ -72,6 +71,7 @@ import {
   chatResourceOwnerMutationKey,
   moduleOwnerMutationKey,
 } from './resourceOwnerMutationKeys'
+import { lorebookPageIndexFromSnapshot, lorebookPageOwner } from './lorebookPageOwner.svelte'
 
 type GlobalLorebook = { id?: string; name: string; data: loreBook[] }
 
@@ -133,6 +133,18 @@ const pendingLorebookEntryAttempts: PendingLorebookEntryAttempt[] = []
 const pendingGlobalLorebookDeleteProjections = new Map<string, PendingGlobalLorebookDeleteProjection>()
 const globalLorebookDeleteStates = new Map<string, GlobalLorebookDeleteState>()
 const globalLorebookDeleteStateListeners = new Set<(states: readonly GlobalLorebookDeleteState[]) => void>()
+
+// Temporary Phase 2 compatibility replica for the collection bridge and the
+// legacy plugin/database surface. Owner consumers never read this projection.
+lorebookPageOwner.subscribe((snapshot) => {
+  const index = lorebookPageIndexFromSnapshot(snapshot)
+  if (index === null || getDatabase().loreBookPage === index) return
+  withSuppressedLorebookWatcher(() => {
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBookPage = index
+    })
+  })
+})
 let nextLorebookEntryAttemptSequence = 0
 const pendingEntryEditKeys = new Set<string>()
 const flushedEntryEditSnapshots = new Map<string, string>()
@@ -441,7 +453,7 @@ export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
 
   withTrustedResourceWrite(() => {
     getDatabase().loreBook = cloneJsonValue(snapshot.loreBook) as Database['loreBook']
-    getDatabase().loreBookPage = snapshot.loreBookPage
+    projectGlobalLorebookPage(snapshot.loreBookPage)
     getDatabase().characters = cloneJsonValue(snapshot.characters)
     getDatabase().modules = cloneJsonValue(snapshot.modules) as Database['modules']
     selectedCharID.set(snapshot.selectedCharID)
@@ -495,7 +507,7 @@ export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapsho
 export function restoreGlobalLorebookState(snapshot: GlobalLorebookStateSnapshot): void {
   withTrustedResourceWrite(() => {
     getDatabase().loreBook = cloneJsonValue(snapshot.loreBook) as Database['loreBook']
-    getDatabase().loreBookPage = snapshot.loreBookPage
+    projectGlobalLorebookPage(snapshot.loreBookPage)
   })
 }
 
@@ -1131,19 +1143,6 @@ function replaceLorebookEntryInPlace(target: loreBook, next: loreBook): void {
   Object.assign(writableTarget, writableNext)
 }
 
-export function selectGlobalLorebook(index: number): boolean {
-  const previous = currentGlobalLorebookStateSnapshot()
-  const lorebookId = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]?.id
-
-  withTrustedResourceWrite(() => {
-    getDatabase().loreBookPage = index
-  })
-  if (canUseServerCommands() && lorebookId) {
-    dispatchSelectGlobalLorebook(lorebookId, previous)
-  }
-  return true
-}
-
 export function createGlobalLorebook(): boolean {
   const previous = currentGlobalLorebookStateSnapshot()
   const lorebook: GlobalLorebook = {
@@ -1197,7 +1196,7 @@ function startGlobalLorebookDelete(index: number): StartedGlobalLorebookDelete {
     const current = (getDatabase().loreBook ?? []) as GlobalLorebook[]
     if (current.length <= 1 || !current[index]) return false
     current.splice(index, 1)
-    getDatabase().loreBookPage = 0
+    projectGlobalLorebookPage(0)
     getDatabase().loreBook = current as Database['loreBook']
     return true
   })
@@ -1476,7 +1475,7 @@ function applyAcceptedGlobalLorebookDeleteProjection(lorebookId: string): void {
       if (selectedLorebookId && selectedLorebookId !== lorebookId) {
         restoreGlobalLorebookSelectionById(selectedLorebookId)
       } else {
-        getDatabase().loreBookPage = 0
+        projectGlobalLorebookPage(0)
       }
     })
   })
@@ -1497,7 +1496,7 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
   if (acknowledgeOptimistic) {
     withSuppressedLorebookWatcher(() => {
       withTrustedResourceWrite(() => {
-        getDatabase().loreBookPage = selectedIndex
+        projectGlobalLorebookPage(selectedIndex)
       })
     })
   }
@@ -1535,42 +1534,6 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
         }
         if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
           rollbackGlobalLorebookSelection(selectionRollback)
-        }
-      },
-      ...transport,
-    }),
-  )
-}
-
-export function dispatchSelectGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
-  if (!canUseServerCommands()) return
-  const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
-  const stableIds = globalLorebookStableIds((getDatabase().loreBook ?? []) as GlobalLorebook[])
-  const rollback = globalLorebookSelectionRollbackFromSnapshot(previous, lorebookId)
-  const intent: DurableMutationIntent = {
-    version: 1,
-    dependencyKeys: [globalLorebookOwnerMutationKey(lorebookId)],
-    requests: [
-      {
-        method: 'POST',
-        path: `/lorebooks/${encodeURIComponent(lorebookId)}/select`,
-        body: {},
-      },
-    ],
-  }
-  const outbox = stagePendingMutation(GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, intent)
-  void dispatchDurableMutation(outbox, intent, (transport) =>
-    runServerCommand({
-      command: (baseRevision) =>
-        selectGlobalLorebookCommand({
-          baseRevision,
-          lorebookId,
-          acknowledgeOptimistic: !!stableIds?.includes(lorebookId),
-          optimisticPageEpoch: pageProjectionEpoch,
-        }),
-      rollback: () => {
-        if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
-          rollbackGlobalLorebookSelection(rollback)
         }
       },
       ...transport,
@@ -3405,7 +3368,7 @@ function restoreGlobalLorebookSelection(rollback: GlobalLorebookSelectionRollbac
   }
 
   if (rollback.previousPage >= 0 && rollback.previousPage < lorebooks.length) {
-    getDatabase().loreBookPage = rollback.previousPage
+    projectGlobalLorebookPage(rollback.previousPage)
   }
 }
 
@@ -3413,13 +3376,19 @@ function restoreGlobalLorebookSelectionById(lorebookId: string | null): void {
   if (!lorebookId) return
   const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
-  if (index >= 0) getDatabase().loreBookPage = index
+  if (index >= 0) projectGlobalLorebookPage(index)
 }
 
 function currentSelectedGlobalLorebookId(): string | null {
   const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   const page = getDatabase().loreBookPage ?? 0
   return stableGlobalLorebookId(lorebooks[page]?.id)
+}
+
+function projectGlobalLorebookPage(index: number): void {
+  if (!Number.isInteger(index) || index < 0) return
+  getDatabase().loreBookPage = index
+  lorebookPageOwner.projectStructuralSelection(index)
 }
 
 function stableGlobalLorebookId(value: unknown): string | null {

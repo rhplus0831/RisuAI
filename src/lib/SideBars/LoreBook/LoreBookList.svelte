@@ -23,6 +23,7 @@
     trackScopedLorebookMutationUiOperation,
     type ScopedLorebookMutationUiState,
   } from 'src/ts/server/scopedLorebookMutationUiState'
+  import { lorebookPageIndexFromSnapshot, lorebookPageOwnerState } from 'src/ts/server/lorebookPageOwner.svelte'
 
   let reinitializeSortable = false
 
@@ -90,12 +91,14 @@
 
   function globalLorebookEntries(): loreBook[] {
     const database = getDatabase()
-    return database.loreBook?.[database.loreBookPage]?.data ?? []
+    const page = lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
+    return database.loreBook?.[page]?.data ?? []
   }
 
   function selectedGlobalLorebookId(): string | null {
     const database = getDatabase()
-    const lorebookId = (database.loreBook?.[database.loreBookPage] as { id?: unknown } | undefined)?.id
+    const page = lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
+    const lorebookId = (database.loreBook?.[page] as { id?: unknown } | undefined)?.id
     return typeof lorebookId === 'string' && lorebookId.trim() ? lorebookId : null
   }
 

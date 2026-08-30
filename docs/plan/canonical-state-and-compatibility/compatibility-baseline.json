@@ -714,7 +714,50 @@
           "expectedCount": 3
         }
       ]
+    },
+    {
+      "id": "client-lorebook-page-compatibility",
+      "family": "client-resource",
+      "surface": "owner-backed lorebook page pointer mirrored to the legacy database and plugin surface",
+      "currentOwner": "lorebookPageOwner with a narrow lorebookBridge compatibility replica",
+      "roles": [
+        "read",
+        "mutation",
+        "plugin",
+        "recovery"
+      ],
+      "currentPrecedence": "The owner pointer wins whenever hydrated; only cold legacy actions may fall back to the existing database scalar, and structural collection repair projects the stable-id result back through the owner.",
+      "missingBehavior": "Owner-backed UI uses page zero until route hydration succeeds; cold non-UI actions may use the existing compatibility scalar without issuing a second request.",
+      "malformedBehavior": "Negative/non-integer pages and non-unique lorebook ids are refused by owner selection; the repository remains responsible for legacy bounds and stable-id repair.",
+      "damagedDatabaseBehavior": "The compatibility replica never repairs lorebook bodies or broad settings and cannot widen bootstrap, shell, or focused resource payloads.",
+      "historicalFixture": "src/ts/process/__tests__/lorebook.resourceGuard.test.ts",
+      "provenance": "Focused route, invalidation, owner, modal, process, and structural bridge tests cover hydration, durable settlement, rollback, stable-id repair, and cold fallback.",
+      "disposition": "temporary",
+      "targetOwner": "lorebookPageOwner only, with external plugin exposure replaced or permanently classified",
+      "migrationPhase": "Workstream 3 Phase 4 bridge removal and Phase 6 plugin/legacy disposition",
+      "oldReaderOrExporter": "unsupportedServerBridgeKeys loreBookPage exposure and currentLorebookPageIndex cold-flow fallback",
+      "rollbackProof": "Owner current-attempt rollback plus bridge delete/reorder stable-id rollback and authoritative reload tests remain mandatory.",
+      "workstream3Cursor": "Owner UI/process consumers are migrated; remove this hold only after the plugin key and cold action fallback have closed-world replacements.",
+      "probes": [
+        {
+          "path": "src/ts/plugins/plugins.svelte.ts",
+          "kind": "text",
+          "value": "loreBookPage",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/ts/process/lorebook.svelte.ts",
+          "kind": "identifier",
+          "value": "currentLorebookPageIndex",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/server/lorebookBridge.svelte.ts",
+          "kind": "text",
+          "value": "lorebookPageOwner.subscribe",
+          "expectedCount": 1
+        }
+      ]
     }
   ]
 }
-

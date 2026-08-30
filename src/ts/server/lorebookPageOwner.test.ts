@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLorebookPageOwner, lorebookPageOwner } from './lorebookPageOwner.svelte'
 import type { ServerStandaloneSettingPayload } from '@risuai/protocol/standalone-settings'
 
@@ -15,6 +15,10 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 describe('lorebook page owner', () => {
+  beforeEach(() => {
+    lorebookPageOwner.reset()
+  })
+
   it('has stable identity and exposes only the standalone pointer lifecycle', () => {
     expect(lorebookPageOwner).toBe(lorebookPageOwner)
     expect(lorebookPageOwner.resource).toBe('loreBookPage')
@@ -47,6 +51,45 @@ describe('lorebook page owner', () => {
       mutation: { status: 'idle' },
     })
     unsubscribe()
+  })
+
+  it('adopts an existing authoritative response without issuing another read', () => {
+    const read = vi.fn()
+    const owner = createLorebookPageOwner({ read })
+    const snapshots = vi.fn()
+    owner.subscribe(snapshots)
+
+    expect(owner.hydrate(payload(7, 3))).toBe(true)
+    expect(owner.hydrate(payload(6, 1))).toBe(false)
+    expect(read).not.toHaveBeenCalled()
+    expect(owner.snapshot()).toMatchObject({ status: 'ready', revision: 7, state: { present: true, value: 3 } })
+    expect(snapshots).toHaveBeenCalledTimes(2)
+  })
+
+  it('supersedes an in-flight owner read when route hydration wins', async () => {
+    const read = deferred<ReturnType<typeof payload>>()
+    const owner = createLorebookPageOwner({ read: vi.fn().mockReturnValue(read.promise) })
+
+    const refresh = owner.refresh()
+    expect(owner.hydrate(payload(9, 2))).toBe(true)
+    read.resolve(payload(8, 1))
+
+    await expect(refresh).resolves.toEqual({ status: 'superseded' })
+    expect(owner.snapshot()).toMatchObject({ revision: 9, state: { present: true, value: 2 } })
+  })
+
+  it('projects structural selection without dispatching a page command and resets cleanly', () => {
+    const select = vi.fn()
+    const owner = createLorebookPageOwner({ select })
+    owner.hydrate(payload(4, 0))
+
+    expect(owner.projectStructuralSelection(2)).toBe(true)
+    expect(owner.projectStructuralSelection(-1)).toBe(false)
+    expect(select).not.toHaveBeenCalled()
+    expect(owner.snapshot()).toMatchObject({ revision: 4, state: { present: true, value: 2 } })
+
+    owner.reset()
+    expect(owner.snapshot()).toMatchObject({ status: 'unloaded', revision: null, state: { present: false } })
   })
 
   it('owns stale state, minimum-revision retry, and focused errors', async () => {

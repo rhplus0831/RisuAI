@@ -1,4 +1,5 @@
 import type { CommandEvent } from './commands'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import {
   SERVER_SETTINGS_GROUP_BY_KEY,
   SERVER_SETTINGS_KEYS_BY_GROUP,
@@ -321,6 +322,9 @@ export async function refreshAllServerResources(
         },
       )
       if (collectionsApplied) resetPromptTemplateHydration()
+      if (!superseded.settings && (settingsApplied || settingsFullAlreadyAtLeast(revision))) {
+        hydrateLorebookPageOwnerFromResidentSettings()
+      }
       if (collectionsApplied) options.hooks?.recordCanonicalLorebookCollections?.(SERVER_COLLECTION_NAMES)
       if (charactersApplied) options.hooks?.recordCanonicalCharacterLorebookScopes?.(mergedCharacters.characters)
       if (
@@ -1480,7 +1484,11 @@ function applyTargetedRead(
         withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider),
         hooks?.mergePendingAgentPresetSettings,
       )
-      return payload.status !== 'ok' || applySettingsResource(payload) || settingsFullAlreadyAtLeast(payload.revision)
+      if (payload.status !== 'ok') return true
+      const applied = applySettingsResource(payload)
+      const alreadyApplied = settingsFullAlreadyAtLeast(payload.revision)
+      if (applied || alreadyApplied) hydrateLorebookPageOwnerFromResidentSettings()
+      return applied || alreadyApplied
     }
     case 'settingsGroup': {
       if (entry.result.status === 'ok' && entry.result.group !== entry.group) return false
@@ -1499,14 +1507,16 @@ function applyTargetedRead(
         settingsGroupAlreadyAtLeast(entry.group, payload.revision)
       )
     }
-    case 'standaloneSetting':
+    case 'standaloneSetting': {
       if (entry.result.status === 'ok' && entry.result.setting !== entry.setting) return false
-      return (
-        entry.result.status !== 'ok' ||
-        supersessions.generic.has(entry) ||
-        applyStandaloneSettingResource(entry.result) ||
-        (settingsResourceState.standaloneRevisions[entry.setting] ?? -1) >= entry.result.revision
-      )
+      if (entry.result.status !== 'ok' || supersessions.generic.has(entry)) return true
+      const applied = applyStandaloneSettingResource(entry.result)
+      const alreadyApplied = (settingsResourceState.standaloneRevisions[entry.setting] ?? -1) >= entry.result.revision
+      if (entry.setting === 'loreBookPage' && (applied || alreadyApplied)) {
+        hydrateLorebookPageOwnerFromResidentSettings()
+      }
+      return applied || alreadyApplied
+    }
     case 'collection': {
       if (entry.result.status !== 'ok') return true
       if (supersessions.generic.has(entry)) return true
@@ -1600,6 +1610,23 @@ function applyTargetedRead(
       })
     }
   }
+}
+
+function hydrateLorebookPageOwnerFromResidentSettings(): void {
+  const revision = Math.max(
+    settingsResourceState.loreBookPageRevision ?? -1,
+    settingsResourceState.standaloneRevisions.loreBookPage ?? -1,
+    settingsResourceState.fullRevision ?? -1,
+  )
+  if (revision < 0) return
+  const settings = settingsResourceState.value as Record<string, unknown>
+  lorebookPageOwner.hydrate({
+    revision,
+    setting: 'loreBookPage',
+    state: Object.prototype.hasOwnProperty.call(settings, 'loreBookPage')
+      ? { present: true, value: settings.loreBookPage }
+      : { present: false },
+  })
 }
 
 async function refreshInvalidatedPromptTemplateOwners(

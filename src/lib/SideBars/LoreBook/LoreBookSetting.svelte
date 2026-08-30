@@ -35,6 +35,7 @@
     hydrateActiveCharacterLorebook,
     isCharacterLorebookHydrationPending,
   } from 'src/ts/server/chatMessageHydration.svelte'
+  import { lorebookPageIndexFromSnapshot, lorebookPageOwnerState } from 'src/ts/server/lorebookPageOwner.svelte'
 
   let submenu = $state(0)
   const characterLoreSettingsDraft = createServerBackedCharacterDraft(['loreSettings', 'lorePlus'])
@@ -64,7 +65,8 @@
 
   function globalLorebookScopeKey(): string | null {
     const database = getDatabase()
-    const lorebookId = (database.loreBook?.[database.loreBookPage] as { id?: unknown } | undefined)?.id
+    const page = lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
+    const lorebookId = (database.loreBook?.[page] as { id?: unknown } | undefined)?.id
     return typeof lorebookId === 'string' && lorebookId.trim() ? `global:${lorebookId}` : null
   }
 

@@ -2516,6 +2516,13 @@ export const languageKorean = {
     queued: '삭제 작업이 이 기기의 대기열에 추가되었으며 자동으로 다시 시도합니다.',
     failed: '로어북을 삭제할 수 없습니다. 다시 시도해 주세요.',
   },
+  globalLorebookSelection: {
+    selecting: '이 로어북을 선택하는 중…',
+    queued: '선택 작업이 이 기기의 대기열에 추가되었으며 자동으로 다시 시도합니다.',
+    failed: (detail: string) => `이 로어북을 선택할 수 없습니다.${detail ? ` ${detail}` : ''}`,
+    reloadFailed: '선택은 저장되었지만 최신 상태를 다시 불러오지 못했습니다. 다시 시도해 주세요.',
+    invalid: '고유한 안정 ID가 없는 레거시 로어북은 아직 선택할 수 없습니다.',
+  },
   scopedLorebookMutation: {
     pending: '로어북 변경 사항 저장 중…',
     queued: '로어북 변경 사항이 이 기기의 대기열에 추가되었으며 자동으로 다시 시도합니다.',

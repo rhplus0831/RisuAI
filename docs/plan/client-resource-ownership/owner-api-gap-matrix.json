@@ -5,8 +5,8 @@
     "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
     "inventoryCursor": "0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f",
     "policyCount": 56,
-    "consumerGroupCount": 325,
-    "referenceCount": 9917
+    "consumerGroupCount": 326,
+    "referenceCount": 9900
   },
   "capabilityKeys": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
   "owners": {
@@ -212,7 +212,7 @@
       "workstream1Cursor": "standalone read 33d1643ae; durable command 3f275e9dc; route relation 6a6d0ac1f",
       "workstream2Cursor": "already-singular settings row",
       "capabilities": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
-      "remaining": "Production selection consumers and the compatibility bridge remain for the later migration slice; lorebook editor bodies stay on their separate family cursor."
+      "remaining": "Owner-backed page consumers are migrated. The named cold-flow fallback, plugin/database compatibility replica, and structural collection repair remain until their Phase 4/6 closed-world gates; lorebook editor bodies stay on their separate family cursor."
     }
   }
 }

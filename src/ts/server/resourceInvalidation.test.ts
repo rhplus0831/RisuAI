@@ -114,6 +114,7 @@ import {
   refreshInvalidatedServerResources,
   type ServerResourceInvalidationHooks,
 } from './resourceInvalidation'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import {
   SERVER_COLLECTION_NAMES,
   applyCharacterResource,
@@ -311,6 +312,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   resetServerResourceState()
+  lorebookPageOwner.reset()
   resetServerInlayCatalogResource()
   resetBardWikiResource()
   for (const mock of Object.values(api)) mock.mockReset()
@@ -2620,6 +2622,11 @@ describe('API-backed resource invalidation', () => {
     expect(api.settings).toHaveBeenCalledOnce()
     expect(api.collection).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
+    expect(lorebookPageOwner.snapshot()).toMatchObject({
+      status: 'ready',
+      revision: 2,
+      state: { present: true, value: 0 },
+    })
   })
 
   it.each([{ type: 'lorebook.deleted', id: 'book-a' }, { type: 'lorebook.reordered' }])(

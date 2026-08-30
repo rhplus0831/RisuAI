@@ -16,6 +16,7 @@ import {
 } from './resourceManifest'
 import { refreshServerResourceTargets, type ServerResourceRefreshResult } from './resourceInvalidation'
 import { fetchServerStandaloneSetting } from './resourceReads'
+import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import {
   applyStandaloneSettingResource,
   beginCollectionsResourceLoad,
@@ -525,6 +526,7 @@ async function loadStandaloneSetting(
     failStandaloneSettingResourceLoad(setting, error)
     return { identity, ok: false, error }
   }
+  if (setting === 'loreBookPage') lorebookPageOwner.hydrate(result)
   return { identity, ok: true }
 }
 
@@ -534,8 +536,16 @@ function requirementIsReady(requirement: ResourceRequirement, route: AppRoute | 
       return settingsResourceState.groupStatuses[requirement.group] === 'ready'
     case 'collection':
       return collectionsResourceState.statuses[requirement.collection] === 'ready'
-    case 'standalone-setting':
-      return settingsResourceState.standaloneStatuses[requirement.setting] === 'ready'
+    case 'standalone-setting': {
+      if (settingsResourceState.standaloneStatuses[requirement.setting] !== 'ready') return false
+      if (requirement.setting !== 'loreBookPage') return true
+      const owner = lorebookPageOwner.snapshot()
+      return (
+        owner.status === 'ready' &&
+        owner.revision !== null &&
+        owner.revision >= (settingsResourceState.standaloneRevisions.loreBookPage ?? -1)
+      )
+    }
     case 'projection':
       switch (requirement.projection) {
         case 'character-summaries':
