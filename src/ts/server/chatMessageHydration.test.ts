@@ -65,6 +65,7 @@ import {
 import {
   captureCharacterLorebookBodyProjectionEpoch,
   captureChatBodyProjectionEpoch,
+  charactersResourceState,
   hasCharacterLorebookBodyProjectionEpochChanged,
   hasChatBodyProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
@@ -246,6 +247,48 @@ const db = () =>
   ).db
 
 describe('chat message hydration bridge', () => {
+  it('fails closed when a ready resource collection has duplicate chat owners', async () => {
+    testDatabaseState.db.characters.push({
+      chaId: 'char-2',
+      chatPage: 0,
+      chats: [{ id: 'chat-1', message: [] }],
+    } as never)
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'ambiguous', chatId: 'm' }]))
+
+    expect(charactersResourceState.status).toBe('ready')
+    await hydrateActiveChatFully()
+
+    expect(projectionState.fetchChat).not.toHaveBeenCalled()
+    expect(getChatMessageOwnerState('chat-1')).toBeUndefined()
+  })
+
+  it('fails closed when a ready resource collection has duplicate character owners', async () => {
+    testDatabaseState.db.characters.push({
+      chaId: 'char-1',
+      chatPage: 0,
+      chats: [{ id: 'chat-distinct', message: [] }],
+    } as never)
+
+    expect(charactersResourceState.status).toBe('ready')
+    expect(getChatMessageOwnerState('chat-distinct')).toBeUndefined()
+    await hydrateChatMessages('chat-distinct')
+
+    expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+
+  it('keeps bootstrap compatibility hydration available before the owner collection is ready', async () => {
+    charactersResourceState.status = 'loading'
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'bootstrap', chatId: 'm-bootstrap' }]),
+    )
+
+    await hydrateActiveChatFully()
+
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', {})
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'bootstrap', chatId: 'm-bootstrap' }])
+    charactersResourceState.status = 'ready'
+  })
+
   it('reapplies a retained transcript projection after authoritative hydration', async () => {
     projectionState.fetchChat.mockResolvedValue(
       okResult('chat-1', [{ role: 'char', data: 'persisted', chatId: 'message-a' }]),

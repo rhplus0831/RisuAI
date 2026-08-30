@@ -9,6 +9,8 @@ import {
   isServerChatMessagePlaceholder,
   type Message,
   type MessageTranslation,
+  type Chat,
+  type character,
   withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
@@ -42,6 +44,7 @@ import {
   markChatBodyProjectionApplied,
   markChatBodyResourceRevision,
 } from './resourceState.svelte'
+import { charactersResourceState, getCharacterResourceOwner } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
 import { transcriptHasReplyForAcceptedSend } from '../process/acceptedSendRecoveryState'
@@ -98,6 +101,11 @@ const chatMessageOwnerProjections = new SvelteMap<string, Message[]>()
 // concurrent range hydration as a local edit.
 const pendingChatHydrationFreshness = new Map<string, Set<ChatHydrationFreshnessToken>>()
 
+interface HydrationChatOwner {
+  character: character
+  chat: Chat
+}
+
 // Character ids whose `globalLore` this client has hydrated this session (only
 // when the EXPERIMENTAL `enableLorebookStubs` setting is on).
 const hydratedCharLorebookIds = new SvelteSet<string>()
@@ -126,28 +134,80 @@ function finishCharacterLorebookHydrationState(characterId: string, generation: 
   }
 }
 
-function activeChatId(): string | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  const character = getDatabase().characters?.[selId]
+/**
+ * Resource rows are the canonical owner once the character collection is
+ * ready. Before that point, retain the compatibility projection so startup
+ * hydration can still observe the bootstrap shell while the collection loads.
+ */
+function characterRowsForHydration(): readonly character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
+function uniqueCharacterForHydration(characterId: string): character | undefined {
+  if (!characterId) return undefined
+  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+
+  let owner: character | undefined
+  for (const character of characterRowsForHydration()) {
+    if (character.chaId !== characterId) continue
+    if (owner) return undefined
+    owner = character
+  }
+  return owner
+}
+
+function uniqueChatForHydration(chatId: string): HydrationChatOwner | undefined {
+  if (!chatId) return undefined
+  let owner: HydrationChatOwner | undefined
+  for (const character of characterRowsForHydration()) {
+    if (uniqueCharacterForHydration(character.chaId) !== character) continue
+    for (const chat of character.chats ?? []) {
+      if (chat.id !== chatId) continue
+      if (owner) return undefined
+      owner = { character, chat }
+    }
+  }
+  return owner
+}
+
+function activeCharacterForHydration(): character | undefined {
+  const selectedIndex = get(selectedCharID)
+  if (selectedIndex < 0) return undefined
+  const candidate = characterRowsForHydration()[selectedIndex]
+  return candidate?.chaId ? uniqueCharacterForHydration(candidate.chaId) : undefined
+}
+
+function activeChatForHydration(): HydrationChatOwner | undefined {
+  const character = activeCharacterForHydration()
   if (!character) return undefined
   const chat = character.chats?.[character.chatPage ?? 0]
-  return chat?.id
+  if (!chat?.id) return undefined
+  const owner = uniqueChatForHydration(chat.id)
+  return owner?.character === character ? owner : undefined
+}
+
+function activeChatId(): string | undefined {
+  return activeChatForHydration()?.chat.id
 }
 
 function activeChatMessageArray(): Message[] | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  const character = getDatabase().characters?.[selId]
-  if (!character) return undefined
-  const chat = character.chats?.[character.chatPage ?? 0]
-  return chat?.message
+  return activeChatForHydration()?.chat.message
 }
 
 function chatMessageArray(chatId: string): Message[] | undefined {
-  return getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .find((chat) => chat.id === chatId)?.message
+  const owner = uniqueChatForHydration(chatId)
+  if (!owner) return undefined
+  if (charactersResourceState.status !== 'ready') return owner.chat.message
+
+  // Keep the live compatibility-view identity for the pre-owner fallback
+  // exposed by getChatMessageOwnerState. All owner/race decisions above use
+  // the canonical resource row; this is only the resident body view callers
+  // already use for trusted local writes.
+  const characterIndex = charactersResourceState.characters.indexOf(owner.character)
+  const chatIndex = owner.character.chats?.indexOf(owner.chat) ?? -1
+  return getDatabase().characters?.[characterIndex]?.chats?.[chatIndex]?.message ?? owner.chat.message
 }
 
 export interface ChatMessageOwnerState {
@@ -199,19 +259,12 @@ function cloneOwnerMessages(messages: readonly Message[]): Message[] {
 }
 
 function rerollTargetForChatId(chatId: string): ActiveChatTarget | null {
-  const characters = getDatabase().characters ?? []
-  for (let selectedCharID = 0; selectedCharID < characters.length; selectedCharID += 1) {
-    const character = characters[selectedCharID]
-    const chatPage = character.chats?.findIndex((chat) => chat.id === chatId) ?? -1
-    if (chatPage < 0) continue
-    return {
-      selectedCharID,
-      chatPage,
-      characterId: character.chaId,
-      chatId,
-    }
-  }
-  return null
+  const owner = uniqueChatForHydration(chatId)
+  if (!owner?.character.chaId) return null
+  const selectedCharID = characterRowsForHydration().indexOf(owner.character)
+  const chatPage = owner.character.chats?.indexOf(owner.chat) ?? -1
+  if (selectedCharID < 0 || chatPage < 0) return null
+  return { selectedCharID, chatPage, characterId: owner.character.chaId, chatId }
 }
 
 function snapshotJson(value: unknown): string | null {
@@ -226,23 +279,19 @@ function snapshotJson(value: unknown): string | null {
 }
 
 function chatStateSnapshot(chatId: string): string | null {
-  for (const character of getDatabase().characters ?? []) {
-    const chat = character.chats?.find((candidate) => candidate.id === chatId)
-    if (!chat) continue
-    return snapshotJson({
-      message: chat.message ?? [],
-      hasHypaV3Data: Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data'),
-      hypaV3Data: chat.hypaV3Data,
-    })
-  }
-  return 'missing-chat'
+  const chat = uniqueChatForHydration(chatId)?.chat
+  return chat
+    ? snapshotJson({
+        message: chat.message ?? [],
+        hasHypaV3Data: Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data'),
+        hypaV3Data: chat.hypaV3Data,
+      })
+    : 'missing-chat'
 }
 
 function acknowledgeHydratedChatGenerationState(chatId: string, fallbackMessages: readonly Message[]): void {
   acknowledgeHydratedGenerationPersistences(chatId, fallbackMessages)
-  const residentMessages = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .find((chat) => chat.id === chatId)?.message
+  const residentMessages = uniqueChatForHydration(chatId)?.chat.message
   reconcileGenerationOperationTranscriptHydration(chatId, residentMessages ?? fallbackMessages)
 }
 
@@ -411,9 +460,7 @@ function rangedHydrationOverlapsResidentMessages(
   // A newer disjoint range may have advanced the chat-level resource revision
   // while this request was in flight. Filling its remaining placeholders is
   // safe; replacing any resident row would let the older response win a race.
-  const messages = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .find((chat) => chat.id === chatId)?.message
+  const messages = uniqueChatForHydration(chatId)?.chat.message
   if (
     !messages ||
     messages.length !== range.total ||
@@ -430,6 +477,7 @@ function rangedHydrationOverlapsResidentMessages(
 
 async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<boolean> {
   if (!canUseServerResourceReads()) return false
+  if (charactersResourceState.status === 'ready' && !uniqueChatForHydration(chatId)) return false
   const force = request.force ?? false
   const wantsFullHydration = !request.range
   if (!force && hydratedChatIds.has(chatId)) return true
@@ -743,6 +791,7 @@ export function applyServerChatMessagesResource(
   options: { hypaV3DataIncluded?: boolean } = {},
 ): boolean {
   if (!chatId) return false
+  if (charactersResourceState.status === 'ready' && !uniqueChatForHydration(chatId)) return false
   const applied = hydrateServerChatMessages(
     chatId,
     message,
@@ -782,16 +831,10 @@ export type AcceptedSendCompletionReconciliationResult =
 
 function residentChatMessagesForTarget(target: ActiveChatTarget): Message[] | null {
   if (!target.characterId || !target.chatId) return null
-  const matches: Array<{ characterId: string; messages: Message[] }> = []
-  for (const character of getDatabase().characters ?? []) {
-    for (const chat of character.chats ?? []) {
-      if (chat.id === target.chatId) {
-        matches.push({ characterId: character.chaId, messages: chat.message ?? [] })
-      }
-    }
-  }
-  if (matches.length !== 1 || matches[0].characterId !== target.characterId) return null
-  return matches[0].messages
+  const character = uniqueCharacterForHydration(target.characterId)
+  const owner = uniqueChatForHydration(target.chatId)
+  if (!character || !owner || owner.character !== character) return null
+  return owner.chat.message ?? []
 }
 
 function residentHasAcceptedSendReply(
@@ -943,9 +986,7 @@ export function applyMessageTranslationLocalEffect(
   if (!chatId || !messageId) return false
   let applied = false
   withTrustedResourceWrite(() => {
-    const chat = getDatabase()
-      .characters?.flatMap((character) => character.chats ?? [])
-      .find((candidate) => candidate.id === chatId)
+    const chat = uniqueChatForHydration(chatId)?.chat
     if (!chat) return
     const matches = (chat.message ?? []).filter((message) => message.chatId === messageId)
     if (matches.length !== 1) return
@@ -966,10 +1007,7 @@ export function applyMessageTranslationLocalEffect(
  */
 export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
   if (!chatId) return false
-  const matches = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .filter((candidate) => candidate.id === chatId)
-  if (matches?.length !== 1) return false
+  if (!uniqueChatForHydration(chatId)) return false
   advanceChatProjectionEpoch(chatId)
   syncChatMessageOwnerProjection(chatId)
   return true
@@ -983,10 +1021,8 @@ export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
  */
 export function acknowledgeCreatedChatTranscriptLocalEffect(chatId: string): boolean {
   if (!chatId) return false
-  const matches = getDatabase()
-    .characters?.flatMap((character) => character.chats ?? [])
-    .filter((candidate) => candidate.id === chatId)
-  if (matches?.length !== 1 || !Array.isArray(matches[0].message)) return false
+  const chat = uniqueChatForHydration(chatId)?.chat
+  if (!chat || !Array.isArray(chat.message)) return false
 
   advanceChatProjectionEpoch(chatId)
   hydratedChatIds.add(chatId)
@@ -1038,9 +1074,7 @@ export function hasChatMessageHydrationFailed(chatId: string | undefined, messag
 // Character globalLore hydration (only when stubs are on).
 
 function activeCharacterId(): string | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  return getDatabase().characters?.[selId]?.chaId
+  return activeCharacterForHydration()?.chaId
 }
 
 /** Reactive: is this character's stubbed global lorebook waiting for hydration? */
@@ -1059,6 +1093,7 @@ export function hasCharacterLorebookHydrationFailed(characterId: string | undefi
 
 async function hydrateCharacterLorebook(characterId: string, force: boolean): Promise<void> {
   if (!canUseServerResourceReads()) return
+  if (charactersResourceState.status === 'ready' && !uniqueCharacterForHydration(characterId)) return
   // Readiness follows the projection that is actually resident. A setting
   // transition can leave an older stub in memory even after stub mode is off.
   if (!force && (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId))) return
@@ -1242,7 +1277,8 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   if (!canUseServerResourceReads()) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
-  for (const character of getDatabase().characters ?? []) {
+  for (const character of characterRowsForHydration()) {
+    if (uniqueCharacterForHydration(character.chaId) !== character) continue
     if (
       typeof character.chaId !== 'string' ||
       !character.chaId ||
@@ -1262,7 +1298,8 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   await Promise.all([hydrateCharacterLorebooksBulk(ids, options), ...pendingRequests])
   if (options.strict) {
     const missing: string[] = []
-    for (const character of getDatabase().characters ?? []) {
+    for (const character of characterRowsForHydration()) {
+      if (uniqueCharacterForHydration(character.chaId) !== character) continue
       if (
         typeof character.chaId === 'string' &&
         character.chaId &&
@@ -1320,9 +1357,15 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
   if (!canUseServerResourceReads()) return
   const ids: string[] = []
   const pendingRequests: Promise<boolean>[] = []
-  for (const character of getDatabase().characters ?? []) {
+  for (const character of characterRowsForHydration()) {
+    if (uniqueCharacterForHydration(character.chaId) !== character) continue
     for (const chat of character.chats ?? []) {
-      if (typeof chat.id !== 'string' || !chat.id || hydratedChatIds.has(chat.id)) {
+      if (
+        typeof chat.id !== 'string' ||
+        !chat.id ||
+        uniqueChatForHydration(chat.id)?.chat !== chat ||
+        hydratedChatIds.has(chat.id)
+      ) {
         continue
       }
       const pending = inFlight.get(chatHydrationRequestKey(chat.id, {}))
@@ -1337,9 +1380,15 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
   await Promise.all([hydrateChatsBulk(ids, options), ...pendingRequests])
   if (options.strict) {
     const missing: string[] = []
-    for (const character of getDatabase().characters ?? []) {
+    for (const character of characterRowsForHydration()) {
+      if (uniqueCharacterForHydration(character.chaId) !== character) continue
       for (const chat of character.chats ?? []) {
-        if (typeof chat.id === 'string' && chat.id && !hydratedChatIds.has(chat.id)) {
+        if (
+          typeof chat.id === 'string' &&
+          chat.id &&
+          uniqueChatForHydration(chat.id)?.chat === chat &&
+          !hydratedChatIds.has(chat.id)
+        ) {
           missing.push(chat.id)
         }
       }
@@ -1385,7 +1434,8 @@ export function startChatMessageHydration(): void {
   const stopHydrationEffect = $effect.root(() => {
     $effect(() => {
       if (selectedCharMirror < 0) return
-      const character = getDatabase().characters?.[selectedCharMirror]
+      const character = characterRowsForHydration()[selectedCharMirror]
+      if (character && uniqueCharacterForHydration(character.chaId) !== character) return
       const chat = character?.chats?.[character?.chatPage ?? 0]
       const chatId = chat?.id
       // Startup generation readiness also owns the effective prompt-template
