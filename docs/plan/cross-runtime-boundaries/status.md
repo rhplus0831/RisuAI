@@ -12,7 +12,7 @@ in [`latest-verification.md`](latest-verification.md).
 - Plan state: Active; Phases 0 through 3 complete; thirty neutral shared-core
   leaves are released.
 - Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
-- Active slice: [Parser character-argument type seam](phases/slices/phase-4-server-consumer-migration/parser-character-argument-type-seam.md),
+- Active slice: [Browser-smoke support boundaries](phases/slices/phase-4-server-consumer-migration/browser-smoke-support-boundaries.md),
   ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
@@ -20,10 +20,10 @@ in [`latest-verification.md`](latest-verification.md).
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: shared prompt-info snapshots at
-  `8d7bc6256`, following shared toggle-preset records at `3153c7d14`, shared
-  memory-model capability at `c51dcac16`, and parser chat-variable injection at
-  `5e7233e2a`; focused shared behavior/ownership, browser/server consumer,
+- Latest implementation candidate: the Lua runtime character type seam at
+  `0fb61855a`, following shared prompt-info snapshots at `8d7bc6256`, shared
+  toggle-preset records at `3153c7d14`, and shared memory-model capability at
+  `c51dcac16`; focused behavior/ownership, browser/server consumer,
   architecture, shared-core/root/downstream
   typechecks, formatting, and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
@@ -97,6 +97,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Memory-model capability | `c51dcac16` | Released through `@risuai/shared-core/memory-model-capability`; two production runtime edges were removed without moving model resolution. |
 | Toggle-preset records | `3153c7d14` | Released through `@risuai/shared-core/chat-generation-toggle-preset-records`; one production runtime edge was removed while command/storage policy stayed in place. |
 | Prompt-info snapshots | `8d7bc6256` | Released through `@risuai/shared-core/prompt-info-snapshot`; browser and Fastify generation share store-agnostic snapshot formatting, and one production runtime edge was removed. |
+| Parser character-argument type seam | `0fb61855a` | Released through a narrow Fastify-owned structural input; Lua runtime no longer imports the browser parser declaration, and one production type-only edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -121,13 +122,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 164 direct root-`src` edges remain: 106 production, 52 server-test, and 6
-  browser-smoke, spanning 87 importers and 28 targets.
-- Usage is 60 runtime, 33 mixed, and 71 type-only; 93 runtime/mixed edges
+- 163 direct root-`src` edges remain: 105 production, 52 server-test, and 6
+  browser-smoke, spanning 87 importers and 27 targets.
+- Usage is 60 runtime, 33 mixed, and 70 type-only; 93 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse and completed Phase 4 server seams, removed 211 edges and
-  51 source targets.
+  shared-helper reuse and completed Phase 4 server seams, removed 212 edges and
+  52 source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
@@ -139,7 +140,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb`; later Phase 4 consumer slices released twelve more audited neutral leaves. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Server seams, neutral fixtures, small shared leaves, protocol codes, parser DI, and record catalogs are released; the parser character-argument type seam is next. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Server seams, neutral fixtures, small shared leaves, protocol codes, parser DI, and record catalogs are released; browser-smoke support boundaries are next. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
@@ -160,5 +161,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Remove the isolated Fastify parser
-character-argument type dependency without moving parser behavior.
+Use [`next-steps.md`](next-steps.md). Neutralize the isolated browser-smoke hook,
+display-fixture, and startup snapshot dependencies without changing browser
+behavior.

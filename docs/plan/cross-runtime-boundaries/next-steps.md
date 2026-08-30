@@ -4,15 +4,14 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [parser character-argument type
-seam](phases/slices/phase-4-server-consumer-migration/parser-character-argument-type-seam.md).
+Execute the [browser-smoke support boundary
+slice](phases/slices/phase-4-server-consumer-migration/browser-smoke-support-boundaries.md).
 
-1. Replace Fastify Lua runtime's type-only parser import with the narrowest
-   structural owner.
-2. Preserve field shapes, optionality, Lua conversion, and browser parser
-   exports.
-3. Do not move parser state, CBS registration, matcher dispatch, or request-local
-   execution policy.
+1. Replace the smoke hook and startup snapshot type imports with neutral
+   contracts when exact structural parity can be pinned.
+2. Replace the lazy-first-open language-module dependency with a test-owned
+   fixture only when source parity preserves the displayed labels.
+3. Keep router and resource-manifest behavior edges outside this slice.
 
 ## Foundations Released
 
@@ -119,6 +118,8 @@ seam](phases/slices/phase-4-server-consumer-migration/parser-character-argument-
   effective translate profile at `f610c11a1`.
 - Prompt-info snapshot formatting is released through
   `@risuai/shared-core/prompt-info-snapshot` at `8d7bc6256`.
+- Fastify Lua runtime's character argument uses a narrow server-owned structural
+  input at `0fb61855a`.
 
 ## Holds
 
@@ -131,5 +132,5 @@ seam](phases/slices/phase-4-server-consumer-migration/parser-character-argument-
 
 ## Handoff
 
-After this slice closes, take the independently owned browser-smoke fixtures or
-refresh the remaining model/prompt/parser/aggregate-domain ranking.
+After this slice closes, refresh the remaining
+model/prompt/parser/aggregate-domain ranking.

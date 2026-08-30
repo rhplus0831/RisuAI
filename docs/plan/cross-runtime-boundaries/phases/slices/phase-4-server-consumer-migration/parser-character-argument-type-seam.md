@@ -1,6 +1,6 @@
 # Parser Character-Argument Type Seam
 
-Status: ready.
+Status: complete at `0fb61855a`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -13,10 +13,10 @@ without moving parser state or behavior.
 
 Use the narrowest structural character argument accepted by the Lua bridge.
 Preserve the existing field shapes and optionality, browser parser exports, Lua
-conversion behavior, and request-local execution policy. Expected delta: one
-production type-only edge; 164 total edges become 163.
+conversion behavior, and request-local execution policy. Delivered delta: one
+production type-only edge; 164 total edges became 163.
 
 ## Verification
 
-Run a focused ownership/structural proof, affected Lua/parser and assembly
-tests, both typechecks, architecture inventory, formatting, and diff checks.
+The focused ownership and Lua runtime suites passed 1 and 52 tests; architecture
+inventory passed 10 tests. Both typechecks, formatting, and diff checks passed.
