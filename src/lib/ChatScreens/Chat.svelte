@@ -68,7 +68,12 @@
   } from '../../ts/alert'
   import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
   import { getSelectedCharacterOwner } from '../../ts/characterState'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+  import {
+    applyChatMetadataOwnerPatch,
+    charactersResourceState,
+    getCharacterResourceOwner,
+    getChatMetadataOwnerSnapshot,
+  } from 'src/ts/server/resourceState.svelte'
   import {
     getCurrentCharacter,
     getCurrentChat,
@@ -861,15 +866,46 @@
     bookmarkNames: Record<string, string>,
   ): boolean {
     if (!previous.chat) return false
+    if (charactersResourceState.status === 'ready') {
+      if (!previous.characterId || !previous.chatId) return false
+      const character = getCharacterResourceOwner(previous.characterId)
+      const chatMatches = character?.chats?.filter((candidate) => candidate.id === previous.chatId) ?? []
+      if (chatMatches.length !== 1) return false
+      const messageMatches = (chatMatches[0].message ?? []).filter((candidate) => candidate.chatId === messageId)
+      if (messageMatches.length !== 1) return false
+      const ownerSnapshot = getChatMetadataOwnerSnapshot(previous.characterId, previous.chatId)
+      if (!ownerSnapshot) return false
+      if (JSON.stringify(ownerSnapshot.metadata.bookmarks ?? []) !== JSON.stringify(previous.chat.bookmarks ?? [])) {
+        return false
+      }
+      if (
+        JSON.stringify(ownerSnapshot.metadata.bookmarkNames ?? {}) !== JSON.stringify(previous.chat.bookmarkNames ?? {})
+      ) {
+        return false
+      }
+      const applied = applyChatMetadataOwnerPatch(previous.characterId, previous.chatId, {
+        bookmarks: [...bookmarks],
+        bookmarkNames: { ...bookmarkNames },
+      })
+      if (applied) syncServerBackedChatMetadataBaselines()
+      return applied
+    }
+
     let applied = false
     withTrustedResourceWrite(() => {
-      const character = previous.characterId
-        ? getDatabase().characters?.find((candidate) => candidate.chaId === previous.characterId)
-        : getDatabase().characters?.[previous.selectedCharID]
-      const liveChat = previous.chatId
-        ? character?.chats?.find((candidate) => candidate.id === previous.chatId)
-        : character?.chats?.[character.chatPage ?? 0]
-      if (!liveChat?.message?.some((candidate) => candidate.chatId === messageId)) return
+      const characters = getDatabase().characters ?? []
+      const characterMatches = previous.characterId
+        ? characters.filter((candidate) => candidate.chaId === previous.characterId)
+        : [characters[previous.selectedCharID]].filter(Boolean)
+      if (characterMatches.length !== 1) return
+      const character = characterMatches[0]
+      const chatMatches = previous.chatId
+        ? (character.chats ?? []).filter((candidate) => candidate.id === previous.chatId)
+        : [character.chats?.[character.chatPage ?? 0]].filter(Boolean)
+      if (chatMatches.length !== 1) return
+      const liveChat = chatMatches[0]
+      const messageMatches = (liveChat.message ?? []).filter((candidate) => candidate.chatId === messageId)
+      if (messageMatches.length !== 1) return
       if (JSON.stringify(liveChat.bookmarks ?? []) !== JSON.stringify(previous.chat?.bookmarks ?? [])) return
       if (JSON.stringify(liveChat.bookmarkNames ?? {}) !== JSON.stringify(previous.chat?.bookmarkNames ?? {})) return
       liveChat.bookmarks = [...bookmarks]
