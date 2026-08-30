@@ -1526,19 +1526,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/assemble.ts",
-      "specifier": "../../../../src/ts/util/punctuation.js",
-      "target": "src/ts/util/punctuation.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "trimUntilPunctuation"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/assetLookup.ts",
       "specifier": "../../../../src/ts/process/index.svelte",
       "target": "src/ts/process/index.svelte.ts",
@@ -3201,19 +3188,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/generationChat.ts",
-      "specifier": "../../../../src/ts/util/punctuation.js",
-      "target": "src/ts/util/punctuation.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "trimUntilPunctuation"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",

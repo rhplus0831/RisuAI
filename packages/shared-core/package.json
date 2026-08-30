@@ -12,6 +12,7 @@
     "./chat-page": "./src/chatPage.ts",
     "./internal-reasoning": "./src/internalReasoning.ts",
     "./legacy-openai-model-aliases": "./src/legacyOpenAIModelAliases.ts",
+    "./punctuation": "./src/punctuation.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts"
   }
 }

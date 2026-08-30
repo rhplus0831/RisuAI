@@ -19,7 +19,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "check:protocol": "tsc -p packages/protocol/tsconfig.json --noEmit",
     "check:shared-core": "tsc -p packages/shared-core/tsconfig.json --noEmit",
-    "check:shared-core:boundary": "vitest run packages/shared-core/src/importBoundary.test.ts packages/shared-core/src/chatPageOwnership.test.ts packages/shared-core/src/chatLoadPagesOwnership.test.ts packages/shared-core/src/chatDisplayTailCountOwnership.test.ts packages/shared-core/src/regexOutputSizeLimitOwnership.test.ts packages/shared-core/src/legacyOpenAIModelAliasesOwnership.test.ts packages/shared-core/src/internalReasoningOwnership.test.ts packages/shared-core/src/agentPresetOutputReferencesOwnership.test.ts",
+    "check:shared-core:boundary": "vitest run packages/shared-core/src/importBoundary.test.ts packages/shared-core/src/chatPageOwnership.test.ts packages/shared-core/src/chatLoadPagesOwnership.test.ts packages/shared-core/src/chatDisplayTailCountOwnership.test.ts packages/shared-core/src/regexOutputSizeLimitOwnership.test.ts packages/shared-core/src/legacyOpenAIModelAliasesOwnership.test.ts packages/shared-core/src/internalReasoningOwnership.test.ts packages/shared-core/src/agentPresetOutputReferencesOwnership.test.ts packages/shared-core/src/punctuationOwnership.test.ts",
     "check:server": "tsx util/check-server.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

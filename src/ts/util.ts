@@ -1,6 +1,6 @@
 import { writable, type Writable } from 'svelte/store'
 import type { Message } from './storage/database.svelte'
-export { isLastCharPunctuation, trimUntilPunctuation } from './util/punctuation'
+export { isLastCharPunctuation, trimUntilPunctuation } from '@risuai/shared-core/punctuation'
 export interface Messagec extends Message {
   index: number
 }

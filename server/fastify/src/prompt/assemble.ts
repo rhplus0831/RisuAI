@@ -14,7 +14,7 @@ import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
+import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
 import { EntityNotFoundError } from '../repository.js'
 import {
   determineHypaV3SummarizedPrefixStartIndex,
