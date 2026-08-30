@@ -7,6 +7,13 @@ const projectionState = vi.hoisted(() => ({
 }))
 
 const assemblyState = vi.hoisted(() => ({
+  buildHistoryWindow: vi.fn(async (args: { currentChat: Chat }) => ({
+    stopSending: false,
+    chats: [],
+    addedTokens: 0,
+    currentChat: args.currentChat,
+    triggerResult: undefined,
+  })),
   renderFinalPrompt: vi.fn(async () => ({
     formated: [{ role: 'system', content: 'assembled' }],
   })),
@@ -52,13 +59,7 @@ vi.mock('../promptBudget/preflightTemplateTokens', () => ({
 }))
 
 vi.mock('../promptAssembly/buildHistoryWindow', () => ({
-  buildHistoryWindow: async (args: { currentChat: Chat }) => ({
-    stopSending: false,
-    chats: [],
-    addedTokens: 0,
-    currentChat: args.currentChat,
-    triggerResult: undefined,
-  }),
+  buildHistoryWindow: assemblyState.buildHistoryWindow,
 }))
 
 vi.mock('../promptAssembly/buildMemoryWindow', () => ({
@@ -144,6 +145,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     projectionState.canUse = true
     projectionState.fetchResource.mockReset()
     assemblyState.renderFinalPrompt.mockClear()
+    assemblyState.buildHistoryWindow.mockClear()
     assemblyState.finalizeRequestBudget.mockClear()
   })
 
@@ -209,6 +211,8 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
       },
       formatingOrder: [],
       aiModel: 'gpt-4',
+      modelProfiles: [{ id: 'durable-main', name: 'Durable Main', modelId: 'novelai:durable' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'durable-main' } },
       chainOfThought: false,
       personaPrompt: false,
       jailbreakToggle: false,
@@ -250,9 +254,13 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     expect(testDatabaseState.db.promptTemplate).toEqual(globalTemplate)
     expect(assemblyState.renderFinalPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
+        modelId: 'novelai:durable',
         promptTemplate: [...chatTemplate, { type: 'postEverything' }],
         usingPromptTemplate: true,
       }),
+    )
+    expect(assemblyState.buildHistoryWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ modelId: 'novelai:durable' }),
     )
     expect(throwError).not.toHaveBeenCalled()
   })

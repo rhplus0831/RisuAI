@@ -25,6 +25,7 @@ import {
   isPromptTemplateHydrated,
 } from '../server/promptTemplateHydration'
 import type { OpenAIChat } from './index.svelte'
+import { resolveModelProfile } from '../model/modelProfileResolver'
 
 export interface SendChatPromptStageTimings {
   stage1Start: number
@@ -121,6 +122,7 @@ export async function assembleLocalSendChatPrompt(args: {
   const { promptTemplate, usingPromptTemplate } = normalizeTemplate(args.currentChar, {
     chatPromptPresetId: currentChat.generationSettings?.promptPresetId,
   })
+  const mainModelId = resolveModelProfile({ database: getDatabase(), role: 'chatMain' }).modelId
 
   if (!args.currentChar.utilityBot && !promptTemplate) {
     const sections = buildPlainPromptSections(args.currentChar)
@@ -157,6 +159,7 @@ export async function assembleLocalSendChatPrompt(args: {
   const history = await buildHistoryWindow({
     currentChar: args.currentChar,
     currentChat,
+    modelId: mainModelId,
     usingPromptTemplate,
     tokenizer: args.tokenizer,
     findCharacterbyIdwithCache: args.findCharacterbyIdwithCache,
@@ -235,6 +238,7 @@ export async function assembleLocalSendChatPrompt(args: {
 
   const render = await renderFinalPrompt({
     currentChar: args.currentChar,
+    modelId: mainModelId,
     unformated,
     promptTemplate,
     usingPromptTemplate,

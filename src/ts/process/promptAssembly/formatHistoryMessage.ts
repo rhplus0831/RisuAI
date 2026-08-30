@@ -16,6 +16,7 @@ export interface FormatHistoryMessageArgs {
   /** ms.length, used for the maxThoughtTagDepth clamp. */
   totalCount: number
   currentChar: character
+  modelId: string
   usingPromptTemplate: boolean
   findCharacterbyIdwithCache: (id: string) => character
 }
@@ -34,7 +35,7 @@ export interface FormatHistoryMessageArgs {
  * cache.
  */
 export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Promise<OpenAIChat> {
-  const { msg, index, totalCount, currentChar, usingPromptTemplate, findCharacterbyIdwithCache } = args
+  const { msg, index, totalCount, currentChar, modelId, usingPromptTemplate, findCharacterbyIdwithCache } = args
   const nowChatroom = currentChar
 
   let formatedChat = (
@@ -86,7 +87,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   }
 
   const multimodal: MultiModal[] = []
-  const modelinfo = getModelInfo(getDatabase().aiModel)
+  const modelinfo = getModelInfo(modelId)
   if (inlays.length > 0) {
     for (const inlay of inlays) {
       const inlayName = inlay

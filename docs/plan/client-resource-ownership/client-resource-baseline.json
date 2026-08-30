@@ -1458,7 +1458,7 @@
         },
         {
           "file": "src/ts/process/promptAssembly/buildHistoryWindow.ts",
-          "count": 4
+          "count": 3
         },
         {
           "file": "src/ts/process/promptAssembly/buildMemoryWindow.ts",
@@ -1474,7 +1474,7 @@
         },
         {
           "file": "src/ts/process/promptAssembly/formatHistoryMessage.ts",
-          "count": 4
+          "count": 3
         },
         {
           "file": "src/ts/process/promptAssembly/normalizeTemplate.ts",
@@ -1482,7 +1482,7 @@
         },
         {
           "file": "src/ts/process/promptAssembly/renderFinalPrompt.ts",
-          "count": 27
+          "count": 19
         },
         {
           "file": "src/ts/process/promptBudget/preflightTemplateTokens.ts",
@@ -1498,7 +1498,7 @@
         },
         {
           "file": "src/ts/process/sendChatPromptAssembly.ts",
-          "count": 8
+          "count": 9
         }
       ]
     },

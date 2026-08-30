@@ -46,7 +46,11 @@ vi.mock('../transformers', () => ({
 }))
 
 import { setDatabase, type Database, type Message, type character } from '../../storage/database.svelte'
-import { formatHistoryMessage } from '../promptAssembly/formatHistoryMessage'
+import { resolveModelProfile } from '../../model/modelProfileResolver'
+import {
+  formatHistoryMessage as formatHistoryMessageWithModel,
+  type FormatHistoryMessageArgs,
+} from '../promptAssembly/formatHistoryMessage'
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -86,8 +90,10 @@ function makeMsg(overrides: Partial<Message>): Message {
   } as Message
 }
 
+let seededDatabase: Database
+
 function seedDb(extra: Partial<Database> = {}) {
-  setDatabase({
+  seededDatabase = {
     aiModel: 'xcustom:::no-vision',
     subModel: 'xcustom:::no-vision',
     customModels: [
@@ -102,10 +108,18 @@ function seedDb(extra: Partial<Database> = {}) {
     ],
     characters: [makeChar()],
     ...extra,
-  } as unknown as Database)
+  } as unknown as Database
+  setDatabase(seededDatabase)
 }
 
 const noCache = (_id: string) => makeChar({ name: 'Cached' })
+
+function formatHistoryMessage(args: Omit<FormatHistoryMessageArgs, 'modelId'>) {
+  return formatHistoryMessageWithModel({
+    ...args,
+    modelId: resolveModelProfile({ database: seededDatabase, role: 'chatMain' }).modelId,
+  })
+}
 
 describe('formatHistoryMessage - basic conversion', () => {
   beforeEach(() => {
@@ -174,6 +188,23 @@ describe('formatHistoryMessage - inlay handling', () => {
     expect(result.content).toContain('[caption-text]')
     expect(result.content).not.toContain('{{inlay::img-1}}')
     expect(result.multimodals).toBeUndefined()
+  })
+
+  it('uses the request-scoped resolved model for image capability checks', async () => {
+    const result = await formatHistoryMessageWithModel({
+      msg: makeMsg({ role: 'user', data: 'see: {{inlay::img-1}}' }),
+      index: 0,
+      totalCount: 1,
+      currentChar: makeChar(),
+      modelId: 'gpt4o',
+      usingPromptTemplate: false,
+      findCharacterbyIdwithCache: noCache,
+    })
+
+    expect(result.content).not.toContain('[caption-text]')
+    expect(result.multimodals).toEqual([
+      expect.objectContaining({ type: 'image', base64: 'data:image/png;base64,IMG1' }),
+    ])
   })
 
   it('records video inlays once and skips subsequent ones (first-wins)', async () => {

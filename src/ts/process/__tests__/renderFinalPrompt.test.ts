@@ -28,9 +28,15 @@ vi.mock('../scriptings', () => ({
 
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { resolveModelProfile } from '../../model/modelProfileResolver'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
-import { renderFinalPrompt, type UnformatedPromptSlots, type FormatOrderKey } from '../promptAssembly/renderFinalPrompt'
+import {
+  renderFinalPrompt as renderFinalPromptWithModel,
+  type FormatOrderKey,
+  type RenderFinalPromptArgs,
+  type UnformatedPromptSlots,
+} from '../promptAssembly/renderFinalPrompt'
 
 const testDatabaseState = {
   get db() {
@@ -96,6 +102,13 @@ function emptyUnformated(): UnformatedPromptSlots {
 
 const passThrough = (text: string) => text
 
+function renderFinalPrompt(args: Omit<RenderFinalPromptArgs, 'modelId'>) {
+  return renderFinalPromptWithModel({
+    ...args,
+    modelId: resolveModelProfile({ database: testDatabaseState.db, role: 'chatMain' }).modelId,
+  })
+}
+
 const DEFAULT_FORMAT_ORDER: FormatOrderKey[] = [
   'main',
   'description',
@@ -157,6 +170,28 @@ describe('renderFinalPrompt - non-template formatOrder path', () => {
     })
 
     expect(result.formated.map((c) => c.content)).toEqual(['MAIN', 'DESC'])
+  })
+
+  it('uses the request-scoped resolved model instead of the flat database model', async () => {
+    seedDb({ aiModel: 'novelai:something' })
+    const unformated = emptyUnformated()
+    unformated.main.push({ role: 'system', content: 'MAIN' })
+    unformated.description.push({ role: 'system', content: 'DESC' })
+
+    const result = await renderFinalPromptWithModel({
+      currentChar: makeChar(),
+      modelId: 'gpt-4o',
+      unformated,
+      promptTemplate: null,
+      usingPromptTemplate: false,
+      formatOrder: DEFAULT_FORMAT_ORDER,
+      memories: [],
+      positionParser: passThrough,
+      hasCachePoint: false,
+      isContinue: false,
+    })
+
+    expect(result.formated.map((chat) => chat.content)).toEqual(['MAIN\n\nDESC'])
   })
 })
 

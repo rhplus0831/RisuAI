@@ -11,6 +11,7 @@ import { runTrigger } from '../triggers'
 export interface BuildHistoryWindowArgs {
   currentChar: character
   currentChat: Chat
+  modelId: string
   usingPromptTemplate: boolean
   tokenizer: ChatTokenizer
   findCharacterbyIdwithCache: (id: string) => character
@@ -47,8 +48,15 @@ export type BuildHistoryWindowResult =
  * additonalSysPrompt processing.
  */
 export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<BuildHistoryWindowResult> {
-  const { currentChar, usingPromptTemplate, tokenizer, findCharacterbyIdwithCache, depthPrompts, resolvePosition } =
-    args
+  const {
+    currentChar,
+    modelId,
+    usingPromptTemplate,
+    tokenizer,
+    findCharacterbyIdwithCache,
+    depthPrompts,
+    resolvePosition,
+  } = args
   let currentChat = args.currentChat
   const nowChatroom = currentChar
 
@@ -61,7 +69,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
 
   const chats: OpenAIChat[] = examples
 
-  if (!getDatabase().aiModel.startsWith('novelai') && !getDatabase().promptSettings?.trimStartNewChat) {
+  if (!modelId.startsWith('novelai') && !getDatabase().promptSettings?.trimStartNewChat) {
     chats.push({
       role: 'system',
       content: '[Start a new chat]',
@@ -124,6 +132,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
       index,
       totalCount: ms.length,
       currentChar,
+      modelId,
       usingPromptTemplate,
       findCharacterbyIdwithCache,
     })

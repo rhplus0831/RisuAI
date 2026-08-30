@@ -25,6 +25,7 @@ export type FormatOrderKey = keyof UnformatedPromptSlots
 
 export interface RenderFinalPromptArgs {
   currentChar: character
+  modelId: string
   unformated: UnformatedPromptSlots
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
@@ -62,6 +63,7 @@ export interface RenderFinalPromptResult {
 export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<RenderFinalPromptResult> {
   const {
     currentChar,
+    modelId,
     unformated,
     promptTemplate,
     usingPromptTemplate,
@@ -77,10 +79,10 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
 
   if (
     isContinue &&
-    (getDatabase().aiModel.startsWith('claude') ||
-      getDatabase().aiModel.startsWith('gpt') ||
-      getDatabase().aiModel.startsWith('openrouter') ||
-      getDatabase().aiModel.startsWith('reverse_proxy'))
+    (modelId.startsWith('claude') ||
+      modelId.startsWith('gpt') ||
+      modelId.startsWith('openrouter') ||
+      modelId.startsWith('reverse_proxy'))
   ) {
     unformated.postEverything.push({
       role: 'system',
@@ -95,10 +97,10 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
       }
       if (
         !(
-          getDatabase().aiModel.startsWith('gpt') ||
-          getDatabase().aiModel.startsWith('claude') ||
-          getDatabase().aiModel === 'openrouter' ||
-          getDatabase().aiModel === 'reverse_proxy'
+          modelId.startsWith('gpt') ||
+          modelId.startsWith('claude') ||
+          modelId === 'openrouter' ||
+          modelId === 'reverse_proxy'
         )
       ) {
         formated.push(chat)
