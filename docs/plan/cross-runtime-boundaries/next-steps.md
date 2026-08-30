@@ -4,19 +4,20 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [legacy OpenAI model-alias normalization
-slice](phases/slices/phase-3-pure-shared-core/legacy-openai-model-alias-normalization.md).
+Execute the [internal-reasoning stripping
+slice](phases/slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
 
-1. Move the exact legacy-to-wire alias table and
-   `normalizeLegacyOpenAIModelId` into an explicit shared-core subpath.
-2. Preserve every mapped value and return every unknown identifier unchanged;
-   do not trim, case-fold, validate, or rewrite stored selections.
-3. Migrate the browser OpenAI request path and the Fastify chat-completions,
-   legacy-instruct, and Responses API paths together.
-4. Delete `src/ts/model/legacyOpenAIModelAliases.ts` only after shared
-   differential fixtures and closed-world consumer ownership pass.
-5. Keep provider selection, routing, credentials, request parameters, error
-   handling, and wire payloads unchanged.
+1. Move the reasoning-tag matcher and `stripInternalReasoning` into an explicit
+   shared-core subpath.
+2. Preserve case-insensitive `Thoughts`/`think` matching, attributes and spacing,
+   nested depth, unmatched close/open behavior, final trimming, and the
+   `preserveUnchanged` identity fast path exactly.
+3. Migrate browser translator/pipeline and Fastify generation, translation, and
+   agent-preset consumers together.
+4. Delete `src/ts/process/internalReasoning.ts` only after differential fixtures
+   and closed-world consumer ownership pass.
+5. Keep generation, translation, agent-output bounds, prompts, persistence,
+   streaming, and UI behavior unchanged.
 
 ## Foundations Released
 
@@ -38,12 +39,15 @@ slice](phases/slices/phase-3-pure-shared-core/legacy-openai-model-alias-normaliz
   `6fc15d7a1`.
 - Regex output-size normalization and all eight production consumers are
   released at `83e8aabfa`.
+- Legacy OpenAI model-alias normalization and all four production consumers are
+  released at `23e5a4b30`.
 
 ## Not In This Slice
 
-- Do not move provider dispatch, endpoint selection, request construction,
-  credentials, response parsing, or retry/error policy into shared core.
-- Do not expand or modernize the legacy alias table in this boundary move.
+- Do not move generation, translation, prompt, agent-preset, streaming,
+  persistence, or UI orchestration into shared core.
+- Do not broaden the recognized reasoning-tag vocabulary or change whitespace
+  policy in this boundary move.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

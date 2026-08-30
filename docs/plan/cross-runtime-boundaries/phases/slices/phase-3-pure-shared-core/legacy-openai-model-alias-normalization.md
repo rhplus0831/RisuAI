@@ -1,6 +1,6 @@
 # Legacy OpenAI Model-Alias Normalization
 
-Status: ready.
+Status: complete at `23e5a4b30`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -45,3 +45,11 @@ architecture inventory, formatting, and `git diff --check`.
 
 Stop if the helper needs provider state, credentials, endpoints, persistence,
 request orchestration, or runtime-specific behavior.
+
+## Result
+
+The exact alias table and pass-through normalizer now live at
+`@risuai/shared-core/legacy-openai-model-aliases`. All four production consumers
+use the shared owner, the old browser-tree module is gone, focused provider
+tests preserve wire payloads, and the reviewed boundary fell to 327 direct
+root-`src` edges.

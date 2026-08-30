@@ -46,4 +46,6 @@ Completed slice: [Chat display-tail normalization](slices/phase-3-pure-shared-co
 
 Completed slice: [Regex output-size normalization](slices/phase-3-pure-shared-core/regex-output-size-normalization.md).
 
-Active slice: [Legacy OpenAI model-alias normalization](slices/phase-3-pure-shared-core/legacy-openai-model-alias-normalization.md).
+Completed slice: [Legacy OpenAI model-alias normalization](slices/phase-3-pure-shared-core/legacy-openai-model-alias-normalization.md).
+
+Active slice: [Internal-reasoning stripping](slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
