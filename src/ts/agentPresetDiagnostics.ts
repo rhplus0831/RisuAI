@@ -1,3 +1,5 @@
+import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
+
 export const DEFAULT_AGENT_PRESET_DIAGNOSTIC_RUN_LIMIT = 50
 
 export interface AgentPresetPreparedInputSectionDiagnostic {
@@ -125,15 +127,17 @@ export function collectAgentPresetDiagnosticRuns(
   limit = DEFAULT_AGENT_PRESET_DIAGNOSTIC_RUN_LIMIT,
 ): AgentPresetDiagnosticRunCollection {
   const normalizedLimit = Number.isFinite(limit) ? Math.max(0, Math.floor(limit)) : 0
-  if (!presetId || normalizedLimit === 0 || !isRecord(database) || !Array.isArray(database.characters)) {
+  if (!presetId || normalizedLimit === 0) {
     return { runs: [], total: 0 }
   }
+  const characters = diagnosticCharacters(database)
+  if (!characters) return { runs: [], total: 0 }
 
   const runs: Array<AgentPresetDiagnosticRun & { encounterOrder: number }> = []
   let total = 0
   let encounterOrder = 0
 
-  database.characters.forEach((characterValue, characterIndex) => {
+  characters.forEach((characterValue, characterIndex) => {
     if (!isRecord(characterValue) || !Array.isArray(characterValue.chats)) return
     const characterId = readString(characterValue.chaId)
     const characterName = readString(characterValue.name)
@@ -180,6 +184,37 @@ export function collectAgentPresetDiagnosticRuns(
     runs: runs.map(({ encounterOrder: _encounterOrder, ...run }) => run),
     total,
   }
+}
+
+/**
+ * Once the canonical character resource is ready, diagnostics must not scan a
+ * stale aggregate database. Stable character and chat identities are required
+ * to be unique; malformed rows fail closed rather than selecting an arbitrary
+ * owner.
+ */
+function diagnosticCharacters(database: unknown): unknown[] | null {
+  if (charactersResourceState.status !== 'ready') {
+    return isRecord(database) && Array.isArray(database.characters) ? database.characters : null
+  }
+
+  const seenCharacterIds = new Set<string>()
+  const seenChatIds = new Set<string>()
+  const owners: unknown[] = []
+  for (const candidate of charactersResourceState.characters) {
+    const characterId = readString((candidate as unknown as Record<string, unknown>)?.chaId)
+    if (!characterId || seenCharacterIds.has(characterId)) return []
+    seenCharacterIds.add(characterId)
+    const owner = getCharacterResourceOwner(characterId)
+    if (!owner) return []
+    if (!Array.isArray(owner.chats)) return []
+    for (const chat of owner.chats) {
+      const chatId = readString((chat as unknown as Record<string, unknown>)?.id)
+      if (!chatId || seenChatIds.has(chatId)) return []
+      seenChatIds.add(chatId)
+    }
+    owners.push(owner)
+  }
+  return owners
 }
 
 function normalizeStepDiagnostic(value: unknown): AgentPresetStepDiagnostic[] {
