@@ -56,13 +56,17 @@
   }
 
   function gridCatalogCharacterKey(char: GridCatalogCharacter) {
-    return char.chaId || `legacy-${char.index}`
+    return char.chaId ? `${char.chaId}:${char.index}` : `legacy-${char.index}`
   }
 </script>
 
 <script lang="ts">
   import { changeChar, getCharImage, removeChar } from '../../ts/characters'
-  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    getResourceDatabase as getDatabase,
+  } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
@@ -90,7 +94,10 @@
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
   let catalogCharacters = $derived(
-    formatGridCatalogCharacterListsFromCharacters(charactersResourceState.characters, normalizedSearch),
+    formatGridCatalogCharacterListsFromCharacters(readCharacterOwners(), normalizedSearch),
+  )
+  let selectedCharacterIndex = $derived(
+    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID,
   )
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
@@ -184,18 +191,68 @@
     return fallback
   }
 
-  function openCharacterRoute(index: number) {
-    const character = getDatabase().characters?.[index]
-    if (!character?.chaId) {
+  function readCharacterOwners(): readonly Database['characters'][number][] {
+    const owners = charactersResourceState.characters
+    if (owners.length > 0 || charactersResourceState.status === 'ready') return owners
+    return getDatabase().characters ?? []
+  }
+
+  function uniqueCharacterOwner(characterId: string) {
+    if (charactersResourceState.status === 'ready') {
+      const character = getCharacterResourceOwner(characterId)
+      const index = character ? charactersResourceState.characters.indexOf(character) : -1
+      return character && index >= 0 ? { character, index } : undefined
+    }
+
+    let owner: { character: Database['characters'][number]; index: number } | undefined
+    for (const [index, character] of readCharacterOwners().entries()) {
+      if (character?.chaId !== characterId) continue
+      if (owner) return undefined
+      owner = { character, index }
+    }
+    return owner
+  }
+
+  function resolveCatalogCharacterOwner(char: GridCatalogCharacter) {
+    if (char.chaId) return uniqueCharacterOwner(char.chaId)
+    const character = readCharacterOwners()[char.index]
+    return character && !character.chaId ? { character, index: char.index } : undefined
+  }
+
+  function isSelectedCatalogCharacter(char: GridCatalogCharacter): boolean {
+    if (char.index !== selectedCharacterIndex) return false
+    return !char.chaId || uniqueCharacterOwner(char.chaId)?.index === char.index
+  }
+
+  function prefetchCatalogCharacter(char: GridCatalogCharacter): void {
+    const characterId = resolveCatalogCharacterOwner(char)?.character.chaId
+    if (characterId) prefetchCharacterRouteResource(characterId)
+  }
+
+  function openCharacterRoute(char: GridCatalogCharacter) {
+    const owner = resolveCatalogCharacterOwner(char)
+    if (!owner) return
+    const { character, index } = owner
+    if (!character.chaId) {
       changeChar(index)
       return
     }
     navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
   }
 
-  async function restoreTrashedCharacter(index: number): Promise<CharacterMutationOutcome | null> {
-    const character = getDatabase().characters?.[index]
-    if (!character) return null
+  async function removeCatalogCharacter(
+    char: GridCatalogCharacter,
+    type: 'normal' | 'permanent' = 'normal',
+  ): Promise<CharacterMutationOutcome | null> {
+    const owner = resolveCatalogCharacterOwner(char)
+    if (!owner) return null
+    return removeChar(owner.index, char.name, type)
+  }
+
+  async function restoreTrashedCharacter(char: GridCatalogCharacter): Promise<CharacterMutationOutcome | null> {
+    const owner = resolveCatalogCharacterOwner(char)
+    if (!owner) return null
+    const { character, index } = owner
 
     const characterId = character.chaId
     if (!characterId) {
@@ -204,8 +261,7 @@
     const previous = currentCharacterRowSnapshot(index)
     let applied = false
     withTrustedResourceWrite(() => {
-      const liveIndex = getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
-      const liveCharacter = getDatabase().characters?.[liveIndex] as
+      const liveCharacter = uniqueCharacterOwner(characterId)?.character as
         | (typeof character & { trashTime?: number | null })
         | undefined
       if (!liveCharacter) return
@@ -313,17 +369,17 @@
               data-risu-row-id={char.chaId ?? ''}
               data-risu-row-index={char.index}
               data-risu-list-kind="grid"
-              data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
-              onpointerenter={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
-              onfocusin={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+              data-risu-selected={isSelectedCatalogCharacter(char) ? 'true' : 'false'}
+              onpointerenter={() => prefetchCatalogCharacter(char)}
+              onfocusin={() => prefetchCatalogCharacter(char)}
               role="group"
-              aria-current={char.index === $selectedCharID ? 'true' : undefined}>
+              aria-current={isSelectedCatalogCharacter(char) ? 'true' : undefined}>
               {#if char.image}
                 <span data-risu-grid-action="open">
                   <BarIcon
                     ariaLabel={language.openCharacter(char.name)}
                     onClick={() => {
-                      openCharacterRoute(char.index)
+                      openCharacterRoute(char)
                     }}
                     additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
                 </span>
@@ -332,9 +388,9 @@
                   <BarIcon
                     ariaLabel={language.openCharacter(char.name)}
                     onClick={() => {
-                      openCharacterRoute(char.index)
+                      openCharacterRoute(char)
                     }}
-                    additionalStyle={char.index === $selectedCharID ? 'background:var(--risu-theme-selected)' : ''}>
+                    additionalStyle={isSelectedCatalogCharacter(char) ? 'background:var(--risu-theme-selected)' : ''}>
                     <User />
                   </BarIcon>
                 </span>
@@ -357,16 +413,16 @@
             data-risu-row-id={char.chaId ?? ''}
             data-risu-row-index={char.index}
             data-risu-list-kind="list"
-            data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
-            onpointerenter={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
-            onfocusin={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
+            data-risu-selected={isSelectedCatalogCharacter(char) ? 'true' : 'false'}
+            onpointerenter={() => prefetchCatalogCharacter(char)}
+            onfocusin={() => prefetchCatalogCharacter(char)}
             role="group"
-            aria-current={char.index === $selectedCharID ? 'true' : undefined}>
+            aria-current={isSelectedCatalogCharacter(char) ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon
                 ariaLabel={language.openCharacter(char.name)}
                 onClick={() => {
-                  openCharacterRoute(char.index)
+                  openCharacterRoute(char)
                 }}
                 additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
             </span>
@@ -382,7 +438,7 @@
                   aria-label={language.openCharacter(char.name)}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    openCharacterRoute(char.index)
+                    openCharacterRoute(char)
                   }}>
                   <SquareMousePointer />
                 </button>
@@ -394,7 +450,7 @@
                   disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    void runCharacterCatalogAction(char, 'remove', () => removeChar(char.index, char.name))
+                    void runCharacterCatalogAction(char, 'remove', () => removeCatalogCharacter(char))
                   }}>
                   <TrashIcon />
                 </button>
@@ -418,13 +474,13 @@
             data-risu-row-id={char.chaId ?? ''}
             data-risu-row-index={char.index}
             data-risu-list-kind="trash"
-            data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
-            aria-current={char.index === $selectedCharID ? 'true' : undefined}>
+            data-risu-selected={isSelectedCatalogCharacter(char) ? 'true' : 'false'}
+            aria-current={isSelectedCatalogCharacter(char) ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon
                 ariaLabel={language.openCharacter(char.name)}
                 onClick={() => {
-                  openCharacterRoute(char.index)
+                  openCharacterRoute(char)
                 }}
                 additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
             </span>
@@ -443,7 +499,7 @@
                   disabled={characterCatalogActions[gridCatalogCharacterKey(char)]?.status === 'pending'}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    void runCharacterCatalogAction(char, 'restore', () => restoreTrashedCharacter(char.index))
+                    void runCharacterCatalogAction(char, 'restore', () => restoreTrashedCharacter(char))
                   }}>
                   <Undo2Icon />
                 </button>
@@ -456,7 +512,7 @@
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
                     void runCharacterCatalogAction(char, 'delete-permanent', () =>
-                      removeChar(char.index, char.name, 'permanent'),
+                      removeCatalogCharacter(char, 'permanent'),
                     )
                   }}>
                   <TrashIcon />

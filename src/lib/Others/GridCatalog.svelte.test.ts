@@ -27,6 +27,18 @@ const alertSpies = vi.hoisted(() => ({
   alertNormal: vi.fn(),
 }))
 
+const resourceStateMocks = vi.hoisted(() => ({
+  fallbackDatabase: undefined as Record<string, unknown> | undefined,
+}))
+
+const routerSpies = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}))
+
+const routeResourceSpies = vi.hoisted(() => ({
+  prefetchCharacterRouteResource: vi.fn(),
+}))
+
 vi.mock('../../ts/characters', () => characterSpies)
 vi.mock('src/ts/characters', () => characterSpies)
 vi.mock('src/ts/characterCommands', () => characterCommandSpies)
@@ -34,6 +46,23 @@ vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
 vi.mock('src/ts/alert', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/ts/alert')>()),
   ...alertSpies,
+}))
+vi.mock('src/ts/server/resourceState.svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('src/ts/server/resourceState.svelte')>()
+  return {
+    ...actual,
+    getResourceDatabase: vi.fn((options?: { snapshot?: boolean }) =>
+      resourceStateMocks.fallbackDatabase ? resourceStateMocks.fallbackDatabase : actual.getResourceDatabase(options),
+    ),
+  }
+})
+vi.mock('../../ts/router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../ts/router')>()),
+  navigate: routerSpies.navigate,
+}))
+vi.mock('src/ts/server/routeResourceLoader', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/server/routeResourceLoader')>()),
+  prefetchCharacterRouteResource: routeResourceSpies.prefetchCharacterRouteResource,
 }))
 vi.mock('src/ts/characterDisplayName', async (importOriginal) => {
   const actual = await importOriginal<typeof import('src/ts/characterDisplayName')>()
@@ -59,8 +88,9 @@ import MobileCharacters, {
 import { changeLanguage, language } from 'src/lang'
 import { languageKorean } from 'src/lang/ko'
 import { languageSpanish } from 'src/lang/es'
-import { MobileSearch } from 'src/ts/stores.svelte'
+import { MobileSearch, selectedCharID } from 'src/ts/stores.svelte'
 import {
+  charactersResourceState,
   getResourceDatabase as getDatabase,
   settingsResourceState,
   replaceResourceDatabase as setDatabaseLite,
@@ -233,7 +263,9 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  resourceStateMocks.fallbackDatabase = undefined
   MobileSearch.set('')
+  selectedCharID.set(-1)
   changeLanguage('en')
   seedCatalog()
 })
@@ -246,6 +278,8 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   MobileSearch.set('')
+  selectedCharID.set(-1)
+  resourceStateMocks.fallbackDatabase = undefined
   changeLanguage('en')
 })
 
@@ -333,6 +367,118 @@ describe('GridCatalog derived lists', () => {
       active: [{ chaId: 'aggregate', name: 'Aggregate Character' }],
       trash: [],
     })
+  })
+
+  it('renders, selects, and navigates from the resident character owner instead of the fallback database', async () => {
+    setDatabaseLite({
+      language: 'en',
+      currentChar: 0,
+      characters: [
+        {
+          ...makeCharacter({ chaId: 'owner-character', name: 'Owner Character' }),
+          chatPage: 0,
+          chats: [{ id: 'owner-chat' }],
+        },
+      ],
+    } as any)
+    charactersResourceState.status = 'idle'
+    resourceStateMocks.fallbackDatabase = {
+      language: 'en',
+      characters: [
+        {
+          ...makeCharacter({ chaId: 'fallback-character', name: 'Fallback Character' }),
+          chatPage: 0,
+          chats: [{ id: 'fallback-chat' }],
+        },
+      ],
+    }
+    selectedCharID.set(99)
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(listHeadings('list')).toEqual(['Owner Character'])
+    expect(rowForCharacterId('list', 'owner-character').dataset.risuSelected).toBe('false')
+    gridAction('list', 'owner-character', 'open').click()
+
+    expect(routerSpies.navigate).toHaveBeenCalledWith('/character/owner-character/owner-chat')
+    expect(characterSpies.changeChar).not.toHaveBeenCalled()
+
+    charactersResourceState.status = 'ready'
+    await tick()
+    expect(rowForCharacterId('list', 'owner-character').dataset.risuSelected).toBe('true')
+  })
+
+  it('uses the fallback database only while the character owner is empty and not ready', async () => {
+    resourceStateMocks.fallbackDatabase = {
+      language: 'en',
+      characters: [
+        {
+          ...makeCharacter({ chaId: 'fallback-character', name: 'Fallback Character' }),
+          chatPage: 0,
+          chats: [{ id: 'fallback-chat' }],
+        },
+      ],
+    }
+    charactersResourceState.characters = []
+    charactersResourceState.status = 'idle'
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(listHeadings('list')).toEqual(['Fallback Character'])
+    gridAction('list', 'fallback-character', 'open').click()
+    expect(routerSpies.navigate).toHaveBeenCalledWith('/character/fallback-character/fallback-chat')
+
+    charactersResourceState.characters = [
+      makeCharacter({ chaId: 'resident-character', name: 'Resident Character' }),
+    ] as any
+    await tick()
+    expect(listHeadings('list')).toEqual(['Resident Character'])
+
+    charactersResourceState.characters = []
+    charactersResourceState.status = 'ready'
+    await tick()
+    expect(gridRows('list')).toEqual([])
+  })
+
+  it('fails prefetch, navigation, and mutations closed for duplicate character owner ids', async () => {
+    setDatabaseLite({
+      language: 'en',
+      characters: [
+        {
+          ...makeCharacter({ chaId: 'duplicate-character', name: 'Active Duplicate' }),
+          chatPage: 0,
+          chats: [{ id: 'active-chat' }],
+        },
+        {
+          ...makeCharacter({ chaId: 'duplicate-character', name: 'Trash Duplicate', trashTime: 20 }),
+          chatPage: 0,
+          chats: [{ id: 'trash-chat' }],
+        },
+      ],
+    } as any)
+
+    mountCatalog()
+    await clickCatalogTab('list')
+    const activeRow = rowForCharacterId('list', 'duplicate-character')
+    activeRow.dispatchEvent(new Event('pointerenter'))
+    gridAction('list', 'duplicate-character', 'open').click()
+    gridAction('list', 'duplicate-character', 'delete').click()
+    await tick()
+
+    await clickCatalogTab('trash')
+    gridAction('trash', 'duplicate-character', 'restore').click()
+    gridAction('trash', 'duplicate-character', 'delete-permanent').click()
+    await tick()
+
+    expect(routerSpies.navigate).not.toHaveBeenCalled()
+    expect(routeResourceSpies.prefetchCharacterRouteResource).not.toHaveBeenCalled()
+    expect(characterSpies.changeChar).not.toHaveBeenCalled()
+    expect(characterSpies.removeChar).not.toHaveBeenCalled()
+    expect(characterCommandSpies.currentCharacterRowSnapshot).not.toHaveBeenCalled()
+    expect(characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome).not.toHaveBeenCalled()
+    expect(charactersResourceState.characters[1].trashTime).toBe(20)
   })
 
   it('GridCatalog trash actions keep restore and permanent-delete targets', async () => {
