@@ -1,5 +1,6 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { canUseServerResourceReads } from './resourceReads'
+import { isServerBulkChatMessagesResource, isServerChatMessagesResource } from '@risuai/protocol/chat-messages-resource'
 import {
   isResourceCacheMetadata,
   persistResourceCache,
@@ -289,9 +290,6 @@ async function fetchServerChatMessagesFromEndpoint(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid resource revision' }
   }
-  if (!Array.isArray(record.message)) {
-    return { status: 'error', error: 'Invalid chat-messages response' }
-  }
   if (
     (record.messageStart !== undefined || record.messageTotal !== undefined) &&
     (!Number.isInteger(record.messageStart) ||
@@ -301,6 +299,9 @@ async function fetchServerChatMessagesFromEndpoint(
       (record.messageStart as number) > (record.messageTotal as number))
   ) {
     return { status: 'error', error: 'Invalid chat-messages range' }
+  }
+  if (!isServerChatMessagesResource(record)) {
+    return { status: 'error', error: 'Invalid chat-messages response' }
   }
   return {
     status: 'ok',
@@ -362,34 +363,32 @@ export async function fetchServerBulkChatMessages(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid resource revision' }
   }
-  if (!Array.isArray(record.chats)) {
+  if (
+    Array.isArray(record.chats) &&
+    record.chats.some(
+      (chat) =>
+        !chat ||
+        typeof chat !== 'object' ||
+        typeof (chat as Record<string, unknown>).chatId !== 'string' ||
+        !Array.isArray((chat as Record<string, unknown>).message),
+    )
+  ) {
+    return { status: 'error', error: 'Invalid bulk chat-messages entry' }
+  }
+  if (!isServerBulkChatMessagesResource(record)) {
     return { status: 'error', error: 'Invalid bulk chat-messages response' }
   }
 
-  const chats: Extract<ServerBulkChatMessagesResult, { status: 'ok' }>['chats'] = []
-  for (const raw of record.chats) {
-    if (!raw || typeof raw !== 'object') {
-      return { status: 'error', error: 'Invalid bulk chat-messages entry' }
-    }
-    const chat = raw as Record<string, unknown>
-    if (typeof chat.chatId !== 'string' || !Array.isArray(chat.message)) {
-      return { status: 'error', error: 'Invalid bulk chat-messages entry' }
-    }
-    chats.push({
-      chatId: chat.chatId,
-      message: chat.message as unknown[],
-      hypaV3Data: chat.hypaV3Data,
-      alternates: Array.isArray(chat.alternates) ? (chat.alternates as unknown[]) : [],
-    })
-  }
+  const chats: Extract<ServerBulkChatMessagesResult, { status: 'ok' }>['chats'] = record.chats.map((chat) => ({
+    ...chat,
+    alternates: chat.alternates ?? [],
+  }))
 
   return {
     status: 'ok',
     revision: revision as number,
     chats,
-    missing: Array.isArray(record.missing)
-      ? record.missing.filter((value): value is string => typeof value === 'string')
-      : [],
+    missing: record.missing.filter((value): value is string => typeof value === 'string'),
   }
 }
 

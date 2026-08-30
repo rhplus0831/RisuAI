@@ -11,6 +11,7 @@ import {
   type ServerCharacterSelectionResource,
 } from '@risuai/protocol/character-resource'
 import { isServerChatMetadataResource } from '@risuai/protocol/chat-metadata'
+import { isServerBulkChatMessagesResource, isServerChatMessagesResource } from '@risuai/protocol/chat-messages-resource'
 import {
   SERVER_SHELL_PROTOCOL_VERSION,
   SERVER_SHELL_SETTINGS_KEYS,
@@ -636,57 +637,42 @@ export function registerResourceReadRoutes(
       const { revision } = getSchemaState(db)
       if (generationMessageId) {
         const hydration = loadGenerationChatHydration(db, dataDir, req.params.id, generationMessageId)
-        return metricResourceResponse(
-          req,
-          reply,
-          'chatMessages',
+        const payload = {
           revision,
-          {
-            revision,
-            chatId: req.params.id,
-            message: hydration.message,
-            alternates: hydration.alternates,
-            messageStart: hydration.messageStart,
-            messageTotal: hydration.messageTotal,
-          },
-          { readMode: 'generation' },
-        )
+          chatId: req.params.id,
+          message: hydration.message,
+          alternates: hydration.alternates,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+        }
+        if (!isServerChatMessagesResource(payload)) throw new Error('Invalid chat messages resource')
+        return metricResourceResponse(req, reply, 'chatMessages', revision, payload, { readMode: 'generation' })
       }
       if (range) {
         const hydration = loadChatHydrationRange(db, dataDir, req.params.id, range)
-        return metricResourceResponse(
-          req,
-          reply,
-          'chatMessages',
-          revision,
-          {
-            revision,
-            chatId: req.params.id,
-            message: hydration.message,
-            hypaV3Data: hydration.hypaV3Data,
-            alternates: hydration.alternates,
-            messageStart: hydration.messageStart,
-            messageTotal: hydration.messageTotal,
-          },
-          { readMode: 'range' },
-        )
-      }
-
-      const hydration = loadChatHydration(db, dataDir, req.params.id)
-      return metricResourceResponse(
-        req,
-        reply,
-        'chatMessages',
-        revision,
-        {
+        const payload = {
           revision,
           chatId: req.params.id,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
           alternates: hydration.alternates,
-        },
-        { readMode: 'full' },
-      )
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+        }
+        if (!isServerChatMessagesResource(payload)) throw new Error('Invalid chat messages resource')
+        return metricResourceResponse(req, reply, 'chatMessages', revision, payload, { readMode: 'range' })
+      }
+
+      const hydration = loadChatHydration(db, dataDir, req.params.id)
+      const payload = {
+        revision,
+        chatId: req.params.id,
+        message: hydration.message,
+        hypaV3Data: hydration.hypaV3Data,
+        alternates: hydration.alternates,
+      }
+      if (!isServerChatMessagesResource(payload)) throw new Error('Invalid chat messages resource')
+      return metricResourceResponse(req, reply, 'chatMessages', revision, payload, { readMode: 'full' })
     },
   )
 
@@ -712,18 +698,16 @@ export function registerResourceReadRoutes(
       const chatIds = result.ids
       const { revision } = getSchemaState(db)
       const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: true })
-      return metricResourceResponse(
-        req,
-        reply,
-        'chatMessages',
+      const payload = {
         revision,
-        {
-          revision,
-          chats: hydration.chats,
-          missing: hydration.missing,
-        },
-        { bulk: true, idCount: chatIds.length },
-      )
+        chats: hydration.chats,
+        missing: hydration.missing,
+      }
+      if (!isServerBulkChatMessagesResource(payload)) throw new Error('Invalid bulk chat messages resource')
+      return metricResourceResponse(req, reply, 'chatMessages', revision, payload, {
+        bulk: true,
+        idCount: chatIds.length,
+      })
     },
   )
 
