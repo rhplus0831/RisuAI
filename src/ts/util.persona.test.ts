@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { selectedCharID } from './stores.svelte'
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
+import { charactersResourceState } from './server/resourceState.svelte'
 import {
   checkPersonaBinded,
   getPersonaPrompt,
@@ -8,6 +9,7 @@ import {
   getUserIcon,
   getUserIconProtrait,
   getUserName,
+  replacePlaceholders,
   resolveUserPersonaPresentation,
 } from './utilState'
 
@@ -46,6 +48,7 @@ function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
         largePortrait: false,
       },
     ],
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -169,5 +172,58 @@ describe('active chat persona display helpers', () => {
   it('uses the selected persona display name only for visible labels', () => {
     expect(getUserName()).toBe('Global Persona')
     expect(getUserDisplayName()).toBe('Visible Global Persona')
+  })
+
+  it('uses the ready character selection owner instead of a stale selected-index mirror', () => {
+    testDatabaseState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Stale Character',
+      chatPage: 0,
+      chats: [],
+    } as never)
+    selectedCharID.set(1)
+
+    expect(replacePlaceholders('{{char}} greets {{user}}', 'Explicit Character')).toBe(
+      'Character A greets Global Persona',
+    )
+  })
+
+  it('fails closed when the active chat id has more than one owner', () => {
+    testDatabaseState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Character B',
+      chatPage: 0,
+      chats: [{ id: 'chat-a', name: 'Duplicate chat', message: [], note: '', localLore: [] }],
+    } as never)
+    testDatabaseState.db.characters[0].chats[0].generationSettings = { personaId: 'chat-persona' } as never
+
+    expect(checkPersonaBinded()).toBeNull()
+    expect(getUserDisplayName()).toBe('Visible Global Persona')
+  })
+
+  it('fails closed when a chat-bound persona id has more than one owner', () => {
+    testDatabaseState.db.personas[2] = {
+      ...testDatabaseState.db.personas[2],
+      id: 'chat-persona',
+      displayName: 'Ambiguous persona',
+    }
+    testDatabaseState.db.characters[0].chats[0].generationSettings = { personaId: 'chat-persona' } as never
+
+    expect(checkPersonaBinded()).toBeNull()
+    expect(getUserDisplayName()).toBe('Visible Global Persona')
+  })
+
+  it('does not fall back to the selected-index mirror after the character owner is ready', () => {
+    charactersResourceState.currentChar = 9
+
+    expect(replacePlaceholders('{{char}}', 'Explicit Character')).toBe('Explicit Character')
+    expect(checkPersonaBinded()).toBeNull()
+  })
+
+  it('does not reuse compatibility character rows after the owner resource fails', () => {
+    charactersResourceState.status = 'error'
+
+    expect(replacePlaceholders('{{char}}', 'Explicit Character')).toBe('Explicit Character')
+    expect(checkPersonaBinded()).toBeNull()
   })
 })

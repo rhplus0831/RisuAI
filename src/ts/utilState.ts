@@ -4,9 +4,16 @@ import {
   resolveEffectivePromptTemplate,
   type EffectivePromptTemplateOptions,
 } from '@risuai/shared-core/effective-prompt-template'
-import { getDatabase, type Chat, type Database } from './storage/database.svelte'
+import { type Chat, type Database, type character } from './storage/database.svelte'
 import { selectedCharID } from './stores/coreStores.svelte'
 import { resolveChatBoundPersonaId } from './personaModuleLinks'
+import { selectCharacterOwner } from './characterState'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getChatMetadataOwnerSnapshot,
+  settingsResourceState,
+} from './server/resourceState.svelte'
 
 export interface UserPersonaPresentation {
   currentUsername: string
@@ -23,9 +30,70 @@ function selectedPersonaRecord(database: Database): Database['personas'][number]
   return persona
 }
 
+function uniquePersonaRecord(
+  personas: Database['personas'],
+  personaId: string,
+): Database['personas'][number] | undefined {
+  const matches = personas.filter((candidate) => candidate?.id === personaId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function personaOwnerRows(): Database['personas'] {
+  const personas = collectionsResourceState.values.personas
+  const status = collectionsResourceState.statuses.personas
+  if (status === 'ready') {
+    return Array.isArray(personas) ? personas : []
+  }
+  if (status === 'error') return []
+  // Before the collection read completes, this value is the compatibility
+  // projection retained by bootstrap. A ready owner never falls through here.
+  return Array.isArray(personas) ? personas : []
+}
+
+function personaPresentationDatabase(): Database {
+  const settings = settingsResourceState.value as unknown as Partial<Database>
+  return {
+    personas: personaOwnerRows(),
+    selectedPersona: Number.isInteger(settings.selectedPersona) ? settings.selectedPersona : -1,
+    username: typeof settings.username === 'string' ? settings.username : 'User',
+    userIcon: typeof settings.userIcon === 'string' ? settings.userIcon : '',
+    personaPrompt: typeof settings.personaPrompt === 'string' ? settings.personaPrompt : '',
+  } as Database
+}
+
+function selectedCharacterPresentationOwner(): character | undefined {
+  const status = charactersResourceState.status
+  if (status !== 'ready' && status !== 'idle' && status !== 'loading') return undefined
+  const selectedIndex = status === 'ready' ? charactersResourceState.currentChar : get(selectedCharID)
+  return selectCharacterOwner(charactersResourceState.characters, selectedIndex)
+}
+
+function selectedChatPresentationOwner(): Chat | undefined {
+  const character = selectedCharacterPresentationOwner()
+  if (!character?.chaId) return undefined
+
+  const candidate = character.chats?.[character.chatPage]
+  const chatId = candidate?.id
+  if (typeof chatId !== 'string' || chatId.trim() === '') return undefined
+
+  let globalOwner: Chat | undefined
+  for (const characterOwner of charactersResourceState.characters) {
+    for (const chatOwner of characterOwner.chats ?? []) {
+      if (chatOwner?.id !== chatId) continue
+      if (globalOwner) return undefined
+      globalOwner = chatOwner
+    }
+  }
+  if (globalOwner !== candidate) return undefined
+
+  const metadataOwner = getChatMetadataOwnerSnapshot(character.chaId, chatId)
+  if (!metadataOwner) return undefined
+  return { ...candidate, ...metadataOwner.metadata } as Chat
+}
+
 export function resolveUserPersonaPresentation(database: Database, chat: Chat | undefined): UserPersonaPresentation {
   const personaId = resolveChatBoundPersonaId(chat)
-  const persona = personaId ? database.personas?.find((candidate) => candidate.id === personaId) : undefined
+  const persona = personaId ? uniquePersonaRecord(database.personas ?? [], personaId) : undefined
   if (persona) {
     return {
       currentUsername: getPersonaDisplayName(persona),
@@ -49,27 +117,21 @@ export function resolveUserPersonaPresentation(database: Database, chat: Chat | 
 }
 
 export const replacePlaceholders = (msg: string, name: string) => {
-  const db = getDatabase()
-  const selectedChar = get(selectedCharID)
-  const currentChar = db.characters[selectedChar]
+  const currentChar = selectedCharacterPresentationOwner()
   return msg
-    .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, currentChar.name)
+    .replace(/({{char}})|({{Char}})|(<Char>)|(<char>)/gi, currentChar?.name ?? name)
     .replace(/({{user}})|({{User}})|(<User>)|(<user>)/gi, getUserName())
     .replace(/(\{\{((set)|(get))var::.+?\}\})/gu, '')
 }
 
 export function checkPersonaBinded() {
   try {
-    const db = getDatabase()
-    const selectedChar = get(selectedCharID)
-    const character = db.characters[selectedChar]
-    const chat = character.chats[character.chatPage]
+    const chat = selectedChatPresentationOwner()
     const personaId = resolveChatBoundPersonaId(chat)
     if (!personaId) {
       return null
     }
-    const persona = db.personas.find((v) => v.id === personaId)
-    return persona
+    return uniquePersonaRecord(personaOwnerRows(), personaId) ?? null
   } catch (error) {
     return null
   }
@@ -80,22 +142,16 @@ export function getUserName() {
   if (bindedPersona) {
     return bindedPersona.name
   }
-  const db = getDatabase()
+  const db = personaPresentationDatabase()
   return selectedPersonaRecord(db)?.name ?? db.username ?? 'User'
 }
 
 export function getUserDisplayName() {
-  const db = getDatabase()
-  const selectedChar = get(selectedCharID)
-  const character = db.characters?.[selectedChar]
-  return resolveUserPersonaPresentation(db, character?.chats?.[character.chatPage]).currentUsername
+  return resolveUserPersonaPresentation(personaPresentationDatabase(), selectedChatPresentationOwner()).currentUsername
 }
 
 export function getUserIcon() {
-  const db = getDatabase()
-  const selectedChar = get(selectedCharID)
-  const character = db.characters?.[selectedChar]
-  return resolveUserPersonaPresentation(db, character?.chats?.[character.chatPage]).userIcon
+  return resolveUserPersonaPresentation(personaPresentationDatabase(), selectedChatPresentationOwner()).userIcon
 }
 
 export function getPersonaPrompt() {
@@ -103,24 +159,29 @@ export function getPersonaPrompt() {
   if (bindedPersona) {
     return bindedPersona.personaPrompt
   }
-  const db = getDatabase()
+  const db = personaPresentationDatabase()
   return selectedPersonaRecord(db)?.personaPrompt ?? db.personaPrompt ?? ''
 }
 
 export function getUserIconProtrait() {
   try {
-    const db = getDatabase()
-    const selectedChar = get(selectedCharID)
-    const character = db.characters?.[selectedChar]
-    return resolveUserPersonaPresentation(db, character?.chats?.[character.chatPage]).userIconPortrait
+    return resolveUserPersonaPresentation(personaPresentationDatabase(), selectedChatPresentationOwner())
+      .userIconPortrait
   } catch (error) {
     return false
   }
 }
 
 export function getAuthorNoteDefaultText(options: EffectivePromptTemplateOptions = {}) {
-  const db = getDatabase()
-  const template = resolveEffectivePromptTemplate(db, options).promptTemplate
+  const settings = settingsResourceState.value as unknown as Partial<Database>
+  const template = resolveEffectivePromptTemplate(
+    {
+      promptPresets: collectionsResourceState.values.promptPresets,
+      promptPresetsId: settings.promptPresetsId,
+      promptTemplate: collectionsResourceState.values.promptTemplate,
+    },
+    options,
+  ).promptTemplate
   if (!template) {
     return ''
   }
