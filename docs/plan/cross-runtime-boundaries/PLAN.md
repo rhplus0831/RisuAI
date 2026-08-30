@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: active. Phase 0 closed at `b01e88b03`; Phase 1 is the execution cursor.
+Status: active. Phases 0 and 1 are complete; Phase 2 is the execution cursor.
 
 ## Goal
 

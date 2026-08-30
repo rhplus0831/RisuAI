@@ -43,4 +43,4 @@ Route-protection and manifest tests, durable-outbox allowlist tests, protocol
 checks, server tests, browser adapter tests, browser smoke where routing changes,
 typechecks, formatting, and diff checks.
 
-Active slice: [Operation catalog foundation](slices/phase-2-route-operation-and-policy-catalog/operation-catalog-foundation.md).
+Active slice: [Browser operation metadata reconciliation](slices/phase-2-route-operation-and-policy-catalog/browser-operation-metadata-reconciliation.md).
