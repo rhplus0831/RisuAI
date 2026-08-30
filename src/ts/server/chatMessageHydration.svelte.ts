@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { SvelteSet } from 'svelte/reactivity'
+import { SvelteMap, SvelteSet } from 'svelte/reactivity'
 import { selectedCharID } from '../stores.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
 import {
@@ -84,6 +84,10 @@ interface ChatHydrationFreshnessToken {
 // hydration request that started before them, even when the projected payload
 // happens to be byte-identical to the old local state.
 const chatProjectionEpochs = new Map<string, number>()
+// Explicit transcript owner projections. The legacy character/chat graph is
+// retained as a compatibility mirror, but consumers can read this map without
+// scanning it once a chat has entered the hydration owner lifecycle.
+const chatMessageOwnerProjections = new SvelteMap<string, Message[]>()
 
 // Local message edits are not routed through one single mutation primitive, so
 // each request also snapshots the chat content it is about to hydrate. Whenever
@@ -163,7 +167,7 @@ export interface ChatMessageOwnerState {
  */
 export function getChatMessageOwnerState(chatId: string): ChatMessageOwnerState | undefined {
   if (!chatId) return undefined
-  const messages = chatMessageArray(chatId)
+  const messages = chatMessageOwnerProjections.get(chatId) ?? chatMessageArray(chatId)
   if (!messages) return undefined
   return {
     chatId,
@@ -172,6 +176,25 @@ export function getChatMessageOwnerState(chatId: string): ChatMessageOwnerState 
     resourceLoaded: isChatBodyResourceLoaded(chatId),
     hydrationPending: isChatMessageHydrationPending(chatId, messages.length),
     hydrationFailed: hasChatMessageHydrationFailed(chatId, messages.length),
+  }
+}
+
+function syncChatMessageOwnerProjection(chatId: string): void {
+  const legacyMessages = chatMessageArray(chatId)
+  if (!legacyMessages) return
+  const ownerMessages = chatMessageOwnerProjections.get(chatId)
+  if (!ownerMessages) {
+    chatMessageOwnerProjections.set(chatId, cloneOwnerMessages(legacyMessages))
+    return
+  }
+  ownerMessages.splice(0, ownerMessages.length, ...cloneOwnerMessages(legacyMessages))
+}
+
+function cloneOwnerMessages(messages: readonly Message[]): Message[] {
+  try {
+    return structuredClone(messages) as Message[]
+  } catch {
+    return JSON.parse(JSON.stringify(messages)) as Message[]
   }
 }
 
@@ -492,6 +515,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       markChatBodyResourceRevision(chatId, result.revision)
       markChatBodyProjectionApplied(chatId)
       reapplyRetainedChatBodyProjections(chatId)
+      syncChatMessageOwnerProjection(chatId)
       acknowledgeHydratedChatGenerationState(chatId, result.message as Message[])
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
@@ -587,6 +611,7 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
         markChatBodyResourceRevision(chatId, result.revision)
         markChatBodyProjectionApplied(chatId)
         reapplyRetainedChatBodyProjections(chatId)
+        syncChatMessageOwnerProjection(chatId)
         acknowledgeHydratedChatGenerationState(chatId, hydration.message as Message[])
         hydratedChatIds.add(chatId)
         seedRerollBufferFromAlternates(hydration.message, hydration.alternates, rerollTargetForChatId(chatId))
@@ -728,6 +753,7 @@ export function applyServerChatMessagesResource(
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
   reapplyRetainedChatBodyProjections(chatId)
+  syncChatMessageOwnerProjection(chatId)
   acknowledgeHydratedChatGenerationState(chatId, message as Message[])
   if (!range || isFullRange(range.start, range.total, message.length)) {
     hydratedChatIds.add(chatId)
@@ -928,6 +954,7 @@ export function applyMessageTranslationLocalEffect(
   })
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
+  syncChatMessageOwnerProjection(chatId)
   return true
 }
 
@@ -944,6 +971,7 @@ export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
     .filter((candidate) => candidate.id === chatId)
   if (matches?.length !== 1) return false
   advanceChatProjectionEpoch(chatId)
+  syncChatMessageOwnerProjection(chatId)
   return true
 }
 
@@ -1261,7 +1289,9 @@ export function resetChatHydration(): void {
   chatHydrationGeneration += 1
   inFlight.clear()
   chatProjectionEpochs.clear()
+  chatMessageOwnerProjections.clear()
   pendingChatHydrationFreshness.clear()
+  chatMessageOwnerProjections.clear()
   // A re-stub also re-stubs character globalLore; forget these marks so the open
   // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
   hydratedCharLorebookIds.clear()

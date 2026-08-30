@@ -421,10 +421,41 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChatFully()
 
     const after = getChatMessageOwnerState('chat-1')
-    expect(after?.messages).toBe(db().characters[0].chats[0].message)
+    expect(after?.messages).not.toBe(db().characters[0].chats[0].message)
     expect(after?.messages).toEqual([{ role: 'user', data: 'owner', chatId: 'm-owner' }])
     expect(after?.projectionEpoch).not.toBe(initialEpoch)
     expect(after?.resourceLoaded).toBe(true)
+  })
+
+  it('keeps owner rows independent from aggregate divergence and syncs accepted local changes', async () => {
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'owner', chatId: 'm-owner' }]),
+    )
+    await hydrateActiveChatFully()
+
+    const ownerBefore = getChatMessageOwnerState('chat-1')
+    db().characters[0].chats[0].message = [{ role: 'user', data: 'aggregate-only', chatId: 'm-aggregate' }]
+    expect(getChatMessageOwnerState('chat-1')?.messages).toEqual(ownerBefore?.messages)
+
+    expect(acknowledgeMessageMutationLocalEffect('chat-1')).toBe(true)
+    expect(getChatMessageOwnerState('chat-1')?.messages).toEqual(db().characters[0].chats[0].message)
+  })
+
+  it('clears owner projections on reset and repopulates them on the next hydration', async () => {
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'before', chatId: 'm-before' }]),
+    )
+    await hydrateActiveChatFully()
+    expect(getChatMessageOwnerState('chat-1')?.resourceLoaded).toBe(true)
+
+    resetChatHydration()
+    expect(getChatMessageOwnerState('chat-1')?.resourceLoaded).toBe(false)
+
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'after', chatId: 'm-after' }]),
+    )
+    await hydrateActiveChatFully()
+    expect(getChatMessageOwnerState('chat-1')?.messages).toEqual([{ role: 'user', data: 'after', chatId: 'm-after' }])
   })
 
   it('preserves resident Hypa state when a narrow generation payload omits it', async () => {
