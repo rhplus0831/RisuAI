@@ -209,10 +209,10 @@
       "status": "implemented",
       "resource": "loreBookPage",
       "ownerApi": "src/ts/server/lorebookPageOwner.svelte.ts#lorebookPageOwner",
-      "workstream1Cursor": "33d1643ae",
+      "workstream1Cursor": "standalone read 33d1643ae; durable command 3f275e9dc; route relation 6a6d0ac1f",
       "workstream2Cursor": "already-singular settings row",
-      "capabilities": ["selectors", "resourceState", "contractTests"],
-      "remaining": "Durable lorebook selection commands and editor drafts remain on the later lorebook family cursor."
+      "capabilities": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
+      "remaining": "Production selection consumers and the compatibility bridge remain for the later migration slice; lorebook editor bodies stay on their separate family cursor."
     }
   }
 }

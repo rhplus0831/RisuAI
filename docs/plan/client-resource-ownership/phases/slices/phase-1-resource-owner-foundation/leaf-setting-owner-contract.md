@@ -1,6 +1,6 @@
 # Leaf Setting Owner Contract
 
-Status: active.
+Status: active; implementation candidate under verification.
 
 Parent: [Phase 1](../../phase-1-resource-owner-foundation.md)
 
@@ -23,6 +23,20 @@ can migrate that family without reaching through the compatibility facade.
   exact operations are present.
 - Reject candidates that require a broad settings snapshot, editor body,
   cross-family draft, or unreleased command contract.
+
+Selected leaf: standalone `loreBookPage`.
+
+- Phase 0 rows in scope are `lorebook:generation`, `lorebook:read`,
+  `lorebook:render`, `lorebook:recovery`, `lorebook:diagnostic`, and their
+  `lorebook:test-fixture` proof. This foundation moves none of them.
+- Direct production page consumers are the global lorebook settings/list
+  surfaces, lorebook prompt processing, plugins, the resource manifest/state,
+  the compatibility bridge, and legacy database normalization. Phase 2 must
+  split page selection from lorebook body ownership rather than migrate this
+  list as an aggregate.
+- Server range proof confirms selection writes only the settings row, while the
+  durable operation is `lorebook-select` with semantic owner ordering by stable
+  lorebook id.
 
 ## Required Owner Contract
 

@@ -18,12 +18,14 @@ describe('lorebook page owner', () => {
   it('has stable identity and exposes only the standalone pointer lifecycle', () => {
     expect(lorebookPageOwner).toBe(lorebookPageOwner)
     expect(lorebookPageOwner.resource).toBe('loreBookPage')
+    expect(lorebookPageOwner.drafts).toBe('not-applicable')
     expect(lorebookPageOwner.snapshot()).toEqual({
       resource: 'loreBookPage',
       status: 'unloaded',
       revision: null,
       state: { present: false },
       error: null,
+      mutation: { status: 'idle' },
     })
     expect(lorebookPageOwner.snapshot()).not.toHaveProperty('loreBook')
     expect(lorebookPageOwner.snapshot()).not.toHaveProperty('settings')
@@ -42,6 +44,7 @@ describe('lorebook page owner', () => {
       revision: 7,
       state: { present: true, value: 3 },
       error: null,
+      mutation: { status: 'idle' },
     })
     unsubscribe()
   })
@@ -96,5 +99,103 @@ describe('lorebook page owner', () => {
     first.resolve(payload(11, 1))
     await expect(older).resolves.toEqual({ status: 'superseded' })
     expect(owner.snapshot()).toMatchObject({ revision: 12, state: { present: true, value: 4 } })
+  })
+
+  it('optimistically selects and accepts the exact page attempt', async () => {
+    const selection = deferred<{ status: 'accepted'; revision: number }>()
+    const select = vi.fn().mockReturnValue(selection.promise)
+    const owner = createLorebookPageOwner({
+      read: vi.fn().mockResolvedValue(payload(4, 0)),
+      select,
+    })
+    await owner.refresh()
+
+    const pending = owner.select({ lorebookId: 'book-b', index: 1 })
+    expect(owner.snapshot()).toMatchObject({
+      state: { present: true, value: 1 },
+      mutation: { status: 'pending', attempt: 1, index: 1, lorebookId: 'book-b' },
+    })
+    selection.resolve({ status: 'accepted', revision: 5 })
+
+    await expect(pending).resolves.toEqual({ status: 'accepted', revision: 5 })
+    expect(select).toHaveBeenCalledWith('book-b', undefined)
+    expect(owner.snapshot()).toMatchObject({
+      status: 'ready',
+      revision: 5,
+      state: { present: true, value: 1 },
+      mutation: { status: 'idle' },
+    })
+  })
+
+  it('rolls back only the current failed selection attempt', async () => {
+    const firstSettlement = deferred<'accepted' | 'failed'>()
+    const select = vi
+      .fn()
+      .mockResolvedValueOnce({ status: 'queued', mutationId: 'mutation-a', settlement: firstSettlement.promise })
+      .mockResolvedValueOnce({ status: 'accepted', revision: 8 })
+    const owner = createLorebookPageOwner({ read: vi.fn().mockResolvedValue(payload(6, 0)), select })
+    await owner.refresh()
+
+    const first = await owner.select({ lorebookId: 'book-b', index: 1 })
+    expect(first.status).toBe('queued')
+    await expect(owner.select({ lorebookId: 'book-c', index: 2 })).resolves.toEqual({
+      status: 'accepted',
+      revision: 8,
+    })
+    firstSettlement.resolve('failed')
+    if (first.status === 'queued') await expect(first.settlement).resolves.toBe('failed')
+
+    expect(owner.snapshot()).toMatchObject({
+      revision: 8,
+      state: { present: true, value: 2 },
+      mutation: { status: 'idle' },
+    })
+  })
+
+  it('retains a queued projection, marks accepted replay stale, and reloads authoritatively', async () => {
+    const settlement = deferred<'accepted' | 'failed'>()
+    const read = vi.fn().mockResolvedValueOnce(payload(2, 0)).mockResolvedValueOnce(payload(4, 1))
+    const owner = createLorebookPageOwner({
+      read,
+      select: vi.fn().mockResolvedValue({ status: 'queued', mutationId: 'mutation-a', settlement: settlement.promise }),
+    })
+    await owner.refresh()
+
+    const queued = await owner.select({ lorebookId: 'book-b', index: 1 })
+    expect(queued).toMatchObject({ status: 'queued', mutationId: 'mutation-a' })
+    expect(owner.snapshot()).toMatchObject({
+      state: { present: true, value: 1 },
+      mutation: { status: 'queued', mutationId: 'mutation-a' },
+    })
+    settlement.resolve('accepted')
+    if (queued.status === 'queued') await expect(queued.settlement).resolves.toBe('accepted')
+    expect(owner.snapshot()).toMatchObject({ status: 'stale', mutation: { status: 'idle' } })
+
+    await expect(owner.retry()).resolves.toEqual({ status: 'ok', revision: 4 })
+    expect(owner.snapshot()).toMatchObject({
+      status: 'ready',
+      revision: 4,
+      state: { present: true, value: 1 },
+    })
+  })
+
+  it('restores the prior snapshot when the current queued selection fails', async () => {
+    const settlement = deferred<'accepted' | 'failed'>()
+    const owner = createLorebookPageOwner({
+      read: vi.fn().mockResolvedValue(payload(3, 0)),
+      select: vi.fn().mockResolvedValue({ status: 'queued', mutationId: 'mutation-a', settlement: settlement.promise }),
+    })
+    await owner.refresh()
+
+    const queued = await owner.select({ lorebookId: 'book-b', index: 1 })
+    settlement.resolve('failed')
+    if (queued.status === 'queued') await expect(queued.settlement).resolves.toBe('failed')
+
+    expect(owner.snapshot()).toMatchObject({
+      status: 'ready',
+      revision: 3,
+      state: { present: true, value: 0 },
+      mutation: { status: 'failed', error: 'Queued lorebook selection failed' },
+    })
   })
 })
