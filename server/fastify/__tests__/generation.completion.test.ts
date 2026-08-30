@@ -12,7 +12,7 @@ import { attachAbort } from '../src/requestAbort.js'
 import { CompletionOutputLimitError, collectCompletionFrames, pipeStream } from '../src/routes/generation.js'
 import { STREAM_CLIENT_MAX_BUFFERED_BYTES } from '../src/streamBackpressure.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
-import { LLMFormat } from '../../../src/ts/model/types'
+import { LLMFormat } from '@risuai/shared-core/model-types'
 
 vi.mock('../src/generation/horde.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/generation/horde.js')>()

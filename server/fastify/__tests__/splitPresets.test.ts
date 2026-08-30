@@ -16,7 +16,7 @@ import {
 } from '../src/commands/splitPresets.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
-import { LLMFlags } from '../../../src/ts/model/types.js'
+import { LLMFlags } from '@risuai/shared-core/model-types'
 import { setupAuthedClient } from './helpers/auth.js'
 
 const normalizedModelRoles = (overrides: Record<string, string> = {}) => ({

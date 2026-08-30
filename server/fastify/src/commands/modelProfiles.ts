@@ -40,7 +40,7 @@ import {
 import { AnthropicModels } from '../../../../src/ts/model/providers/anthropic.js'
 import { GoogleModels } from '../../../../src/ts/model/providers/google.js'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai.js'
-import { LLMFormat } from '../../../../src/ts/model/types.js'
+import { LLMFormat } from '@risuai/shared-core/model-types'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   EntityNotFoundError,

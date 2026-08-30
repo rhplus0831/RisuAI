@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LLMFormat } from '../../../src/ts/model/types'
+import { LLMFormat } from '@risuai/shared-core/model-types'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import { migrateLegacyFlatModelConfiguration, normalizeDatabaseDefaults } from '../src/databaseDefaults'

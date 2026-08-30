@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LLMFlags } from '../../../src/ts/model/types'
+import { LLMFlags } from '@risuai/shared-core/model-types'
 import {
   buildAnthropicWireMessages,
   buildOpenAIWireMessages,

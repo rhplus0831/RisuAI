@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../../../src/ts/storage/database.svelte'
-import { LLMTokenizer } from '../../../src/ts/model/types.js'
+import { LLMTokenizer } from '@risuai/shared-core/model-types'
 import {
   serverTokenizerUnsupportedReason,
   tokenizerEncodingFromDb,

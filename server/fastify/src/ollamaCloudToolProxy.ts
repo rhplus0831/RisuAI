@@ -5,7 +5,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../src/ts/storage/database.svelte.js'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
-import { LLMFormat } from '../../../src/ts/model/types.js'
+import { LLMFormat } from '@risuai/shared-core/model-types'
 import {
   assertModelProfileGenerationReady,
   resolveModelProfile,

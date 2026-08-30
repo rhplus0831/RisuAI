@@ -1,4 +1,4 @@
-import { LLMFlags } from '../../../../src/ts/model/types'
+import { LLMFlags } from '@risuai/shared-core/model-types'
 
 export interface ProviderMessageMultimodal {
   type: 'image' | 'video' | 'audio' | 'signature'

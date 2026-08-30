@@ -7,7 +7,7 @@ import {
   LLMTokenizer,
   OpenAIParameters,
   type LLMModel,
-} from '../../../src/ts/model/types'
+} from '@risuai/shared-core/model-types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { Database } from '../../../src/ts/storage/database.svelte'

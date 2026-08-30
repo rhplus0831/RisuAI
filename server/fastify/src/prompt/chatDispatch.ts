@@ -1,7 +1,7 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
 import type { PromptMessage } from './promptMessage.js'
-import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '@risuai/shared-core/model-types'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
 import { stripCoTFromCompletionFrames } from '../generation/stripCoT.js'

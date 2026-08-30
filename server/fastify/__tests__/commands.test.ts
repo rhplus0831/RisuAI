@@ -26,7 +26,7 @@ import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } f
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import type { Database } from '../../../src/ts/storage/database.svelte.js'
-import { LLMFlags, LLMFormat } from '../../../src/ts/model/types.js'
+import { LLMFlags, LLMFormat } from '@risuai/shared-core/model-types'
 import {
   serializeChatGenerationSettingsDigestInput,
   type ChatGenerationSettings,

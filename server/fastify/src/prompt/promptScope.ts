@@ -1,6 +1,6 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { ChatVarBackend } from './chatVarBackend.js'
-import type { LLMModel } from '../../../../src/ts/model/types'
+import type { LLMModel } from '@risuai/shared-core/model-types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver'
 import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'

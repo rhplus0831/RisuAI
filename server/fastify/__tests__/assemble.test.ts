@@ -60,7 +60,7 @@ import {
 import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
 import { promptSummaryMetricFields, summarizePromptRows } from '../src/prompt/promptSummary.js'
 import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
-import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '@risuai/shared-core/model-types'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 import { createBardWikiDocument } from '../src/bardWikiRepository.js'
 

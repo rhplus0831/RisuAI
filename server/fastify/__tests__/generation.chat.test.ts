@@ -16,7 +16,7 @@ import { clearOpenRouterFreeModelCacheForTests } from '../src/generation/openrou
 import { type ChatProviderDispatchContext, type GenerationChatRouteOptions } from '../src/routes/generationChat.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
-import { LLMFlags, LLMFormat, LLMTokenizer } from '../../../src/ts/model/types'
+import { LLMFlags, LLMFormat, LLMTokenizer } from '@risuai/shared-core/model-types'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
 import {
