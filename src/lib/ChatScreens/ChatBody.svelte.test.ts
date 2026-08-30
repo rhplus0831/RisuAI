@@ -10,6 +10,13 @@ const chatBodyMocks = vi.hoisted(() => ({
     prebuiltAssetStyle: 'none',
   })),
   getCurrentChat: vi.fn(() => ({ autoTranslate: true })),
+  getSelectedCharacterOwner: vi.fn(() => ({
+    additionalAssets: [],
+    prebuiltAssetStyle: 'none',
+    chaId: 'char-a',
+    chatPage: 0,
+    chats: [chatBodyMocks.getCurrentChat()],
+  })),
   getDistance: vi.fn(() => 0),
   getFileSrc: vi.fn(async (src: string) => src),
   getLLMCache: vi.fn(async () => null),
@@ -61,6 +68,10 @@ vi.mock('src/ts/storage/database.svelte', () => ({
   getCurrentCharacter: chatBodyMocks.getCurrentCharacter,
   getCurrentChat: chatBodyMocks.getCurrentChat,
   getDatabase: chatBodyMocks.getDatabase,
+}))
+
+vi.mock('src/ts/characterState', () => ({
+  getSelectedCharacterOwner: chatBodyMocks.getSelectedCharacterOwner,
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({

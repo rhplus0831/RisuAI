@@ -3,13 +3,14 @@ import { untrack } from 'svelte'
 import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
 import { getModules } from '../../ts/process/modules'
 import {
-  getCurrentChat,
   getDatabase,
   type customscript,
   type triggerscript,
   type character,
   type Database,
 } from '../../ts/storage/database.svelte'
+import { getSelectedCharacterOwner } from '../../ts/characterState'
+import { charactersResourceState } from '../../ts/server/resourceState.svelte'
 import {
   CurrentTriggerIdStore,
   ReloadGUIPointer,
@@ -201,7 +202,8 @@ function findCharacterByArg(charArg: ChatBodyParseMemoInput['charArg']) {
   if (!charArg || typeof charArg !== 'string') {
     return charArg
   }
-  return getDatabase().characters?.find((char: character) => char?.chaId === charArg) ?? charArg
+  const matches = charactersResourceState.characters.filter((char: character) => char?.chaId === charArg)
+  return matches.length === 1 ? matches[0] : charArg
 }
 
 function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
@@ -318,12 +320,12 @@ function serializedModuleSignature(modules = safeGetModules()) {
 
 function activeChatSignature() {
   const selectedChar = get(selectedCharID)
-  const char = getDatabase().characters?.[selectedChar]
+  const char = getSelectedCharacterOwner()
   let chatId: string | undefined
   let chatModules: unknown
   let scriptstate: unknown
   try {
-    const currentChat = getCurrentChat()
+    const currentChat = char?.chats?.[char.chatPage]
     chatId = currentChat?.id
     chatModules = currentChat?.modules
     scriptstate = currentChat?.scriptstate
@@ -346,12 +348,12 @@ function activeChatSignature() {
 
 function activeChatSignatureToken() {
   const selectedChar = get(selectedCharID)
-  const char = getDatabase().characters?.[selectedChar]
+  const char = getSelectedCharacterOwner()
   let chatId: string | undefined
   let chatModules: unknown
   let scriptstate: unknown
   try {
-    const currentChat = getCurrentChat()
+    const currentChat = char?.chats?.[char.chatPage]
     chatId = currentChat?.id
     chatModules = currentChat?.modules
     scriptstate = currentChat?.scriptstate
@@ -469,7 +471,8 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
 
 function getTranslateSettingsSignature() {
   const db = getDatabase() as Partial<Database>
-  const chat = getCurrentChat()
+  const selectedCharacter = getSelectedCharacterOwner()
+  const chat = selectedCharacter?.chats?.[selectedCharacter.chatPage]
   return {
     autoTranslate: chat?.autoTranslate,
     autoTranslateBotOnly: chat?.autoTranslateBotOnly,

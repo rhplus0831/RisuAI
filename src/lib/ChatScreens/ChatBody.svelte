@@ -13,7 +13,8 @@
   import { translateHTML } from '../../ts/translator/translator'
   import { pruneEmptyBilingualPairs } from '../../ts/translator/bilingualInterleave'
   import { getModuleAssets } from 'src/ts/process/modules'
-  import { getCurrentCharacter, getCurrentChat, getDatabase } from 'src/ts/storage/database.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import {
     RegexDisplayReloadPointer,
@@ -124,7 +125,8 @@
   }
 
   function automaticClientTranslationEnabled(): boolean {
-    const chat = getCurrentChat()
+    const characterOwner = getSelectedCharacterOwner()
+    const chat = characterOwner?.chats?.[characterOwner.chatPage]
     return chat?.autoTranslate === true && !(chat.autoTranslateBotOnly === true && role === 'user')
   }
 
@@ -419,7 +421,8 @@
     ) as NodeListOf<HTMLImageElement>
 
     if (imgs.length > 0) {
-      const currentCharacter = getCurrentCharacter()
+      const currentCharacter = getSelectedCharacterOwner()
+      if (!currentCharacter) return
       const styl = currentCharacter.prebuiltAssetStyle
       const assets = getModuleAssets().concat(currentCharacter.additionalAssets ?? [])
       const normalizedAssets = assets.map((asset) => {
