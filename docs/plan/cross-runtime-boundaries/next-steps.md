@@ -4,17 +4,18 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [mutation-certificate ownership
-slice](phases/slices/phase-4-server-consumer-migration/mutation-certificate-ownership.md).
+Execute the [RisuChat parser-helper ownership
+slice](phases/slices/phase-4-server-consumer-migration/risuchat-parser-helper-ownership.md).
 
-1. Move persona ID, collection, and legacy-profile digest inputs plus script
-   definition collection digest inputs to one dependency-free shared leaf.
-2. Retain browser facades for existing callers; point Fastify commands and
-   focused server tests directly at the shared owner.
-3. Preserve version prefixes, recursive lexical object-key sorting, array
-   order, own `__proto__` keys, and profile field order exactly.
-4. Do not move mutation classification, hashing, command validation,
-   persistence, revisions, receipts, or events.
+1. Move escaping, date/time formatting, legacy block matching, array/dictionary
+   parsing, array construction, and line trimming to one dependency-free shared
+   leaf.
+2. Retain the browser facade; point Fastify CBS and generation consumers
+   directly at the shared owner.
+3. Preserve private-use escape mappings, token replacement order, 300-character
+   format bound, JSON/fallback behavior, `::` escaping, and whitespace rules.
+4. Do not move the RisuChat parser, CBS registry/callbacks, `calcString`, or the
+   request-local chat-variable backend.
 
 ## Foundations Released
 
@@ -98,16 +99,20 @@ slice](phases/slices/phase-4-server-consumer-migration/mutation-certificate-owne
   consumers use the eighteenth audited shared-core leaf.
 - The large deterministic corpus and Phase 9 CBS fixtures are released at
   `e75d742b6` under the neutral `test/fixtures` owner.
+- Mutation certificates, key/value parsing, default hotkeys, and default prompt
+  settings are released through four audited shared-core subpaths.
+- The Hypa truncation confirmation code is released through
+  `@risuai/protocol/hypa-context-truncation` at `d82d1b86b`.
 
 ## Not In This Slice
 
-- Do not move the script mutation classifier or any persona/script command
-  policy into shared core.
-- Do not change SHA-256 use, certificate envelopes, request bodies, response
-  validation, collection writes, or rollback behavior.
+- Do not move CBS registration state, request-local prompt scope, chat-variable
+  storage, parser budgets, or matcher dispatch.
+- Do not include `calcString`; it requires a separate dependency-injection
+  contract for chat/global variable reads.
 
 ## Handoff
 
-After this slice closes, select the next production Phase 4 consumer migration
-from the refreshed inventory; the parser core, prompt-template consumers, and
-model-owned configuration remain separate domains.
+After this slice closes, decide the bounded `calcString` injection seam, then
+select the next production Phase 4 consumer domain; prompt-template and
+model-owned configuration remain Workstream 2-dependent.

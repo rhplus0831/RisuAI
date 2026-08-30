@@ -8,4 +8,4 @@ The initial slice is
 [Boundary baseline and no-new-debt gate](phase-0-boundary-inventory-and-gates/baseline-and-no-new-debt-gate.md).
 
 The active slice is
-[Mutation-certificate ownership](phase-4-server-consumer-migration/mutation-certificate-ownership.md).
+[RisuChat parser-helper ownership](phase-4-server-consumer-migration/risuchat-parser-helper-ownership.md).

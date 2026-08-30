@@ -59,5 +59,10 @@ Completed slices:
 - [Bounded-regex settings seam](slices/phase-4-server-consumer-migration/bounded-regex-settings-seam.md)
 - [MCP identifier ownership](slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md)
 - [Neutral cross-runtime test fixtures](slices/phase-4-server-consumer-migration/neutral-cross-runtime-test-fixtures.md)
+- [Mutation-certificate ownership](slices/phase-4-server-consumer-migration/mutation-certificate-ownership.md)
+- [Key/value parser ownership](slices/phase-4-server-consumer-migration/key-value-parser-ownership.md)
+- [Hypa truncation protocol](slices/phase-4-server-consumer-migration/hypa-truncation-protocol.md)
+- [Default hotkey ownership](slices/phase-4-server-consumer-migration/default-hotkey-ownership.md)
+- [Default prompt-settings ownership](slices/phase-4-server-consumer-migration/default-prompt-settings-ownership.md)
 
-Active slice: [Mutation-certificate ownership](slices/phase-4-server-consumer-migration/mutation-certificate-ownership.md).
+Active slice: [RisuChat parser-helper ownership](slices/phase-4-server-consumer-migration/risuchat-parser-helper-ownership.md).

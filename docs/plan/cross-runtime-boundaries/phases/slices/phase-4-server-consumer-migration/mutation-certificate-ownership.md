@@ -1,6 +1,6 @@
 # Mutation-Certificate Ownership
 
-Status: ready.
+Status: complete at `10a108ff3`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -15,8 +15,8 @@ a neutral shared owner used by browser and Fastify command lanes.
 
 - Persona ID, collection, and legacy-profile digest inputs.
 - Script-definition collection digest input.
-- Expected delta: two production and two server-test runtime/mixed root-`src`
-  edges; 203 total edges become 199.
+- Delivered delta: two production and two server-test runtime/mixed root-`src`
+  edges; 203 total edges became 199.
 
 ## Behavior Contract
 
@@ -27,6 +27,7 @@ events, and rollback remain in their existing owners.
 
 ## Validation
 
-Run shared behavior/ownership, persona certificate/persona command, script
-mutation, browser command, and Fastify command suites; run both typechecks,
-architecture inventory, formatting, and diff checks.
+Shared behavior/ownership, persona certificate/persona command, script mutation,
+browser command, and Fastify command suites passed 4, 1, 2, 46, 14, 166, and
+230 tests. Both typechecks, the 199-edge architecture inventory, formatting,
+and diff checks passed.

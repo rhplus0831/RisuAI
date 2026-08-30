@@ -9,21 +9,22 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 3 complete; eighteen neutral shared-core
+- Plan state: Active; Phases 0 through 3 complete; twenty-two neutral shared-core
   leaves are released.
 - Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
-- Active slice: [Mutation-certificate ownership](phases/slices/phase-4-server-consumer-migration/mutation-certificate-ownership.md), ready.
+- Active slice: [RisuChat parser-helper ownership](phases/slices/phase-4-server-consumer-migration/risuchat-parser-helper-ownership.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: neutral large-corpus and Phase 9 fixtures at
-  `e75d742b6`, following shared MCP identifier validation at `12076cc52`;
-  focused corpus, CBS, module, Phase 10, shared behavior/ownership, architecture,
-  shared-core/root/downstream typechecks, formatting, and diff checks passed;
-  see
+- Latest implementation candidate: default prompt settings at `8a07be89e`,
+  following default hotkeys at `2a5a83d37`, the Hypa truncation wire code at
+  `d82d1b86b`, key/value parsing at `e71c5944e`, and mutation certificates at
+  `10a108ff3`; focused shared behavior/ownership, browser/server consumer,
+  architecture, shared-core/root/downstream typechecks, formatting, and diff
+  checks passed; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -80,6 +81,11 @@ in [`latest-verification.md`](latest-verification.md).
 | Bounded-regex settings seam | `9bcffa62e` | Released through a five-field Fastify-owned settings input; one production and one server-test aggregate browser-model edge were removed. |
 | MCP identifier seam | `12076cc52` | Released through `@risuai/shared-core/mcp-identifier`; browser import and Fastify command validation share exact syntax while network policy remains Fastify-owned. |
 | Neutral cross-runtime test fixtures | `e75d742b6` | Released through three dependency-free fixtures under `test/fixtures`; five server-test and two browser-smoke runtime edges were removed. |
+| Mutation-certificate inputs | `10a108ff3` | Released through `@risuai/shared-core/mutation-certificates`; two production and two server-test runtime/mixed edges were removed while hashing and commands stayed in their owners. |
+| Key/value template parsing | `e71c5944e` | Released through `@risuai/shared-core/parse-key-value`; one production runtime edge was removed. |
+| Hypa truncation confirmation code | `d82d1b86b` | Released through `@risuai/protocol/hypa-context-truncation`; one production runtime edge was removed from the browser-owned wire-code target. |
+| Default hotkey vocabulary | `2a5a83d37` | Released through `@risuai/shared-core/default-hotkeys`; one production runtime edge was removed. |
+| Default prompt settings | `8a07be89e` | Released through `@risuai/shared-core/default-prompt-settings`; one production runtime edge was removed while prebuilt/legacy prompt templates stayed browser-owned. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -104,13 +110,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 203 direct root-`src` edges remain: 137 production, 60 server-test, and 6
-  browser-smoke, spanning 95 importers and 43 targets.
-- Usage is 86 runtime, 37 mixed, and 80 type-only; 123 runtime/mixed edges
+- 195 direct root-`src` edges remain: 131 production, 58 server-test, and 6
+  browser-smoke, spanning 92 importers and 37 targets.
+- Usage is 80 runtime, 35 mixed, and 80 type-only; 115 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse and completed Phase 4 server seams, removed 172 edges and
-  36 source targets.
+  shared-helper reuse and completed Phase 4 server seams, removed 180 edges and
+  42 source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
@@ -121,8 +127,8 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb`; a later Phase 4 consumer slice released the eighteenth audited neutral leaf. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Server descriptors/settings, MCP syntax, and neutral test fixtures are released; mutation-certificate serialization is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb`; later Phase 4 consumer slices released five more audited neutral leaves. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Server descriptors/settings, neutral fixtures, small shared leaves, and the Hypa wire code are released; RisuChat parser helpers are next. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
@@ -143,6 +149,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move deterministic persona and script
-definition certificate serialization to a shared owner while keeping command
-and persistence policy in the browser and Fastify lanes.
+Use [`next-steps.md`](next-steps.md). Move the dependency-free RisuChat parser
+helpers to a shared owner while keeping the parser, callback registry, and
+request-local variable backend in their current owners.
