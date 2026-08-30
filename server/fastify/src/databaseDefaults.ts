@@ -1375,8 +1375,8 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
         name: 'Default',
         settings: {
           ...cloneJson(DEFAULT_HYPA_V3_SETTINGS),
-          ...cloneJson(existingSettings),
           summarizationPrompt: typeof database.supaMemoryPrompt === 'string' ? database.supaMemoryPrompt : '',
+          ...cloneJson(existingSettings),
         },
       },
     ]

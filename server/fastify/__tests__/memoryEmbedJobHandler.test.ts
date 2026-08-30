@@ -436,6 +436,7 @@ describe('embed memory job handler', () => {
       seedBatchJob(db, { id: 'job-3', chunkId: 'chunk-3', text: 'chunk three' })
       let active = 0
       let maxActive = 0
+      const releases: Array<() => void> = []
       const worker = new MemoryWorker({
         db,
         batchHandlers: {
@@ -446,17 +447,29 @@ describe('embed memory job handler', () => {
             embed: async () => {
               active += 1
               maxActive = Math.max(maxActive, active)
-              await Promise.resolve()
-              active -= 1
+              await new Promise<void>((resolve) => {
+                releases.push(() => {
+                  active -= 1
+                  resolve()
+                })
+              })
               return { model: 'custom', vectors: [new Float32Array([1])], dim: 1 }
             },
           }),
         },
       })
 
-      expect(await worker.tick()).toBe(true)
+      const tick = worker.tick()
+      await flushMicrotasks()
+      expect(releases).toHaveLength(2)
 
-      expect(maxActive).toBeLessThanOrEqual(2)
+      // The selected preset allows two concurrent jobs; the stale flat
+      // hypaV3Settings fixture would incorrectly serialize this batch.
+      expect(maxActive).toBe(2)
+      for (const release of releases.splice(0)) release()
+      await flushMicrotasks()
+      for (const release of releases.splice(0)) release()
+      expect(await tick).toBe(true)
       expect(
         listMemoryEmbeddings(db, { chatId: 'chat-1' })
           .map((embedding) => embedding.chunkId)

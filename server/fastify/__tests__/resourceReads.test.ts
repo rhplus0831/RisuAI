@@ -149,6 +149,8 @@ beforeEach(async () => {
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
         loreBook: [{ id: 'lorebook-a', name: 'Lorebook A', data: [] }],
         translatorPresets: [{ id: 'translator-a', name: 'Translator A' }],
+        hypaV3Settings: { summarizationPrompt: 'stale flat prompt' },
+        supaMemoryKey: 'stale-flat-key',
         hypaV3Presets: [{ id: 'hypa-a', name: 'Hypa A' }],
         pluginCustomStorage: { 'plugin-a:state': { enabled: true } },
         characters: [
@@ -420,6 +422,8 @@ describe('authenticated resource read routes', () => {
     expect(memory.statusCode).toBe(200)
     expect(memory.json()).toMatchObject({ revision, group: 'memory' })
     expect(memory.json().settings).not.toHaveProperty('hypaV3Presets')
+    expect(memory.json().settings).not.toHaveProperty('hypaV3Settings')
+    expect(memory.json().settings).not.toHaveProperty('supaMemoryKey')
 
     const runtime = await harness.app.inject({
       method: 'GET',

@@ -1603,7 +1603,6 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
   ],
   memory: [
     'bardWiki',
-    'supaMemoryKey',
     'hypaV3Key',
     'hypaMemoryKey',
     'voyageApiKey',
@@ -1615,7 +1614,6 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'hanuraiEnable',
     'legacyMemoryMigrationNoticeDismissed',
     'hypaV3',
-    'hypaV3Settings',
     'hypaV3Presets',
     'hypaV3PresetId',
     'hypaCustomSettings',
@@ -2045,7 +2043,6 @@ const OBJECT_SETTING_KEYS = new Set([
   'globalChatVariables',
   'hordeConfig',
   'hypaCustomSettings',
-  'hypaV3Settings',
   'fallbackModels',
   'modelRuntimeDefaults',
   'modelRoleProfiles',

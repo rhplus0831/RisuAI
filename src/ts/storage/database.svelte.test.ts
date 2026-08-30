@@ -371,6 +371,28 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('prefers legacy Hypa settings over the stale Supa prompt during first-preset migration', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase()) as Database & { supaMemoryPrompt?: string }
+    delete legacyData.hypaV3Presets
+    legacyData.hypaV3Settings = {
+      summarizationPrompt: 'canonical legacy Hypa prompt',
+      recentMemoryRatio: 0.2,
+    } as any
+    legacyData.supaMemoryPrompt = 'stale legacy Supa prompt'
+
+    setDatabase(legacyData)
+
+    expect(getDatabase().hypaV3Presets).toEqual([
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          summarizationPrompt: 'canonical legacy Hypa prompt',
+          recentMemoryRatio: 0.2,
+        }),
+      }),
+    ])
+  })
+
   it('preserves a legacy custom palette separately and defaults presets to the standard palette', () => {
     seedPresetDatabase()
     const legacyCustomData = clonePlain(getDatabase())

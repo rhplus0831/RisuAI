@@ -4160,6 +4160,67 @@ describe('scalar settings groups', () => {
     })
   })
 
+  it('rejects legacy Hypa aliases while allowing canonical preset settings to remain authoritative', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      hypaV3Settings: { summarizationPrompt: 'stale flat prompt' },
+      supaMemoryKey: 'stale-flat-key',
+      hypaV3Presets: [
+        {
+          name: 'Canonical memory',
+          settings: { summarizationModel: 'subModel', summarizationPrompt: 'canonical prompt' },
+        },
+      ],
+    })
+
+    for (const [key, value] of [
+      ['hypaV3Settings', { summarizationPrompt: 'attempted stale overwrite' }],
+      ['supaMemoryKey', 'attempted stale key overwrite'],
+    ] as const) {
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/memory',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch: { [key]: value } },
+      })
+      expect(response.statusCode).toBe(400)
+      expect(response.json().error).toBe(`Unsupported memory setting: ${key}`)
+    }
+
+    const canonical = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          hypaV3Presets: [
+            {
+              name: 'Canonical memory',
+              settings: { summarizationModel: 'subModel', summarizationPrompt: 'updated canonical prompt' },
+            },
+          ],
+        },
+      },
+    })
+    expect(canonical.statusCode).toBe(200)
+    expect(canonical.json().acknowledgedKeys).toEqual(['hypaV3Presets'])
+
+    const memory = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/memory',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(memory.statusCode).toBe(200)
+    expect(memory.json().settings).not.toHaveProperty('hypaV3Settings')
+    expect(memory.json().settings).not.toHaveProperty('supaMemoryKey')
+    expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
+      hypaV3Settings: { summarizationPrompt: 'stale flat prompt' },
+      supaMemoryKey: 'stale-flat-key',
+      hypaV3Presets: [{ settings: { summarizationPrompt: 'updated canonical prompt' } }],
+    })
+  })
+
   it('rejects Hypa presets with client-only summary models', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, { hypaV3Presets: [] })

@@ -9,6 +9,28 @@ import { LLMFlags } from '@risuai/shared-core/model-types'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 
 describe('database defaults', () => {
+  it('prefers legacy Hypa settings over the stale Supa prompt during first-preset migration', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        hypaV3Settings: {
+          summarizationPrompt: 'canonical legacy Hypa prompt',
+          recentMemoryRatio: 0.2,
+        },
+        supaMemoryPrompt: 'stale legacy Supa prompt',
+      },
+      { providerDefaults: false },
+    )
+
+    expect(database.hypaV3Presets).toEqual([
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          summarizationPrompt: 'canonical legacy Hypa prompt',
+          recentMemoryRatio: 0.2,
+        }),
+      }),
+    ])
+  })
+
   it('normalizes prompt roles at top-level, legacy-preset, and modern-preset entry points', () => {
     const database = normalizeDatabaseDefaults(
       {
