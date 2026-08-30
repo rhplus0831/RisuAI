@@ -58,6 +58,7 @@ import { languageSpanish } from 'src/lang/es'
 import { MobileSearch } from 'src/ts/stores.svelte'
 import {
   getResourceDatabase as getDatabase,
+  settingsResourceState,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
 
@@ -95,6 +96,7 @@ function makeCharacter(options: CharacterFixtureOptions) {
     creatorNotes: options.creatorNotes ?? 'No description',
     trashTime: options.trashTime,
     chats: Array.from({ length: options.chatCount ?? 0 }),
+    chatCount: options.chatCount ?? 0,
     lastInteraction: options.lastInteraction ?? 0,
     type: 'character',
   }
@@ -598,7 +600,7 @@ describe('GridCatalog derived lists', () => {
     expect(agoText('known-time')).toBe(new Intl.RelativeTimeFormat('ko', { style: 'short' }).format(-2, 'hour'))
     expect(agoText('unknown-time')).toBe(languageKorean.unknownInteractionTime)
 
-    getDatabase().language = 'es'
+    settingsResourceState.value.language = 'es'
     changeLanguage('es')
     await tick()
 

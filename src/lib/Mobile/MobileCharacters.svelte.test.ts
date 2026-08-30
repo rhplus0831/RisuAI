@@ -2,10 +2,8 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mobileCharacterMocks = vi.hoisted(() => ({
-  database: {
-    language: 'en',
-    characters: [] as Array<Record<string, unknown>>,
-  },
+  charactersResourceState: { characters: [] as Array<Record<string, unknown>> },
+  settingsResourceState: { value: { language: 'en' } },
 }))
 
 const characterActionSpies = vi.hoisted(() => ({
@@ -19,7 +17,8 @@ const routerActionSpies = vi.hoisted(() => ({
 
 vi.mock('src/ts/server/resourceState.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/resourceState.svelte')>()),
-  getResourceDatabase: () => mobileCharacterMocks.database,
+  charactersResourceState: mobileCharacterMocks.charactersResourceState,
+  settingsResourceState: mobileCharacterMocks.settingsResourceState,
 }))
 
 vi.mock('src/ts/characters', () => ({
@@ -53,7 +52,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
   selectedCharID.set(-1)
   MobileSearch.set('')
-  mobileCharacterMocks.database.characters = [
+  mobileCharacterMocks.charactersResourceState.characters = [
     {
       chaId: 'character-a',
       name: 'Character A',
@@ -61,6 +60,8 @@ beforeEach(() => {
       lastInteraction: Date.now() - 30_000,
       chatPage: 0,
       chats: [{ id: 'chat-a' }],
+      chatCount: 1,
+      activeChatId: 'chat-a',
     },
   ]
   target = document.createElement('div')
@@ -111,13 +112,15 @@ describe('MobileCharacters actions', () => {
     create.click()
     expect(characterActionSpies.addCharacter).toHaveBeenCalledOnce()
 
-    mobileCharacterMocks.database.characters = [
+    mobileCharacterMocks.charactersResourceState.characters = [
       {
         chaId: 'character-b',
         name: 'Character B',
         image: '',
         chatPage: 0,
         chats: [{ id: 'chat-b' }],
+        chatCount: 1,
+        activeChatId: 'chat-b',
       },
     ]
     row.click()

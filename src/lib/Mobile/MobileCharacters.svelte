@@ -21,7 +21,7 @@
 
 <script lang="ts">
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
   import { MobileSearch } from 'src/ts/stores.svelte'
@@ -39,11 +39,11 @@
 
   let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
   let relativeTimeNow = $state(Date.now())
-  let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(getDatabase().language))
+  let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(settingsResourceState.value.language))
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
   let mobileCharacterRows = $derived(
-    formatMobileCharacterRows(getDatabase().characters, {
+    formatMobileCharacterRows(charactersResourceState.characters, {
       hideTrash,
       agoFormatter,
       unknownText: language.unknownInteractionTime,
@@ -60,7 +60,7 @@
   })
 
   function openCharacterRoute(row: { chaId?: string; index: number }) {
-    const characters = getDatabase().characters ?? []
+    const characters = charactersResourceState.characters ?? []
     const index = row.chaId ? characters.findIndex((character) => character.chaId === row.chaId) : row.index
     if (index < 0) return
     const character = characters[index]
@@ -69,7 +69,7 @@
       endGrid()
       return
     }
-    navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+    navigate(characterRoutePath(character.chaId, character.activeChatId ?? character.chats?.[character.chatPage]?.id))
   }
 </script>
 

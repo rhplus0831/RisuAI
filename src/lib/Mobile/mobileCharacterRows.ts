@@ -20,6 +20,11 @@ export interface MobileCharacterRowsOptions {
   now?: number
 }
 
+type MobileCharacterSummary = character & {
+  chatCount?: number
+  activeChatId?: string | null
+}
+
 const relativeTimeLocaleByUiLanguage: Readonly<Record<string, string>> = {
   cn: 'zh-CN',
   de: 'de',
@@ -74,7 +79,7 @@ export function makeMobileCharacterAgoText(
 }
 
 export function formatMobileCharacterRows(
-  characters: readonly character[],
+  characters: readonly MobileCharacterSummary[],
   { hideTrash = false, agoFormatter, unknownText, now = Date.now() }: MobileCharacterRowsOptions,
 ): MobileCharacterRow[] {
   const rows = characters
@@ -88,7 +93,7 @@ export function formatMobileCharacterRows(
         name: displayInfo.name,
         searchText: displayInfo.searchText,
         image: c.image,
-        chats: c.chats.length,
+        chats: c.chatCount ?? c.chats.length,
         index: i,
         interaction,
         agoText: makeMobileCharacterAgoText(interaction, agoFormatter, unknownText, now),
