@@ -2922,6 +2922,41 @@ describe('fillMemoryAndPostHistory', () => {
     }
   })
 
+  it('does not use stale flat Hypa settings when the selected preset pointer is invalid', async () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      seedPromptMemory(memoryDb, {
+        summaryId: 'summary-stale-flat',
+        chunkId: 'chunk-stale-flat',
+        text: 'stale flat summary',
+      })
+      const db = memoryEnabledDatabase({
+        hypaV3PresetId: 99,
+        hypaV3Settings: {
+          summarizationModel: 'summary-model',
+          recentMemoryRatio: 1,
+          similarMemoryRatio: 0,
+        },
+      } as Partial<Database>)
+
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [[1, 0]],
+        }),
+      )
+      fillStaticSlots(state)
+      fillLorebookSlots(state)
+      await fillHistoryAndBias(state)
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryRows).toEqual([])
+    } finally {
+      memoryDb.close()
+    }
+  })
+
   it('plans missing Hypa chunks and summarize jobs before prompt memory selection', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {

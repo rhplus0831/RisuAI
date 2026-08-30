@@ -2329,7 +2329,7 @@ function resolveHypaV3PresetSettings(database: Database): unknown {
   if (preset && typeof preset === 'object' && 'settings' in preset) {
     return preset.settings
   }
-  return database.hypaV3Settings
+  return null
 }
 
 function resolvePromptMemoryEmbeddingModel(database: Database): string {
