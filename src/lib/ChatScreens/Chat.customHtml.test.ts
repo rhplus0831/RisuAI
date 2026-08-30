@@ -525,6 +525,7 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
         type: 'character',
       },
     ],
+    currentChar: 0,
     clickToEdit: false,
     createFolderOnBranch: false,
     disableAutoPopupMessageEditor: true,

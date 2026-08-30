@@ -307,6 +307,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
   SizeStore.set({ w: 900, h: 700 })
   replaceResourceDatabase({
     askRemoval: false,
+    currentChar: 0,
     characters: [
       {
         chaId: 'parser-dependency-character',

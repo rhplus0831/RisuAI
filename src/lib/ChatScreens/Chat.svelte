@@ -900,17 +900,23 @@
   }
 
   function currentLiveMessage(): Message | null {
-    const character = getDatabase().characters?.[selIdState.selId]
-    const chatPage = character?.chatPage
-    if (chatPage === undefined || chatPage === null || idx < 0) return null
-    return character.chats?.[chatPage]?.message?.[idx] ?? null
+    const chat = currentLiveChat()
+    if (!chat || idx < 0) return null
+    const candidate = chat.message?.[idx]
+    return candidate?.chatId && chat.message.filter((message) => message.chatId === candidate.chatId).length === 1
+      ? candidate
+      : null
   }
 
   function currentLiveChat(): Chat | null {
-    const character = getDatabase().characters?.[selIdState.selId]
+    const character = renderCharacter
     const chatPage = character?.chatPage
-    if (chatPage === undefined || chatPage === null) return null
-    return character.chats?.[chatPage] ?? null
+    if (chatPage === undefined || chatPage === null || !character) return null
+    const candidate = character.chats?.[chatPage]
+    if (charactersResourceState.status !== 'ready') return candidate ?? null
+    if (!candidate?.id) return null
+    const matches = character.chats.filter((chat) => chat.id === candidate.id)
+    return matches.length === 1 ? matches[0] : null
   }
 
   function automaticTranslationDisplayEnabled(): boolean {
@@ -987,6 +993,18 @@
   }
 
   function findLiveMessageByTarget(target: TranslationMessageTarget): Message | null {
+    if (renderCharacter) {
+      const chats = target.chatId
+        ? (renderCharacter.chats?.filter((candidate) => candidate.id === target.chatId) ?? [])
+        : charactersResourceState.status === 'ready'
+          ? []
+          : [currentLiveChat()].filter((candidate): candidate is Chat => candidate !== null)
+      if (chats.length !== 1) return null
+      const chat = chats[0]
+      const matches = chat?.message?.filter((candidate) => candidate.chatId === target.messageId) ?? []
+      return matches.length === 1 ? matches[0] : null
+    }
+    if (charactersResourceState.status === 'ready') return null
     const matches: Message[] = []
 
     for (const character of getDatabase().characters ?? []) {
@@ -1005,6 +1023,26 @@
   }
 
   function translationScopedSnapshot(target: TranslationMessageTarget): ReturnType<typeof currentChatScopedSnapshot> {
+    if (renderCharacter) {
+      const chats = target.chatId
+        ? (renderCharacter.chats?.filter((candidate) => candidate.id === target.chatId) ?? [])
+        : charactersResourceState.status === 'ready'
+          ? []
+          : [currentLiveChat()].filter((candidate): candidate is Chat => candidate !== null)
+      const chat = chats.length === 1 ? chats[0] : undefined
+      const hasMessage = chat?.message?.some((candidate) => candidate.chatId === target.messageId)
+      return hasMessage
+        ? {
+            selectedCharID: selIdState.selId,
+            characterId: renderCharacter.chaId,
+            chatId: chat.id,
+            chat: cloneJsonValue(chat),
+          }
+        : { selectedCharID: $selectedCharID, characterId: undefined, chatId: undefined, chat: undefined }
+    }
+    if (charactersResourceState.status === 'ready') {
+      return { selectedCharID: $selectedCharID, characterId: undefined, chatId: undefined, chat: undefined }
+    }
     const matches: Array<ReturnType<typeof currentChatScopedSnapshot>> = []
     for (const [characterIndex, character] of (getDatabase().characters ?? []).entries()) {
       for (const chat of character.chats ?? []) {
