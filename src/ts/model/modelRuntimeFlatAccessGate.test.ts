@@ -34,7 +34,7 @@ type AccessOccurrence = {
 }
 
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
-const roots = ['src/ts', 'src/lib', 'server/fastify/src'] as const
+const roots = ['src/ts', 'src/lib', 'server/fastify/src', 'packages/shared-core/src'] as const
 const fields = [
   'aiModel',
   'subModel',
@@ -191,42 +191,42 @@ const inventory: readonly InventoryEntry[] = [
 
   // Deliberate fallback branches retain compatibility for context-free callers.
   {
-    path: 'src/ts/model/modelProfileResolver.ts',
+    path: 'packages/shared-core/src/modelProfileResolver.ts',
     marker: 'database.modelRoles',
     classification: 'context-free-fallback',
     expectedCount: 1,
     reason: 'legacy role selection fallback',
   },
   {
-    path: 'src/ts/model/modelProfileResolver.ts',
+    path: 'packages/shared-core/src/modelProfileResolver.ts',
     marker: 'database.maxContext',
     classification: 'context-free-fallback',
     expectedCount: 1,
     reason: 'legacy runtime default fallback',
   },
   {
-    path: 'src/ts/model/modelProfileResolver.ts',
+    path: 'packages/shared-core/src/modelProfileResolver.ts',
     marker: 'database.maxResponse',
     classification: 'context-free-fallback',
     expectedCount: 1,
     reason: 'legacy runtime default fallback',
   },
   {
-    path: 'src/ts/model/modelProfileResolver.ts',
+    path: 'packages/shared-core/src/modelProfileResolver.ts',
     marker: 'database.temperature',
     classification: 'context-free-fallback',
     expectedCount: 2,
     reason: 'legacy runtime default fallback',
   },
   {
-    path: 'src/ts/model/modelProfileResolver.ts',
+    path: 'packages/shared-core/src/modelProfileResolver.ts',
     marker: 'database.top_p',
     classification: 'context-free-fallback',
     expectedCount: 1,
     reason: 'legacy runtime default fallback',
   },
   {
-    path: 'src/ts/model/modelProfileResolver.ts',
+    path: 'packages/shared-core/src/modelProfileResolver.ts',
     marker: 'database.top_k',
     classification: 'context-free-fallback',
     expectedCount: 1,

@@ -11,7 +11,7 @@ import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
-} from '../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import { filterResponseHeaders } from './proxy.js'
 import { applyAdditionalParameters, getProfileAdditionalParameters } from './generation/additionalParams.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'

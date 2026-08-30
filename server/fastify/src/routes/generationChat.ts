@@ -78,7 +78,7 @@ import {
   resolveModelProfile,
   type ModelProfileFallbackRef,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import { risuEscape, risuUnescape } from '@risuai/shared-core/risuchat-parser-helpers'
 import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
 import { isAgentPresetGenerationError, type AgentPresetProgressReporter } from '../prompt/agentPresetExecution.js'

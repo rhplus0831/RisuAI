@@ -31,7 +31,7 @@ describe('provider-capability shared-core ownership', () => {
       "export * from '@risuai/shared-core/provider-capability'",
     )
 
-    expect(source('src/ts/model/modelProfileResolver.ts')).toContain("from '../process/request/providerCapability'")
+    expect(source('packages/shared-core/src/modelProfileResolver.ts')).toContain("from './providerCapability.js'")
     expect(source('src/ts/process/request/serverCompletion.ts')).toContain("from './providerCapability'")
   })
 

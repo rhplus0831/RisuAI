@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
+import type { ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import type { CompletionStreamFrame } from './generation/frames.js'
 
 export const DEFAULT_REQUEST_HISTORY_LIMIT = 20

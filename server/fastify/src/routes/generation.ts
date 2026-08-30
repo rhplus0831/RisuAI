@@ -7,7 +7,7 @@ import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import type { AuthState } from '../auth.js'
 import { resolveAnthropicRequest, runAnthropic, runAnthropicStream } from '../generation/anthropic.js'
 import { resolveEchoRequest, runEcho, runEchoStream } from '../generation/echo.js'

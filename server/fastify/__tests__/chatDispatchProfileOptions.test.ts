@@ -12,7 +12,7 @@ import {
   resolveModelProfile,
   resolveModelProfileWithLegacyCompatibility,
   type ResolvedModelProfile,
-} from '../../../src/ts/model/modelProfileResolver'
+} from '@risuai/shared-core/model-profile-resolver'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { MASKED_PROVIDER_SECRET } from '@risuai/shared-core/provider-secret-mask'

@@ -4,7 +4,7 @@ import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import {
   resolveModelProfile,
   resolveModelProfileWithLegacyCompatibility,
-} from '../../../src/ts/model/modelProfileResolver'
+} from '@risuai/shared-core/model-profile-resolver'
 import { migrateLegacyFlatModelConfiguration, normalizeDatabaseDefaults } from '../src/databaseDefaults'
 
 const MODEL_ROLES = [

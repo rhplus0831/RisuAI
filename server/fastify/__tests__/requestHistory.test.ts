@@ -19,7 +19,7 @@ import {
   type RequestHistoryProfileSnapshot,
 } from '../src/requestHistory.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
-import type { ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
+import type { ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
 
 const profile: RequestHistoryProfileSnapshot = {
   id: 'profile-a',

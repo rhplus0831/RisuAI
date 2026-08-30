@@ -17,7 +17,7 @@ import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './mem
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler, type MemoryJobHandlerContext } from './memoryWorker.js'
 import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
-import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
+import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import {
   completeRequestHistory,
   requestHistoryProfileSnapshot,

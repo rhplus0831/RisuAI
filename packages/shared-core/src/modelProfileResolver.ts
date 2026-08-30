@@ -1,4 +1,3 @@
-import type { Database } from '../storage/database.svelte'
 import {
   LEGACY_FALLBACK_MODEL_KEYS,
   type LegacyFallbackModelKey,
@@ -11,7 +10,7 @@ import {
   normalizeModelRole,
   normalizeModelRoleOverrides,
   resolveModelForRole,
-} from '@risuai/shared-core/model-roles'
+} from './modelRoles.js'
 import {
   ClaudeParameters,
   LLMFlags,
@@ -22,17 +21,17 @@ import {
   ProviderNames,
   type LLMModel,
   type LLMTokenizer as LLMTokenizerValue,
-} from './types'
-import { AnthropicModels } from './providers/anthropic'
-import { GoogleModels } from './providers/google'
-import { OpenAIModels } from './providers/openai'
+} from './modelTypes.js'
+import { AnthropicModels } from './anthropicModels.js'
+import { GoogleModels } from './googleModels.js'
+import { OpenAIModels } from './openaiModels.js'
 import {
   resolveProviderCapability,
   type CustomModelEntryLike,
   type ProviderCapabilityInput,
   type ProviderCapabilityVerdict,
   type ProviderUnsupportedReason,
-} from '../process/request/providerCapability'
+} from './providerCapability.js'
 import {
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
@@ -41,8 +40,90 @@ import {
   type ModelProfileRecordFallbackRef,
   type ModelProfileRecordProviderOptions,
   type ModelProfileRecordRuntimeOptions,
-} from './modelProfileRecords'
-import { normalizeProjectedProviderCredentials, type ProviderCredentialRecord } from './providerCredentialRecords'
+} from './modelProfileRecords.js'
+import { normalizeProjectedProviderCredentials, type ProviderCredentialRecord } from './providerCredentialRecords.js'
+
+export interface ModelProfileResolverDatabase {
+  modelProfiles?: unknown
+  modelRoleProfiles?: unknown
+  modelRuntimeDefaults?: unknown
+  providerCredentials?: unknown
+  fallbackModels?: unknown
+  modelRoles?: unknown
+  seperateModelsForAxModels?: boolean
+  seperateModels?: unknown
+  customModels?: unknown
+  customProxyRequestModel?: string
+  customAPIFormat?: unknown
+  ollamaRequestFormat?: unknown
+  vertexClientEmail?: string
+  vertexRegion?: string
+  vertexPrivateKey?: string
+  forceReplaceUrl?: string
+  proxyKey?: string
+  OaiCompAPIKeys?: Record<string, string>
+  google?: { projectId?: string; accessToken?: string }
+  claudeAPIKey?: string
+  instructChatTemplate?: string
+  JinjaTemplate?: string
+  ollamaApiKey?: string
+  ollamaURL?: string
+  ollamaModelSource?: string
+  ollamaThinkingMode?: string
+  ollamaCloudModel?: string
+  ollamaModel?: string
+  openrouterKey?: string
+  openrouterFallback?: boolean
+  openrouterMiddleOut?: boolean
+  openrouterProvider?: { order?: string[]; only?: string[]; ignore?: string[] }
+  openrouterRequestModel?: string
+  nanogptProvider?: string
+  nanogptUseSubscriptionEndpoint?: boolean
+  nanogptKey?: string
+  nanogptSubscriptionState?: string
+  nanogptRequestModel?: string
+  autofillRequestUrl?: boolean
+  additionalParams?: unknown
+  reverseProxyOobaMode?: boolean
+  reverseProxyOobaArgs?: unknown
+  mistralKey?: string
+  cohereAPIKey?: string
+  koboldURL?: string
+  mancerHeader?: string
+  textgenWebUIBlockingURL?: string
+  hordeConfig?: { apiKey?: string }
+  openAIKey?: string
+  maxContext?: number
+  maxResponse?: number
+  temperature?: number
+  top_p?: number
+  top_k?: number
+  min_p?: number
+  top_a?: number
+  repetition_penalty?: number
+  frequencyPenalty?: number
+  PresensePenalty?: number
+  reasoningEffort?: number
+  thinkingTokens?: number
+  thinkingType?: string
+  deepseekThinkingType?: string
+  adaptiveThinkingEffort?: string
+  deepseekReasoningEffort?: string
+  verbosity?: number
+  halfStreaming?: boolean
+  useStreaming?: boolean
+  genTime?: number
+  extractJson?: string
+  jsonSchemaEnabled?: boolean
+  jsonSchema?: string
+  strictJsonSchema?: boolean
+  outputImageModal?: boolean
+  dynamicOutput?: unknown
+  modelTools?: unknown
+  enableCustomFlags?: boolean
+  customFlags?: unknown
+  customTokenizer?: string
+}
 
 export type ModelProfileSourceKind =
   | 'staticModel'
@@ -239,10 +320,10 @@ export function isNovelListModelProfile(profile: Pick<ResolvedModelProfile, 'mod
 }
 
 export interface ResolveModelProfileArgs {
-  database: Database
+  database: ModelProfileResolverDatabase
   role?: ModelRoleLike
   staticModel?: string | null
-  lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
+  lookupModelInfo?: (database: ModelProfileResolverDatabase, modelId: string) => LLMModel | null | undefined
 }
 
 interface ModelProfileSelection {
@@ -604,7 +685,10 @@ export function resolveModelProfileByProfileId({
  * custom-API configuration and then global runtime defaults. Legacy profiles
  * retain their existing flat/runtime fallback through `runtimeOptions`.
  */
-export function resolveModelProfileTokenizerSelection(database: Database, profile: ResolvedModelProfile): string {
+export function resolveModelProfileTokenizerSelection(
+  database: ModelProfileResolverDatabase,
+  profile: ResolvedModelProfile,
+): string {
   if (profile.source.kind === 'durable-profile') {
     const profileRecord = findDurableModelProfile(database.modelProfiles, profile.source.profileId ?? '')
     const profileRuntimeTokenizer = profileRecord?.runtimeOptions?.customTokenizer?.trim()
@@ -655,11 +739,11 @@ function resolveModelProfileSelection({
   lookupModelInfo,
   allowLegacyCompatibility,
 }: {
-  database: Database
+  database: ModelProfileResolverDatabase
   normalizedRole: ModelRole
   selection: ModelProfileSelection
   staticModelId?: string
-  lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
+  lookupModelInfo?: (database: ModelProfileResolverDatabase, modelId: string) => LLMModel | null | undefined
   allowLegacyCompatibility: boolean
 }): ResolvedModelProfile {
   const profileBound = selection.source.kind === 'durable-profile'
@@ -778,7 +862,10 @@ function resolveModelProfileSelection({
   }
 }
 
-function resolveProfileCredential(database: Database, selection: ModelProfileSelection): ModelProfileSelection {
+function resolveProfileCredential(
+  database: ModelProfileResolverDatabase,
+  selection: ModelProfileSelection,
+): ModelProfileSelection {
   const credentialId = nonBlankString(selection.profileProviderOptions?.credentialId)
   if (!credentialId) return selection
 
@@ -836,7 +923,10 @@ function resolveDurableFallbackRefs(
   })
 }
 
-export function resolveLegacyFallbackRefs(database: Database, roleLike: ModelRoleLike): ModelProfileFallbackRef[] {
+export function resolveLegacyFallbackRefs(
+  database: ModelProfileResolverDatabase,
+  roleLike: ModelRoleLike,
+): ModelProfileFallbackRef[] {
   const role = normalizeModelRole(roleLike)
   if (!role) return []
   const fallbackKey = fallbackKeyForRole(role)
@@ -850,7 +940,7 @@ export function resolveLegacyFallbackRefs(database: Database, roleLike: ModelRol
 }
 
 export function resolveServerSafeModelInfo(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelId: string,
   durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
   options: { useLegacyFallback?: boolean } = {},
@@ -1168,7 +1258,10 @@ export function resolveServerSafeModelInfo(
  * the client's automatic tokenizer routing from the same static model data as
  * profile resolution.
  */
-export function resolveServerSafeTokenizerFamily(database: Database, modelId: string): LLMTokenizerValue {
+export function resolveServerSafeTokenizerFamily(
+  database: ModelProfileResolverDatabase,
+  modelId: string,
+): LLMTokenizerValue {
   return resolveServerSafeModelInfo(database, modelId).tokenizer
 }
 
@@ -1638,7 +1731,7 @@ function firstClassIncompleteReasons(
 }
 
 function resolveProfileBoundRuntimeSource(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   profileRuntimeOptions?: ModelProfileRecordRuntimeOptions,
 ): ModelProfileRecordRuntimeOptions {
   return mergeRuntimeOptionRecords(
@@ -1681,7 +1774,10 @@ function uniqueReasons(reasons: readonly ModelProfileStatusReason[]): ModelProfi
   return [...new Set(reasons)]
 }
 
-function resolveDurableModelSelection(database: Database, role: ModelRole): ModelProfileSelection | null {
+function resolveDurableModelSelection(
+  database: ModelProfileResolverDatabase,
+  role: ModelRole,
+): ModelProfileSelection | null {
   const bindings = normalizeModelRoleProfiles(database.modelRoleProfiles)
   const binding = bindings[role]
 
@@ -1727,7 +1823,7 @@ function missingDurableModelSelection(role: ModelRole): ModelProfileSelection {
 }
 
 function resolveDurableProfileSelection(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   role: ModelRole,
   profileId: string,
   options: {
@@ -1783,7 +1879,7 @@ function resolveDurableProfileSelection(
   }
 }
 
-function resolveLegacyModelSelection(database: Database, role: ModelRole): ModelProfileSelection {
+function resolveLegacyModelSelection(database: ModelProfileResolverDatabase, role: ModelRole): ModelProfileSelection {
   const legacyMode = modelRoleToLegacyModelMode(role)
   const roleOverride = nonBlankString(normalizeModelRoleOverrides(database.modelRoles)[role])
   if (role !== 'chatMain' && role !== 'chatAux' && roleOverride) {
@@ -1894,7 +1990,7 @@ function fallbackKeyForRole(role: ModelRole): LegacyFallbackModelKey | null {
 }
 
 function buildProfileProviderCapabilityInputForDatabase(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   providerOptions?: ModelProfileProviderOptions,
@@ -1961,7 +2057,7 @@ function buildProfileProviderCapabilityInputForDatabase(
 }
 
 function resolveProviderOptions(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   requestModel: string,
@@ -2171,7 +2267,7 @@ function resolveProviderOptions(
 }
 
 function resolveRuntimeOptions(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelInfo: ResolvedModelProfileModelInfo,
   durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
   options: { useLegacyFallback?: boolean } = {},
@@ -2233,7 +2329,7 @@ function resolveRuntimeOptions(
 }
 
 function resolveProfileRequestModelFromParts(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelId: string,
   modelInfo: ResolvedModelProfileModelInfo,
   profileRequestModel?: string,
@@ -2317,7 +2413,7 @@ function resolveBedrockWireModel(internalId: string): string {
 function withDurableModelInfoOptions(
   modelId: string,
   providerOptions: EffectiveModelProfileRecordProviderOptions | undefined,
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelInfo: ResolvedModelProfileModelInfo,
   useLegacyFallback: boolean,
 ): ResolvedModelProfileModelInfo {
@@ -2336,7 +2432,7 @@ function withDurableModelInfoOptions(
 }
 
 function withCustomFlags(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelInfo: ResolvedModelProfileModelInfo,
   durableRuntimeOptions?: ModelProfileRecordRuntimeOptions,
   options: { useLegacyFallback?: boolean } = {},
@@ -2446,13 +2542,13 @@ function cloneAdditionalParams(value: Array<[string, string]> | undefined): Arra
   return value?.map(([key, val]) => [key, val])
 }
 
-function findXcustomEntry(database: Database, modelId: string): CustomModelEntry | null {
+function findXcustomEntry(database: ModelProfileResolverDatabase, modelId: string): CustomModelEntry | null {
   const models = Array.isArray(database.customModels) ? (database.customModels as CustomModelEntry[]) : []
   return models.find((entry) => entry.id === modelId) ?? null
 }
 
 function buildCapabilityCustomModels(
-  database: Database,
+  database: ModelProfileResolverDatabase,
   modelId: string,
   profileApiKey: string | undefined,
 ): CustomModelEntryLike[] | undefined {

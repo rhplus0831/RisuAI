@@ -1,6 +1,6 @@
 import type { FastifyDatabase as Database } from './serverTypes.js'
 import { LLMFlags, LLMTokenizer } from '@risuai/shared-core/model-types'
-import { resolveModelProfile, resolveServerSafeTokenizerFamily } from '../../../../src/ts/model/modelProfileResolver.js'
+import { resolveModelProfile, resolveServerSafeTokenizerFamily } from '@risuai/shared-core/model-profile-resolver'
 import { encodingForModel, ensureTokenizerLoaded, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'
 
 const AUTOMATIC_TOKENIZERS = new Set(['', 'tik', 'automatic', 'unknown', '0'])

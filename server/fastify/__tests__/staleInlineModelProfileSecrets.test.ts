@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { resolveMemorySummaryModel } from '../src/memorySummaryModel.js'
-import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import { canonicalModelProfileFixture } from '../../../test/fixtures/canonicalModelProfile'
 
 const subtle = webcrypto.subtle

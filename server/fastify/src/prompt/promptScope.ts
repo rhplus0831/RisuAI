@@ -1,7 +1,7 @@
 import type { FastifyDatabase as Database } from './serverTypes.js'
 import type { ChatVarBackend } from './chatVarBackend.js'
 import type { LLMModel } from '@risuai/shared-core/model-types'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver'
+import { resolveModelProfile, type ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
 

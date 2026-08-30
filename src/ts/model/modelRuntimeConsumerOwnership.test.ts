@@ -25,7 +25,7 @@ describe('browser model-runtime consumer ownership', () => {
   })
 
   it('shares durable tokenizer-selection precedence with Fastify', () => {
-    const sharedResolver = source('src/ts/model/modelProfileResolver.ts')
+    const sharedResolver = source('packages/shared-core/src/modelProfileResolver.ts')
     const tokenizer = source('src/ts/tokenizer.ts')
     const serverConfig = source('server/fastify/src/prompt/effectiveGenerationConfig.ts')
     const helper = 'resolveModelProfileTokenizerSelection'

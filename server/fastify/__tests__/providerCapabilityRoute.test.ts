@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LLMFormat } from '@risuai/shared-core/model-types'
 import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
-import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import { resolveChatProviderRoute } from '../src/prompt/chatDispatch.js'
 
 // Proves the server /chat dispatcher wires the shared capability table

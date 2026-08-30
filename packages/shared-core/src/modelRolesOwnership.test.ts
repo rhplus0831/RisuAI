@@ -33,7 +33,6 @@ describe('model-role shared-core ownership', () => {
       'src/lib/Setting/Pages/Model/ModelRoleList.svelte',
       'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
       'src/ts/model/modelProfileMutations.ts',
-      'src/ts/model/modelProfileResolver.ts',
       'src/ts/model/modelProfileUiState.ts',
       'src/ts/process/__fixtures__/mocks/serverCompletionFetch.ts',
       'src/ts/process/request/shared.ts',
@@ -42,6 +41,8 @@ describe('model-role shared-core ownership', () => {
     ]) {
       expect(source(consumer), consumer).toContain(sharedImport)
     }
+    const resolverSource = source('packages/shared-core/src/modelProfileResolver.ts')
+    expect(resolverSource).toContain("from './modelRoles.js'")
     expect(fs.existsSync(new URL('src/ts/model/modelRoles.ts', `file://${repoRoot}/`))).toBe(false)
   })
 })

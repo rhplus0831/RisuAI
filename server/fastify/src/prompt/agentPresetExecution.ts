@@ -13,7 +13,7 @@ import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import type { PromptMessage } from './promptMessage.js'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'

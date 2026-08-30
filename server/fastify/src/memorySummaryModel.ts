@@ -1,5 +1,5 @@
-import type { ModelProfileProviderOptions } from '../../../src/ts/model/modelProfileResolver'
-import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
+import type { ModelProfileProviderOptions } from '@risuai/shared-core/model-profile-resolver'
+import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import type { FastifyDatabase as Database } from './prompt/serverTypes.js'
 import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
 import { type OpenAICompatibleOptions, type OpenAICompatibleProvider } from './generation/openaiCompatible.js'

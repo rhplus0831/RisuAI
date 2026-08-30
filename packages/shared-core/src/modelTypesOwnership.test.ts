@@ -28,7 +28,6 @@ describe('model-types shared-core ownership', () => {
       'server/fastify/__tests__/databaseDefaults.test.ts',
       'server/fastify/__tests__/generation.chat.test.ts',
       'server/fastify/__tests__/generation.completion.test.ts',
-      'server/fastify/__tests__/memorySummaryModel.test.ts',
       'server/fastify/__tests__/modelProfileResolver.server.test.ts',
       'server/fastify/__tests__/phase7CompatibilityStructure.test.ts',
       'server/fastify/__tests__/providerCapabilityRoute.test.ts',

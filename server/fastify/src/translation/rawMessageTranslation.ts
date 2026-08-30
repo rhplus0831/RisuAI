@@ -4,7 +4,7 @@ import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
   assertModelProfileGenerationReady,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import {
   resolveTranslatorPipeline,
   runTranslatorPipeline,

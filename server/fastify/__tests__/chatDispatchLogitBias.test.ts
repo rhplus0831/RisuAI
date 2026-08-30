@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
-import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver.js'
+import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import {
   dispatchChatProvider,
   OPENAI_STRONG_BAN_PUNCTUATION,

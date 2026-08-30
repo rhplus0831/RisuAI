@@ -131,7 +131,7 @@ import {
   type AgentPresetExecutionPlan,
   type AgentPresetResolution,
 } from '../../../../src/ts/agentPresetResolver.js'
-import type { ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
+import type { ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import type { AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 
 /**

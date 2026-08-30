@@ -24,7 +24,7 @@ import {
   resolveModelProfileTokenizerSelection,
   resolveModelProfileWithLegacyCompatibility,
   type ResolvedModelProfile,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapshot'

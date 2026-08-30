@@ -4,7 +4,7 @@ import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
-} from '../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import type { BardWikiGlobalSettings } from '@risuai/protocol'
 import {
   listBardWikiDocuments,

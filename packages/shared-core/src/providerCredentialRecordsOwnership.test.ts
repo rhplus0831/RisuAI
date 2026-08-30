@@ -24,12 +24,10 @@ describe('provider-credential-records shared-core ownership', () => {
     }
   })
 
-  it('keeps projected credential normalization browser-owned', () => {
-    expect(source('src/ts/model/providerCredentialRecords.ts')).toContain(
+  it('keeps projected credential normalization on the shared owner and facade', () => {
+    expect(source('src/ts/model/providerCredentialRecords.ts')).toContain('normalizeProjectedProviderCredentials')
+    expect(source('packages/shared-core/src/providerCredentialRecords.ts')).toContain(
       'export function normalizeProjectedProviderCredentials',
-    )
-    expect(source('packages/shared-core/src/providerCredentialRecords.ts')).not.toContain(
-      'normalizeProjectedProviderCredentials',
     )
   })
 })

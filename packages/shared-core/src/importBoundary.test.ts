@@ -89,6 +89,7 @@ describe('@risuai/shared-core import boundary', () => {
         'mcpIdentifier.ts',
         'memoryModelCapability.ts',
         'modelProfileRecords.ts',
+        'modelProfileResolver.ts',
         'modelRoles.ts',
         'modelTypes.ts',
         'moduleIntegration.ts',

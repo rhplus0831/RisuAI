@@ -32,6 +32,7 @@
     "./memory-model-capability": "./src/memoryModelCapability.ts",
     "./model-types": "./src/modelTypes.ts",
     "./model-profile-records": "./src/modelProfileRecords.ts",
+    "./model-profile-resolver": "./src/modelProfileResolver.ts",
     "./openai-models": "./src/openaiModels.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",

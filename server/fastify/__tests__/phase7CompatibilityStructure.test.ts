@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from '../../../src/ts/model/modelProfileResolver.js'
+import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from '@risuai/shared-core/model-profile-resolver'
 import { LLMFormat, type LLMFormat as LLMFormatValue } from '@risuai/shared-core/model-types'
 import { formatToServerProvider } from '@risuai/shared-core/provider-capability'
 import { SERVER_IMAGE_GENERATION_PROVIDERS } from '@risuai/protocol/image-generation-operation'
@@ -220,9 +220,12 @@ const FIRST_CLASS_PROVIDER_POLICY: Record<
 type OptionOwner = { owner: string; anchor: string; disposition?: 'retained-inert' }
 
 const PROVIDER_OPTION_OWNERS: Record<string, OptionOwner> = {
-  credentialId: { owner: 'src/ts/model/modelProfileResolver.ts', anchor: 'resolveProfileCredential' },
-  requestModel: { owner: 'src/ts/model/modelProfileResolver.ts', anchor: 'resolveProfileRequestModelFromParts' },
-  baseUrl: { owner: 'src/ts/model/modelProfileResolver.ts', anchor: 'resolveFirstClassProviderOptions' },
+  credentialId: { owner: 'packages/shared-core/src/modelProfileResolver.ts', anchor: 'resolveProfileCredential' },
+  requestModel: {
+    owner: 'packages/shared-core/src/modelProfileResolver.ts',
+    anchor: 'resolveProfileRequestModelFromParts',
+  },
+  baseUrl: { owner: 'packages/shared-core/src/modelProfileResolver.ts', anchor: 'resolveFirstClassProviderOptions' },
   extraHeaders: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'extraHeaders' },
   additionalParams: {
     owner: 'server/fastify/src/generation/additionalParams.ts',
@@ -234,7 +237,7 @@ const PROVIDER_OPTION_OWNERS: Record<string, OptionOwner> = {
   llmGateway: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'llmGateway' },
   ollama: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'ollama' },
   vertex: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'vertex' },
-  customApi: { owner: 'src/ts/model/modelProfileResolver.ts', anchor: 'customApi' },
+  customApi: { owner: 'packages/shared-core/src/modelProfileResolver.ts', anchor: 'customApi' },
 }
 
 const RUNTIME_OPTION_OWNERS: Record<string, OptionOwner> = {
@@ -273,7 +276,7 @@ const RUNTIME_OPTION_OWNERS: Record<string, OptionOwner> = {
   jsonSchemaEnabled: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'db.jsonSchemaEnabled' },
   strictJsonSchema: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'db.strictJsonSchema' },
   outputImageModal: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'db.outputImageModal' },
-  enableCustomFlags: { owner: 'src/ts/model/modelProfileResolver.ts', anchor: 'enableCustomFlags' },
+  enableCustomFlags: { owner: 'packages/shared-core/src/modelProfileResolver.ts', anchor: 'enableCustomFlags' },
   stripCoT: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'profile.runtimeOptions.stripCoT' },
   dynamicOutput: {
     owner: 'server/fastify/src/prompt/effectiveGenerationConfig.ts',
@@ -281,7 +284,7 @@ const RUNTIME_OPTION_OWNERS: Record<string, OptionOwner> = {
     disposition: 'retained-inert',
   },
   modelTools: { owner: 'server/fastify/src/prompt/chatDispatch.ts', anchor: 'runtimeOptions.modelTools' },
-  customFlags: { owner: 'src/ts/model/modelProfileResolver.ts', anchor: 'customFlags' },
+  customFlags: { owner: 'packages/shared-core/src/modelProfileResolver.ts', anchor: 'customFlags' },
 }
 
 type OperationOwner = { production: string; assurance: string }
@@ -402,7 +405,7 @@ describe('Phase 7 compatibility structure', () => {
 
   it('pins every first-class profile provider to endpoint, credential, option, and dispatch owners', () => {
     expect(Object.keys(FIRST_CLASS_PROVIDER_POLICY).sort()).toEqual([...FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS].sort())
-    const resolverSource = readRepoFile('src/ts/model/modelProfileResolver.ts')
+    const resolverSource = readRepoFile('packages/shared-core/src/modelProfileResolver.ts')
     const dispatchSource = readRepoFile('server/fastify/src/prompt/chatDispatch.ts')
 
     for (const [provider, policy] of Object.entries(FIRST_CLASS_PROVIDER_POLICY)) {

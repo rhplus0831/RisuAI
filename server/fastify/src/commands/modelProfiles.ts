@@ -4,7 +4,7 @@ import { isDeepStrictEqual } from 'node:util'
 import {
   resolveModelProfile,
   type FirstClassModelProfileProviderId,
-} from '../../../../src/ts/model/modelProfileResolver.js'
+} from '@risuai/shared-core/model-profile-resolver'
 import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
 import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
 import {
