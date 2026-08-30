@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { normalizeChatPageIndex } from '@risuai/shared-core/chat-page'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   CHAT_GENERATION_SETTINGS_KEYS,
@@ -558,7 +559,7 @@ export function readChatGenerationSettingsSave(
       throw new ValidationError(`${label}.promptPresetId must be a string`)
     }
     normalized.promptPresetId = raw.promptPresetId
-    if (raw.promptPresetId.trim() !== '' && !context.promptPresets.some((preset) => preset.id === raw.promptPresetId)) {
+    if (raw.promptPresetId.trim() !== '' && !resolveUniquePromptPreset(context.promptPresets, raw.promptPresetId)) {
       throw new ValidationError(`Unknown prompt preset id in ${label}.promptPresetId: ${raw.promptPresetId}`)
     }
   }
@@ -597,7 +598,7 @@ export function readChatGenerationSettingsSave(
   }
 
   const selectedPromptPreset = isNonEmptyString(normalized.promptPresetId)
-    ? context.promptPresets.find((preset) => preset.id === normalized.promptPresetId)
+    ? resolveUniquePromptPreset(context.promptPresets, normalized.promptPresetId)
     : undefined
   const readiness = resolveChatGenerationSettingsReadiness({
     ...context,

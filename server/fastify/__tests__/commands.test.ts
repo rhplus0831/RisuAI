@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { compressSync } from 'fflate'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { readChatGenerationSettingsSave } from '../src/commands/chats.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { applyJsonCommandMutation, applyMessageFreeJsonCommandMutation } from '../src/commands/mutations.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
@@ -581,6 +582,21 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await stopHarness(harness)
+})
+
+describe('chat generation settings prompt owner validation', () => {
+  it.each(['missing', 'duplicate'])('rejects a %s prompt preset owner', (kind) => {
+    const promptPresets = kind === 'missing' ? [{ id: 'other' }] : [{ id: 'prompt-a' }, { id: 'prompt-a' }]
+    const context = {
+      personas: [],
+      modelPresets: [],
+      promptPresets,
+    }
+
+    expect(() =>
+      readChatGenerationSettingsSave({ promptPresetId: 'prompt-a', jailbreakToggle: false }, context),
+    ).toThrow('Unknown prompt preset id in generationSettings.promptPresetId: prompt-a')
+  })
 })
 
 describe('command foundation', () => {

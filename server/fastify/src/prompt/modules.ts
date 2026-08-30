@@ -11,6 +11,7 @@ import {
   resolveModuleActivationStates,
   type ModuleActivationIdentifiers,
 } from '@risuai/shared-core/module-activation'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { attachTriggerSource } from './triggerSource.js'
 
@@ -97,7 +98,10 @@ function resolveServerActiveModuleIdentifiers(
     typeof promptPresetId === 'string' && promptPresetId.trim().length > 0
       ? {
           source: 'promptPresetIntegration' as const,
-          value: database.promptPresets?.find((candidate: any) => candidate?.id === promptPresetId)?.moduleIntergration,
+          value: resolveUniquePromptPreset(
+            database.promptPresets as readonly { id?: unknown; moduleIntergration?: unknown }[] | undefined,
+            promptPresetId,
+          )?.moduleIntergration,
         }
       : { source: 'legacyIntegration' as const, value: database.moduleIntergration }
   const agentPresetIntegration = resolveAgentPresetModuleIntegration(

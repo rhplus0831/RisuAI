@@ -42,7 +42,7 @@ export function resolveEffectivePromptTemplate<PromptItem = unknown>(
 ): EffectivePromptTemplateResolution<PromptItem> {
   const chatPromptPresetId = nonBlankString(options.chatPromptPresetId)
   if (chatPromptPresetId) {
-    const preset = findUniquePromptPresetById(promptPresets(db), chatPromptPresetId)
+    const preset = resolveUniquePromptPreset(promptPresets(db), chatPromptPresetId)
     if (!preset) {
       return { promptTemplate: null, source: 'missing-chat-prompt-preset', promptPresetId: chatPromptPresetId }
     }
@@ -97,19 +97,22 @@ function resolveGlobalPromptPreset<PromptItem>(
   const promptPresetId = stablePromptPresetId(preset?.id)
   if (!preset) return { status: 'none' }
   if (!promptPresetId) return { status: 'invalid' }
-  if (!findUniquePromptPresetById(promptPresets(db), promptPresetId)) {
+  if (!resolveUniquePromptPreset(promptPresets(db), promptPresetId)) {
     return { status: 'invalid', promptPresetId }
   }
   return { status: 'valid', preset, promptPresetId }
 }
 
-function findUniquePromptPresetById<PromptItem>(
-  presets: readonly EffectivePromptTemplatePreset<PromptItem>[],
-  promptPresetId: string,
-): EffectivePromptTemplatePreset<PromptItem> | undefined {
-  let match: EffectivePromptTemplatePreset<PromptItem> | undefined
+export function resolveUniquePromptPreset<Preset extends { id?: unknown }>(
+  presets: readonly Preset[] | null | undefined,
+  promptPresetId: unknown,
+): Preset | undefined {
+  const stableId = stablePromptPresetId(promptPresetId)
+  if (!stableId || !Array.isArray(presets)) return undefined
+
+  let match: Preset | undefined
   for (const preset of presets) {
-    if (stablePromptPresetId(preset?.id) !== promptPresetId) continue
+    if (stablePromptPresetId(preset?.id) !== stableId) continue
     if (match) return undefined
     match = preset
   }

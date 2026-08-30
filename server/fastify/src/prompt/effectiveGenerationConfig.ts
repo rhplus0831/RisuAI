@@ -30,6 +30,7 @@ import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapshot'
 import { resolveEffectiveAgentPresetId } from '@risuai/shared-core/agent-preset-resolver'
 import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -92,7 +93,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   const promptPresets = (input.database.promptPresets ?? []) as unknown as EffectivePromptPresetRecord[]
   const personas = (input.database.personas ?? []) as PersonaRecord[]
   const selectedModelPreset = findById(modelPresets, settings?.modelPresetId)
-  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
+  const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, settings?.promptPresetId)
   const readiness = resolveChatGenerationSettingsReadiness({
     settings,
     effectiveAgentPresetId,
@@ -134,12 +135,10 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   const effectiveModelPresetIndex = effectiveModelPresets.findIndex(
     (candidate: ModelPresetRecord) => candidate.id === modelPreset.id,
   )
-  const effectivePromptPresetIndex = effectivePromptPresets.findIndex(
-    (candidate: EffectivePromptPresetRecord) => candidate.id === promptPreset.id,
-  )
+  const effectivePromptPreset = resolveUniquePromptPreset(effectivePromptPresets, promptPreset.id)
+  const effectivePromptPresetIndex = effectivePromptPreset ? effectivePromptPresets.indexOf(effectivePromptPreset) : -1
   const effectivePersonaIndex = effectivePersonas.findIndex((candidate: PersonaRecord) => candidate.id === persona.id)
   const effectiveModelPreset = effectiveModelPresets[effectiveModelPresetIndex] as ModelPresetRecord | undefined
-  const effectivePromptPreset = effectivePromptPresets[effectivePromptPresetIndex] as PromptPresetRecord | undefined
   const effectivePersona = effectivePersonas[effectivePersonaIndex] as PersonaRecord | undefined
 
   if (!effectiveModelPreset || !effectivePromptPreset || !effectivePersona) {

@@ -1914,6 +1914,33 @@ describe('resolveScope (via beginAssembly)', () => {
     expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
   })
 
+  it('fails closed when the chat-selected prompt owner is duplicated', () => {
+    const db = makeDatabase({
+      promptPresets: [
+        { id: 'prompt-duplicate', name: 'Prompt A' },
+        { id: 'prompt-duplicate', name: 'Prompt B' },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'prompt-duplicate',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    } as unknown as Partial<Database>)
+
+    expect(() => beginAssembly(baseInput(), depsFor(db))).toThrow(ChatGenerationSettingsIncompleteAssemblyError)
+  })
+
   it('adds effective Agent Preset module integration to the selected Prompt Preset', () => {
     const db = makeDatabase({
       modules: [

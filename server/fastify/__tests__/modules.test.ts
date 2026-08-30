@@ -146,6 +146,21 @@ describe('getActiveModules', () => {
     })
     expect(getActiveModules(db, undefined, undefined)).toEqual([m])
   })
+
+  it.each(['missing', 'duplicate'])('fails closed for a %s chat-selected prompt owner', (kind) => {
+    const linked = makeModule({ id: 'linked', namespace: 'prompt-space' })
+    const promptPresets =
+      kind === 'missing'
+        ? [{ id: 'other', moduleIntergration: 'prompt-space' }]
+        : [
+            { id: 'prompt-a', moduleIntergration: 'prompt-space' },
+            { id: 'prompt-a', moduleIntergration: 'prompt-space' },
+          ]
+    const db = makeDb({ modules: [linked], promptPresets })
+    const currentChat = makeChat({ generationSettings: { promptPresetId: 'prompt-a' } })
+
+    expect(getActiveModules(db, undefined, currentChat)).toEqual([])
+  })
 })
 
 describe('getModuleRegexScripts', () => {
