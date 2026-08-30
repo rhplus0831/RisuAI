@@ -1,6 +1,6 @@
 # Phase 2: Route Operation And Policy Catalog
 
-Status: queued.
+Status: active.
 
 Depends on: Phase 1 operation identifier and schema conventions.
 
@@ -42,3 +42,5 @@ grant itself authority.
 Route-protection and manifest tests, durable-outbox allowlist tests, protocol
 checks, server tests, browser adapter tests, browser smoke where routing changes,
 typechecks, formatting, and diff checks.
+
+Active slice: [Operation catalog foundation](slices/phase-2-route-operation-and-policy-catalog/operation-catalog-foundation.md).

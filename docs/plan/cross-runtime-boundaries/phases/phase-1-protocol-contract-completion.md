@@ -1,6 +1,6 @@
 # Phase 1: Protocol Contract Completion
 
-Status: active.
+Status: complete at `33d1643aedcf74aecf3f0d8b549b0313a061c6b1`.
 
 Depends on: Phase 0 accepted import/duplication inventory and package rules.
 
@@ -52,4 +52,4 @@ behavior mismatch becomes a separate remediation slice.
 Focused protocol tests, `pnpm check:protocol`, both typecheck families, affected
 frontend/server lanes, formatting, and diff checks.
 
-Active slice: [Standalone-settings contract](slices/phase-1-protocol-contract-completion/standalone-settings-contract.md).
+Final slice: [Standalone-settings contract](slices/phase-1-protocol-contract-completion/standalone-settings-contract.md).

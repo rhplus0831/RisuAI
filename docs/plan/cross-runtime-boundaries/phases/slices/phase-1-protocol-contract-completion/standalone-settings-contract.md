@@ -1,6 +1,6 @@
 # Standalone-Settings Contract
 
-Status: ready.
+Status: complete at `33d1643aedcf74aecf3f0d8b549b0313a061c6b1`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 

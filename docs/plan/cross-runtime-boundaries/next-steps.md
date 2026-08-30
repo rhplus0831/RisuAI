@@ -4,19 +4,19 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [standalone-settings contract
-slice](phases/slices/phase-1-protocol-contract-completion/standalone-settings-contract.md).
+Execute the [operation catalog foundation
+slice](phases/slices/phase-2-route-operation-and-policy-catalog/operation-catalog-foundation.md).
 
-1. Define the eight-name taxonomy plus schema-derived present/absent state and
-   revisioned payload at an explicit protocol subpath.
-2. Preserve non-negative safe-integer revisions, additive outer payloads, exact
-   state variants, unknown present values, and the existing name guard.
-3. Migrate browser resource state/read/manifest/invalidation consumers and the
-   Fastify resource-read route without moving storage, revision, or repair policy.
-4. Remove the superseded application-tree contract module and extend the
-   protocol import audit.
-5. Refresh the boundary baseline for the exact one removed cross-runtime edge and
-   record the contract release.
+1. Publish closed, browser-safe transport metadata taxonomies and stable route
+   operation identifiers from an explicit protocol subpath.
+2. Record one reviewed descriptor per registered API method/path template with
+   stream class, cache behavior, durability tag, and response class.
+3. Bind Fastify's server-owned auth and active-writer policy entries to shared
+   operation identifiers without moving policy authority.
+4. Make live `app.printRoutes()` coverage bidirectional and reject missing,
+   stale, duplicate, or ambiguous catalog/manifest coverage.
+5. Preserve every route, method, path, response, cache header, stream, policy,
+   rate limit, and handler decision; run the complete Phase 2 foundation gates.
 
 ## Boundary Conventions Released
 
@@ -28,21 +28,22 @@ slice](phases/slices/phase-1-protocol-contract-completion/standalone-settings-co
 - Shared historical fixtures are test-owned and cannot make browser application
   modules a server dependency.
 
-These conventions were released by Phase 0 at `b01e88b03` and unblock
-Workstream 2's compatibility inventory.
+These conventions and every inventoried Phase 1 wire contract were released at
+`33d1643ae`.
 
 ## Not In This Slice
 
-- Do not introduce the route operation catalog yet.
-- Do not move aggregate `Database`, character state, or Svelte state into a
-  shared package.
-- Do not move standalone-setting storage, resource projection, revision
-  authority, repair, invalidation, authentication, or writer policy into protocol.
-- Do not combine unrelated generation or prompt contract families.
+- Do not derive the browser durable-command allowlist until exact server/live
+  route parity is established.
+- Do not move authentication, active-writer, credential, rate-limit, host,
+  persistence, cache storage, or handler-validation policy into protocol.
+- Do not reconcile resource-surface or raw-generation caller metadata yet.
+- Do not rename routes or runtime generation UUIDs while introducing stable
+  catalog identifiers.
 
 ## Handoff
 
-After the slice passes, update [`status.md`](status.md) with exact edge counts
-and the standalone-settings release cursor, refresh
-[`latest-verification.md`](latest-verification.md), then select the next
-wire-contract family from [`baseline.json`](baseline.json).
+After the foundation passes, update [`status.md`](status.md) and
+[`latest-verification.md`](latest-verification.md), then derive the durable
+browser operation allowlist by catalog identifier while preserving adversarial
+near-miss coverage.
