@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./chat-metadata": "./src/chatMetadata.ts",
     "./character-resource": "./src/characterResource.ts",
     "./character-summary-resource": "./src/characterSummaryResource.ts",
     "./client-context": "./src/clientContext.ts",

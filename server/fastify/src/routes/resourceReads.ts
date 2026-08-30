@@ -10,6 +10,7 @@ import {
   type ServerCharacterOrderResource,
   type ServerCharacterSelectionResource,
 } from '@risuai/protocol/character-resource'
+import { isServerChatMetadataResource } from '@risuai/protocol/chat-metadata'
 import {
   SERVER_SHELL_PROTOCOL_VERSION,
   SERVER_SHELL_SETTINGS_KEYS,
@@ -545,7 +546,9 @@ export function registerResourceReadRoutes(
       revision,
       character: envelope.characters[0] as ServerCharacterDetailResource['character'],
     }
-    if (!isServerCharacterDetailResource(payload)) throw new Error('Invalid character detail resource')
+    if (!isServerCharacterDetailResource(payload) || !isServerChatMetadataResource(payload)) {
+      throw new Error('Invalid character detail resource')
+    }
     return metricResourceResponse(req, reply, 'character', revision, payload, { detailRead: true })
   })
 

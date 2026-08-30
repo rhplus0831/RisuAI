@@ -11,6 +11,7 @@ import {
   isServerCharacterOrderResource,
   isServerCharacterSelectionResource,
 } from '@risuai/protocol/character-resource'
+import { isServerChatMetadataResource } from '@risuai/protocol/chat-metadata'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   isResourceCacheMetadata,
@@ -326,6 +327,7 @@ export async function fetchServerCharacter(
   const record = readRevisionEnvelope(result.body)
   if (
     !isServerCharacterDetailResource(result.body) ||
+    !isServerChatMetadataResource(result.body) ||
     !isMessageFreeCharacter(record.character) ||
     record.character.chaId !== characterId
   ) {
