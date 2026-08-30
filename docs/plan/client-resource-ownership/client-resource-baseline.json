@@ -1366,7 +1366,7 @@
       "files": [
         {
           "file": "src/ts/process/models/modelString.ts",
-          "count": 2
+          "count": 3
         },
         {
           "file": "src/ts/process/models/nai.ts",
@@ -4942,6 +4942,10 @@
         },
         {
           "file": "src/ts/model/openrouter.test.ts",
+          "count": 1
+        },
+        {
+          "file": "src/ts/process/models/modelString.test.ts",
           "count": 1
         },
         {

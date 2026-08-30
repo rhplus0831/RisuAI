@@ -1,8 +1,11 @@
 import { getDatabase } from 'src/ts/storage/database.svelte'
+import { resolveModelProfile, type ResolvedModelProfile } from 'src/ts/model/modelProfileResolver'
 
-export function getGenerationModelString(name?: string) {
-  const db = getDatabase()
-  switch (name ?? db.aiModel) {
+type GenerationModelDatabase = ReturnType<typeof getDatabase>
+
+function getLegacyGenerationModelString(db: GenerationModelDatabase, name?: string): string {
+  const selectedModel = name ?? db.aiModel
+  switch (selectedModel) {
     case 'reverse_proxy':
       return 'custom-' + (db.reverseProxyOobaMode ? 'ooba' : db.customProxyRequestModel)
     case 'openrouter':
@@ -18,6 +21,34 @@ export function getGenerationModelString(name?: string) {
       return `Ollama ${name === 'ollama-cloud' ? 'Cloud' : 'Local'} ${modelLabel}`
     }
     default:
-      return name ?? db.aiModel
+      return selectedModel
   }
+}
+
+function getProfileGenerationModelString(profile: ResolvedModelProfile): string {
+  switch (profile.modelId) {
+    case 'reverse_proxy':
+      return 'custom-' + (profile.providerOptions.reverseProxy?.oobaSystemHoist ? 'ooba' : profile.requestModel)
+    case 'openrouter':
+      return 'openrouter-' + profile.requestModel
+    case 'nanogpt':
+      return (
+        'NanoGPT ' + profile.requestModel + (profile.providerOptions.nanogpt?.useSubscriptionEndpoint ? ' [SUB]' : '')
+      )
+    case 'ollama-hosted':
+    case 'ollama-cloud':
+      return `Ollama ${profile.providerOptions.ollama?.cloud ? 'Cloud' : 'Local'} ${profile.requestModel}`
+    default:
+      return profile.modelId
+  }
+}
+
+export function getGenerationModelString(name?: string) {
+  const db = getDatabase()
+  if (name !== undefined) return getLegacyGenerationModelString(db, name)
+
+  const profile = resolveModelProfile({ database: db })
+  return profile.source.kind === 'durable-profile'
+    ? getProfileGenerationModelString(profile)
+    : getLegacyGenerationModelString(db)
 }

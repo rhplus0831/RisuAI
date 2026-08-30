@@ -37,6 +37,7 @@ describe('browser model-runtime consumer ownership', () => {
     const browserParser = source('src/ts/parser/parser.svelte.ts')
     const serverAdapter = source('server/fastify/src/prompt/cbsAdapter.ts')
     const pluginApi = source('src/ts/plugins/apiV3/v3.svelte.ts')
+    const modelString = source('src/ts/process/models/modelString.ts')
 
     expect(cbs).not.toContain('return db.aiModel')
     expect(cbs).not.toContain('return db.subModel')
@@ -47,5 +48,7 @@ describe('browser model-runtime consumer ownership', () => {
     expect(serverAdapter).toContain('getModelContext: getActiveModelContext')
     expect(pluginApi).not.toContain('getModelInfo(getDatabase().aiModel)')
     expect(pluginApi).toContain('resolveModelProfile({ database: getDatabase() }).modelInfo.id')
+    expect(modelString).toContain('resolveModelProfile({ database: db })')
+    expect(modelString).toContain("profile.source.kind === 'durable-profile'")
   })
 })
