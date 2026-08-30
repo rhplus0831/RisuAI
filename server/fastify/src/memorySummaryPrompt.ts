@@ -1,5 +1,5 @@
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
-import { inlayTokenRegex } from '../../../src/ts/util/inlayTokens.js'
+import { inlayTokenRegex } from '@risuai/shared-core/inlay-tokens'
 import type { HypaV3Settings } from './memoryPlanner.js'
 
 export const DEFAULT_SUMMARIZATION_PROMPT =

@@ -9,7 +9,7 @@ import { type OpenAIChat } from '../index.svelte'
 import { requestChatData } from '../request/request'
 import { chatCompletion, unloadEngine } from '../webllm'
 import { type ChatTokenizer } from 'src/ts/tokenizer'
-import { inlayTokenRegex } from 'src/ts/util/inlayTokens'
+import { inlayTokenRegex } from '@risuai/shared-core/inlay-tokens'
 import {
   startLocalMemoryJob,
   updateLocalMemoryJob,

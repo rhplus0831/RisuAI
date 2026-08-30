@@ -69,6 +69,7 @@ describe('@risuai/shared-core import boundary', () => {
         'chatLoadPages.ts',
         'chatPage.ts',
         'index.ts',
+        'inlayTokens.ts',
         'internalReasoning.ts',
         'legacyOpenAIModelAliases.ts',
         'punctuation.ts',

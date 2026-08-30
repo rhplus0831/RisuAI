@@ -10,6 +10,7 @@
     "./chat-display-tail-count": "./src/chatDisplayTailCount.ts",
     "./chat-load-pages": "./src/chatLoadPages.ts",
     "./chat-page": "./src/chatPage.ts",
+    "./inlay-tokens": "./src/inlayTokens.ts",
     "./internal-reasoning": "./src/internalReasoning.ts",
     "./legacy-openai-model-aliases": "./src/legacyOpenAIModelAliases.ts",
     "./punctuation": "./src/punctuation.ts",
