@@ -41,6 +41,10 @@ Import gate, focused domain tests, complete server lane for broad slices,
 protocol/shared checks, `pnpm check:server`, compatibility fixtures when shared
 behavior moves, formatting, and diff checks.
 
-Completed slice: [BardWiki server type seam](slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md).
+Completed slices:
 
-Active slice: [Memory-embedding configuration seam](slices/phase-4-server-consumer-migration/memory-embedding-configuration-seam.md).
+- [BardWiki server type seam](slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md)
+- [Memory-embedding configuration seam](slices/phase-4-server-consumer-migration/memory-embedding-configuration-seam.md)
+- [Provider-message input seam](slices/phase-4-server-consumer-migration/provider-message-input-seam.md)
+
+Active slice: [Memory-summary message seam](slices/phase-4-server-consumer-migration/memory-summary-message-seam.md).

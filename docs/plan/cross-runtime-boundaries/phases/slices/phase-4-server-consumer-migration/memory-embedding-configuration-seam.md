@@ -1,6 +1,6 @@
 # Memory-Embedding Configuration Seam
 
-Status: ready.
+Status: complete at `3a96d8505`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -19,9 +19,8 @@ vocabulary and settings inputs in Fastify.
   `memoryEmbeddingModel.ts` and `memoryEmbedJobHandler.ts`.
 - Destination: narrow Fastify-owned memory-embedding model, credential, custom
   provider, and Hypa V3 preset/settings input records.
-- Expected minimum delta: four production type-only root-`src` edges. The
-  same-domain `embeddingOperations.ts` database edge is optional only if its
-  contract can be narrowed without affecting command or provider policy.
+- Delivered delta: five production and one server-test type-only root-`src`
+  edges, including the same-domain `embeddingOperations.ts` input.
 
 ## Behavior Contract
 

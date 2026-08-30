@@ -4,19 +4,20 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [memory-embedding configuration seam
-slice](phases/slices/phase-4-server-consumer-migration/memory-embedding-configuration-seam.md).
+Execute the [memory-summary message seam
+slice](phases/slices/phase-4-server-consumer-migration/memory-summary-message-seam.md).
 
-1. Define the complete memory-embedding model vocabulary and the narrow settings
-   fields used by Fastify resolution and job execution under the server owner.
-2. Replace direct type-only imports of browser `HypaModel` and aggregate
-   `Database` in the resolver and job handler; include embedding operations only
-   if its input can be narrowed without changing policy.
-3. Preserve custom URL normalization, credential selection, provider aliases,
-   dimension/input/batch limits, exact local-model rejection, and error strings.
-4. Keep SQLite transitions, dispatch, batching, deadlines, masking, and
-   persistence unchanged.
-5. Refresh the baseline after focused resolver/job/operation and ownership proof.
+1. Define one Fastify-owned message record with exactly the role, content, memo,
+   name, thoughts, and multimodal metadata used by memory summarization.
+2. Replace the four direct type-only browser `OpenAIChat` imports in the memory
+   planner, chunk planner, summary prompt, and summary adapter.
+3. Preserve example/NewChat/empty-row skip rules, summarized-prefix detection,
+   token accounting, ChatML parsing, thought scrubbing, chunk hashes, and job
+   payload identity.
+4. Keep provider dispatch, model-profile resolution, SQLite job state, batching,
+   deadlines, retries, and persistence unchanged.
+5. Refresh the baseline after focused planner/prompt/adapter/job and ownership
+   proof.
 
 ## Foundations Released
 
@@ -66,14 +67,19 @@ slice](phases/slices/phase-4-server-consumer-migration/memory-embedding-configur
   Fastify prompt command consumers share one dependency-free key contract.
 - BardWiki's server type seam is released at `44e53527a`; its five production
   consumers no longer import browser aggregate/chat declarations directly.
+- Memory-embedding resolution and job configuration are released at
+  `3a96d8505`; their Fastify-owned inputs removed five production and one test
+  browser-model edges.
+- Provider conversion inputs are released at `e0be7d72e`; provider-wire builders
+  no longer depend on the browser prompt-row declaration.
 
 ## Not In This Slice
 
-- Do not move browser-local embedding implementations into Fastify or make them
-  remotely executable.
-- Do not change embedding provider dispatch, request limits, credentials,
-  masking, job state, or persistence.
-- Do not widen shared-core with aggregate memory/database application types.
+- Do not change model-profile resolution, provider requests, job persistence,
+  retries, or memory-summary scheduling.
+- Do not broaden the record into an aggregate browser prompt or database type.
+- Do not migrate the separate memory-summary configuration/database seam in this
+  slice.
 
 ## Handoff
 
