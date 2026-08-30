@@ -298,6 +298,20 @@ describe('effective preset composition', () => {
     expect(modelPreset).not.toHaveProperty('modelRoleProfiles')
   })
 
+  it('keeps legacy role-specific model selection on the effective clone', () => {
+    const effective = composeEffectivePresetSettings({
+      base: {
+        modelRoles: { memory: 'base-memory' },
+        modelRoleProfiles: { memory: { mode: 'profile', profileId: 'durable-memory' } },
+      },
+      modelPreset: { id: 'legacy-roles', modelRoles: { memory: 'preset-memory' } },
+      scope: 'model-runtime',
+    })
+
+    expect(effective.modelRoles).toEqual({ memory: 'preset-memory' })
+    expect(effective.modelRoleProfiles).toMatchObject({ memory: { mode: 'legacy' } })
+  })
+
   it('lets canonical model preset ownership win over stale legacy fields', () => {
     const effective = composeEffectivePresetSettings({
       base: {

@@ -206,9 +206,13 @@ const CANONICAL_MODEL_PRESET_OWNER_FIELDS = new Set<ModelPresetField>([
   'modelRoleProfiles',
   'modelRuntimeDefaults',
 ])
-const LEGACY_MODEL_PRESET_COMPATIBILITY_FIELDS = MODEL_PRESET_ONLY_FIELDS.filter(
-  (field) => !CANONICAL_MODEL_PRESET_OWNER_FIELDS.has(field),
-)
+const LEGACY_MODEL_PRESET_COMPATIBILITY_FIELDS: readonly ModelPresetField[] = [
+  ...MODEL_PRESET_ONLY_FIELDS.filter((field) => !CANONICAL_MODEL_PRESET_OWNER_FIELDS.has(field)),
+  'modelRoles',
+  'seperateModelsForAxModels',
+  'seperateModels',
+  'fallbackModels',
+]
 
 /**
  * Detect a legacy/full preset before preset defaults are merged into it.
