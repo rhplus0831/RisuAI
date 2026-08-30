@@ -15,6 +15,7 @@ import {
   isNovelListModelProfile,
   resolveModelProfile,
   resolveModelProfileByProfileId,
+  resolveModelProfileWithLegacyCompatibility,
 } from '../model/modelProfileResolver'
 import localforage from 'localforage'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
@@ -204,8 +205,20 @@ function safeStringify(value: unknown) {
   }
 }
 
-function getTranslateSourceLanguage(db = getDatabase()): 'ja' | 'en' {
+function getTranslateModelProfile(db = getDatabase()) {
   const profile = resolveModelProfile({ database: db, role: 'translate' })
+  if (
+    profile.source.kind === 'durable-profile' &&
+    profile.modelId === '' &&
+    profile.status.reasons.includes('profile-not-found')
+  ) {
+    return resolveModelProfileWithLegacyCompatibility({ database: db, role: 'translate' })
+  }
+  return profile
+}
+
+function getTranslateSourceLanguage(db = getDatabase()): 'ja' | 'en' {
+  const profile = getTranslateModelProfile(db)
   return isNovelListModelProfile(profile) ? 'ja' : 'en'
 }
 
@@ -250,7 +263,7 @@ export function getTranslatorSettingsSignatureKey(db = getDatabase(), scope?: Tr
 }
 
 function getTranslateProfileCacheSignature(db = getDatabase()) {
-  const profile = resolveModelProfile({ database: db, role: 'translate' })
+  const profile = getTranslateModelProfile(db)
   const customModel = profile.providerOptions.customModel
 
   return {

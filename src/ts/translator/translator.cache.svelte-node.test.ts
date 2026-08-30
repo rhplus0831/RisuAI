@@ -652,16 +652,21 @@ describe('auto-translate cache', () => {
 
   it('ignores a stale flat main model when the resolved LLM translate profile is unchanged', async () => {
     testState.db.translatorType = 'llm'
-    testState.db.modelProfiles = [{ id: 'translate-profile', name: 'Translate', modelId: 'echo_model' }]
+    testState.db.modelProfiles = [
+      { id: 'chat-main-profile', name: 'Chat Main', modelId: 'openai' },
+      { id: 'translate-profile', name: 'Translate', modelId: 'echo_model' },
+    ]
     testState.db.modelRoleProfiles = {
+      chatMain: { mode: 'profile', profileId: 'chat-main-profile' },
       translate: { mode: 'profile', profileId: 'translate-profile' },
     }
+    testState.db.aiModel = 'novellist'
     testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>translated</p>' })
 
     const initialSignature = getTranslatorSettingsSignatureKey(testState.db)
     const first = await translateHTML('<p>stable translate profile</p>', false, '', 0)
     __translatorTestHooks.clearTranslateHTMLMemo()
-    testState.db.aiModel = 'novellist'
+    testState.db.aiModel = 'openai'
     const staleFlatSignature = getTranslatorSettingsSignatureKey(testState.db)
     const cached = await translateHTML('<p>stable translate profile</p>', false, '', 0)
 
@@ -670,7 +675,7 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(1)
 
     __translatorTestHooks.clearTranslateHTMLMemo()
-    testState.db.modelProfiles[0].modelId = 'novellist_damsel'
+    testState.db.modelProfiles[1].modelId = 'novellist_damsel'
     expect(getTranslatorSettingsSignatureKey(testState.db)).not.toBe(initialSignature)
     await translateHTML('<p>stable translate profile</p>', false, '', 0)
     expect(testState.requestChatData).toHaveBeenCalledTimes(2)
