@@ -1,3 +1,14 @@
+<script lang="ts" module>
+  import type { ChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
+
+  export function resolveTranscriptRenderMessages(
+    ownerState: ChatMessageOwnerState | undefined,
+    aggregateMessages: ChatMessageOwnerState['messages'],
+  ): ChatMessageOwnerState['messages'] {
+    return ownerState?.messages ?? aggregateMessages
+  }
+</script>
+
 <script lang="ts">
   import Suggestion from './Suggestion.svelte'
   import {
@@ -113,6 +124,7 @@
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
     hasChatMessageHydrationFailed,
+    getChatMessageOwnerState,
     hydrateActiveChat,
     hydrateActiveChatFully,
     hydrateActiveChatWindow,
@@ -342,6 +354,8 @@
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
+  let currentChatOwnerState = $derived(currentChatId ? getChatMessageOwnerState(currentChatId) : undefined)
+  let renderChat = $derived(resolveTranscriptRenderMessages(currentChatOwnerState, currentChat))
   let currentChatRecord = $derived(currentCharacter?.chats[currentCharacter.chatPage])
   let currentRerollTarget = $derived(
     currentCharacter && currentChatRecord
@@ -2966,7 +2980,7 @@
           <div class="contents" data-default-chat-chats-container>
             <Chats
               bind:this={chatsInstance}
-              messages={currentChat}
+              messages={renderChat}
               {loadPages}
               scrollContainer={chatScrollContainer}
               onReroll={reroll}
