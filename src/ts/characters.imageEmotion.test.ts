@@ -158,7 +158,7 @@ vi.mock('./filePicker', () => ({
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 import type { character, Database } from './storage/database.svelte'
@@ -338,6 +338,23 @@ afterEach(() => {
 })
 
 describe('image/emotion scoped rollback', () => {
+  it('fails closed for duplicate ready character owners', () => {
+    testDatabaseState.db = {
+      characters: [
+        baseCharacter({ chaId: 'char-a', emotionImages: [['first', 'first-asset']] }),
+        baseCharacter({ chaId: 'char-a', emotionImages: [['second', 'second-asset']] }),
+      ],
+    } as any
+
+    expect(charactersResourceState.status).toBe('ready')
+    rmCharEmotion(0, 0)
+
+    expect(testDatabaseState.db.characters.map((character) => character.emotionImages)).toEqual([
+      [['first', 'first-asset']],
+      [['second', 'second-asset']],
+    ])
+  })
+
   it('rmCharEmotion captures a single-row baseline, never the whole characters array', async () => {
     // char-0 carries the large 40-message hydrated transcript; the edit targets a
     // small sibling so a whole-array clone would dwarf the single-row clone.

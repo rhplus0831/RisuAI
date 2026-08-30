@@ -48,7 +48,7 @@ import {
   type CharacterMutationOutcome,
 } from './characterCommands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { charactersResourceState } from './server/resourceState.svelte'
+import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
@@ -128,7 +128,7 @@ function isCurrentCharacterAvatarUpload(input: {
   avatarSnapshot: CharacterAvatarSnapshot
   editorScope: CharacterNavigationScope
 }): boolean {
-  const character = getDatabase().characters?.[input.charIndex]
+  const character = characterOwnerAt(input.charIndex)
   return (
     characterAvatarUploadGuard.isLatest(input.token) &&
     changeCharSelectionAttemptId === input.editorScope.selectionAttemptId &&
@@ -215,7 +215,7 @@ export async function selectCharacterAvatarImage(
     const pngExif: Record<string, string> = {}
 
     try {
-      if (type === 'PNG' && getDatabase().characters[charIndex].type === 'character') {
+      if (type === 'PNG' && characterOwnerAt(charIndex)?.type === 'character') {
         const gen = PngChunk.readGenerator(img)
         const allowedChunk = [
           'parameters',
@@ -276,7 +276,8 @@ export async function selectCharImg(charIndex: number) {
     let applied = false
     withTrustedResourceWrite(() => {
       dumpCharImage(charIndex, { dispatch: false })
-      const character = getDatabase().characters[charIndex]
+      const character = characterOwnerAt(charIndex)
+      if (!character) return
       const pngExifEntries = Object.entries(pngExif)
       if (pngExifEntries.length > 0) {
         character.extentions ??= {}
@@ -290,7 +291,8 @@ export async function selectCharImg(charIndex: number) {
     })
 
     if (applied) {
-      dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
+      const character = characterOwnerAt(charIndex)
+      if (character) dispatchCompatibleCharacterUpdateScoped(previousCharacter, character, previous)
     }
   })
 }
@@ -300,7 +302,8 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
   const previous = dispatch ? currentCharacterRowSnapshot(charIndex) : null
   const previousCharacter = previous?.character ?? null
   withTrustedResourceWrite(() => {
-    const char = getDatabase().characters[charIndex] as character
+    const char = characterOwnerAt(charIndex)
+    if (!char) return
     if (!char.image || char.image === '') {
       return
     }
@@ -312,10 +315,10 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
       ext: 'png',
     })
     char.image = ''
-    getDatabase().characters[charIndex] = char
   })
   if (previous && previousCharacter) {
-    dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
+    const character = characterOwnerAt(charIndex)
+    if (character) dispatchCompatibleCharacterUpdateScoped(previousCharacter, character, previous)
   }
 }
 
@@ -323,21 +326,22 @@ export function changeCharImage(charIndex: number, changeIndex: number) {
   const previous = currentCharacterRowSnapshot(charIndex)
   const previousCharacter = previous.character
   withTrustedResourceWrite(() => {
-    const char = getDatabase().characters[charIndex] as character
+    const char = characterOwnerAt(charIndex)
+    if (!char) return
     const image = char.ccAssets[changeIndex].uri
     char.ccAssets.splice(changeIndex, 1)
     dumpCharImage(charIndex, { dispatch: false })
     char.image = image
-    getDatabase().characters[charIndex] = char
   })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
+  const character = characterOwnerAt(charIndex)
+  if (character) dispatchCompatibleCharacterUpdateScoped(previousCharacter, character, previous)
 }
 
 export const addingEmotion = writable(false)
 
 function currentCharacterEmotionUploadFreshness(charIndex: number) {
-  const selectedCharacterId = getDatabase().characters?.[get(selectedCharID)]?.chaId
-  const rowCharacter = getDatabase().characters?.[charIndex]
+  const selectedCharacterId = characterOwnerAt(get(selectedCharID))?.chaId
+  const rowCharacter = characterOwnerAt(charIndex)
   return {
     currentCharacterId: selectedCharacterId,
     rowCharacterId: rowCharacter?.chaId,
@@ -394,7 +398,7 @@ export async function addCharEmotion(charId: number) {
 
       let applied = false
       withTrustedResourceWrite(() => {
-        const dbChar = getDatabase().characters[charId]
+        const dbChar = characterOwnerAt(charId)
         const emotionImages = appendFreshCharacterEmotionImages({
           operation: activeOperation,
           freshness: currentCharacterEmotionUploadFreshness(charId),
@@ -405,12 +409,12 @@ export async function addCharEmotion(charId: number) {
         }
 
         dbChar.emotionImages = emotionImages
-        getDatabase().characters[charId] = dbChar
         applied = true
       })
 
       if (applied) {
-        dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
+        const character = characterOwnerAt(charId)
+        if (character) dispatchCompatibleCharacterUpdateScoped(previousCharacter, character, previous)
       }
     } finally {
       if (operation) {
@@ -426,11 +430,12 @@ export function rmCharEmotion(charId: number, emotionId: number) {
   const previous = currentCharacterRowSnapshot(charId)
   const previousCharacter = previous.character
   withTrustedResourceWrite(() => {
-    let dbChar = getDatabase().characters[charId]
+    const dbChar = characterOwnerAt(charId)
+    if (!dbChar) return
     dbChar.emotionImages.splice(emotionId, 1)
-    getDatabase().characters[charId] = dbChar
   })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
+  const character = characterOwnerAt(charId)
+  if (character) dispatchCompatibleCharacterUpdateScoped(previousCharacter, character, previous)
 }
 
 export interface ChatExportTarget {
@@ -1489,7 +1494,5 @@ function characterOwnerAt(index: number): character | undefined {
   const candidate = characterRowsOwner()[index]
   if (charactersResourceState.status !== 'ready') return candidate
   if (!candidate?.chaId) return undefined
-  return characterRowsOwner().filter((character) => character?.chaId === candidate.chaId).length === 1
-    ? candidate
-    : undefined
+  return getCharacterResourceOwner(candidate.chaId)
 }
