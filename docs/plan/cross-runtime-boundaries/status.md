@@ -9,19 +9,19 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; thirteen Phase 3 leaf slices are
+- Plan state: Active; Phases 0 through 2 complete; fourteen Phase 3 leaf slices are
   complete.
 - Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [Agent-only lorebook predicate](phases/slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md), ready.
+- Active slice: [Script-model overrides](phases/slices/phase-3-pure-shared-core/script-model-overrides.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: model-role resolution at `22d6799dd`,
-  after lore hash randomization at `1b1152814`; focused differential/ownership,
-  affected browser/Fastify model, settings, preset, storage, and command owners,
+- Latest implementation candidate: Agent-only lorebook predicate at
+  `4162150ec`, after model-role resolution at `22d6799dd`; focused
+  predicate/ownership, affected browser/Fastify Agent and lorebook owners,
   architecture inventory, shared-core/root/downstream typechecks, formatting,
   and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
@@ -59,6 +59,7 @@ in [`latest-verification.md`](latest-verification.md).
 | History-slot rendering | `7e03538ea` | Released through `@risuai/shared-core/history-slots`; all four production consumers use the shared leaf and one production runtime/mixed root-`src` edge was removed. |
 | Lore hash randomization | `1b1152814` | Released through `@risuai/shared-core/lore-hash`; browser/Fastify consumers use one implementation, the private Fastify copy is gone, and one production runtime edge was removed. |
 | Model-role resolution | `22d6799dd` | Released through `@risuai/shared-core/model-roles`; all 28 production consumers use the shared leaf and eleven production/server-test root-`src` edges were removed. |
+| Agent-only lorebook predicate | `4162150ec` | Released through `@risuai/shared-core/agent-only-lorebook`; all four production consumers use the shared predicate and one production runtime root-`src` edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -83,12 +84,12 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 303 direct root-`src` edges remain: 203 production, 92 server-test, and 8
+- 302 direct root-`src` edges remain: 202 production, 92 server-test, and 8
   browser-smoke, spanning 128 importers and 56 targets.
-- Usage is 106 runtime, 38 mixed, and 159 type-only; 144 runtime/mixed edges
+- Usage is 105 runtime, 38 mixed, and 159 type-only; 143 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse, removed 72 edges and 23 source
+  shared-helper reuse, removed 73 edges and 23 source
   targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -100,7 +101,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and thirteen neutral leaves complete; agent-only lorebook predicate is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and fourteen neutral leaves complete; script-model overrides are next. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
@@ -122,8 +123,8 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Extract only the dependency-free
-agent-only lorebook marker predicate into the audited shared-core owner while
-leaving Agent input resolution, Original Risu export projection, database
-types, cloning, activation validation, and lorebook orchestration in their
+Use [`next-steps.md`](next-steps.md). Move only dependency-free script-model
+override types, normalization, strict reading, lookup, and immutable update
+behavior into the audited shared-core owner while leaving profile resolution,
+Lua execution, database repair, persistence, and UI orchestration in their
 current owners.

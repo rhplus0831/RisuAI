@@ -1,6 +1,6 @@
 # Agent-Only Lorebook Predicate
 
-Status: ready.
+Status: complete at `4162150ec`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -54,3 +54,15 @@ formatting; and `git diff --check`.
 Stop if the predicate needs aggregate database types, cloning, Agent preset
 records, browser stores, DOM/Svelte, Fastify, filesystem, process-global state,
 credentials, persistence, or host policy.
+
+## Release Evidence
+
+- `@risuai/shared-core/agent-only-lorebook` owns the portable marker and strict
+  predicate; the browser Agent-input/export module, browser settings and
+  lorebook processing, and Fastify lorebook filter import it directly.
+- Predicate, ownership, and import-boundary files passed 6, 1, and 2 tests;
+  Agent input, browser lorebook resource-guard, and Fastify lorebook owners
+  passed 5, 11, and 79 tests.
+- One production runtime root-`src` edge left the checked inventory without
+  changing the source target, which remains legitimately consumed by Fastify
+  Agent input execution.

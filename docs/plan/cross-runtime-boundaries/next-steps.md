@@ -4,21 +4,19 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [agent-only lorebook predicate
-slice](phases/slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).
+Execute the [script-model overrides
+slice](phases/slices/phase-3-pure-shared-core/script-model-overrides.md).
 
-1. Move only the portable marker constant and predicate into an explicit
-   shared-core subpath with a narrow structural input.
-2. Preserve nullish handling and strict `=== true` checks for both `agentOnly`
-   and `extentions.risu_agent_only`.
-3. Preserve the extension fallback when the direct field is false; do not
-   coerce truthy values or mutate entries.
-4. Migrate the browser Agent-input/export module, browser lorebook settings and
-   processing, and Fastify lorebook filtering, then add a closed-world ownership
-   proof.
-5. Keep Agent input resolution, scope precedence, activation validation,
-   cloning, Original Risu export projection, persistence, and UI orchestration
-   unchanged.
+1. Move the zero-import override types, normalizer, strict reader, role lookup,
+   updater, and validation error into an explicit shared-core subpath.
+2. Preserve exact field/role names, trimming and blank omission, object-only
+   handling, unknown-key rejection, path-qualified errors, and error identity.
+3. Preserve main/aux selection, blank deletion, fresh return objects, and input
+   non-mutation.
+4. Migrate all browser and four Fastify production consumers, then delete the
+   browser-tree owner after differential and closed-world ownership proof.
+5. Keep model-profile resolution, Lua execution, database repair, persistence,
+   command policy, and settings orchestration unchanged.
 
 ## Foundations Released
 
@@ -58,14 +56,16 @@ slice](phases/slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).
   both Fastify owners share one implementation.
 - Model-role resolution is released at `22d6799dd`; twenty browser and eight
   Fastify production consumers share one implementation.
+- The Agent-only lorebook predicate is released at `4162150ec`; all four
+  production consumers use the shared marker logic.
 
 ## Not In This Slice
 
-- Do not move Agent input resolution, Original Risu export projection, cloning,
-  database types, activation validation, prompt filtering, or UI orchestration
-  into shared core.
-- Do not correct the persisted `extentions` spelling or broaden the input shape
-  beyond the two fields inspected by the predicate.
+- Do not move model-profile resolution, Lua execution, database repair,
+  persistence, character/module command policy, or settings UI into shared
+  core.
+- Do not rename the durable override fields or broaden this slice into profile
+  records, role resolution, or provider behavior.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

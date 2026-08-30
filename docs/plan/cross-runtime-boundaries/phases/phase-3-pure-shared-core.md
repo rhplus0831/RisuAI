@@ -64,4 +64,6 @@ Completed slice: [Lore hash randomization](slices/phase-3-pure-shared-core/lore-
 
 Completed slice: [Model-role resolution](slices/phase-3-pure-shared-core/model-role-resolution.md).
 
-Active slice: [Agent-only lorebook predicate](slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).
+Completed slice: [Agent-only lorebook predicate](slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).
+
+Active slice: [Script-model overrides](slices/phase-3-pure-shared-core/script-model-overrides.md).
