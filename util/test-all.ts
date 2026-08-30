@@ -46,9 +46,16 @@ export const qualityLanes: readonly QualityLane[] = [
     priority: 0,
   },
   {
+    id: 'test-topology',
+    label: 'test topology validation',
+    args: ['test:topology'],
+    priority: 0,
+  },
+  {
     id: 'frontend-tests',
     label: 'frontend tests',
     args: ['test:frontend:run'],
+    after: ['test-topology'],
     // The coverage lane below executes these six files with its thresholds.
     env: { RISU_TEST_EXCLUDE_UI_MAP: 'true' },
     priority: 1,

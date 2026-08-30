@@ -26,6 +26,7 @@
     "test": "pnpm test:frontend",
     "test:quick": "tsx util/affected-tests.ts",
     "test:affected": "tsx util/affected-tests.ts",
+    "test:topology": "tsx util/test-topology.ts",
     "test:frontend": "pnpm test:frontend:run",
     "test:frontend:run": "vitest run",
     "test:frontend:all": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run",

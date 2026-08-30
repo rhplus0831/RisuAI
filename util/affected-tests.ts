@@ -33,7 +33,7 @@ export interface AffectedTestPlan {
 
 export const FINAL_VERIFICATION_REQUIRED_MARKER = 'TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED'
 export const FINAL_VERIFICATION_REQUIRED_NOTE =
-  'Build, dependency, or CI configuration changed; safe targeted feedback is limited and final verification with pnpm test:all is required.'
+  'Build, dependency, CI, test-runner, or shared typecheck configuration changed; safe targeted feedback is limited and final verification with pnpm test:all is required.'
 export const ADDITIVE_PROTOCOL_EXPORT_NOTE =
   'The protocol manifest only adds explicit local source exports; targeted lanes are selected. Run test:all once at the integration boundary.'
 
@@ -44,15 +44,28 @@ interface CliOptions extends AffectedTestOptions {
 const frontendTestPattern = /(?:^|\/).+\.test\.[cm]?[jt]sx?$/
 const browserSmokePattern = /^server\/fastify\/browser-smoke\/.+\.spec\.ts$/
 const performanceTestFileSet = new Set<string>(performanceTestFiles)
-const rootRunnerFiles = new Set([
-  'package.json',
-  'pnpm-lock.yaml',
-  'pnpm-workspace.yaml',
-  'vite.config.ts',
+const testTopologyRunnerFiles = new Set([
   'vitest.config.ts',
+  'vitest.dom.config.ts',
+  'vitest.dom.setup.ts',
+  'vitest.fetchGuard.ts',
+  'vitest.frontend-routing.ts',
+  'vitest.node.config.ts',
+  'vitest.performance-tests.ts',
   'vitest.setup.ts',
-  'vitest.setup.test.ts',
+  'vitest.svelte-node.config.ts',
+  'vitest.svelte-node.environment.ts',
+  'vitest.ui-coverage-tests.ts',
+  'server/fastify/vitest.config.ts',
+  'util/test-topology.ts',
 ])
+const frontendTypecheckRunnerFiles = new Set(['tsconfig.json', 'tsconfig.node.json'])
+const serverTypecheckRunnerFiles = new Set([
+  'tsconfig.client-lib.json',
+  'tsconfig.browser-smoke.json',
+  'server/fastify/tsconfig.json',
+])
+const smokeTypecheckRunnerFiles = new Set(['playwright.fastify-smoke.config.ts', 'tsconfig.browser-smoke.json'])
 const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts'])
 const compatibilityBaselineFiles = new Set(['util/compat-baseline.ts', 'util/compat-baseline.test.ts'])
 const compatibilityRegisterValidatorFiles = new Set([
@@ -144,10 +157,6 @@ function isServerTestSupport(file: string): boolean {
   return /^server\/fastify\/(?:__tests__|__fixtures__)\/.+\.[cm]?[jt]sx?$/.test(file) && !isServerTest(file)
 }
 
-function isRootRunnerFile(file: string): boolean {
-  return rootRunnerFiles.has(file) || /^vitest(?:\.[^/]+)?\.ts$/.test(file) || /^tsconfig(?:\.[^/]+)?\.json$/.test(file)
-}
-
 function isCompatibilityBaselineFile(file: string): boolean {
   return compatibilityBaselineFiles.has(file)
 }
@@ -178,6 +187,20 @@ function uniqueSorted(files: Iterable<string>): string[] {
   return [...new Set(files)].sort()
 }
 
+function isUnclassifiedRootRunnerFile(file: string): boolean {
+  const isRootRunner =
+    (/^vitest(?:\.[^/]+)?\.ts$/.test(file) && !isFrontendTest(file)) ||
+    /^tsconfig(?:\.[^/]+)?\.json$/.test(file) ||
+    /^playwright(?:\.[^/]+)?\.ts$/.test(file)
+  if (!isRootRunner) return false
+  return (
+    !testTopologyRunnerFiles.has(file) &&
+    !frontendTypecheckRunnerFiles.has(file) &&
+    !serverTypecheckRunnerFiles.has(file) &&
+    !smokeTypecheckRunnerFiles.has(file)
+  )
+}
+
 function requiresFullQuality(change: ChangedPath): boolean {
   const file = change.path
   return (
@@ -192,29 +215,53 @@ function requiresFullQuality(change: ChangedPath): boolean {
     file === 'packages/shared-core/package.json' ||
     file === 'packages/shared-core/tsconfig.json' ||
     fullQualityRunnerFiles.has(file) ||
+    isUnclassifiedRootRunnerFile(file) ||
     file.startsWith('.github/')
+  )
+}
+
+function requiresFinalVerification(change: ChangedPath): boolean {
+  const file = change.path
+  return (
+    requiresFullQuality(change) ||
+    testTopologyRunnerFiles.has(file) ||
+    frontendTypecheckRunnerFiles.has(file) ||
+    serverTypecheckRunnerFiles.has(file) ||
+    smokeTypecheckRunnerFiles.has(file)
   )
 }
 
 export function planAffectedTests(changes: readonly ChangedPath[], options: AffectedTestOptions): AffectedTestPlan {
   const allNormalized = changes.map((change) => ({ ...change, path: normalizeRepoPath(change.path) }))
-  const finalVerificationRequired = allNormalized.some(requiresFullQuality)
+  const finalVerificationRequired = allNormalized.some(requiresFinalVerification)
   const normalized = allNormalized.filter((change) => !requiresFullQuality(change))
   const notes: string[] = finalVerificationRequired ? [FINAL_VERIFICATION_REQUIRED_NOTE] : []
   const commands: TestCommand[] = []
   const existing = normalized.filter((change) => change.status !== 'D')
   const deleted = normalized.filter((change) => change.status === 'D')
   const changedFiles = normalized.map((change) => change.path)
+  const runnerContractTests = new Set<string>()
+  for (const file of changedFiles) {
+    if (file === 'vitest.frontend-routing.ts') runnerContractTests.add('vitest.frontend-routing.test.ts')
+    if (file === 'vitest.setup.ts') runnerContractTests.add('vitest.setup.test.ts')
+    if (file === 'vitest.fetchGuard.ts' || file === 'vitest.dom.setup.ts') {
+      runnerContractTests.add('vitest.fetchGuard.test.ts')
+    }
+    if (file === 'vitest.performance-tests.ts' || file === 'vitest.ui-coverage-tests.ts') {
+      runnerContractTests.add('util/test-all.test.ts')
+    }
+  }
   const compatHarnessChanged = changedFiles.some((file) => file.startsWith('test/compat-harness/'))
   const compatBaselineChanged = changedFiles.some(isCompatibilityBaselineFile)
   const compatibilityInfrastructureChanged = compatHarnessChanged || compatBaselineChanged
   const compatibilityRegisterChanged = changedFiles.some(isCompatibilityRegisterFile)
   const compatibilityProductionChanged = changedFiles.some(isCompatibilityRelevantProductionFile)
-  const directFrontendTests = uniqueSorted(
-    existing
+  const directFrontendTests = uniqueSorted([
+    ...existing
       .map((change) => change.path)
       .filter((file) => isFrontendTest(file) && !isExplicitGate(file) && !isCompatibilityFocusedTest(file)),
-  )
+    ...runnerContractTests,
+  ])
   const directGateTests = uniqueSorted(
     existing.map((change) => change.path).filter((file) => isFrontendTest(file) && isExplicitGate(file)),
   )
@@ -226,10 +273,10 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     (change) => change.path === protocolManifestPath && change.impact === 'protocol-additive-exports',
   )
 
-  const rootRunnerChanged = changedFiles.some(isRootRunnerFile)
-  const serverRunnerChanged = changedFiles.some(
-    (file) => file === 'server/fastify/vitest.config.ts' || file === 'server/fastify/tsconfig.json',
-  )
+  const testTopologyChanged = changedFiles.some((file) => testTopologyRunnerFiles.has(file))
+  const frontendTypecheckChanged = changedFiles.some((file) => frontendTypecheckRunnerFiles.has(file))
+  const serverTypecheckChanged = changedFiles.some((file) => serverTypecheckRunnerFiles.has(file))
+  const smokeTypecheckChanged = changedFiles.some((file) => smokeTypecheckRunnerFiles.has(file))
   const smokeRunnerChanged = changedFiles.some(
     (file) =>
       file === 'playwright.fastify-smoke.config.ts' ||
@@ -244,6 +291,7 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   const frontendSourceChanged = existing.some(
     ({ path: file }) =>
       (/^(?:src|util|server\/fastify\/src)\//.test(file) || isProtocolSource(file) || isSharedCoreSource(file)) &&
+      !testTopologyRunnerFiles.has(file) &&
       !isCompatibilityBaselineFile(file) &&
       !compatibilityRegisterValidatorFiles.has(file) &&
       !isFrontendTest(file) &&
@@ -259,36 +307,47 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
       !isServerTest(file),
   )
   const deletedFrontendSource = deleted.some(
-    ({ path: file }) => /^(?:src|util|server\/fastify\/src)\//.test(file) || isSharedCoreSource(file),
+    ({ path: file }) =>
+      (/^(?:src|util|server\/fastify\/src)\//.test(file) || isSharedCoreSource(file)) &&
+      !testTopologyRunnerFiles.has(file) &&
+      !isFrontendTest(file) &&
+      !isServerTest(file),
   )
   const deletedServerSource = deleted.some(
-    ({ path: file }) => /^(?:server\/fastify\/src|src)\//.test(file) || isSharedCoreSource(file),
+    ({ path: file }) =>
+      (/^(?:server\/fastify\/src|src)\//.test(file) || isSharedCoreSource(file)) &&
+      !isFrontendTest(file) &&
+      !isServerTest(file),
   )
   const deletedServerTestSupport = deleted.some(({ path: file }) => isServerTestSupport(file))
-  const deletedFrontendTest = deleted.some(({ path: file }) => isFrontendTest(file))
+  const deletedFrontendTest = deleted.some(({ path: file }) => isFrontendTest(file) && !isExplicitGate(file))
+  const deletedGateTest = deleted.some(({ path: file }) => isFrontendTest(file) && isExplicitGate(file))
   const deletedServerTest = deleted.some(({ path: file }) => isServerTest(file))
 
   const runFullFrontend =
-    rootRunnerChanged ||
-    deletedFrontendSource ||
-    deletedProtocolSource ||
-    deletedSharedCoreSource ||
-    deletedFrontendTest
+    deletedFrontendSource || deletedProtocolSource || deletedSharedCoreSource || deletedFrontendTest
   const runFullServer =
-    rootRunnerChanged ||
-    serverRunnerChanged ||
     deletedServerSource ||
     deletedProtocolSource ||
     deletedSharedCoreSource ||
     deletedServerTestSupport ||
     deletedServerTest
-  const runFullGates = rootRunnerChanged
+  const runFullGates = deletedGateTest
   if (additiveProtocolExports) notes.push(ADDITIVE_PROTOCOL_EXPORT_NOTE)
   if (additiveProtocolExports || protocolSourceChanged || deletedProtocolSource) {
     commands.push({ label: 'protocol typecheck', args: ['check:protocol'] })
   }
   if (sharedCoreSourceChanged || deletedSharedCoreSource) {
     commands.push({ label: 'shared-core typecheck', args: ['check:shared-core'] })
+  }
+  if (frontendTypecheckChanged) {
+    commands.push({ label: 'frontend typecheck', args: ['check'] })
+  }
+  if (serverTypecheckChanged || smokeTypecheckChanged) {
+    commands.push({ label: 'server and browser-smoke typecheck', args: ['check:server'] })
+  }
+  if (testTopologyChanged) {
+    commands.push({ label: 'test topology validation', args: ['test:topology'] })
   }
 
   if (runFullFrontend) {

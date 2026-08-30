@@ -57,7 +57,7 @@ source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |
 | `util/` | Full-stack dev runners, database analyzer, tsserver wrapper, API-flag runner, and userscript bridge. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts` | TypeScript, Vitest, and Playwright configuration. |
-| `.github/workflows/quality.yml`, `.github/workflows/compatibility-differential.yml` | Parallel Node 24 CI for pull requests and pushes to `main` or `fastify`, plus the scheduled/manual full pinned compatibility differential. Quality preserves local `test:all` ownership, runs the focused UI coverage map once, and adds initial-preload reporting. |
+| `.github/workflows/quality.yml`, `.github/workflows/compatibility-differential.yml` | Parallel Node 24 CI for pull requests and pushes to `main` or `fastify`, plus the scheduled/manual full pinned compatibility differential. Quality preserves local `test:all` ownership, validates test topology, runs the focused UI coverage map once, and adds initial-preload reporting. |
 | `.claude/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore` | Agent tooling, editor, package-manager, Git, and search policy. |
 | `.prettier*`, `README.md`, `version.json`, `LICENSE`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` | Formatting policy, project metadata, and shared/local contributor and agent guidance. |
 | `dist/`, `data/`, `data-agent/`, `node_modules/`, `coverage/`, `test-results/`, `fast-bootstrap-results/` | Generated or runtime state. Persisted/user-uploaded assets live under `data/assets/`; see [Generated And Legacy](docs/structure/generated-and-legacy.md). |

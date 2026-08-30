@@ -60,6 +60,7 @@ entrypoints are:
 | Goal | Command |
 | ---- | ------- |
 | Current diff | `pnpm test:affected` |
+| Test discovery and ownership | `pnpm test:topology` |
 | Ordinary frontend lane | `pnpm test` |
 | Complete owning frontend/server lane | `pnpm test:frontend:all` / `pnpm test:server` |
 | Built-browser smoke | `pnpm test:smoke` |
@@ -78,6 +79,14 @@ directly once for the coherent final candidate. Do not run all component checks
 and lanes immediately before `test:all`; the aggregate already owns them.
 Related additive protocol exports are intentionally batched on targeted feedback
 before the one integration-boundary aggregate.
+
+Runner/configuration changes use a fast topology contract instead of launching
+unrelated frontend, performance, and server bodies. The contract loads the
+actual frontend and server Vitest configurations, validates default/gate/UI-map
+exclusion modes, and rejects missing, duplicate, unexpected, or misrouted
+tracked tests. Shared TypeScript configuration selects only its owning
+typecheck; the final-verification marker keeps the full aggregate as the
+pre-merge authority, and unclassified root runner files fail closed to it.
 
 ### Compatibility evidence ownership
 

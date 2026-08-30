@@ -26,7 +26,11 @@ describe('test:all orchestration', () => {
     const byId = new Map(qualityLanes.map((lane) => [lane.id, lane]))
 
     expect(byId.get('browser-smoke')).toMatchObject({ after: ['server-check'], isolated: true })
-    expect(byId.get('frontend-tests')?.args).toEqual(['test:frontend:run'])
+    expect(byId.get('test-topology')).toMatchObject({ args: ['test:topology'] })
+    expect(byId.get('frontend-tests')).toMatchObject({
+      after: ['test-topology'],
+      args: ['test:frontend:run'],
+    })
     expect(byId.get('frontend-tests')?.env).toEqual({ RISU_TEST_EXCLUDE_UI_MAP: 'true' })
     expect(byId.get('compat-registers')?.args).toEqual(['validate:compat-registers'])
     expect(byId.get('compat-registers')?.isolated).toBeUndefined()
@@ -165,6 +169,7 @@ describe('test:all orchestration', () => {
     const workflow = readFileSync('.github/workflows/quality.yml', 'utf8')
     const ciOwners = new Map([
       ['server-check', ['check-server', 'pnpm check:server']],
+      ['test-topology', ['check', 'pnpm test:topology']],
       ['frontend-tests', ['frontend', 'pnpm test:frontend:run']],
       ['compat-registers', ['compat-registers', 'pnpm validate:compat-registers']],
       ['compat-current', ['compat-current', 'pnpm test:compat-current']],

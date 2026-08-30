@@ -77,14 +77,96 @@ describe('affected test planning', () => {
     expect(affectedCommands.every((command) => command.args.includes('HEAD~1'))).toBe(true)
   })
 
-  it('runs the complete Vitest lanes when runner configuration changes', () => {
-    const result = plan([{ path: 'vitest.svelte-node.config.ts', status: 'M' }])
+  it('validates runner topology without launching unrelated test lanes', () => {
+    for (const file of [
+      'vitest.config.ts',
+      'vitest.node.config.ts',
+      'vitest.svelte-node.config.ts',
+      'vitest.dom.config.ts',
+      'vitest.svelte-node.environment.ts',
+      'server/fastify/vitest.config.ts',
+      'util/test-topology.ts',
+    ]) {
+      const result = plan([{ path: file, status: 'M' }])
+      expect(result.commands, file).toEqual([{ label: 'test topology validation', args: ['test:topology'] }])
+      expect(result.finalVerificationRequired, file).toBe(true)
+    }
+  })
+
+  it('adds focused contracts for runner support and ownership manifests', () => {
+    expect(plan([{ path: 'vitest.frontend-routing.ts', status: 'M' }]).commands).toEqual([
+      { label: 'test topology validation', args: ['test:topology'] },
+      {
+        label: 'changed frontend tests',
+        args: ['exec', 'vitest', 'run', 'vitest.frontend-routing.test.ts', '--bail=1'],
+      },
+    ])
+    expect(plan([{ path: 'vitest.setup.ts', status: 'M' }]).commands).toEqual([
+      { label: 'test topology validation', args: ['test:topology'] },
+      {
+        label: 'changed frontend tests',
+        args: ['exec', 'vitest', 'run', 'vitest.setup.test.ts', '--bail=1'],
+      },
+    ])
+    for (const file of ['vitest.fetchGuard.ts', 'vitest.dom.setup.ts']) {
+      expect(plan([{ path: file, status: 'M' }]).commands, file).toEqual([
+        { label: 'test topology validation', args: ['test:topology'] },
+        {
+          label: 'changed frontend tests',
+          args: ['exec', 'vitest', 'run', 'vitest.fetchGuard.test.ts', '--bail=1'],
+        },
+      ])
+    }
+    for (const file of ['vitest.performance-tests.ts', 'vitest.ui-coverage-tests.ts']) {
+      expect(plan([{ path: file, status: 'M' }]).commands, file).toEqual([
+        { label: 'test topology validation', args: ['test:topology'] },
+        {
+          label: 'changed frontend tests',
+          args: ['exec', 'vitest', 'run', 'util/test-all.test.ts', '--bail=1'],
+        },
+      ])
+    }
+  })
+
+  it('routes shared typecheck configuration only to its owning check', () => {
+    for (const file of ['tsconfig.json', 'tsconfig.node.json']) {
+      const result = plan([{ path: file, status: 'M' }])
+      expect(result.commands, file).toEqual([{ label: 'frontend typecheck', args: ['check'] }])
+      expect(result.finalVerificationRequired, file).toBe(true)
+    }
+    for (const file of ['tsconfig.client-lib.json', 'server/fastify/tsconfig.json']) {
+      const result = plan([{ path: file, status: 'M' }])
+      expect(result.commands, file).toEqual([{ label: 'server and browser-smoke typecheck', args: ['check:server'] }])
+      expect(result.finalVerificationRequired, file).toBe(true)
+    }
+  })
+
+  it('keeps smoke runner execution opt-in beside its owning typecheck', () => {
+    for (const file of ['playwright.fastify-smoke.config.ts', 'tsconfig.browser-smoke.json']) {
+      const change = [{ path: file, status: 'M' as const }]
+      const quick = plan(change)
+      const withSmoke = planAffectedTests(change, { ...options, includeSmoke: true })
+
+      expect(quick.commands, file).toEqual([{ label: 'server and browser-smoke typecheck', args: ['check:server'] }])
+      expect(quick.notes, file).toContain('Browser-smoke changes detected; rerun with --include-smoke before handoff.')
+      expect(quick.finalVerificationRequired, file).toBe(true)
+      expect(withSmoke.commands, file).toEqual([
+        { label: 'server and browser-smoke typecheck', args: ['check:server'] },
+        { label: 'browser smoke tests', args: ['test:smoke'] },
+      ])
+    }
+  })
+
+  it('treats runner contract tests as direct tests rather than configuration changes', () => {
+    const result = plan([{ path: 'vitest.setup.test.ts', status: 'M' }])
 
     expect(result.commands).toEqual([
-      { label: 'frontend tests', args: ['test:frontend:run'] },
-      { label: 'frontend performance gates', args: ['test:gates:perf'] },
-      { label: 'server tests', args: ['test:server'] },
+      {
+        label: 'changed frontend tests',
+        args: ['exec', 'vitest', 'run', 'vitest.setup.test.ts', '--bail=1'],
+      },
     ])
+    expect(result.finalVerificationRequired).toBe(false)
   })
 
   it('defers dependency and CI changes to explicit final verification', () => {
@@ -93,6 +175,15 @@ describe('affected test planning', () => {
     expect(result.commands).toEqual([])
     expect(result.finalVerificationRequired).toBe(true)
     expect(result.notes).toContain(FINAL_VERIFICATION_REQUIRED_NOTE)
+  })
+
+  it('fails closed for unclassified root runner configuration', () => {
+    for (const file of ['vitest.experimental-environment.ts', 'tsconfig.experimental.json', 'playwright.e2e.ts']) {
+      const result = plan([{ path: file, status: 'A' }])
+      expect(result.commands, file).toEqual([])
+      expect(result.finalVerificationRequired, file).toBe(true)
+      expect(result.notes, file).toContain(FINAL_VERIFICATION_REQUIRED_NOTE)
+    }
   })
 
   it('routes protocol sources through typecheck and both dependency-aware test lanes', () => {
@@ -218,10 +309,7 @@ describe('affected test planning', () => {
   it('treats a rename away from a test path as a deletion', () => {
     const changes = parseNameStatus('R100\0src/removed.test.ts\0docs/removed.md\0')
 
-    expect(plan(changes).commands).toEqual([
-      { label: 'frontend tests', args: ['test:frontend:run'] },
-      { label: 'server tests', args: ['test:server'] },
-    ])
+    expect(plan(changes).commands).toEqual([{ label: 'frontend tests', args: ['test:frontend:run'] }])
   })
 
   it('runs a complete lane when source or tests were deleted', () => {
@@ -234,6 +322,12 @@ describe('affected test planning', () => {
       { label: 'frontend tests', args: ['test:frontend:run'] },
       { label: 'server tests', args: ['test:server'] },
       { label: 'current compatibility harness', args: ['test:compat-current'] },
+    ])
+  })
+
+  it('keeps deleted performance contracts in the isolated gate lane', () => {
+    expect(plan([{ path: 'src/ts/__tests__/renderCostHarness.test.ts', status: 'D' }]).commands).toEqual([
+      { label: 'frontend performance gates', args: ['test:gates:perf'] },
     ])
   })
 
