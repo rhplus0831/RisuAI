@@ -18,6 +18,7 @@ vi.mock('../../modules', async (importActual) => {
 })
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
+import type { ModelProfileRecord } from '../../../model/modelProfileRecords'
 import { ClaudeParameters, LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
 import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestClaude } from '../anthropic'
@@ -74,6 +75,35 @@ function modelInfo(overrides: Partial<LLMModel>): LLMModel {
     tokenizer: LLMTokenizer.Claude,
     ...overrides,
   }
+}
+
+function resolveDurableProfile(
+  database: Database,
+  record: Omit<ModelProfileRecord, 'id' | 'name'>,
+  apiKey?: string,
+  lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined,
+): ResolvedModelProfile {
+  const profileId = 'request-profile'
+  const credentialId = apiKey ? 'request-profile-credential' : undefined
+  const durableDatabase = {
+    ...database,
+    providerCredentials: apiKey
+      ? [{ id: credentialId, name: 'Request profile credential', type: 'apiKey', apiKey }]
+      : database.providerCredentials,
+    modelProfiles: [
+      {
+        id: profileId,
+        name: 'Request profile',
+        ...record,
+        providerOptions: {
+          ...(record.providerOptions ?? {}),
+          ...(credentialId ? { credentialId } : {}),
+        },
+      },
+    ],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId } },
+  } as unknown as Database
+  return resolveModelProfile({ database: durableDatabase, lookupModelInfo })
 }
 
 function makeArg(
@@ -141,13 +171,15 @@ afterEach(() => {
 
 describe('requestClaude profile provider options', () => {
   it('uses profile-owned adaptive thinking over conflicting flat settings', async () => {
-    const resolved = resolveModelProfile({
-      database: db({
-        aiModel: 'claude-sonnet-4-5-20250929',
-        thinkingType: 'adaptive',
-        adaptiveThinkingEffort: 'medium',
-      } as Partial<Database>),
-    })
+    const resolved = resolveDurableProfile(
+      db({ aiModel: 'claude-sonnet-4-5-20250929' } as Partial<Database>),
+      {
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-5-20250929',
+        runtimeOptions: { thinkingType: 'adaptive', adaptiveThinkingEffort: 'medium' },
+      },
+      'sk-profile-anthropic',
+    )
     const profile: ResolvedModelProfile = {
       ...resolved,
       runtimeOptions: {
@@ -188,19 +220,23 @@ describe('requestClaude profile provider options', () => {
   })
 
   it('uses reverse_proxy profile URL, key, request model, additional params, and risu header over flat DB and arg conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'reverse_proxy',
-        customAPIFormat: LLMFormat.Anthropic,
-        forceReplaceUrl: 'risu::https://profile.proxy.example/v1',
-        proxyKey: 'sk-profile-proxy',
-        customProxyRequestModel: 'profile-claude-model',
-        additionalParams: [
-          ['profile_param', '"from-profile"'],
-          ['header::X-Profile-Param', 'profile-header'],
-        ],
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'reverse_proxy' } as Partial<Database>),
+      {
+        modelId: 'reverse_proxy',
+        providerOptions: {
+          baseUrl: 'risu::https://profile.proxy.example/v1',
+          requestModel: 'profile-claude-model',
+          additionalParams: [
+            ['profile_param', '"from-profile"'],
+            ['header::X-Profile-Param', 'profile-header'],
+          ],
+          reverseProxy: { autofillRequestUrl: true, oobaSystemHoist: false },
+        },
+      },
+      'sk-profile-proxy',
+      () => modelInfo({ id: 'reverse_proxy', provider: LLMProvider.AsIs, format: LLMFormat.Anthropic }),
+    )
     setDatabase(
       db({
         aiModel: 'reverse_proxy',
@@ -234,12 +270,21 @@ describe('requestClaude profile provider options', () => {
   })
 
   it('uses Bedrock profile credentials and prefixed request model over flat DB conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
-        claudeAPIKey: 'PROFILEACCESS:PROFILESECRET:ap-southeast-2',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0' } as Partial<Database>),
+      {
+        modelId: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+        providerOptions: { requestModel: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0' },
+      },
+      'PROFILEACCESS:PROFILESECRET:ap-southeast-2',
+      () =>
+        modelInfo({
+          id: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+          internalID: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+          provider: LLMProvider.AWS,
+          format: LLMFormat.AWSBedrockClaude,
+        }),
+    )
     setDatabase(
       db({
         aiModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
@@ -262,15 +307,18 @@ describe('requestClaude profile provider options', () => {
   })
 
   it('uses Ollama Cloud Anthropic profile URL, key, and request model over flat DB and arg conflicts', async () => {
-    const profile = resolveModelProfile({
-      database: db({
-        aiModel: 'ollama-cloud',
-        ollamaApiKey: 'sk-profile-ollama',
-        ollamaRequestFormat: LLMFormat.Anthropic,
-        ollamaCloudModel: 'profile-ollama-claude',
-        ollamaModelSource: 'cloud',
-      } as Partial<Database>),
-    })
+    const profile = resolveDurableProfile(
+      db({ aiModel: 'ollama-cloud' } as Partial<Database>),
+      {
+        providerId: 'ollama',
+        modelId: 'ollama-cloud',
+        providerOptions: {
+          requestModel: 'profile-ollama-claude',
+          ollama: { requestFormat: LLMFormat.Anthropic, modelSource: 'cloud' },
+        },
+      },
+      'sk-profile-ollama',
+    )
     setDatabase(
       db({
         aiModel: 'ollama-cloud',
