@@ -11,18 +11,21 @@ in [`latest-verification.md`](latest-verification.md).
 
 - Plan state: Active; Phase 0 complete.
 - Current phase: [Phase 1 protocol contract completion](phases/phase-1-protocol-contract-completion.md).
-- Active slice: [Shell and character-summary resource contracts](phases/slices/phase-1-protocol-contract-completion/shell-and-character-summary-contracts.md), ready to start.
+- Active slice: [Provider operation contract](phases/slices/phase-1-protocol-contract-completion/provider-operation-contract.md), ready to start.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes through Phase 0: none; only read-only architecture tooling and
-  mandatory quality orchestration changed.
-- Latest verification: Phase 0 passed at `b01e88b03461753afe8f573029ce2e5ab47892ef`; see
+- Runtime changes through the current slice: shell and character-summary
+  contracts moved to explicit protocol subpaths without wire changes.
+- Latest verification: shell and character-summary contracts passed at
+  `159b6eccfd508b1b77300c6597cdbc15b31470a9`; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
 
 | Consumer or prerequisite | Cursor | State |
 | --- | --- | --- |
-| Portfolio no-new-debt requirement | `b01e88b03` | Released; 375-edge baseline is mandatory in `check:server`. |
+| Portfolio no-new-debt requirement | `b01e88b03` | Released from the 375-edge opening cursor; the reviewed 367-edge baseline is mandatory in `check:server`. |
+| Shell resource contract | `159b6eccf` | Released through `@risuai/protocol/shell-resource`. |
+| Character-summary resource contract | `159b6eccf` | Released through `@risuai/protocol/character-summary-resource`. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -45,12 +48,22 @@ in [`latest-verification.md`](latest-verification.md).
   and server-tool requests. Phase 0 owns classification; this list is not an
   approval to move them together.
 
+## Current Boundary Cursor
+
+- 367 direct root-`src` edges remain: 257 production, 102 server-test, and 8
+  browser-smoke, spanning 147 importers and 77 targets.
+- Usage is 141 runtime, 44 mixed, and 182 type-only; 185 runtime/mixed edges
+  remain.
+- The shell/character-summary slice removed exactly eight edges and two source
+  targets. Both consuming TypeScript projects still reference
+  `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
+
 ## Phase Router
 
 | Phase | Status | Opens when |
 | ---: | --- | --- |
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
-| [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Ready | Current execution cursor. |
+| [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Active | Current execution cursor. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Queued | Phase 1 operation conventions are stable. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Queued | Phase 0 classifications name neutral leaf candidates. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |

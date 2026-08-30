@@ -39,10 +39,10 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 | --- | --- | --- | --- |
 | Inventory/gates | Phase 0 convention released at `b01e88b03` | Not required for read-only inventory | Complete at `0432b32ba`. |
 | Leaf settings/collections | Per owner pending | Per family pending or already singular, to prove | Runtime blocked. |
-| Character/chat | Resource/command contracts pending | Canonical state must be confirmed | Runtime blocked. |
+| Character/chat | Character-summary read contract released at `159b6eccf`; remaining resource/command contracts pending | Canonical state must be confirmed | Runtime blocked. |
 | Prompt templates | Prompt contract pending | Phase 3 not released | Runtime blocked. |
 | Lorebook/script definitions | Per owner pending | Phase 0/4 disposition as applicable | Runtime blocked. |
-| Broad settings/shell | Shell/settings contracts pending | Relevant settings owners pending | Runtime blocked. |
+| Broad settings/shell | Shell read contract released at `159b6eccf`; settings/command contracts pending | Relevant settings owners pending | Runtime blocked. |
 | Facade/bridge infrastructure | All families | All releases/holds resolved | Removal blocked. |
 
 ## Opening Research Snapshot

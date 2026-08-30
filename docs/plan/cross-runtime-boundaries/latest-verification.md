@@ -4,44 +4,49 @@ Date: 2026-08-30
 
 ## Candidate
 
-- Implementation commit: `b01e88b03461753afe8f573029ce2e5ab47892ef`
-- Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
+- Implementation commit: `159b6eccfd508b1b77300c6597cdbc15b31470a9`
+- Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 0 boundary baseline and no-new-debt gate; no runtime modules,
-  routes, persistence, events, cache behavior, or payloads changed.
+- Scope: shell and character-summary resource contract ownership; no route,
+  payload, cache, authentication, active-writer, persistence, revision, event,
+  or recovery behavior changed.
 
-## Inventory
+## Contract And Inventory Proof
 
-- 375 direct browser-tree edges across 148 importers and 79 targets.
-- Lanes: 260 production, 107 server-test, 8 browser-smoke.
-- Usage: 147 runtime, 46 mixed, 182 type-only.
-- Syntax: 373 static imports, 1 re-export, 1 dynamic import.
-- Classifications: 39 wire contract, 190 pure runtime, 134 browser application
-  model, 7 test fixture, 5 accidental browser-support.
-- Project references: Fastify and browser-smoke both reference
-  `tsconfig.client-lib.json`; the declaration prerequisite remains intentionally
-  grandfathered until Phase 6.
-- Duplicated metadata observations: 103 server route-policy entries, 257 literal
-  route registrations, 129 browser durable-operation patterns, 59 browser
-  resource surfaces, and 146 server command-event catalog entries.
+- TypeBox schemas and derived types live at the explicit
+  `@risuai/protocol/shell-resource` and
+  `@risuai/protocol/character-summary-resource` subpaths.
+- Seventeen focused protocol/import-boundary tests cover exact fields, versions,
+  malformed values, detail-field rejection, list coherence, unique identities,
+  chat membership, and nested revision coherence.
+- Fastify routes/repository/tests and browser resource/cache consumers use the
+  package contracts; the old application-tree modules have no consumer and were
+  removed.
+- 367 direct root-`src` edges remain across 147 importers and 77 targets.
+- Lanes: 257 production, 102 server-test, 8 browser-smoke. Usage: 141 runtime,
+  44 mixed, 182 type-only.
+- The exact reduction is eight edges: three production and five server-test.
 
 ## Commands And Results
 
-- `pnpm exec vitest run util/architecture-inventory.test.ts util/check-server.test.ts`
-  — passed, 2 files and 9 tests.
-- `pnpm exec tsx util/architecture-inventory.ts` — passed with the 375-edge
-  checked baseline.
-- `pnpm check:protocol` — passed.
-- `pnpm check:server` — passed protocol, architecture inventory, client
-  declaration, Fastify, and browser-smoke checks.
-- `pnpm test:affected --dry-run` — selected the affected frontend tests.
-- `pnpm test:affected` — passed, 2 files and 9 tests.
-- `pnpm format:check` — passed.
+- Focused protocol/import-boundary suite — passed, 3 files and 17 tests.
+- Owning browser resource/hydration/invalidation/manifest suite — passed, 4
+  files and 168 tests.
+- Owning Fastify resource/payload/load-cost suite — passed, 3 files and 61 tests.
+- `pnpm check:protocol`, `pnpm check:server`, and `pnpm check` — passed; the
+  mandatory architecture gate reported 367 cross-runtime edges and both runtime
+  typecheck families were clean.
+- `pnpm test:affected -- --dry-run` — correctly escalated package-export changes
+  to `pnpm test:all`.
+- `pnpm test:affected` / `pnpm test:all` — passed every lane: 6,705 frontend
+  tests; 3,650 server tests with one skip; 41 browser-smoke tests; 206 UI coverage
+  tests; 18 compatibility-harness tests; the Realm scale test; six frontend
+  performance tests; register, typecheck, formatting, and coverage gates.
 - `git diff --check` — passed.
 
 ## Dependency Release And Verdict
 
-The Phase 0 package/dependency conventions and mandatory no-new-debt gate are
-released to Workstreams 2 and 3 at `b01e88b03`. Per-contract runtime migration
-remains gated on the matching Phase 1 or Phase 2 release. Phase 0 passes; Phase
-1 shell and character-summary resource contracts are the next cursor.
+The shell and character-summary contracts are released to Workstream 3 at
+`159b6eccf`. Their move preserved wire and authority behavior and reduced the
+checked boundary exactly as planned. The slice passes; Phase 1 continues with
+the provider operation contract.
