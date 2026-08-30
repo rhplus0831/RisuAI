@@ -20,13 +20,14 @@ import {
   getTranslatorPresetFromState,
   getTranslatorPresetDownloadName,
   normalizeTranslatorPresetState,
+  normalizeTranslatorPresetStateWithLegacyCompatibility,
   TRANSLATOR_PRESET_MAX_STEPS,
   translatorPresetImportExtensions,
   type TranslatorPresetStateLike,
 } from './presets'
 
 describe('normalizeTranslatorPresetState', () => {
-  it('creates a default preset from legacy translator settings', () => {
+  it('uses canonical defaults without consulting legacy translator settings', () => {
     const state: TranslatorPresetStateLike = {
       translatorPrompt: 'Translate to {{slot}}.',
       translatorMaxResponse: 321,
@@ -38,15 +39,15 @@ describe('normalizeTranslatorPresetState', () => {
       {
         id: expect.any(String),
         name: 'Default',
-        prompt: 'Translate to {{slot}}.',
-        maxResponse: 321,
+        prompt: expect.any(String),
+        maxResponse: 1000,
         steps: [
           {
             id: expect.any(String),
             name: 'Step 1',
             enabled: true,
-            prompt: 'Translate to {{slot}}.',
-            maxResponse: 321,
+            prompt: expect.any(String),
+            maxResponse: 1000,
             model: { mode: 'inheritTranslate' },
           },
         ],
@@ -57,7 +58,23 @@ describe('normalizeTranslatorPresetState', () => {
     expect(state.translatorMaxResponse).toBe(321)
   })
 
-  it('clamps invalid preset ids and syncs legacy fields from the selected preset', () => {
+  it('imports legacy translator settings only through the explicit compatibility resolver', () => {
+    const state: TranslatorPresetStateLike = {
+      translatorPrompt: 'Translate to {{slot}}.',
+      translatorMaxResponse: 321,
+    }
+
+    normalizeTranslatorPresetStateWithLegacyCompatibility(state)
+
+    expect(state.translatorPresets?.[0]).toMatchObject({
+      prompt: 'Translate to {{slot}}.',
+      maxResponse: 321,
+    })
+    expect(state.translatorPrompt).toBe('Translate to {{slot}}.')
+    expect(state.translatorMaxResponse).toBe(321)
+  })
+
+  it('clamps invalid preset ids without synchronizing legacy fields', () => {
     const state: TranslatorPresetStateLike = {
       translatorPrompt: 'legacy',
       translatorMaxResponse: 1000,
@@ -74,8 +91,8 @@ describe('normalizeTranslatorPresetState', () => {
 
     expect(state.translatorPresetId).toBe(0)
     expect(state.translatorPresets?.[0]).toMatchObject({ id: expect.any(String) })
-    expect(state.translatorPrompt).toBe('Fast preset')
-    expect(state.translatorMaxResponse).toBe(128)
+    expect(state.translatorPrompt).toBe('legacy')
+    expect(state.translatorMaxResponse).toBe(1000)
   })
 
   it('normalizes missing and duplicate translator preset ids', () => {
@@ -99,8 +116,10 @@ describe('normalizeTranslatorPresetState', () => {
     expect(ids?.[2]).toEqual(expect.any(String))
   })
 
-  it('normalizes step ids and output keys, caps the pipeline, and mirrors the first step', () => {
+  it('normalizes step ids and output keys, caps the pipeline, and owns first-step values canonically', () => {
     const state: TranslatorPresetStateLike = {
+      translatorPrompt: 'stale prompt',
+      translatorMaxResponse: 999,
       translatorPresets: [
         {
           id: 'preset-a',
@@ -139,8 +158,8 @@ describe('normalizeTranslatorPresetState', () => {
     expect(preset.steps[3].model).toEqual({ mode: 'inheritTranslate' })
     expect(preset.prompt).toBe('Step prompt 1')
     expect(preset.maxResponse).toBe(100)
-    expect(state.translatorPrompt).toBe('Step prompt 1')
-    expect(state.translatorMaxResponse).toBe(100)
+    expect(state.translatorPrompt).toBe('stale prompt')
+    expect(state.translatorMaxResponse).toBe(999)
   })
 })
 
@@ -167,8 +186,8 @@ describe('getCurrentTranslatorPresetFromState', () => {
 
     expect(preset).toBe(presets[1])
     expect(state.translatorPresets).toBe(presets)
-    expect(state.translatorPrompt).toBe('Detailed prompt')
-    expect(state.translatorMaxResponse).toBe(256)
+    expect(state.translatorPrompt).toBe('legacy prompt')
+    expect(state.translatorMaxResponse).toBe(1000)
   })
 
   it('resolves a stable chat binding without changing the global legacy mirrors', () => {
@@ -202,8 +221,24 @@ describe('getCurrentTranslatorPresetFromState', () => {
     }
 
     expect(getTranslatorPresetFromState(state, 'missing')).toBe(presets[0])
-    expect(state.translatorPrompt).toBe('Global prompt')
-    expect(state.translatorMaxResponse).toBe(128)
+    expect(state.translatorPrompt).toBe('legacy')
+    expect(state.translatorMaxResponse).toBe(1000)
+  })
+
+  it('prefers the selected canonical preset over conflicting stale legacy scalars', () => {
+    const state: TranslatorPresetStateLike = {
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
+      translatorPresets: [createTranslatorPreset('Canonical', { prompt: 'canonical prompt', maxResponse: 321 })],
+      translatorPresetId: 0,
+    }
+
+    const preset = getTranslatorPresetFromState(state)
+
+    expect(preset.prompt).toBe('canonical prompt')
+    expect(preset.maxResponse).toBe(321)
+    expect(state.translatorPrompt).toBe('stale scalar prompt')
+    expect(state.translatorMaxResponse).toBe(7)
   })
 })
 

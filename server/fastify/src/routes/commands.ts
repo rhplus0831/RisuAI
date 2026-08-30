@@ -148,7 +148,6 @@ import {
   readTranslatorPresetPatch,
   requireTranslatorPresetIndex,
   selectedTranslatorPresetId,
-  syncSelectedTranslatorPresetToLegacyFields,
 } from '../commands/translatorPresets.js'
 import {
   createLoadoutRecord,
@@ -782,10 +781,8 @@ function hasSplitPresetProjectionChange(
 
 /** The shared narrow write for every translator-preset route: a full
  *  `translator_presets` rewrite plus an unconditional `settings` write.
- *  `ensureTranslatorPresetCollection` reassigns the whole array and re-syncs the
- *  `translatorPrompt` / `translatorMaxResponse` / `translatorPresetId` settings
- *  scalars on every call, so both writes are faithful (not over-broad) for create,
- *  patch, delete, and select alike. */
+ *  Legacy translator prompt/max-response scalars remain untouched; the
+ *  canonical preset rows own ordinary runtime behavior. */
 function writeTranslatorPresetMutation(
   db: DatabaseSync,
   target: Record<string, unknown>,
@@ -5104,7 +5101,6 @@ export function registerCommandRoutes(
           presets.push(preset)
           if (select) {
             target.translatorPresetId = presets.length - 1
-            syncSelectedTranslatorPresetToLegacyFields(target, presets)
           }
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
@@ -5151,20 +5147,13 @@ export function registerCommandRoutes(
           const target = ensureTranslatorPresetDatabaseObject(database)
           const rawPresets = target.translatorPresets
           const rawSelectedIndex = target.translatorPresetId
-          const rawPrompt = target.translatorPrompt
-          const rawMaxResponse = target.translatorMaxResponse
           const presets = ensureTranslatorPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) &&
             isDeepStrictEqual(rawPresets, presets) &&
-            rawSelectedIndex === target.translatorPresetId &&
-            rawPrompt === target.translatorPrompt &&
-            rawMaxResponse === target.translatorMaxResponse
+            rawSelectedIndex === target.translatorPresetId
           const index = requireTranslatorPresetIndex(presets, presetId)
           presets[index] = applyTranslatorPresetRecordPatch(presets[index], patch)
-          if (target.translatorPresetId === index) {
-            syncSelectedTranslatorPresetToLegacyFields(target, presets)
-          }
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetUpdated, id: presetId },
@@ -5241,7 +5230,6 @@ export function registerCommandRoutes(
 
           const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : 0
           target.translatorPresetId = selectedIndex
-          syncSelectedTranslatorPresetToLegacyFields(target, presets)
           const cascadedChatIds = clearChatTranslatorPresetBindings(innerDb, presetId)
           writeTranslatorPresetMutation(innerDb, target, presets)
 
@@ -5285,7 +5273,6 @@ export function registerCommandRoutes(
           const presets = ensureTranslatorPresetCollection(target)
           const index = requireTranslatorPresetIndex(presets, presetId)
           target.translatorPresetId = index
-          syncSelectedTranslatorPresetToLegacyFields(target, presets)
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetSelected, id: presetId },

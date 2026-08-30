@@ -865,7 +865,7 @@ describe('auto-translate cache', () => {
     expect(testState.db.translatorPresets).toBe(presets)
   })
 
-  it('current translator preset normalization reads from a snapshot without writing preset defaults to live DB', () => {
+  it('current translator preset reads canonical defaults from a snapshot without consulting live scalars', () => {
     Object.assign(testState.db, {
       translatorPrompt: 'legacy only prompt',
       translatorMaxResponse: 333,
@@ -877,8 +877,8 @@ describe('auto-translate cache', () => {
 
     expect(preset).toMatchObject({
       name: 'Default',
-      prompt: 'legacy only prompt',
-      maxResponse: 333,
+      prompt: expect.stringContaining('You are a translator.'),
+      maxResponse: 1000,
     })
     expect(testState.db.translatorPresets).toBeUndefined()
     expect(testState.db.translatorPresetId).toBe(99)

@@ -7263,13 +7263,13 @@ describe('translator preset commands', () => {
     expect(bootstrap.resourceDatabase.characters[0].chats[0]).not.toHaveProperty('translatorPresetId')
   })
 
-  it('syncs legacy translator fields when updating the selected preset', async () => {
+  it('leaves legacy translator fields unchanged when updating the selected preset', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       translatorPresets: [{ id: 'translator-a', name: 'A', prompt: 'old prompt', maxResponse: 100 }],
       translatorPresetId: 0,
-      translatorPrompt: 'old prompt',
-      translatorMaxResponse: 100,
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
     })
 
     const updated = await harness.app.inject({
@@ -7304,8 +7304,9 @@ describe('translator preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.resourceDatabase).toMatchObject({
-      translatorPrompt: 'new prompt',
-      translatorMaxResponse: 321,
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
+      translatorPresets: [expect.objectContaining({ id: 'translator-a', prompt: 'new prompt', maxResponse: 321 })],
     })
   })
 

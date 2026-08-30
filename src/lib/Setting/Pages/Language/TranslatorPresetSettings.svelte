@@ -73,7 +73,6 @@
     isValidTranslatorPresetOutputKey,
     normalizeTranslatorPreset,
     normalizeTranslatorPresetState,
-    syncCurrentTranslatorPresetToLegacyFields,
     TRANSLATOR_PRESET_MAX_STEPS,
     translatorPresetImportExtensions,
     type TranslatorPreset,
@@ -89,8 +88,6 @@
   interface TranslatorPresetStateSnapshot {
     translatorPresets: TranslatorPreset[]
     translatorPresetId: number
-    translatorPrompt: string
-    translatorMaxResponse: number
   }
 
   interface PendingTranslatorPresetUpdate {
@@ -297,8 +294,6 @@
     return {
       translatorPresets: cloneJsonValue(getDatabase().translatorPresets ?? []),
       translatorPresetId: getDatabase().translatorPresetId,
-      translatorPrompt: getDatabase().translatorPrompt,
-      translatorMaxResponse: getDatabase().translatorMaxResponse,
     }
   }
 
@@ -486,7 +481,6 @@
       getDatabase().translatorPresets = presets
       const selectedIndex = selectedPresetId ? presets.findIndex((preset) => preset.id === selectedPresetId) : -1
       getDatabase().translatorPresetId = selectedIndex === -1 ? 0 : selectedIndex
-      syncCurrentTranslatorPreset()
     })
   }
 
@@ -611,8 +605,6 @@
   ): boolean {
     if (snapshotJson(preset[field]) !== snapshotJson(value)) return false
     if (getDatabase().translatorPresetId !== presetIndex) return true
-    if (field === 'prompt') return snapshotJson(getDatabase().translatorPrompt) === snapshotJson(value)
-    if (field === 'maxResponse') return snapshotJson(getDatabase().translatorMaxResponse) === snapshotJson(value)
     return true
   }
 
@@ -671,10 +663,6 @@
           Object.fromEntries(dirtyFields),
         ),
       )
-
-      if (getDatabase().translatorPresetId === presetIndex) {
-        syncCurrentTranslatorPreset()
-      }
     })
   }
 
@@ -747,10 +735,6 @@
       )
       getDatabase().translatorPresets = nextPresets
 
-      if (getDatabase().translatorPresetId === presetIndex) {
-        syncCurrentTranslatorPreset()
-      }
-
       clearTranslatorPresetDirtyFieldsMatchingValues(presetId, attempted, rolledBackFields)
     })
   }
@@ -761,10 +745,6 @@
 
   function normalizeTranslatorPresets() {
     normalizeTranslatorPresetState(getDatabase())
-  }
-
-  function syncCurrentTranslatorPreset() {
-    syncCurrentTranslatorPresetToLegacyFields(getDatabase())
   }
 
   function applyTranslatorPresetPatchToDatabase(presetId: string, patch: TranslatorPresetSnapshot): void {
@@ -783,10 +763,6 @@
       nextPresets[presetIndex] = nextPreset
       getDatabase().translatorPresets = nextPresets
       updatePendingTranslatorPresetCreateDraft(presetId, patch)
-
-      if (getDatabase().translatorPresetId === presetIndex) {
-        syncCurrentTranslatorPreset()
-      }
     })
   }
 
@@ -874,7 +850,6 @@
       const nextPresets = [...presets, cloneJsonValue(attemptedPresetWithId)]
       getDatabase().translatorPresets = nextPresets
       getDatabase().translatorPresetId = nextPresets.length - 1
-      syncCurrentTranslatorPreset()
       applied = true
     })
 
@@ -910,7 +885,6 @@
           ? nextPresets.findIndex((translatorPreset) => translatorPreset.id === confirmedPresetId)
           : -1
         getDatabase().translatorPresetId = confirmedIndex === -1 ? 0 : confirmedIndex
-        syncCurrentTranslatorPreset()
         return
       }
 
@@ -1058,7 +1032,6 @@
       if (livePresetIndex === -1) return
 
       getDatabase().translatorPresetId = livePresetIndex
-      syncCurrentTranslatorPreset()
       applied = true
     })
 
@@ -1084,7 +1057,6 @@
       if (confirmedSelectedPresetIndex === -1) return
 
       getDatabase().translatorPresetId = confirmedSelectedPresetIndex
-      syncCurrentTranslatorPreset()
     })
     reassertPendingTranslatorPresetStructuralMutations()
   }
@@ -1214,7 +1186,6 @@
 
       getDatabase().translatorPresets = nextPresets
       getDatabase().translatorPresetId = 0
-      syncCurrentTranslatorPreset()
       attempt = {
         operationId: nextTranslatorPresetStructuralOperationId++,
         deletedPreset: deletedPreset as TranslatorPreset & { id: string },
@@ -1281,7 +1252,6 @@
           ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
           : -1
         getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
-        syncCurrentTranslatorPreset()
         return
       }
 
@@ -1296,7 +1266,6 @@
         ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
         : -1
       getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
-      syncCurrentTranslatorPreset()
     })
     if (!authoritativePreset) {
       const confirmedPreset = confirmedTranslatorPresetCollection?.find((preset) => preset.id === restoredPreset.id)
@@ -1755,7 +1724,6 @@
     if (!canUseServerCommands()) {
       Object.assign(currentPreset, cloneJsonValue(patch))
       getDatabase().translatorPresets = [...getDatabase().translatorPresets]
-      syncCurrentTranslatorPreset()
     } else {
       markTranslatorPresetDirtyFields(presetId, patch)
       applyTranslatorPresetPatchToDatabase(presetId, patch)
@@ -1882,7 +1850,6 @@
       const presetId = getDatabase().translatorPresets[presetIndex]?.id ?? null
       if (!canUseServerCommands()) {
         getDatabase().translatorPresetId = presetIndex
-        syncCurrentTranslatorPreset()
         if (presetId) dispatchSelectTranslatorPreset(presetId, null)
       } else if (presetId) {
         const attempt = applyOptimisticTranslatorPresetSelection(presetId)
@@ -1955,9 +1922,6 @@
       if (!canUseServerCommands()) {
         targetPreset.name = newName
         getDatabase().translatorPresets = [...getDatabase().translatorPresets]
-        if (getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id === presetId) {
-          syncCurrentTranslatorPreset()
-        }
       } else {
         markTranslatorPresetDirtyFields(presetId, { name: newName })
         applyTranslatorPresetPatchToDatabase(presetId, { name: newName })
@@ -2199,7 +2163,6 @@
               if (!canUseServerCommands()) {
                 if (Array.isArray(preset.steps) && preset.steps[0]) preset.steps[0].maxResponse = value
                 preset.maxResponse = value
-                syncCurrentTranslatorPreset()
               } else if (presetId) {
                 markTranslatorPresetDirtyFields(presetId, { maxResponse: value })
                 applyTranslatorPresetPatchToDatabase(presetId, { maxResponse: value })
@@ -2226,7 +2189,6 @@
               if (!canUseServerCommands()) {
                 if (Array.isArray(preset.steps) && preset.steps[0]) preset.steps[0].prompt = value
                 preset.prompt = value
-                syncCurrentTranslatorPreset()
               } else if (presetId) {
                 markTranslatorPresetDirtyFields(presetId, { prompt: value })
                 applyTranslatorPresetPatchToDatabase(presetId, { prompt: value })

@@ -152,10 +152,10 @@ function isEncryptedTranslatorPresetFile(value: unknown): value is EncryptedTran
   )
 }
 
-function getDefaultTranslatorPreset(state: TranslatorPresetStateLike): TranslatorPreset {
+function getDefaultTranslatorPreset(): TranslatorPreset {
   return createTranslatorPreset('Default', {
-    prompt: state.translatorPrompt ?? '',
-    maxResponse: state.translatorMaxResponse ?? 1000,
+    prompt: defaultTranslatorPrompt,
+    maxResponse: 1000,
   })
 }
 
@@ -198,11 +198,10 @@ export function createTranslatorPreset(
 }
 
 export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLike>(state: T): T {
-  const defaultPreset = getDefaultTranslatorPreset(state)
   const sourcePresets =
     Array.isArray(state.translatorPresets) && state.translatorPresets.length > 0
       ? state.translatorPresets
-      : [defaultPreset]
+      : [getDefaultTranslatorPreset()]
   const seen = new Set<string>()
 
   state.translatorPresets = sourcePresets.map((preset, index) => {
@@ -224,9 +223,31 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
 
   state.translatorPresetId = Math.min(Math.max(requestedId, 0), Math.max(state.translatorPresets.length - 1, 0))
 
-  return syncCurrentTranslatorPresetToLegacyFields(state)
+  return state
 }
 
+/**
+ * Import/migration-only compatibility for databases that have not acquired a
+ * canonical translator preset collection yet. Ordinary runtime reads and
+ * preset commands must use normalizeTranslatorPresetState instead.
+ */
+export function normalizeTranslatorPresetStateWithLegacyCompatibility<T extends TranslatorPresetStateLike>(
+  state: T,
+): T {
+  const missingCanonicalCollection = !Array.isArray(state.translatorPresets) || state.translatorPresets.length === 0
+  if (missingCanonicalCollection) {
+    state.translatorPresets = [
+      createTranslatorPreset('Default', {
+        prompt: state.translatorPrompt ?? '',
+        maxResponse: state.translatorMaxResponse ?? 1000,
+      }),
+    ]
+  }
+  normalizeTranslatorPresetState(state)
+  return missingCanonicalCollection ? syncCurrentTranslatorPresetToLegacyFields(state) : state
+}
+
+/** Explicit export/migration compatibility projection for legacy scalar fields. */
 export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPresetStateLike>(state: T): T {
   const preset = state.translatorPresets?.[state.translatorPresetId ?? 0]
 
@@ -274,15 +295,12 @@ export function getTranslatorPresetFromState<T extends TranslatorPresetStateLike
   if (!isTranslatorPresetValue(preset)) {
     const normalizedState = normalizeTranslatorPresetState(state)
     const normalizedPreset = normalizedState.translatorPresets?.[normalizedState.translatorPresetId ?? 0]
-    return isTranslatorPresetValue(normalizedPreset) ? normalizedPreset : getDefaultTranslatorPreset(normalizedState)
+    return isTranslatorPresetValue(normalizedPreset) ? normalizedPreset : getDefaultTranslatorPreset()
   }
 
   const firstStep = preset.steps[0]
   preset.prompt = firstStep.prompt
   preset.maxResponse = firstStep.maxResponse
-  state.translatorPrompt = firstStep.prompt
-  state.translatorMaxResponse = firstStep.maxResponse
-
   return preset
 }
 

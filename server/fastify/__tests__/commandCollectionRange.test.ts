@@ -64,12 +64,12 @@ function seedDatabase(): Record<string, unknown> {
     // A "current" settings scalar + prompt items that legacy `applyPreset` must leave alone.
     temperature: 0.5,
     selectedPersona: 0,
-    // Legacy profile mirror scalars (settings) that select/delete/patch refresh.
+    // Legacy profile mirror scalars retained as stale compatibility fields.
     username: 'legacy-user',
     userIcon: '',
     personaPrompt: 'legacy-prompt',
     userNote: 'legacy-note',
-    // Translator legacy scalars (settings) re-synced on every translator command.
+    // Translator legacy scalars (settings) retained as stale compatibility fields.
     translatorPresetId: 0,
     translatorPrompt: 'pa-prompt',
     translatorMaxResponse: 500,
@@ -1368,12 +1368,12 @@ describe('translator-presets collection range', () => {
       'tp-b',
       'tp-c',
     ])
-    // No select: pointer + legacy fields still reflect tp-a.
+    // No select: the pointer moves independently of legacy compatibility fields.
     expect(readSettings().translatorPresetId).toBe(0)
     expect(readSettings().translatorPrompt).toBe('pa-prompt')
   })
 
-  it('PATCH translator-presets/:id rewrites the table + re-syncs settings', async () => {
+  it('PATCH translator-presets/:id rewrites the canonical table without syncing settings', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1387,8 +1387,9 @@ describe('translator-presets collection range', () => {
     expect(metric.writtenTables).toEqual(EXPECTED)
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    // tp-a is selected, so its edited prompt mirrors into the legacy scalar.
-    expect(readSettings().translatorPrompt).toBe('pa-edited')
+    // The selected canonical row owns the edited prompt; the legacy scalar is unchanged.
+    expect(readSettings().translatorPrompt).toBe('pa-prompt')
+    expect((readCollection('translator_presets') as Array<{ prompt: string }>)[0].prompt).toBe('pa-edited')
   })
 
   it('DELETE translator-presets/:id writes translator_presets + settings', async () => {
@@ -1425,8 +1426,8 @@ describe('translator-presets collection range', () => {
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
     expect(settings.translatorPresetId).toBe(1)
-    expect(settings.translatorPrompt).toBe('pb-prompt')
-    expect(settings.translatorMaxResponse).toBe(800)
+    expect(settings.translatorPrompt).toBe('pa-prompt')
+    expect(settings.translatorMaxResponse).toBe(500)
   })
 })
 

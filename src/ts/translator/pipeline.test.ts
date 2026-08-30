@@ -21,7 +21,7 @@ function step(overrides: Partial<TranslatorPresetStep> = {}): TranslatorPresetSt
 }
 
 describe('translator pipeline resolution', () => {
-  it('resolves legacy settings without mutating the input', () => {
+  it('uses canonical defaults without consulting legacy settings', () => {
     const state = {
       translatorPrompt: 'Translate {{slot::content}}',
       translatorMaxResponse: 123,
@@ -35,11 +35,29 @@ describe('translator pipeline resolution', () => {
     expect(steps).toMatchObject([
       {
         enabled: true,
-        prompt: 'Translate {{slot::content}}',
-        maxResponse: 123,
+        prompt: expect.stringContaining('You are a translator.'),
+        maxResponse: 1000,
         model: { mode: 'inheritTranslate' },
       },
     ])
+  })
+
+  it('uses selected canonical prompt and maxResponse when legacy scalars are stale', () => {
+    const state = {
+      translatorPrompt: 'stale scalar prompt',
+      translatorMaxResponse: 7,
+      translatorPresets: [
+        createTranslatorPreset('Canonical', {
+          prompt: 'canonical prompt {{slot::content}}',
+          maxResponse: 321,
+        }),
+      ],
+      translatorPresetId: 0,
+    }
+
+    const steps = resolveTranslatorPipeline(state)
+
+    expect(steps[0]).toMatchObject({ prompt: 'canonical prompt {{slot::content}}', maxResponse: 321 })
   })
 
   it('resolves a stable chat binding before the global preset index', () => {

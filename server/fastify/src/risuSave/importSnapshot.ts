@@ -9,7 +9,7 @@ import { COLLECTION_FIELDS, ValidationError } from '../repository.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePersonaCollection } from '../commands/personas.js'
-import { normalizeTranslatorPresetCollection } from '../commands/translatorPresets.js'
+import { normalizeTranslatorPresetCollectionWithLegacyCompatibility } from '../commands/translatorPresets.js'
 import { normalizeLoadoutCollection } from '../commands/loadouts.js'
 import { normalizeAllChatMessages } from '../commands/messages.js'
 import { normalizeCharacterCollection } from '../commands/characters.js'
@@ -432,7 +432,7 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
     normalizePersonaCollection(target)
   }
   if (hasAnyKey(target, ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'])) {
-    normalizeTranslatorPresetCollection(target)
+    normalizeTranslatorPresetCollectionWithLegacyCompatibility(target)
   }
   normalizeLoadoutCollection(target)
   ensureModuleRecords(target)

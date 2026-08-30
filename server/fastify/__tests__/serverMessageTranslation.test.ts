@@ -77,9 +77,10 @@ describe('runServerMessageTranslation', () => {
           translate: { mode: 'profile', profileId: 'persisted-translate-profile' },
         },
         translatorPresetId: 0,
-        // Real persistence keeps these legacy scalars synced to step one.
-        translatorPrompt: 'Draft {{slot::content}}',
-        translatorMaxResponse: 111,
+        // Deliberately stale compatibility fields; the canonical pipeline owns
+        // prompt and response budget after reopen.
+        translatorPrompt: 'stale scalar prompt',
+        translatorMaxResponse: 7,
         translatorPresets: [
           {
             id: 'pipeline',

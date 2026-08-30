@@ -1844,9 +1844,9 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
 
 /**
  * Fence both tables written by one accepted translator-preset PATCH. The
- * optimistic row and its selected legacy mirror are already resident, so this
- * advances only the collection and language-group revision fences. Projection
- * epochs and acknowledgement taints remain owned by authoritative reads.
+ * optimistic canonical row is already resident, so this advances only the
+ * collection and language-group revision fences. Projection epochs and
+ * acknowledgement taints remain owned by authoritative reads.
  */
 export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorPresetPatchLocalEffectPayload): boolean {
   const attemptedKeys = isPlainRecord(payload.attemptedPatch) ? Object.keys(payload.attemptedPatch).sort() : []
@@ -1897,12 +1897,7 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
     return false
   }
   const selectedPreset = presets[selectedIndex as number]
-  if (
-    targetMatches.length !== 1 ||
-    selectedPreset.id !== payload.selectedPresetId ||
-    !isJsonValueEqual(settings.translatorPrompt, selectedPreset.prompt) ||
-    !isJsonValueEqual(settings.translatorMaxResponse, selectedPreset.maxResponse)
-  ) {
+  if (targetMatches.length !== 1 || selectedPreset.id !== payload.selectedPresetId) {
     return false
   }
 

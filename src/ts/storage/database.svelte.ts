@@ -56,7 +56,7 @@ import {
   type AgentRecord,
 } from '../agentPresetRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
-import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
+import { normalizeTranslatorPresetStateWithLegacyCompatibility, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 import {
@@ -3354,7 +3354,7 @@ export function setDatabase(data: Database) {
     )
   }
   data.hypaV3PresetId ??= 0
-  normalizeTranslatorPresetState(data)
+  normalizeTranslatorPresetStateWithLegacyCompatibility(data)
   data.showDeprecatedTriggerV2 ??= false
   data.returnCSSError ??= true
   data.realmDirectOpen ??= false

@@ -35,8 +35,6 @@ export interface TranslatorStepRunInput {
 
 function cloneStateLike(stateLike: TranslatorPresetStateLike): TranslatorPresetStateLike {
   return {
-    translatorPrompt: stateLike.translatorPrompt,
-    translatorMaxResponse: stateLike.translatorMaxResponse,
     translatorPresetId: stateLike.translatorPresetId,
     translatorPresets: Array.isArray(stateLike.translatorPresets)
       ? stateLike.translatorPresets.map((preset) => {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  defaultTranslatorPrompt,
   normalizeTranslatorPreset,
   TRANSLATOR_PRESET_MAX_STEPS,
   type TranslatorPresetStep,
@@ -28,8 +29,8 @@ export function ensureTranslatorPresetCollection(database: JsonRecord): Translat
     database.translatorPresets = [
       repairTranslatorPresetRecord({
         name: 'Default',
-        prompt: stringValue(database.translatorPrompt),
-        maxResponse: numberValue(database.translatorMaxResponse, 1000),
+        prompt: defaultTranslatorPrompt,
+        maxResponse: 1000,
       }),
     ]
   }
@@ -62,13 +63,25 @@ export function ensureTranslatorPresetCollection(database: JsonRecord): Translat
     database.translatorPresetId = 0
   }
 
-  syncSelectedTranslatorPresetToLegacyFields(database, presets)
   return presets
 }
 
-export function normalizeTranslatorPresetCollection(database: unknown): void {
+/** Import/migration-only compatibility for legacy scalar translator settings. */
+export function normalizeTranslatorPresetCollectionWithLegacyCompatibility(database: unknown): void {
   if (!database || typeof database !== 'object' || Array.isArray(database)) return
-  ensureTranslatorPresetCollection(database as JsonRecord)
+  const target = database as JsonRecord
+  const missingCanonicalCollection = !Array.isArray(target.translatorPresets) || target.translatorPresets.length === 0
+  if (missingCanonicalCollection) {
+    target.translatorPresets = [
+      repairTranslatorPresetRecord({
+        name: 'Default',
+        prompt: stringValue(target.translatorPrompt),
+        maxResponse: numberValue(target.translatorMaxResponse, 1000),
+      }),
+    ]
+  }
+  const presets = ensureTranslatorPresetCollection(target)
+  if (missingCanonicalCollection) syncSelectedTranslatorPresetToLegacyFields(target, presets)
 }
 
 export function createTranslatorPresetRecord(input: unknown): TranslatorPresetRecord {

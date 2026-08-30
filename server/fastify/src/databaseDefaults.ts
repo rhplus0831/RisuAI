@@ -43,7 +43,10 @@ import {
   normalizeRegexOutputSizeLimitMiB,
 } from '@risuai/shared-core/regex-output-size-limit'
 import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@risuai/shared-core/agent-preset-records'
-import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
+import {
+  normalizeTranslatorPresetStateWithLegacyCompatibility,
+  type TranslatorPresetStateLike,
+} from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@risuai/protocol'
@@ -1394,7 +1397,7 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
 }
 
 function normalizeTranslatorPresets(database: JsonRecord): void {
-  normalizeTranslatorPresetState(database as TranslatorPresetStateLike)
+  normalizeTranslatorPresetStateWithLegacyCompatibility(database as TranslatorPresetStateLike)
 }
 
 function normalizeHypaCustomSettings(database: JsonRecord): void {
