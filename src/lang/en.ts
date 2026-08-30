@@ -96,7 +96,20 @@ export const languageEnglish = {
   composerDraftRecovery: {
     storageFailed:
       'This composer draft could not be stored for reload recovery. Keep this tab open or copy the text before leaving.',
-    queuedSaveFailed: 'The queued message was not accepted. Your composer draft was kept so you can retry.',
+    sendFailed: (detail: string) =>
+      `Your message was not sent. ${detail} Your composer draft was kept so you can retry.`,
+    sendFailureDetails: {
+      chatGenerationSettings: 'Chat generation settings could not be saved.',
+      personaSettings: 'Persona settings could not be saved.',
+      characterDefinitions: "The character's regex and trigger changes could not be saved.",
+      activeChatMissing: 'No active chat was found.',
+      preparation: 'The message could not be prepared for sending.',
+      staging: 'The message could not be staged for sending.',
+      queuedConfirmation: 'The queued message save could not be confirmed.',
+      queuedConflict: 'The queued message conflicted with a newer server revision.',
+      queuedServerUnavailable: 'The server was unavailable when the queued message was retried.',
+      appendNotAccepted: 'The server accepted the generation request without accepting the message.',
+    },
   },
   acceptedSendRecovery: {
     generationFailed:

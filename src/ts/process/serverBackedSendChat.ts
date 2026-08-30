@@ -556,7 +556,7 @@ export async function assembleServerBackedSendChat(args: {
     if (scripts === 'queued' || scripts === 'failed') {
       return {
         status: 'failed',
-        error: 'Character scripts could not be saved.',
+        error: language.composerDraftRecovery.sendFailureDetails.characterDefinitions,
         currentChat: args.currentChat,
       }
     }

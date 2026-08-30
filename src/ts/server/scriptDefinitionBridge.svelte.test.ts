@@ -842,7 +842,7 @@ describe('character script definition draft bridge', () => {
     expect(recorded.commands).toHaveLength(1)
   })
 
-  it('keeps a failed character save visible to later display activation checks', async () => {
+  it('reports a failed character save to the current waiter without caching it for later checks', async () => {
     setupScriptDefinitions()
     recorded.commandResults.push({ status: 'error', error: 'save rejected' })
     expect(
@@ -854,9 +854,7 @@ describe('character script definition draft bridge', () => {
     ).toBe(true)
 
     await expect(waitForPendingCharacterScriptDefinitionSave('char-1')).resolves.toBe('failed')
-    await expect(waitForPendingCharacterScriptDefinitionSave('char-1', { finalSettlement: true })).resolves.toBe(
-      'failed',
-    )
+    await expect(waitForPendingCharacterScriptDefinitionSave('char-1', { finalSettlement: true })).resolves.toBe('idle')
   })
 
   it('applies cloned drafts, dispatches replacements, and preserves newer definitions on stale rollback', async () => {

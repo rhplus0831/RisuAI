@@ -169,7 +169,7 @@ interface AbsorbedStructuralSnapshot {
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 const pendingCharacterScriptDefinitionDrafts = new Map<string, PendingCharacterScriptDefinitionDraft>()
 const trackedScriptDefinitionDispatches = new Map<string, Set<TrackedScriptDefinitionDispatch>>()
-const scriptDefinitionFinalOutcomeByKey = new Map<string, boolean>()
+const successfulScriptDefinitionFinalOutcomeKeys = new Set<string>()
 const mutationSafetyByKey = new Map<string, ScriptDefinitionMutationSafetyState>()
 const structuralWriteAttempts = new WeakMap<
   CharacterScriptDefinitionStructuralWriteAttempt,
@@ -238,8 +238,8 @@ export function scheduleCharacterScriptDefinitionDraft(
   if (!characterId) return false
   if (!getDatabase().characters?.some((candidate) => candidate.chaId === characterId)) return false
 
-  scriptDefinitionFinalOutcomeByKey.delete(`characterScripts:${characterId}`)
-  scriptDefinitionFinalOutcomeByKey.delete(`characterTriggers:${characterId}`)
+  successfulScriptDefinitionFinalOutcomeKeys.delete(`characterScripts:${characterId}`)
+  successfulScriptDefinitionFinalOutcomeKeys.delete(`characterTriggers:${characterId}`)
   const previous = pendingCharacterScriptDefinitionDrafts.get(characterId)
   if (previous) clearTimeout(previous.timer)
   const pending: PendingCharacterScriptDefinitionDraft = {
@@ -278,11 +278,7 @@ export async function waitForPendingCharacterScriptDefinitionSave(
 
   const dispatches = keys.flatMap((key) => Array.from(trackedScriptDefinitionDispatches.get(key) ?? []))
   if (dispatches.length === 0) {
-    const knownOutcomes = keys.flatMap((key) =>
-      scriptDefinitionFinalOutcomeByKey.has(key) ? [scriptDefinitionFinalOutcomeByKey.get(key)!] : [],
-    )
-    if (knownOutcomes.length === 0) return 'idle'
-    return knownOutcomes.every(Boolean) ? 'saved' : 'failed'
+    return keys.some((key) => successfulScriptDefinitionFinalOutcomeKeys.has(key)) ? 'saved' : 'idle'
   }
 
   if (options.finalSettlement) {
@@ -306,7 +302,7 @@ export function resetPendingCharacterScriptDefinitionDraftsForTests(): void {
     for (const dispatch of dispatches) dispatch.settleFinal(false)
   }
   trackedScriptDefinitionDispatches.clear()
-  scriptDefinitionFinalOutcomeByKey.clear()
+  successfulScriptDefinitionFinalOutcomeKeys.clear()
 }
 
 export function applyCharacterScriptDefinitionDraft(
@@ -2072,7 +2068,8 @@ function dispatchTrackedScriptDefinitionReplacement(
       if (finalSettled) return
       finalSettled = true
       settlementCleanup?.()
-      scriptDefinitionFinalOutcomeByKey.set(pending.key, accepted)
+      if (accepted) successfulScriptDefinitionFinalOutcomeKeys.add(pending.key)
+      else successfulScriptDefinitionFinalOutcomeKeys.delete(pending.key)
       resolveFinal(accepted)
       const current = trackedScriptDefinitionDispatches.get(pending.key)
       current?.delete(tracked)
@@ -2083,7 +2080,7 @@ function dispatchTrackedScriptDefinitionReplacement(
   settlementCleanup = registerDurableMutationSettlementListener(pending.outbox.mutationId, (settlement) => {
     tracked.settleFinal(settlement === 'accepted')
   })
-  scriptDefinitionFinalOutcomeByKey.delete(pending.key)
+  successfulScriptDefinitionFinalOutcomeKeys.delete(pending.key)
   const dispatches = trackedScriptDefinitionDispatches.get(pending.key) ?? new Set()
   dispatches.add(tracked)
   trackedScriptDefinitionDispatches.set(pending.key, dispatches)

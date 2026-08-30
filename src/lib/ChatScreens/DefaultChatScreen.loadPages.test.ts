@@ -81,7 +81,19 @@ vi.mock('../../lang', () => ({
           : property === 'composerDraftRecovery'
             ? {
                 storageFailed: 'composerDraftStorageFailed',
-                queuedSaveFailed: 'composerQueuedSaveFailed',
+                sendFailed: (detail: string) => `composerSendFailed:${detail}`,
+                sendFailureDetails: {
+                  chatGenerationSettings: 'chatGenerationSettingsSaveFailed',
+                  personaSettings: 'personaSettingsSaveFailed',
+                  characterDefinitions: 'characterDefinitionsSaveFailed',
+                  activeChatMissing: 'activeChatMissing',
+                  preparation: 'sendPreparationFailed',
+                  staging: 'sendStagingFailed',
+                  queuedConfirmation: 'queuedConfirmationFailed',
+                  queuedConflict: 'queuedRevisionConflict',
+                  queuedServerUnavailable: 'queuedServerUnavailable',
+                  appendNotAccepted: 'appendNotAccepted',
+                },
               }
             : property === 'acceptedSendRecovery'
               ? {
@@ -3189,10 +3201,10 @@ describe('DefaultChatScreen transcript window state', () => {
     settlement.resolve({ status: 'failed', result: { status: 'unavailable' } })
     await waitFor(() => {
       expect(target.querySelector('[data-testid="composer-draft-persistence-error"]')?.textContent).toContain(
-        'composerQueuedSaveFailed',
+        'composerSendFailed:queuedServerUnavailable',
       )
     })
-    expect(loadPageMocks.alertError).toHaveBeenCalledWith('composerQueuedSaveFailed')
+    expect(loadPageMocks.alertError).toHaveBeenCalledWith('composerSendFailed:queuedServerUnavailable')
     expect(draft.value).toBe('Queued draft')
   })
 

@@ -51,6 +51,22 @@ export type AcceptedSendCoordinatorResult =
   | { status: 'append_failed' }
   | { status: 'generation_failed'; cause: AcceptedSendRecoveryCause }
 
+export type AcceptedSendFailureReason =
+  | 'chatGenerationSettings'
+  | 'personaSettings'
+  | 'characterDefinitions'
+  | 'activeChatMissing'
+  | 'preparation'
+  | 'staging'
+  | 'queuedConfirmation'
+  | 'queuedConflict'
+  | 'queuedServerUnavailable'
+  | 'appendNotAccepted'
+
+export type AcceptedSendAppendFailure =
+  | { kind: 'known'; reason: AcceptedSendFailureReason; outcome?: ChatMutationFinalOutcome }
+  | { kind: 'message'; message: string; outcome?: ChatMutationFinalOutcome }
+
 export interface CoordinateAcceptedChatSendInput {
   target: ActiveChatTarget
   /** Compatibility append, used only when protocol v1 was not advertised. */
@@ -60,7 +76,7 @@ export interface CoordinateAcceptedChatSendInput {
   draftGeneration?: unknown
   syntheticSayNothing?: boolean
   onAppendAccepted?: () => void
-  onAppendFailed?: (outcome?: ChatMutationFinalOutcome) => void
+  onAppendFailed?: (failure: AcceptedSendAppendFailure) => void
 }
 
 interface AcceptedGenerationRequest {
@@ -126,14 +142,32 @@ function notifyAppendAccepted(callback: (() => void) | undefined): void {
 }
 
 function notifyAppendFailed(
-  callback: ((outcome?: ChatMutationFinalOutcome) => void) | undefined,
-  outcome?: ChatMutationFinalOutcome,
+  callback: ((failure: AcceptedSendAppendFailure) => void) | undefined,
+  failure: AcceptedSendAppendFailure,
 ): void {
   try {
-    callback?.(outcome)
+    callback?.(failure)
   } catch (error) {
     console.error(error)
   }
+}
+
+function failureFromError(error: unknown, fallback: AcceptedSendFailureReason): AcceptedSendAppendFailure {
+  if (error instanceof Error && error.message) return { kind: 'message', message: error.message }
+  if (typeof error === 'string' && error) return { kind: 'message', message: error }
+  return { kind: 'known', reason: fallback }
+}
+
+function queuedAppendFailure(
+  outcome: Extract<ChatMutationFinalOutcome, { status: 'failed' }>,
+): AcceptedSendAppendFailure {
+  if (outcome.result.status === 'error') {
+    return { kind: 'message', message: outcome.result.error, outcome }
+  }
+  if (outcome.result.status === 'conflict') {
+    return { kind: 'known', reason: 'queuedConflict', outcome }
+  }
+  return { kind: 'known', reason: 'queuedServerUnavailable', outcome }
 }
 
 interface AcceptedGenerationAttempt {
@@ -265,23 +299,30 @@ async function prepareAtomicSendGenerationIntent(input: CoordinateAcceptedChatSe
   const readiness = guardActiveChatGenerationSettingsForSend(
     resolveActiveChatGenerationSettings({ target: input.target }),
   )
-  if (readiness.status === 'error') return { status: 'error' as const, error: readiness.error }
+  if (readiness.status === 'error') {
+    return { status: 'error' as const, failure: { kind: 'message' as const, message: readiness.error } }
+  }
   if (input.target.chatId) {
     const settings = await waitForPendingChatGenerationSettingsSave(input.target.chatId)
     if (settings && settings.status !== 'ok') {
-      return { status: 'error' as const, error: 'Chat generation settings could not be saved.' }
+      return {
+        status: 'error' as const,
+        failure: { kind: 'known' as const, reason: 'chatGenerationSettings' as const },
+      }
     }
   }
   const persona = await flushPendingSelectedPersonaUpdate()
   if (persona && persona.status !== 'ok') {
-    return { status: 'error' as const, error: 'Persona settings could not be saved.' }
+    return { status: 'error' as const, failure: { kind: 'known' as const, reason: 'personaSettings' as const } }
   }
   const scripts = await waitForPendingCharacterScriptDefinitionSave(input.target.characterId)
   if (scripts === 'queued' || scripts === 'failed') {
-    return { status: 'error' as const, error: 'Character scripts could not be saved.' }
+    return { status: 'error' as const, failure: { kind: 'known' as const, reason: 'characterDefinitions' as const } }
   }
   const chat = chatForTarget(input.target)
-  if (!chat) return { status: 'error' as const, error: 'No active chat found.' }
+  if (!chat) {
+    return { status: 'error' as const, failure: { kind: 'known' as const, reason: 'activeChatMissing' as const } }
+  }
   const inlayAssetRefs = await collectServerInlayAssetRefs(chat)
   return {
     status: 'ok' as const,
@@ -319,11 +360,11 @@ async function coordinateAtomicAcceptedChatSend(
     preparedIntent = await prepareAtomicSendGenerationIntent(input)
   } catch (error) {
     console.error(error)
-    notifyAppendFailed(input.onAppendFailed)
+    notifyAppendFailed(input.onAppendFailed, failureFromError(error, 'preparation'))
     return { status: 'append_failed' }
   }
   if (preparedIntent.status === 'error') {
-    notifyAppendFailed(input.onAppendFailed)
+    notifyAppendFailed(input.onAppendFailed, preparedIntent.failure)
     return { status: 'append_failed' }
   }
   let staged: Awaited<ReturnType<typeof stageAcceptedSendGenerationOperation>>
@@ -336,11 +377,11 @@ async function coordinateAtomicAcceptedChatSend(
     })
   } catch (error) {
     console.error(error)
-    notifyAppendFailed(input.onAppendFailed)
+    notifyAppendFailed(input.onAppendFailed, failureFromError(error, 'staging'))
     return { status: 'append_failed' }
   }
   if ('status' in staged) {
-    notifyAppendFailed(input.onAppendFailed)
+    notifyAppendFailed(input.onAppendFailed, { kind: 'message', message: staged.error })
     return { status: 'append_failed' }
   }
 
@@ -361,7 +402,12 @@ async function coordinateAtomicAcceptedChatSend(
     return { status: 'append_failed' }
   }
   if (submitted.status !== 'accepted' || submitted.response.append?.disposition !== 'accepted') {
-    notifyAppendFailed(input.onAppendFailed)
+    notifyAppendFailed(
+      input.onAppendFailed,
+      submitted.status === 'rejected'
+        ? { kind: 'message', message: submitted.error }
+        : { kind: 'known', reason: 'appendNotAccepted' },
+    )
     return { status: 'append_failed' }
   }
   notifyAppendAccepted(input.onAppendAccepted)
@@ -421,12 +467,12 @@ export function coordinateAcceptedChatSend(
       let settlement: ChatMutationFinalOutcome
       try {
         settlement = await input.append.settlement
-      } catch {
-        notifyAppendFailed(input.onAppendFailed)
+      } catch (error) {
+        notifyAppendFailed(input.onAppendFailed, failureFromError(error, 'queuedConfirmation'))
         return { status: 'append_failed' }
       }
       if (settlement.status !== 'accepted') {
-        notifyAppendFailed(input.onAppendFailed, settlement)
+        notifyAppendFailed(input.onAppendFailed, queuedAppendFailure(settlement))
         return { status: 'append_failed' }
       }
     }

@@ -1044,8 +1044,10 @@
           clearComposerForCurrentOperation(input.composerOperation)
         }
       },
-      onAppendFailed: () => {
-        reportComposerDraftPersistenceError(language.composerDraftRecovery.queuedSaveFailed)
+      onAppendFailed: (failure) => {
+        const detail =
+          failure.kind === 'known' ? language.composerDraftRecovery.sendFailureDetails[failure.reason] : failure.message
+        reportComposerDraftPersistenceError(language.composerDraftRecovery.sendFailed(detail))
       },
     })
 

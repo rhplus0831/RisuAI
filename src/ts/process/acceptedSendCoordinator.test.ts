@@ -144,7 +144,10 @@ describe('accepted send coordinator', () => {
 
     expect(coordinatorMocks.waitForPendingCharacterScriptDefinitionSave).toHaveBeenCalledWith('character-a')
     expect(coordinatorMocks.stageAcceptedSendGenerationOperation).not.toHaveBeenCalled()
-    expect(onAppendFailed).toHaveBeenCalledOnce()
+    expect(onAppendFailed).toHaveBeenCalledWith({
+      kind: 'known',
+      reason: 'characterDefinitions',
+    })
   })
 
   it('shows a typed notice when a prior reply finalization still fences the chat', async () => {
@@ -289,7 +292,11 @@ describe('accepted send coordinator', () => {
     settlement.resolve(failure)
 
     await expect(operation).resolves.toEqual({ status: 'append_failed' })
-    expect(onAppendFailed).toHaveBeenCalledWith(failure)
+    expect(onAppendFailed).toHaveBeenCalledWith({
+      kind: 'known',
+      reason: 'queuedServerUnavailable',
+      outcome: failure,
+    })
     expect(coordinatorMocks.sendChat).not.toHaveBeenCalled()
     expect(get(acceptedSendRecoveries)).toEqual([])
   })

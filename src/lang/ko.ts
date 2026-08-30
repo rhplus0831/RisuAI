@@ -1987,7 +1987,20 @@ export const languageKorean = {
     '활성 메시지 입력창이 변경되어 업로드한 파일을 첨부할 수 없습니다. 파일을 다시 첨부하세요.',
   composerDraftRecovery: {
     storageFailed: '새로고침 복구용 메시지 초안을 저장할 수 없습니다. 탭을 닫거나 나가기 전에 텍스트를 복사해 두세요.',
-    queuedSaveFailed: '대기 중인 메시지가 전송되지 않았습니다. 다시 시도할 수 있도록 입력창 초안을 유지했습니다.',
+    sendFailed: (detail: string) =>
+      `메시지를 보내지 못했습니다. ${detail} 다시 시도할 수 있도록 입력창 초안을 유지했습니다.`,
+    sendFailureDetails: {
+      chatGenerationSettings: '채팅 생성 설정을 저장할 수 없습니다.',
+      personaSettings: '페르소나 설정을 저장할 수 없습니다.',
+      characterDefinitions: '캐릭터의 정규식 또는 트리거 변경 사항을 저장할 수 없습니다.',
+      activeChatMissing: '활성 채팅을 찾을 수 없습니다.',
+      preparation: '메시지 전송을 준비할 수 없습니다.',
+      staging: '메시지를 안전하게 전송 대기 상태로 저장할 수 없습니다.',
+      queuedConfirmation: '대기 중인 메시지의 저장 결과를 확인할 수 없습니다.',
+      queuedConflict: '대기 중인 메시지가 서버의 최신 변경 사항과 충돌했습니다.',
+      queuedServerUnavailable: '대기 중인 메시지를 다시 시도할 때 서버를 사용할 수 없었습니다.',
+      appendNotAccepted: '서버가 생성 요청은 수락했지만 메시지는 수락하지 않았습니다.',
+    },
   },
   acceptedSendRecovery: {
     generationFailed:
