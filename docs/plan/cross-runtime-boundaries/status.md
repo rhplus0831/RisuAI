@@ -12,17 +12,17 @@ in [`latest-verification.md`](latest-verification.md).
 - Plan state: Active; Phases 0 through 3 complete; seventeen neutral shared-core
   leaves are released.
 - Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
-- Active slice: [Prompt-message value-contract completion](phases/slices/phase-4-server-consumer-migration/prompt-message-value-contract-completion.md), ready.
+- Active slice: [Trigger-compatibility policy seam](phases/slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: prompt-template card ownership at
-  `ee87bc6ac`, following chat-variable defaults at `43c0ac781` and trigger
-  transcript-cache inputs at `68883eba5`; focused defaults, trigger, memory,
-  preflight, template, and ownership suites,
+- Latest implementation candidate: prompt-memory query inputs at `e520f5bb7`,
+  following complete prompt-message value ownership at `d31f0eb16` and
+  `53e9fa0c3`; focused memory query, generation, prompt, dispatch, route, and
+  ownership suites,
   architecture inventory, shared-core/root/downstream typechecks, formatting,
   and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
@@ -72,6 +72,8 @@ in [`latest-verification.md`](latest-verification.md).
 | Chat-variable defaults seam | `43c0ac781` | Released through two narrow Fastify inputs; the default parser dropped its aggregate browser database/character edge. |
 | Trigger transcript-cache seam | `68883eba5` | Released through Fastify-owned transcript message/chat inputs while retaining WeakMap identity and cache invalidation behavior. |
 | Prompt-template card seam | `ee87bc6ac` | Released through a closed Fastify-owned card union; four production and three focused test consumers dropped seven type-only browser prompt-model edges. |
+| Prompt-message value contract | `d31f0eb16` (`53e9fa0c3` integration follow-up) | Released across all prompt, assembly, dispatch, and generation consumers; fourteen production and four server-test browser prompt-row type edges were removed. |
+| Prompt-memory query seam | `e520f5bb7` | Released through Fastify-owned character/chat/message query projections and the existing embedding settings contract; one production aggregate browser-model edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -96,13 +98,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 251 direct root-`src` edges remain: 165 production, 78 server-test, and 8
-  browser-smoke, spanning 109 importers and 51 targets.
-- Usage is 97 runtime, 38 mixed, and 116 type-only; 135 runtime/mixed edges
+- 232 direct root-`src` edges remain: 150 production, 74 server-test, and 8
+  browser-smoke, spanning 104 importers and 50 targets.
+- Usage is 97 runtime, 38 mixed, and 97 type-only; 135 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse and completed Phase 4 server seams, removed 124 edges and
-  28 source targets.
+  shared-helper reuse and completed Phase 4 server seams, removed 143 edges and
+  29 source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
@@ -114,7 +116,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb` after seventeen audited neutral leaves. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Prompt-template cards are server-owned; low-risk prompt-message consumers are next. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Prompt rows and memory-query inputs are server-owned; trigger compatibility policy is next. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
@@ -135,6 +137,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Replace the remaining low-risk prompt
-consumer imports of browser `OpenAIChat`/`MultiModal` with the existing
-Fastify-owned prompt-message contract, preserving values and behavior.
+Use [`next-steps.md`](next-steps.md). Move the server-only unsupported-trigger
+policy from the browser tree into Fastify while preserving the exact effect set,
+`@@emo` classification, sorted diagnostics, and no-op behavior.

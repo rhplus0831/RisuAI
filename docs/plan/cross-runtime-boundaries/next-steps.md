@@ -4,18 +4,18 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [prompt-message value-contract completion
-slice](phases/slices/phase-4-server-consumer-migration/prompt-message-value-contract-completion.md).
+Execute the [trigger-compatibility policy seam
+slice](phases/slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md).
 
-1. Replace browser `OpenAIChat`/`MultiModal` imports in the ten bounded prompt
-   consumers with `PromptMessage`/`PromptMultimodal` from
-   `prompt/promptMessage.ts`.
-2. Move the direct `tokens.test.ts` and `luaRuntime.test.ts` row fixtures to the
-   same Fastify-owned contract.
-3. Preserve row roles/content, multimodal dimensions, token charges, Lua
-   round-trips, asset parsing, memo keys, and provider-visible ordering.
-4. Expand the closed ownership assertion, refresh the architecture baseline,
-   and run every owning focused suite plus both type gates.
+1. Move the exact unsupported-trigger effect set and `@@emo` regex classifier
+   from `src/ts/process/triggerServerSupport.ts` into a Fastify-owned prompt
+   module.
+2. Point scripts, triggers, and their two structural/behavior suites at that
+   server owner.
+3. Preserve exact set membership, empty CBS callback exclusions, cycle-safe
+   deduplication, lexical diagnostic sorting, and unsupported-effect no-ops.
+4. Add a closed ownership assertion, refresh the architecture baseline, and run
+   the scripts, trigger, and compatibility-structure suites plus both type gates.
 
 ## Foundations Released
 
@@ -80,13 +80,18 @@ slice](phases/slices/phase-4-server-consumer-migration/prompt-message-value-cont
   WeakMap cache now accepts Fastify-owned message/chat inputs.
 - Prompt-template cards are released at `ee87bc6ac`; four production and three
   test imports now use a closed Fastify-owned union.
+- Prompt-message value ownership is complete at `d31f0eb16` with the
+  assembly/dispatch/route follow-up at `53e9fa0c3`; fourteen production and four
+  test browser-model imports were removed.
+- Prompt-memory query inputs are released at `e520f5bb7`; query construction now
+  consumes Fastify-owned transcript projections and embedding settings.
 
 ## Not In This Slice
 
-- Do not change serialization, row normalization, token formulas, Lua behavior,
-  model/profile selection, provider dispatch, or persistence.
-- Do not include the broader assembly/dispatch/route prompt-row fixtures in this
-  tranche; they remain a separate integration slice.
+- Do not change trigger/effect descriptors, trigger execution, regex evaluation,
+  diagnostics, script state, model/profile selection, or persistence.
+- Do not include the larger module/trigger descriptor migration in this policy
+  relocation.
 
 ## Handoff
 

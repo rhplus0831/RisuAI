@@ -51,5 +51,7 @@ Completed slices:
 - [Chat-variable defaults seam](slices/phase-4-server-consumer-migration/chat-variable-defaults-seam.md)
 - [Trigger transcript-cache seam](slices/phase-4-server-consumer-migration/trigger-transcript-cache-seam.md)
 - [Prompt-template card seam](slices/phase-4-server-consumer-migration/prompt-template-card-seam.md)
+- [Prompt-message value-contract completion](slices/phase-4-server-consumer-migration/prompt-message-value-contract-completion.md)
+- [Prompt-memory query seam](slices/phase-4-server-consumer-migration/prompt-memory-query-seam.md)
 
-Active slice: [Prompt-message value-contract completion](slices/phase-4-server-consumer-migration/prompt-message-value-contract-completion.md).
+Active slice: [Trigger-compatibility policy seam](slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md).

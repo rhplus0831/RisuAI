@@ -1,6 +1,6 @@
 # Prompt-Message Value-Contract Completion
 
-Status: ready.
+Status: complete through `d31f0eb16` and `53e9fa0c3`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -16,9 +16,9 @@ Move the remaining low-risk prompt consumers from browser `OpenAIChat` and
 
 - Production: Agent Preset messages, asset lookup, lorebook rows, Lua prompt
   rows, memory adapter rows, plain/static sections, prefix-token memoization,
-  tokenization, and trigger data effects.
-- Tests: the direct Lua-runtime and token fixtures.
-- Expected delta: ten production and two server-test type-only
+  tokenization, trigger data effects, assembly, dispatch, and generation routes.
+- Tests: Lua-runtime, token, assembly, and dispatch fixtures.
+- Delivered delta: fourteen production and four server-test type-only
   browser-application-model edges.
 
 ## Behavior Contract
@@ -37,6 +37,6 @@ both typechecks, architecture inventory, formatting, and diff checks.
 
 ## Done When
 
-- All twelve bounded consumers import only the Fastify prompt-message contract.
-- The baseline accounts for twelve removed edges without a new exception.
+- All bounded consumers import only the Fastify prompt-message contract.
+- The baseline accounts for eighteen removed edges without a new exception.
 - Row and multimodal behavior remains unchanged.
