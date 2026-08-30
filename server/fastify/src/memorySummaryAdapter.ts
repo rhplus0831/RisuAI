@@ -4,7 +4,7 @@ import {
   resolveOpenAICompatibleVariant,
 } from './generation/openaiCompatible.js'
 import { resolveOpenAIRequest, runOpenAI } from './generation/openai.js'
-import type { MemorySummaryMessage } from './memorySummaryMessage.js'
+import type { PromptMessage } from './prompt/promptMessage.js'
 import { scrubThinkSummaryOutput, scrubThoughtsSummaryOutput } from './memorySummaryPrompt.js'
 
 export interface SummarizeOnceOptions {
@@ -19,7 +19,7 @@ export interface SummarizeOnceOptions {
 export type SummaryAdapterResult = { text: string; tokens: number } | { error: string }
 
 export async function summarizeOnce(
-  messages: readonly MemorySummaryMessage[],
+  messages: readonly PromptMessage[],
   opts: SummarizeOnceOptions,
 ): Promise<SummaryAdapterResult> {
   const variantResult = resolveOpenAICompatibleVariant(opts.provider, opts.options ?? {})

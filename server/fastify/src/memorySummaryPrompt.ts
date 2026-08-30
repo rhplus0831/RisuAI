@@ -1,6 +1,6 @@
 import { inlayTokenRegex } from '@risuai/shared-core/inlay-tokens'
 import type { HypaV3Settings } from './memoryPlanner.js'
-import type { MemorySummaryMessage } from './memorySummaryMessage.js'
+import type { PromptMessage } from './prompt/promptMessage.js'
 
 export const DEFAULT_SUMMARIZATION_PROMPT =
   '[Summarize the ongoing role story, It must also remove redundancy and unnecessary text and content from the output.]'
@@ -13,14 +13,14 @@ export interface SummaryPromptOptions {
 }
 
 export interface BuildHypaV3SummaryPromptInput {
-  messages?: readonly MemorySummaryMessage[]
+  messages?: readonly PromptMessage[]
   chunkText?: string
   settings?: Pick<HypaV3Settings, 'summarizationPrompt' | 'reSummarizationPrompt'> | null
   isResummarize?: boolean
 }
 
 export interface BuildHypaV3SummaryPromptResult {
-  messages: MemorySummaryMessage[]
+  messages: PromptMessage[]
   chunkText: string
   prompt: string
   parsedChatML: boolean
@@ -62,7 +62,7 @@ export function buildHypaV3SummaryPrompt(input: BuildHypaV3SummaryPromptInput): 
   }
 }
 
-export function buildSummaryChunkText(messages: readonly MemorySummaryMessage[]): string {
+export function buildSummaryChunkText(messages: readonly PromptMessage[]): string {
   return messages.map((message) => `${message.role}: ${sanitizeSummaryMessageContent(message.content)}`).join('\n')
 }
 
@@ -78,7 +78,7 @@ export function scrubThinkSummaryOutput(content: string): string {
   return scrubSummaryOutput(content, /<think>[\s\S]*?<\/think>/g, 'think')
 }
 
-export function parseSummaryChatML(text: string): MemorySummaryMessage[] | null {
+export function parseSummaryChatML(text: string): PromptMessage[] | null {
   const starter = '<|im_start|>'
   const separator = '<|im_sep|>'
   const ender = '<|im_end|>'
@@ -128,7 +128,7 @@ export function parseSummaryChatML(text: string): MemorySummaryMessage[] | null 
         role,
         content,
         thoughts,
-      } satisfies MemorySummaryMessage
+      } satisfies PromptMessage
     })
 }
 

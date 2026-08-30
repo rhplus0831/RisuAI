@@ -1,5 +1,4 @@
 import type { character } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { createPositionParser, type LorebookActivationReport } from './lorebook.js'
@@ -10,6 +9,7 @@ import {
   type StableCardRenderCache,
   type UnformatedPromptSlots as PromptUnformatedSlots,
 } from './templates.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Template-wide token preflight ported from the SPA's
@@ -83,7 +83,7 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
   let memoryCardUsed = false
   let hasCachePoint = false
 
-  const tokenizeAll = (rows: OpenAIChat[]): void => {
+  const tokenizeAll = (rows: PromptMessage[]): void => {
     for (const row of rows) {
       addedTokens += tokenizeChat(row, encoding, options)
     }

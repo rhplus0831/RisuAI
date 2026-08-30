@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { finalizeRequestBudget } from '../src/prompt/budgetFinalize.js'
 import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 function makeDb(aiModel = 'gpt4'): Database {
   return { aiModel } as unknown as Database
@@ -10,7 +10,7 @@ function makeDb(aiModel = 'gpt4'): Database {
 
 describe('finalizeRequestBudget — under budget', () => {
   it('passes through and returns maxResponse as outputTokens', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'hello' },
       { role: 'user', content: 'world!' },
     ]
@@ -46,7 +46,7 @@ describe('finalizeRequestBudget — under budget', () => {
 
 describe('finalizeRequestBudget — outputTokens clamp', () => {
   it('clamps outputTokens to the remaining headroom', () => {
-    const formated: OpenAIChat[] = [{ role: 'user', content: 'a'.repeat(80) }]
+    const formated: PromptMessage[] = [{ role: 'user', content: 'a'.repeat(80) }]
     const result = finalizeRequestBudget({
       db: makeDb(),
       formated,
@@ -63,7 +63,7 @@ describe('finalizeRequestBudget — outputTokens clamp', () => {
 
 describe('finalizeRequestBudget — trimming', () => {
   it('zeroes removable entries front-to-back then filters empties', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'system-prompt' },
       { role: 'user', content: 'aaaaaaaaaa', removable: true, memo: 'message-1' },
       { role: 'assistant', content: 'bbbbbbbbbb', removable: true },
@@ -88,7 +88,7 @@ describe('finalizeRequestBudget — trimming', () => {
   })
 
   it('keeps multimodal-only rows during the empty-content filter', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       {
         role: 'user',
         content: 'caption',
@@ -118,7 +118,7 @@ describe('finalizeRequestBudget — trimming', () => {
   })
 
   it('uses low-quality image charges when deciding whether to trim history', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       {
         role: 'user',
         content: 'caption',
@@ -145,7 +145,7 @@ describe('finalizeRequestBudget — trimming', () => {
   })
 
   it('returns ok=false overflow when no removable row can fit the budget', () => {
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'pinned-system-prompt' },
       { role: 'user', content: 'pinned-user-prompt' },
     ]
@@ -162,7 +162,7 @@ describe('finalizeRequestBudget — trimming', () => {
 
 describe('finalizeRequestBudget — tokenizer routing', () => {
   it('uses overhead 3 + name accounting for non-gpt models', async () => {
-    const formated: OpenAIChat[] = [{ role: 'system', content: 'hello', name: 'hello' }]
+    const formated: PromptMessage[] = [{ role: 'system', content: 'hello', name: 'hello' }]
     const db = makeDb('claude-3-5-sonnet')
     await ensureTokenizerLoadedForDb(db)
     const result = finalizeRequestBudget({
@@ -179,7 +179,7 @@ describe('finalizeRequestBudget — tokenizer routing', () => {
   })
 
   it('routes through o200k_base for the gpt-4o family', () => {
-    const formated: OpenAIChat[] = [{ role: 'system', content: 'café résumé 漢字' }]
+    const formated: PromptMessage[] = [{ role: 'system', content: 'café résumé 漢字' }]
     const result = finalizeRequestBudget({
       db: makeDb('gpt-4o'),
       formated,

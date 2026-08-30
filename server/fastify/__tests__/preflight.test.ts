@@ -9,11 +9,11 @@ import type {
   PromptItemPlain,
   PromptItemTyped,
 } from '../../../src/ts/process/prompt'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { preflightTemplateTokens, type PromptUnformatedSlots } from '../src/prompt/preflight.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -77,7 +77,7 @@ function makeCharacter(overrides: Partial<character> = {}): character {
 }
 
 function makeSlots(overrides: Partial<PromptUnformatedSlots> = {}): PromptUnformatedSlots {
-  const empty = (): OpenAIChat[] => []
+  const empty = (): PromptMessage[] => []
   return {
     main: empty(),
     jailbreak: empty(),
@@ -539,7 +539,7 @@ describe('preflightTemplateTokens — chat range card', () => {
       } as Database['promptSettings'],
     })
     const card: PromptItemChat = { type: 'chat', rangeStart: 0, rangeEnd: 'end' }
-    const original: OpenAIChat[] = [
+    const original: PromptMessage[] = [
       { role: 'user', content: 'hi' },
       { role: 'assistant', content: 'hello' },
     ]

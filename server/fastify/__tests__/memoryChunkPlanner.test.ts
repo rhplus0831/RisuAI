@@ -6,7 +6,7 @@ import { openDatabase } from '../src/db.js'
 import { planHypaV3ChunkJobs } from '../src/memoryChunkPlanner.js'
 import { planStandardHypaV3Memory } from '../src/memoryPlanner.js'
 import { listMemoryChunks, listMemoryJobs, updateMemoryChunkStatus } from '../src/memoryRepository.js'
-import type { MemorySummaryMessage } from '../src/memorySummaryMessage.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 const dataDirs: string[] = []
 
@@ -22,12 +22,12 @@ afterEach(() => {
   }
 })
 
-function chat(memo: string, content = memo, role: MemorySummaryMessage['role'] = 'assistant'): MemorySummaryMessage {
+function chat(memo: string, content = memo, role: PromptMessage['role'] = 'assistant'): PromptMessage {
   return { role, content, memo }
 }
 
 function fixedTokenizer(tokensByMemo: Record<string, number>, memoryTokens = 7) {
-  return (item: MemorySummaryMessage): number => {
+  return (item: PromptMessage): number => {
     if (item.memo && item.memo in tokensByMemo) return tokensByMemo[item.memo]
     if (item.content.startsWith('<Past Events Summary>')) return memoryTokens
     return 5
@@ -174,7 +174,7 @@ describe('Hypa V3 chunk/job planning bridge', () => {
   it('uses only planner-selected message indexes for chunk text and payload memos', () => {
     const db = openDatabase(makeDataDir())
     try {
-      const chats: MemorySummaryMessage[] = [
+      const chats: PromptMessage[] = [
         { role: 'user', content: 'example', memo: 'e0', name: 'example_user' },
         chat('NewChat', '[Start a new chat]', 'system'),
         chat('empty', '   '),

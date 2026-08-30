@@ -1,5 +1,4 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import { applyDescriptionPromptRole, applyPromptBlockRole } from '../../../../src/ts/process/promptBlockRole.js'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
@@ -8,6 +7,7 @@ import {
   type EffectivePromptTemplateOptions,
 } from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Template normalization + slot contract, ported from the SPA's
@@ -51,16 +51,16 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * exactly. `preflight.ts` re-exports this as `PromptUnformatedSlots`.
  */
 export interface UnformatedPromptSlots {
-  main: OpenAIChat[]
-  jailbreak: OpenAIChat[]
-  chats: OpenAIChat[]
-  lorebook: OpenAIChat[]
-  globalNote: OpenAIChat[]
-  authorNote: OpenAIChat[]
-  lastChat: OpenAIChat[]
-  description: OpenAIChat[]
-  postEverything: OpenAIChat[]
-  personaPrompt: OpenAIChat[]
+  main: PromptMessage[]
+  jailbreak: PromptMessage[]
+  chats: PromptMessage[]
+  lorebook: PromptMessage[]
+  globalNote: PromptMessage[]
+  authorNote: PromptMessage[]
+  lastChat: PromptMessage[]
+  description: PromptMessage[]
+  postEverything: PromptMessage[]
+  personaPrompt: PromptMessage[]
 }
 
 export type FormatOrderKey = keyof UnformatedPromptSlots
@@ -137,7 +137,7 @@ function coalescesSystemRows(aiModel: string): boolean {
  *
  * The SPA's trailing `formated.at(-1).content += ''` no-op is omitted.
  */
-export function coalesceRows(formated: OpenAIChat[], rows: OpenAIChat[], aiModel: string): void {
+export function coalesceRows(formated: PromptMessage[], rows: PromptMessage[], aiModel: string): void {
   for (const chat of rows) {
     if (!chat.content.trim() && !(chat.multimodals && chat.multimodals.length > 0)) {
       continue
@@ -169,8 +169,8 @@ export function renderByFormatOrder(
   unformated: UnformatedPromptSlots,
   formatOrder: FormatOrderKey[],
   aiModel: string,
-): OpenAIChat[] {
-  const formated: OpenAIChat[] = []
+): PromptMessage[] {
+  const formated: PromptMessage[] = []
   for (const key of formatOrder) {
     coalesceRows(formated, unformated[key], aiModel)
   }
@@ -209,7 +209,7 @@ Example: <img src="{{ele::{{chardisplayasset}}::0}}">
  * row through the server `expandVariables` (matches the prior copy in
  * `preflight.ts`). Returns `null` when the text is not a ChatML block.
  */
-export function parseChatML(text: string, ctx: ExpandContext, onVarDirty?: () => void): OpenAIChat[] | null {
+export function parseChatML(text: string, ctx: ExpandContext, onVarDirty?: () => void): PromptMessage[] | null {
   return parseChatMLRows(text, (content) => expanded(content, ctx, onVarDirty))
 }
 
@@ -221,7 +221,7 @@ export function parseChatML(text: string, ctx: ExpandContext, onVarDirty?: () =>
  * `memo` / `name`. Callers clone first when the source must be
  * preserved (see the `chat` card).
  */
-export function systemizeChat(chats: OpenAIChat[]): OpenAIChat[] {
+export function systemizeChat(chats: PromptMessage[]): PromptMessage[] {
   for (let i = 0; i < chats.length; i++) {
     const row = chats[i]
     if (row.role === 'user' || row.role === 'assistant') {
@@ -245,13 +245,18 @@ export function systemizeChat(chats: OpenAIChat[]): OpenAIChat[] {
  * an empty `fmt`. `fmt` is expanded with the bare `ctx` (no `chara`),
  * matching the SPA's `risuChatParser(fmt)`.
  */
-function pushPromptInfoBody(store: OpenAIChat[], role: OpenAIChat['role'], fmt: string, ctx: ExpandContext): void {
+function pushPromptInfoBody(
+  store: PromptMessage[],
+  role: PromptMessage['role'],
+  fmt: string,
+  ctx: ExpandContext,
+): void {
   if (!fmt.trim()) return
   store.push({ role, content: expandVariables(fmt, ctx).text })
 }
 
 /** SPA trailing content trim (`renderFinalPrompt.ts`). */
-function trimContentsInPlace(rows: OpenAIChat[]): void {
+function trimContentsInPlace(rows: PromptMessage[]): void {
   for (const row of rows) {
     row.content = row.content.trim()
   }
@@ -274,32 +279,32 @@ export interface ContentCardDeps {
    * `promptInfoInsideChat` and `promptTextInfoInsideChat` are on;
    * `preflight.ts` never supplies it.
    */
-  promptInfo?: OpenAIChat[]
+  promptInfo?: PromptMessage[]
   /** Called when an expansion writes chat variables through `runVar`. */
   onVarDirty?: () => void
 }
 
 /** Render result for the template-walk path. */
 export interface RenderedTemplate {
-  formated: OpenAIChat[]
+  formated: PromptMessage[]
   /** Parallel prompt-info rows; defined only when capture is on. */
-  promptInfo?: OpenAIChat[]
+  promptInfo?: PromptMessage[]
 }
 
 export class StableCardRenderCache {
-  private readonly entries = new Map<string, OpenAIChat[]>()
+  private readonly entries = new Map<string, PromptMessage[]>()
   private dirtyState = false
 
   get dirty(): boolean {
     return this.dirtyState
   }
 
-  read(key: string): OpenAIChat[] | undefined {
+  read(key: string): PromptMessage[] | undefined {
     const rows = this.entries.get(key)
     return rows ? structuredClone(rows) : undefined
   }
 
-  write(key: string, rows: OpenAIChat[], dirty: boolean): void {
+  write(key: string, rows: PromptMessage[], dirty: boolean): void {
     this.entries.set(key, structuredClone(rows))
     this.dirtyState ||= dirty
   }
@@ -336,7 +341,7 @@ function stableCardCacheKey(card: PromptItem, templateIndex: number): string {
   return `${templateIndex}:${card.type}:${card.id ?? ''}`
 }
 
-function captureStableCardPromptInfo(card: PromptItem, rows: OpenAIChat[], deps: ContentCardDeps): void {
+function captureStableCardPromptInfo(card: PromptItem, rows: PromptMessage[], deps: ContentCardDeps): void {
   if (!deps.promptInfo) return
 
   switch (card.type) {
@@ -364,7 +369,7 @@ export function renderContentCardWithStableCache(
   deps: ContentCardDeps,
   stableCardCache: StableCardRenderCache | undefined,
   templateIndex: number,
-): OpenAIChat[] | null {
+): PromptMessage[] | null {
   if (!stableCardCache || !isStableTemplateCard(card)) {
     return renderContentCard(card, deps)
   }
@@ -410,16 +415,16 @@ export function renderContentCardWithStableCache(
  * `preflight.ts` never supplies the sink, so its tokenization is
  * unaffected.
  */
-export function renderContentCard(card: PromptItem, deps: ContentCardDeps): OpenAIChat[] | null {
+export function renderContentCard(card: PromptItem, deps: ContentCardDeps): PromptMessage[] | null {
   const { ctx, currentChar, unformated, usingPromptTemplate, positionParser } = deps
   const db = ctx.database
 
   const wrapInnerFormat = (
-    rows: OpenAIChat[],
+    rows: PromptMessage[],
     innerFormat: string | undefined,
     loc: string,
-    fallback?: (row: OpenAIChat) => string,
-  ): OpenAIChat[] => {
+    fallback?: (row: PromptMessage) => string,
+  ): PromptMessage[] => {
     if (innerFormat && rows.length > 0) {
       const wrap = expanded(
         positionParser(innerFormat, loc),
@@ -513,7 +518,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
         deps.onVarDirty,
       )
 
-      const promptRow: OpenAIChat = { role: CONVERT_ROLE[card.role], content }
+      const promptRow: PromptMessage = { role: CONVERT_ROLE[card.role], content }
       // Prompt-info capture re-expands the parsed content with the bare
       // ctx, excluding globalNote — `renderFinalPrompt.ts`.
       if (deps.promptInfo && card.type2 !== 'globalNote') {
@@ -575,7 +580,7 @@ export function renderByTemplate(
   promptTemplate: PromptItem[],
   usingPromptTemplate: boolean,
   positionParser: (text: string, loc: string) => string = (text) => text,
-  memories: OpenAIChat[] = [],
+  memories: PromptMessage[] = [],
   stableCardCache?: StableCardRenderCache,
   descriptionBaseIndex?: number,
 ): RenderedTemplate {
@@ -585,7 +590,7 @@ export function renderByTemplate(
   // Prompt-info-inside-chat capture (`renderFinalPrompt.ts`):
   // collect a parallel info array, gated on both db flags.
   const capture = !!(db.promptInfoInsideChat && db.promptTextInfoInsideChat)
-  const promptInfo: OpenAIChat[] | undefined = capture ? [] : undefined
+  const promptInfo: PromptMessage[] | undefined = capture ? [] : undefined
 
   const deps: ContentCardDeps = {
     ctx,
@@ -603,7 +608,7 @@ export function renderByTemplate(
   // suppresses the automatic cache-point walk-back below.
   const hasCachePoint = promptTemplate.some((card) => card.type === 'cache')
 
-  const formated: OpenAIChat[] = []
+  const formated: PromptMessage[] = []
   for (let templateIndex = 0; templateIndex < promptTemplate.length; templateIndex++) {
     const card = promptTemplate[templateIndex]
     // `memory` builds rows from the injected `memories` and `cache`
@@ -686,7 +691,7 @@ export interface RenderFinalPromptArgs {
   /** Cloned + `postEverything`-appended `formatingOrder`; non-template path only. */
   formatOrder: FormatOrderKey[]
   /** Memory rows for the `memory` template card. */
-  memories?: OpenAIChat[]
+  memories?: PromptMessage[]
   /** `{{position::}}` and `@@inject_at` substitution supplied by the caller. */
   positionParser?: (text: string, loc: string) => string
   /** Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
@@ -696,7 +701,7 @@ export interface RenderFinalPromptArgs {
    * Defaults to an identity transform; dispatch may supply the request-edit
    * transform.
    */
-  editRequest?: (rows: OpenAIChat[]) => OpenAIChat[] | Promise<OpenAIChat[]>
+  editRequest?: (rows: PromptMessage[]) => PromptMessage[] | Promise<PromptMessage[]>
   /** Per-assembly stable-card rows shared by template preflight and final render. */
   stableCardCache?: StableCardRenderCache
   /** Index of the base character-description row after lorebook placement. */
@@ -704,9 +709,9 @@ export interface RenderFinalPromptArgs {
 }
 
 export interface RenderFinalPromptResult {
-  formated: OpenAIChat[]
+  formated: PromptMessage[]
   /** Defined only when the template path captured prompt-info. */
-  promptText?: OpenAIChat[]
+  promptText?: PromptMessage[]
 }
 
 /** Models that take the `isContinue` `[Continue the last response]` push. */
@@ -761,8 +766,8 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
 
   // 2. Dispatch. Each path renderer already trims its rows; only
   //    the template path captures prompt-info.
-  let formated: OpenAIChat[]
-  let promptInfo: OpenAIChat[] | undefined
+  let formated: PromptMessage[]
+  let promptInfo: PromptMessage[] | undefined
   if (promptTemplate) {
     ;({ formated, promptInfo } = renderByTemplate(
       ctx,
@@ -793,7 +798,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
 
   // 4. `editRequest` request-edit seam (`renderFinalPrompt.ts`).
   formated = await editRequest(formated)
-  let promptText: OpenAIChat[] | undefined
+  let promptText: PromptMessage[] | undefined
   if (promptInfo) {
     promptText = await editRequest(promptInfo)
   }

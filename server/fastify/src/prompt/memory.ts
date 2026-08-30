@@ -1,9 +1,9 @@
 import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { UnformatedPromptSlots } from './templates.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Server memory window: ports the SPA's non-Hypa budget fallback from
@@ -14,7 +14,7 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 
 export interface MemoryWindowInput {
   /** The flattened history rows (`AssemblyState.historyMessages`). */
-  chats: OpenAIChat[]
+  chats: PromptMessage[]
   /** The running token estimate seeded by lorebook preflight. */
   currentTokens: number
   /** `db.maxContext`. */
@@ -37,7 +37,7 @@ export type MemoryWindowResult =
       stopSending: false
       currentTokens: number
       currentChat: Chat
-      memories: OpenAIChat[]
+      memories: PromptMessage[]
       /** True when at least one durable chat message was omitted for budget. */
       historyTruncated?: true
     }
@@ -82,7 +82,8 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
     chats.splice(trimIndex, 1)
   }
   const survivingMessageId = chats.find(
-    (chat): chat is OpenAIChat & { memo: string } => typeof chat.memo === 'string' && stableMessageIds.has(chat.memo),
+    (chat): chat is PromptMessage & { memo: string } =>
+      typeof chat.memo === 'string' && stableMessageIds.has(chat.memo),
   )?.memo
   if (trimmedStableMessage && survivingMessageId) {
     currentChat.lastMemory = survivingMessageId
@@ -90,7 +91,7 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
     delete currentChat.lastMemory
   }
 
-  const memories: OpenAIChat[] = []
+  const memories: PromptMessage[] = []
 
   // Match the SPA's `buildMemoryWindow`: promote the trailing chat to
   // `lastChat` only on the non-template path.
@@ -108,7 +109,7 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
         v.removable = true
       } else if (memoryCardUsed) {
         memories.push(v)
-        return { role: 'system', content: '' } as OpenAIChat
+        return { role: 'system', content: '' } as PromptMessage
       } else if (v.memo !== 'bardWiki') {
         v.content = `<Previous Conversation>${v.content}</Previous Conversation>`
       }
@@ -125,7 +126,7 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   }
 }
 
-function memoryWindowTrimIndex(chats: readonly OpenAIChat[]): number {
+function memoryWindowTrimIndex(chats: readonly PromptMessage[]): number {
   const nonPinnedBardWiki = chats.findIndex((chat) => chat.memo === 'bardWiki' && chat.removable === true)
   if (nonPinnedBardWiki >= 0) return nonPinnedBardWiki
 
@@ -139,6 +140,6 @@ function memoryWindowTrimIndex(chats: readonly OpenAIChat[]): number {
   return chats.findIndex((chat, index) => !isMemoryRow(chat) && index !== newestHistoryIndex)
 }
 
-function isMemoryRow(chat: OpenAIChat): boolean {
+function isMemoryRow(chat: PromptMessage): boolean {
   return chat.memo === 'supaMemory' || chat.memo === 'hypaMemory' || chat.memo === 'bardWiki'
 }

@@ -6,7 +6,7 @@ import {
   validateHypaV3Settings,
   type HypaV3Settings,
 } from '../src/memoryPlanner.js'
-import type { MemorySummaryMessage } from '../src/memorySummaryMessage.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import {
   createHypaV3PrefixTokenMemo,
   type HypaV3PrefixTokenMemo,
@@ -14,12 +14,12 @@ import {
 } from '../src/prompt/prefixTokenMemo.js'
 import { tokenizeChat, type TokenEncoding, type TokenizeChatOptions } from '../src/prompt/tokens.js'
 
-function chat(memo: string, content = memo, role: MemorySummaryMessage['role'] = 'assistant'): MemorySummaryMessage {
+function chat(memo: string, content = memo, role: PromptMessage['role'] = 'assistant'): PromptMessage {
   return { role, content, memo }
 }
 
 function fixedTokenizer(tokensByMemo: Record<string, number>, memoryTokens = 7) {
-  return (item: MemorySummaryMessage): number => {
+  return (item: PromptMessage): number => {
     if (item.memo && item.memo in tokensByMemo) return tokensByMemo[item.memo]
     if (item.content.startsWith('<Past Events Summary>')) return memoryTokens
     return 5
@@ -27,7 +27,7 @@ function fixedTokenizer(tokensByMemo: Record<string, number>, memoryTokens = 7) 
 }
 
 function planWithSummarizedPrefixMemo(input: {
-  chats: readonly MemorySummaryMessage[]
+  chats: readonly PromptMessage[]
   memo: HypaV3PrefixTokenMemo
   rawTokenizeChat: HypaV3RawTokenizeChat
   encoding?: TokenEncoding
@@ -214,7 +214,7 @@ describe('standard Hypa V3 planner contract', () => {
   })
 
   it('surfaces skipped-message reasons in the window contract', () => {
-    const chats: MemorySummaryMessage[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'example', memo: 'e0', name: 'example_user' },
       chat('NewChat', '[Start a new chat]', 'system'),
       chat('empty', '   '),
@@ -259,7 +259,7 @@ describe('standard Hypa V3 planner contract', () => {
   })
 
   it('advances and records token deltas for skipped-only windows', () => {
-    const chats: MemorySummaryMessage[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'example', memo: 'e0', name: 'example_user' },
       chat('NewChat', '[Start a new chat]', 'system'),
       chat('tail', 'tail'),
@@ -323,15 +323,14 @@ describe('standard Hypa V3 planner contract', () => {
 
   it('memoizes already-summarized prefix token counts across repeated planner passes', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: MemorySummaryMessage[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'alpha prefix '.repeat(12), memo: 'memo-a', name: 'Alex' },
       { role: 'assistant', content: 'bravo prefix '.repeat(12), memo: 'memo-b' },
       { role: 'user', content: 'tail', memo: 'memo-c' },
     ]
     const options: TokenizeChatOptions = { chatAdditionalTokens: 3, useName: 'name' }
-    const rawTokenizeChat = vi.fn(
-      (item: MemorySummaryMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
-        tokenizeChat(item, rawEncoding, rawOptions),
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+      tokenizeChat(item, rawEncoding, rawOptions),
     )
 
     const first = planWithSummarizedPrefixMemo({
@@ -361,14 +360,13 @@ describe('standard Hypa V3 planner contract', () => {
 
   it('re-encodes edited summarized-prefix content and updates token deltas', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: MemorySummaryMessage[] = [
+    const chats: PromptMessage[] = [
       { role: 'user', content: 'alpha prefix '.repeat(12), memo: 'memo-a' },
       { role: 'assistant', content: 'bravo prefix '.repeat(12), memo: 'memo-b' },
       { role: 'user', content: 'tail', memo: 'memo-c' },
     ]
-    const rawTokenizeChat = vi.fn(
-      (item: MemorySummaryMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
-        tokenizeChat(item, rawEncoding, rawOptions),
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+      tokenizeChat(item, rawEncoding, rawOptions),
     )
     planWithSummarizedPrefixMemo({ chats, memo, rawTokenizeChat })
     rawTokenizeChat.mockClear()
@@ -389,7 +387,7 @@ describe('standard Hypa V3 planner contract', () => {
 
   it('re-encodes when summarized-prefix tokenizer options change', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: MemorySummaryMessage[] = [
+    const chats: PromptMessage[] = [
       {
         role: 'user',
         content: 'alpha prefix '.repeat(12),
@@ -405,9 +403,8 @@ describe('standard Hypa V3 planner contract', () => {
       },
       { role: 'user', content: 'tail', memo: 'memo-c' },
     ]
-    const rawTokenizeChat = vi.fn(
-      (item: MemorySummaryMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
-        tokenizeChat(item, rawEncoding, rawOptions),
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+      tokenizeChat(item, rawEncoding, rawOptions),
     )
     const firstOptions: TokenizeChatOptions = { chatAdditionalTokens: 3, countThoughts: false }
     const changedOptions: TokenizeChatOptions = { chatAdditionalTokens: 5, countThoughts: true }
@@ -435,7 +432,7 @@ describe('standard Hypa V3 planner contract', () => {
 
   it('re-encodes when summarized-prefix multimodal dimensions change', () => {
     const memo = createHypaV3PrefixTokenMemo()
-    const chats: MemorySummaryMessage[] = [
+    const chats: PromptMessage[] = [
       {
         role: 'user',
         content: 'alpha prefix '.repeat(12),
@@ -449,9 +446,8 @@ describe('standard Hypa V3 planner contract', () => {
       supportsInlayImage: true,
       visionQuality: 'high',
     }
-    const rawTokenizeChat = vi.fn(
-      (item: MemorySummaryMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
-        tokenizeChat(item, rawEncoding, rawOptions),
+    const rawTokenizeChat = vi.fn((item: PromptMessage, rawEncoding: TokenEncoding, rawOptions: TokenizeChatOptions) =>
+      tokenizeChat(item, rawEncoding, rawOptions),
     )
     planWithSummarizedPrefixMemo({ chats, memo, rawTokenizeChat, options })
     rawTokenizeChat.mockClear()

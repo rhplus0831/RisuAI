@@ -1186,19 +1186,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/budgetFinalize.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/budgetFinalize.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1499,20 +1486,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/history.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "MultiModal",
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/history.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1634,19 +1607,6 @@
         "Chat",
         "Database",
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/memory.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1779,19 +1739,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/prefixTokenMemo.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/preflight.ts",
       "specifier": "../../../../src/ts/process/index.svelte",
       "target": "src/ts/process/index.svelte.ts",
       "kind": "static",
@@ -2042,19 +1989,6 @@
         "Chat",
         "Database",
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/templates.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -2863,19 +2797,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/budgetFinalize.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/budgetFinalize.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3123,20 +3044,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/history.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "MultiModal",
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/history.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3218,19 +3125,6 @@
         "Database",
         "character",
         "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memory.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -3525,19 +3419,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/preflight.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/preflight.test.ts",
       "specifier": "../../../src/ts/process/prompt",
       "target": "src/ts/process/prompt.ts",
       "kind": "static",
@@ -3760,19 +3641,6 @@
         "Chat",
         "Database",
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/templates.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"

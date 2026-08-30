@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { summarizeOnce } from '../src/memorySummaryAdapter.js'
-import type { MemorySummaryMessage } from '../src/memorySummaryMessage.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function chat(role: MemorySummaryMessage['role'], content: string): MemorySummaryMessage {
+function chat(role: PromptMessage['role'], content: string): PromptMessage {
   return { role, content }
 }
 

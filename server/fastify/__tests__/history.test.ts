@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
 import { applyDepthPrompts, buildHistoryWindow, exampleMessage, type AssetLookup } from '../src/prompt/history.js'
 import type { LoreEntryActive, LorebookActivationReport } from '../src/prompt/lorebook.js'
-import type { MultiModal, OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { PromptMessage, PromptMultimodal } from '../src/prompt/promptMessage.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 
@@ -768,7 +768,7 @@ describe('buildHistoryWindow <Thoughts> extraction', () => {
   })
 })
 
-function imageMM(base64 = 'IMG'): MultiModal {
+function imageMM(base64 = 'IMG'): PromptMultimodal {
   return { type: 'image', base64 }
 }
 
@@ -1171,7 +1171,7 @@ function depthCtx(): ExpandContext {
 
 describe('applyDepthPrompts', () => {
   it('returns the array unchanged when no depth entries are active', async () => {
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'user', content: 'hello' },
       { role: 'assistant', content: 'hi' },
     ]
@@ -1186,7 +1186,7 @@ describe('applyDepthPrompts', () => {
   })
 
   it('@@depth 1 inserts at index 1 (right after the first message)', async () => {
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'system', content: '[Start a new chat]' },
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },
@@ -1201,7 +1201,7 @@ describe('applyDepthPrompts', () => {
   })
 
   it('@@reverse_depth 1 inserts at length-1 (just before the last message)', async () => {
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'system', content: '[Start a new chat]' },
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'last' },
@@ -1216,7 +1216,7 @@ describe('applyDepthPrompts', () => {
   })
 
   it('honors the entry role on the inserted chat', async () => {
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'user', content: 'a' },
       { role: 'assistant', content: 'b' },
     ]
@@ -1234,7 +1234,7 @@ describe('applyDepthPrompts', () => {
     // a reverse_depth=1 and depth=1 entry fire, the resulting layout
     // depends on the order they appear in `report.actives` (which is
     // the post-sort+reverse order from activateLorebook).
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'system', content: 'NewChat' },
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },
@@ -1255,7 +1255,7 @@ describe('applyDepthPrompts', () => {
   })
 
   it('expands {{user}} CBS in the depth-prompt body', async () => {
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'user', content: 'a' },
       { role: 'assistant', content: 'b' },
     ]
@@ -1277,7 +1277,7 @@ describe('applyDepthPrompts', () => {
   })
 
   it('resolves {{position::pt_slot}} markers against the same report', async () => {
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'user', content: 'a' },
       { role: 'assistant', content: 'b' },
     ]

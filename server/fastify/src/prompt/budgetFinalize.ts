@@ -1,7 +1,7 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
+import type { PromptMessage } from './promptMessage.js'
 
 /**
  * Request budget finalization ported from the SPA's
@@ -26,7 +26,7 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
 export type FinalizeRequestBudgetResult =
   | {
       ok: true
-      formated: OpenAIChat[]
+      formated: PromptMessage[]
       inputTokens: number
       outputTokens: number
       /** True when final-budget trimming omitted a durable chat message. */
@@ -41,7 +41,7 @@ export type FinalizeRequestBudgetResult =
 export interface FinalizeRequestBudgetInput {
   /** Read for `db.aiModel` → tokenizer config; finalize never expands variables. */
   db: Database
-  formated: OpenAIChat[]
+  formated: PromptMessage[]
   maxContextTokens: number
   maxResponse: number
   /** Stable message ids belonging to the target chat transcript. */

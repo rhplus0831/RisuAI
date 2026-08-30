@@ -10,9 +10,9 @@ import {
   scrubThoughtsSummaryOutput,
   SummaryPromptError,
 } from '../src/memorySummaryPrompt.js'
-import type { MemorySummaryMessage } from '../src/memorySummaryMessage.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
-function chat(role: MemorySummaryMessage['role'], content: string): MemorySummaryMessage {
+function chat(role: PromptMessage['role'], content: string): PromptMessage {
   return { role, content }
 }
 

@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Chat, Database } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../src/ts/process/prompt'
 import { buildMemoryWindow } from '../src/prompt/memory.js'
 import { createEmptyUnformatedSlots } from '../src/prompt/assemble.js'
 import { tokenizeChat } from '../src/prompt/tokens.js'
 import { tokenizerOptionsFromDb } from '../src/prompt/tokenizerConfig.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 const db = { maxContext: 1000 } as unknown as Database
 
-function row(content: string, memo?: string): OpenAIChat {
+function row(content: string, memo?: string): PromptMessage {
   return { role: 'user', content, ...(memo ? { memo } : {}) }
 }
 

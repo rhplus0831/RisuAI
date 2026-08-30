@@ -1,7 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Database, character } from '../../../src/ts/storage/database.svelte'
 import type { PromptItem } from '../../../src/ts/process/prompt'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
   buildFormatOrder,
   coalesceRows,
@@ -18,6 +17,7 @@ import { preflightTemplateTokens } from '../src/prompt/preflight.js'
 import { createPositionParser, type LoreEntryActive, type LorebookActivationReport } from '../src/prompt/lorebook.js'
 import type { ExpandContext } from '../src/prompt/variables.js'
 import * as promptVariables from '../src/prompt/variables.js'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 beforeAll(() => {
   bootPromptVariables()
@@ -72,7 +72,7 @@ function makeCharacter(overrides: Partial<character> = {}): character {
 }
 
 function makeSlots(overrides: Partial<UnformatedPromptSlots> = {}): UnformatedPromptSlots {
-  const empty = (): OpenAIChat[] => []
+  const empty = (): PromptMessage[] => []
   return {
     main: empty(),
     jailbreak: empty(),
@@ -88,8 +88,8 @@ function makeSlots(overrides: Partial<UnformatedPromptSlots> = {}): UnformatedPr
   }
 }
 
-const row = (overrides: Partial<OpenAIChat>): OpenAIChat =>
-  ({ role: 'system', content: 'x', ...overrides }) as OpenAIChat
+const row = (overrides: Partial<PromptMessage>): PromptMessage =>
+  ({ role: 'system', content: 'x', ...overrides }) as PromptMessage
 
 describe('normalizeTemplate', () => {
   it('returns null / false when no template is set', () => {
@@ -265,7 +265,7 @@ describe('buildFormatOrder', () => {
 
 describe('coalesceRows', () => {
   it('keeps BardWiki reference rows independently removable on coalescing models', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [
@@ -281,7 +281,7 @@ describe('coalesceRows', () => {
   })
 
   it('drops empty / whitespace rows but keeps a multimodal row with empty content', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [
@@ -295,7 +295,7 @@ describe('coalesceRows', () => {
   })
 
   it('merges consecutive same-memo/name system rows on a coalescing model', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [
@@ -311,7 +311,7 @@ describe('coalesceRows', () => {
   })
 
   it('does not merge a non-system row between two system rows', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(
       out,
       [row({ content: 'a', memo: 'm' }), row({ role: 'user', content: 'u' }), row({ content: 'b', memo: 'm' })],
@@ -321,7 +321,7 @@ describe('coalesceRows', () => {
   })
 
   it('pushes every row verbatim on a non-coalescing model', () => {
-    const out: OpenAIChat[] = []
+    const out: PromptMessage[] = []
     coalesceRows(out, [row({ content: 'a', memo: 'm' }), row({ content: 'b', memo: 'm' })], 'ollama')
     expect(out.map((r) => r.content)).toEqual(['a', 'b'])
   })
@@ -573,8 +573,12 @@ describe('chat cards', () => {
       ],
     })
 
-  const renderChat = (db: Database, card: PromptItem, unformated = chatSlots(), char = makeCharacter()): OpenAIChat[] =>
-    renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
+  const renderChat = (
+    db: Database,
+    card: PromptItem,
+    unformated = chatSlots(),
+    char = makeCharacter(),
+  ): PromptMessage[] => renderByTemplate(ctxFor(db), char, unformated, [card], true).formated
 
   it('emits the full chat for rangeEnd "end"', () => {
     const out = renderChat(makeDatabase(), { type: 'chat', rangeStart: 0, rangeEnd: 'end' })
@@ -721,7 +725,10 @@ describe('chat cards', () => {
 })
 
 describe('memory cards', () => {
-  const mem = (): OpenAIChat[] => [row({ role: 'assistant', content: 'm0' }), row({ role: 'assistant', content: 'm1' })]
+  const mem = (): PromptMessage[] => [
+    row({ role: 'assistant', content: 'm0' }),
+    row({ role: 'assistant', content: 'm1' }),
+  ]
 
   it('clones the injected memories and passes them through unwrapped', () => {
     const { formated: out } = renderByTemplate(
@@ -816,7 +823,7 @@ describe('cache markers', () => {
 
   const chatCard: PromptItem = { type: 'chat', rangeStart: 0, rangeEnd: 'end' }
 
-  const cachePoints = (out: OpenAIChat[]): string[] => out.filter((r) => r.cachePoint).map((r) => r.content)
+  const cachePoints = (out: PromptMessage[]): string[] => out.filter((r) => r.cachePoint).map((r) => r.content)
 
   it('marks up to `depth` rows whose role matches the cache card', () => {
     const { formated: out } = renderByTemplate(
@@ -1452,7 +1459,7 @@ describe('renderFinalPrompt', () => {
   })
 
   it('applies the editRequest seam to both formated and promptText', async () => {
-    const bang = (rows: OpenAIChat[]): OpenAIChat[] => rows.map((r) => ({ ...r, content: r.content + '!' }))
+    const bang = (rows: PromptMessage[]): PromptMessage[] => rows.map((r) => ({ ...r, content: r.content + '!' }))
     const { formated, promptText } = await renderFinalPrompt({
       ctx: ctxFor(
         makeDatabase({

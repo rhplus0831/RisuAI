@@ -9,13 +9,14 @@ function source(file: string): string {
   return fs.readFileSync(path.join(repoRoot, file), 'utf8')
 }
 
-describe('memory summary message server type ownership', () => {
-  it('keeps all memory summary consumers behind a Fastify-owned record', () => {
+describe('prompt message server type ownership', () => {
+  it('keeps rendering and budget consumers behind a Fastify-owned record', () => {
     const consumers = [
-      'server/fastify/src/memoryPlanner.ts',
-      'server/fastify/src/memoryChunkPlanner.ts',
-      'server/fastify/src/memorySummaryPrompt.ts',
-      'server/fastify/src/memorySummaryAdapter.ts',
+      'server/fastify/src/prompt/history.ts',
+      'server/fastify/src/prompt/memory.ts',
+      'server/fastify/src/prompt/budgetFinalize.ts',
+      'server/fastify/src/prompt/preflight.ts',
+      'server/fastify/src/prompt/templates.ts',
     ]
 
     for (const consumer of consumers) {
