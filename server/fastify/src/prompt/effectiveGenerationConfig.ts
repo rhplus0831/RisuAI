@@ -17,7 +17,7 @@ import {
   applyPromptPresetModelOverrides,
   isLegacyModelPresetCompatibilityRecord,
   resolvePromptPresetRegexField,
-} from '../../../../src/ts/presetSplit.js'
+} from '@risuai/shared-core/preset-split'
 import {
   modelProfileGenerationBlockReason,
   resolveModelProfile,

@@ -9,7 +9,7 @@ import type {
   FastifyMessage as Message,
 } from './prompt/serverTypes.js'
 import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
-import { resolvePromptPresetRegexField } from '../../../src/ts/presetSplit.js'
+import { resolvePromptPresetRegexField } from '@risuai/shared-core/preset-split'
 import {
   DISPLAY_SOURCE_PROTOCOL_VERSION,
   DISPLAY_SOURCE_TRANSFORM_VERSION,

@@ -13,7 +13,7 @@ import {
   promptPresetRecommendedModelPresetId,
   promptPresetOverridesModelParameters,
   resolvePromptPresetRegexField,
-} from '../../../../src/ts/presetSplit.js'
+} from '@risuai/shared-core/preset-split'
 import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {

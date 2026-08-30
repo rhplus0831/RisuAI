@@ -24,7 +24,7 @@ import {
   tryBeginRequestHistory,
   type RequestHistoryContext,
 } from './requestHistory.js'
-import { applyEffectivePresetComposition } from '../../../src/ts/presetSplit.js'
+import { applyEffectivePresetComposition } from '@risuai/shared-core/preset-split'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync

@@ -335,7 +335,7 @@ import {
   PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
   clearPromptPresetRecommendedModelPresetReferences,
   databaseKeyForModelPresetField,
-} from '../../../../src/ts/presetSplit.js'
+} from '@risuai/shared-core/preset-split'
 import {
   activeMessageIdExistsOutsideChat,
   activeMessageIdExists,

@@ -98,6 +98,7 @@ describe('@risuai/shared-core import boundary', () => {
         'mutationCertificates.ts',
         'openaiModels.ts',
         'parseKeyValue.ts',
+        'presetSplit.ts',
         'promptBlockRole.ts',
         'promptInfoSnapshot.ts',
         'promptSettings.ts',

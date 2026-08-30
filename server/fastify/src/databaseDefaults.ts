@@ -12,7 +12,7 @@ import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
   repairPromptPresetRecommendedModelPresetReferences,
-} from '../../../src/ts/presetSplit.js'
+} from '@risuai/shared-core/preset-split'
 import {
   MODEL_ROLES,
   createDefaultLegacyFallbackModels,
