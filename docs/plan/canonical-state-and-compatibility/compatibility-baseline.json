@@ -197,6 +197,387 @@
       ]
     },
     {
+      "id": "persona-collection",
+      "family": "persona",
+      "surface": "personas[] canonical persona rows",
+      "currentOwner": "persona collection owner and persona commands",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "The selected stable-id persona row owns profile values; legacy scalar fields are projections only.",
+      "missingBehavior": "Explicit migration/import creates a supported default persona collection; ordinary reads do not mint rows.",
+      "malformedBehavior": "Persona collection boundaries validate rows and stable ids; unsupported records fail the owning command.",
+      "damagedDatabaseBehavior": "Do not repair sibling personas during ordinary reads; stable-id repair remains a migration/import/recovery concern.",
+      "historicalFixture": "src/ts/persona.test.ts",
+      "provenance": "Persona row, selected-profile projection, optimistic mutation, and rollback fixtures.",
+      "disposition": "canonical",
+      "targetOwner": "personas[] rows keyed by stable persona id",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "legacy username/userIcon/personaPrompt/userNote projection and selectedPersona index",
+      "rollbackProof": "Persona collection and selected-profile mutation fixtures preserve row identity and rollback ordering.",
+      "workstream3Cursor": "Release persona row consumers after Phase 4 alias and pointer dispositions close.",
+      "reviewTriggers": [
+        "Any normal persona/profile read outside the persona row owner or its explicit selected-profile projection.",
+        "Any command that mints or rewrites persona ids during ordinary render, selection, or reload."
+      ],
+      "probes": [
+        {
+          "path": "server/fastify/src/commands/personas.ts",
+          "kind": "identifier",
+          "value": "ensurePersonaCollection",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "currentSelectedPersonaProjectionSnapshot",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/ts/server/resourceState.svelte.ts",
+          "kind": "text",
+          "value": "collectionsResourceState.values.personas",
+          "expectedCount": 2
+        }
+      ]
+    },
+    {
+      "id": "persona-profile-mirrors",
+      "family": "persona",
+      "surface": "username, userIcon, personaPrompt, and userNote scalar mirrors",
+      "currentOwner": "selected persona row profile projection",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "The selected persona row owns name/icon/prompt/note; scalar values remain aliases for explicit import/export and projection compatibility.",
+      "missingBehavior": "Import normalization may synthesize scalar aliases from the selected row; normal runtime reads use the row projection.",
+      "malformedBehavior": "Scalar aliases normalize to supported empty/default values at import or settings boundaries.",
+      "damagedDatabaseBehavior": "Do not reconcile stale scalar aliases with unrelated rows during ordinary commands.",
+      "historicalFixture": "src/ts/persona.test.ts",
+      "provenance": "Selected persona profile projection and stale-field rollback fixtures.",
+      "disposition": "migrate",
+      "targetOwner": "selected persona row fields name, icon, personaPrompt, and note",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database username/userIcon/personaPrompt/userNote settings aliases",
+      "rollbackProof": "Selected-persona projection fixtures preserve scalar aliases through accepted, queued, and failed row writes.",
+      "workstream3Cursor": "Import/export-only hold: retire scalar aliases after Phase 4 import/export and selected-persona reload proof passes.",
+      "reviewTriggers": [
+        "Any normal render/generation reader that treats username, userIcon, personaPrompt, or userNote as independent truth.",
+        "Any write that updates a scalar alias without a selected persona row projection or an explicit import/export boundary."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "personaProfileMirrorFields",
+          "expectedCount": 5
+        },
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "selectedPersonaFieldProjectionValue",
+          "expectedCount": 5
+        },
+        {
+          "path": "src/ts/persona.test.ts",
+          "kind": "text",
+          "value": "mirrors selected text fields",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "persona-selected-pointer",
+      "family": "persona",
+      "surface": "numeric selectedPersona pointer",
+      "currentOwner": "selected persona row selection bridge",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Stable persona id identifies the selected row; selectedPersona remains a numeric compatibility pointer for current database projections.",
+      "missingBehavior": "Selection resolves to the first valid row or no selection at explicit normalization boundaries.",
+      "malformedBehavior": "Missing, out-of-range, or duplicate-id selections are rejected or normalized by the selection boundary.",
+      "damagedDatabaseBehavior": "Ordinary selection does not renumber or mint rows; repair remains explicit.",
+      "historicalFixture": "src/ts/persona.test.ts",
+      "provenance": "Selected persona id, stale selection, and rollback ordering fixtures.",
+      "disposition": "temporary",
+      "targetOwner": "stable selected persona id with a derived numeric UI pointer",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database.selectedPersona numeric index",
+      "rollbackProof": "Selection fixtures retain the selected stable id across reorder, delete, reload, and failed mutation paths.",
+      "workstream3Cursor": "Explicit hold: do not retire the numeric pointer until selected-persona reload, import/export, and plugin boundaries have a stable-id contract.",
+      "reviewTriggers": [
+        "Any new consumer persisting or comparing selectedPersona as canonical identity instead of selectedPersonaId.",
+        "Any reorder/delete path that changes the pointer without proving stable selected-id preservation."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/persona.ts",
+          "kind": "identifier",
+          "value": "selectedPersonaId",
+          "expectedCount": 23
+        },
+        {
+          "path": "server/fastify/src/commands/personas.ts",
+          "kind": "identifier",
+          "value": "selectedPersonaId",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "hypa-v3-presets",
+      "family": "memory",
+      "surface": "hypaV3Presets[] canonical memory preset records",
+      "currentOwner": "HypaV3 preset collection and settings owner",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "The selected HypaV3 preset settings own memory behavior; legacy scalar settings are aliases only.",
+      "missingBehavior": "Explicit initialization/import creates a supported default preset collection; ordinary memory reads do not repair it.",
+      "malformedBehavior": "Preset boundaries normalize supported settings and reject unsupported imported shapes.",
+      "damagedDatabaseBehavior": "Memory jobs validate selected preset data without repairing unrelated presets.",
+      "historicalFixture": "src/ts/process/memory/hypav3ModelOwnership.test.ts",
+      "provenance": "HypaV3 selected-preset, budgeting, settings, and memory-job fixtures.",
+      "disposition": "canonical",
+      "targetOwner": "hypaV3Presets[] selected by stable preset selection state",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "hypaV3Settings/supaMemoryPrompt/supaMemoryKey aliases and numeric hypaV3PresetId",
+      "rollbackProof": "HypaV3 settings and memory-job fixtures preserve selected preset behavior across reload and failed writes.",
+      "workstream3Cursor": "Release HypaV3 preset consumers after alias and selection-pointer dispositions close.",
+      "reviewTriggers": [
+        "Any normal memory UI/job reader that prefers hypaV3Settings or scalar aliases when a selected preset exists.",
+        "Any preset mutation that repairs or rewrites sibling preset rows during an ordinary settings operation."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/process/memory/hypav3.ts",
+          "kind": "text",
+          "value": "export function getCurrentHypaV3Preset",
+          "expectedCount": 1
+        },
+        {
+          "path": "src/lib/Setting/Pages/OtherBotSettings.svelte",
+          "kind": "text",
+          "value": "const hypaV3PresetsDraft",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/memoryEmbedJobHandler.ts",
+          "kind": "text",
+          "value": "function resolveHypaV3Settings",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/memorySummarizeJobHandler.ts",
+          "kind": "text",
+          "value": "function resolveHypaV3Settings",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "hypa-v3-legacy-aliases",
+      "family": "memory",
+      "surface": "hypaV3Settings, supaMemoryPrompt, and supaMemoryKey scalar aliases",
+      "currentOwner": "HypaV3 preset import/legacy-alias boundary",
+      "roles": [
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "Selected hypaV3Presets settings win; scalar aliases are read only for import/default synthesis and explicit legacy export.",
+      "missingBehavior": "Alias absence uses the selected preset/default settings at explicit normalization boundaries.",
+      "malformedBehavior": "Alias values normalize or are rejected by database/import validation without changing sibling presets.",
+      "damagedDatabaseBehavior": "Do not repair scalar aliases from arbitrary preset rows during ordinary memory execution.",
+      "historicalFixture": "server/fastify/__tests__/memoryLegacyImport.test.ts",
+      "provenance": "Legacy memory settings import and selected HypaV3 preset compatibility behavior.",
+      "disposition": "migrate",
+      "targetOwner": "selected hypaV3Presets[].settings fields",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "databaseDefaults and storage initialization aliases for supaMemoryKey/supaMemoryPrompt/hypaV3Settings",
+      "rollbackProof": "Legacy import fixtures retain alias values while canonical preset settings are selected and persisted.",
+      "workstream3Cursor": "Import/export-only hold: remove ordinary alias fallback after legacy memory import and export parity is recorded.",
+      "reviewTriggers": [
+        "Any new ordinary memory reader of hypaV3Settings, supaMemoryPrompt, or supaMemoryKey outside default/import alias code.",
+        "Any change to alias synthesis that changes selected preset settings or provider-secret masking."
+      ],
+      "probes": [
+        {
+          "path": "server/fastify/src/databaseDefaults.ts",
+          "kind": "text",
+          "value": "database.supaMemoryPrompt",
+          "expectedCount": 2
+        },
+        {
+          "path": "server/fastify/src/databaseDefaults.ts",
+          "kind": "text",
+          "value": "database.supaMemoryKey",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/storage/database.svelte.ts",
+          "kind": "text",
+          "value": "data.supaMemoryKey",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "hypa-v3-selected-pointer",
+      "family": "memory",
+      "surface": "numeric hypaV3PresetId selection pointer",
+      "currentOwner": "HypaV3 preset selection bridge",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "import",
+        "export"
+      ],
+      "currentPrecedence": "hypaV3PresetId selects the current collection row while stable preset identity remains the intended owner contract.",
+      "missingBehavior": "Selection defaults to the first preset at explicit initialization/import boundaries.",
+      "malformedBehavior": "Invalid indexes normalize to zero or fail the owning settings command.",
+      "damagedDatabaseBehavior": "Memory execution does not renumber or mint presets while resolving a pointer.",
+      "historicalFixture": "src/lib/Setting/Pages/OtherBotSettings.svelte",
+      "provenance": "HypaV3 preset selection, add/delete, import, export, and settings draft flows.",
+      "disposition": "temporary",
+      "targetOwner": "stable selected HypaV3 preset id with a derived collection index",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database.hypaV3PresetId numeric index",
+      "rollbackProof": "Preset selection fixtures preserve the selected row across add/delete/import and failed persistence.",
+      "workstream3Cursor": "Explicit hold: do not retire the numeric pointer until HypaV3 settings reload and import/export use stable selection identity.",
+      "reviewTriggers": [
+        "Any new consumer comparing hypaV3PresetId as canonical identity rather than the selected preset row.",
+        "Any preset delete/import path that changes the pointer without proving selected-row preservation."
+      ],
+      "probes": [
+        {
+          "path": "src/lib/Setting/Pages/OtherBotSettings.svelte",
+          "kind": "text",
+          "value": "const hypaV3PresetIdDraft",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/promptMemoryQuery.ts",
+          "kind": "text",
+          "value": "function resolveHypaV3PresetSettings",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "loadout-snapshot-projection-hold",
+      "family": "loadout",
+      "surface": "loadout snapshot fields sent through create/apply mutation projections",
+      "currentOwner": "canonical loadout collection with explicit client snapshot adapter",
+      "roles": [
+        "read",
+        "write",
+        "import",
+        "export",
+        "rollback"
+      ],
+      "currentPrecedence": "Canonical loadout rows own stable ids and fields; toLoadoutSnapshot is an explicit mutation/interchange projection.",
+      "missingBehavior": "Explicit loadout initialization/import supplies supported defaults; ordinary apply does not synthesize sibling state.",
+      "malformedBehavior": "Loadout command validation rejects unsupported snapshot fields and normalizes only its declared collection boundary.",
+      "damagedDatabaseBehavior": "Do not repair unrelated settings or preset collections while applying a loadout snapshot.",
+      "historicalFixture": "src/ts/loadout.test.ts",
+      "provenance": "Loadout create/apply, split-preset references, mutation sequencing, and rollback fixtures.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "canonical loadouts[] rows and explicit loadout mutation payloads",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "toLoadoutSnapshot and legacy preset-name/reference fields in loadout payloads",
+      "rollbackProof": "Loadout mutation fixtures preserve exact attempted snapshots and selective rollback across concurrent projections.",
+      "workstream3Cursor": "Explicit hold: retain the snapshot adapter until loadout/import/export and cross-family reference ownership are dispositioned.",
+      "reviewTriggers": [
+        "Any change to toLoadoutSnapshot that drops, rewrites, or derives a cross-family field without an updated rollback fixture.",
+        "Any loadout apply path that writes a mirrored family outside its declared durable mutation step."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/loadout.ts",
+          "kind": "text",
+          "value": "function toLoadoutSnapshot",
+          "expectedCount": 1
+        },
+        {
+          "path": "server/fastify/src/commands/loadouts.ts",
+          "kind": "identifier",
+          "value": "ensureLoadoutCollection",
+          "expectedCount": 2
+        },
+        {
+          "path": "src/ts/server/loadoutCanonical.ts",
+          "kind": "identifier",
+          "value": "isCanonicalLoadoutCollection",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "loadout-last-touched-hold",
+      "family": "loadout",
+      "surface": "lastLoadedLoadoutName and last-touched loadout settings projection",
+      "currentOwner": "explicit loadout touch command plus settings compatibility projection",
+      "roles": [
+        "read",
+        "write",
+        "fallback",
+        "rollback"
+      ],
+      "currentPrecedence": "A successful loadout touch owns lastLoadedLoadoutName; failed or superseded touches restore only their still-current projection.",
+      "missingBehavior": "The touch projection defaults to an empty name until a loadout is explicitly touched.",
+      "malformedBehavior": "Non-string settings values normalize at the loadout command boundary.",
+      "damagedDatabaseBehavior": "Do not infer or rewrite the last-touched name from unrelated collection reads.",
+      "historicalFixture": "server/fastify/__tests__/commandCollectionRange.test.ts",
+      "provenance": "Loadout touch co-write, optimistic projection, authoritative replacement, and rollback fixtures.",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "loadout touch event/row plus a narrowly scoped last-touched projection",
+      "migrationPhase": "Phase 4 translator and smaller mirrors",
+      "oldReaderOrExporter": "database.lastLoadedLoadoutName and loadout touch response projection",
+      "rollbackProof": "Touch fixtures preserve lastLoadedLoadoutName only when the attempted row and projection fence remain current.",
+      "workstream3Cursor": "Explicit hold: retain last-touched compatibility until loadout touch, reload, backup, and cross-resource projection semantics are closed.",
+      "reviewTriggers": [
+        "Any write to lastLoadedLoadoutName outside the explicit loadout touch command or its guarded rollback.",
+        "Any change to touch co-write range, projection fences, or settings reload precedence without command-range tests."
+      ],
+      "probes": [
+        {
+          "path": "src/ts/loadout.ts",
+          "kind": "text",
+          "value": "getDatabase().lastLoadedLoadoutName",
+          "expectedCount": 7
+        },
+        {
+          "path": "server/fastify/src/routes/commands.ts",
+          "kind": "text",
+          "value": "target.lastLoadedLoadoutName",
+          "expectedCount": 7
+        },
+        {
+          "path": "server/fastify/__tests__/commandCollectionRange.test.ts",
+          "kind": "text",
+          "value": "co-writes settings (lastLoadedLoadoutName)",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
       "id": "prompt-modern-presets",
       "family": "prompt-template",
       "surface": "promptPresets[].promptTemplate bodies and promptPresetsId selection",

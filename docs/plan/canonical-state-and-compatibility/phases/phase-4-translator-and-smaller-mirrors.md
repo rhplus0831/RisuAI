@@ -9,6 +9,21 @@ Depends on: Phase 1 foundation and per-family Phase 0 dispositions.
 Move translator and selected smaller compatibility domains to one internal
 read/write contract, without broadening the phase into a generic legacy cleanup.
 
+## Phase 0 Disposition Inputs
+
+- `personas[]` is canonical. `username`, `userIcon`, `personaPrompt`, and
+  `userNote` are migration aliases retained only for explicit import/export;
+  the numeric `selectedPersona` pointer remains an explicit hold until stable
+  selection identity is proven across reload and interchange.
+- `hypaV3Presets[]` is canonical. `hypaV3Settings`, `supaMemoryPrompt`, and
+  `supaMemoryKey` are migration aliases retained only for explicit import or
+  alias synthesis; the numeric `hypaV3PresetId` pointer remains an explicit
+  hold until stable selection identity is proven.
+- The existing lorebook temporary hold remains unchanged. Loadout snapshot
+  projections and `lastLoadedLoadoutName` remain explicit holds while
+  cross-family references, touch co-writes, reload, and rollback semantics are
+  reviewed.
+
 ## Required Work
 
 - Make selected translator preset/step data the normal pipeline owner.
