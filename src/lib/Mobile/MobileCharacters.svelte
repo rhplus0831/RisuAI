@@ -30,6 +30,7 @@
   import { language } from 'src/lang'
   import { onMount } from 'svelte'
   import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
+  import type { MobileCharacterSummary } from './mobileCharacterRows'
 
   interface Props {
     endGrid?: () => void
@@ -63,7 +64,7 @@
     const characters = charactersResourceState.characters ?? []
     const index = row.chaId ? characters.findIndex((character) => character.chaId === row.chaId) : row.index
     if (index < 0) return
-    const character = characters[index]
+    const character = characters[index] as MobileCharacterSummary
     if (!character?.chaId) {
       changeChar(index)
       endGrid()

@@ -20,7 +20,7 @@ export interface MobileCharacterRowsOptions {
   now?: number
 }
 
-type MobileCharacterSummary = character & {
+export type MobileCharacterSummary = character & {
   chatCount?: number
   activeChatId?: string | null
 }
