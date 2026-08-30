@@ -11,12 +11,14 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 - Plan state: Active; Phases 0 and 1 complete.
 - Current phase: [Phase 2 model configuration ownership](phases/phase-2-model-configuration-ownership.md).
-- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), ready after migration commit `47146eb75`.
+- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), in progress after migration commit `47146eb75`.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes through the first Phase 2 slice: schema v34 transactionally
+- Runtime changes through the current Phase 2 checkpoint: schema v34 transactionally
   creates deterministic profiles/bindings for usable flat selections at
-  migration, fresh-init, and import boundaries without copying inline secrets.
-- Latest verification: flat model migration passed at `47146eb75`.
+  migration, fresh-init, and import boundaries without copying inline secrets;
+  selected legacy model/preset role ownership is isolated to effective clones,
+  and profile-local tokenizer configuration outranks global defaults.
+- Latest verification: normal-consumer checkpoint passed through `bfa1b048e`.
 
 ## Dependency Cursors
 
@@ -25,7 +27,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | Workstream 1 package/boundary conventions | `b01e88b03` | Released; Phase 0 may execute. |
 | Workstream 1 shared contracts | Per contract family | Required only before a slice introduces or consumes that shared contract. |
 | Migration/recovery foundation | `1e758cd22` | Released with named-step validation, rollback/retry/reopen injection proof, damaged-database refusal, and all 19 historical fixture adapters. |
-| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; not yet released to Workstream 3. |
+| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; selected-preset compatibility is isolated through `bfa1b048e`; not yet released to Workstream 3. |
 | Prompt-template canonical owner | Phase 3 | Not released to Workstream 3. |
 | Translator/smaller canonical owners | Phase 4 per family | Not released to Workstream 3. |
 | Repair/interchange cleanup | Phases 5-6 | Not started; may add per-family holds to earlier releases. |
@@ -72,6 +74,6 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move normal model consumers to durable
-profiles/bindings while preserving static/explicit compatibility and the Phase
-5 inline-only Vertex hold.
+Use [`next-steps.md`](next-steps.md). Continue moving ordinary runtime and
+authoring consumers to durable profiles/bindings while preserving the named
+request-clone compatibility seam and Phase 5 inline-secret holds.

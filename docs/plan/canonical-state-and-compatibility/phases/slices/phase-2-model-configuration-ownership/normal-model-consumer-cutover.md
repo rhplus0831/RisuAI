@@ -1,6 +1,6 @@
 # Normal Model Consumer Cutover
 
-Status: ready.
+Status: in progress; request-local selected-preset checkpoint at `bfa1b048e`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -51,3 +51,18 @@ compatibility/architecture gates, formatting, and `git diff --check`.
 
 Stop if a consumer needs an inline secret copied, a fallback reordered, or a
 classified static/legacy boundary removed to complete the cutover.
+
+## Progress Record
+
+- Legacy-shaped selected model presets now reset durable role bindings only on
+  an effective request clone, so their model/provider/role selections and
+  inline credentials remain usable without changing persisted canonical state.
+- Any preset-owned `modelProfiles`, `modelProfileOrder`, `modelRoleProfiles`, or
+  `modelRuntimeDefaults` field disables that seam. Parameter-only rows do not
+  masquerade as legacy model selection.
+- Profile-local runtime tokenizer selection and custom-API provider tokenizer
+  selection outrank global runtime defaults.
+- The seam is named in the compatibility baseline and closed-world probe. Chat
+  generation, memory summarization, browser prompt assembly, split presets, and
+  tokenizer owners pass; ordinary flat runtime/authoring consumers remain to be
+  cut over before this slice can close.

@@ -7,10 +7,13 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Inventory every normal authoring, reload, generation, memory, translation,
-   scripting, tool, agent, and auxiliary resolver consumer.
-2. Route normal consumers through durable role bindings and profile records.
-3. Prevent normal authoring from restoring flat model/runtime ownership.
+1. Replace ordinary runtime reads of flat pre-prompt, tokenizer, CBS,
+   translation, agent, and auxiliary settings with resolved durable-profile
+   inputs.
+2. Move normal model authoring surfaces away from flat model/runtime writes;
+   keep explicit import/export/conversion paths classified.
+3. Preserve the named clone-only selected-preset seam for legacy inline
+   credentials; canonical preset owner fields must continue to win.
 4. Prove provider/model/options/fallback parity in browser reload and request
    lanes while retaining explicit legacy conversion/import/export.
 5. Isolate the remaining legacy-reader removal and prepare the Phase 2
@@ -34,4 +37,4 @@ Phase 0 dispositions.
 
 After normal consumers pass, isolate and remove the ordinary legacy resolver
 fallback, refresh the Phase 2 release evidence, and hand the model-owner cursor
-to Workstream 3 while retaining the Phase 5 inline-secret repair hold.
+to Workstream 3 while retaining the Phase 5 inline-secret repair holds.
