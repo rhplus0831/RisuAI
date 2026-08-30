@@ -326,7 +326,7 @@ import {
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import type { ChatGenerationSettings } from '../../../../src/ts/chatGenerationSettings.js'
+import type { ChatGenerationSettings } from '@risuai/shared-core/chat-generation-settings'
 import {
   MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,

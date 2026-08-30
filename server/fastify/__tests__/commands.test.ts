@@ -30,7 +30,7 @@ import { LLMFlags, LLMFormat } from '@risuai/shared-core/model-types'
 import {
   serializeChatGenerationSettingsDigestInput,
   type ChatGenerationSettings,
-} from '../../../src/ts/chatGenerationSettings.js'
+} from '@risuai/shared-core/chat-generation-settings'
 import {
   serializePersonaCollectionDigestInput,
   serializePersonaIdsDigestInput,

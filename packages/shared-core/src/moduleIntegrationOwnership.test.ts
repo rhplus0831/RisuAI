@@ -13,10 +13,13 @@ describe('module-integration shared-core ownership', () => {
     const sharedImport = "from '@risuai/shared-core/module-integration'"
     for (const consumer of [
       'server/fastify/src/prompt/effectiveGenerationConfig.ts',
-      'src/ts/chatGenerationSettings.ts',
+      'packages/shared-core/src/chatGenerationSettings.ts',
       'src/ts/moduleActivation.ts',
     ]) {
-      expect(source(consumer), consumer).toContain(sharedImport)
+      const contents = source(consumer)
+      expect(contents, consumer).toContain(
+        consumer.startsWith('packages/') ? "from './moduleIntegration.js'" : sharedImport,
+      )
     }
     expect(fs.existsSync(new URL('src/ts/moduleIntegration.ts', `file://${repoRoot}/`))).toBe(false)
   })

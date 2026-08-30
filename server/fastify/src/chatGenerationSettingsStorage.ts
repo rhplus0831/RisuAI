@@ -1,4 +1,7 @@
-import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from '../../../src/ts/chatGenerationSettings.js'
+import {
+  CHAT_GENERATION_SETTINGS_FIELD,
+  type ChatGenerationSettings,
+} from '@risuai/shared-core/chat-generation-settings'
 
 type JsonRecord = Record<string, unknown>
 

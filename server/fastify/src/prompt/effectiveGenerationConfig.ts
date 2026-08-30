@@ -9,7 +9,7 @@ import {
   resolveChatGenerationSettingsReadiness,
   type ChatGenerationSettingsIncompleteErrorBody,
   type ChatGenerationSettingsReadiness,
-} from '../../../../src/ts/chatGenerationSettings'
+} from '@risuai/shared-core/chat-generation-settings'
 import type { ModelPresetRecord, PromptPresetRecord } from '../commands/splitPresets.js'
 import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js'
 import {

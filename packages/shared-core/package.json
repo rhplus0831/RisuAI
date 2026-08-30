@@ -15,6 +15,7 @@
     "./calculation": "./src/calculation.ts",
     "./chat-display-tail-count": "./src/chatDisplayTailCount.ts",
     "./chat-generation-toggle-preset-records": "./src/chatGenerationTogglePresetRecords.ts",
+    "./chat-generation-settings": "./src/chatGenerationSettings.ts",
     "./chat-load-pages": "./src/chatLoadPages.ts",
     "./chatml-rows": "./src/chatMLRows.ts",
     "./chat-page": "./src/chatPage.ts",

@@ -72,6 +72,7 @@ describe('@risuai/shared-core import boundary', () => {
         'browserSmoke.ts',
         'calculation.ts',
         'chatDisplayTailCount.ts',
+        'chatGenerationSettings.ts',
         'chatGenerationTogglePresetRecords.ts',
         'chatLoadPages.ts',
         'chatMLRows.ts',

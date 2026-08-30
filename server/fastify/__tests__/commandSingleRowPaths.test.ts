@@ -9,7 +9,7 @@ import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
-import { serializeChatGenerationSettingsDigestInput } from '../../../src/ts/chatGenerationSettings.js'
+import { serializeChatGenerationSettingsDigestInput } from '@risuai/shared-core/chat-generation-settings'
 import { createBardWikiDocument } from '../src/bardWikiRepository.js'
 
 // Single character-row / single chat-row regression. Character/chat metadata

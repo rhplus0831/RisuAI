@@ -20,7 +20,7 @@ import { ensureGlobalLorebookCollection, ensureAllChildLorebooks } from '../comm
 import { normalizeScriptDefinitionCollection } from '../commands/scriptDefinitions.js'
 import { normalizeDatabaseDefaults } from '../databaseDefaults.js'
 import { normalizeStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
-import { CHAT_GENERATION_SETTINGS_FIELD } from '../../../../src/ts/chatGenerationSettings.js'
+import { CHAT_GENERATION_SETTINGS_FIELD } from '@risuai/shared-core/chat-generation-settings'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from '@risuai/shared-core/settings-groups'
 import {
   RISU_SERVER_DATA_KEY,

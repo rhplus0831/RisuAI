@@ -16,7 +16,7 @@ import {
   type ChatGenerationPromptPresetReference,
   type ChatGenerationSettings,
   type SparseChatGenerationSettingsUpdate,
-} from '../../../../src/ts/chatGenerationSettings.js'
+} from '@risuai/shared-core/chat-generation-settings'
 import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 import { repairCreatedLorebookEntries } from './lorebooks.js'
