@@ -23,7 +23,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
 import { getActiveModules, getModuleRegexScripts } from './modules.js'
 import { isRisuChatParserFixedPoint } from './parserFixedPoint.js'
 import { serverUnsupportedRegexEffectType } from '../../../../src/ts/process/triggerServerSupport.js'
-import { regexOutputSizeLimitCodeUnits } from '../../../../src/ts/regexOutputSizeLimit.js'
+import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
 
 /**
  * Regex script processor ported from `src/ts/process/scripts.ts`

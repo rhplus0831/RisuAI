@@ -36,7 +36,7 @@ import {
   testReplaceClientRegex,
 } from './clientRegexWorker'
 import { assertClientRegexPatternSafe } from './regexSafety'
-import { regexOutputSizeLimitCodeUnits } from '../regexOutputSizeLimit'
+import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g

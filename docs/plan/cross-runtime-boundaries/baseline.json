@@ -904,20 +904,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/regexOutputSizeLimit.js",
-      "target": "src/ts/regexOutputSizeLimit.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB",
-        "normalizeRegexOutputSizeLimitMiB"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
       "specifier": "../../../src/ts/storage/defaultPrompts.js",
       "target": "src/ts/storage/defaultPrompts.ts",
       "kind": "static",
@@ -1673,20 +1659,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/boundedRegex.ts",
-      "specifier": "../../../../src/ts/regexOutputSizeLimit.js",
-      "target": "src/ts/regexOutputSizeLimit.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB",
-        "regexOutputSizeLimitCodeUnits"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",
@@ -2587,19 +2559,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/scripts.ts",
-      "specifier": "../../../../src/ts/regexOutputSizeLimit.js",
-      "target": "src/ts/regexOutputSizeLimit.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "regexOutputSizeLimitCodeUnits"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/scripts.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3196,20 +3155,6 @@
         "PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS",
         "clearPromptPresetRecommendedModelPresetReferences",
         "databaseKeyForModelPresetField"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/commands.ts",
-      "specifier": "../../../../src/ts/regexOutputSizeLimit.js",
-      "target": "src/ts/regexOutputSizeLimit.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB",
-        "MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

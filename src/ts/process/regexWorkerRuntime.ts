@@ -2,7 +2,7 @@ import {
   DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   regexOutputSizeLimitCodeUnits,
-} from '../regexOutputSizeLimit'
+} from '@risuai/shared-core/regex-output-size-limit'
 
 const DEFAULT_OUTPUT_SIZE_LIMIT = regexOutputSizeLimitCodeUnits(DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB)
 const MAX_OUTPUT_SIZE_LIMIT = regexOutputSizeLimitCodeUnits(MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB)

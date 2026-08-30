@@ -1,6 +1,9 @@
 import type { SettingItem } from './types'
 import { updateHeightMode } from '../gui/heightMode'
-import { MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB, MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB } from '../regexOutputSizeLimit'
+import {
+  MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+} from '@risuai/shared-core/regex-output-size-limit'
 
 export const advancedSettingsItems: SettingItem[] = [
   {

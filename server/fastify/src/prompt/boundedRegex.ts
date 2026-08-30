@@ -3,7 +3,7 @@ import type { Database } from '../../../../src/ts/storage/database.svelte'
 import {
   DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   regexOutputSizeLimitCodeUnits,
-} from '../../../../src/ts/regexOutputSizeLimit.js'
+} from '@risuai/shared-core/regex-output-size-limit'
 
 const DEFAULT_OUTPUT_SIZE_LIMIT = regexOutputSizeLimitCodeUnits(DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB)
 

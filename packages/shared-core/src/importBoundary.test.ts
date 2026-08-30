@@ -63,7 +63,13 @@ function auditImportBoundary(root: string): { runtimeFiles: string[]; violations
 describe('@risuai/shared-core import boundary', () => {
   it('keeps every runtime module dependency-free and inside shared core', () => {
     expect(auditImportBoundary(sourceRoot)).toEqual({
-      runtimeFiles: ['chatDisplayTailCount.ts', 'chatLoadPages.ts', 'chatPage.ts', 'index.ts'],
+      runtimeFiles: [
+        'chatDisplayTailCount.ts',
+        'chatLoadPages.ts',
+        'chatPage.ts',
+        'index.ts',
+        'regexOutputSizeLimit.ts',
+      ],
       violations: [],
     })
   })

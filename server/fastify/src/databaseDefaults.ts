@@ -32,7 +32,7 @@ import { normalizeScriptModelOverrides } from '../../../src/ts/model/scriptModel
 import {
   DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   normalizeRegexOutputSizeLimitMiB,
-} from '../../../src/ts/regexOutputSizeLimit.js'
+} from '@risuai/shared-core/regex-output-size-limit'
 import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '../../../src/ts/agentPresetRecords.js'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'

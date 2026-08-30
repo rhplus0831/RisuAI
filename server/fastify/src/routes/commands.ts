@@ -61,7 +61,7 @@ import { normalizeChatGenerationTogglePresets } from '../../../../src/ts/chatGen
 import {
   MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
-} from '../../../../src/ts/regexOutputSizeLimit.js'
+} from '@risuai/shared-core/regex-output-size-limit'
 import {
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,

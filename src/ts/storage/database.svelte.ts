@@ -45,7 +45,10 @@ import {
   type ProviderCredentialRecord,
 } from '../model/providerCredentialRecords'
 import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '../model/scriptModelOverrides'
-import { DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB, normalizeRegexOutputSizeLimitMiB } from '../regexOutputSizeLimit'
+import {
+  DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
+  normalizeRegexOutputSizeLimitMiB,
+} from '@risuai/shared-core/regex-output-size-limit'
 import {
   normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,
