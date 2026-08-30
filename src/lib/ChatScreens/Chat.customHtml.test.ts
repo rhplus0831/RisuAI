@@ -374,6 +374,7 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(() => true),
+  getChatMessageOwnerState: () => undefined,
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateChatMessages: customHtmlMocks.hydrateChatMessages,
   resetChatHydration: vi.fn(),

@@ -68,6 +68,7 @@
   } from '../../ts/alert'
   import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
   import { getSelectedCharacterOwner } from '../../ts/characterState'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     getCurrentCharacter,
     getCurrentChat,
@@ -169,6 +170,12 @@
   let translationEditOperation = 0
   let activeRawTranslationRequestTarget: RawTranslationTarget | null = $state(null)
   let bodyRoot: HTMLElement | null = $state(null)
+  // Rendering follows the unique resource owner once ready. The aggregate
+  // row remains a pre-readiness compatibility fallback for existing shells.
+  let renderCharacter = $derived(
+    getSelectedCharacterOwner() ??
+      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters?.[selIdState.selId]),
+  )
   interface Props {
     message?: string
     translation?: MessageTranslation | null
@@ -2232,8 +2239,7 @@
           onclick={() => {
             const currentGenerationInfo =
               idx >= 0
-                ? getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                    .message[idx].generationInfo
+                ? renderCharacter?.chats?.[renderCharacter.chatPage]?.message?.[idx]?.generationInfo
                 : messageGenerationInfo
 
             alertRequestData({
@@ -2499,7 +2505,7 @@
 
             const parser = new DOMParser()
             const doc = parser.parseFromString(
-              await ParseMarkdown(msgDisplay, getCurrentCharacter(), 'normal', idx, getCbsCondition()),
+              await ParseMarkdown(msgDisplay, renderCharacter, 'normal', idx, getCbsCondition()),
               'text/html',
             )
 
@@ -2611,7 +2617,7 @@
             let hasValidImage = false
 
             try {
-              const iconImage = (await getFileSrc(getDatabase().characters[selIdState.selId].image ?? '')) ?? ''
+              const iconImage = (await getFileSrc(renderCharacter?.image ?? '')) ?? ''
 
               if (
                 iconImage &&
@@ -2794,7 +2800,7 @@
     </button>
   {/if}
   {#if idx > -1}
-    {#if getDatabase().characters[selIdState.selId].ttsMode !== 'none' && getDatabase().characters[selIdState.selId].ttsMode}
+    {#if renderCharacter?.ttsMode !== 'none' && renderCharacter?.ttsMode}
       <button
         data-risu-message-action="tts"
         aria-label={language.readMessageAloud}
@@ -3307,7 +3313,7 @@
           class:rounded-tl-none={role !== 'user'}
           class:rounded-tr-none={role === 'user'}>
           <p class="text-gray-800">{@render textBox()}</p>
-          {#if getDatabase().characters?.[selIdState.selId]?.chats?.[getDatabase().characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
+          {#if renderCharacter?.chats?.[renderCharacter.chatPage]?.message?.[idx]?.time}
             <span class="text-xs text-textcolor2 mt-1 block">
               {new Intl.DateTimeFormat(undefined, {
                 hour: '2-digit',
@@ -3316,10 +3322,7 @@
                 month: '2-digit',
                 day: '2-digit',
                 hour12: false,
-              }).format(
-                getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
-                  .message[idx].time,
-              )}
+              }).format(renderCharacter.chats[renderCharacter.chatPage].message[idx].time)}
             </span>
           {/if}
         </div>
@@ -3364,11 +3367,10 @@
       {@render senderIcon({ rounded: getDatabase().roundIcons })}
       <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
         <div class="flexium items-center chat-width">
-          {#if getDatabase().characters[selIdState.selId]?.chaId === '§playground' && !blankMessage && getDatabase().characters[selIdState.selId]?.chats?.[getDatabase().characters[selIdState.selId]?.chatPage]?.message?.[idx]}
+          {#if renderCharacter?.chaId === '§playground' && !blankMessage && renderCharacter.chats?.[renderCharacter.chatPage]?.message?.[idx]}
             <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
               <span
-                >{getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
-                  .message[idx].role === 'char'
+                >{renderCharacter.chats[renderCharacter.chatPage].message[idx].role === 'char'
                   ? 'Assistant'
                   : 'User'}</span>
               <button
