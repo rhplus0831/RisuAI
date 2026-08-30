@@ -44,23 +44,27 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Test Workflow
 
-- When a background affected-test watcher is running, call
-  `pnpm test:watch:status` before starting `pnpm check` or
+- When a background affected-test watcher is expected, call
+  `pnpm test:watch:await` before starting `pnpm check` or
   `pnpm test:affected`. A zero exit means its passing Svelte-check and affected
   test results are live, match the exact current worktree fingerprint, and may
   be used instead of rerunning those two commands. A one exit is a fresh watched
   failure; inspect `.test-watch/latest.log` and fix it rather than rerunning
-  merely to reproduce it. A two exit means the result is running, stale,
-  stopped, or unavailable, so wait for the watcher or use the normal command.
-  Never trust `.test-watch/status.json` without the validating status command.
+  merely to reproduce it. A two exit is still pending or timed out; keep waiting
+  or inspect `pnpm test:watch:status`, but do not duplicate the active test run.
+  A three exit means the supervisor is unavailable or incompatible, so restart
+  `pnpm test:watch:agent` in the task terminal or use the normal command.
+  Never trust `.test-watch/status.json` or `.test-watch/supervisor.json` without
+  a validating watcher command.
 - A watched result substitutes for `pnpm check` and only the affected-test scope
   recorded in its status. Continue to follow any reported smoke/compatibility
   notes and the broader owning-lane or handoff rules below. Start the watcher in
   the task's integrated terminal with `pnpm test:watch:agent`; add
   `--include-smoke` only when automatic browser-smoke reruns are desired, and
   stop it when the task is done. When the watcher uses a non-default `--base`,
-  pass the same base to the status command; pass `--include-smoke` to the status
-  command when that coverage is required.
+  pass the same base to the await or status command; pass `--include-smoke` to
+  either command when that coverage is required. `pnpm test:watch:status` is
+  the non-blocking diagnostic view; `pnpm test:watch:await` is the handoff gate.
 - During implementation, prefer `pnpm test:affected` for the current uncommitted
   diff or pass `--base <git-ref>` for a branch diff. Use `--dry-run` to inspect
   the selected lanes and `--include-smoke` when browser-smoke files changed.

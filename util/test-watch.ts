@@ -29,9 +29,12 @@ import {
 } from './affected-tests.js'
 
 export const TEST_WATCH_SCHEMA_VERSION = 2
+export const TEST_WATCH_SUPERVISOR_SCHEMA_VERSION = 1
 export const TEST_WATCH_DIRECTORY = '.test-watch'
 export const TEST_WATCH_STATUS_FILE = 'status.json'
 export const TEST_WATCH_LOG_FILE = 'latest.log'
+export const TEST_WATCH_SUPERVISOR_FILE = 'supervisor.json'
+export const TEST_WATCH_SUPERVISOR_LOCK = 'supervisor.lock'
 export const TEST_WATCH_HEARTBEAT_MS = 5_000
 export const TEST_WATCH_HEARTBEAT_STALE_MS = 20_000
 
@@ -39,6 +42,14 @@ const FRONTEND_CHECK_COMMAND: TestCommand = { label: 'frontend check', args: ['c
 
 const SNAPSHOT_RETRIES = 5
 const DEFAULT_DEBOUNCE_MS = 400
+const DEFAULT_AWAIT_TIMEOUT_MS = 10 * 60_000
+const DEFAULT_AWAIT_POLL_MS = 1_000
+const SUPERVISOR_LOCK_INITIALIZATION_GRACE_MS = 1_000
+const SUPERVISOR_MAX_RAPID_RESTARTS = 3
+const SUPERVISOR_RESTART_STABLE_MS = 10_000
+const SUPERVISOR_SHUTDOWN_GRACE_MS = 5_000
+const SUPERVISOR_WORKER_WATCHDOG_GRACE_MS = 30_000
+const SUPERVISOR_WORKER_STALL_MS = 5 * 60_000
 const IGNORED_WATCH_DIRECTORIES = new Set([
   '.git',
   TEST_WATCH_DIRECTORY,
@@ -119,17 +130,38 @@ export interface TestWatchStatus {
   targetFingerprint?: string
   testedFingerprint?: string
   reusedTestedFingerprint?: string
+  rerunPending: boolean
+  supervisorId?: string
   watcherId: string
+}
+
+export type TestWatchSupervisorState = 'starting' | 'running' | 'recovering' | 'stopping' | 'stopped' | 'error'
+
+export interface TestWatchSupervisorStatus {
+  base: string
+  failure?: string
+  heartbeatAt: string
+  includeSmoke: boolean
+  pid: number
+  projectRoot: string
+  recoveryCount: number
+  schemaVersion: typeof TEST_WATCH_SUPERVISOR_SCHEMA_VERSION
+  startedAt: string
+  state: TestWatchSupervisorState
+  supervisorId: string
+  workerId?: string
+  workerPid?: number
 }
 
 export interface TestWatchStatusEvaluation {
   currentFingerprint?: string
-  exitCode: 0 | 1 | 2
+  exitCode: 0 | 1 | 2 | 3
   message: string
-  verdict: 'passed' | 'failed' | 'running' | 'stale' | 'unavailable'
+  verdict: 'passed' | 'failed' | 'pending' | 'stale' | 'unavailable'
 }
 
 export interface TestWatchCliOptions {
+  awaitResult: boolean
   base: string
   debounceMs: number
   help: boolean
@@ -137,6 +169,7 @@ export interface TestWatchCliOptions {
   json: boolean
   once: boolean
   statusOnly: boolean
+  waitTimeoutMs: number
 }
 
 class SnapshotChangedError extends Error {}
@@ -298,27 +331,39 @@ export function canRunIncrementally(
   )
 }
 
-export function testWatchPaths(repoRoot: string): { directory: string; log: string; status: string } {
+export function testWatchPaths(repoRoot: string): {
+  directory: string
+  lock: string
+  log: string
+  status: string
+  supervisor: string
+} {
   const directory = path.join(repoRoot, TEST_WATCH_DIRECTORY)
   return {
     directory,
+    lock: path.join(directory, TEST_WATCH_SUPERVISOR_LOCK),
     log: path.join(directory, TEST_WATCH_LOG_FILE),
     status: path.join(directory, TEST_WATCH_STATUS_FILE),
+    supervisor: path.join(directory, TEST_WATCH_SUPERVISOR_FILE),
+  }
+}
+
+function writeJsonAtomically(filePath: string, value: unknown): void {
+  mkdirSync(path.dirname(filePath), { recursive: true })
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`,
+  )
+  try {
+    writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+    renameSync(temporaryPath, filePath)
+  } finally {
+    rmSync(temporaryPath, { force: true })
   }
 }
 
 export function writeTestWatchStatus(statusPath: string, status: TestWatchStatus): void {
-  mkdirSync(path.dirname(statusPath), { recursive: true })
-  const temporaryPath = path.join(
-    path.dirname(statusPath),
-    `.${path.basename(statusPath)}.${process.pid}.${randomUUID()}.tmp`,
-  )
-  try {
-    writeFileSync(temporaryPath, `${JSON.stringify(status, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
-    renameSync(temporaryPath, statusPath)
-  } finally {
-    rmSync(temporaryPath, { force: true })
-  }
+  writeJsonAtomically(statusPath, status)
 }
 
 export function readTestWatchStatus(statusPath: string): TestWatchStatus | undefined {
@@ -335,10 +380,32 @@ export function readTestWatchStatus(statusPath: string): TestWatchStatus | undef
       affectedCommands: parsed.commands ?? [],
       executionChangedPaths: parsed.changedPaths ?? [],
       executionMode: 'full',
+      rerunPending: false,
       schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     } as TestWatchStatus
   }
-  return parsed as TestWatchStatus
+  return {
+    ...parsed,
+    rerunPending: parsed.rerunPending ?? false,
+    schemaVersion: TEST_WATCH_SCHEMA_VERSION,
+  } as TestWatchStatus
+}
+
+export function writeTestWatchSupervisorStatus(supervisorPath: string, status: TestWatchSupervisorStatus): void {
+  writeJsonAtomically(supervisorPath, status)
+}
+
+export function readTestWatchSupervisorStatus(supervisorPath: string): TestWatchSupervisorStatus | undefined {
+  if (!existsSync(supervisorPath)) return undefined
+  const parsed = JSON.parse(readFileSync(supervisorPath, 'utf8')) as Partial<TestWatchSupervisorStatus>
+  if (
+    parsed.schemaVersion !== TEST_WATCH_SUPERVISOR_SCHEMA_VERSION ||
+    typeof parsed.supervisorId !== 'string' ||
+    typeof parsed.pid !== 'number'
+  ) {
+    throw new Error(`unsupported test watcher supervisor schema in ${supervisorPath}`)
+  }
+  return parsed as TestWatchSupervisorStatus
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -356,71 +423,169 @@ export function evaluateTestWatchStatus(
   currentFingerprint: string | undefined,
   options: {
     base?: string
+    heartbeatStaleMs?: number
     includeSmoke?: boolean
     nowMs?: number
     processAlive?: boolean
     projectRoot?: string
+    supervisor?: TestWatchSupervisorStatus
+    supervisorAlive?: boolean
   } = {},
 ): TestWatchStatusEvaluation {
-  if (!status) {
-    return { exitCode: 2, message: 'no test watcher status is available', verdict: 'unavailable' }
-  }
   const nowMs = options.nowMs ?? Date.now()
-  const processAlive = options.processAlive ?? isProcessAlive(status.pid)
-  const heartbeatAge = nowMs - Date.parse(status.heartbeatAt)
-  if (options.projectRoot && path.resolve(status.projectRoot) !== path.resolve(options.projectRoot)) {
+  const heartbeatStaleMs = options.heartbeatStaleMs ?? TEST_WATCH_HEARTBEAT_STALE_MS
+  const owner = options.supervisor ?? status
+  if (!owner) {
+    return { exitCode: 3, message: 'no test watcher status is available', verdict: 'unavailable' }
+  }
+  if (options.projectRoot && path.resolve(owner.projectRoot) !== path.resolve(options.projectRoot)) {
     return {
       currentFingerprint,
-      exitCode: 2,
+      exitCode: 3,
       message: 'the test watcher status belongs to a different worktree',
       verdict: 'unavailable',
     }
   }
-  if (options.base && status.base !== options.base) {
+  if (options.base && owner.base !== options.base) {
     return {
       currentFingerprint,
-      exitCode: 2,
-      message: `the test watcher uses base ${status.base}, not ${options.base}`,
+      exitCode: 3,
+      message: `the test watcher uses base ${owner.base}, not ${options.base}`,
       verdict: 'unavailable',
     }
   }
-  if (options.includeSmoke && !status.includeSmoke) {
+  if (options.includeSmoke && !owner.includeSmoke) {
     return {
       currentFingerprint,
-      exitCode: 2,
+      exitCode: 3,
       message: 'the test watcher result does not include browser smoke',
       verdict: 'unavailable',
     }
   }
-  if (!processAlive || !Number.isFinite(heartbeatAge) || heartbeatAge > TEST_WATCH_HEARTBEAT_STALE_MS) {
+
+  if (options.supervisor) {
+    const supervisorAlive = options.supervisorAlive ?? isProcessAlive(options.supervisor.pid)
+    const supervisorHeartbeatAge = nowMs - Date.parse(options.supervisor.heartbeatAt)
+    if (
+      !supervisorAlive ||
+      !Number.isFinite(supervisorHeartbeatAge) ||
+      supervisorHeartbeatAge < -heartbeatStaleMs ||
+      supervisorHeartbeatAge > heartbeatStaleMs ||
+      options.supervisor.state === 'error' ||
+      options.supervisor.state === 'stopped' ||
+      options.supervisor.state === 'stopping'
+    ) {
+      return {
+        currentFingerprint,
+        exitCode: 3,
+        message: options.supervisor.failure || 'the test watcher supervisor is unavailable',
+        verdict: 'unavailable',
+      }
+    }
+    if (options.supervisor.state === 'starting' || options.supervisor.state === 'recovering') {
+      return {
+        currentFingerprint,
+        exitCode: 2,
+        message: `the test watcher supervisor is ${options.supervisor.state}`,
+        verdict: 'pending',
+      }
+    }
+    if (
+      !status ||
+      status.supervisorId !== options.supervisor.supervisorId ||
+      status.watcherId !== options.supervisor.workerId
+    ) {
+      return {
+        currentFingerprint,
+        exitCode: 2,
+        message: 'the supervised test worker is starting',
+        verdict: 'pending',
+      }
+    }
+  } else {
+    if (!status) {
+      return { exitCode: 3, message: 'no test watcher status is available', verdict: 'unavailable' }
+    }
+    if (status.supervisorId) {
+      return {
+        currentFingerprint,
+        exitCode: 3,
+        message: 'the test watcher supervisor status is unavailable',
+        verdict: 'unavailable',
+      }
+    }
+    const processAlive = options.processAlive ?? isProcessAlive(status.pid)
+    const heartbeatAge = nowMs - Date.parse(status.heartbeatAt)
+    if (
+      !processAlive ||
+      !Number.isFinite(heartbeatAge) ||
+      heartbeatAge < -heartbeatStaleMs ||
+      heartbeatAge > heartbeatStaleMs
+    ) {
+      return {
+        currentFingerprint,
+        exitCode: 3,
+        message: 'the test watcher is not running or its heartbeat is stale',
+        verdict: 'unavailable',
+      }
+    }
+  }
+
+  if (!status) {
     return {
       currentFingerprint,
       exitCode: 2,
-      message: 'the test watcher is not running or its heartbeat is stale',
-      verdict: 'unavailable',
+      message: 'the supervised test worker is starting',
+      verdict: 'pending',
     }
   }
-  if (
-    (status.state === 'running' || status.state === 'starting') &&
-    currentFingerprint &&
-    status.targetFingerprint === currentFingerprint
-  ) {
+  if (status.state === 'starting') {
     return {
       currentFingerprint,
       exitCode: 2,
-      message: `generation ${status.generation} is still running`,
-      verdict: 'running',
+      message: 'the test worker is starting its first generation',
+      verdict: 'pending',
     }
   }
-  if (status.state === 'waiting-for-commit' && currentFingerprint && status.targetFingerprint === currentFingerprint) {
+  if (status.state === 'running') {
+    const superseded = Boolean(
+      status.rerunPending ||
+      (currentFingerprint && status.targetFingerprint && status.targetFingerprint !== currentFingerprint),
+    )
+    return {
+      currentFingerprint,
+      exitCode: 2,
+      message: superseded
+        ? `generation ${status.generation} is finishing and a rerun is queued`
+        : `generation ${status.generation} is still running`,
+      verdict: 'pending',
+    }
+  }
+  if (status.state === 'waiting-for-commit') {
     return {
       currentFingerprint,
       exitCode: 2,
       message: `generation ${status.generation} is waiting for a commit`,
-      verdict: 'running',
+      verdict: 'pending',
+    }
+  }
+  if (status.rerunPending) {
+    return {
+      currentFingerprint,
+      exitCode: 2,
+      message: 'the watcher has queued the current worktree for testing',
+      verdict: 'pending',
     }
   }
   if (!currentFingerprint || status.testedFingerprint !== currentFingerprint) {
+    if (options.supervisor) {
+      return {
+        currentFingerprint,
+        exitCode: 2,
+        message: 'the live watcher has not completed the current worktree yet',
+        verdict: 'pending',
+      }
+    }
     return {
       currentFingerprint,
       exitCode: 2,
@@ -444,9 +609,17 @@ export function evaluateTestWatchStatus(
       verdict: 'failed',
     }
   }
+  if (options.supervisor && (status.state === 'stopped' || status.state === 'error')) {
+    return {
+      currentFingerprint,
+      exitCode: 2,
+      message: 'the supervisor is replacing an unavailable test worker',
+      verdict: 'pending',
+    }
+  }
   return {
     currentFingerprint,
-    exitCode: 2,
+    exitCode: status.state === 'stopped' || status.state === 'error' ? 3 : 2,
     message: `the latest test watcher state is ${status.state}`,
     verdict: status.state === 'stale' ? 'stale' : 'unavailable',
   }
@@ -458,8 +631,31 @@ function parsePositiveInteger(value: string, option: string): number {
   return parsed
 }
 
+function configuredHeartbeatMs(): number {
+  const value = process.env.RISU_TEST_WATCH_HEARTBEAT_MS?.trim()
+  return value ? parsePositiveInteger(value, 'RISU_TEST_WATCH_HEARTBEAT_MS') : TEST_WATCH_HEARTBEAT_MS
+}
+
+function configuredShutdownGraceMs(): number {
+  const value = process.env.RISU_TEST_WATCH_SHUTDOWN_GRACE_MS?.trim()
+  return value ? parsePositiveInteger(value, 'RISU_TEST_WATCH_SHUTDOWN_GRACE_MS') : SUPERVISOR_SHUTDOWN_GRACE_MS
+}
+
+function configuredWorkerStallMs(): number {
+  const value = process.env.RISU_TEST_WATCH_WORKER_STALL_MS?.trim()
+  return value ? parsePositiveInteger(value, 'RISU_TEST_WATCH_WORKER_STALL_MS') : SUPERVISOR_WORKER_STALL_MS
+}
+
+function configuredWorkerWatchdogGraceMs(): number {
+  const value = process.env.RISU_TEST_WATCH_WORKER_WATCHDOG_GRACE_MS?.trim()
+  return value
+    ? parsePositiveInteger(value, 'RISU_TEST_WATCH_WORKER_WATCHDOG_GRACE_MS')
+    : SUPERVISOR_WORKER_WATCHDOG_GRACE_MS
+}
+
 export function parseTestWatchCli(args: string[]): TestWatchCliOptions {
   const options: TestWatchCliOptions = {
+    awaitResult: false,
     base: process.env.RISU_TEST_BASE?.trim() || 'HEAD',
     debounceMs: DEFAULT_DEBOUNCE_MS,
     help: false,
@@ -467,6 +663,7 @@ export function parseTestWatchCli(args: string[]): TestWatchCliOptions {
     json: false,
     once: false,
     statusOnly: false,
+    waitTimeoutMs: DEFAULT_AWAIT_TIMEOUT_MS,
   }
 
   for (let index = 0; index < args.length; index += 1) {
@@ -489,10 +686,19 @@ export function parseTestWatchCli(args: string[]): TestWatchCliOptions {
       options.includeSmoke = true
     } else if (arg === '--json') {
       options.json = true
+    } else if (arg === '--await') {
+      options.awaitResult = true
     } else if (arg === '--once') {
       options.once = true
     } else if (arg === '--status') {
       options.statusOnly = true
+    } else if (arg === '--timeout-ms') {
+      const value = args[index + 1]
+      if (!value) throw new Error('--timeout-ms requires a value')
+      options.waitTimeoutMs = parsePositiveInteger(value, '--timeout-ms')
+      index += 1
+    } else if (arg.startsWith('--timeout-ms=')) {
+      options.waitTimeoutMs = parsePositiveInteger(arg.slice('--timeout-ms='.length), '--timeout-ms')
     } else if (arg === '--help' || arg === '-h') {
       options.help = true
     } else if (arg === '--') {
@@ -667,6 +873,7 @@ class WarmSvelteCheckLane {
   private latest?: SvelteCheckWatchResult
   private lastReportedSequence = 0
   private parser = new SvelteCheckWatchOutputParser()
+  private recoveryTimer?: NodeJS.Timeout
   private restartAfterClose = false
   private stderr = ''
   private version = 0
@@ -693,11 +900,31 @@ class WarmSvelteCheckLane {
     this.closed = true
     this.closing = true
     this.restartAfterClose = false
+    if (this.recoveryTimer) clearTimeout(this.recoveryTimer)
+    this.recoveryTimer = undefined
+    if (this.waiters.size > 0) {
+      this.publish(
+        {
+          durationMs: 0,
+          errors: 1,
+          failure: 'frontend check watch is stopping',
+          output: '',
+          passed: false,
+          sequence: (this.latest?.sequence ?? 0) + 1,
+          version: this.version,
+          warnings: 0,
+        },
+        false,
+      )
+    }
     const child = this.child
     this.child = undefined
     if (!child || child.exitCode !== null || child.signalCode !== null) return
-    child.kill('SIGTERM')
-    await new Promise<void>((resolve) => child.once('close', () => resolve()))
+    await new Promise<void>((resolve) => {
+      child.once('close', () => resolve())
+      if (child.exitCode !== null || child.signalCode !== null) resolve()
+      else child.kill('SIGTERM')
+    })
   }
 
   async run(restartForSourceTopology = false): Promise<{ failure?: string; passed: boolean }> {
@@ -758,22 +985,34 @@ class WarmSvelteCheckLane {
         spawnFailure ||
         this.stderr.trim() ||
         (signal ? `frontend check watch terminated by ${signal}` : `frontend check watch exited with code ${code ?? 1}`)
-      this.publish({
-        durationMs: 0,
-        errors: 1,
-        failure: detail,
-        output: this.stderr,
-        passed: false,
-        sequence: (this.latest?.sequence ?? 0) + 1,
-        version: this.version,
-        warnings: 0,
-      })
+      this.publish(
+        {
+          durationMs: 0,
+          errors: 1,
+          failure: detail,
+          output: this.stderr,
+          passed: false,
+          sequence: (this.latest?.sequence ?? 0) + 1,
+          version: this.version,
+          warnings: 0,
+        },
+        false,
+      )
+      if (!this.closed) {
+        this.recoveryTimer = setTimeout(
+          () => {
+            this.recoveryTimer = undefined
+            this.start()
+          },
+          Math.min(DEFAULT_DEBOUNCE_MS, 250),
+        )
+      }
     })
   }
 
-  private publish(result: SvelteCheckWatchResult): void {
+  private publish(result: SvelteCheckWatchResult, cache = true): void {
     if (result.version !== this.version) return
-    this.latest = result
+    this.latest = cache ? result : undefined
     for (const resolve of this.waiters) resolve(result)
     this.waiters.clear()
   }
@@ -825,11 +1064,13 @@ export function prepareVitestContext(context: Vitest, repoRoot: string, changes:
 
 class WarmVitestLane {
   private contextPromise?: Promise<Vitest>
+  private recycleBeforeNextRun = false
 
   constructor(
     private readonly repoRoot: string,
     private readonly config: string,
     private readonly log: TestWatchLog,
+    private readonly label: string,
   ) {}
 
   private async context(): Promise<Vitest> {
@@ -850,8 +1091,13 @@ class WarmVitestLane {
           undefined,
           { stderr: this.log.stderr, stdout: this.log.stdout },
         )
-        await context.standalone()
-        return context
+        try {
+          await context.standalone()
+          return context
+        } catch (error) {
+          await context.close().catch(() => undefined)
+          throw error
+        }
       })().catch((error) => {
         this.contextPromise = undefined
         throw error
@@ -872,14 +1118,32 @@ class WarmVitestLane {
   }
 
   async recycle(): Promise<void> {
+    this.recycleBeforeNextRun = false
     await this.close()
     await this.context()
   }
 
   private async prepare(changes: readonly ChangedPath[]): Promise<Vitest> {
+    if (this.recycleBeforeNextRun) {
+      this.recycleBeforeNextRun = false
+      this.log.stderr.write(`[test:watch] recycling the ${this.label} Vitest context after a runner exception\n`)
+      await this.close().catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error)
+        this.log.stderr.write(`[test:watch] failed to close a poisoned Vitest context: ${detail}\n`)
+      })
+    }
     const context = await this.context()
     prepareVitestContext(context, this.repoRoot, changes)
     return context
+  }
+
+  private async recoverAfterThrownRun<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation()
+    } catch (error) {
+      this.recycleBeforeNextRun = true
+      throw error
+    }
   }
 
   private async runSpecifications(
@@ -913,31 +1177,37 @@ class WarmVitestLane {
   }
 
   async runAll(changes: readonly ChangedPath[]): Promise<VitestCommandResult> {
-    const context = await this.prepare(changes)
-    context.config.related = undefined
-    const specifications = await context.globTestSpecifications()
-    return this.runSpecifications(context, specifications, true)
+    return this.recoverAfterThrownRun(async () => {
+      const context = await this.prepare(changes)
+      context.config.related = undefined
+      const specifications = await context.globTestSpecifications()
+      return this.runSpecifications(context, specifications, true)
+    })
   }
 
   async runDirect(filters: readonly string[], changes: readonly ChangedPath[]): Promise<VitestCommandResult> {
-    const context = await this.prepare(changes)
-    context.config.related = undefined
-    const absoluteFilters = filters.map((filter) => path.resolve(this.repoRoot, filter))
-    const specifications = await context.getRelevantTestSpecifications(absoluteFilters)
-    return this.runSpecifications(context, specifications)
+    return this.recoverAfterThrownRun(async () => {
+      const context = await this.prepare(changes)
+      context.config.related = undefined
+      const absoluteFilters = filters.map((filter) => path.resolve(this.repoRoot, filter))
+      const specifications = await context.getRelevantTestSpecifications(absoluteFilters)
+      return this.runSpecifications(context, specifications)
+    })
   }
 
   async runRelated(changes: readonly ChangedPath[]): Promise<VitestCommandResult> {
-    const context = await this.prepare(changes)
-    context.config.related = changes
-      .filter((change) => change.status !== 'D')
-      .map((change) => path.resolve(this.repoRoot, change.path))
-    try {
-      const specifications = await context.getRelevantTestSpecifications()
-      return await this.runSpecifications(context, specifications)
-    } finally {
-      context.config.related = undefined
-    }
+    return this.recoverAfterThrownRun(async () => {
+      const context = await this.prepare(changes)
+      context.config.related = changes
+        .filter((change) => change.status !== 'D')
+        .map((change) => path.resolve(this.repoRoot, change.path))
+      try {
+        const specifications = await context.getRelevantTestSpecifications()
+        return await this.runSpecifications(context, specifications)
+      } finally {
+        context.config.related = undefined
+      }
+    })
   }
 }
 
@@ -951,8 +1221,8 @@ class TestCommandRunner {
     private readonly repoRoot: string,
     private readonly log: TestWatchLog,
   ) {
-    this.frontend = new WarmVitestLane(repoRoot, 'vitest.config.ts', log)
-    this.server = new WarmVitestLane(repoRoot, 'server/fastify/vitest.config.ts', log)
+    this.frontend = new WarmVitestLane(repoRoot, 'vitest.config.ts', log, 'frontend')
+    this.server = new WarmVitestLane(repoRoot, 'server/fastify/vitest.config.ts', log, 'server')
     this.svelte = new WarmSvelteCheckLane(repoRoot, log)
   }
 
@@ -1095,55 +1365,430 @@ function statusFromPlan(
     reusedTestedFingerprint,
     runFinishedAt: undefined,
     runStartedAt: new Date().toISOString(),
+    rerunPending: false,
     state: 'running',
     targetFingerprint: snapshot.fingerprint,
   }
 }
 
-async function runStatusCommand(repoRoot: string, options: TestWatchCliOptions): Promise<number> {
+interface TestWatchInspection {
+  evaluation: TestWatchStatusEvaluation
+  status?: TestWatchStatus
+  supervisor?: TestWatchSupervisorStatus
+}
+
+async function inspectTestWatch(repoRoot: string, options: TestWatchCliOptions): Promise<TestWatchInspection> {
   const paths = testWatchPaths(repoRoot)
   let status: TestWatchStatus | undefined
+  let supervisor: TestWatchSupervisorStatus | undefined
   try {
     status = readTestWatchStatus(paths.status)
+    supervisor = readTestWatchSupervisorStatus(paths.supervisor)
   } catch (error) {
     const evaluation: TestWatchStatusEvaluation = {
-      exitCode: 2,
+      exitCode: 3,
       message: error instanceof Error ? error.message : String(error),
       verdict: 'unavailable',
     }
-    if (options.json) console.log(JSON.stringify({ evaluation }, null, 2))
-    else console.log(`[test:watch:status] UNAVAILABLE: ${evaluation.message}`)
-    return evaluation.exitCode
+    return { evaluation, status, supervisor }
   }
 
   let snapshot: WorktreeSnapshot | undefined
   let snapshotError: string | undefined
-  if (status) {
+  const snapshotBase = supervisor?.base ?? status?.base
+  if (snapshotBase) {
     try {
-      snapshot = await createWorktreeSnapshot(repoRoot, status.base)
+      snapshot = await createWorktreeSnapshot(repoRoot, snapshotBase)
       const latestStatus = readTestWatchStatus(paths.status)
-      if (latestStatus?.watcherId === status.watcherId) status = latestStatus
+      const latestSupervisor = readTestWatchSupervisorStatus(paths.supervisor)
+      if (
+        !status ||
+        latestStatus?.watcherId === status.watcherId ||
+        latestStatus?.supervisorId === supervisor?.supervisorId
+      ) {
+        status = latestStatus
+      }
+      if (!supervisor || latestSupervisor?.supervisorId === supervisor.supervisorId) supervisor = latestSupervisor
     } catch (error) {
       snapshotError = error instanceof Error ? error.message : String(error)
     }
   }
   const evaluation = snapshotError
-    ? ({ exitCode: 2, message: snapshotError, verdict: 'unavailable' } satisfies TestWatchStatusEvaluation)
+    ? ({ exitCode: 3, message: snapshotError, verdict: 'unavailable' } satisfies TestWatchStatusEvaluation)
     : evaluateTestWatchStatus(status, snapshot?.fingerprint, {
         base: options.base,
         includeSmoke: options.includeSmoke,
         projectRoot: repoRoot,
+        supervisor,
+      })
+  return { evaluation, status, supervisor }
+}
+
+function printTestWatchInspection(prefix: 'await' | 'status', inspection: TestWatchInspection, json: boolean): void {
+  const { evaluation, status, supervisor } = inspection
+  if (json) {
+    console.log(JSON.stringify({ evaluation, status, supervisor }, null, 2))
+    return
+  }
+  console.log(`[test:watch:${prefix}] ${evaluation.verdict.toUpperCase()}: ${evaluation.message}`)
+  if (status?.notes.length) for (const note of status.notes) console.log(`[test:watch:${prefix}] note: ${note}`)
+  if (status?.failure) console.log(`[test:watch:${prefix}] ${status.failure}`)
+  else if (supervisor?.failure) console.log(`[test:watch:${prefix}] ${supervisor.failure}`)
+  if (status) console.log(`[test:watch:${prefix}] log: ${path.join(status.projectRoot, status.logPath)}`)
+}
+
+async function runStatusCommand(repoRoot: string, options: TestWatchCliOptions): Promise<number> {
+  const inspection = await inspectTestWatch(repoRoot, options)
+  printTestWatchInspection('status', inspection, options.json)
+  return inspection.evaluation.exitCode
+}
+
+async function runAwaitCommand(repoRoot: string, options: TestWatchCliOptions): Promise<number> {
+  const deadline = Date.now() + options.waitTimeoutMs
+  let inspection = await inspectTestWatch(repoRoot, options)
+  while (inspection.evaluation.exitCode === 2 && Date.now() < deadline) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.min(DEFAULT_AWAIT_POLL_MS, Math.max(1, deadline - Date.now()))),
+    )
+    inspection = await inspectTestWatch(repoRoot, options)
+  }
+  if (inspection.evaluation.exitCode === 2) {
+    inspection = {
+      ...inspection,
+      evaluation: {
+        ...inspection.evaluation,
+        message: `timed out after ${options.waitTimeoutMs}ms: ${inspection.evaluation.message}`,
+      },
+    }
+  }
+  printTestWatchInspection('await', inspection, options.json)
+  return inspection.evaluation.exitCode
+}
+
+interface TestWatchSupervisorLockOwner {
+  pid: number
+  projectRoot: string
+  startedAt: string
+  supervisorId: string
+}
+
+function readSupervisorLockOwner(lockPath: string): TestWatchSupervisorLockOwner | undefined {
+  try {
+    return JSON.parse(readFileSync(path.join(lockPath, 'owner.json'), 'utf8')) as TestWatchSupervisorLockOwner
+  } catch {
+    return undefined
+  }
+}
+
+async function acquireSupervisorLock(lockPath: string, owner: TestWatchSupervisorLockOwner): Promise<() => void> {
+  mkdirSync(path.dirname(lockPath), { recursive: true })
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      mkdirSync(lockPath)
+      writeFileSync(path.join(lockPath, 'owner.json'), `${JSON.stringify(owner, null, 2)}\n`, 'utf8')
+      return () => {
+        const current = readSupervisorLockOwner(lockPath)
+        if (current?.supervisorId !== owner.supervisorId) return
+        const releasedPath = `${lockPath}.released.${owner.supervisorId}`
+        try {
+          renameSync(lockPath, releasedPath)
+          rmSync(releasedPath, { force: true, recursive: true })
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+        }
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    }
+
+    const current = readSupervisorLockOwner(lockPath)
+    if (current && isProcessAlive(current.pid)) {
+      throw new Error(`test watcher supervisor ${current.pid} is already running for this worktree`)
+    }
+    let lockAge = 0
+    try {
+      lockAge = Date.now() - lstatSync(lockPath).mtimeMs
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    if (!current && lockAge < SUPERVISOR_LOCK_INITIALIZATION_GRACE_MS) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      continue
+    }
+    const stalePath = `${lockPath}.stale.${randomUUID()}`
+    try {
+      renameSync(lockPath, stalePath)
+      rmSync(stalePath, { force: true, recursive: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  throw new Error('could not acquire the test watcher supervisor lock')
+}
+
+function watcherWorkerArgs(options: TestWatchCliOptions): string[] {
+  return [
+    '--base',
+    options.base,
+    '--debounce-ms',
+    String(options.debounceMs),
+    ...(options.includeSmoke ? ['--include-smoke'] : []),
+  ]
+}
+
+function signalProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (!child.pid) return
+  try {
+    if (process.platform === 'win32') child.kill(signal)
+    else process.kill(-child.pid, signal)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
+async function stopWorkerProcess(
+  child: ChildProcess,
+  closed: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  child.kill('SIGTERM')
+  const closedGracefully = await Promise.race([
+    closed.then(() => true),
+    new Promise<false>((resolve) => setTimeout(() => resolve(false), configuredShutdownGraceMs())),
+  ])
+  if (closedGracefully || child.exitCode !== null || child.signalCode !== null) return
+  signalProcessTree(child, 'SIGKILL')
+  await closed
+}
+
+async function stopOrphanedWorker(pid: number): Promise<void> {
+  try {
+    if (process.platform === 'win32') process.kill(pid, 'SIGTERM')
+    else process.kill(-pid, 'SIGTERM')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+    return
+  }
+  const deadline = Date.now() + 1_000
+  while (isProcessAlive(pid) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  if (!isProcessAlive(pid)) return
+  try {
+    if (process.platform === 'win32') process.kill(pid, 'SIGKILL')
+    else process.kill(-pid, 'SIGKILL')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
+async function runSupervisor(repoRoot: string, options: TestWatchCliOptions): Promise<number> {
+  const paths = testWatchPaths(repoRoot)
+  mkdirSync(paths.directory, { recursive: true })
+  const legacyStatus = readTestWatchStatus(paths.status)
+  if (legacyStatus && !legacyStatus.supervisorId && isProcessAlive(legacyStatus.pid)) {
+    throw new Error(`test watcher ${legacyStatus.pid} is already running for this worktree`)
+  }
+
+  const supervisorId = randomUUID()
+  const startedAt = new Date().toISOString()
+  const releaseLock = await acquireSupervisorLock(paths.lock, {
+    pid: process.pid,
+    projectRoot: repoRoot,
+    startedAt,
+    supervisorId,
+  })
+  if (legacyStatus?.supervisorId && isProcessAlive(legacyStatus.pid)) {
+    try {
+      await stopOrphanedWorker(legacyStatus.pid)
+    } catch (error) {
+      releaseLock()
+      throw error
+    }
+  }
+  let supervisor: TestWatchSupervisorStatus = {
+    base: options.base,
+    heartbeatAt: startedAt,
+    includeSmoke: options.includeSmoke,
+    pid: process.pid,
+    projectRoot: repoRoot,
+    recoveryCount: 0,
+    schemaVersion: TEST_WATCH_SUPERVISOR_SCHEMA_VERSION,
+    startedAt,
+    state: 'starting',
+    supervisorId,
+  }
+  const persistSupervisor = (next: TestWatchSupervisorStatus): void => {
+    supervisor = { ...next, heartbeatAt: new Date().toISOString() }
+    writeTestWatchSupervisorStatus(paths.supervisor, supervisor)
+  }
+  try {
+    persistSupervisor(supervisor)
+  } catch (error) {
+    releaseLock()
+    throw error
+  }
+
+  let shutdownRequested = false
+  let shutdownSignal: NodeJS.Signals | undefined
+  let supervisorFailure: string | undefined
+  let resolveShutdown!: () => void
+  const shutdownPromise = new Promise<void>((resolve) => {
+    resolveShutdown = resolve
+  })
+  const requestShutdown = (signal?: NodeJS.Signals, failure?: string): void => {
+    if (shutdownRequested) return
+    shutdownRequested = true
+    shutdownSignal = signal
+    supervisorFailure = failure
+    resolveShutdown()
+  }
+  const onSigint = (): void => requestShutdown('SIGINT')
+  const onSigterm = (): void => requestShutdown('SIGTERM')
+  process.once('SIGINT', onSigint)
+  process.once('SIGTERM', onSigterm)
+  let activeWorker: ChildProcess | undefined
+  let activeWorkerFailure: string | undefined
+  let activeWorkerId: string | undefined
+  let activeWorkerStartedAt = 0
+  const heartbeat = setInterval(() => {
+    try {
+      if (activeWorker && activeWorkerId && supervisor.state === 'running') {
+        const workerStatus = readTestWatchStatus(paths.status)
+        const workerHeartbeatAge = workerStatus ? Date.now() - Date.parse(workerStatus.heartbeatAt) : 0
+        if (
+          workerStatus?.supervisorId === supervisorId &&
+          workerStatus.watcherId === activeWorkerId &&
+          Date.now() - activeWorkerStartedAt > configuredWorkerWatchdogGraceMs() &&
+          Number.isFinite(workerHeartbeatAge) &&
+          workerHeartbeatAge > configuredWorkerStallMs()
+        ) {
+          activeWorkerFailure = `test worker made no coordinator progress for ${workerHeartbeatAge}ms`
+          persistSupervisor({ ...supervisor, failure: activeWorkerFailure, state: 'recovering' })
+          signalProcessTree(activeWorker, 'SIGTERM')
+          return
+        }
+      }
+      persistSupervisor(supervisor)
+    } catch (error) {
+      requestShutdown(undefined, error instanceof Error ? error.message : String(error))
+    }
+  }, configuredHeartbeatMs())
+
+  const workerExecutable = process.execPath
+  const workerLoader = import.meta.resolve('tsx')
+  let rapidRestarts = 0
+  try {
+    while (!shutdownRequested) {
+      const workerId = randomUUID()
+      const workerStartedAt = Date.now()
+      activeWorkerStartedAt = workerStartedAt
+      activeWorkerFailure = undefined
+      const child = spawn(
+        workerExecutable,
+        ['--import', workerLoader, fileURLToPath(import.meta.url), ...watcherWorkerArgs(options)],
+        {
+          cwd: repoRoot,
+          detached: process.platform !== 'win32',
+          env: {
+            ...process.env,
+            RISU_TEST_WATCH_SUPERVISOR_ID: supervisorId,
+            RISU_TEST_WATCH_SUPERVISOR_PID: String(process.pid),
+            RISU_TEST_WATCH_WORKER: '1',
+            RISU_TEST_WATCH_WORKER_ID: workerId,
+          },
+          stdio: 'inherit',
+        },
+      )
+      let spawnFailure: string | undefined
+      const closed = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+        child.once('error', (error) => {
+          spawnFailure = error.message
+        })
+        child.once('close', (code, signal) => {
+          resolve({ code, signal })
+        })
+      })
+      activeWorker = child
+      activeWorkerId = workerId
+      persistSupervisor({
+        ...supervisor,
+        failure: undefined,
+        state: 'running',
+        workerId,
+        workerPid: child.pid,
       })
 
-  if (options.json) {
-    console.log(JSON.stringify({ evaluation, status }, null, 2))
-  } else {
-    console.log(`[test:watch:status] ${evaluation.verdict.toUpperCase()}: ${evaluation.message}`)
-    if (status?.notes.length) for (const note of status.notes) console.log(`[test:watch:status] note: ${note}`)
-    if (status?.failure) console.log(`[test:watch:status] ${status.failure}`)
-    if (status) console.log(`[test:watch:status] log: ${path.join(repoRoot, status.logPath)}`)
+      const outcome = await Promise.race([
+        closed.then((result) => ({ kind: 'closed' as const, result })),
+        shutdownPromise.then(() => ({ kind: 'shutdown' as const })),
+      ])
+      if (outcome.kind === 'shutdown') {
+        persistSupervisor({ ...supervisor, state: 'stopping' })
+        await stopWorkerProcess(child, closed)
+        break
+      }
+
+      activeWorker = undefined
+      activeWorkerId = undefined
+      signalProcessTree(child, 'SIGTERM')
+
+      const runtimeMs = Date.now() - workerStartedAt
+      rapidRestarts = runtimeMs >= SUPERVISOR_RESTART_STABLE_MS ? 0 : rapidRestarts + 1
+      supervisor.recoveryCount += 1
+      const detail =
+        activeWorkerFailure ||
+        spawnFailure ||
+        (outcome.result.signal
+          ? `test worker terminated by ${outcome.result.signal}`
+          : `test worker exited with code ${outcome.result.code ?? 1}`)
+      if (rapidRestarts > SUPERVISOR_MAX_RAPID_RESTARTS) {
+        supervisorFailure = `${detail}; automatic recovery was exhausted`
+        persistSupervisor({
+          ...supervisor,
+          failure: supervisorFailure,
+          state: 'error',
+          workerId: undefined,
+          workerPid: undefined,
+        })
+        break
+      }
+      const backoffMs = Math.min(2_000, 250 * 2 ** Math.max(0, rapidRestarts - 1))
+      persistSupervisor({
+        ...supervisor,
+        failure: `${detail}; restarting in ${backoffMs}ms`,
+        state: 'recovering',
+        workerId: undefined,
+        workerPid: undefined,
+      })
+      await Promise.race([new Promise((resolve) => setTimeout(resolve, backoffMs)), shutdownPromise])
+    }
+  } finally {
+    clearInterval(heartbeat)
+    process.removeListener('SIGINT', onSigint)
+    process.removeListener('SIGTERM', onSigterm)
+    try {
+      persistSupervisor({
+        ...supervisor,
+        failure: supervisorFailure,
+        state: supervisorFailure ? 'error' : 'stopped',
+        workerId: undefined,
+        workerPid: undefined,
+      })
+    } finally {
+      releaseLock()
+    }
   }
-  return evaluation.exitCode
+
+  if (supervisorFailure) {
+    console.error(`[test:watch] ${supervisorFailure}`)
+    return 1
+  }
+  console.log('[test:watch] supervisor stopped')
+  if (shutdownSignal === 'SIGINT') return 130
+  if (shutdownSignal === 'SIGTERM') return 143
+  return 0
 }
 
 async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promise<number> {
@@ -1155,15 +1800,12 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   } catch {
     existing = undefined
   }
-  if (
-    existing &&
-    isProcessAlive(existing.pid) &&
-    Date.now() - Date.parse(existing.heartbeatAt) <= TEST_WATCH_HEARTBEAT_STALE_MS
-  ) {
+  if (existing && existing.watcherId !== process.env.RISU_TEST_WATCH_WORKER_ID && isProcessAlive(existing.pid)) {
     throw new Error(`test watcher ${existing.pid} is already running for this worktree`)
   }
 
-  const watcherId = randomUUID()
+  const watcherId = process.env.RISU_TEST_WATCH_WORKER_ID?.trim() || randomUUID()
+  const supervisorId = process.env.RISU_TEST_WATCH_SUPERVISOR_ID?.trim() || undefined
   let status: TestWatchStatus = {
     affectedCommands: [],
     base: options.base,
@@ -1179,8 +1821,10 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     notes: [],
     pid: process.pid,
     projectRoot: repoRoot,
+    rerunPending: false,
     schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     state: 'starting',
+    supervisorId,
     watcherId,
   }
   writeTestWatchStatus(paths.status, status)
@@ -1201,6 +1845,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   let shutdownRequested = false
   let shutdownSignal: NodeJS.Signals | undefined
   let watcherFailure: string | undefined
+  let runnerClosePromise: Promise<void> | undefined
   let resolveShutdown!: () => void
   const shutdownRequestedPromise = new Promise<void>((resolve) => {
     resolveShutdown = resolve
@@ -1218,6 +1863,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     watcherFailure = failure
     filesystemWatcher?.close()
     if (debounceTimer) clearTimeout(debounceTimer)
+    runnerClosePromise ??= runner.close()
     resolveShutdown()
   }
 
@@ -1226,12 +1872,13 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     try {
       snapshot = await createWorktreeSnapshot(repoRoot, options.base)
     } catch (error) {
+      const failure = error instanceof Error ? error.message : String(error)
       persist({
         ...status,
-        failure: error instanceof Error ? error.message : String(error),
+        failure,
         state: 'error',
       })
-      return 'completed'
+      throw new Error(failure, { cause: error })
     }
 
     if (waitingForHeadCommit === snapshot.headCommit) {
@@ -1341,6 +1988,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
         commandResults,
         durationMs: Date.now() - startedAt,
         failure: error instanceof Error ? error.message : String(error),
+        rerunPending: true,
         state: 'stale',
       })
       rerunRequested = true
@@ -1354,6 +2002,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
         commandResults,
         durationMs: Date.now() - startedAt,
         failure: undefined,
+        rerunPending: true,
         state: 'stale',
       })
       rerunRequested = true
@@ -1367,6 +2016,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       durationMs: Date.now() - startedAt,
       failure,
       heartbeatAt: new Date().toISOString(),
+      rerunPending: false,
       runFinishedAt: new Date().toISOString(),
       state: passed ? 'passed' : 'failed',
       testedFingerprint: snapshot.fingerprint,
@@ -1399,17 +2049,23 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     if (shutdownRequested) return
     rerunRequested = true
     nextRunAt = Date.now() + delayMs
-    if (status.state !== 'starting' && status.state !== 'stale' && status.state !== 'waiting-for-commit') {
-      persist({ ...status, state: 'stale' })
+    if (status.state === 'running') {
+      persist({ ...status, rerunPending: true })
+    } else if (status.state !== 'starting' && status.state !== 'stale' && status.state !== 'waiting-for-commit') {
+      persist({ ...status, rerunPending: true, state: 'stale' })
     }
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
       debounceTimer = undefined
       if (!drainPromise) {
-        drainPromise = drain().finally(() => {
-          drainPromise = undefined
-          if (rerunRequested && !shutdownRequested) scheduleRun(Math.max(0, nextRunAt - Date.now()))
-        })
+        drainPromise = drain()
+          .catch((error) => {
+            requestShutdown(undefined, error instanceof Error ? error.stack || error.message : String(error))
+          })
+          .finally(() => {
+            drainPromise = undefined
+            if (rerunRequested && !shutdownRequested) scheduleRun(Math.max(0, nextRunAt - Date.now()))
+          })
       }
     }, delayMs)
   }
@@ -1420,7 +2076,13 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     scheduleRun(options.debounceMs)
   })
   filesystemWatcher.on('error', (error) => requestShutdown(undefined, error.message))
-  heartbeat = setInterval(() => persist(status), TEST_WATCH_HEARTBEAT_MS)
+  heartbeat = setInterval(() => {
+    try {
+      persist(status)
+    } catch (error) {
+      requestShutdown(undefined, error instanceof Error ? error.message : String(error))
+    }
+  }, configuredHeartbeatMs())
 
   const onSigint = (): void => requestShutdown('SIGINT')
   const onSigterm = (): void => requestShutdown('SIGTERM')
@@ -1431,11 +2093,18 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   )
   if (!options.once) {
     log.stdout.write('[test:watch] warming Svelte diagnostics and frontend/server Vitest contexts\n')
-    void runner.warm().then((warmed) => {
-      if (warmed && !shutdownRequested) {
-        log.stdout.write('[test:watch] frontend and server Vitest contexts are warm\n')
-      }
-    })
+    void runner
+      .warm()
+      .then((warmed) => {
+        if (warmed && !shutdownRequested) {
+          log.stdout.write('[test:watch] frontend and server Vitest contexts are warm\n')
+        }
+      })
+      .catch((error) => {
+        log.stderr.write(
+          `[test:watch] background warm-up failed; initialization will retry when selected: ${error instanceof Error ? error.message : String(error)}\n`,
+        )
+      })
   }
   scheduleRun(0)
 
@@ -1445,7 +2114,10 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   await drainPromise?.catch((error) => {
     watcherFailure ||= error instanceof Error ? error.message : String(error)
   })
-  await runner.close()
+  runnerClosePromise ??= runner.close()
+  await runnerClosePromise.catch((error) => {
+    watcherFailure ||= error instanceof Error ? error.message : String(error)
+  })
   process.removeListener('SIGINT', onSigint)
   process.removeListener('SIGTERM', onSigterm)
   persist({
@@ -1473,7 +2145,9 @@ Options:
   --debounce-ms <ms>     Wait for an edit burst to settle (default: ${DEFAULT_DEBOUNCE_MS})
   --include-smoke        Include browser smoke when the affected plan requires it
   --status               Validate the latest watched result against the worktree
-  --json                 Emit machine-readable output with --status
+  --await                Wait for the exact current worktree to finish
+  --timeout-ms <ms>      Bound --await (default: ${DEFAULT_AWAIT_TIMEOUT_MS})
+  --json                 Emit machine-readable output with --status or --await
   --once                 Run one generation and stop (diagnostic use)
   -h, --help             Show this help`)
 }
@@ -1484,15 +2158,25 @@ export async function runTestWatchCli(args = process.argv.slice(2), repoRoot = p
     printHelp()
     return 0
   }
-  if (options.json && !options.statusOnly) throw new Error('--json requires --status')
+  if (options.statusOnly && options.awaitResult) throw new Error('--status and --await cannot be combined')
+  if (options.once && (options.statusOnly || options.awaitResult)) {
+    throw new Error('--once cannot be combined with --status or --await')
+  }
+  if (options.json && !options.statusOnly && !options.awaitResult) {
+    throw new Error('--json requires --status or --await')
+  }
   if (options.statusOnly) return runStatusCommand(repoRoot, options)
-  return runWatcher(repoRoot, options)
+  if (options.awaitResult) return runAwaitCommand(repoRoot, options)
+  if (options.once || process.env.RISU_TEST_WATCH_WORKER === '1') return runWatcher(repoRoot, options)
+  return runSupervisor(repoRoot, options)
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath && fileURLToPath(import.meta.url) === invokedPath && existsSync(invokedPath)) {
   try {
-    process.exitCode = await runTestWatchCli()
+    const exitCode = await runTestWatchCli()
+    if (process.env.RISU_TEST_WATCH_WORKER === '1') process.exit(exitCode)
+    process.exitCode = exitCode
   } catch (error) {
     console.error(`[test:watch] ${error instanceof Error ? error.message : String(error)}`)
     process.exitCode = 1

@@ -26,6 +26,7 @@
     "test:quick": "tsx util/affected-tests.ts",
     "test:affected": "tsx util/affected-tests.ts",
     "test:watch:agent": "tsx util/test-watch.ts",
+    "test:watch:await": "tsx util/test-watch.ts --await",
     "test:watch:status": "tsx util/test-watch.ts --status",
     "test:frontend": "pnpm test:frontend:run",
     "test:frontend:run": "vitest run",

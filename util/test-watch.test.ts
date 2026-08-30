@@ -19,12 +19,14 @@ import {
   isFrontendCheckWatchPath,
   parseTestWatchCli,
   prepareVitestContext,
+  readTestWatchSupervisorStatus,
   readTestWatchStatus,
   requiresFrontendCheckTopologyRestart,
   runTestWatchCli,
   testWatchPaths,
   writeTestWatchStatus,
   type TestWatchStatus,
+  type TestWatchSupervisorStatus,
   type WorktreeSnapshot,
 } from './test-watch.js'
 import type { AffectedTestPlan } from './affected-tests.js'
@@ -98,6 +100,20 @@ async function waitForWatcherState(
   return waitForWatcherStatus(repoRoot, (watched) => watched.state === expectedState, timeoutMs)
 }
 
+async function waitForSupervisorStatus(
+  repoRoot: string,
+  predicate: (status: TestWatchSupervisorStatus) => boolean,
+  timeoutMs = 15_000,
+): Promise<TestWatchSupervisorStatus> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const supervised = readTestWatchSupervisorStatus(testWatchPaths(repoRoot).supervisor)
+    if (supervised && predicate(supervised)) return supervised
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error('test watcher supervisor did not reach the expected status')
+}
+
 async function waitForFile(file: string, timeoutMs = 15_000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -111,6 +127,20 @@ async function stopWatcherProcess(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) return
   child.kill('SIGTERM')
   await once(child, 'exit')
+}
+
+function startWatcherProcess(repoRoot: string, env: NodeJS.ProcessEnv = process.env): ChildProcess {
+  const child = spawn(
+    process.execPath,
+    ['--import', import.meta.resolve('tsx'), path.resolve('util/test-watch.ts'), '--debounce-ms=10'],
+    {
+      cwd: repoRoot,
+      env: { ...env, RISU_TEST_WATCH_SHUTDOWN_GRACE_MS: env.RISU_TEST_WATCH_SHUTDOWN_GRACE_MS ?? '250' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  )
+  watcherProcesses.push(child)
+  return child
 }
 
 function status(overrides: Partial<TestWatchStatus> = {}): TestWatchStatus {
@@ -129,11 +159,30 @@ function status(overrides: Partial<TestWatchStatus> = {}): TestWatchStatus {
     notes: [],
     pid: 123,
     projectRoot: '/repo',
+    rerunPending: false,
     schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     state: 'passed',
     targetFingerprint: 'current',
     testedFingerprint: 'current',
     watcherId: 'watcher-id',
+    ...overrides,
+  }
+}
+
+function supervisorStatus(overrides: Partial<TestWatchSupervisorStatus> = {}): TestWatchSupervisorStatus {
+  return {
+    base: 'HEAD',
+    heartbeatAt: new Date(10_000).toISOString(),
+    includeSmoke: false,
+    pid: 456,
+    projectRoot: '/repo',
+    recoveryCount: 0,
+    schemaVersion: 1,
+    startedAt: new Date(9_000).toISOString(),
+    state: 'running',
+    supervisorId: 'supervisor-id',
+    workerId: 'watcher-id',
+    workerPid: 123,
     ...overrides,
   }
 }
@@ -178,6 +227,11 @@ describe('test watcher CLI', () => {
       statusOnly: false,
     })
     expect(parseTestWatchCli(['--status', '--json'])).toMatchObject({ json: true, statusOnly: true })
+    expect(parseTestWatchCli(['--await', '--timeout-ms=2500', '--json'])).toMatchObject({
+      awaitResult: true,
+      json: true,
+      waitTimeoutMs: 2500,
+    })
   })
 
   it('rejects invalid debounce values and unknown options', () => {
@@ -427,9 +481,9 @@ describe('watched result validation', () => {
         nowMs: 10_000 + TEST_WATCH_HEARTBEAT_STALE_MS + 1,
         processAlive: true,
       }),
-    ).toMatchObject({ exitCode: 2, verdict: 'unavailable' })
+    ).toMatchObject({ exitCode: 3, verdict: 'unavailable' })
     expect(evaluateTestWatchStatus(status(), 'current', { nowMs: 10_001, processAlive: false })).toMatchObject({
-      exitCode: 2,
+      exitCode: 3,
       verdict: 'unavailable',
     })
   })
@@ -440,10 +494,38 @@ describe('watched result validation', () => {
         nowMs: 10_001,
         processAlive: true,
       }),
-    ).toMatchObject({ exitCode: 2, verdict: 'running' })
+    ).toMatchObject({ exitCode: 2, verdict: 'pending' })
     expect(
       evaluateTestWatchStatus(status({ state: 'failed' }), 'current', { nowMs: 10_001, processAlive: true }),
     ).toMatchObject({ exitCode: 1, verdict: 'failed' })
+  })
+
+  it('keeps supervised active, superseded, and recovering work pending', () => {
+    const running = status({
+      rerunPending: true,
+      state: 'running',
+      supervisorId: 'supervisor-id',
+      targetFingerprint: 'previous',
+    })
+    expect(
+      evaluateTestWatchStatus(running, 'current', {
+        nowMs: 10_001,
+        projectRoot: '/repo',
+        supervisor: supervisorStatus(),
+        supervisorAlive: true,
+      }),
+    ).toMatchObject({
+      exitCode: 2,
+      message: 'generation 3 is finishing and a rerun is queued',
+      verdict: 'pending',
+    })
+    expect(
+      evaluateTestWatchStatus(undefined, 'current', {
+        nowMs: 10_001,
+        supervisor: supervisorStatus({ state: 'recovering', workerId: undefined, workerPid: undefined }),
+        supervisorAlive: true,
+      }),
+    ).toMatchObject({ exitCode: 2, verdict: 'pending' })
   })
 
   it('reports waiting-for-commit as a current running generation', () => {
@@ -455,7 +537,7 @@ describe('watched result validation', () => {
     ).toMatchObject({
       exitCode: 2,
       message: 'generation 3 is waiting for a commit',
-      verdict: 'running',
+      verdict: 'pending',
     })
   })
 
@@ -466,21 +548,21 @@ describe('watched result validation', () => {
         nowMs: 10_001,
         processAlive: true,
       }),
-    ).toMatchObject({ exitCode: 2, verdict: 'unavailable' })
+    ).toMatchObject({ exitCode: 3, verdict: 'unavailable' })
     expect(
       evaluateTestWatchStatus(status(), 'current', {
         nowMs: 10_001,
         processAlive: true,
         projectRoot: '/another-repo',
       }),
-    ).toMatchObject({ exitCode: 2, verdict: 'unavailable' })
+    ).toMatchObject({ exitCode: 3, verdict: 'unavailable' })
     expect(
       evaluateTestWatchStatus(status(), 'current', {
         includeSmoke: true,
         nowMs: 10_001,
         processAlive: true,
       }),
-    ).toMatchObject({ exitCode: 2, verdict: 'unavailable' })
+    ).toMatchObject({ exitCode: 3, verdict: 'unavailable' })
   })
 
   it('writes status atomically without leaving temporary files', () => {
@@ -532,15 +614,7 @@ describe('watched result validation', () => {
     git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts'])
     git(repoRoot, ['commit', '-m', 'add Vitest configs'])
 
-    const child = spawn(
-      path.resolve('node_modules/.bin/tsx'),
-      [path.resolve('util/test-watch.ts'), '--debounce-ms=10'],
-      {
-        cwd: repoRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-    watcherProcesses.push(child)
+    const child = startWatcherProcess(repoRoot)
 
     try {
       await Promise.all([waitForFile(frontendMarker), waitForFile(serverMarker)])
@@ -549,9 +623,177 @@ describe('watched result validation', () => {
         commandResults: [{ label: 'frontend check', status: 'passed' }],
         generation: 1,
       })
+      const supervisor = readTestWatchSupervisorStatus(testWatchPaths(repoRoot).supervisor)
+      const worker = readTestWatchStatus(testWatchPaths(repoRoot).status)
+      expect(supervisor).toMatchObject({
+        state: 'running',
+        supervisorId: worker?.supervisorId,
+        workerId: worker?.watcherId,
+        workerPid: expect.any(Number),
+      })
+      expect(supervisor?.pid).not.toBe(worker?.pid)
     } finally {
       await stopWatcherProcess(child)
       watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 20_000)
+
+  it('keeps the supervisor heartbeat live while the test worker event loop is blocked', async () => {
+    const repoRoot = initializedRepository()
+    const blockMarker = path.join(temporaryDirectory('risu-test-watch-block-'), 'started')
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      `import { writeFileSync } from 'node:fs'
+writeFileSync(${JSON.stringify(blockMarker)}, 'started')
+const deadline = Date.now() + 500
+while (Date.now() < deadline) {}
+export default { test: { passWithNoTests: true } }
+`,
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      'export default { test: { passWithNoTests: true } }\n',
+    )
+    git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts'])
+    git(repoRoot, ['commit', '-m', 'add blocking Vitest config'])
+
+    const child = startWatcherProcess(repoRoot, { ...process.env, RISU_TEST_WATCH_HEARTBEAT_MS: '20' })
+
+    try {
+      await waitForFile(blockMarker)
+      const before = await waitForSupervisorStatus(repoRoot, (supervised) => supervised.state === 'running')
+      const workerHeartbeat = readTestWatchStatus(testWatchPaths(repoRoot).status)?.heartbeatAt
+      const after = await waitForSupervisorStatus(
+        repoRoot,
+        (supervised) => supervised.heartbeatAt !== before.heartbeatAt,
+      )
+      expect(Date.parse(after.heartbeatAt)).toBeGreaterThan(Date.parse(before.heartbeatAt))
+      expect(readTestWatchStatus(testWatchPaths(repoRoot).status)?.heartbeatAt).toBe(workerHeartbeat)
+      await waitForWatcherState(repoRoot, 'passed')
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 20_000)
+
+  it('restarts a crashed test worker and runs a fresh baseline', async () => {
+    const repoRoot = initializedRepository()
+    const crashMarker = path.join(temporaryDirectory('risu-test-watch-crash-'), 'crashed')
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      `import { existsSync, writeFileSync } from 'node:fs'
+if (!existsSync(${JSON.stringify(crashMarker)})) {
+  writeFileSync(${JSON.stringify(crashMarker)}, 'crashed')
+  process.exit(17)
+}
+export default { test: { passWithNoTests: true } }
+`,
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      'export default { test: { passWithNoTests: true } }\n',
+    )
+    git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts'])
+    git(repoRoot, ['commit', '-m', 'add crash-once Vitest config'])
+
+    const child = startWatcherProcess(repoRoot)
+
+    try {
+      await waitForFile(crashMarker)
+      const recovered = await waitForSupervisorStatus(
+        repoRoot,
+        (supervised) => supervised.recoveryCount >= 1 && supervised.state === 'running',
+      )
+      const watched = await waitForWatcherStatus(
+        repoRoot,
+        (status) => status.watcherId === recovered.workerId && status.state === 'passed',
+      )
+      expect(watched).toMatchObject({ executionMode: 'full', generation: 1 })
+      expect(recovered.workerId).toBe(watched.watcherId)
+      expect(watched.supervisorId).toBe(recovered.supervisorId)
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 25_000)
+
+  it('replaces a worker whose coordinator heartbeat stalls', async () => {
+    const repoRoot = initializedRepository()
+    const stallMarker = path.join(temporaryDirectory('risu-test-watch-stall-'), 'stalled')
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      `import { existsSync, writeFileSync } from 'node:fs'
+if (!existsSync(${JSON.stringify(stallMarker)})) {
+  writeFileSync(${JSON.stringify(stallMarker)}, 'stalled')
+  const deadline = Date.now() + 3_000
+  while (Date.now() < deadline) {}
+}
+export default { test: { passWithNoTests: true } }
+`,
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      'export default { test: { passWithNoTests: true } }\n',
+    )
+    git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts'])
+    git(repoRoot, ['commit', '-m', 'add stalled-worker fixture'])
+
+    const child = startWatcherProcess(repoRoot, {
+      ...process.env,
+      RISU_TEST_WATCH_HEARTBEAT_MS: '20',
+      RISU_TEST_WATCH_WORKER_STALL_MS: '150',
+      RISU_TEST_WATCH_WORKER_WATCHDOG_GRACE_MS: '1000',
+    })
+    try {
+      await waitForFile(stallMarker)
+      const recovered = await waitForSupervisorStatus(
+        repoRoot,
+        (supervised) => supervised.recoveryCount >= 1 && supervised.state === 'running',
+      )
+      const watched = await waitForWatcherStatus(
+        repoRoot,
+        (status) => status.watcherId === recovered.workerId && status.state === 'passed',
+      )
+      expect(recovered.workerId).toBe(watched.watcherId)
+      expect(watched).toMatchObject({ executionMode: 'full', generation: 1 })
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 25_000)
+
+  it('allows only one supervisor to own a worktree', async () => {
+    const repoRoot = initializedRepository()
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(path.join(repoRoot, 'vitest.config.ts'), 'export default { test: { passWithNoTests: true } }\n')
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      'export default { test: { passWithNoTests: true } }\n',
+    )
+    git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts'])
+    git(repoRoot, ['commit', '-m', 'add supervisor lock fixture'])
+
+    const owner = startWatcherProcess(repoRoot)
+    try {
+      await waitForSupervisorStatus(repoRoot, (supervised) => supervised.state === 'running')
+      const contender = startWatcherProcess(repoRoot)
+      let output = ''
+      contender.stdout?.on('data', (chunk) => {
+        output += String(chunk)
+      })
+      contender.stderr?.on('data', (chunk) => {
+        output += String(chunk)
+      })
+      const [exitCode] = (await once(contender, 'exit')) as [number | null]
+      watcherProcesses.splice(watcherProcesses.indexOf(contender), 1)
+      expect(exitCode).not.toBe(0)
+      expect(output).toMatch(/supervisor \d+ is already running/)
+    } finally {
+      await stopWatcherProcess(owner)
+      watcherProcesses.splice(watcherProcesses.indexOf(owner), 1)
     }
   }, 20_000)
 
@@ -567,15 +809,7 @@ describe('watched result validation', () => {
     git(repoRoot, ['commit', '-m', 'add test fixture'])
     writeFileSync(path.join(repoRoot, 'src/first.test.ts'), "test('first changed baseline', () => {})\n")
 
-    const child = spawn(
-      path.resolve('node_modules/.bin/tsx'),
-      [path.resolve('util/test-watch.ts'), '--debounce-ms=10'],
-      {
-        cwd: repoRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-    watcherProcesses.push(child)
+    const child = startWatcherProcess(repoRoot)
     let output = ''
     child.stdout?.on('data', (chunk) => {
       output += String(chunk)
@@ -697,6 +931,117 @@ describe('watched result validation', () => {
     }
   }, 30_000)
 
+  it('keeps an active superseded generation pending and awaits its queued rerun', async () => {
+    const repoRoot = initializedRepository()
+    mkdirSync(path.join(repoRoot, 'src'), { recursive: true })
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      "export default { test: { globals: true, include: ['src/**/*.test.ts'] } }\n",
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      "export default { test: { globals: true, include: ['server/fastify/**/*.test.ts'], passWithNoTests: true } }\n",
+    )
+    writeFileSync(path.join(repoRoot, 'src/active.test.ts'), "test('baseline', () => {})\n")
+    git(repoRoot, ['add', 'vitest.config.ts', 'server/fastify/vitest.config.ts', 'src/active.test.ts'])
+    git(repoRoot, ['commit', '-m', 'add active generation fixture'])
+
+    const child = startWatcherProcess(repoRoot)
+
+    try {
+      const baseline = await waitForWatcherState(repoRoot, 'passed')
+      writeFileSync(
+        path.join(repoRoot, 'src/active.test.ts'),
+        "test('slow generation', async () => { await new Promise((resolve) => setTimeout(resolve, 750)) })\n",
+      )
+      const active = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation > baseline.generation && watched.state === 'running',
+      )
+      writeFileSync(path.join(repoRoot, 'src/active.test.ts'), "test('queued rerun', () => {})\n")
+      const superseded = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation === active.generation && watched.state === 'running' && watched.rerunPending,
+      )
+      expect(
+        evaluateTestWatchStatus(superseded, 'new-fingerprint', {
+          nowMs: Date.now(),
+          supervisor: readTestWatchSupervisorStatus(testWatchPaths(repoRoot).supervisor),
+          supervisorAlive: true,
+        }),
+      ).toMatchObject({ exitCode: 2, verdict: 'pending' })
+
+      expect(await runTestWatchCli(['--await', '--timeout-ms=15000'], repoRoot)).toBe(0)
+      expect(await waitForWatcherStatus(repoRoot, (watched) => watched.state === 'passed')).toMatchObject({
+        rerunPending: false,
+        testedFingerprint: expect.any(String),
+      })
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 30_000)
+
+  it('recreates a Vitest context after a thrown transform failure', async () => {
+    const repoRoot = initializedRepository()
+    const contextMarker = path.join(temporaryDirectory('risu-test-watch-context-'), 'count')
+    mkdirSync(path.join(repoRoot, 'src/web'), { recursive: true })
+    mkdirSync(path.join(repoRoot, 'server/fastify'), { recursive: true })
+    writeFileSync(
+      path.join(repoRoot, 'vitest.config.ts'),
+      `import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+const marker = ${JSON.stringify(contextMarker)}
+const count = existsSync(marker) ? Number(readFileSync(marker, 'utf8')) : 0
+writeFileSync(marker, String(count + 1))
+export default { test: { globals: true, include: ['src/**/*.test.ts'] } }
+`,
+    )
+    writeFileSync(
+      path.join(repoRoot, 'server/fastify/vitest.config.ts'),
+      "export default { test: { globals: true, include: ['server/fastify/**/*.test.ts'], passWithNoTests: true } }\n",
+    )
+    writeFileSync(path.join(repoRoot, 'src/web/value.js'), 'export const value = 1\n')
+    writeFileSync(
+      path.join(repoRoot, 'src/context.test.ts'),
+      "import { value } from './web/value.js'\ntest('uses transformed source', () => { if (value < 1) throw new Error('bad value') })\n",
+    )
+    git(repoRoot, [
+      'add',
+      'vitest.config.ts',
+      'server/fastify/vitest.config.ts',
+      'src/web/value.js',
+      'src/context.test.ts',
+    ])
+    git(repoRoot, ['commit', '-m', 'add context recovery fixture'])
+
+    const child = startWatcherProcess(repoRoot)
+
+    try {
+      const baseline = await waitForWatcherState(repoRoot, 'passed')
+      expect(readFileSync(contextMarker, 'utf8')).toBe('1')
+      writeFileSync(path.join(repoRoot, 'src/web/value.js'), 'export const value =\n')
+      const failed = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation > baseline.generation && watched.state === 'failed',
+      )
+      expect(failed.failure).toMatch(/parse (?:source|failure)|invalid JS syntax/i)
+
+      writeFileSync(path.join(repoRoot, 'src/web/value.js'), 'export const value = 2\n')
+      const recovered = await waitForWatcherStatus(
+        repoRoot,
+        (watched) => watched.generation > failed.generation && watched.state === 'passed',
+      )
+      expect(recovered.executionMode).toBe('full')
+      expect(readFileSync(testWatchPaths(repoRoot).log, 'utf8')).toMatch(
+        /recycling the frontend Vitest context after a runner exception/,
+      )
+    } finally {
+      await stopWatcherProcess(child)
+      watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
+    }
+  }, 30_000)
+
   it('waits for final diagnostics when a transitive server module is completed after creation', async () => {
     const repoRoot = initializedRepository()
     mkdirSync(path.join(repoRoot, 'server/fastify/src'), { recursive: true })
@@ -730,15 +1075,7 @@ describe('watched result validation', () => {
     ])
     git(repoRoot, ['commit', '-m', 'add transitive server fixture'])
 
-    const child = spawn(
-      path.resolve('node_modules/.bin/tsx'),
-      [path.resolve('util/test-watch.ts'), '--debounce-ms=10'],
-      {
-        cwd: repoRoot,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
-    watcherProcesses.push(child)
+    const child = startWatcherProcess(repoRoot)
     let output = ''
     child.stdout?.on('data', (chunk) => {
       output += String(chunk)
