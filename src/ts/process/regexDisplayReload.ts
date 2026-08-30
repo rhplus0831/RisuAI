@@ -1,7 +1,14 @@
 import { untrack } from 'svelte'
 import { get, writable } from 'svelte/store'
 import { resolveActiveModuleStates } from '../moduleActivation'
-import { getCurrentCharacter, getDatabase, type Chat, type character } from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { getDatabase, type Chat, type Database, type character } from '../storage/database.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getChatMetadataOwnerSnapshot,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
 
 export const RegexDisplayReloadPointer = writable(0)
 
@@ -52,12 +59,20 @@ export function regexDisplayReloadTokenForContext(
   if (scope.epoch !== pointer) return `legacy:${pointer}`
 
   return untrack(() => {
-    const database = getDatabase()
-    const selectedCharacter = resolveContextCharacter(database.characters ?? [], context.characterId)
-    const selectedChat = resolveContextChat(selectedCharacter, context.chatId)
+    const ownerState = regexDisplayOwnerState()
+    const selectedCharacter = resolveContextCharacter(
+      ownerState.characters,
+      ownerState.selectedCharacterIndex,
+      context.characterId,
+    )
+    const selectedChatStructure = resolveContextChat(ownerState.characters, selectedCharacter, context.chatId)
+    const selectedChat =
+      ownerState.ready && selectedCharacter && selectedChatStructure
+        ? projectChatMetadataOwner(selectedCharacter, selectedChatStructure)
+        : selectedChatStructure
     const ownerKeys = [ALL_REGEX_DISPLAY_OWNERS, 'global']
 
-    const characterId = selectedCharacter?.chaId ?? context.characterId?.trim()
+    const characterId = selectedCharacter?.chaId
     if (characterId) {
       ownerKeys.push(characterId, `character:${characterId}`)
     }
@@ -65,7 +80,7 @@ export function regexDisplayReloadTokenForContext(
     const promptPresetId = selectedChat?.generationSettings?.promptPresetId?.trim()
     ownerKeys.push(promptPresetId ? `preset:${promptPresetId}` : 'root')
 
-    for (const state of resolveActiveModuleStates(database, selectedCharacter, selectedChat)) {
+    for (const state of resolveActiveModuleStates(ownerState.database, selectedCharacter, selectedChat)) {
       ownerKeys.push(`module:${state.module.id}`)
     }
 
@@ -83,22 +98,116 @@ export function resetRegexDisplayReloadForTests(): void {
 }
 
 function resolveContextCharacter(
-  characters: character[],
+  characters: readonly character[],
+  selectedCharacterIndex: number,
   characterId: string | null | undefined,
 ): character | undefined {
-  if (characterId) return characters.find((candidate) => candidate?.chaId === characterId)
-  try {
-    return getCurrentCharacter()
-  } catch {
-    return undefined
+  if (characterId !== null && characterId !== undefined) {
+    const normalizedCharacterId = characterId.trim()
+    return normalizedCharacterId ? uniqueCharacterOwner(characters, normalizedCharacterId) : undefined
   }
+
+  const candidate = characters[selectedCharacterIndex]
+  return candidate?.chaId ? uniqueCharacterOwner(characters, candidate.chaId) : undefined
 }
 
 function resolveContextChat(
+  characters: readonly character[],
   selectedCharacter: character | undefined,
   chatId: string | null | undefined,
 ): Chat | undefined {
   if (!selectedCharacter) return undefined
-  if (chatId) return selectedCharacter.chats?.find((candidate) => candidate?.id === chatId)
-  return selectedCharacter.chats?.[selectedCharacter.chatPage]
+  if (chatId !== null && chatId !== undefined) {
+    const normalizedChatId = chatId.trim()
+    return normalizedChatId ? uniqueChatOwner(characters, selectedCharacter, normalizedChatId) : undefined
+  }
+
+  const candidate = selectedCharacter.chats?.[selectedCharacter.chatPage]
+  return candidate?.id ? uniqueChatOwner(characters, selectedCharacter, candidate.id) : undefined
+}
+
+function uniqueCharacterOwner(characters: readonly character[], characterId: string): character | undefined {
+  let owner: character | undefined
+  for (const candidate of characters) {
+    if (candidate?.chaId !== characterId) continue
+    if (owner) return undefined
+    owner = candidate
+  }
+  return owner
+}
+
+function uniqueChatOwner(
+  characters: readonly character[],
+  selectedCharacter: character,
+  chatId: string,
+): Chat | undefined {
+  let owner: { character: character; chat: Chat } | undefined
+  for (const character of characters) {
+    for (const chat of character.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      if (owner) return undefined
+      owner = { character, chat }
+    }
+  }
+  return owner?.character === selectedCharacter ? owner.chat : undefined
+}
+
+function projectChatMetadataOwner(selectedCharacter: character, selectedChat: Chat): Chat | undefined {
+  const characterId = selectedCharacter.chaId?.trim()
+  const chatId = selectedChat.id?.trim()
+  if (!characterId || !chatId) return undefined
+  const snapshot = getChatMetadataOwnerSnapshot(characterId, chatId)
+  if (!snapshot) return undefined
+
+  return {
+    ...selectedChat,
+    modules: Array.isArray(snapshot.metadata.modules) ? (snapshot.metadata.modules as string[]) : undefined,
+    bindedPersona: typeof snapshot.metadata.bindedPersona === 'string' ? snapshot.metadata.bindedPersona : undefined,
+  }
+}
+
+function regexDisplayOwnerState(): {
+  database: Database
+  characters: readonly character[]
+  selectedCharacterIndex: number
+  ready: boolean
+} {
+  if (charactersResourceState.status === 'ready') {
+    return {
+      database: canonicalModuleActivationDatabase(),
+      characters: charactersResourceState.characters,
+      selectedCharacterIndex: charactersResourceState.currentChar,
+      ready: true,
+    }
+  }
+
+  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+    const database = getDatabase()
+    return {
+      database,
+      characters: database.characters ?? [],
+      selectedCharacterIndex: get(selectedCharID),
+      ready: false,
+    }
+  }
+
+  return {
+    database: canonicalModuleActivationDatabase(),
+    characters: [],
+    selectedCharacterIndex: -1,
+    ready: false,
+  }
+}
+
+function canonicalModuleActivationDatabase(): Database {
+  return {
+    ...(settingsResourceState.value as Partial<Database>),
+    ...(collectionsResourceState.values as Partial<Database>),
+    characters: charactersResourceState.characters,
+    enabledModules: settingsResourceState.value.enabledModules ?? [],
+    agentPresets: settingsResourceState.value.agentPresets ?? [],
+    modules: collectionsResourceState.values.modules ?? [],
+    promptPresets: collectionsResourceState.values.promptPresets ?? [],
+    personas: collectionsResourceState.values.personas ?? [],
+  } as Database
 }

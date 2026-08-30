@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
+import { selectedCharID } from '../stores.svelte'
+import { charactersResourceState } from '../server/resourceState.svelte'
 import {
   RegexDisplayReloadPointer,
   RegexDisplayReloadScope,
@@ -51,7 +53,9 @@ beforeEach(() => {
     ],
     promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     enabledModules: [],
+    currentChar: 0,
   } as any
+  selectedCharID.set(0)
 })
 
 describe('regex display reload scoping', () => {
@@ -76,4 +80,94 @@ describe('regex display reload scoping', () => {
       expect(currentToken()).not.toBe(initial)
     },
   )
+
+  it('uses the ready selected-character owner instead of the compatibility selection', () => {
+    charactersResourceState.currentChar = 1
+    selectedCharID.set(0)
+
+    const initial = regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))
+    reloadRegexDisplay('char-a')
+    expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).toBe(
+      initial,
+    )
+
+    reloadRegexDisplay('char-b')
+    expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).not.toBe(
+      initial,
+    )
+  })
+
+  it('retains the compatibility selection only while character owners are loading', () => {
+    charactersResourceState.status = 'loading'
+    charactersResourceState.currentChar = 1
+    selectedCharID.set(0)
+
+    const initial = regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))
+    reloadRegexDisplay('char-a')
+    expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).not.toBe(
+      initial,
+    )
+  })
+
+  it('does not reuse compatibility characters after the owner resource fails', () => {
+    charactersResourceState.status = 'error'
+
+    const initial = regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))
+    reloadRegexDisplay('char-a')
+    expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).toBe(
+      initial,
+    )
+  })
+
+  it('fails closed for duplicate character and chat stable IDs', () => {
+    const duplicateCharacter = { ...charactersResourceState.characters[0], chats: [] }
+    charactersResourceState.characters.push(duplicateCharacter)
+
+    const duplicateCharacterToken = currentToken()
+    reloadRegexDisplay('char-a')
+    expect(currentToken()).toBe(duplicateCharacterToken)
+    reloadRegexDisplay('preset:preset-a')
+    expect(currentToken()).toBe(duplicateCharacterToken)
+
+    testDatabaseState.db = {
+      ...testDatabaseState.db,
+      characters: [
+        testDatabaseState.db.characters[0],
+        {
+          ...testDatabaseState.db.characters[1],
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Duplicate chat',
+              note: '',
+              localLore: [],
+              message: [],
+              generationSettings: { promptPresetId: 'preset-b' },
+            },
+          ],
+        },
+      ],
+    }
+
+    const duplicateChatToken = currentToken()
+    reloadRegexDisplay('preset:preset-a')
+    expect(currentToken()).toBe(duplicateChatToken)
+    reloadRegexDisplay('module:module-a')
+    expect(currentToken()).toBe(duplicateChatToken)
+  })
+
+  it('does not scope reloads to missing explicit stable IDs', () => {
+    const token = regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope), {
+      characterId: 'char-missing',
+      chatId: 'chat-a',
+    })
+
+    reloadRegexDisplay('char-missing')
+    expect(
+      regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope), {
+        characterId: 'char-missing',
+        chatId: 'chat-a',
+      }),
+    ).toBe(token)
+  })
 })
