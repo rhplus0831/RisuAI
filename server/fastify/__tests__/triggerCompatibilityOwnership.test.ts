@@ -14,6 +14,12 @@ function source(file: string): string {
   return fs.readFileSync(path.join(repoRoot, file), 'utf8')
 }
 
+function unsupportedEffectTypes(file: string): string[] {
+  const body = source(file).match(/serverUnsupportedTriggerEffectTypes:[\s\S]*?new Set\(\[([\s\S]*?)\]\)/)?.[1]
+  if (!body) throw new Error(`Missing unsupported trigger-effect set in ${file}`)
+  return [...body.matchAll(/'([^']+)'/g)].map((match) => match[1])
+}
+
 describe('trigger compatibility policy ownership', () => {
   it('keeps Fastify consumers behind the server-owned policy', () => {
     const consumers = [
@@ -26,6 +32,12 @@ describe('trigger compatibility policy ownership', () => {
     for (const consumer of consumers) {
       expect(source(consumer)).not.toContain('src/ts/process/triggerServerSupport')
     }
+  })
+
+  it('keeps the browser compatibility-warning mirror aligned', () => {
+    expect(unsupportedEffectTypes('server/fastify/src/prompt/triggerCompatibility.ts')).toEqual(
+      unsupportedEffectTypes('src/ts/process/triggerServerSupport.ts'),
+    )
   })
 
   it('keeps regex classification exact and CBS callback exclusions empty', () => {
