@@ -784,20 +784,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/generation/providerMessages.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "MultiModal",
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/generationFinalizationRetry.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",

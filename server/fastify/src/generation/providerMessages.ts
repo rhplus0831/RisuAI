@@ -1,5 +1,21 @@
-import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { LLMFlags } from '../../../../src/ts/model/types'
+
+export interface ProviderMessageMultimodal {
+  type: 'image' | 'video' | 'audio' | 'signature'
+  base64: string
+}
+
+export interface ProviderMessageInput {
+  role: 'system' | 'user' | 'assistant' | 'function'
+  content: string
+  memo?: string
+  name?: string
+  removable?: boolean
+  attr?: readonly string[]
+  multimodals?: readonly ProviderMessageMultimodal[]
+  thoughts?: readonly string[]
+  cachePoint?: boolean
+}
 
 export interface WireChatMessage {
   role: string
@@ -26,7 +42,7 @@ export interface AnthropicWireMessage {
   content: AnthropicContentPart[]
 }
 
-function normalizedContent(row: OpenAIChat, newOAIHandle: boolean): string {
+function normalizedContent(row: ProviderMessageInput, newOAIHandle: boolean): string {
   if (newOAIHandle && row.memo?.startsWith('NewChat')) return ''
   return typeof row.content === 'string' ? row.content : ''
 }
@@ -35,7 +51,7 @@ function visionDetail(value: unknown): 'auto' | 'low' | 'high' {
   return value === 'low' || value === 'high' ? value : 'auto'
 }
 
-function imageParts(multimodals: readonly MultiModal[] | undefined): MultiModal[] {
+function imageParts(multimodals: readonly ProviderMessageMultimodal[] | undefined): ProviderMessageMultimodal[] {
   return (multimodals ?? []).filter((modal) => modal.type === 'image' && typeof modal.base64 === 'string')
 }
 
@@ -44,7 +60,7 @@ function imageParts(multimodals: readonly MultiModal[] | undefined): MultiModal[
  * so internal prompt metadata can never leak through JSON serialization.
  */
 export function sanitizeTextMessages(
-  messages: readonly OpenAIChat[],
+  messages: readonly ProviderMessageInput[],
   options: { newOAIHandle?: boolean; developerRole?: boolean } = {},
 ): WireChatMessage[] {
   const newOAIHandle = options.newOAIHandle !== false
@@ -66,7 +82,7 @@ export function sanitizeTextMessages(
 
 /** Provider-native OpenAI Chat Completions conversion. */
 export function buildOpenAIWireMessages(
-  messages: readonly OpenAIChat[],
+  messages: readonly ProviderMessageInput[],
   options: {
     flags?: readonly number[]
     newOAIHandle?: boolean
@@ -132,7 +148,7 @@ function markAnthropicCache(part: AnthropicContentPart, oneHour: boolean): void 
 
 /** Provider-native Anthropic messages, including image and prompt-cache parts. */
 export function buildAnthropicWireMessages(
-  messages: readonly OpenAIChat[],
+  messages: readonly ProviderMessageInput[],
   options: { oneHourCache?: boolean; newOAIHandle?: boolean } = {},
 ): AnthropicWireMessage[] {
   const newOAIHandle = options.newOAIHandle !== false
