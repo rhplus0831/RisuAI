@@ -2,6 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
 const hydration = vi.hoisted(() => ({
   failed: false,
@@ -251,6 +252,86 @@ describe('lorebook editor action accessibility', () => {
     expect(characterToggle?.getAttribute('aria-pressed')).toBe('true')
     expect(chatToggle?.getAttribute('aria-label')).toBe('Enable: Always Active (Chat)')
     expect(chatToggle?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('targets the authoritative selected character owner when the compatibility selection is stale', async () => {
+    setDatabaseLite({
+      bulkEnabling: true,
+      characters: [
+        {
+          chaId: 'compatibility-character',
+          chatPage: 0,
+          chats: [{ id: 'compatibility-chat', localLore: [], message: [] }],
+          globalLore: [{ alwaysActive: true }],
+          lorePlus: false,
+        },
+        {
+          chaId: 'owner-character',
+          chatPage: 0,
+          chats: [{ id: 'owner-chat', localLore: [], message: [] }],
+          globalLore: [{ alwaysActive: false }],
+          lorePlus: true,
+        },
+      ],
+    } as any)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 1
+    charactersResourceState.selectionRevision = 9
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const characterToggle = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'CHAR',
+    )!
+    expect(characterToggle.getAttribute('aria-label')).toBe('Enable: Always Active (Character)')
+    characterToggle.click()
+    await tick()
+
+    expect(bridgeActions.replaceCharacterLorebookCollectionWithOutcome).toHaveBeenCalledWith('owner-character', [
+      { alwaysActive: true },
+    ])
+  })
+
+  it('disables chat mutations when the selected chat id has duplicate owners', async () => {
+    setDatabaseLite({
+      bulkEnabling: true,
+      characters: [
+        {
+          chaId: 'selected-character',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', localLore: [{ alwaysActive: false }], message: [] }],
+          globalLore: [],
+          lorePlus: false,
+        },
+        {
+          chaId: 'other-character',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', localLore: [], message: [] }],
+          globalLore: [],
+          lorePlus: false,
+        },
+      ],
+    } as any)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 0
+    charactersResourceState.selectionRevision = 10
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const chatTab = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'Chat',
+    )!
+    chatTab.click()
+    await tick()
+
+    expect(target.querySelector<HTMLButtonElement>('[aria-label="Add: Lorebook"]')?.disabled).toBe(true)
+    expect(target.querySelector<HTMLButtonElement>('[aria-label="Import: Lorebook"]')?.disabled).toBe(true)
+    const chatToggle = [...target.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent?.trim() === 'CHAT',
+    )!
+    expect(chatToggle.disabled).toBe(true)
+    chatToggle.click()
+    expect(bridgeActions.replaceChatLorebookCollectionWithOutcome).not.toHaveBeenCalled()
   })
 })
 

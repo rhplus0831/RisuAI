@@ -1,6 +1,6 @@
 <script lang="ts">
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { getDatabase, type loreBook } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type Chat, type character, type Database, type loreBook } from 'src/ts/storage/database.svelte'
   import LoreBookData, { type LorebookDeletionTarget } from './LoreBookData.svelte'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, tick } from 'svelte'
@@ -24,6 +24,11 @@
     type ScopedLorebookMutationUiState,
   } from 'src/ts/server/scopedLorebookMutationUiState'
   import { lorebookPageIndexFromSnapshot, lorebookPageOwnerState } from 'src/ts/server/lorebookPageOwner.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+  } from 'src/ts/server/resourceState.svelte'
 
   let reinitializeSortable = false
 
@@ -72,13 +77,60 @@
     stb = null
   }
 
-  function selectedCharacter() {
-    return getDatabase().characters?.[$selectedCharID]
+  type GlobalLorebook = Database['loreBook'][number]
+
+  function characterOwners(): readonly character[] {
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+      return getDatabase().characters ?? []
+    }
+    return []
   }
 
-  function selectedChat() {
+  function uniqueCharacterOwner(characterId: string | undefined): character | undefined {
+    if (!characterId) return undefined
+    if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+
+    const matches = characterOwners().filter((candidate) => candidate?.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function selectedCharacterIndex(): number {
+    return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
+      ? charactersResourceState.currentChar
+      : $selectedCharID
+  }
+
+  function selectedCharacter(): character | undefined {
+    const candidate = characterOwners()[selectedCharacterIndex()]
+    return candidate?.chaId ? uniqueCharacterOwner(candidate.chaId) : undefined
+  }
+
+  function uniqueChatOwnerById(chatId: string | undefined): Chat | undefined {
+    if (!chatId) return undefined
+    let owner: Chat | undefined
+    for (const character of characterOwners()) {
+      for (const chat of character.chats ?? []) {
+        if (chat?.id !== chatId) continue
+        if (owner) return undefined
+        owner = chat
+      }
+    }
+    return owner
+  }
+
+  function uniqueChatOwner(character: character | undefined, chatId: string | undefined): Chat | undefined {
+    if (!character || !chatId) return undefined
+    const owner = uniqueChatOwnerById(chatId)
+    if (!owner) return undefined
+    const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+    return matches.length === 1 && matches[0] === owner ? owner : undefined
+  }
+
+  function selectedChat(): Chat | undefined {
     const character = selectedCharacter()
-    return character?.chats?.[character.chatPage ?? 0]
+    const candidate = character?.chats?.[character.chatPage ?? 0]
+    return candidate?.id ? uniqueChatOwner(character, candidate.id) : undefined
   }
 
   function characterGlobalLore(): loreBook[] {
@@ -89,17 +141,47 @@
     return selectedChat()?.localLore ?? []
   }
 
+  function globalLorebookOwners(): readonly GlobalLorebook[] {
+    const status = collectionsResourceState.statuses.loreBook
+    if (status === 'ready') {
+      return Array.isArray(collectionsResourceState.values.loreBook)
+        ? (collectionsResourceState.values.loreBook as GlobalLorebook[])
+        : []
+    }
+    if (status === 'error') return []
+    return getDatabase().loreBook ?? []
+  }
+
+  function selectedGlobalLorebookIndex(): number | null {
+    const snapshot = $lorebookPageOwnerState
+    const ownerIndex = lorebookPageIndexFromSnapshot(snapshot)
+    if (snapshot.status === 'ready' || snapshot.status === 'stale') return ownerIndex
+    if (snapshot.status === 'error') return null
+    const compatibilityPage = getDatabase().loreBookPage
+    return Number.isInteger(compatibilityPage) && compatibilityPage >= 0 ? compatibilityPage : null
+  }
+
+  function uniqueGlobalLorebookOwner(lorebookId: string | undefined): GlobalLorebook | undefined {
+    if (!lorebookId) return undefined
+    const matches = globalLorebookOwners().filter((candidate) => candidate?.id === lorebookId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function selectedGlobalLorebook(): GlobalLorebook | undefined {
+    const page = selectedGlobalLorebookIndex()
+    const candidate = page === null ? undefined : globalLorebookOwners()[page]
+    return typeof candidate?.id === 'string' && candidate.id.trim()
+      ? uniqueGlobalLorebookOwner(candidate.id)
+      : undefined
+  }
+
   function globalLorebookEntries(): loreBook[] {
-    const database = getDatabase()
-    const page = lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
-    return database.loreBook?.[page]?.data ?? []
+    const entries = selectedGlobalLorebook()?.data
+    return Array.isArray(entries) ? entries : []
   }
 
   function selectedGlobalLorebookId(): string | null {
-    const database = getDatabase()
-    const page = lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
-    const lorebookId = (database.loreBook?.[page] as { id?: unknown } | undefined)?.id
-    return typeof lorebookId === 'string' && lorebookId.trim() ? lorebookId : null
+    return selectedGlobalLorebook()?.id ?? null
   }
 
   function internalEntryDraftScopeKey(): string | undefined {
@@ -277,54 +359,48 @@
     updateCollection(resolution.nextEntries)
   }
 
-  function updateCharacterGlobalLoreValue(index: number, value: loreBook): void {
-    const characterId = selectedCharacter()?.chaId
-    if (!characterId) return
+  function updateCharacterGlobalLoreValue(characterId: string | undefined, index: number, value: loreBook): void {
+    if (!characterId || !uniqueCharacterOwner(characterId)) return
     applyLorebookEntryDraftEdit({ kind: 'character', characterId }, index, value)
   }
 
-  function flushCharacterGlobalLoreValue(): void {
-    const characterId = selectedCharacter()?.chaId
-    if (!characterId) return
+  function flushCharacterGlobalLoreValue(characterId: string | undefined): void {
+    if (!characterId || !uniqueCharacterOwner(characterId)) return
     flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId })
   }
 
-  function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
-    const characterId = selectedCharacter()?.chaId
-    if (!characterId) return
+  function updateCharacterGlobalLoreCollection(characterId: string | undefined, entries: loreBook[]): void {
+    if (!characterId || !uniqueCharacterOwner(characterId)) return
     trackCollectionMutation(replaceCharacterLorebookCollectionWithOutcome(characterId, entries))
   }
 
-  function updateChatLoreValue(index: number, value: loreBook): void {
-    const chat = selectedChat()
-    if (!chat?.id) return
-    applyLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id }, index, value)
+  function updateChatLoreValue(chatId: string | undefined, index: number, value: loreBook): void {
+    if (!chatId || !uniqueChatOwnerById(chatId)) return
+    applyLorebookEntryDraftEdit({ kind: 'chat', chatId }, index, value)
   }
 
-  function flushChatLoreValue(): void {
-    const chat = selectedChat()
-    if (!chat?.id) return
-    flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id })
+  function flushChatLoreValue(chatId: string | undefined): void {
+    if (!chatId || !uniqueChatOwnerById(chatId)) return
+    flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId })
   }
 
-  function updateChatLoreCollection(entries: loreBook[]): void {
-    const chatId = selectedChat()?.id
-    if (!chatId) return
+  function updateChatLoreCollection(chatId: string | undefined, entries: loreBook[]): void {
+    if (!chatId || !uniqueChatOwnerById(chatId)) return
     trackCollectionMutation(replaceChatLorebookCollectionWithOutcome(chatId, entries))
   }
 
   function updateGlobalLoreValue(lorebookId: string | null, index: number, value: loreBook): void {
-    if (!lorebookId) return
+    if (!lorebookId || !uniqueGlobalLorebookOwner(lorebookId)) return
     applyLorebookEntryDraftEdit({ kind: 'global', lorebookId }, index, value)
   }
 
   function flushGlobalLoreValue(lorebookId: string | null): void {
-    if (!lorebookId) return
+    if (!lorebookId || !uniqueGlobalLorebookOwner(lorebookId)) return
     flushPendingLorebookEntryDraftEdit({ kind: 'global', lorebookId })
   }
 
   function updateGlobalLorebookCollection(entries: loreBook[], lorebookId = selectedGlobalLorebookId()): void {
-    if (!lorebookId) return
+    if (!lorebookId || !uniqueGlobalLorebookOwner(lorebookId)) return
     trackCollectionMutation(replaceGlobalLorebookEntryCollectionWithOutcome(lorebookId, entries))
   }
 
@@ -452,13 +528,19 @@
         const newIndex = evt.newIndex
 
         let currentArray: loreBook[]
+        let characterId: string | undefined
+        let chatId: string | undefined
+        let lorebookId: string | null = null
         if (externalLoreBooks) {
           currentArray = externalLoreBooks
         } else if (submenu === 1) {
+          chatId = selectedChat()?.id
           currentArray = chatLocalLore()
         } else if (globalMode) {
+          lorebookId = selectedGlobalLorebookId()
           currentArray = globalLorebookEntries()
         } else {
+          characterId = selectedCharacter()?.chaId
           currentArray = characterGlobalLore()
         }
 
@@ -524,11 +606,11 @@
         if (externalLoreBooks) {
           updateExternalCollection(newArray)
         } else if (submenu === 1) {
-          updateChatLoreCollection(newArray)
+          updateChatLoreCollection(chatId, newArray)
         } else if (globalMode) {
-          updateGlobalLorebookCollection(newArray)
+          updateGlobalLorebookCollection(newArray, lorebookId)
         } else {
-          updateCharacterGlobalLoreCollection(newArray)
+          updateCharacterGlobalLoreCollection(characterId, newArray)
         }
 
         await recreateStb()
@@ -727,6 +809,7 @@
         {/each}
       {/if}
     {:else if submenu === 0}
+      {@const characterId = selectedCharacter()?.chaId}
       {@const entries = characterGlobalLore()}
       {@const visibleItems = entries.filter((book) => (!showFolder && !book.folder) || showFolder === book.folder)}
       {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
@@ -740,20 +823,23 @@
               entryDraftScopeKey={resolvedEntryDraftScopeKey}
               mutationLocked={collectionMutationBlocked}
               value={entries[i]}
-              onDraftChange={(value) => updateCharacterGlobalLoreValue(i, value)}
-              onDraftSettled={flushCharacterGlobalLoreValue}
+              onDraftChange={(value) => updateCharacterGlobalLoreValue(characterId, i, value)}
+              onDraftSettled={() => flushCharacterGlobalLoreValue(characterId)}
               idx={i}
               isOpen={openedRefs.has(openedRefForEntry(book))}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={(target) => removeLorebookTarget(entries, target, updateCharacterGlobalLoreCollection)}
+              onRemove={(target) =>
+                removeLorebookTarget(entries, target, (nextEntries) =>
+                  updateCharacterGlobalLoreCollection(characterId, nextEntries),
+                )}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
               externalLoreBooks={entries}
-              onCollectionChange={updateCharacterGlobalLoreCollection}
-              onEntryChange={updateCharacterGlobalLoreValue}
-              onEntrySettled={flushCharacterGlobalLoreValue} />
+              onCollectionChange={(nextEntries) => updateCharacterGlobalLoreCollection(characterId, nextEntries)}
+              onEntryChange={(index, value) => updateCharacterGlobalLoreValue(characterId, index, value)}
+              onEntrySettled={() => flushCharacterGlobalLoreValue(characterId)} />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
             <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
@@ -761,6 +847,7 @@
         {/each}
       {/if}
     {:else if submenu === 1}
+      {@const chatId = selectedChat()?.id}
       {@const entries = chatLocalLore()}
       {@const visibleItems = entries.filter((book) => (!showFolder && !book.folder) || showFolder === book.folder)}
       {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
@@ -774,20 +861,21 @@
               entryDraftScopeKey={resolvedEntryDraftScopeKey}
               mutationLocked={collectionMutationBlocked}
               value={entries[i]}
-              onDraftChange={(value) => updateChatLoreValue(i, value)}
-              onDraftSettled={flushChatLoreValue}
+              onDraftChange={(value) => updateChatLoreValue(chatId, i, value)}
+              onDraftSettled={() => flushChatLoreValue(chatId)}
               idx={i}
               isOpen={openedRefs.has(openedRefForEntry(book))}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={(target) => removeLorebookTarget(entries, target, updateChatLoreCollection)}
+              onRemove={(target) =>
+                removeLorebookTarget(entries, target, (nextEntries) => updateChatLoreCollection(chatId, nextEntries))}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
               externalLoreBooks={entries}
-              onCollectionChange={updateChatLoreCollection}
-              onEntryChange={updateChatLoreValue}
-              onEntrySettled={flushChatLoreValue} />
+              onCollectionChange={(nextEntries) => updateChatLoreCollection(chatId, nextEntries)}
+              onEntryChange={(index, value) => updateChatLoreValue(chatId, index, value)}
+              onEntrySettled={() => flushChatLoreValue(chatId)} />
           {:else}
             <!-- Hidden marker for filtered items (for SortableJS) -->
             <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>

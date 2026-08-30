@@ -5,6 +5,7 @@ import { selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { lorebookPageOwner } from 'src/ts/server/lorebookPageOwner.svelte'
 import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
   type Deferred<T> = {
@@ -548,6 +549,76 @@ describe('LoreBookList', () => {
     expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('character-resource', [])
   })
 
+  it('renders and mutates the authoritative selected character owner when the compatibility selection is stale', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'compatibility-character',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'compatibility-entry', comment: 'Compatibility Entry' })],
+        },
+        {
+          chaId: 'owner-character',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'owner-entry', comment: 'Owner Entry' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 1
+    charactersResourceState.selectionRevision = 7
+
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+
+    expect(lorebookRows().map((row) => row.dataset.risuLorebookId)).toEqual(['owner-entry'])
+    lorebookListMocks.queueConfirm(true)
+    deleteButtonForRow(rowByEntryId('owner-entry')).click()
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('owner-character', [])
+  })
+
+  it('fails closed when the selected chat id has duplicate owners', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'selected-character',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'duplicate-chat',
+              localLore: [makeLoreBook({ id: 'unsafe-entry', comment: 'Unsafe Entry' })],
+            },
+          ],
+          globalLore: [],
+        },
+        {
+          chaId: 'other-character',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', localLore: [] }],
+          globalLore: [],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+    charactersResourceState.currentChar = 0
+    charactersResourceState.selectionRevision = 8
+
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 1 } })
+    await tick()
+
+    expect(lorebookRows()).toHaveLength(0)
+    expect(target.textContent).toContain('No Lorebook')
+    expect(lorebookListMocks.replaceChatLorebookCollection).not.toHaveBeenCalled()
+  })
+
   it('does not transfer an open row to another character with the same entry id', async () => {
     setDatabaseLite({
       characters: [
@@ -983,6 +1054,37 @@ describe('LoreBookList', () => {
     await tick()
 
     expect(lorebookRows().map((row) => row.dataset.risuLorebookId)).toEqual(['owner-entry'])
+  })
+
+  it('fails closed when the owner-selected global lorebook id is duplicated', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'duplicate-book',
+          name: 'Duplicate A',
+          data: [makeLoreBook({ id: 'unsafe-entry', comment: 'Unsafe Entry' })],
+        },
+        {
+          id: 'duplicate-book',
+          name: 'Duplicate B',
+          data: [makeLoreBook({ id: 'other-entry', comment: 'Other Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    lorebookPageOwner.hydrate({
+      revision: 3,
+      setting: 'loreBookPage',
+      state: { present: true, value: 0 },
+    })
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows()).toHaveLength(0)
+    expect(target.textContent).toContain('No Lorebook')
+    expect(lorebookListMocks.replaceGlobalLorebookEntryCollection).not.toHaveBeenCalled()
   })
 
   it('dispatches global entry edits and deletion to the captured lorebook id', async () => {

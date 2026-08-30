@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type Chat, type character, type Database } from 'src/ts/storage/database.svelte'
   import { language } from '../../../lang'
   import {
     DownloadIcon,
@@ -36,6 +36,12 @@
     isCharacterLorebookHydrationPending,
   } from 'src/ts/server/chatMessageHydration.svelte'
   import { lorebookPageIndexFromSnapshot, lorebookPageOwnerState } from 'src/ts/server/lorebookPageOwner.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
 
   let submenu = $state(0)
   const characterLoreSettingsDraft = createServerBackedCharacterDraft(['loreSettings', 'lorePlus'])
@@ -44,7 +50,109 @@
   }
 
   let { globalMode = $bindable(false) }: Props = $props()
-  let selectedCharacterId = $derived(globalMode ? undefined : getDatabase().characters?.[$selectedCharID]?.chaId)
+
+  type GlobalLorebook = Database['loreBook'][number]
+  type LorebookAdvancedSetting = 'bulkEnabling' | 'loreBookDepth' | 'loreBookToken' | 'useExperimental'
+
+  function characterOwners(): readonly character[] {
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+      return getDatabase().characters ?? []
+    }
+    return []
+  }
+
+  function uniqueCharacterOwner(characterId: string | undefined): character | undefined {
+    if (!characterId) return undefined
+    if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+    const matches = characterOwners().filter((candidate) => candidate?.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function selectedCharacterIndex(): number {
+    return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
+      ? charactersResourceState.currentChar
+      : $selectedCharID
+  }
+
+  function selectedCharacter(): character | undefined {
+    const candidate = characterOwners()[selectedCharacterIndex()]
+    return candidate?.chaId ? uniqueCharacterOwner(candidate.chaId) : undefined
+  }
+
+  function uniqueChatOwnerById(chatId: string | undefined): Chat | undefined {
+    if (!chatId) return undefined
+    let owner: Chat | undefined
+    for (const character of characterOwners()) {
+      for (const chat of character.chats ?? []) {
+        if (chat?.id !== chatId) continue
+        if (owner) return undefined
+        owner = chat
+      }
+    }
+    return owner
+  }
+
+  function uniqueChatOwner(character: character | undefined, chatId: string | undefined): Chat | undefined {
+    if (!character || !chatId) return undefined
+    const owner = uniqueChatOwnerById(chatId)
+    if (!owner) return undefined
+    const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+    return matches.length === 1 && matches[0] === owner ? owner : undefined
+  }
+
+  function selectedChat(): Chat | undefined {
+    const character = selectedCharacter()
+    const candidate = character?.chats?.[character.chatPage ?? 0]
+    return candidate?.id ? uniqueChatOwner(character, candidate.id) : undefined
+  }
+
+  function advancedSetting<K extends LorebookAdvancedSetting>(key: K): Database[K] | undefined {
+    const status = settingsResourceState.groupStatuses.advanced
+    if (status === 'ready') {
+      const settings = settingsResourceState.value as Partial<Database>
+      return Object.prototype.hasOwnProperty.call(settings, key)
+        ? (settings[key] as Database[K] | undefined)
+        : undefined
+    }
+    if (status === 'error') return undefined
+    return getDatabase()[key]
+  }
+
+  function globalLorebookOwners(): readonly GlobalLorebook[] {
+    const status = collectionsResourceState.statuses.loreBook
+    if (status === 'ready') {
+      return Array.isArray(collectionsResourceState.values.loreBook)
+        ? (collectionsResourceState.values.loreBook as GlobalLorebook[])
+        : []
+    }
+    if (status === 'error') return []
+    return getDatabase().loreBook ?? []
+  }
+
+  function uniqueGlobalLorebookOwner(lorebookId: string | undefined): GlobalLorebook | undefined {
+    if (!lorebookId) return undefined
+    const matches = globalLorebookOwners().filter((candidate) => candidate?.id === lorebookId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function selectedGlobalLorebook(): GlobalLorebook | undefined {
+    const snapshot = $lorebookPageOwnerState
+    const ownerPage = lorebookPageIndexFromSnapshot(snapshot)
+    const compatibilityPage = getDatabase().loreBookPage
+    const page =
+      snapshot.status === 'ready' || snapshot.status === 'stale'
+        ? ownerPage
+        : snapshot.status !== 'error' && Number.isInteger(compatibilityPage) && compatibilityPage >= 0
+          ? compatibilityPage
+          : null
+    const candidate = page === null ? undefined : globalLorebookOwners()[page]
+    return typeof candidate?.id === 'string' && candidate.id.trim()
+      ? uniqueGlobalLorebookOwner(candidate.id)
+      : undefined
+  }
+
+  let selectedCharacterId = $derived(globalMode ? undefined : selectedCharacter()?.chaId)
   let characterLorebookLoading = $derived(
     !globalMode && submenu === 0 && isCharacterLorebookHydrationPending(selectedCharacterId),
   )
@@ -53,21 +161,18 @@
   )
 
   function characterLorebookScopeKey(): string | null {
-    const characterId = getDatabase().characters?.[$selectedCharID]?.chaId
+    const characterId = selectedCharacter()?.chaId
     return characterId ? `character:${characterId}` : null
   }
 
   function chatLorebookScopeKey(): string | null {
-    const character = getDatabase().characters?.[$selectedCharID]
-    const chatId = character?.chats?.[character.chatPage]?.id
+    const chatId = selectedChat()?.id
     return chatId ? `chat:${chatId}` : null
   }
 
   function globalLorebookScopeKey(): string | null {
-    const database = getDatabase()
-    const page = lorebookPageIndexFromSnapshot($lorebookPageOwnerState) ?? 0
-    const lorebookId = (database.loreBook?.[page] as { id?: unknown } | undefined)?.id
-    return typeof lorebookId === 'string' && lorebookId.trim() ? `global:${lorebookId}` : null
+    const lorebookId = selectedGlobalLorebook()?.id
+    return lorebookId ? `global:${lorebookId}` : null
   }
 
   let activeToolbarScopeKey = $derived(
@@ -84,6 +189,10 @@
 
   function lorebookMutationPending(scopeKey: string | null): boolean {
     return lorebookMutationStatus(scopeKey) === 'pending'
+  }
+
+  function lorebookMutationBlocked(scopeKey: string | null): boolean {
+    return !scopeKey || lorebookMutationPending(scopeKey)
   }
 
   function trackLorebookMutation(operation: ScopedLorebookMutationOperation | null): void {
@@ -109,18 +218,17 @@
   })
 
   function isAllCharacterLoreAlwaysActive() {
-    const globalLore = getDatabase().characters?.[$selectedCharID]?.globalLore
+    const globalLore = selectedCharacter()?.globalLore
     return globalLore && globalLore.every((book) => book.alwaysActive)
   }
 
   function isAllChatLoreAlwaysActive() {
-    const character = getDatabase().characters?.[$selectedCharID]
-    const localLore = character?.chats?.[character.chatPage]?.localLore
+    const localLore = selectedChat()?.localLore
     return localLore && localLore.every((book) => book.alwaysActive)
   }
 
   function toggleCharacterLoreAlwaysActive() {
-    const character = getDatabase().characters?.[$selectedCharID]
+    const character = selectedCharacter()
     const globalLore = character?.globalLore
 
     if (!character?.chaId || !globalLore) return
@@ -131,8 +239,7 @@
   }
 
   function toggleChatLoreAlwaysActive() {
-    const character = getDatabase().characters?.[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
+    const chat = selectedChat()
     const localLore = chat?.localLore
 
     if (!chat?.id || !localLore) return
@@ -209,14 +316,11 @@
       </div>
     </div>
   {:else if !globalMode && submenu === 0}
-    <LoreBookList {globalMode} {submenu} lorePlus={getDatabase().characters[$selectedCharID]?.lorePlus} />
+    <LoreBookList {globalMode} {submenu} lorePlus={selectedCharacter()?.lorePlus} />
   {:else if !globalMode && submenu === 1}
-    <LoreBookList {globalMode} {submenu} lorePlus={getDatabase().characters[$selectedCharID]?.lorePlus} />
+    <LoreBookList {globalMode} {submenu} lorePlus={selectedCharacter()?.lorePlus} />
   {:else}
-    <LoreBookList
-      {globalMode}
-      {submenu}
-      lorePlus={!globalMode && getDatabase().characters[$selectedCharID]?.lorePlus} />
+    <LoreBookList {globalMode} {submenu} lorePlus={!globalMode && selectedCharacter()?.lorePlus} />
   {/if}
 {:else}
   {#if characterLoreSettingsDraft.value.loreSettings}
@@ -249,8 +353,8 @@
         check={true}
         onChange={() => {
           characterLoreSettingsDraft.value.loreSettings = {
-            tokenBudget: getDatabase().loreBookToken,
-            scanDepth: getDatabase().loreBookDepth,
+            tokenBudget: advancedSetting('loreBookToken') ?? 800,
+            scanDepth: advancedSetting('loreBookDepth') ?? 5,
             recursiveScanning: false,
           }
           characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
@@ -259,7 +363,7 @@
     </div>
   {/if}
   <div class="flex items-center mt-4">
-    {#if getDatabase().useExperimental}
+    {#if advancedSetting('useExperimental')}
       <Check bind:check={characterLoreSettingsDraft.value.lorePlus} name={language.lorePlus}
         ><Help key="lorePlus"></Help><Help key="experimental"></Help></Check>
     {/if}
@@ -269,9 +373,9 @@
   <div class="text-textcolor2 mt-2 flex">
     <button
       aria-label={`${language.add}: ${language.loreBook}`}
-      disabled={lorebookMutationPending(activeToolbarScopeKey)}
+      disabled={lorebookMutationBlocked(activeToolbarScopeKey)}
       onclick={() => {
-        if (lorebookMutationPending(activeToolbarScopeKey)) return
+        if (lorebookMutationBlocked(activeToolbarScopeKey)) return
         trackLorebookMutation(addLorebook(globalMode ? -1 : submenu))
       }}
       class="hover:text-textcolor cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
@@ -279,17 +383,19 @@
     </button>
     <button
       aria-label={`${language.export}: ${language.loreBook}`}
+      disabled={!activeToolbarScopeKey}
       onclick={() => {
+        if (!activeToolbarScopeKey) return
         exportLoreBook(globalMode ? 'sglobal' : submenu === 0 ? 'global' : 'local')
       }}
-      class="hover:text-textcolor ml-1 cursor-pointer">
+      class="hover:text-textcolor ml-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
       <DownloadIcon />
     </button>
     <button
       aria-label={`${language.add}: ${language.folderName}`}
-      disabled={lorebookMutationPending(activeToolbarScopeKey)}
+      disabled={lorebookMutationBlocked(activeToolbarScopeKey)}
       onclick={() => {
-        if (lorebookMutationPending(activeToolbarScopeKey)) return
+        if (lorebookMutationBlocked(activeToolbarScopeKey)) return
         trackLorebookMutation(addLorebookFolder(globalMode ? -1 : submenu))
       }}
       class="hover:text-textcolor ml-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
@@ -297,22 +403,22 @@
     </button>
     <button
       aria-label={`${language.import}: ${language.loreBook}`}
-      disabled={lorebookMutationPending(activeToolbarScopeKey)}
+      disabled={lorebookMutationBlocked(activeToolbarScopeKey)}
       onclick={async () => {
-        if (lorebookMutationPending(activeToolbarScopeKey)) return
+        if (lorebookMutationBlocked(activeToolbarScopeKey)) return
         trackLorebookMutation(await importLoreBook(globalMode ? 'sglobal' : submenu === 0 ? 'global' : 'local'))
       }}
       class="hover:text-textcolor ml-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50">
       <HardDriveUploadIcon />
     </button>
-    {#if getDatabase().bulkEnabling}
+    {#if advancedSetting('bulkEnabling')}
       <button
         aria-label={`${isAllCharacterLoreAlwaysActive() ? language.disable : language.enable}: ${language.alwaysActive} (${language.character})`}
         aria-pressed={Boolean(isAllCharacterLoreAlwaysActive())}
-        disabled={lorebookMutationPending(characterLorebookScopeKey())}
+        disabled={lorebookMutationBlocked(characterLorebookScopeKey())}
         data-risu-lorebook-persistence={lorebookMutationStatus(characterLorebookScopeKey())}
         onclick={() => {
-          if (lorebookMutationPending(characterLorebookScopeKey())) return
+          if (lorebookMutationBlocked(characterLorebookScopeKey())) return
           toggleCharacterLoreAlwaysActive()
         }}
         class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50">
@@ -326,10 +432,10 @@
       <button
         aria-label={`${isAllChatLoreAlwaysActive() ? language.disable : language.enable}: ${language.alwaysActive} (${language.Chat})`}
         aria-pressed={Boolean(isAllChatLoreAlwaysActive())}
-        disabled={lorebookMutationPending(chatLorebookScopeKey())}
+        disabled={lorebookMutationBlocked(chatLorebookScopeKey())}
         data-risu-lorebook-persistence={lorebookMutationStatus(chatLorebookScopeKey())}
         onclick={() => {
-          if (lorebookMutationPending(chatLorebookScopeKey())) return
+          if (lorebookMutationBlocked(chatLorebookScopeKey())) return
           toggleChatLoreAlwaysActive()
         }}
         class="hover:text-textcolor ml-2 cursor-pointer flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50">
