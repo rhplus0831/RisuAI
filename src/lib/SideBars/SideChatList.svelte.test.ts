@@ -500,6 +500,7 @@ import SideChatListHarness from './SideChatList.testHarness.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import {
+  charactersResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
@@ -791,6 +792,22 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarRoot().dataset.risuChatOpen).toBe('false')
     expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeNull()
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('renders chat names from the hydrated owner when aggregate metadata conflicts', async () => {
+    const aggregate = seedSidebarDatabase()
+    charactersResourceState.characters = [
+      {
+        ...aggregate,
+        chats: aggregate.chats.map((chat) => (chat.id === 'chat-root-a' ? { ...chat, name: 'Owner Chat A' } : chat)),
+      },
+    ]
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    expect(selectButtonForRow(rowByChatId('chat-root-a')).textContent).toContain('Owner Chat A')
+    expect(selectButtonForRow(rowByChatId('chat-root-a')).textContent).not.toContain('Root Chat A')
   })
 
   it('marks only the exact chat whose observer is exhausted with an accessible warning', async () => {

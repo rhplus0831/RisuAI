@@ -16,7 +16,8 @@
   } from '@lucide/svelte'
 
   import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { reloadGuiDisplay } from 'src/ts/stores.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
@@ -82,6 +83,13 @@
   }
 
   let { chara }: Props = $props()
+  function renderedChatName(chat: Chat): string {
+    const characterId = chara.chaId
+    if (!characterId) return chat.name ?? ''
+    const owner = charactersResourceState.characters.find((candidate) => candidate?.chaId === characterId)
+    if (!owner || isServerCharacterShell(owner)) return chat.name ?? ''
+    return owner.chats?.find((candidate) => candidate.id === chat.id)?.name ?? chat.name ?? ''
+  }
   let editMode = $state(false)
   let pendingPersonaBindings = $state<Record<string, boolean>>({})
   type ChatStructureMutationStatus = 'pending' | 'queued' | 'failed'
@@ -1586,7 +1594,7 @@
                             event.stopPropagation()
                             activateChatRow(index)
                           }}>
-                          <span>{chat.name}</span>
+                          <span>{renderedChatName(chat)}</span>
                         </button>
                       {/if}
                       {#if chat.id && reattachWarningChatIds.has(chat.id)}
@@ -1724,7 +1732,7 @@
                     event.stopPropagation()
                     activateChatRow(index)
                   }}>
-                  <span>{chat.name}</span>
+                  <span>{renderedChatName(chat)}</span>
                 </button>
               {/if}
               {#if chat.id && reattachWarningChatIds.has(chat.id)}
