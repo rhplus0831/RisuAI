@@ -4,14 +4,13 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [browser-smoke support boundary
-slice](phases/slices/phase-4-server-consumer-migration/browser-smoke-support-boundaries.md).
+Extract the pure Agent lorebook input resolver used by browser and Fastify.
 
-1. Replace the smoke hook and startup snapshot type imports with neutral
-   contracts when exact structural parity can be pinned.
-2. Replace the lazy-first-open language-module dependency with a test-owned
-   fixture only when source parity preserves the displayed labels.
-3. Keep router and resource-manifest behavior edges outside this slice.
+1. Define narrow structural input/entry records in shared core.
+2. Keep Original Risu export cloning and browser database declarations in the
+   browser facade.
+3. Prove matching missing/ambiguous/activation/empty/resolved outcomes before
+   removing the Fastify import.
 
 ## Foundations Released
 
@@ -120,6 +119,10 @@ slice](phases/slices/phase-4-server-consumer-migration/browser-smoke-support-bou
   `@risuai/shared-core/prompt-info-snapshot` at `8d7bc6256`.
 - Fastify Lua runtime's character argument uses a narrow server-owned structural
   input at `0fb61855a`.
+- Browser-smoke startup snapshots and English labels are isolated at
+  `85b01059c`; the exact count gate followed at `589d7a893`.
+- Prompt role and template-row normalization are released through two audited
+  shared-core subpaths at `663019ccb`.
 
 ## Holds
 
@@ -132,5 +135,5 @@ slice](phases/slices/phase-4-server-consumer-migration/browser-smoke-support-bou
 
 ## Handoff
 
-After this slice closes, refresh the remaining
-model/prompt/parser/aggregate-domain ranking.
+After this leaf closes, refresh the remaining model/prompt/parser/aggregate-domain
+ranking.

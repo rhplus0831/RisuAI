@@ -9,7 +9,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 browser-smoke support](cross-runtime-boundaries/status.md) | Thirty neutral leaves, Fastify-local prompt state, and protocol contracts reduce the checked boundary to 163 direct root-`src` edges. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 Agent lorebook input](cross-runtime-boundaries/status.md) | Thirty-two neutral leaves, Fastify-local prompt state, and protocol contracts reduce the checked boundary to 158 direct root-`src` edges. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Profile-owned request/runtime identity is canonical through `841d0b65e`; character/chat row owners are released at `7cb62afa8`. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat ownership](client-resource-ownership/status.md) | The mobile character-summary consumer migrated at `3b74261c1`; the next family waits for its Workstream 1 contract. |
 
