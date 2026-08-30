@@ -16,6 +16,10 @@ export function getSelectedCharacterOwner(): character | undefined {
   return selectCharacterOwner(charactersResourceState.characters, charactersResourceState.currentChar)
 }
 
+function characterOwnerRows(): readonly character[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
+}
+
 export async function getCustomBackground(db: unknown) {
   if (typeof db !== 'string' || db.length < 2) {
     return ''
@@ -25,21 +29,18 @@ export async function getCustomBackground(db: unknown) {
 }
 
 export function findCharacterbyId(id: string) {
-  const db = getDatabase()
-  for (const char of db.characters) {
-    if (char.chaId === id) {
-      return char
-    }
-  }
+  const matches = characterOwnerRows().filter((char) => char.chaId === id)
+  if (matches.length === 1) return matches[0]
   const unknown = createBlankChar()
   unknown.name = 'Unknown Character'
   return unknown
 }
 
 export function findCharacterIndexbyId(id: string) {
-  const db = getDatabase()
+  const characters = characterOwnerRows()
+  if (characters.filter((char) => char.chaId === id).length !== 1) return -1
   let i = 0
-  for (const char of db.characters) {
+  for (const char of characters) {
     if (char.chaId === id) {
       return i
     }
@@ -49,11 +50,13 @@ export function findCharacterIndexbyId(id: string) {
 }
 
 export function getCharacterIndexObject() {
-  const db = getDatabase()
+  const characters = characterOwnerRows()
   let i = 0
   const result: { [key: string]: number } = {}
-  for (const char of db.characters) {
-    result[char.chaId] = i
+  const counts = new Map<string, number>()
+  for (const char of characters) counts.set(char.chaId, (counts.get(char.chaId) ?? 0) + 1)
+  for (const char of characters) {
+    if ((counts.get(char.chaId) ?? 0) === 1) result[char.chaId] = i
     i += 1
   }
   return result
@@ -89,5 +92,7 @@ export async function getEmotion(
   chaEmotion: { [key: string]: [string, string, number][] },
   type: 'contain' | 'plain' | 'css',
 ) {
-  return getEmotionForCharacter(db.characters[get(selectedCharID)], chaEmotion, type)
+  const currentChar =
+    charactersResourceState.status === 'ready' ? getSelectedCharacterOwner() : db.characters[get(selectedCharID)]
+  return getEmotionForCharacter(currentChar, chaEmotion, type)
 }
