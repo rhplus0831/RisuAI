@@ -48,6 +48,7 @@ import {
   type CharacterMutationOutcome,
 } from './characterCommands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import { charactersResourceState } from './server/resourceState.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
@@ -1382,7 +1383,7 @@ export async function addCharacter(
 
 function captureCharacterNavigationScope(): CharacterNavigationScope {
   const selectedIndex = get(selectedCharID)
-  const currentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
+  const currentChar = currentCharacterIndexOwner()
   return {
     selectedCharID: selectedIndex,
     selectedCharacterId: characterIdAtIndex(selectedIndex),
@@ -1394,7 +1395,7 @@ function captureCharacterNavigationScope(): CharacterNavigationScope {
 
 function characterNavigationScopeMatches(scope: CharacterNavigationScope): boolean {
   const selectedIndex = get(selectedCharID)
-  const currentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
+  const currentChar = currentCharacterIndexOwner()
   const selectedCharacterId = characterIdAtIndex(selectedIndex)
   const currentCharacterId = characterIdAtIndex(currentChar)
 
@@ -1429,7 +1430,10 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
     const recovered = await recoverColdStorageCharacter(index)
     if (!isFreshSelectionAttempt() || !recovered) return
   }
-  const characterId = getDatabase().characters?.[index]?.chaId
+  const characterId =
+    charactersResourceState.status === 'ready'
+      ? characterOwnerAt(index)?.chaId
+      : getDatabase().characters?.[index]?.chaId
   if (!characterId) return
   if (isServerCharacterShell(getDatabase().characters?.[index])) {
     const hydrated = await hydrateCharacterShell(characterId)
@@ -1456,10 +1460,36 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
 }
 
 function findLiveCharacterIndex(characterId: string): number {
-  return getDatabase().characters?.findIndex((character) => character?.chaId === characterId) ?? -1
+  const rows = characterRowsOwner()
+  const matches = rows.reduce<number[]>((indices, character, index) => {
+    if (character?.chaId === characterId) indices.push(index)
+    return indices
+  }, [])
+  return charactersResourceState.status === 'ready' ? (matches.length === 1 ? matches[0] : -1) : (matches[0] ?? -1)
 }
 
 function characterIdAtIndex(index: number | undefined): string | undefined {
-  if (typeof index !== 'number' || index < 0) return undefined
-  return getDatabase().characters?.[index]?.chaId
+  return typeof index === 'number' ? characterOwnerAt(index)?.chaId : undefined
+}
+
+function characterRowsOwner(): character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
+function currentCharacterIndexOwner(): number | undefined {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.currentChar
+    : (getDatabase() as unknown as { currentChar?: number }).currentChar
+}
+
+function characterOwnerAt(index: number): character | undefined {
+  if (index < 0) return undefined
+  const candidate = characterRowsOwner()[index]
+  if (charactersResourceState.status !== 'ready') return candidate
+  if (!candidate?.chaId) return undefined
+  return characterRowsOwner().filter((character) => character?.chaId === candidate.chaId).length === 1
+    ? candidate
+    : undefined
 }

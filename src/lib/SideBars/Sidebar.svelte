@@ -296,7 +296,7 @@
       const folderImage = await selectSingleFile(['png', 'jpg', 'webp'], {
         onFileSelected: () => {
           const folderImageTarget = captureCharacterFolderImageUploadTarget({
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
             folderId,
           })
           if (!folderImageTarget) return
@@ -311,7 +311,7 @@
         if (
           !isFreshCharacterFolderImageUpload({
             operation: freshFolderImageUpload,
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
           })
         ) {
           return null
@@ -322,7 +322,7 @@
         if (
           !isFreshCharacterFolderImageUpload({
             operation: freshFolderImageUpload,
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
           })
         ) {
           return null
@@ -333,7 +333,7 @@
         if (
           !isFreshCharacterFolderImageUpload({
             operation: freshFolderImageUpload,
-            characterOrder: getDatabase().characterOrder,
+            characterOrder: characterOrderOwner(),
           })
         ) {
           return null
@@ -341,7 +341,7 @@
 
         const freshImagePatch = resolveFreshCharacterFolderImageUploadPatch({
           operation: freshFolderImageUpload,
-          characterOrder: getDatabase().characterOrder,
+          characterOrder: characterOrderOwner(),
           patch: { imgFile: folderImageData, img: folderImageSrc },
         })
 
@@ -354,7 +354,7 @@
   }
 
   async function openCharacterRoute(index: number) {
-    const character = getDatabase().characters?.[index]
+    const character = characterOwnerAt(index)
     if (!character?.chaId) {
       changeChar(index, { reseter })
       return
@@ -363,16 +363,40 @@
     navigate(characterRoutePath(character.chaId))
   }
 
+  function selectedSidebarCharacter() {
+    const index = $selectedCharID
+    return characterOwnerAt(index)
+  }
+
+  function characterOwnerAt(index: number) {
+    if (index < 0) return undefined
+    const candidate =
+      charactersResourceState.status === 'ready'
+        ? charactersResourceState.characters[index]
+        : getDatabase().characters?.[index]
+    if (charactersResourceState.status !== 'ready') return candidate
+    if (!candidate?.chaId) return undefined
+    return charactersResourceState.characters.filter((character) => character?.chaId === candidate.chaId).length === 1
+      ? candidate
+      : undefined
+  }
+
+  function characterOrderOwner() {
+    return charactersResourceState.status === 'ready' && charactersResourceState.orderRevision !== null
+      ? charactersResourceState.characterOrder
+      : (getDatabase().characterOrder ?? [])
+  }
+
   const getSidebarCharacterList = createSidebarCharacterListMemo()
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(charactersResourceState.characterOrder, charactersResourceState.characters).items,
+    () => getSidebarCharacterList(characterOrderOwner(), charactersResourceState.characters).items,
   )
   let IconRounded = $derived(getDatabase().roundIcons)
   let warningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
   let generatingChatIds = $derived(
     collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations, warningChatIds),
   )
-  let pinnedChats = $derived(collectPinnedChats(getDatabase().characters, getDatabase().characterOrder))
+  let pinnedChats = $derived(collectPinnedChats(getDatabase().characters, characterOrderOwner()))
   let openFolders: string[] = $state([])
   const sidebarCharacterDrag = createSidebarCharacterDragController()
   interface Props {
@@ -394,7 +418,7 @@
   }: Props = $props()
 
   function prefetchCharacterAt(index: number): void {
-    const characterId = getDatabase().characters?.[index]?.chaId
+    const characterId = characterOwnerAt(index)?.chaId
     if (characterId) prefetchCharacter(characterId)
   }
 
@@ -407,7 +431,7 @@
 
   function characterOrderPosition(characterId: string | undefined): DragData | null {
     if (!characterId) return null
-    for (const [index, entry] of getDatabase().characterOrder.entries()) {
+    for (const [index, entry] of characterOrderOwner().entries()) {
       if (typeof entry === 'string') {
         if (entry === characterId) return { index }
         continue
@@ -455,9 +479,9 @@
 
   function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {
     if (item.type === 'normal') {
-      return characterOrderPosition(getDatabase().characters[item.index]?.chaId)
+      return characterOrderPosition(characterOwnerAt(item.index)?.chaId)
     }
-    const index = getDatabase().characterOrder.findIndex((entry) => typeof entry !== 'string' && entry.id === item.id)
+    const index = characterOrderOwner().findIndex((entry) => typeof entry !== 'string' && entry.id === item.id)
     return index < 0 ? null : { index }
   }
 
@@ -497,14 +521,14 @@
     const selectedId = $selectedCharID
     if (selectedId === -1) return
 
-    const characterId = getDatabase().characters[selectedId]?.chaId
+    const characterId = characterOwnerAt(selectedId)?.chaId
     if (!characterId) return
 
     let targetFolder: Extract<SidebarCharacterListItem, { type: 'folder' }> | null = null
 
     for (const item of charImages) {
       if (item.type === 'folder') {
-        const foundChar = item.folder.find((c) => getDatabase().characters[c.index]?.chaId === characterId)
+        const foundChar = item.folder.find((c) => characterOwnerAt(c.index)?.chaId === characterId)
         if (foundChar) {
           targetFolder = item
           break
@@ -556,7 +580,7 @@
   type DragData = CharacterOrderDragPosition
   const avatarDragStart = (ind: DragData, e: DragEv) => {
     if (characterOrganizationMutationPending) return
-    if (!sidebarCharacterDrag.begin(ind, getDatabase().characterOrder)) return
+    if (!sidebarCharacterDrag.begin(ind, characterOrderOwner())) return
 
     e.dataTransfer.setData('text/plain', '')
     e.dataTransfer.setData(RISU_SIDEBAR_DRAG_TYPE, 'true')
@@ -575,7 +599,7 @@
 
   const avatarDrop = (ind: DragData, e: DragEv) => {
     if (characterOrganizationMutationPending) return
-    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
+    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, characterOrderOwner())
     if (!drag) return
 
     e.preventDefault()
@@ -596,7 +620,7 @@
   const consumeDropZoneDrag = (e: DragEv) => {
     e.currentTarget.classList.remove('bg-green-500')
     if (characterOrganizationMutationPending) return null
-    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
+    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, characterOrderOwner())
     if (!drag) return null
 
     e.preventDefault()
@@ -804,7 +828,7 @@
                 size="56"
                 rounded={IconRounded}
                 name={char.name}
-                chaId={getDatabase().characters[char.index]?.chaId}
+                chaId={characterOwnerAt(char.index)?.chaId}
                 onClick={() => openCharacterRoute(char.index)} />
             {:else if char.type === 'folder'}
               {#key char.color}
@@ -915,7 +939,7 @@
                   data-risu-character-organization-status={characterOrganizationActions.order?.status ?? 'idle'}
                   aria-busy={isCharacterOrganizationActionPending('order')}
                   ondragstart={(e) => {
-                    const position = characterOrderPosition(getDatabase().characters[char2.index]?.chaId)
+                    const position = characterOrderPosition(characterOwnerAt(char2.index)?.chaId)
                     if (position) avatarDragStart(position, e)
                   }}
                   ondragend={sidebarCharacterDrag.clear}
@@ -923,7 +947,7 @@
                   onfocusin={() => prefetchCharacterAt(char2.index)}
                   ondragover={avatarDragOver}
                   ondrop={(e) => {
-                    const position = characterOrderPosition(getDatabase().characters[char2.index]?.chaId)
+                    const position = characterOrderPosition(characterOwnerAt(char2.index)?.chaId)
                     if (position) avatarDrop(position, e)
                   }}
                   ondragenter={preventCharacterDrag}>
@@ -934,7 +958,7 @@
                       size="56"
                       rounded={IconRounded}
                       name={char2.name}
-                      chaId={getDatabase().characters[char2.index]?.chaId}
+                      chaId={characterOwnerAt(char2.index)?.chaId}
                       onClick={() => openCharacterRoute(char2.index)} />
                   </div>
                   {#if characterHasReattachWarning(char2.index)}
@@ -961,7 +985,7 @@
                   }}
                   ondrop={(e) => {
                     const da = consumeDropZoneDrag(e)
-                    const target = positionAfter(characterOrderPosition(getDatabase().characters[char2.index]?.chaId))
+                    const target = positionAfter(characterOrderPosition(characterOwnerAt(char2.index)?.chaId))
                     if (da && target) {
                       inserter(da, target)
                     }
@@ -1085,9 +1109,13 @@
         <h1 class="text-xl">Welcome to RisuAI!</h1>
         <span class="text-xs text-textcolor2">Select a bot to start chatting</span>
       </div>
-    {:else if getDatabase().characters[$selectedCharID]?.chaId === '§playground'}
-      <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+    {:else if selectedSidebarCharacter()?.chaId === '§playground'}
+      {@const selectedCharacter = selectedSidebarCharacter()}
+      {#if selectedCharacter}
+        <SideChatList chara={selectedCharacter} />
+      {/if}
     {:else}
+      {@const selectedCharacter = selectedSidebarCharacter()}
       <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button
           onclick={() => {
@@ -1133,7 +1161,9 @@
         </div>
       {:else}
         <div class="contents" data-risu-sidebar-panel="chat">
-          <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+          {#if selectedCharacter}
+            <SideChatList chara={selectedCharacter} />
+          {/if}
         </div>
       {/if}
     {/if}

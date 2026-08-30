@@ -16,7 +16,7 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
@@ -258,11 +258,31 @@ function pendingMutationStagingFailure(error: unknown): Exclude<ServerCommandRes
   }
 }
 
+function characterRowsOwner(): character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
+function characterOrderOwner(): (string | folder)[] {
+  const result =
+    charactersResourceState.status === 'ready' && charactersResourceState.orderRevision !== null
+      ? charactersResourceState.characterOrder
+      : (getDatabase().characterOrder ?? [])
+  return result
+}
+
+function currentCharOwner(): number | undefined {
+  return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
+    ? charactersResourceState.currentChar
+    : (getDatabase() as unknown as { currentChar?: number }).currentChar
+}
+
 export function currentCharacterStateSnapshot(): CharacterStateSnapshot {
   return {
     characters: cloneJsonValue(getDatabase().characters ?? []),
-    characterOrder: cloneJsonValue(getDatabase().characterOrder ?? []),
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    characterOrder: cloneJsonValue(characterOrderOwner()),
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
@@ -277,22 +297,22 @@ export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
 }
 
 function currentCharacterOrderSnapshot(): (string | folder)[] {
-  return cloneJsonValue(getDatabase().characterOrder ?? [])
+  return cloneJsonValue(characterOrderOwner())
 }
 
 export function currentCharacterSelectionSnapshot(characterId: string): CharacterSelectionSnapshot {
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const character = uniqueCharacterOwnerById(characterId)
   return {
     characterId,
     lastInteraction: character?.lastInteraction,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot): void {
   withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
+    const character = uniqueCharacterOwnerById(snapshot.characterId)
     if (character) {
       character.lastInteraction = snapshot.lastInteraction
     }
@@ -308,7 +328,7 @@ function currentCharacterSelectionAttempt(
   return {
     characterId,
     lastInteraction,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
@@ -319,9 +339,9 @@ function restoreCharacterSelectionAttempt(
 ): void {
   withTrustedResourceWrite(() => {
     const liveSelectedCharID = get(selectedCharID)
-    const liveCurrentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
+    const liveCurrentChar = currentCharOwner()
     const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
-    const attemptedCharacter = getDatabase().characters?.find((candidate) => candidate?.chaId === attempted.characterId)
+    const attemptedCharacter = uniqueCharacterOwnerById(attempted.characterId)
 
     if (
       liveSelectedCharID !== attempted.selectedCharID ||
@@ -332,7 +352,7 @@ function restoreCharacterSelectionAttempt(
       return
     }
 
-    const previousCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === previous.characterId)
+    const previousCharacter = uniqueCharacterOwnerById(previous.characterId)
     if (previousCharacter) {
       previousCharacter.lastInteraction = previous.lastInteraction
     }
@@ -381,31 +401,35 @@ interface CharacterOrderPlacement {
 }
 
 export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
-  const character = getDatabase().characters?.[index]
+  const character = uniqueCharacterOwnerAt(index)
   return {
     characterId: character?.chaId,
     index,
     character: character ? cloneJsonValue(character) : undefined,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function currentCharacterTrashTimeSnapshot(index: number = get(selectedCharID)): CharacterTrashTimeSnapshot {
-  const character = getDatabase().characters?.[index] as (character & { trashTime?: number | null }) | undefined
+  const character = uniqueCharacterOwnerAt(index) as (character & { trashTime?: number | null }) | undefined
   return {
     characterId: character?.chaId,
     index,
     hadTrashTime: !!character && Object.prototype.hasOwnProperty.call(character, 'trashTime'),
     trashTime: character?.trashTime,
     orderPlacement: character?.chaId ? currentCharacterOrderPlacement(character.chaId) : null,
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharOwner(),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function currentCharacterSupaMemorySnapshot(characterId: string): CharacterSupaMemorySnapshot | null {
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const character =
+    uniqueCharacterOwnerById(characterId) ??
+    (charactersResourceState.status === 'ready'
+      ? undefined
+      : getDatabase().characters?.find((candidate) => candidate.chaId === characterId))
   if (!character) return null
   return {
     characterId,
@@ -494,7 +518,7 @@ function locateCharacterIndex(characters: character[], characterId: string | und
 }
 
 function currentCharacterOrderPlacement(characterId: string): CharacterOrderPlacement | null {
-  return characterOrderPlacementFromOrder(getDatabase().characterOrder ?? [], characterId)
+  return characterOrderPlacementFromOrder(characterOrderOwner(), characterId)
 }
 
 function characterOrderPlacementFromOrder(
@@ -687,12 +711,11 @@ function shouldRestorePreviousSelectionAfterDeletedCharacterRollback(
 }
 
 function isCharacterSelectionEmptyOrStale(index: number): boolean {
-  return index < 0 || !getDatabase().characters?.[index]
+  return index < 0 || !uniqueCharacterOwnerAt(index)
 }
 
 function selectedCharacterIdAt(index: number): string | undefined {
-  if (index < 0) return undefined
-  return getDatabase().characters?.[index]?.chaId
+  return uniqueCharacterOwnerAt(index)?.chaId
 }
 
 function restoreCharacterSelectionScalars(currentChar: number | undefined, selectedCharacterIndex: number): void {
@@ -701,9 +724,25 @@ function restoreCharacterSelectionScalars(currentChar: number | undefined, selec
 }
 
 function restoreCharacterSelectionById(characterId: string): void {
-  const index = getDatabase().characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
+  const characters = characterRowsOwner()
+  const candidate = uniqueCharacterOwnerById(characterId)
+  const index = candidate ? characters.indexOf(candidate) : -1
   if (index === -1) return
   restoreCharacterSelectionScalars(index, index)
+}
+
+function uniqueCharacterOwnerAt(index: number): character | undefined {
+  if (index < 0) return undefined
+  const candidate = characterRowsOwner()[index]
+  if (charactersResourceState.status !== 'ready') return candidate
+  return candidate?.chaId ? uniqueCharacterOwnerById(candidate.chaId) : undefined
+}
+
+function uniqueCharacterOwnerById(characterId: string): character | undefined {
+  if (!characterId) return undefined
+  const matches = characterRowsOwner().filter((candidate) => candidate?.chaId === characterId)
+  if (charactersResourceState.status === 'ready') return matches.length === 1 ? matches[0] : undefined
+  return matches[0]
 }
 
 function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacement | null): void {
@@ -916,10 +955,9 @@ function selectedCharacterIdFromStateSnapshot(snapshot: CharacterStateSnapshot):
 }
 
 function selectedCharacterIdFromSelectionSnapshot(snapshot: CharacterSelectionSnapshot): string | null {
-  const characters = getDatabase().characters ?? []
   for (const index of [snapshot.currentChar, snapshot.selectedCharID]) {
     if (!Number.isInteger(index) || (index as number) < 0) continue
-    const characterId = characters[index as number]?.chaId
+    const characterId = uniqueCharacterOwnerAt(index as number)?.chaId
     if (typeof characterId === 'string' && characterId.trim()) return characterId
   }
   return null
@@ -1710,7 +1748,7 @@ export function dispatchReorderCharactersWithOutcome(
   previousOrder: (string | folder)[],
   dependencyCharacterIds: readonly string[] = [],
 ): Promise<CharacterMutationOutcome> | undefined {
-  const rollback = characterOrderRollbackFromOrders(previousOrder, getDatabase().characterOrder ?? [])
+  const rollback = characterOrderRollbackFromOrders(previousOrder, characterOrderOwner())
   return dispatchCharacterOrderCommandWithOutcome(
     { attemptedOrder: rollback.attemptedOrder },
     () => restoreCharacterOrderAttempt(rollback),
@@ -1724,7 +1762,7 @@ function isCurrentCharacterOrderProjectionFence(fence: PendingMutationProjection
 
 function reapplyCharacterOrderProjection(projection: CharacterOrderDurableProjection): void {
   withTrustedResourceWrite(() => {
-    const liveOrder = getDatabase().characterOrder ?? []
+    const liveOrder = characterOrderOwner()
     const reappliedOrder = restoreCharacterOrderStructure(projection.attemptedOrder, liveOrder)
     const metadata = projection.metadata
     if (metadata) {
@@ -1735,13 +1773,13 @@ function reapplyCharacterOrderProjection(projection: CharacterOrderDurableProjec
         reappliedOrder[folderIndex] = targetFolder
       }
     }
-    getDatabase().characterOrder = normalizeCharacterOrder(reappliedOrder, getDatabase().characters).characterOrder
+    getDatabase().characterOrder = normalizeCharacterOrder(reappliedOrder, characterRowsOwner()).characterOrder
   })
 }
 
 function reapplyCharacterOrderFolderMetadataProjection(metadata: CharacterOrderFolderMetadataRollback): void {
   withTrustedResourceWrite(() => {
-    const characterOrder = getDatabase().characterOrder ?? []
+    const characterOrder = characterOrderOwner()
     const folderIndex = findCharacterOrderFolderIndex(characterOrder, metadata.folderId)
     const targetFolder = characterOrder[folderIndex]
     if (!isCharacterOrderFolder(targetFolder)) return
@@ -1776,7 +1814,7 @@ function characterOrderRollbackFromOrders(
 
 function restoreCharacterOrderAttempt(rollback: CharacterOrderRollback): void {
   withTrustedResourceWrite(() => {
-    const liveOrder = getDatabase().characterOrder ?? []
+    const liveOrder = characterOrderOwner()
     if (!characterOrderStructureEquals(liveOrder, rollback.attemptedOrder)) return
 
     getDatabase().characterOrder = restoreCharacterOrderStructure(rollback.previousOrder, liveOrder)
@@ -1875,7 +1913,7 @@ export function repairCharacterOrderOptimistically(
     dispatchReorder?: boolean
   } = {},
 ): boolean {
-  const normalized = normalizeCharacterOrder(getDatabase().characterOrder, getDatabase().characters)
+  const normalized = normalizeCharacterOrder(characterOrderOwner(), characterRowsOwner())
   if (!normalized.changed) return false
 
   const shouldDispatchReorder = options.dispatchReorder ?? true
@@ -2216,7 +2254,7 @@ function applyCharacterOrderFolderMetadata(
 
 function restoreCharacterOrderFolderMetadataAttempt(rollback: CharacterOrderFolderMetadataRollback): void {
   withTrustedResourceWrite(() => {
-    const characterOrder = getDatabase().characterOrder ?? []
+    const characterOrder = characterOrderOwner()
     const folderIndex = findCharacterOrderFolderIndex(characterOrder, rollback.folderId)
     if (folderIndex === -1) return
 
@@ -2254,7 +2292,9 @@ function characterIdsInOrder(order: readonly (string | folder)[]): string[] {
 }
 
 function ensureCharacterOrder(): (string | folder)[] {
-  getDatabase().characterOrder = getDatabase().characterOrder ?? []
+  const characterOrder = characterOrderOwner()
+  if (charactersResourceState.status === 'ready') return characterOrder
+  getDatabase().characterOrder = characterOrder
   return getDatabase().characterOrder
 }
 
@@ -2263,7 +2303,7 @@ function isCharacterOrderFolder(value: string | folder | undefined | null): valu
 }
 
 function getCharacterOrderFolderIndex(id: string): number {
-  return findCharacterOrderFolderIndex(getDatabase().characterOrder ?? [], id)
+  return findCharacterOrderFolderIndex(characterOrderOwner(), id)
 }
 
 function findCharacterOrderFolderIndex(characterOrder: (string | folder)[], id: string): number {
@@ -2299,7 +2339,7 @@ function resolveCharacterOrderFolderIndex(
 }
 
 function replaceCharacterOrderWithNormalized(): void {
-  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), getDatabase().characters)
+  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), characterRowsOwner())
   getDatabase().characterOrder = normalized.characterOrder
 }
 

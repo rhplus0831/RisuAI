@@ -74,7 +74,7 @@ import {
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import * as pendingMutationOutboxModule from './server/pendingMutationOutbox'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
 import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
 import { removeChar } from './characters'
@@ -2658,6 +2658,37 @@ describe('select supa memory flag patch', () => {
 })
 
 describe('character-row snapshot kit', () => {
+  it('fails closed when the ready owner collection contains duplicate stable IDs', () => {
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Aggregate', chats: [], lastInteraction: 7 }],
+      characterOrder: [],
+      currentChar: 0,
+    } as any
+    charactersResourceState.characters = [
+      { chaId: 'char-a', name: 'Owner A', chats: [], lastInteraction: 11 },
+      { chaId: 'char-a', name: 'Owner duplicate', chats: [], lastInteraction: 13 },
+    ] as any
+    selectedCharID.set(0)
+
+    expect(currentCharacterSelectionSnapshot('char-a').lastInteraction).toBeUndefined()
+    expect(currentCharacterRowSnapshot(0).characterId).toBeUndefined()
+  })
+
+  it('captures row and trash snapshots from the ready owner instead of stale aggregate data', () => {
+    testDatabaseState.db = {
+      characters: [{ chaId: 'char-a', name: 'Aggregate stale', chats: [], trashTime: 3 }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [{ chaId: 'char-a', name: 'Owner current', chats: [], trashTime: 17 }] as any
+    selectedCharID.set(0)
+
+    expect(staleAggregate[0].name).toBe('Aggregate stale')
+    expect(currentCharacterRowSnapshot(0).character?.name).toBe('Owner current')
+    expect(currentCharacterTrashTimeSnapshot(0).trashTime).toBe(17)
+  })
+
   it('captures one character row plus selection scalars, never the whole array', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(2)

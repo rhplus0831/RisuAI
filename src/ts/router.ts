@@ -13,6 +13,7 @@ import {
 } from './stores.svelte'
 import { hasActiveModuleEditorLeaveGuard, requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
 import { failActiveRouteLoad, finishRouteResources, prepareRouteResources } from './server/routeResourceLoader'
+import { charactersResourceState } from './server/resourceState.svelte'
 import { preloadRouteComponents } from './routeComponentPreload'
 import {
   characterRoutePath,
@@ -398,7 +399,10 @@ function restoreCharacterSidebarViewMode(
   isFresh: () => boolean,
 ): void {
   if (!isFresh() || !characterSidebarViewStateMatches(route)) return
-  const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
+  const selectedCharacter =
+    charactersResourceState.status === 'ready'
+      ? charactersResourceState.characters[get(selectedCharID)]
+      : getDatabase().characters?.[get(selectedCharID)]
   if (selectedCharacter?.chaId === route.chaId) botMakerMode.set(true)
 }
 
