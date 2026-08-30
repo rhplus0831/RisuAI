@@ -26,12 +26,12 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 ## Inventory Cursor
 
-- 9,900 exact compatibility references grouped into 326 consumer records and 56
+- 9,889 exact compatibility references grouped into 326 consumer records and 56
   resource-family/role policies.
-- Lanes: 3,334 production, 6 server, and 6,560 test references.
-- Families: broad settings/shell 1,046; character/chat 1,775; compatibility
+- Lanes: 3,323 production, 6 server, and 6,560 test references.
+- Families: broad settings/shell 1,046; character/chat 1,773; compatibility
   infrastructure 2,062; cross-cutting 1,422; leaf settings/collections 1,854;
-  lorebook 615; model/translator 469; prompt template 321; script definition
+  lorebook 615; model/translator 469; prompt template 312; script definition
   336.
 - Six bridge families remain: settings, character, chat, lorebook, prompt
   template, and script definition.

@@ -56,4 +56,6 @@ Completed slice: [Punctuation trimming](slices/phase-3-pure-shared-core/punctuat
 
 Completed slice: [Inlay-token matching](slices/phase-3-pure-shared-core/inlay-token-matching.md).
 
-Active slice: [ChatML row parsing](slices/phase-3-pure-shared-core/chatml-row-parsing.md).
+Completed slice: [ChatML row parsing](slices/phase-3-pure-shared-core/chatml-row-parsing.md).
+
+Active slice: [History-slot rendering](slices/phase-3-pure-shared-core/history-slot-rendering.md).

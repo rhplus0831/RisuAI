@@ -1,6 +1,6 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; request-local selected-preset checkpoint at `bfa1b048e`.
+Status: in progress; prompt-shape and tokenizer checkpoint at `c0b8776b3`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -62,7 +62,15 @@ classified static/legacy boundary removed to complete the cutover.
   masquerade as legacy model selection.
 - Profile-local runtime tokenizer selection and custom-API provider tokenizer
   selection outrank global runtime defaults.
+- Browser prompt assembly resolves `chatMain` once for NovelAI markers, image
+  capability, continue markers, and system coalescing; conflicting flat fields
+  no longer reshape the selected durable model at `29775b825`.
+- Send-context budgeting and `ChatTokenizer` capture one selected profile for
+  model overhead, name handling, maximum context, tokenizer family, provider
+  credential, and cache identity. Fastify uses the same tokenizer precedence
+  helper at `c0b8776b3`.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
-  generation, memory summarization, browser prompt assembly, split presets, and
-  tokenizer owners pass; ordinary flat runtime/authoring consumers remain to be
-  cut over before this slice can close.
+  generation, memory summarization, browser prompt assembly and send-context,
+  split presets, tokenizer, and static ownership owners pass; ordinary flat
+  runtime/authoring consumers remain to be cut over before this slice can
+  close.

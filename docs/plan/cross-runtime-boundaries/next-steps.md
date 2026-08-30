@@ -4,19 +4,23 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [ChatML row parsing
-slice](phases/slices/phase-3-pure-shared-core/chatml-row-parsing.md).
+Execute the [history-slot rendering
+slice](phases/slices/phase-3-pure-shared-core/history-slot-rendering.md).
 
-1. Move `ChatMLRole`, `ChatMLRow`, and `parseChatMLRows` into an explicit
-   shared-core subpath.
-2. Preserve exact start/separator/end markers, default-user fallback, role
-   prefix slicing, per-row trimming, greedy multiline thought extraction, and
-   callback timing.
-3. Migrate all three browser and both Fastify production consumers.
-4. Delete `src/ts/parser/chatMLCore.ts` only after differential fixtures and
-   closed-world consumer ownership pass.
-5. Keep CBS expansion, agent validation/execution, prompt assembly, persistence,
-   and UI behavior unchanged.
+1. Move the pure history-slot types, grammar, collectors, renderers, and
+   synchronous/asynchronous resolver factories into an explicit shared-core
+   subpath.
+2. Preserve the `history`/`historytrans` grammar and the inclusive 1..50 count
+   bound, invalid-slot erasure, message filtering, `allBefore` cutoff, greeting
+   fallback, role mapping, transform timing, and exact block separators.
+3. Preserve paired source/translation token accounting, oldest-first eviction,
+   the 2048 fallback budget, per-count caching, async de-duplication, and output
+   ordering.
+4. Migrate the three browser production consumers and the Fastify raw-message
+   translator, then delete the browser-tree owner only after differential and
+   closed-world ownership proof passes.
+5. Keep tokenizer implementation, translator orchestration, chat state,
+   persistence, prompt dispatch, and UI behavior unchanged.
 
 ## Foundations Released
 
@@ -48,13 +52,16 @@ slice](phases/slices/phase-3-pure-shared-core/chatml-row-parsing.md).
   `386bdd750`.
 - Inlay-token matching and both production consumers are released at
   `92dde59e1`.
+- ChatML row parsing and all five production consumers are released at
+  `14f44ed87`.
 
 ## Not In This Slice
 
-- Do not move CBS expansion, prompt assembly, agent execution, request routing,
-  provider policy, or UI orchestration into shared core.
-- Do not alter marker parsing, role fallback, trimming, thought extraction, or
-  transform-callback semantics in this boundary move.
+- Do not move tokenizers, translator pipelines, input-hook orchestration, chat
+  state selection, request routing, provider policy, or UI orchestration into
+  shared core.
+- Do not alter slot parsing, message filtering, greeting inclusion, translation
+  fallback, token-budget eviction, or transform-callback semantics.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

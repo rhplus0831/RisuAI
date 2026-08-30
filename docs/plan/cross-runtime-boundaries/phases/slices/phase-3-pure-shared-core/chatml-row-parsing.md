@@ -1,6 +1,6 @@
 # ChatML Row Parsing
 
-Status: ready.
+Status: complete at `14f44ed87`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -49,3 +49,13 @@ production owners; both typechecks; architecture inventory; formatting; and
 
 Stop if the parser needs CBS, browser state, Fastify, persistence, credentials,
 or host-specific behavior.
+
+## Release Evidence
+
+- `@risuai/shared-core/chatml-rows` owns the parser and all five production
+  consumers import that subpath.
+- Differential, ownership, and import-boundary suites passed 13, 1, and 2
+  tests; affected browser owners passed 5, 14, and 14, while affected Fastify
+  owners passed 71 and 25.
+- The browser-tree implementation was deleted and two production runtime/mixed
+  root-`src` edges plus one target left the checked inventory.
