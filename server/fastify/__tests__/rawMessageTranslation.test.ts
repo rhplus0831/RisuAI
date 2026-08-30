@@ -74,9 +74,29 @@ function llmSettings(translatorSendTextAsIs: boolean, translatorExcludeThoughts 
 }
 
 function historyLlmSettings(count: number, translatorSendTextAsIs = true): Record<string, unknown> {
+  const prompt = `History:\n{{slot::history::${count}}}\nTranslations:\n{{slot::historytrans::${count}}}\nSource={{slot::content}}`
   return {
     ...llmSettings(translatorSendTextAsIs),
-    translatorPrompt: `History:\n{{slot::history::${count}}}\nTranslations:\n{{slot::historytrans::${count}}}\nSource={{slot::content}}`,
+    translatorPrompt: prompt,
+    translatorPresets: [
+      {
+        id: 'history-preset',
+        name: 'History',
+        prompt,
+        maxResponse: 1000,
+        steps: [
+          {
+            id: 'history-step',
+            name: 'History',
+            enabled: true,
+            prompt,
+            maxResponse: 1000,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+    ],
+    translatorPresetId: 0,
   }
 }
 
@@ -225,6 +245,29 @@ describe('translateRawMessageData', () => {
 
     const excludingThoughts = { ...createSettings(), translatorExcludeThoughts: true }
     expect(hash(excludingThoughts)).not.toBe(baseline)
+  })
+
+  it('ignores a conflicting flat model when the durable translate profile owns identity', () => {
+    const settings = {
+      ...llmSettings(true),
+      aiModel: 'stale-flat-model',
+      modelProfiles: [
+        {
+          id: 'translate-profile',
+          name: 'Translate Profile',
+          modelId: 'echo_model',
+          runtimeOptions: { temperature: 35, maxResponse: 256 },
+        },
+      ],
+      modelRoleProfiles: {
+        translate: { mode: 'profile', profileId: 'translate-profile' },
+      },
+    }
+
+    const conflictingFlatModel = { ...settings, aiModel: 'conflicting-flat-model' }
+    const identity = (value: Record<string, unknown>) =>
+      resolveRawMessageTranslatorIdentity({ settings: value }).settingsHash
+    expect(identity(conflictingFlatModel)).toBe(identity(settings))
   })
 
   it.each(providerCases)('uses the $name wire contract and returns normalized metadata', async (providerCase) => {

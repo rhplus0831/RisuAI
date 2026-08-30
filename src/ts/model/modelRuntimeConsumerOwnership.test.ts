@@ -116,7 +116,16 @@ describe('browser model-runtime consumer ownership', () => {
     const scriptings = source('src/ts/process/scriptings.ts')
 
     expect(scriptings).toContain("resolveModelProfile({ database: db, role: 'scriptMain' })")
+    expect(scriptings).toContain('scriptProfile.runtimeOptions.maxContext')
+    expect(scriptings).not.toContain('db.maxContext')
     expect(scriptings).not.toContain('const maxContext = db.maxContext - reserve')
+  })
+
+  it('names the only server-backed flat budget fallback as older-server compatibility', () => {
+    const serverBackedSendChat = source('src/ts/process/serverBackedSendChat.ts')
+
+    expect(serverBackedSendChat).toContain('function olderServerResponseBudgetFallback()')
+    expect(serverBackedSendChat.match(/olderServerResponseBudgetFallback\(\)/g)).toHaveLength(3)
   })
 
   it('routes HypaV3 response reservation through the resolved chat profile', () => {

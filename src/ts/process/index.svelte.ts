@@ -322,7 +322,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     let formated: OpenAIChat[] = []
     let biases: [string, number][] = []
     let inputTokens = 0
-    let outputTokens = getDatabase().maxResponse
+    // Every dispatch path replaces this with the assembled server/profile
+    // budget before it is consumed. Keep the initialization model-neutral.
+    let outputTokens = 0
     let assembledByServer = false
     let serverDispatch: ServerBackedDispatch | undefined
     // When the send is durable-eligible, the server runs it as a detached job and

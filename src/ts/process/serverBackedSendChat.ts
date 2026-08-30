@@ -150,6 +150,11 @@ function numberFrom(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+/** Compatibility fallback for servers predating the response-budget field. */
+export function olderServerResponseBudgetFallback(): number {
+  return getDatabase().maxResponse
+}
+
 function isServerChatGenerationOk(
   served: ServerChatAnyResult,
 ): served is Extract<Awaited<ReturnType<typeof requestServerChatGeneration>>, { status: 'ok' }> {
@@ -756,7 +761,7 @@ export async function assembleServerBackedSendChat(args: {
     outputTokens:
       numberFrom(served.info?.responseBudget) ??
       numberFrom(served.prompt.promptInfo?.outputTokens) ??
-      getDatabase().maxResponse,
+      olderServerResponseBudgetFallback(),
     ...(dispatch ? { dispatch } : {}),
   }
 }
@@ -887,7 +892,7 @@ export async function reattachServerBackedSendChat(args: {
     outputTokens:
       numberFrom(served.info?.responseBudget) ??
       numberFrom(served.prompt.promptInfo?.outputTokens) ??
-      getDatabase().maxResponse,
+      olderServerResponseBudgetFallback(),
     ...(dispatch ? { dispatch } : {}),
   }
 }

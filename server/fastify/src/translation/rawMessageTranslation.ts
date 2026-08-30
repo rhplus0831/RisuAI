@@ -118,6 +118,49 @@ function translatorHistoryMaxTokens(settings: Record<string, unknown>): number {
     : DEFAULT_TRANSLATOR_HISTORY_MAX_TOKENS
 }
 
+function translateProfileCacheIdentity(
+  settings: Record<string, unknown>,
+  chat: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const database = {
+    ...settings,
+    characters: [],
+    halfStreaming: false,
+    useStreaming: false,
+  } as unknown as Database
+  let profile = resolveModelProfile({ database, role: 'translate' })
+  if (profile.modelId.length === 0) {
+    profile = resolveModelProfile({ database, role: 'translate', staticModel: 'echo_model' })
+  }
+  return {
+    profileId: profile.profileId,
+    source: {
+      kind: profile.source.kind,
+      role: profile.source.role,
+      field: profile.source.field ?? null,
+      legacyMode: profile.source.legacyMode,
+    },
+    modelId: profile.modelId,
+    requestModel: profile.requestModel,
+    model: {
+      id: profile.modelInfo.id,
+      internalID: profile.modelInfo.internalID ?? null,
+      provider: profile.modelInfo.provider,
+      format: profile.modelInfo.format,
+      tokenizer: profile.modelInfo.tokenizer,
+      keyIdentifier: profile.modelInfo.keyIdentifier ?? null,
+    },
+    provider: {
+      id:
+        profile.providerOptions.provider ??
+        (profile.providerCapability.routable ? profile.providerCapability.provider : null),
+      keyIdentifier: profile.providerOptions.keyIdentifier ?? profile.modelInfo.keyIdentifier ?? null,
+    },
+    runtimeOptions: profile.runtimeOptions,
+    boundPresetId: boundTranslatorPresetId(chat),
+  }
+}
+
 function translatorSettingsHash(input: {
   settings: Record<string, unknown>
   character?: Record<string, unknown>
@@ -139,7 +182,7 @@ function translatorSettingsHash(input: {
         input.settings.translatorSendTextAsIs === true && input.settings.translatorExcludeThoughts === true,
       translatorHistoryMaxTokens: translatorHistoryMaxTokens(input.settings),
       translatorNote: translatorNote(input.character),
-      aiModel: stringValue(input.settings.aiModel),
+      translateProfile: translateProfileCacheIdentity(input.settings, input.chat),
       providerCredentials: input.settings.providerCredentials ?? null,
       modelProfiles: input.settings.modelProfiles ?? null,
       modelRoleProfiles: input.settings.modelRoleProfiles ?? null,

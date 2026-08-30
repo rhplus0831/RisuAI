@@ -598,36 +598,14 @@ const inventory: readonly InventoryEntry[] = [
     expectedCount: 2,
     reason: 'schema/default/import normalization boundary',
   },
-  {
-    path: 'server/fastify/src/translation/rawMessageTranslation.ts',
-    marker: 'input.settings.aiModel',
-    classification: 'static-import-export',
-    expectedCount: 1,
-    reason: 'explicit translation input compatibility payload',
-  },
-
-  // These are intentionally enumerated rather than silently allowed: they are
-  // the remaining ordinary consumers to migrate in the next Phase 2 slice.
-  {
-    path: 'src/ts/process/index.svelte.ts',
-    marker: 'getDatabase().maxResponse',
-    classification: 'context-free-fallback',
-    expectedCount: 1,
-    reason: 'initial generation UI fallback replaced by assembled request metadata',
-  },
+  // This is intentionally enumerated rather than silently allowed: it is the
+  // sole retained older-server compatibility read.
   {
     path: 'src/ts/process/serverBackedSendChat.ts',
     marker: 'getDatabase().maxResponse',
-    classification: 'context-free-fallback',
-    expectedCount: 2,
-    reason: 'older-server fallback when response-budget metadata is absent',
-  },
-  {
-    path: 'src/ts/process/scriptings.ts',
-    marker: 'db.maxContext',
-    classification: 'context-free-fallback',
+    classification: 'compatibility',
     expectedCount: 1,
-    reason: 'legacy fallback after resolved scriptMain runtime context',
+    reason: 'explicit fallback for older servers without response-budget metadata',
   },
 ]
 

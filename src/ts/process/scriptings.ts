@@ -970,10 +970,9 @@ export async function runScripted(
 
         const fullLoreBooks = (await loadLoreBookV3Prompt()).actives
         // This is a low-level scripting API, so its budget follows the scriptMain
-        // execution role (the same owner as LLM/simpleLLM), not chatMain. The
-        // resolver keeps the legacy db.maxContext fallback for un-migrated data.
+        // execution role (the same owner as LLM/simpleLLM), not chatMain.
         const scriptProfile = resolveModelProfile({ database: db, role: 'scriptMain' })
-        const maxContext = (scriptProfile.runtimeOptions.maxContext ?? db.maxContext) - reserve
+        const maxContext = (scriptProfile.runtimeOptions.maxContext ?? 0) - reserve
         if (maxContext < 0) {
           return JSON.stringify([])
         }

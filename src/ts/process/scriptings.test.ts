@@ -576,7 +576,7 @@ describe('client scripting lorebook loading', () => {
     expect(tokenizerMock.tokenize).toHaveBeenCalledTimes(2)
   })
 
-  it('retains the legacy flat maxContext fallback when no durable script budget exists', async () => {
+  it('retains the resolver-owned flat maxContext compatibility fallback when no durable script budget exists', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)
     selectedCharID.set(0)
