@@ -528,6 +528,22 @@ export function resolveModelProfile({
   staticModel,
   lookupModelInfo,
 }: ResolveModelProfileArgs): ResolvedModelProfile {
+  return resolveModelProfileInternal({ database, role, staticModel, lookupModelInfo }, false)
+}
+
+/**
+ * Resolve a model profile through the explicitly retained legacy compatibility
+ * boundary. Normal runtime callers must use `resolveModelProfile`, which does
+ * not read flat role fields when a durable binding is absent.
+ */
+export function resolveModelProfileWithLegacyCompatibility(args: ResolveModelProfileArgs): ResolvedModelProfile {
+  return resolveModelProfileInternal(args, true)
+}
+
+function resolveModelProfileInternal(
+  { database, role, staticModel, lookupModelInfo }: ResolveModelProfileArgs,
+  allowLegacyCompatibility: boolean,
+): ResolvedModelProfile {
   const roleLike = role ?? 'model'
   const normalizedRole = normalizeModelRole(roleLike) ?? 'chatMain'
   const staticModelId = nonBlankString(staticModel)
@@ -543,8 +559,18 @@ export function resolveModelProfile({
           bypassesRoleResolution: true,
         },
       }
-    : (resolveDurableModelSelection(database, normalizedRole) ?? resolveLegacyModelSelection(database, normalizedRole))
-  return resolveModelProfileSelection({ database, normalizedRole, selection, staticModelId, lookupModelInfo })
+    : (resolveDurableModelSelection(database, normalizedRole) ??
+      (allowLegacyCompatibility
+        ? resolveLegacyModelSelection(database, normalizedRole)
+        : missingDurableModelSelection(normalizedRole)))
+  return resolveModelProfileSelection({
+    database,
+    normalizedRole,
+    selection,
+    staticModelId,
+    lookupModelInfo,
+    allowLegacyCompatibility,
+  })
 }
 
 export function resolveModelProfileByProfileId({
@@ -568,6 +594,7 @@ export function resolveModelProfileByProfileId({
     selection,
     staticModelId: undefined,
     lookupModelInfo,
+    allowLegacyCompatibility: false,
   })
 }
 
@@ -626,14 +653,17 @@ function resolveModelProfileSelection({
   selection,
   staticModelId,
   lookupModelInfo,
+  allowLegacyCompatibility,
 }: {
   database: Database
   normalizedRole: ModelRole
   selection: ModelProfileSelection
   staticModelId?: string
   lookupModelInfo?: (database: Database, modelId: string) => LLMModel | null | undefined
+  allowLegacyCompatibility: boolean
 }): ResolvedModelProfile {
   const profileBound = selection.source.kind === 'durable-profile'
+  const useLegacyFallback = !profileBound || allowLegacyCompatibility
   const effectiveSelection = profileBound ? resolveProfileCredential(database, selection) : selection
   const runtimeSource = profileBound
     ? resolveProfileBoundRuntimeSource(database, effectiveSelection.profileRuntimeOptions)
@@ -641,7 +671,7 @@ function resolveModelProfileSelection({
   const effectiveProvider = profileBound ? resolveEffectiveFirstClassProvider(effectiveSelection) : null
   const lookedUp = effectiveProvider ? undefined : lookupModelInfo?.(database, effectiveSelection.modelId)
   const baseModelInfo = lookedUp
-    ? withCustomFlags(database, cloneModelInfo(lookedUp), runtimeSource, { useLegacyFallback: !profileBound })
+    ? withCustomFlags(database, cloneModelInfo(lookedUp), runtimeSource, { useLegacyFallback })
     : effectiveProvider
       ? resolveFirstClassModelInfo(
           effectiveProvider.providerId,
@@ -649,7 +679,7 @@ function resolveModelProfileSelection({
           effectiveSelection.profileProviderOptions,
         )
       : resolveServerSafeModelInfo(database, effectiveSelection.modelId, runtimeSource, {
-          useLegacyFallback: !profileBound,
+          useLegacyFallback,
         })
   const modelInfo = effectiveProvider
     ? withCustomFlags(database, baseModelInfo, runtimeSource, { useLegacyFallback: false })
@@ -658,6 +688,7 @@ function resolveModelProfileSelection({
         effectiveSelection.profileProviderOptions,
         database,
         baseModelInfo,
+        useLegacyFallback,
       )
   const requestModel = resolveProfileRequestModelFromParts(
     database,
@@ -665,6 +696,7 @@ function resolveModelProfileSelection({
     modelInfo,
     effectiveSelection.profileRequestModel,
     effectiveProvider?.providerId,
+    useLegacyFallback,
   )
   const providerOptions = effectiveProvider
     ? resolveFirstClassProviderOptions(
@@ -679,9 +711,10 @@ function resolveModelProfileSelection({
         modelInfo,
         requestModel,
         effectiveSelection.profileProviderOptions,
+        useLegacyFallback,
       )
   const runtimeOptions = resolveRuntimeOptions(database, modelInfo, runtimeSource, {
-    useLegacyFallback: !profileBound,
+    useLegacyFallback,
   })
   const providerCapabilityInput = effectiveProvider
     ? buildFirstClassProviderCapabilityInput(
@@ -696,6 +729,7 @@ function resolveModelProfileSelection({
         modelInfo,
         providerOptions,
         effectiveSelection.profileProviderOptions,
+        useLegacyFallback,
       )
   const providerCapability = resolveProviderCapability(providerCapabilityInput)
   const status = resolveModelProfileStatus({
@@ -831,9 +865,11 @@ export function resolveServerSafeModelInfo(
       completeModel({
         id,
         name: 'Custom API',
-        internalID: nonBlankString(database.customProxyRequestModel) ?? id,
+        internalID: useLegacyFallback ? (nonBlankString(database.customProxyRequestModel) ?? id) : id,
         provider: LLMProvider.AsIs,
-        format: asFormat(database.customAPIFormat, LLMFormat.OpenAICompatible),
+        format: useLegacyFallback
+          ? asFormat(database.customAPIFormat, LLMFormat.OpenAICompatible)
+          : LLMFormat.OpenAICompatible,
         flags: DEFAULT_OPENAI_FLAGS,
         parameters: OPENAI_EXTENDED_PARAMETERS,
         tokenizer: LLMTokenizer.Unknown,
@@ -843,7 +879,7 @@ export function resolveServerSafeModelInfo(
   }
 
   if (id.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(database, id)
+    const entry = useLegacyFallback ? findXcustomEntry(database, id) : undefined
     if (entry) {
       return withCustomFlags(
         database,
@@ -895,7 +931,7 @@ export function resolveServerSafeModelInfo(
       tokenizer: LLMTokenizer.Unknown,
     })
   }
-  if (nonBlankString(database.ollamaURL) && id.includes('ollama')) {
+  if (id.includes('ollama')) {
     return withCustomFlags(
       database,
       completeModel({
@@ -1672,6 +1708,24 @@ function resolveDurableModelSelection(database: Database, role: ModelRole): Mode
   })
 }
 
+function missingDurableModelSelection(role: ModelRole): ModelProfileSelection {
+  const profileId = `unbound:${role}`
+  return {
+    modelId: '',
+    profileId,
+    profileFallbacks: [],
+    profileStatusReasons: ['profile-not-found'],
+    source: {
+      kind: 'durable-profile',
+      role,
+      legacyMode: modelRoleToLegacyModelMode(role),
+      field: `modelRoleProfiles.${role}`,
+      profileId,
+      bypassesRoleResolution: false,
+    },
+  }
+}
+
 function resolveDurableProfileSelection(
   database: Database,
   role: ModelRole,
@@ -1845,6 +1899,7 @@ function buildProfileProviderCapabilityInputForDatabase(
   modelInfo: ResolvedModelProfileModelInfo,
   providerOptions?: ModelProfileProviderOptions,
   durableProviderOptions?: EffectiveModelProfileRecordProviderOptions,
+  useLegacyFallback = true,
 ): ProviderCapabilityInput {
   const durableReverseProxyUrl =
     modelId === 'reverse_proxy' ? nonBlankString(durableProviderOptions?.baseUrl) : undefined
@@ -1861,30 +1916,46 @@ function buildProfileProviderCapabilityInputForDatabase(
     keyIdentifier,
     internalID: nonBlankString(modelInfo.internalID),
     config: {
-      forceReplaceUrl: durableReverseProxyUrl ? providerOptions?.baseUrl : nonBlankString(database.forceReplaceUrl),
-      proxyKey: modelId === 'reverse_proxy' ? profileApiKey : nonBlankString(database.proxyKey),
+      forceReplaceUrl: durableReverseProxyUrl
+        ? providerOptions?.baseUrl
+        : useLegacyFallback
+          ? nonBlankString(database.forceReplaceUrl)
+          : undefined,
+      proxyKey:
+        modelId === 'reverse_proxy' ? profileApiKey : useLegacyFallback ? nonBlankString(database.proxyKey) : undefined,
       oaiCompApiKeys:
         keyIdentifier && profileApiKey
-          ? { ...(database.OaiCompAPIKeys ?? {}), [keyIdentifier]: profileApiKey }
-          : database.OaiCompAPIKeys,
-      customModels: buildCapabilityCustomModels(database, modelId, profileApiKey),
-      googleProjectId: database.google?.projectId,
-      vertexRegion: database.vertexRegion,
-      vertexClientEmail: database.vertexClientEmail,
-      vertexPrivateKey: database.vertexPrivateKey,
+          ? { ...(useLegacyFallback ? (database.OaiCompAPIKeys ?? {}) : {}), [keyIdentifier]: profileApiKey }
+          : useLegacyFallback
+            ? database.OaiCompAPIKeys
+            : undefined,
+      customModels: useLegacyFallback ? buildCapabilityCustomModels(database, modelId, profileApiKey) : undefined,
+      googleProjectId: useLegacyFallback ? database.google?.projectId : undefined,
+      vertexRegion: useLegacyFallback ? database.vertexRegion : undefined,
+      vertexClientEmail: useLegacyFallback ? database.vertexClientEmail : undefined,
+      vertexPrivateKey: useLegacyFallback ? database.vertexPrivateKey : undefined,
       claudeAPIKey:
         modelInfo.format === LLMFormat.AWSBedrockClaude
-          ? (profileApiKey ?? nonBlankString(database.claudeAPIKey))
-          : nonBlankString(database.claudeAPIKey),
-      instructChatTemplate: nonBlankString(database.instructChatTemplate),
-      jinjaTemplate: nonBlankString(database.JinjaTemplate),
+          ? (profileApiKey ?? (useLegacyFallback ? nonBlankString(database.claudeAPIKey) : undefined))
+          : useLegacyFallback
+            ? nonBlankString(database.claudeAPIKey)
+            : undefined,
+      instructChatTemplate: useLegacyFallback ? nonBlankString(database.instructChatTemplate) : undefined,
+      jinjaTemplate: useLegacyFallback ? nonBlankString(database.JinjaTemplate) : undefined,
       ollamaApiKey:
-        modelId === 'ollama-cloud' ? providerOptions?.ollama?.apiKey : nonBlankString(database.ollamaApiKey),
+        modelId === 'ollama-cloud'
+          ? providerOptions?.ollama?.apiKey
+          : useLegacyFallback
+            ? nonBlankString(database.ollamaApiKey)
+            : undefined,
       ollamaRequestFormat:
-        durableProviderOptions?.ollama?.requestFormat ?? asFormat(database.ollamaRequestFormat, undefined),
+        durableProviderOptions?.ollama?.requestFormat ??
+        (useLegacyFallback ? asFormat(database.ollamaRequestFormat, undefined) : undefined),
       ollamaURL: durableOllamaUrl
         ? (providerOptions?.ollama?.url ?? providerOptions?.baseUrl)
-        : nonBlankString(database.ollamaURL),
+        : useLegacyFallback
+          ? nonBlankString(database.ollamaURL)
+          : undefined,
     },
   }
 }
@@ -1895,6 +1966,7 @@ function resolveProviderOptions(
   modelInfo: ResolvedModelProfileModelInfo,
   requestModel: string,
   durableProviderOptions?: EffectiveModelProfileRecordProviderOptions,
+  useLegacyFallback = true,
 ): ModelProfileProviderOptions {
   const base: ModelProfileProviderOptions = {
     requestModel,
@@ -1903,8 +1975,9 @@ function resolveProviderOptions(
   }
   const durableApiKey = nonBlankString(durableProviderOptions?.apiKey)
   const durableBaseUrl = nonBlankString(durableProviderOptions?.baseUrl)
+  const legacy = <T>(value: T | undefined): T | undefined => (useLegacyFallback ? value : undefined)
   if (modelId === 'ollama-cloud') {
-    const apiKey = durableApiKey ?? nonBlankString(database.ollamaApiKey)
+    const apiKey = durableApiKey ?? legacy(nonBlankString(database.ollamaApiKey))
     return {
       ...base,
       apiKey,
@@ -1914,17 +1987,20 @@ function resolveProviderOptions(
         url: 'https://ollama.com',
         requestFormat:
           durableProviderOptions?.ollama?.requestFormat ??
-          asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
+          legacy(asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible)),
         model: nonBlankString(requestModel),
-        modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? database.ollamaModelSource,
-        thinkingMode: nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? database.ollamaThinkingMode,
+        modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? legacy(database.ollamaModelSource),
+        thinkingMode:
+          nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? legacy(database.ollamaThinkingMode),
         cloud: true,
       },
     }
   }
   if (modelInfo.format === LLMFormat.Ollama || modelId.includes('ollama')) {
     const ollamaUrl =
-      nonBlankString(durableProviderOptions?.ollama?.url) ?? durableBaseUrl ?? nonBlankString(database.ollamaURL)
+      nonBlankString(durableProviderOptions?.ollama?.url) ??
+      durableBaseUrl ??
+      legacy(nonBlankString(database.ollamaURL))
     return {
       ...base,
       baseUrl: ollamaUrl,
@@ -1932,8 +2008,9 @@ function resolveProviderOptions(
         url: ollamaUrl,
         requestFormat: durableProviderOptions?.ollama?.requestFormat ?? LLMFormat.Ollama,
         model: nonBlankString(requestModel),
-        modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? database.ollamaModelSource,
-        thinkingMode: nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? database.ollamaThinkingMode,
+        modelSource: nonBlankString(durableProviderOptions?.ollama?.modelSource) ?? legacy(database.ollamaModelSource),
+        thinkingMode:
+          nonBlankString(durableProviderOptions?.ollama?.thinkingMode) ?? legacy(database.ollamaThinkingMode),
         cloud: false,
       },
     }
@@ -1941,33 +2018,34 @@ function resolveProviderOptions(
   if (modelId === 'openrouter') {
     return {
       ...base,
-      apiKey: durableApiKey ?? nonBlankString(database.openrouterKey),
+      apiKey: durableApiKey ?? legacy(nonBlankString(database.openrouterKey)),
       baseUrl: OPENROUTER_BASE_URL,
       extraHeaders: { 'X-Title': 'RisuAI', 'HTTP-Referer': 'https://risuai.xyz' },
       openrouter: {
-        fallback: durableProviderOptions?.openrouter?.fallback ?? database.openrouterFallback,
-        middleOut: durableProviderOptions?.openrouter?.middleOut ?? database.openrouterMiddleOut,
+        fallback: durableProviderOptions?.openrouter?.fallback ?? legacy(database.openrouterFallback),
+        middleOut: durableProviderOptions?.openrouter?.middleOut ?? legacy(database.openrouterMiddleOut),
         provider: durableProviderOptions?.openrouter?.provider
           ? cloneOpenrouterProvider(durableProviderOptions.openrouter.provider)
-          : cloneOpenrouterProvider(database.openrouterProvider),
+          : legacy(cloneOpenrouterProvider(database.openrouterProvider)),
       },
     }
   }
   if (modelId === 'nanogpt' || modelInfo.format === LLMFormat.NanoGPT) {
     const providerHint =
-      nonBlankString(durableProviderOptions?.nanogpt?.providerHint) ?? nonBlankString(database.nanogptProvider)
+      nonBlankString(durableProviderOptions?.nanogpt?.providerHint) ?? legacy(nonBlankString(database.nanogptProvider))
     const useSubscriptionEndpoint =
-      durableProviderOptions?.nanogpt?.useSubscriptionEndpoint ?? database.nanogptUseSubscriptionEndpoint
+      durableProviderOptions?.nanogpt?.useSubscriptionEndpoint ?? legacy(database.nanogptUseSubscriptionEndpoint)
     return {
       ...base,
-      apiKey: durableApiKey ?? nonBlankString(database.nanogptKey),
+      apiKey: durableApiKey ?? legacy(nonBlankString(database.nanogptKey)),
       baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
       extraHeaders: providerHint ? { 'X-Provider': providerHint } : undefined,
       nanogpt: {
         providerHint,
         useSubscriptionEndpoint,
         subscriptionState:
-          nonBlankString(durableProviderOptions?.nanogpt?.subscriptionState) ?? database.nanogptSubscriptionState,
+          nonBlankString(durableProviderOptions?.nanogpt?.subscriptionState) ??
+          legacy(database.nanogptSubscriptionState),
       },
     }
   }
@@ -1977,11 +2055,11 @@ function resolveProviderOptions(
     modelInfo.format === LLMFormat.NanoGPTMessages
   ) {
     const providerHint =
-      nonBlankString(durableProviderOptions?.nanogpt?.providerHint) ?? nonBlankString(database.nanogptProvider)
+      nonBlankString(durableProviderOptions?.nanogpt?.providerHint) ?? legacy(nonBlankString(database.nanogptProvider))
     const useSubscriptionEndpoint = durableProviderOptions?.nanogpt?.useSubscriptionEndpoint
     return {
       ...base,
-      apiKey: durableApiKey ?? nonBlankString(database.nanogptKey),
+      apiKey: durableApiKey ?? legacy(nonBlankString(database.nanogptKey)),
       baseUrl: useSubscriptionEndpoint === true ? NANOGPT_SUBSCRIPTION_BASE_URL : NANOGPT_BASE_URL,
       extraHeaders:
         providerHint && !(modelInfo.format === LLMFormat.NanoGPTResponses && useSubscriptionEndpoint === true)
@@ -1991,14 +2069,15 @@ function resolveProviderOptions(
         providerHint,
         useSubscriptionEndpoint,
         subscriptionState:
-          nonBlankString(durableProviderOptions?.nanogpt?.subscriptionState) ?? database.nanogptSubscriptionState,
+          nonBlankString(durableProviderOptions?.nanogpt?.subscriptionState) ??
+          legacy(database.nanogptSubscriptionState),
       },
     }
   }
   if (modelId === 'reverse_proxy') {
-    const rawUrl = durableBaseUrl ?? nonBlankString(database.forceReplaceUrl) ?? ''
+    const rawUrl = durableBaseUrl ?? legacy(nonBlankString(database.forceReplaceUrl)) ?? ''
     const autofillRequestUrl =
-      durableProviderOptions?.reverseProxy?.autofillRequestUrl ?? database.autofillRequestUrl !== false
+      durableProviderOptions?.reverseProxy?.autofillRequestUrl ?? legacy(database.autofillRequestUrl !== false) ?? true
     const reverseProxyUrl = resolveReverseProxyUrlForFormat(rawUrl, autofillRequestUrl, modelInfo.format)
     const extraHeaders = {
       ...cloneStringRecord(durableProviderOptions?.extraHeaders),
@@ -2006,85 +2085,88 @@ function resolveProviderOptions(
     }
     return {
       ...base,
-      apiKey: durableApiKey ?? nonBlankString(database.proxyKey),
+      apiKey: durableApiKey ?? legacy(nonBlankString(database.proxyKey)),
       baseUrl: reverseProxyUrl.baseUrl,
       extraHeaders: Object.keys(extraHeaders).length > 0 ? extraHeaders : undefined,
       additionalParams:
-        cloneAdditionalParams(durableProviderOptions?.additionalParams) ?? additionalParams(database.additionalParams),
+        cloneAdditionalParams(durableProviderOptions?.additionalParams) ??
+        legacy(additionalParams(database.additionalParams)),
       reverseProxy: {
         autofillRequestUrl,
         oobaSystemHoist:
-          durableProviderOptions?.reverseProxy?.oobaSystemHoist ?? database.reverseProxyOobaMode === true,
+          durableProviderOptions?.reverseProxy?.oobaSystemHoist ??
+          legacy(database.reverseProxyOobaMode === true) ??
+          false,
         oobaArgs: Object.prototype.hasOwnProperty.call(durableProviderOptions?.reverseProxy ?? {}, 'oobaArgs')
           ? durableProviderOptions?.reverseProxy?.oobaArgs
-          : database.reverseProxyOobaArgs,
+          : legacy(database.reverseProxyOobaArgs),
         risuIdentify: reverseProxyUrl.risuIdentify,
       },
     }
   }
   if (modelId.startsWith('xcustom:::')) {
     const entry = findXcustomEntry(database, modelId)
-    const apiKey = durableApiKey ?? nonBlankString(entry?.key)
+    const apiKey = durableApiKey ?? legacy(nonBlankString(entry?.key))
     return {
       ...base,
       apiKey,
       baseUrl: xcustomBaseUrl(entry, modelInfo.format),
       extraHeaders: cloneStringRecord(durableProviderOptions?.extraHeaders),
       additionalParams:
-        cloneAdditionalParams(durableProviderOptions?.additionalParams) ?? parseXcustomParams(entry?.params),
-      customModel: entry ? cloneCustomModelDependency(entry, modelId, apiKey) : undefined,
+        cloneAdditionalParams(durableProviderOptions?.additionalParams) ?? legacy(parseXcustomParams(entry?.params)),
+      customModel: useLegacyFallback && entry ? cloneCustomModelDependency(entry, modelId, apiKey) : undefined,
     }
   }
   if (modelInfo.keyIdentifier) {
     return {
       ...base,
-      apiKey: durableApiKey ?? nonBlankString(database.OaiCompAPIKeys?.[modelInfo.keyIdentifier]),
+      apiKey: durableApiKey ?? legacy(nonBlankString(database.OaiCompAPIKeys?.[modelInfo.keyIdentifier])),
       baseUrl: modelInfo.endpoint ? deriveOpenAIBaseUrl(modelInfo.endpoint) : undefined,
     }
   }
 
   switch (modelInfo.format) {
     case LLMFormat.AWSBedrockClaude:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.claudeAPIKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.claudeAPIKey)) }
     case LLMFormat.Anthropic:
     case LLMFormat.AnthropicLegacy:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.claudeAPIKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.claudeAPIKey)) }
     case LLMFormat.Mistral:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.mistralKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.mistralKey)) }
     case LLMFormat.Cohere:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.cohereAPIKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.cohereAPIKey)) }
     case LLMFormat.Kobold:
-      return { ...base, baseUrl: durableBaseUrl ?? nonBlankString(database.koboldURL) }
+      return { ...base, baseUrl: durableBaseUrl ?? legacy(nonBlankString(database.koboldURL)) }
     case LLMFormat.OobaLegacy:
       return {
         ...base,
-        apiKey: durableApiKey ?? nonBlankString(database.mancerHeader),
-        baseUrl: durableBaseUrl ?? nonBlankString(database.textgenWebUIBlockingURL),
+        apiKey: durableApiKey ?? legacy(nonBlankString(database.mancerHeader)),
+        baseUrl: durableBaseUrl ?? legacy(nonBlankString(database.textgenWebUIBlockingURL)),
       }
     case LLMFormat.Horde:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.hordeConfig?.apiKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.hordeConfig?.apiKey)) }
     case LLMFormat.GoogleCloud:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.google?.accessToken) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.google?.accessToken)) }
     case LLMFormat.VertexAIGemini:
       return {
         ...base,
         vertex: {
-          projectId: nonBlankString(database.google?.projectId),
-          region: nonBlankString(database.vertexRegion),
-          clientEmail: nonBlankString(database.vertexClientEmail),
-          privateKey: nonBlankString(database.vertexPrivateKey),
+          projectId: legacy(nonBlankString(database.google?.projectId)),
+          region: legacy(nonBlankString(database.vertexRegion)),
+          clientEmail: legacy(nonBlankString(database.vertexClientEmail)),
+          privateKey: legacy(nonBlankString(database.vertexPrivateKey)),
         },
       }
     case LLMFormat.OpenAIResponseAPI:
       return {
         ...base,
-        apiKey: durableApiKey ?? nonBlankString(database.openAIKey),
+        apiKey: durableApiKey ?? legacy(nonBlankString(database.openAIKey)),
         baseUrl: modelInfo.endpoint ? stripTrailingPath(modelInfo.endpoint, '/responses') : undefined,
       }
     case LLMFormat.OpenAILegacyInstruct:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.openAIKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.openAIKey)) }
     default:
-      return { ...base, apiKey: durableApiKey ?? nonBlankString(database.openAIKey) }
+      return { ...base, apiKey: durableApiKey ?? legacy(nonBlankString(database.openAIKey)) }
   }
 }
 
@@ -2156,6 +2238,7 @@ function resolveProfileRequestModelFromParts(
   modelInfo: ResolvedModelProfileModelInfo,
   profileRequestModel?: string,
   firstClassProviderId?: FirstClassModelProfileProviderId,
+  useLegacyFallback = true,
 ): string {
   const durableRequestModel = nonBlankString(profileRequestModel)
   if (durableRequestModel) return durableRequestModel
@@ -2169,36 +2252,48 @@ function resolveProfileRequestModelFromParts(
   }
 
   const providerCapability = resolveProviderCapability(
-    buildProfileProviderCapabilityInputForDatabase(database, modelId, modelInfo),
+    buildProfileProviderCapabilityInputForDatabase(
+      database,
+      modelId,
+      modelInfo,
+      undefined,
+      undefined,
+      useLegacyFallback,
+    ),
   )
   const provider = providerCapability.routable ? providerCapability.provider : undefined
-  if (modelId === 'ollama-cloud') return database.ollamaCloudModel ?? ''
-  if (modelInfo.format === LLMFormat.Ollama || modelId.includes('ollama')) return database.ollamaModel ?? ''
-  if (provider === 'ollama') return database.ollamaModel ?? ''
+  if (modelId === 'ollama-cloud') return useLegacyFallback ? (database.ollamaCloudModel ?? '') : modelId
+  if (modelInfo.format === LLMFormat.Ollama || modelId.includes('ollama'))
+    return useLegacyFallback ? (database.ollamaModel ?? '') : modelId
+  if (provider === 'ollama') return useLegacyFallback ? (database.ollamaModel ?? '') : modelId
   if (modelId.startsWith('xcustom:::')) {
-    const entry = findXcustomEntry(database, modelId)
+    const entry = useLegacyFallback ? findXcustomEntry(database, modelId) : undefined
     return nonBlankString(entry?.internalId) ?? nonBlankString(entry?.id) ?? modelId
   }
-  if (modelId === 'reverse_proxy') return database.customProxyRequestModel ?? ''
+  if (modelId === 'reverse_proxy') return useLegacyFallback ? (database.customProxyRequestModel ?? '') : modelId
   if (provider === 'bedrock') return resolveBedrockWireModel(modelInfo.internalID ?? modelInfo.id)
   if (provider === 'horde') return modelId.startsWith('horde:::') ? modelId.slice('horde:::'.length) : modelId
-  if (provider === 'nanogpt') return database.nanogptRequestModel ?? ''
-  if (provider === 'openrouter') return database.openrouterRequestModel ?? ''
+  if (provider === 'nanogpt') return useLegacyFallback ? (database.nanogptRequestModel ?? '') : modelId
+  if (provider === 'openrouter') return useLegacyFallback ? (database.openrouterRequestModel ?? '') : modelId
   if (provider === 'gemini') {
     const raw = modelInfo.internalID ?? modelInfo.id
     return raw.startsWith('models/') ? raw.slice('models/'.length) : raw
   }
   if (provider === 'openai-legacy-instruct') {
     return modelInfo.format === LLMFormat.NanoGPTLegacy
-      ? (database.nanogptRequestModel ?? '')
+      ? useLegacyFallback
+        ? (database.nanogptRequestModel ?? '')
+        : modelId
       : 'gpt-3.5-turbo-instruct'
   }
   if (provider === 'anthropic' && modelInfo.format === LLMFormat.NanoGPTMessages) {
-    return database.nanogptRequestModel ?? ''
+    return useLegacyFallback ? (database.nanogptRequestModel ?? '') : modelId
   }
   if (provider === 'openai-responses') {
     return modelInfo.format === LLMFormat.NanoGPTResponses
-      ? (database.nanogptRequestModel ?? '')
+      ? useLegacyFallback
+        ? (database.nanogptRequestModel ?? '')
+        : modelId
       : (modelInfo.internalID ?? modelInfo.id)
   }
   return modelInfo.id
@@ -2224,13 +2319,18 @@ function withDurableModelInfoOptions(
   providerOptions: EffectiveModelProfileRecordProviderOptions | undefined,
   database: Database,
   modelInfo: ResolvedModelProfileModelInfo,
+  useLegacyFallback: boolean,
 ): ResolvedModelProfileModelInfo {
-  if (modelId !== 'ollama-cloud' || providerOptions?.ollama?.requestFormat === undefined) return modelInfo
+  const requestModel = nonBlankString(providerOptions?.requestModel)
+  const resolved = requestModel ? { ...modelInfo, internalID: requestModel } : modelInfo
+  if (modelId !== 'ollama-cloud' || providerOptions?.ollama?.requestFormat === undefined) return resolved
   return {
-    ...modelInfo,
+    ...resolved,
     format: asFormat(
       providerOptions.ollama.requestFormat,
-      asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible),
+      useLegacyFallback
+        ? asFormat(database.ollamaRequestFormat, LLMFormat.OpenAICompatible)
+        : LLMFormat.OpenAICompatible,
     ),
   }
 }

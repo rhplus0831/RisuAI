@@ -10,14 +10,17 @@ import { mirrorLegacyProfile, type PersonaRecord } from '../commands/personas.js
 import {
   applyEffectivePresetComposition,
   applyPromptPresetModelOverrides,
+  isLegacyModelPresetCompatibilityRecord,
   resolvePromptPresetRegexField,
 } from '../../../../src/ts/presetSplit.js'
 import {
   modelProfileGenerationBlockReason,
   resolveModelProfile,
   resolveModelProfileTokenizerSelection,
+  resolveModelProfileWithLegacyCompatibility,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
+import { normalizeModelRoleProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapshot'
 import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
@@ -74,6 +77,7 @@ export interface EffectiveGenerationConfigResult {
   currentChar: character
   currentChat: Chat
   promptInfo: MessagePresetInfo
+  resolvedMainProfile: ResolvedModelProfile
 }
 
 export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigInput): EffectiveGenerationConfigResult {
@@ -166,7 +170,11 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   }
   effectiveDatabase.jailbreakToggle = settings?.jailbreakToggle === true
 
-  const profile = resolveModelProfile({ database: effectiveDatabase })
+  const legacyBinding = normalizeModelRoleProfiles(effectiveDatabase.modelRoleProfiles).chatMain.mode === 'legacy'
+  const profile =
+    isLegacyModelPresetCompatibilityRecord(effectiveModelPreset) || legacyBinding
+      ? resolveModelProfileWithLegacyCompatibility({ database: effectiveDatabase })
+      : resolveModelProfile({ database: effectiveDatabase })
   const profileBlockReason = modelProfileGenerationBlockReason(profile)
   if (profileBlockReason) {
     throw new ModelProfileGenerationGuardAssemblyError(profileBlockReason)
@@ -195,6 +203,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     currentChar: effectiveCurrentChar,
     currentChat: structuredClone(effectiveStoredChat) as Chat,
     promptInfo,
+    resolvedMainProfile: profile,
   }
 }
 

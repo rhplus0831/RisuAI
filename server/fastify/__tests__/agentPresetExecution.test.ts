@@ -22,12 +22,25 @@ beforeAll(() => {
 })
 
 function db(overrides: Partial<Database> = {}): Database {
+  const modelProfiles =
+    overrides.modelProfiles ??
+    ([
+      {
+        id: 'default-echo',
+        name: 'Default Echo',
+        providerId: 'debug-echo',
+        modelId: 'debug-echo',
+      },
+    ] as Database['modelProfiles'])
+  const modelRoleProfiles =
+    overrides.modelRoleProfiles ??
+    ({
+      chatMain: { mode: 'profile', profileId: modelProfiles[0]?.id ?? 'default-echo' },
+    } as Database['modelRoleProfiles'])
   return {
     aiModel: 'debug-echo',
     subModel: 'debug-echo',
     modelRoles: {},
-    modelProfiles: [],
-    modelRoleProfiles: {},
     modelRuntimeDefaults: {},
     customModels: [],
     modelTools: ['legacy-tool'],
@@ -47,6 +60,8 @@ function db(overrides: Partial<Database> = {}): Database {
     personas: [{ id: 'persona-a', name: 'Mira', icon: '', personaPrompt: 'Writes careful field notes.' }],
     characters: [char()],
     ...overrides,
+    modelProfiles,
+    modelRoleProfiles,
   } as unknown as Database
 }
 
@@ -876,6 +891,7 @@ describe('Agent Preset step execution', () => {
       })
       const result = await executeAgentPresetPhase({
         database,
+        resolvedMainProfile: resolveModelProfile({ database, staticModel: 'echo_model' }),
         requestHistoryDb: historyDb,
         currentChar: database.characters[0],
         currentChat: database.characters[0].chats[0],

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { LLMFormat } from '@risuai/shared-core/model-types'
 import type { Database } from '../../../src/ts/storage/database.svelte'
-import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import {
+  resolveModelProfile,
+  resolveModelProfileWithLegacyCompatibility,
+} from '../../../src/ts/model/modelProfileResolver'
 import { migrateLegacyFlatModelConfiguration, normalizeDatabaseDefaults } from '../src/databaseDefaults'
 
 const MODEL_ROLES = [
@@ -34,7 +37,7 @@ function db(overrides: Record<string, unknown> = {}): Database {
 
 describe('model profile resolver server import', () => {
   it('resolves provider capability without importing the browser model registry', () => {
-    const profile = resolveModelProfile({ database: db() })
+    const profile = resolveModelProfileWithLegacyCompatibility({ database: db() })
 
     expect(profile.modelId).toBe('reverse_proxy')
     expect(profile.requestModel).toBe('server-safe-model')
@@ -64,12 +67,22 @@ describe('model profile resolver server import', () => {
         modelProfiles: [],
         modelRoleProfiles: {},
         modelRuntimeDefaults: {},
-        providerCredentials: [],
+        providerCredentials: [
+          {
+            id: 'cred-proxy',
+            name: 'Proxy',
+            type: 'apiKey',
+            apiKey: 'proxy-key',
+          },
+        ],
       }) as unknown as Record<string, unknown>,
       { providerDefaults: false },
     ) as unknown as Database
     const expected = Object.fromEntries(
-      MODEL_ROLES.map((role) => [role, comparableResolution(resolveModelProfile({ database: legacy, role }))]),
+      MODEL_ROLES.map((role) => [
+        role,
+        comparableResolution(resolveModelProfileWithLegacyCompatibility({ database: legacy, role })),
+      ]),
     )
     const migrated = structuredClone(legacy) as unknown as Record<string, unknown>
 

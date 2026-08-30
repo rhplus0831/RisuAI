@@ -131,7 +131,7 @@ import {
   type AgentPresetExecutionPlan,
   type AgentPresetResolution,
 } from '../../../../src/ts/agentPresetResolver.js'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
+import type { ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 
 /**
@@ -690,6 +690,7 @@ interface ResolvedScope {
   currentChar: character
   currentChat: Chat
   promptInfo: MessagePresetInfo
+  resolvedMainProfile: ResolvedModelProfile
   selectedCharID: number
   chatPage: number
 }
@@ -733,6 +734,7 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
     currentChar: effective.currentChar,
     currentChat: effective.currentChat,
     promptInfo: effective.promptInfo,
+    resolvedMainProfile: effective.resolvedMainProfile,
     selectedCharID,
     chatPage,
   }
@@ -743,12 +745,12 @@ function resolveScope(input: AssembleInput, deps: AssembleDeps): ResolvedScope {
  * `ExpandContext` + empty slots, and run the pure template helpers.
  */
 export function beginAssembly(input: AssembleInput, deps: AssembleDeps): AssemblyState {
-  const { database, currentChar, currentChat, promptInfo, selectedCharID, chatPage } = resolveScope(input, deps)
+  const { database, currentChar, currentChat, promptInfo, resolvedMainProfile, selectedCharID, chatPage } =
+    resolveScope(input, deps)
 
   const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
   const luaExecBudget = createLuaExecBudget()
   const memoryDatabase = deps.loadMemoryDatabase?.() ?? null
-  const resolvedMainProfile = resolveModelProfile({ database })
   const unsupportedTriggerEffectTypes = new Set<string>()
   const cbsCallbackDiagnostics = new Map<string, ServerCbsCallbackDiagnosticReason>()
   const ctx: ExpandContext = {

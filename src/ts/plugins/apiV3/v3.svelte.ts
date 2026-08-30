@@ -55,7 +55,7 @@ import { sendChat as processSendChat } from 'src/ts/process/index.svelte'
 import { coordinateAcceptedChatSend } from 'src/ts/process/acceptedSendCoordinator.svelte'
 import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
 import { isChatGenerationKnown } from 'src/ts/process/reattach'
-import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
+import { resolveModelProfileWithLegacyCompatibility } from 'src/ts/model/modelProfileResolver'
 import type { ModelModeExtended } from 'src/ts/process/request/shared'
 import { requestChatDataMain } from 'src/ts/process/request/request'
 import { getModuleLorebooks } from 'src/ts/process/modules'
@@ -1893,7 +1893,11 @@ const makeRisuaiAPIV3 = (
         throw new Error('Message must be a string')
       }
 
-      if (resolveModelProfile({ database: getDatabase() }).modelInfo.id.startsWith('pluginmodel:::')) {
+      if (
+        resolveModelProfileWithLegacyCompatibility({ database: getDatabase() }).modelInfo.id.startsWith(
+          'pluginmodel:::',
+        )
+      ) {
         // Plugin-provided models are blocked from chat sends to keep plugin IPC
         // outside provider execution.
         throw new Error('Sending chat with plugin-based model is currently blocked')

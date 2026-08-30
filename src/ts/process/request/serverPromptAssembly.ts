@@ -3,12 +3,19 @@ import type { character, Chat, Database, triggerscript } from '../../storage/dat
 import { LLMFlags } from '../../model/types'
 import { getModuleTriggers } from '../modules'
 import { isPluginRuntimeReady, pluginV2 } from '../../plugins/plugins.svelte'
-import { applyEffectivePresetComposition, databaseKeyForModelPresetField, MODEL_PRESET_FIELDS } from '../../presetSplit'
+import {
+  applyEffectivePresetComposition,
+  databaseKeyForModelPresetField,
+  isLegacyModelPresetCompatibilityRecord,
+  MODEL_PRESET_FIELDS,
+} from '../../presetSplit'
 import {
   modelProfileGenerationBlockReason,
   resolveModelProfile,
+  resolveModelProfileWithLegacyCompatibility,
   type ResolvedModelProfile,
 } from '../../model/modelProfileResolver'
+import { normalizeModelRoleProfiles } from '../../model/modelProfileRecords'
 
 /**
  * Route shape shared with `ServerCompletionRoute` in `serverCompletion.ts`.
@@ -232,7 +239,12 @@ function findPresetById(collection: unknown, id: string | undefined): Record<str
 }
 
 function resolveProfileForChat(currentChat: Chat): ResolvedModelProfile {
-  return resolveModelProfile({ database: effectiveModelDatabaseForChat(currentChat) })
+  const database = effectiveModelDatabaseForChat(currentChat)
+  const modelPreset = findPresetById(getDatabase().modelPresets, currentChat.generationSettings?.modelPresetId)
+  const legacyBinding = normalizeModelRoleProfiles(database.modelRoleProfiles).chatMain.mode === 'legacy'
+  return isLegacyModelPresetCompatibilityRecord(modelPreset) || legacyBinding
+    ? resolveModelProfileWithLegacyCompatibility({ database })
+    : resolveModelProfile({ database })
 }
 
 function unsupportedServerGenerationReason(aiModel: string): string {

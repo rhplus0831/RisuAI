@@ -7,6 +7,7 @@ import {
   resolveLegacyFallbackRefs,
   resolveModelProfile,
   resolveModelProfileByProfileId,
+  resolveModelProfileWithLegacyCompatibility,
   resolveModelProfileTokenizerSelection,
 } from './modelProfileResolver'
 
@@ -48,6 +49,22 @@ function modelInfo(overrides: Partial<LLMModel>): LLMModel {
 }
 
 describe('resolveModelProfile legacy role compatibility', () => {
+  it('does not read flat selections during ordinary resolution', () => {
+    const database = db({ aiModel: 'flat-main-model', subModel: 'flat-aux-model' })
+    const ordinary = resolveModelProfile({ database, role: 'chatMain' })
+
+    expect(ordinary.modelId).toBe('')
+    expect(ordinary.source).toMatchObject({
+      kind: 'durable-profile',
+      field: 'modelRoleProfiles.chatMain',
+    })
+    expect(ordinary.status).toMatchObject({
+      bucket: 'incomplete',
+      reasons: ['profile-not-found'],
+    })
+    expect(resolveModelProfileWithLegacyCompatibility({ database, role: 'chatMain' }).modelId).toBe('flat-main-model')
+  })
+
   it('uses aiModel/subModel for chat roles and modelRoles only for non-chat roles', () => {
     const database = db({
       aiModel: 'main-model',
@@ -61,10 +78,14 @@ describe('resolveModelProfile legacy role compatibility', () => {
     const lookupModelInfo = (_database: Database, id: string) =>
       modelInfo({ id, name: id, internalID: id, flags: [LLMFlags.hasFullSystemPrompt] })
 
-    expect(resolveModelProfile({ database, role: 'chatMain', lookupModelInfo }).modelId).toBe('main-model')
-    expect(resolveModelProfile({ database, role: 'chatAux', lookupModelInfo }).modelId).toBe('aux-model')
+    expect(resolveModelProfileWithLegacyCompatibility({ database, role: 'chatMain', lookupModelInfo }).modelId).toBe(
+      'main-model',
+    )
+    expect(resolveModelProfileWithLegacyCompatibility({ database, role: 'chatAux', lookupModelInfo }).modelId).toBe(
+      'aux-model',
+    )
 
-    const memory = resolveModelProfile({ database, role: 'memory', lookupModelInfo })
+    const memory = resolveModelProfileWithLegacyCompatibility({ database, role: 'memory', lookupModelInfo })
     expect(memory.modelId).toBe('memory-role-model')
     expect(memory.source).toMatchObject({
       kind: 'legacy-modelRoles',
@@ -96,6 +117,42 @@ describe('resolveModelProfile legacy role compatibility', () => {
       bypassesRoleResolution: false,
     })
     expect(profile.fallbacks).toEqual([])
+  })
+
+  it('keeps flat provider and runtime values out of ordinary durable resolution', () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'flat-main-model',
+        openrouterKey: 'flat-openrouter-key',
+        openrouterRequestModel: 'flat/openrouter',
+        openrouterFallback: true,
+        maxContext: 99999,
+        modelTools: ['flat-tool'],
+        customFlags: [LLMFlags.hasImageInput],
+        modelProfiles: [
+          {
+            id: 'durable-openrouter',
+            name: 'Durable OpenRouter',
+            modelId: 'openrouter',
+            providerOptions: { requestModel: 'profile/openrouter' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'durable-openrouter' } },
+      } as Partial<Database>),
+    })
+
+    expect(profile.requestModel).toBe('profile/openrouter')
+    expect(profile.providerOptions.apiKey).toBeUndefined()
+    expect(profile.providerOptions.openrouter).toEqual({
+      fallback: undefined,
+      middleOut: undefined,
+      provider: undefined,
+    })
+    expect(profile.runtimeOptions.maxContext).toBe(4000)
+    expect(profile.runtimeOptions.modelTools).toEqual([])
+    expect(profile.runtimeOptions.customFlags).toEqual([])
+    expect(profile.providerCapability).toEqual({ routable: true, provider: 'openrouter' })
+    expect(profile.status).toMatchObject({ bucket: 'compatibility', reasons: ['missing-provider-id'] })
   })
 
   it('inherits durable profile bindings from fixed source roles while resolving as the child role', () => {
@@ -215,7 +272,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
         },
       } as unknown as Partial<Database>),
     ]) {
-      const profile = resolveModelProfile({ database, role: 'memory', lookupModelInfo })
+      const profile = resolveModelProfileWithLegacyCompatibility({ database, role: 'memory', lookupModelInfo })
 
       expect(profile.modelId).toBe('memory-role-model')
       expect(profile.profileId).toBe('legacy:modelRoles.memory:memory-role-model')
@@ -376,7 +433,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
       [{ id: 'durable-main', name: 'Durable Main', modelId: '   ' }],
       [{ id: 'durable-main', name: 'Durable Main' }],
     ]) {
-      const profile = resolveModelProfile({
+      const profile = resolveModelProfileWithLegacyCompatibility({
         database: db({
           aiModel: 'flat-main-model',
           modelProfiles,
@@ -409,15 +466,15 @@ describe('resolveModelProfile legacy role compatibility', () => {
     })
     const lookupModelInfo = (_database: Database, id: string) => modelInfo({ id, name: id, internalID: id })
 
-    const memory = resolveModelProfile({ database, role: 'memory', lookupModelInfo })
+    const memory = resolveModelProfileWithLegacyCompatibility({ database, role: 'memory', lookupModelInfo })
     expect(memory.modelId).toBe('memory-seperate-model')
     expect(memory.source).toMatchObject({ kind: 'legacy-seperateModels', field: 'seperateModels.memory' })
 
-    const scriptMain = resolveModelProfile({ database, role: 'scriptMain', lookupModelInfo })
+    const scriptMain = resolveModelProfileWithLegacyCompatibility({ database, role: 'scriptMain', lookupModelInfo })
     expect(scriptMain.modelId).toBe('main-model')
     expect(scriptMain.source).toMatchObject({ kind: 'legacy-inherit', field: 'aiModel' })
 
-    const scriptAux = resolveModelProfile({ database, role: 'scriptAux', lookupModelInfo })
+    const scriptAux = resolveModelProfileWithLegacyCompatibility({ database, role: 'scriptAux', lookupModelInfo })
     expect(scriptAux.modelId).toBe('other-ax-model')
     expect(scriptAux.source).toMatchObject({ kind: 'legacy-seperateModels', field: 'seperateModels.otherAx' })
   })
@@ -500,7 +557,7 @@ describe('resolveModelProfile legacy role compatibility', () => {
 
 describe('resolveModelProfile provider/runtime normalization', () => {
   it('normalizes reverse_proxy request model, options, capability input, and fallbacks', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'reverse_proxy',
         customProxyRequestModel: 'proxy-model',
@@ -532,7 +589,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes xcustom rows and reuses the capability table for matching formats', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'xcustom:::mistral',
         customModels: [
@@ -570,7 +627,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('marks incomplete xcustom rows as capability-incomplete without hiding their dependency', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'xcustom:::missing-key',
         customModels: [
@@ -597,7 +654,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes OpenRouter and NanoGPT request model/provider options', () => {
-    const openrouter = resolveModelProfile({
+    const openrouter = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'openrouter',
         openrouterKey: 'or-key',
@@ -620,7 +677,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       },
     })
 
-    const nanogpt = resolveModelProfile({
+    const nanogpt = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'nanogpt',
         nanogptKey: 'nano-key',
@@ -652,7 +709,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   ])(
     'keeps %s NanoGPT-compatible formats on the base endpoint when durable subscription options are missing',
     (_label, format) => {
-      const profile = resolveModelProfile({
+      const profile = resolveModelProfileWithLegacyCompatibility({
         database: db({
           aiModel: 'flat-main-model',
           nanogptKey: 'nano-key',
@@ -725,7 +782,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   )
 
   it('prefers durable providerOptions.requestModel over flat provider request model fields', () => {
-    const openrouter = resolveModelProfile({
+    const openrouter = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         openrouterKey: 'or-key',
@@ -749,7 +806,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       requestModel: 'profile/openrouter',
     })
 
-    const nanogpt = resolveModelProfile({
+    const nanogpt = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         nanogptKey: 'nano-key',
@@ -773,7 +830,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       requestModel: 'profile/nanogpt',
     })
 
-    const reverseProxy = resolveModelProfile({
+    const reverseProxy = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         customProxyRequestModel: 'flat-proxy-model',
@@ -799,7 +856,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       requestModel: 'profile-proxy-model',
     })
 
-    const ollamaCloud = resolveModelProfile({
+    const ollamaCloud = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         ollamaApiKey: 'ollama-cloud-key',
@@ -826,7 +883,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       model: 'profile-cloud-model',
     })
 
-    const localOllama = resolveModelProfile({
+    const localOllama = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         ollamaURL: 'http://localhost:11434',
@@ -949,7 +1006,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
 
   it('falls back to flat provider keys when a durable profile credential reference is blank or missing', () => {
     for (const providerOptions of [undefined, { credentialId: '   ' }]) {
-      const profile = resolveModelProfile({
+      const profile = resolveModelProfileWithLegacyCompatibility({
         database: db({
           aiModel: 'flat-main-model',
           openrouterKey: 'flat-openrouter-key',
@@ -1007,7 +1064,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('uses durable reverse_proxy endpoint and flags while keeping flat proxy key', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         customAPIFormat: LLMFormat.OpenAICompatible,
@@ -1059,7 +1116,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('uses durable OpenRouter and NanoGPT options while keeping flat provider keys', () => {
-    const openrouter = resolveModelProfile({
+    const openrouter = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         openrouterKey: 'flat-openrouter-key',
@@ -1104,7 +1161,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       },
     })
 
-    const nanogpt = resolveModelProfile({
+    const nanogpt = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         nanogptKey: 'flat-nano-key',
@@ -1189,7 +1246,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     })
     expect(local.providerOptions.ollama?.apiKey).toBeUndefined()
 
-    const cloud = resolveModelProfile({
+    const cloud = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         ollamaApiKey: 'flat-ollama-key',
@@ -1255,7 +1312,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       requestModel: 'kobold',
     })
 
-    const oobaLegacy = resolveModelProfile({
+    const oobaLegacy = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'flat-main-model',
         textgenWebUIBlockingURL: 'http://flat-ooba.example.com/api/v1/blocking',
@@ -1281,7 +1338,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
 
   it('falls back to flat request model fields when durable providerOptions.requestModel is missing or blank', () => {
     for (const providerOptions of [undefined, { requestModel: '   ' }]) {
-      const profile = resolveModelProfile({
+      const profile = resolveModelProfileWithLegacyCompatibility({
         database: db({
           aiModel: 'flat-main-model',
           openrouterKey: 'or-key',
@@ -1313,7 +1370,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes Ollama cloud remapping and native Ollama dispatch options', () => {
-    const cloud = resolveModelProfile({
+    const cloud = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'ollama-cloud',
         ollamaApiKey: 'ollama-cloud-key',
@@ -1330,7 +1387,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
     expect(cloud.requestModel).toBe('gpt-oss:20b')
     expect(cloud.providerOptions.ollama).toMatchObject({ cloud: true, model: 'gpt-oss:20b' })
 
-    const local = resolveModelProfile({
+    const local = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'ollama-hosted',
         ollamaURL: 'http://localhost:11434',
@@ -1350,7 +1407,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes Kobold endpoint into provider options', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'kobold',
         koboldURL: 'http://kobold.example.com',
@@ -1366,7 +1423,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes OobaLegacy endpoint and API key into provider options', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'mancer',
         textgenWebUIBlockingURL: 'http://ooba.example.com/api/v1/blocking',
@@ -1385,7 +1442,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes Horde API key and strips horde prefix from the request model', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'horde:::koboldcpp/Mistral-7B',
         hordeConfig: { apiKey: 'horde-profile-key', model: '', softPrompt: '' },
@@ -1437,7 +1494,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes Google AI Studio API key and strips models/ from the request model', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-flash',
         google: { accessToken: 'google-profile-key', projectId: 'studio-project' },
@@ -1465,7 +1522,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes Vertex service-account auth and strips models/ from the request model', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-pro-vertex',
         google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
@@ -1500,7 +1557,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('does not treat a cached Vertex access token as a profile credential', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-pro-vertex',
         google: { accessToken: 'studio-key-ignored-for-vertex', projectId: 'profile-project' },
@@ -1531,7 +1588,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('normalizes OpenAI-compatible key identifier models', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'deepseek-chat',
         OaiCompAPIKeys: { deepseek: 'deepseek-key' },
@@ -1551,7 +1608,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('marks unknown OpenAI-compatible ids as server-unsupported while storage remains flat', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'unregistered-local-model',
         openAIKey: 'sk-server-owned',
@@ -1564,7 +1621,7 @@ describe('resolveModelProfile provider/runtime normalization', () => {
   })
 
   it('lets custom flags override lookup-provided model metadata and exposes runtime options', () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'lookup-model',
         enableCustomFlags: true,

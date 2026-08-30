@@ -1,10 +1,10 @@
 import type { Database } from '../storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider, type LLMModel } from './types'
 import {
-  resolveModelProfile,
   type ModelProfileStatus,
   type ModelProfileStatusBucket,
   type ResolvedModelProfile,
+  resolveModelProfileWithLegacyCompatibility,
 } from './modelProfileResolver'
 import { MODEL_ROLES, type ModelRole } from '@risuai/shared-core/model-roles'
 import { resolveMemoryModelCapability } from './memoryModelCapability'
@@ -57,7 +57,7 @@ export function resolveModelProfileUiState({
   const resolvedProfiles = Object.fromEntries(
     MODEL_ROLES.map((role) => [
       role,
-      resolveModelProfile({
+      resolveModelProfileWithLegacyCompatibility({
         database,
         role,
         lookupModelInfo,

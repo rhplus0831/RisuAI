@@ -50,7 +50,7 @@ describe('browser model-runtime consumer ownership', () => {
     expect(browserParser).toContain('resolveModelProfile({ database: getDatabase(), role })')
     expect(serverAdapter).toContain('getModelContext: getActiveModelContext')
     expect(pluginApi).not.toContain('getModelInfo(getDatabase().aiModel)')
-    expect(pluginApi).toContain('resolveModelProfile({ database: getDatabase() }).modelInfo.id')
+    expect(pluginApi).toContain('resolveModelProfileWithLegacyCompatibility({ database: getDatabase() }).modelInfo.id')
     expect(modelString).toContain('resolveModelProfile({ database: db })')
     expect(modelString).toContain("profile.source.kind === 'durable-profile'")
   })

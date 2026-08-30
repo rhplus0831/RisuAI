@@ -2,7 +2,10 @@
   import { PencilIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
-  import { resolveModelProfile, type ResolvedModelProfile } from 'src/ts/model/modelProfileResolver'
+  import {
+    resolveModelProfileWithLegacyCompatibility,
+    type ResolvedModelProfile,
+  } from 'src/ts/model/modelProfileResolver'
   import { getModelInfo } from 'src/ts/model/modellist'
   import {
     type LegacyFallbackModelKey,
@@ -171,7 +174,7 @@
   }
 
   function resolvedProfileForRole(role: ModelRole): ResolvedModelProfile {
-    return resolveModelProfile({
+    return resolveModelProfileWithLegacyCompatibility({
       database: resolverCompatibilityDatabase,
       role,
       lookupModelInfo: (_database, id) => getModelInfo(id),
