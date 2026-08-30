@@ -2232,20 +2232,29 @@ describe('beginAssembly context + template normalization', () => {
         baseUrl: 'debug://prompt-metadata',
         requestModel: 'profile-request-model',
       },
+      runtimeOptions: {
+        maxContext: 12345,
+      },
+    }
+    const auxiliaryProfile = {
+      id: 'prompt-metadata-aux-profile',
+      name: 'Prompt Metadata Aux',
+      modelId: 'gpt-5-mini',
     }
     const roleBindings = {
       chatMain: { mode: 'profile' as const, profileId: 'prompt-metadata-profile' },
+      chatAux: { mode: 'profile' as const, profileId: 'prompt-metadata-aux-profile' },
     }
     const db = makeDatabase({
       aiModel: 'echo_model',
-      modelProfiles: [profile],
+      modelProfiles: [profile, auxiliaryProfile],
       modelRoleProfiles: roleBindings,
       modelPresets: [
         {
           id: 'model-preset-default',
           name: 'Default Model',
-          modelProfiles: [profile],
-          modelProfileOrder: ['prompt-metadata-profile'],
+          modelProfiles: [profile, auxiliaryProfile],
+          modelProfileOrder: ['prompt-metadata-profile', 'prompt-metadata-aux-profile'],
           modelRoleProfiles: roleBindings,
         },
       ],
@@ -2254,6 +2263,9 @@ describe('beginAssembly context + template normalization', () => {
 
     const metadata = promptVariables.expandVariables(
       [
+        '{{model}}',
+        '{{axmodel}}',
+        '{{maxcontext}}',
         '{{metadata::modelshortname}}',
         '{{metadata::modelname}}',
         '{{metadata::modelinternalid}}',
@@ -2266,6 +2278,9 @@ describe('beginAssembly context + template normalization', () => {
 
     expect(metadata).toBe(
       [
+        'debug-echo',
+        'gpt-5-mini',
+        '12345',
         'Debug Echo',
         'Debug Echo',
         'profile-request-model',

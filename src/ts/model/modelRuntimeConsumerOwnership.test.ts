@@ -31,4 +31,18 @@ describe('browser model-runtime consumer ownership', () => {
     expect(tokenizer).toContain(helper)
     expect(serverConfig).toContain(helper)
   })
+
+  it('routes prompt-visible model identity through resolved role contexts', () => {
+    const cbs = source('src/ts/cbs.ts')
+    const browserParser = source('src/ts/parser/parser.svelte.ts')
+    const serverAdapter = source('server/fastify/src/prompt/cbsAdapter.ts')
+
+    expect(cbs).not.toContain('return db.aiModel')
+    expect(cbs).not.toContain('return db.subModel')
+    expect(cbs).toContain("getEffectiveModelContext('chatMain')")
+    expect(cbs).toContain("getEffectiveModelContext('chatAux')")
+    expect(browserParser).toContain('getModelContext: (role) =>')
+    expect(browserParser).toContain('resolveModelProfile({ database: getDatabase(), role })')
+    expect(serverAdapter).toContain('getModelContext: getActiveModelContext')
+  })
 })

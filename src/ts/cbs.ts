@@ -113,6 +113,15 @@ export interface CbsCallbackMemo {
   recordMiss?: (name: CbsCallbackMemoName, key: string) => void
 }
 
+export type CBSModelRole = 'chatMain' | 'chatAux'
+
+export interface CBSModelContext {
+  modelId: string
+  requestModel: string
+  modelInfo: LLMModel
+  maxContext?: number
+}
+
 export type RegisterCallback = (
   str: string,
   matcherArg: matcherArg,
@@ -157,6 +166,11 @@ export type CBSRegisterArg = {
   pickHashRand: (seed: number, hash: string) => number
   getSelectedCharID: () => number
   getModelInfo: (model: string) => LLMModel
+  /**
+   * Resolves the effective model selected for prompt-visible CBS values.
+   * Older parser hosts may omit this and retain the flat-field lookup below.
+   */
+  getModelContext?: (role: CBSModelRole) => CBSModelContext
   callInternalFunction: (args: string[]) => string
   isMobile: boolean
   appVer: string
@@ -333,6 +347,21 @@ export function registerCBS(arg: CBSRegisterArg) {
     getScreenHeight,
     getBrowserLanguage,
   } = arg
+
+  const getEffectiveModelContext = (role: CBSModelRole): CBSModelContext => {
+    const resolved = arg.getModelContext?.(role)
+    if (resolved) return resolved
+
+    const db = getDatabase()
+    const modelId = role === 'chatAux' ? db.subModel : db.aiModel
+    const modelInfo = getModelInfo(modelId)
+    return {
+      modelId,
+      requestModel: modelInfo.internalID ?? modelInfo.id,
+      modelInfo,
+      maxContext: db.maxContext,
+    }
+  }
 
   // Basic character/user variables
   registerFunction({
@@ -932,8 +961,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'model',
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase()
-      return db.aiModel
+      return getEffectiveModelContext('chatMain').modelId
     },
     alias: [],
     description:
@@ -943,8 +971,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'axmodel',
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase()
-      return db.subModel
+      return getEffectiveModelContext('chatAux').modelId
     },
     alias: [],
     description:
@@ -999,8 +1026,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'maxcontext',
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase()
-      return db.maxContext.toString()
+      return getEffectiveModelContext('chatMain').maxContext?.toString() ?? ''
     },
     alias: [],
     description:
@@ -1713,8 +1739,7 @@ export function registerCBS(arg: CBSRegisterArg) {
   registerFunction({
     name: 'prefillsupported',
     callback: (str, matcherArg, args, vars) => {
-      const db = getDatabase()
-      return db.aiModel.startsWith('claude') ? '1' : '0'
+      return getEffectiveModelContext('chatMain').modelId.startsWith('claude') ? '1' : '0'
     },
     alias: ['prefill_supported', 'prefill'],
     description:
@@ -2318,27 +2343,26 @@ export function registerCBS(arg: CBSRegisterArg) {
           return getBrowserLanguage()
         }
         case 'modelshortname': {
-          const modelInfo = getModelInfo(db.aiModel)
+          const modelInfo = getEffectiveModelContext('chatMain').modelInfo
           return modelInfo.shortName ?? modelInfo.name ?? modelInfo.id
         }
         case 'modelname': {
-          const modelInfo = getModelInfo(db.aiModel)
+          const modelInfo = getEffectiveModelContext('chatMain').modelInfo
           return modelInfo.name ?? modelInfo.id
         }
         case 'modelinternalid': {
-          const modelInfo = getModelInfo(db.aiModel)
-          return modelInfo.internalID ?? modelInfo.id
+          return getEffectiveModelContext('chatMain').requestModel
         }
         case 'modelformat': {
-          const modelInfo = getModelInfo(db.aiModel)
+          const modelInfo = getEffectiveModelContext('chatMain').modelInfo
           return modelInfo.format.toString()
         }
         case 'modelprovider': {
-          const modelInfo = getModelInfo(db.aiModel)
+          const modelInfo = getEffectiveModelContext('chatMain').modelInfo
           return modelInfo.provider.toString()
         }
         case 'modeltokenizer': {
-          const modelInfo = getModelInfo(db.aiModel)
+          const modelInfo = getEffectiveModelContext('chatMain').modelInfo
           return modelInfo.tokenizer.toString()
         }
         case 'imateapot': {
@@ -2348,7 +2372,7 @@ export function registerCBS(arg: CBSRegisterArg) {
           return 'fastify'
         }
         case 'maxcontext': {
-          return db.maxContext.toString()
+          return getEffectiveModelContext('chatMain').maxContext?.toString() ?? ''
         }
         default: {
           return `Error: ${args[0]} is not a valid metadata key.`

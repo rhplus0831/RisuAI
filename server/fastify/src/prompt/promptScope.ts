@@ -85,6 +85,24 @@ export function getActiveModelInfo(): LLMModel {
   return activeScope.modelInfo
 }
 
+export function getActiveModelContext(role: 'chatMain' | 'chatAux') {
+  if (!activeScope) {
+    throw new Error('promptScope not set; call setActivePromptScope before expandVariables')
+  }
+  const profile = resolveModelProfile({ database: activeScope.database, role })
+  const modelInfo =
+    role === 'chatMain'
+      ? (activeScope.modelInfo ??= modelInfoForPromptScope(profile))
+      : modelInfoForPromptScope(profile)
+
+  return {
+    modelId: profile.modelId,
+    requestModel: profile.requestModel,
+    modelInfo,
+    maxContext: profile.runtimeOptions.maxContext,
+  }
+}
+
 export const chatVarBackend: ChatVarBackend = {
   getChatVar(key: string): string {
     if (!activeScope) return 'null'

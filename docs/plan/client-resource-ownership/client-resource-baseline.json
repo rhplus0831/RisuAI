@@ -934,7 +934,7 @@
       "files": [
         {
           "file": "src/ts/cbs.ts",
-          "count": 40
+          "count": 37
         },
         {
           "file": "src/ts/filePicker.ts",
@@ -974,7 +974,7 @@
         },
         {
           "file": "src/ts/parser/parser.svelte.ts",
-          "count": 14
+          "count": 15
         },
         {
           "file": "src/ts/playground.ts",
@@ -4927,6 +4927,10 @@
         {
           "file": "src/lib/UI/ScriptModelOverrideSelectors.svelte.test.ts",
           "count": 1
+        },
+        {
+          "file": "src/ts/cbs.modelContext.test.ts",
+          "count": 2
         },
         {
           "file": "src/ts/model/modellist.dynamic.test.ts",

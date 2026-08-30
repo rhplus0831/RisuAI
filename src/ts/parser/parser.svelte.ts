@@ -32,6 +32,7 @@ import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang'
 import katex from 'katex'
 import { getModelInfo } from '../model/modellist'
+import { resolveModelProfile } from '../model/modelProfileResolver'
 import cssSelectorParser from 'postcss-selector-parser'
 import {
   registerRisuChatParserCBS,
@@ -99,6 +100,15 @@ registerRisuChatParserCBS({
     return get(selectedCharID)
   },
   getModelInfo: getModelInfo,
+  getModelContext: (role) => {
+    const profile = resolveModelProfile({ database: getDatabase(), role })
+    return {
+      modelId: profile.modelId,
+      requestModel: profile.requestModel,
+      modelInfo: profile.modelInfo,
+      maxContext: profile.runtimeOptions.maxContext,
+    }
+  },
   callInternalFunction: function (args: string[]): string {
     return ''
   },
