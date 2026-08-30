@@ -72,8 +72,11 @@ export interface ChatDispatchHistoryInput {
   metadata?: Record<string, unknown>
 }
 
+/** Fastify's generation-facing database input until the provider domain is narrowed in its own Phase 4 slice. */
+export type ChatDispatchDatabase = Database
+
 interface ChatDispatchArgs {
-  database: Database
+  database: ChatDispatchDatabase
   formated: OpenAIChat[]
   outputTokens?: number
   profile?: ResolvedModelProfile

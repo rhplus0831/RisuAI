@@ -1,7 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { BardWikiGlobalSettings } from '@risuai/protocol'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { BardWikiChatRow, BardWikiGenerationDatabase } from '../bardWikiTypes.js'
 import { getBardWikiChatSettings } from '../bardWikiRepository.js'
 import {
   readBardWikiGlobalSettings,
@@ -39,7 +38,7 @@ export interface BardWikiPromptDiagnostics {
 export interface BardWikiPromptAssembly {
   settings: BardWikiGlobalSettings
   budgets: BardWikiMemoryBudgets
-  rows: OpenAIChat[]
+  rows: BardWikiChatRow[]
   diagnostics: BardWikiPromptDiagnostics
 }
 
@@ -64,7 +63,7 @@ export function bardWikiRequestHistoryMetadata(
 /** Build committed BardWiki rows for the shared memory_bridge stage. */
 export function buildBardWikiPromptRows(input: {
   db: DatabaseSync
-  database: Database
+  database: BardWikiGenerationDatabase
   querySource: PromptMemoryQuerySourceInput
 }): BardWikiPromptAssembly {
   const globalSettings = readBardWikiGlobalSettings(input.database.bardWiki)

@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
 import {
   COMMAND_EVENT_CATALOG,
   persistCommandEvent,
@@ -48,6 +47,7 @@ import {
   type BardWikiJobHandlerResult,
 } from './bardWikiWorker.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
+import type { BardWikiGenerationDatabase } from './bardWikiTypes.js'
 
 export const BARDWIKI_REBUILD_BATCH_SIZE = 8
 
@@ -188,7 +188,7 @@ export function createBardWikiRebuildHandler(options: BardWikiRebuildHandlerOpti
 async function analyzeSource(
   options: BardWikiRebuildHandlerOptions,
   analyze: BardWikiEventAnalyzer,
-  database: Database,
+  database: BardWikiGenerationDatabase,
   settings: ReturnType<typeof resolveEffectiveBardWikiSettingsForChat>,
   job: BardWikiJob,
   source: BardWikiSourcePair,
@@ -678,14 +678,14 @@ function resolveEventLogicalPath(
   }
 }
 
-function loadAnalysisDatabase(options: BardWikiRebuildHandlerOptions, chatId: string): Database {
+function loadAnalysisDatabase(options: BardWikiRebuildHandlerOptions, chatId: string): BardWikiGenerationDatabase {
   const loaded = options.loadDatabase
     ? options.loadDatabase(chatId)
     : loadPersistedDatabaseForMemoryJob(options.db, options.dataDir, chatId)
   if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
     throw new BardWikiJobHandlerError('bardwiki_model_unavailable', 'BardWiki model settings are unavailable')
   }
-  return loaded as Database
+  return loaded as BardWikiGenerationDatabase
 }
 
 function sourceChanged(): BardWikiJobHandlerError {

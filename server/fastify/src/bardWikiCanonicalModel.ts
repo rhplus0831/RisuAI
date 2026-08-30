@@ -1,7 +1,5 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
@@ -19,6 +17,7 @@ import {
   type BardWikiDocumentKind,
 } from './bardWikiRepository.js'
 import type { BardWikiEventDraft } from './bardWikiEventModel.js'
+import type { BardWikiChatRow, BardWikiGenerationDatabase } from './bardWikiTypes.js'
 import { dispatchChatProvider } from './prompt/chatDispatch.js'
 import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
 
@@ -92,7 +91,7 @@ export type BardWikiStagedCanonicalChange =
 export interface BardWikiCanonicalCompileRequest {
   db: DatabaseSync
   chatId: string
-  database: Database
+  database: BardWikiGenerationDatabase
   settings: BardWikiGlobalSettings
   eventDraft: BardWikiEventDraft
   documents: readonly BardWikiCanonicalDocumentSnapshot[]
@@ -467,7 +466,7 @@ function snapshotDocument(document: BardWikiDocument): BardWikiCanonicalDocument
   }
 }
 
-function buildCanonicalMessages(request: BardWikiCanonicalCompileRequest): OpenAIChat[] {
+function buildCanonicalMessages(request: BardWikiCanonicalCompileRequest): BardWikiChatRow[] {
   const system = request.repair
     ? [
         'Repair the invalid BardWiki canonical operation array. Return one JSON array only.',
@@ -487,7 +486,10 @@ function buildCanonicalMessages(request: BardWikiCanonicalCompileRequest): OpenA
   ]
 }
 
-function resolveCanonicalProfile(database: Database, profileId: string | null): ResolvedModelProfile | null {
+function resolveCanonicalProfile(
+  database: BardWikiGenerationDatabase,
+  profileId: string | null,
+): ResolvedModelProfile | null {
   return profileId
     ? resolveModelProfileByProfileId({ database, role: 'memory', profileId })
     : resolveModelProfile({ database, role: 'memory' })

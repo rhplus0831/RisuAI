@@ -1,5 +1,4 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
 import {
   COMMAND_EVENT_CATALOG,
   persistCommandEvent,
@@ -42,6 +41,7 @@ import {
 } from './bardWikiCanonicalModel.js'
 import { BardWikiJobHandlerError, type BardWikiJobHandlerContext } from './bardWikiWorker.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
+import type { BardWikiGenerationDatabase } from './bardWikiTypes.js'
 
 export interface BardWikiApplyTurnHandlerOptions {
   db: DatabaseSync
@@ -195,7 +195,7 @@ export function createBardWikiApplyTurnHandler(options: BardWikiApplyTurnHandler
 async function compileCanonicalChanges(args: {
   options: BardWikiApplyTurnHandlerOptions
   compileCanonical: BardWikiCanonicalCompiler
-  database: Database
+  database: BardWikiGenerationDatabase
   settings: ReturnType<typeof resolveEffectiveBardWikiSettingsForChat>
   job: BardWikiJob
   receipt: BardWikiReceiptSummary
@@ -330,14 +330,14 @@ function markReceiptObsolete(db: DatabaseSync, receiptId: string): void {
   ).run(receiptId)
 }
 
-function loadAnalysisDatabase(options: BardWikiApplyTurnHandlerOptions, chatId: string): Database {
+function loadAnalysisDatabase(options: BardWikiApplyTurnHandlerOptions, chatId: string): BardWikiGenerationDatabase {
   const loaded = options.loadDatabase
     ? options.loadDatabase(chatId)
     : loadPersistedDatabaseForMemoryJob(options.db, options.dataDir, chatId)
   if (!loaded || typeof loaded !== 'object' || Array.isArray(loaded)) {
     throw new BardWikiJobHandlerError('bardwiki_model_unavailable', 'BardWiki model settings are unavailable')
   }
-  return loaded as Database
+  return loaded as BardWikiGenerationDatabase
 }
 
 function commitChangeSet(

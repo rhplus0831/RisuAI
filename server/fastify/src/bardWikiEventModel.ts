@@ -1,6 +1,4 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { Database } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
@@ -14,6 +12,7 @@ import {
   requireBardWikiMarkdown,
 } from './bardWikiRepository.js'
 import type { BardWikiSourcePair } from './bardWikiReceipts.js'
+import type { BardWikiChatRow, BardWikiGenerationDatabase } from './bardWikiTypes.js'
 import { dispatchChatProvider } from './prompt/chatDispatch.js'
 import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
 
@@ -29,7 +28,7 @@ export interface BardWikiEventDraft {
 
 export interface BardWikiEventAnalysisRequest {
   db: DatabaseSync
-  database: Database
+  database: BardWikiGenerationDatabase
   settings: BardWikiGlobalSettings
   source: BardWikiSourcePair
   jobId: string
@@ -139,13 +138,16 @@ export function validateBardWikiEventDraft(output: string): BardWikiEventDraft {
   return { title, logicalPath, aliases, markdown }
 }
 
-function resolveBardWikiEventProfile(database: Database, profileId: string | null): ResolvedModelProfile | null {
+function resolveBardWikiEventProfile(
+  database: BardWikiGenerationDatabase,
+  profileId: string | null,
+): ResolvedModelProfile | null {
   return profileId
     ? resolveModelProfileByProfileId({ database, role: 'memory', profileId })
     : resolveModelProfile({ database, role: 'memory' })
 }
 
-function buildBardWikiEventMessages(request: BardWikiEventAnalysisRequest): OpenAIChat[] {
+function buildBardWikiEventMessages(request: BardWikiEventAnalysisRequest): BardWikiChatRow[] {
   const system = request.repair
     ? [
         'Repair the invalid BardWiki event draft. Return one JSON object only.',
