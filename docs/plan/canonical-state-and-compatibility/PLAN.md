@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: active. Phases 0 and 1 are complete; Phase 2 model configuration
+Status: active. Phases 0, 1, and 2 are complete; Phase 3 prompt-template
 ownership is the execution cursor.
 
 ## Goal
@@ -19,9 +19,9 @@ slice is implemented and verified.
 
 ## Opening Baseline
 
-- Durable model profiles and role bindings exist, along with explicit legacy
-  conversion paths, but normal resolution and interchange still retain flat
-  compatibility inputs.
+- Durable model profiles and role bindings own normal model resolution, with
+  flat compatibility inputs retained only at named static/import/export,
+  compatibility, and repair boundaries.
 - Modern prompt presets own template bodies for normal workflows, while the
   aggregate `promptTemplate` compatibility projection and the
   `prompt_templates` SQLite representation still participate in hydration and
@@ -98,7 +98,7 @@ Phase 0 must classify each surface. Names such as `legacy`, `ensure`, or
 | Workstream 1 boundary convention | Released at `b01e88b03` | Phase 0 inventory is unblocked; shared-contract choices still wait for the matching Phase 1 contract. |
 | Compatibility baseline | `71c476e9c86263fe907105b011ca4dde0a619d66` | Immutable pre-Fastify behavioral source for historical fixtures, where applicable. |
 | Behavioral sync cursor | `f3f0242fba297d82e0efcc2c31ca1428569b70f2` | Latest upstream unit already dispositioned; not a source-equivalent ancestor. |
-| Workstream 3 model-owner release | Not released | Phase 2 closes before browser model compatibility access is retired. |
+| Workstream 3 model-owner release | `6020f6009` | Phase 2 normal model consumers released; named compatibility and Phase 5/6 repair boundaries remain. |
 | Workstream 3 prompt-owner release | Not released | Phase 3 closes before prompt bridge removal. |
 | Workstream 3 translator/smaller-owner release | Not released | Phase 4 closes per family before bridge/facade retirement. |
 

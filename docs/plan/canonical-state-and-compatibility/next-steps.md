@@ -4,20 +4,8 @@ Date: 2026-08-31
 
 ## Current Task
 
-Execute the [normal model consumer
-cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
-
-1. Add a closed-world allowlist for the remaining effective request
-   projections, context-free fallbacks, static, import/export,
-   conversion, rollback, and explicit legacy-reader surfaces.
-2. Replace any unclassified ordinary bypass found by that gate with an
-   already-resolved role/profile input and a conflicting flat/profile fixture.
-3. Preserve the named clone-only selected-preset seam for legacy inline
-   credentials; canonical preset owner fields must continue to win.
-4. Prove provider/model/options/fallback parity in browser reload and request
-   lanes while retaining explicit legacy conversion/import/export.
-5. Isolate the remaining legacy-reader removal and prepare the Phase 2
-   model-owner release cursor for Workstream 3.
+Execute [Phase 3 prompt-template ownership](phases/phase-3-prompt-template-ownership.md)
+after the Phase 2 model-owner release at `6020f6009`.
 
 ## Phase 0 Release
 
@@ -36,6 +24,6 @@ Phase 0 dispositions.
 
 ## Handoff
 
-After normal consumers pass, isolate and remove the ordinary legacy resolver
-fallback, refresh the Phase 2 release evidence, and hand the model-owner cursor
-to Workstream 3 while retaining the Phase 5 inline-secret repair holds.
+Phase 2 model consumers are released to Workstream 3. Retain the named model
+static/import/export/compatibility seams and Phase 5 inline-secret repair hold
+while Prompt Phase 3 establishes its canonical owner and release evidence.

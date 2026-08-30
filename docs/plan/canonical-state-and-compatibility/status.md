@@ -9,11 +9,12 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 and 1 complete.
-- Current phase: [Phase 2 model configuration ownership](phases/phase-2-model-configuration-ownership.md).
-- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), in progress through auxiliary consumers at `841d0b65e`.
+- Plan state: Active; Phases 0, 1, and 2 complete.
+- Current phase: [Phase 3 prompt-template ownership](phases/phase-3-prompt-template-ownership.md).
+- Active slice: Phase 3 prompt-template ownership, opened after the Phase 2
+  model-owner release at `6020f6009`.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes through the current Phase 2 checkpoint: schema v34 transactionally
+- Runtime changes through the Phase 2 release: schema v34 transactionally
   creates deterministic profiles/bindings for usable flat selections at
   migration, fresh-init, and import boundaries without copying inline secrets;
   selected legacy model/preset role ownership is isolated to effective clones,
@@ -27,8 +28,11 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
   translate role while preserving legacy auxiliary fallback. Seed visibility,
   HypaV3 response reservation, and display-source Lua/trigger identity now use
   resolved model context, the unused lorebook model mirror is removed, and the
-  Hypa settings capacity ratio uses the selected runtime profile.
-- Latest verification: normal-consumer checkpoint passed through `841d0b65e`.
+  Hypa settings capacity ratio uses the selected runtime profile. The final
+  ordinary flat model/runtime reads are either removed or isolated behind the
+  named older-server response-budget compatibility fallback.
+- Latest verification: Phase 2 model-owner release passed through
+  `6020f6009`; Prompt Phase 3 is now the execution cursor.
 - Character/chat dependency release: singular SQLite row owners and the bounded
   pre-extraction fallback are released at `7cb62afa8`; orphan/integrity repair
   remains held for Phases 5-6.
@@ -40,7 +44,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | Workstream 1 package/boundary conventions | `b01e88b03` | Released; Phase 0 may execute. |
 | Workstream 1 shared contracts | Per contract family | Required only before a slice introduces or consumes that shared contract. |
 | Migration/recovery foundation | `1e758cd22` | Released with named-step validation, rollback/retry/reopen injection proof, damaged-database refusal, and all 19 historical fixture adapters. |
-| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; selected-preset compatibility is isolated, prompt shape/tokenizer/output budgets/image capability, Fastify completion, request samplers/thinking, CBS/generation/translation/display identity, settings metadata, and HypaV3 budgets resolve durable profiles through `841d0b65e`; not yet released to Workstream 3. |
+| Model configuration canonical owner | `6020f6009` | Phase 2 released to Workstream 3 after the closed-world flat-access and consumer-ownership gates passed; explicit static/import/export/compatibility and Phase 5/6 repair holds remain named. |
 | Character/chat canonical owners | `7cb62afa8` | Character, chat, message, and Hypa rows are singular normal owners; legacy import repairs ids before extraction. Summary-only Workstream 3 consumers are released; broader contracts remain per-family dependencies. |
 | Prompt-template canonical owner | Phase 3 | Not released to Workstream 3. |
 | Translator/smaller canonical owners | Phase 4 per family | Not released to Workstream 3. |
@@ -67,8 +71,8 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | ---: | --- | --- |
 | [0. Inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md) | Complete | Closed at `cd04b0e11`. |
 | [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Complete | Closed at `1e758cd22`. |
-| [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Active | Current execution cursor; foundation passes model historical fixtures. |
-| [3. Prompt templates](phases/phase-3-prompt-template-ownership.md) | Queued | Foundation passes prompt historical fixtures. |
+| [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Complete | Released at `6020f6009`; normal model consumers use resolved profile/runtime inputs. |
+| [3. Prompt templates](phases/phase-3-prompt-template-ownership.md) | Active | Current execution cursor after the Phase 2 release. |
 | [4. Translator/smaller mirrors](phases/phase-4-translator-and-smaller-mirrors.md) | Queued | Foundation and per-family dispositions are complete. |
 | [5. Repair boundary](phases/phase-5-repair-boundary.md) | Queued | Canonical owners exist for affected commands. |
 | [6. Interchange/backups/storage](phases/phase-6-interchange-backup-and-obsolete-storage.md) | Queued | Replacement readers/writers and rollback proofs pass. |
@@ -76,7 +80,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Blockers And Risks
 
-- No blocker prevents the normal model consumer cutover.
+- No Phase 2 blocker remains; Prompt Phase 3 is the current execution cursor.
 - A field may be an explicit export projection, not a removable mirror; Phase 0
   must decide before implementation.
 - Command-time repair may currently make damaged historical data usable. Moving
@@ -88,6 +92,5 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Inventory and cut over the remaining
-ordinary auxiliary model reads, then isolate the legacy resolver fallback while
-preserving named static/import/export/request-clone and Phase 5 holds.
+Use [`next-steps.md`](next-steps.md). Continue Prompt Phase 3 while preserving
+the named model static/import/export/compatibility seams and Phase 5/6 holds.

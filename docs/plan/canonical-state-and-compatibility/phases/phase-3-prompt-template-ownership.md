@@ -1,6 +1,6 @@
 # Phase 3: Prompt-Template Ownership
 
-Status: queued.
+Status: active; opened after the Phase 2 model-owner release at `6020f6009`.
 
 Depends on: Phase 1 foundation and accepted prompt rows in the Phase 0 matrix.
 

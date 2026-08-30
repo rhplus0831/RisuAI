@@ -1,6 +1,6 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; auxiliary-consumer checkpoint through `1853a3fd3`.
+Status: complete; model-owner release at `6020f6009`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -17,8 +17,8 @@ lanes, while keeping explicitly classified static and legacy entrypoints.
 - Settings/model authoring, model presets, loadouts, and reload hydration.
 - Chat generation, memory, translation, scripting, tools, agents, and other
   auxiliary model-role consumers.
-- Normal resolver fallback from a migrated role binding to `aiModel`,
-  `subModel`, `modelRoles`, separate parameters, and fallback arrays.
+- Explicit compatibility fallback from an incomplete/context-free request to
+  `aiModel`, `subModel`, `modelRoles`, separate parameters, and fallback arrays.
 - Current import/export and explicit legacy conversion remain compatibility
   boundaries; the inline-only Vertex hold remains Phase 5 work.
 
@@ -46,8 +46,9 @@ compatibility/architecture gates, formatting, and `git diff --check`.
   and binding after migration/reopen.
 - Flat fields can influence behavior only through named static, import,
   export, explicit conversion, rollback, or Phase 5 repair boundaries.
-- The remaining Phase 2 legacy-reader removal is isolated and the model-owner
-  cursor is ready to release to Workstream 3.
+- The remaining Phase 2 legacy-reader removal is isolated, the closed-world
+  flat-access gate passes, and the model-owner cursor is released to Workstream
+  3 at `6020f6009`.
 
 Stop if a consumer needs an inline secret copied, a fallback reordered, or a
 classified static/legacy boundary removed to complete the cutover.
@@ -109,9 +110,10 @@ classified static/legacy boundary removed to complete the cutover.
 - Display-source Lua and trigger stages receive one resolved `chatMain` identity
   through the existing Fastify prompt-model boundary at `1853a3fd3`, without
   adding a new browser-tree dependency.
-- The seam is named in the compatibility baseline and closed-world probe. Chat
-  generation, memory summarization, browser prompt assembly and send-context,
-  split presets, tokenizer, static ownership, prompt-budget, and sidebar
-  authoring owners pass. The remaining flat readers now need a closed-world
-  effective-projection/static/import/export/legacy classification before the
-  ordinary resolver fallback can be isolated.
+- The seam is named in the compatibility baseline and closed-world probe. The
+  final ordinary readers in browser dispatch initialization, scripting budget,
+  server-backed response-budget assembly, and translation cache identity now
+  use resolved profile/runtime inputs or an explicitly named older-server
+  compatibility fallback. The flat-access and consumer-ownership gates pass;
+  the model-owner release is handed to Workstream 3 while Prompt Phase 3 is
+  the next execution cursor.

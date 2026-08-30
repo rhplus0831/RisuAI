@@ -7,8 +7,8 @@ Date: 2026-08-31
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
   `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`,
   `07576969c`, `d8275c5e9`, `3cff93cd6`, `fd0764744`, `c24cdd16d`,
-  `e663269de`, `f610c11a1`, `6006b08cb`, `c389535d3`, `cc3a469cf`, and
-  `1853a3fd3`, and `841d0b65e`; character/chat dependency release
+  `e663269de`, `f610c11a1`, `6006b08cb`, `c389535d3`, `cc3a469cf`,
+  `1853a3fd3`, `841d0b65e`, and `6020f6009`; character/chat dependency release
   `7cb62afa8`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
@@ -21,7 +21,8 @@ Date: 2026-08-31
   server-intent completion projection, browser request sampling,
   provider-specific thinking overrides, and effective prompt/generation model
   identity, translation cache/source-language identity, settings metadata,
-  HypaV3 budgeting, and display-source model context.
+  HypaV3 budgeting, and display-source model context, closing the ordinary
+  flat model/runtime access gate and releasing the model-owner cursor.
 
 ## Consumer-Cutover Proof
 
@@ -103,6 +104,11 @@ Date: 2026-08-31
   V3 plugin, 3 generation-label, and 3 closed ownership tests.
 - Translation cache/locale identity passed 26 cache and 4 closed model-runtime
   ownership tests.
+- The Phase 2 closure checkpoint passed the closed-world flat-access gate (1
+  test), model-consumer ownership gate (10 tests), scripting budget lane (30
+  tests), server-backed send-chat lane (33 tests), and raw translation/cache
+  lane (33 tests) at `6020f6009`. Prettier and `git diff --check` also passed;
+  no broad suite was required for this focused closure record.
 - Seed metadata passed 4 behavior and 5 closed ownership tests. HypaV3 budget
   ownership passed 2 behavior and 6 closed ownership tests.
 - Hypa settings capacity passed all 19 focused UI tests and 6 closed
@@ -123,7 +129,7 @@ Date: 2026-08-31
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `841d0b65e`. Selected legacy
+The Phase 2 normal-consumer release passes through `6020f6009`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
 canonical presets; server-intent completion projects durable runtime fields;
@@ -132,8 +138,10 @@ resolved runtime options; prompt-visible identity, plugin recursion protection,
 default generation labels, translation cache/locale identity, settings
 metadata, HypaV3 response reservation/capacity display, and display-source
 identity use the effective profile. The unused lorebook model mirror is gone.
-The broader normal consumer cutover remains active; the model-owner cursor is
-not released yet.
+The closed-world flat-access gate leaves only explicitly classified
+static/import/export/compatibility boundaries, including the named
+older-server response-budget fallback. The model-owner cursor is released to
+Workstream 3. Prompt Phase 3 is now the execution cursor.
 Character, chat, transcript, and Hypa SQLite rows are released as the singular
 normal persisted owners at `7cb62afa8`. Embedded copies are retained only for
 pre-extraction import/recovery, while orphan and damaged-state cleanup remains a

@@ -1,6 +1,6 @@
 # Phase 2: Model Configuration Ownership
 
-Status: active.
+Status: complete at `6020f6009`.
 
 Depends on: Phase 1 foundation and accepted model rows in the Phase 0 matrix.
 
@@ -31,8 +31,8 @@ slice names settings tables/records, command revisions/events, and rollback.
 - Normal consumers resolve through one profile/binding contract.
 - Flat fields cannot influence normal generation after canonical migration.
 - Supported legacy imports and exports still work only at explicit boundaries.
-- The model-owner release cursor is handed to Workstream 3 unless a Phase 5/6
-  hold remains.
+- The model-owner release cursor is handed to Workstream 3 at `6020f6009`;
+  inline-secret repair and interchange cleanup remain Phase 5/6 holds.
 
 ## Validation
 
@@ -43,4 +43,10 @@ reload proof, both typechecks, formatting, and diff checks.
 Completed slice: [Legacy flat model configuration migration](slices/phase-2-model-configuration-ownership/legacy-flat-model-configuration-migration.md)
 at `47146eb75`.
 
-Active slice: [Normal model consumer cutover](slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
+Completed slice: [Normal model consumer cutover](slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
+
+Release record: the closed-world flat-access gate and model-consumer ownership
+proof pass at `6020f6009`. Ordinary browser/server model consumers now reach
+resolved profile/runtime inputs; the sole retained flat runtime read is the
+named older-server response-budget compatibility fallback. Phase 3 prompt
+template ownership is the next execution cursor.

@@ -14,7 +14,7 @@
         "write"
       ],
       "currentPrecedence": "A valid role binding to a durable profile wins over legacy model fields.",
-      "missingBehavior": "Legacy role resolution remains available until Phase 2 migration closes.",
+      "missingBehavior": "Normal readers require durable profile/binding state; explicit compatibility boundaries retain supported legacy resolution.",
       "malformedBehavior": "Strict command readers reject malformed records; lenient hydration normalizes supported old shapes.",
       "damagedDatabaseBehavior": "Do not mint replacement profiles during ordinary reads; use migration or explicit recovery.",
       "historicalFixture": "server/fastify/__tests__/commands.test.ts",
@@ -22,12 +22,12 @@
       "disposition": "canonical",
       "targetOwner": "durable model profile records, order, credentials, runtime defaults, and role bindings",
       "migrationPhase": "Phase 2 model configuration ownership",
-      "oldReaderOrExporter": "resolveModelProfile legacy branches remain until migrated fixtures pass",
+      "oldReaderOrExporter": "resolveModelProfileWithLegacyCompatibility and explicit legacy export",
       "rollbackProof": "Restore pre-migration backup and legacy resolver while retaining profile rows.",
-      "workstream3Cursor": "Hold model compatibility consumer retirement until Phase 2 closes.",
+      "workstream3Cursor": "Normal model consumers released at Phase 2 cursor 6020f6009; retain explicit compatibility boundaries.",
       "probes": [
         {
-          "path": "src/ts/model/modelProfileResolver.ts",
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
           "kind": "identifier",
           "value": "normalizeModelProfiles",
           "expectedCount": 2
@@ -50,8 +50,8 @@
         "write",
         "fallback"
       ],
-      "currentPrecedence": "Profile mode selects its profile; inherit/legacy modes currently fall back to flat role fields.",
-      "missingBehavior": "Defaults each role to legacy mode before Phase 2 migration.",
+      "currentPrecedence": "Durable profile bindings own normal role resolution; explicit compatibility/static/import/export paths may resolve legacy role fields.",
+      "missingBehavior": "Normal migrated state requires a durable role binding; explicit compatibility boundaries preserve supported legacy modes.",
       "malformedBehavior": "Lenient normalization restores invalid bindings to legacy; strict commands reject invalid shapes.",
       "damagedDatabaseBehavior": "Ordinary resolution must not rewrite bindings; explicit recovery may restore defaults.",
       "historicalFixture": "src/ts/model/modelProfileRecords.test.ts",
@@ -61,10 +61,10 @@
       "migrationPhase": "Phase 2 model configuration ownership",
       "oldReaderOrExporter": "modelRoleToLegacyModelMode and resolveModelForRole",
       "rollbackProof": "Retain flat role fields and old resolver through restart/export proof.",
-      "workstream3Cursor": "Hold model settings/facade retirement until role migration passes.",
+      "workstream3Cursor": "Normal model settings/facade consumers released at Phase 2 cursor 6020f6009; retain explicit compatibility boundaries.",
       "probes": [
         {
-          "path": "src/ts/model/modelProfileResolver.ts",
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
           "kind": "identifier",
           "value": "normalizeModelRoleProfiles",
           "expectedCount": 2
@@ -89,27 +89,27 @@
         "import",
         "export"
       ],
-      "currentPrecedence": "Used when role binding remains legacy/inherit or an explicit static model is supplied.",
-      "missingBehavior": "Resolver uses provider/runtime defaults and existing role inheritance.",
+      "currentPrecedence": "Normal consumers use durable profiles/bindings; flat fields are read only through named static, import/export, explicit compatibility, effective-projection, or repair boundaries.",
+      "missingBehavior": "Normal resolution requires durable state; explicit compatibility uses provider/runtime defaults and supported role inheritance.",
       "malformedBehavior": "Normalizers drop unusable selections and preserve supported opaque export fields.",
       "damagedDatabaseBehavior": "Do not opportunistically convert during generation; require migration/recovery.",
       "historicalFixture": "test/compat-harness/fixture.ts",
       "provenance": "Pinned pre-Fastify compatibility fixture with provenance in test/compat-harness/fixture-provenance.json.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "durable profiles, credentials, runtime defaults, and role bindings",
       "migrationPhase": "Phase 2 model configuration ownership",
       "oldReaderOrExporter": "resolveModelProfile legacy source branches and explicit legacy export",
       "rollbackProof": "Keep flat fields and old resolver until migrated generation and export parity pass.",
-      "workstream3Cursor": "Hold flat model facade/settings consumers until Phase 2 release.",
+      "workstream3Cursor": "No normal model-consumer hold after Phase 2 release; retain explicit compatibility and Phase 5/6 repair boundaries.",
       "probes": [
         {
-          "path": "src/ts/model/modelProfileResolver.ts",
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
           "kind": "text",
           "value": "legacy-aiModel",
           "expectedCount": 2
         },
         {
-          "path": "src/ts/model/modelProfileResolver.ts",
+          "path": "packages/shared-core/src/modelProfileResolver.ts",
           "kind": "identifier",
           "value": "resolveModelForRole",
           "expectedCount": 2
@@ -149,7 +149,7 @@
       "migrationPhase": "Phase 2 model configuration ownership",
       "oldReaderOrExporter": "convertLegacyModelProfilesCommand",
       "rollbackProof": "Command receipt/event and pre-command database snapshot restore prove atomic rollback.",
-      "workstream3Cursor": "Does not release browser model compatibility until automatic migration closes.",
+      "workstream3Cursor": "No normal browser model hold after Phase 2 migration; retain the user-invoked conversion boundary.",
       "probes": [
         {
           "path": "server/fastify/src/commands/modelProfiles.ts",
