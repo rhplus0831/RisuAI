@@ -25,8 +25,10 @@ import {
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
+  collectionsResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
@@ -267,6 +269,114 @@ describe('module command projection helpers', () => {
     expect(toggledModuleIds(current, 'mod-b')).toEqual(['mod-a', 'mod-b'])
     expect(toggledModuleIds(current, 'mod-a')).toEqual([])
     expect(current).toEqual(['mod-a'])
+  })
+
+  it('projects ready global module mutations through the leaf collection and settings owners', async () => {
+    const calls = stubCommandFetch()
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'module-a' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'module-b' },
+      ],
+    } as any)
+
+    await setGlobalModuleEnabled('mod-a', true)
+    await updateGlobalModule('mod-a', {
+      id: 'mod-a',
+      name: 'Module A updated',
+      description: '',
+      namespace: 'module-a',
+    })
+
+    expect(settingsResourceState.value.enabledModules).toEqual(['mod-a'])
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Module A updated', description: '', namespace: 'module-a' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'module-b' },
+    ])
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules/enable')).toBe(true)
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
+  })
+
+  it('falls back to the compatibility facade while a module owner is not ready or has ambiguous namespaces', () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: ['mod-a'],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+      ],
+    } as any)
+    collectionsResourceState.statuses.modules = 'loading'
+
+    expect(currentGlobalModuleStateSnapshot()).toEqual({
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+      ],
+      enabledModules: ['mod-a'],
+    })
+  })
+
+  it('fails closed for a ready module owner with duplicate ids', async () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'module-a' },
+        { id: 'mod-a', name: 'Module A copy', description: '', namespace: 'module-a-copy' },
+      ],
+    } as any)
+
+    const before = JSON.parse(JSON.stringify(collectionsResourceState.values.modules))
+    expect(currentGlobalModuleStateSnapshot().modules).toEqual([])
+    await expect(
+      updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'module-a' }),
+    ).resolves.toMatchObject({ status: 'error' })
+    await expect(setGlobalModuleEnabled('mod-a', true)).resolves.toMatchObject({ status: 'failed' })
+    await expect(deleteGlobalModule('mod-a')).resolves.toMatchObject({ status: 'failed' })
+    expect(collectionsResourceState.values.modules).toEqual(before)
+    expect(settingsResourceState.value.enabledModules).toEqual([])
+  })
+
+  it('fails closed for a ready module owner with duplicate namespaces', async () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: [],
+      modules: [
+        { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+        { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+      ],
+    } as any)
+
+    const before = JSON.parse(JSON.stringify(collectionsResourceState.values.modules))
+    expect(currentGlobalModuleStateSnapshot().modules).toEqual([])
+    await expect(
+      updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' }),
+    ).resolves.toMatchObject({ status: 'error' })
+    await expect(setGlobalModuleEnabled('mod-a', true)).resolves.toMatchObject({ status: 'failed' })
+    await expect(deleteGlobalModule('mod-a')).resolves.toMatchObject({ status: 'failed' })
+    expect(collectionsResourceState.values.modules).toEqual(before)
+    expect(settingsResourceState.value.enabledModules).toEqual([])
+  })
+
+  it('fails closed for a ready settings owner with duplicate enabled module ids', async () => {
+    setDatabaseLite({
+      characters: [],
+      characterOrder: [],
+      enabledModules: ['mod-a', 'mod-a'],
+      modules: [{ id: 'mod-a', name: 'Module A', description: '', namespace: 'module-a' }],
+    } as any)
+
+    const before = JSON.parse(JSON.stringify(settingsResourceState.value.enabledModules))
+    expect(currentGlobalModuleStateSnapshot().enabledModules).toEqual([])
+    await expect(setGlobalModuleEnabled('mod-a', false)).resolves.toMatchObject({ status: 'failed' })
+    expect(settingsResourceState.value.enabledModules).toEqual(before)
   })
 
   it('routes selected-chat module toggles through a chat command under the resource guard', async () => {

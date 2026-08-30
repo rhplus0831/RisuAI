@@ -31,7 +31,12 @@ import {
   type TriggerDefinitionSnapshot,
 } from './server/commands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { captureCollectionProjectionEpoch, getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import {
+  captureCollectionProjectionEpoch,
+  collectionsResourceState,
+  getResourceDatabase as getDatabase,
+  settingsResourceState,
+} from './server/resourceState.svelte'
 import { reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
 import type { character, customscript, loreBook, triggerscript } from './storage/database.svelte'
@@ -143,6 +148,90 @@ const MODULE_PATCH_DELETABLE_KEYS = new Set([
   'cjs',
   'assets',
 ])
+
+function moduleCollectionOwnerRead(): RisuModule[] {
+  const modules = collectionsResourceState.values.modules
+  if (collectionsResourceState.statuses.modules !== 'ready') return getDatabase().modules ?? []
+  return isStableModuleCollection(modules) ? modules : []
+}
+
+function moduleCollectionOwnerWrite(modules: RisuModule[]): void {
+  if (collectionsResourceState.statuses.modules === 'ready') {
+    if (!isStableModuleCollection(collectionsResourceState.values.modules) || !isStableModuleCollection(modules)) return
+    collectionsResourceState.values.modules = modules
+    return
+  }
+  withTrustedResourceWrite(() => {
+    getDatabase().modules = modules
+  })
+}
+
+function enabledModulesOwnerRead(): string[] {
+  const enabledModules = (settingsResourceState.value as Record<string, unknown>).enabledModules
+  if (settingsResourceState.status !== 'ready') return getDatabase().enabledModules ?? []
+  return isUniqueStringArray(enabledModules) ? enabledModules : []
+}
+
+function enabledModulesOwnerWrite(enabledModules: string[]): void {
+  if (settingsResourceState.status === 'ready') {
+    if (!isUniqueStringArray((settingsResourceState.value as Record<string, unknown>).enabledModules)) return
+    if (!isUniqueStringArray(enabledModules)) return
+    ;(settingsResourceState.value as Record<string, unknown>).enabledModules = enabledModules
+    return
+  }
+  withTrustedResourceWrite(() => {
+    getDatabase().enabledModules = enabledModules
+  })
+}
+
+function isStableModuleCollection(value: unknown): value is RisuModule[] {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  const namespaces = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const module = candidate as Record<string, unknown>
+    if (typeof module.id !== 'string' || module.id.length === 0 || ids.has(module.id)) return false
+    if (module.namespace !== undefined) {
+      if (typeof module.namespace !== 'string' || module.namespace.length === 0 || namespaces.has(module.namespace)) {
+        return false
+      }
+      namespaces.add(module.namespace)
+    }
+    ids.add(module.id)
+  }
+  return true
+}
+
+function isUniqueStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === 'string') && new Set(value).size === value.length
+  )
+}
+
+function uniqueModuleIndex(modules: readonly RisuModule[], moduleId: string): number {
+  const matches = modules.reduce<number[]>((indexes, module, index) => {
+    if (module.id === moduleId) indexes.push(index)
+    return indexes
+  }, [])
+  return matches.length === 1 ? matches[0] : -1
+}
+
+function canResolveGlobalModuleTarget(moduleId: string): boolean {
+  if (collectionsResourceState.statuses.modules !== 'ready') return true
+  const modules = collectionsResourceState.values.modules
+  return isStableModuleCollection(modules) && uniqueModuleIndex(modules, moduleId) !== -1
+}
+
+function canWriteEnabledModuleOwner(): boolean {
+  if (settingsResourceState.status !== 'ready') return true
+  return isUniqueStringArray((settingsResourceState.value as Record<string, unknown>).enabledModules)
+}
+
+function unavailableModuleOwnerResult(): Exclude<ServerCommandResult, { status: 'ok' }> {
+  return { status: 'error', error: 'Module collection owner is unavailable' }
+}
+
 let nextGlobalModuleOperationSequence = 0
 const pendingGlobalModuleOperationsByTarget = new Map<string, GlobalModuleOperationRecord[]>()
 
@@ -373,8 +462,8 @@ export function rebaseModuleEditorDraftOntoLatest(
 
 export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string): GlobalModuleStateSnapshot {
   const snapshot: GlobalModuleStateSnapshot = {
-    modules: cloneJsonValue(getDatabase().modules ?? []),
-    enabledModules: cloneJsonValue(getDatabase().enabledModules ?? []),
+    modules: cloneJsonValue(moduleCollectionOwnerRead()),
+    enabledModules: cloneJsonValue(enabledModulesOwnerRead()),
   }
 
   if (moduleIdForReferences) {
@@ -386,8 +475,8 @@ export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string)
 
 export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): void {
   withTrustedResourceWrite(() => {
-    getDatabase().modules = cloneJsonValue(snapshot.modules)
-    getDatabase().enabledModules = cloneJsonValue(snapshot.enabledModules)
+    moduleCollectionOwnerWrite(cloneJsonValue(snapshot.modules))
+    enabledModulesOwnerWrite(cloneJsonValue(snapshot.enabledModules))
     if (snapshot.moduleReferences) {
       restoreModuleReferenceState(snapshot.moduleReferences)
     }
@@ -581,6 +670,7 @@ export function dispatchUpdateModule(
   patch: ModuleSnapshot,
   previous: GlobalModuleStateSnapshot,
 ): Promise<ServerCommandResult> | null {
+  if (!canResolveGlobalModuleTarget(moduleId)) return Promise.resolve(unavailableModuleOwnerResult())
   const commandPatch = changedModulePatch(moduleId, patch, previous, { complete: true })
   if (Object.keys(commandPatch).length === 0) return null
   if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
@@ -629,6 +719,7 @@ export function dispatchModuleInfoPatch(
   enabled: boolean | null,
   previous: GlobalModuleStateSnapshot,
 ): void {
+  if (!canResolveGlobalModuleTarget(moduleId) || (enabled !== null && !canWriteEnabledModuleOwner())) return
   if (!canUseServerCommands()) return
 
   const steps: ModuleCollectionPatchStep[] = []
@@ -733,6 +824,9 @@ export async function dispatchEnableModule(
   enabled: boolean,
   previous: GlobalModuleStateSnapshot,
 ): Promise<ModuleMutationOutcome> {
+  if (!canResolveGlobalModuleTarget(moduleId) || !canWriteEnabledModuleOwner()) {
+    return { status: 'failed', result: unavailableModuleOwnerResult() }
+  }
   if (!canUseServerCommands()) return { status: 'failed', result: { status: 'unavailable' } }
   const rollbackEntry = moduleEnableRollbackEntry(moduleId, enabled, previous)
   const operation = issueGlobalModuleOperation([rollbackEntry])
@@ -780,6 +874,9 @@ export async function dispatchEnableModule(
 }
 
 export async function setGlobalModuleEnabled(moduleId: string, enabled: boolean): Promise<ModuleMutationOutcome> {
+  if (!canResolveGlobalModuleTarget(moduleId) || !canWriteEnabledModuleOwner()) {
+    return { status: 'failed', result: unavailableModuleOwnerResult() }
+  }
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
     applyOptimisticGlobalModuleEnabled(moduleId, enabled)
@@ -787,11 +884,12 @@ export async function setGlobalModuleEnabled(moduleId: string, enabled: boolean)
   }
 
   if (enabled) {
-    if (!getDatabase().enabledModules.includes(moduleId)) {
-      getDatabase().enabledModules.push(moduleId)
+    const enabledModules = enabledModulesOwnerRead()
+    if (!enabledModules.includes(moduleId)) {
+      enabledModulesOwnerWrite([...enabledModules, moduleId])
     }
   } else {
-    getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== moduleId)
+    enabledModulesOwnerWrite(enabledModulesOwnerRead().filter((id) => id !== moduleId))
   }
   reloadGuiAfterDefinitionChange()
   return { status: 'accepted', result: null }
@@ -808,7 +906,7 @@ export async function createGlobalModule(module: RisuModule): Promise<ServerComm
     return dispatchCreateModule(module, previous)
   }
 
-  getDatabase().modules.push(module)
+  moduleCollectionOwnerWrite([...moduleCollectionOwnerRead(), module])
   reloadGuiAfterDefinitionChange()
   return null
 }
@@ -820,7 +918,7 @@ export async function createGlobalModuleWithOutcome(module: RisuModule): Promise
   if (Array.isArray(module.trigger)) ensureClientTriggerDefinitionIds(module.trigger)
 
   if (!canUseServerCommands()) {
-    getDatabase().modules.push(module)
+    moduleCollectionOwnerWrite([...moduleCollectionOwnerRead(), module])
     reloadGuiAfterDefinitionChange()
     return { status: 'accepted', result: null }
   }
@@ -895,6 +993,7 @@ export async function createGlobalModuleWithOutcome(module: RisuModule): Promise
 }
 
 export async function updateGlobalModule(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
+  if (!canResolveGlobalModuleTarget(moduleId)) return unavailableModuleOwnerResult()
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
     const moduleSnapshot = toModuleSnapshot(module)
@@ -904,9 +1003,12 @@ export async function updateGlobalModule(moduleId: string, module: RisuModule): 
     return dispatchUpdateModule(moduleId, moduleSnapshot, previous)
   }
 
-  const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
+  const modules = moduleCollectionOwnerRead()
+  const index = uniqueModuleIndex(modules, moduleId)
   if (index !== -1) {
-    getDatabase().modules[index] = module
+    const nextModules = [...modules]
+    nextModules[index] = module
+    moduleCollectionOwnerWrite(nextModules)
     reloadGuiAfterDefinitionChange()
   }
   return null
@@ -922,10 +1024,14 @@ export async function saveGlobalModuleDraftWithOutcome(
   moduleId: string,
   module: RisuModule,
 ): Promise<ModuleEditorSaveOutcome> {
+  if (!canResolveGlobalModuleTarget(moduleId)) return { status: 'failed', result: unavailableModuleOwnerResult() }
   if (!canUseServerCommands()) {
-    const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
+    const modules = moduleCollectionOwnerRead()
+    const index = uniqueModuleIndex(modules, moduleId)
     if (index !== -1) {
-      getDatabase().modules[index] = cloneJsonValue(module)
+      const nextModules = [...modules]
+      nextModules[index] = cloneJsonValue(module)
+      moduleCollectionOwnerWrite(nextModules)
       reloadGuiAfterDefinitionChange()
     }
     return { status: 'accepted', result: null }
@@ -1075,8 +1181,8 @@ function applyOptimisticGlobalModulePatch(moduleId: string, patch: ModuleSnapsho
   if (Object.keys(patch).length === 0) return false
 
   return withTrustedResourceWrite(() => {
-    const modules = getDatabase().modules
-    const index = modules.findIndex((candidate) => candidate.id === moduleId)
+    const modules = moduleCollectionOwnerRead()
+    const index = uniqueModuleIndex(modules, moduleId)
     if (index === -1) return false
     const nextModule = cloneJsonValue(modules[index]) as RisuModule & Record<string, unknown>
 
@@ -1087,20 +1193,23 @@ function applyOptimisticGlobalModulePatch(moduleId: string, patch: ModuleSnapsho
         nextModule[field] = cloneJsonValue(value)
       }
     }
-    modules[index] = nextModule
+    const nextModules = [...modules]
+    nextModules[index] = nextModule
+    moduleCollectionOwnerWrite(nextModules)
     return true
   })
 }
 
 export async function deleteGlobalModule(moduleId: string): Promise<ModuleMutationOutcome> {
+  if (!canResolveGlobalModuleTarget(moduleId)) return { status: 'failed', result: unavailableModuleOwnerResult() }
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot(moduleId)
     applyOptimisticDeletedGlobalModule(moduleId)
     return dispatchDeleteModule(moduleId, previous)
   }
 
-  getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== moduleId)
-  getDatabase().modules = getDatabase().modules.filter((module) => module.id !== moduleId)
+  enabledModulesOwnerWrite(enabledModulesOwnerRead().filter((id) => id !== moduleId))
+  moduleCollectionOwnerWrite(moduleCollectionOwnerRead().filter((module) => module.id !== moduleId))
   removeProjectedModuleReferences(moduleId)
   reloadGuiAfterDefinitionChange()
   return { status: 'accepted', result: null }
@@ -1127,28 +1236,28 @@ function moduleEditorFinalFailureResult(result: unknown): Exclude<ServerCommandR
 
 function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
   withTrustedResourceWrite(() => {
-    const enabledModules = new Set(getDatabase().enabledModules ?? [])
+    const enabledModules = new Set(enabledModulesOwnerRead())
     if (enabled) {
       enabledModules.add(moduleId)
     } else {
       enabledModules.delete(moduleId)
     }
-    getDatabase().enabledModules = Array.from(enabledModules)
+    enabledModulesOwnerWrite(Array.from(enabledModules))
   })
   reloadGuiAfterDefinitionChange()
 }
 
 function applyOptimisticCreatedGlobalModule(module: RisuModule): void {
   withTrustedResourceWrite(() => {
-    getDatabase().modules = [...(getDatabase().modules ?? []), cloneJsonValue(module)]
+    moduleCollectionOwnerWrite([...moduleCollectionOwnerRead(), cloneJsonValue(module)])
   })
   reloadGuiAfterDefinitionChange()
 }
 
 function applyOptimisticDeletedGlobalModule(moduleId: string): void {
   withTrustedResourceWrite(() => {
-    getDatabase().enabledModules = (getDatabase().enabledModules ?? []).filter((id) => id !== moduleId)
-    getDatabase().modules = (getDatabase().modules ?? []).filter((module) => module.id !== moduleId)
+    enabledModulesOwnerWrite(enabledModulesOwnerRead().filter((id) => id !== moduleId))
+    moduleCollectionOwnerWrite(moduleCollectionOwnerRead().filter((module) => module.id !== moduleId))
     removeProjectedModuleReferences(moduleId)
   })
   reloadGuiAfterDefinitionChange()
@@ -1182,7 +1291,7 @@ function removeProjectedModuleReferences(moduleId: string): void {
 
 export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): void {
   if (!canUseServerCommands()) return
-  const attemptedModuleIds = (getDatabase().modules ?? []).map((module) => module.id)
+  const attemptedModuleIds = moduleCollectionOwnerRead().map((module) => module.id)
   const rollbackEntry = moduleOrderRollbackEntry(previous, attemptedModuleIds)
   runModuleCollectionPatchSteps([
     {
@@ -1405,13 +1514,16 @@ function applyModuleDeletionSentinelsOptimistically(moduleId: string, patch: Mod
   if (deletedFields.length === 0) return
 
   withTrustedResourceWrite(() => {
-    const module = getDatabase().modules?.find((candidate) => candidate.id === moduleId) as
-      | (RisuModule & Record<string, unknown>)
-      | undefined
+    const modules = moduleCollectionOwnerRead()
+    const index = uniqueModuleIndex(modules, moduleId)
+    const module = (index === -1 ? undefined : modules[index]) as (RisuModule & Record<string, unknown>) | undefined
     if (!module) return
+    const nextModules = [...modules]
     for (const field of deletedFields) {
       if (module[field] === null) delete module[field]
     }
+    nextModules[index] = module
+    moduleCollectionOwnerWrite(nextModules)
   })
 }
 
@@ -1651,17 +1763,17 @@ function rollbackGlobalModuleEntryIfLiveMatches(entry: GlobalModuleRollbackEntry
 }
 
 function rollbackModuleCreateIfLiveMatches(entry: ModuleCreateRollbackEntry): boolean {
-  const modules = getDatabase().modules ?? []
-  const index = modules.findIndex((module) => module.id === entry.moduleId)
+  const modules = moduleCollectionOwnerRead()
+  const index = uniqueModuleIndex(modules, entry.moduleId)
   if (index === -1 || !isJsonValueEqual(modules[index], entry.attemptedModule)) return false
 
-  getDatabase().modules = modules.filter((_, moduleIndex) => moduleIndex !== index)
+  moduleCollectionOwnerWrite(modules.filter((_, moduleIndex) => moduleIndex !== index))
   return true
 }
 
 function rollbackModuleFieldIfLiveMatches(entry: ModuleFieldRollbackEntry): boolean {
-  const modules = getDatabase().modules ?? []
-  const index = modules.findIndex((module) => module.id === entry.moduleId)
+  const modules = moduleCollectionOwnerRead()
+  const index = uniqueModuleIndex(modules, entry.moduleId)
   if (index === -1) return false
 
   const liveModule = modules[index] as RisuModule & Record<string, unknown>
@@ -1682,23 +1794,25 @@ function rollbackModuleFieldIfLiveMatches(entry: ModuleFieldRollbackEntry): bool
     delete nextModule[entry.field]
   }
 
-  getDatabase().modules[index] = nextModule
+  const nextModules = [...modules]
+  nextModules[index] = nextModule
+  moduleCollectionOwnerWrite(nextModules)
   return true
 }
 
 function rollbackModuleDeleteRowIfLiveMatches(entry: ModuleDeleteRowRollbackEntry): boolean {
-  const modules = getDatabase().modules ?? []
+  const modules = moduleCollectionOwnerRead()
   if (modules.some((module) => module.id === entry.moduleId)) return false
 
   const nextModules = [...modules]
   const insertIndex = boundedInsertIndex(entry.previousIndex, nextModules.length)
   nextModules.splice(insertIndex, 0, cloneJsonValue(entry.previousModule))
-  getDatabase().modules = nextModules
+  moduleCollectionOwnerWrite(nextModules)
   return true
 }
 
 function rollbackModuleEnableIfLiveMatches(entry: ModuleEnableRollbackEntry): boolean {
-  const enabledModules = getDatabase().enabledModules ?? []
+  const enabledModules = enabledModulesOwnerRead()
   const liveIndex = enabledModules.indexOf(entry.moduleId)
   const liveEnabled = liveIndex !== -1
   if (liveEnabled !== entry.attemptedEnabled) return false
@@ -1708,11 +1822,11 @@ function rollbackModuleEnableIfLiveMatches(entry: ModuleEnableRollbackEntry): bo
     const nextEnabledModules = enabledModules.filter((id) => id !== entry.moduleId)
     const insertIndex = boundedInsertIndex(entry.previousIndex, nextEnabledModules.length)
     nextEnabledModules.splice(insertIndex, 0, entry.moduleId)
-    getDatabase().enabledModules = nextEnabledModules
+    enabledModulesOwnerWrite(nextEnabledModules)
     return true
   }
 
-  getDatabase().enabledModules = enabledModules.filter((id) => id !== entry.moduleId)
+  enabledModulesOwnerWrite(enabledModules.filter((id) => id !== entry.moduleId))
   return true
 }
 
@@ -1752,7 +1866,7 @@ function modulesFieldMatches(target: { modules?: string[] }, snapshot: ModuleIds
 }
 
 function rollbackModuleOrderIfLiveMatches(entry: ModuleOrderRollbackEntry): boolean {
-  const modules = getDatabase().modules ?? []
+  const modules = moduleCollectionOwnerRead()
   const liveModuleIds = modules.map((module) => module.id)
   if (!isStringArrayEqual(liveModuleIds, entry.attemptedModuleIds)) return false
 
@@ -1779,7 +1893,7 @@ function rollbackModuleOrderIfLiveMatches(entry: ModuleOrderRollbackEntry): bool
     )
   )
     return false
-  getDatabase().modules = reorderedModules
+  moduleCollectionOwnerWrite(reorderedModules)
   return true
 }
 
@@ -1864,36 +1978,39 @@ function reapplyGlobalModuleEntries(
 
 function reapplyGlobalModuleEntryIfLiveMatchesPrevious(entry: GlobalModuleRollbackEntry): boolean {
   if (entry.kind === 'module-create') {
-    const modules = getDatabase().modules ?? []
+    const modules = moduleCollectionOwnerRead()
     if (modules.some((module) => module.id === entry.moduleId)) return false
-    getDatabase().modules = [...modules, cloneJsonValue(entry.attemptedModule)]
+    moduleCollectionOwnerWrite([...modules, cloneJsonValue(entry.attemptedModule)])
     return true
   }
   if (entry.kind === 'module-field') {
-    const module = getDatabase().modules?.find((candidate) => candidate.id === entry.moduleId) as
-      | (RisuModule & Record<string, unknown>)
-      | undefined
+    const modules = moduleCollectionOwnerRead()
+    const index = uniqueModuleIndex(modules, entry.moduleId)
+    const module = (index === -1 ? undefined : modules[index]) as (RisuModule & Record<string, unknown>) | undefined
     if (!module) return false
     const liveExists = hasOwnRecordKey(module, entry.field)
     if (liveExists !== entry.previousExists) return false
     if (liveExists && !isJsonValueEqual(module[entry.field], entry.previousValue)) return false
     if (entry.attemptedExists) module[entry.field] = cloneJsonValue(entry.attemptedValue)
     else delete module[entry.field]
+    const nextModules = [...modules]
+    nextModules[index] = module
+    moduleCollectionOwnerWrite(nextModules)
     return true
   }
   if (entry.kind === 'module-delete-row') {
-    const modules = getDatabase().modules ?? []
-    const index = modules.findIndex((module) => module.id === entry.moduleId)
+    const modules = moduleCollectionOwnerRead()
+    const index = uniqueModuleIndex(modules, entry.moduleId)
     if (index === -1 || !isJsonValueEqual(modules[index], entry.previousModule)) return false
-    getDatabase().modules = modules.filter((_, moduleIndex) => moduleIndex !== index)
+    moduleCollectionOwnerWrite(modules.filter((_, moduleIndex) => moduleIndex !== index))
     return true
   }
   if (entry.kind === 'module-enable') {
-    const enabledModules = getDatabase().enabledModules ?? []
+    const enabledModules = enabledModulesOwnerRead()
     const liveEnabled = enabledModules.includes(entry.moduleId)
     if (liveEnabled !== entry.previousEnabled || liveEnabled === entry.attemptedEnabled) return false
-    if (entry.attemptedEnabled) getDatabase().enabledModules = [...enabledModules, entry.moduleId]
-    else getDatabase().enabledModules = enabledModules.filter((moduleId) => moduleId !== entry.moduleId)
+    if (entry.attemptedEnabled) enabledModulesOwnerWrite([...enabledModules, entry.moduleId])
+    else enabledModulesOwnerWrite(enabledModules.filter((moduleId) => moduleId !== entry.moduleId))
     return true
   }
   if (entry.kind === 'module-reference') {
@@ -1903,7 +2020,7 @@ function reapplyGlobalModuleEntryIfLiveMatchesPrevious(entry: GlobalModuleRollba
     return true
   }
 
-  const modules = getDatabase().modules ?? []
+  const modules = moduleCollectionOwnerRead()
   if (
     !isStringArrayEqual(
       modules.map((module) => module.id),
@@ -1914,7 +2031,7 @@ function reapplyGlobalModuleEntryIfLiveMatchesPrevious(entry: GlobalModuleRollba
   const byId = new Map(modules.map((module) => [module.id, module]))
   const reordered = entry.attemptedModuleIds.map((moduleId) => byId.get(moduleId))
   if (reordered.some((module) => !module)) return false
-  getDatabase().modules = reordered as RisuModule[]
+  moduleCollectionOwnerWrite(reordered as RisuModule[])
   return true
 }
 
