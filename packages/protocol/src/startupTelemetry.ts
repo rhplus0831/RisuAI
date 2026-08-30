@@ -112,6 +112,63 @@ export type StartupTelemetryAttemptFailedEvent = Static<typeof StartupTelemetryA
 export type StartupTelemetryDiagnosticFailureEvent = Static<typeof StartupTelemetryDiagnosticFailureEventSchema>
 export type StartupTelemetryEvent = Static<typeof StartupTelemetryEventSchema>
 
+/** Browser startup snapshots exposed to the browser-smoke diagnostic bridge. */
+export type StartupCapability = 'canRenderShell' | 'canApplyRoutes' | 'canMutate' | 'pluginsReady' | 'canGenerate'
+export type StartupRetryTarget = StartupCapability | 'backgroundReady'
+export type StartupStep =
+  | 'observer-shell'
+  | 'writer-shell'
+  | 'writer-owner-adoption'
+  | 'writer-bootstrap'
+  | 'writer-initialize'
+  | 'writer-outbox-prepare'
+  | 'writer-receipt-flush'
+  | 'writer-pending-replay'
+  | 'writer-resource-hydration'
+  | 'writer-projection-install'
+  | 'writer-runtime-services'
+  | 'writer-event-subscription'
+  | 'chat-hydration-runtime'
+  | 'chat-readiness'
+  | 'push-runtime'
+  | 'plugin-runtime'
+  | 'generation-recovery'
+  | 'background-runtime'
+  | 'background-readiness'
+
+export interface StartupAttemptSnapshot {
+  attemptId: number
+  startedAtMs: number
+  completedAtMs?: number
+  failedAtMs?: number
+  failureCode?: StartupTelemetryFailureCode
+  failureMilestone?: StartupTelemetryMilestone
+}
+
+export interface StartupReadinessSnapshot {
+  schemaVersion: 1
+  phase: StartupTelemetryMilestone | null
+  timestamps: Partial<Record<StartupTelemetryMilestone, number>>
+  durationsFromEntry: Partial<Record<StartupTelemetryMilestone, number>>
+  attempts: StartupAttemptSnapshot[]
+}
+
+export interface StartupCapabilityFailureSnapshot {
+  attemptId: number
+  failureCode: StartupTelemetryFailureCode
+  failureMilestone: StartupTelemetryMilestone
+  failedAtMs: number
+}
+
+export interface StartupCoordinatorSnapshot {
+  schemaVersion: 1
+  capabilities: Record<StartupCapability, boolean>
+  observerShellEnabled: boolean
+  writerCapabilitiesRevoked: boolean
+  failures: Partial<Record<StartupRetryTarget, StartupCapabilityFailureSnapshot>>
+  completedSteps: StartupStep[]
+}
+
 export const StartupTelemetryBatchSchema = Type.Object(
   {
     version: Type.Literal(STARTUP_TELEMETRY_PROTOCOL_VERSION),

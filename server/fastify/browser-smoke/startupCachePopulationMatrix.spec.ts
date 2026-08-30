@@ -2,7 +2,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
-import type { StartupReadinessSnapshot } from '../../../src/ts/startupReadiness.js'
+import type { StartupReadinessSnapshot } from '@risuai/protocol/startup-telemetry'
 import { subscribeProtocolMetrics } from '../src/protocolMetrics.js'
 import {
   closeFastBootstrapHarness,

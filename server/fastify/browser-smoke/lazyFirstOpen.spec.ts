@@ -4,10 +4,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { languageEnglish } from '../../../src/lang/en.js'
 import { phase1LazyBoundarySources } from '../../../util/fast-bootstrap-boundaries.js'
 import { buildApp } from '../src/app.js'
 import { setupBrowserSmokeAuth } from './auth.js'
+import { browserSmokeEnglish } from './englishFixture.js'
 
 interface Harness {
   app: FastifyInstance
@@ -500,7 +500,7 @@ test('preset and persona lazy dialogs stay within the viewport after first-open 
     '[data-risu-generation-picker][data-risu-picker-kind="model"][data-risu-picker-mode="active-chat-generation-settings"]',
   )
   await expect(presetDialog).toBeInViewport()
-  await presetDialog.getByRole('button', { name: languageEnglish.close }).click()
+  await presetDialog.getByRole('button', { name: browserSmokeEnglish.close }).click()
   await expect(presetSurface).toHaveCount(0)
 
   await page.locator('[data-risu-generation-picker-control][data-risu-picker-kind="persona"] button').first().click()
@@ -511,7 +511,7 @@ test('preset and persona lazy dialogs stay within the viewport after first-open 
     '[data-risu-generation-picker][data-risu-picker-kind="persona"][data-risu-picker-mode="active-chat-generation-settings"]',
   )
   await expect(personaDialog).toBeInViewport()
-  await personaDialog.getByRole('button', { name: languageEnglish.close }).click()
+  await personaDialog.getByRole('button', { name: browserSmokeEnglish.close }).click()
   await expect(personaSurface).toHaveCount(0)
 })
 
@@ -527,10 +527,10 @@ test('an offline first open shows local Retry and succeeds when connectivity ret
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo('/grid'))
 
   const routeError = page.getByTestId('route-resource-error')
-  await expect(routeError).toContainText(languageEnglish.preloadOfflineError)
+  await expect(routeError).toContainText(browserSmokeEnglish.preloadOfflineError)
   await expect(page.locator('[data-previous-route-sentinel="true"]')).toBeVisible()
   await expect(lazySurface(page, 'character-grid')).toHaveCount(0)
-  const retry = routeError.getByRole('button', { name: languageEnglish.retry })
+  const retry = routeError.getByRole('button', { name: browserSmokeEnglish.retry })
   await expect(retry).toBeFocused()
   expect(failedPaths.includes(assetPath('src/lib/Others/GridCatalog.svelte'))).toBe(true)
 
@@ -568,13 +568,13 @@ test('a stale emitted stylesheet shows local recovery and reloads the current ro
 
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo('/settings/display'))
   const routeError = page.getByTestId('route-resource-error')
-  await expect(routeError).toContainText(languageEnglish.preloadStaleError)
-  await expect(routeError.getByRole('button', { name: languageEnglish.retry })).toBeFocused()
+  await expect(routeError).toContainText(browserSmokeEnglish.preloadStaleError)
+  await expect(routeError.getByRole('button', { name: browserSmokeEnglish.retry })).toBeFocused()
   await expect(page.locator('[data-previous-route-sentinel="true"]')).toBeVisible()
   await expect(lazySurface(page, 'settings')).toHaveCount(0)
 
   const reloaded = page.waitForNavigation({ waitUntil: 'domcontentloaded' })
-  await routeError.getByRole('button', { name: languageEnglish.preloadReload }).click()
+  await routeError.getByRole('button', { name: browserSmokeEnglish.preloadReload }).click()
   await reloaded
   await waitForLoaded(page)
   await expect(lazySurface(page, 'settings-display')).toHaveAttribute('data-risu-lazy-state', 'ready')

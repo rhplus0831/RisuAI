@@ -67,32 +67,6 @@
     },
     {
       "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/lazyFirstOpen.spec.ts",
-      "specifier": "../../../src/lang/en.js",
-      "target": "src/lang/en.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "languageEnglish"
-      ],
-      "count": 1,
-      "policy": "accidental-browser-support"
-    },
-    {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts",
-      "specifier": "../../../src/ts/startupReadiness.js",
-      "target": "src/ts/startupReadiness.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "StartupReadinessSnapshot"
-      ],
-      "count": 1,
-      "policy": "accidental-browser-support"
-    },
-    {
-      "lane": "browser-smoke",
       "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
       "specifier": "../../../src/ts/routerRoute.js",
       "target": "src/ts/routerRoute.ts",
@@ -123,20 +97,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
-      "specifier": "../../../src/ts/startupReadiness.js",
-      "target": "src/ts/startupReadiness.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "StartupCoordinatorSnapshot",
-        "StartupReadinessSnapshot"
-      ],
-      "count": 1,
-      "policy": "accidental-browser-support"
     },
     {
       "lane": "production",

@@ -2,6 +2,13 @@ import {
   STARTUP_TELEMETRY_MAX_ATTEMPTS,
   STARTUP_TELEMETRY_MAX_DURATION_MS,
   STARTUP_TELEMETRY_MILESTONES,
+  type StartupAttemptSnapshot as ProtocolStartupAttemptSnapshot,
+  type StartupCapability as ProtocolStartupCapability,
+  type StartupCapabilityFailureSnapshot as ProtocolStartupCapabilityFailureSnapshot,
+  type StartupCoordinatorSnapshot as ProtocolStartupCoordinatorSnapshot,
+  type StartupReadinessSnapshot as ProtocolStartupReadinessSnapshot,
+  type StartupRetryTarget as ProtocolStartupRetryTarget,
+  type StartupStep as ProtocolStartupStep,
   type StartupTelemetryEvent,
   type StartupTelemetryFailureCode,
   type StartupTelemetryMilestone,
@@ -19,63 +26,16 @@ export const STARTUP_CAPABILITIES = [
   'canGenerate',
 ] as const
 
-export type StartupCapability = (typeof STARTUP_CAPABILITIES)[number]
-export type StartupRetryTarget = StartupCapability | 'backgroundReady'
-export type StartupStep =
-  | 'observer-shell'
-  | 'writer-shell'
-  | 'writer-owner-adoption'
-  | 'writer-bootstrap'
-  | 'writer-initialize'
-  | 'writer-outbox-prepare'
-  | 'writer-receipt-flush'
-  | 'writer-pending-replay'
-  | 'writer-resource-hydration'
-  | 'writer-projection-install'
-  | 'writer-runtime-services'
-  | 'writer-event-subscription'
-  | 'chat-hydration-runtime'
-  | 'chat-readiness'
-  | 'push-runtime'
-  | 'plugin-runtime'
-  | 'generation-recovery'
-  | 'background-runtime'
-  | 'background-readiness'
+export type StartupCapability = ProtocolStartupCapability
+export type StartupRetryTarget = ProtocolStartupRetryTarget
+export type StartupStep = ProtocolStartupStep
 
 export type StartupAttemptFailureCode = StartupTelemetryFailureCode
 
-export interface StartupAttemptSnapshot {
-  attemptId: number
-  startedAtMs: number
-  completedAtMs?: number
-  failedAtMs?: number
-  failureCode?: StartupAttemptFailureCode
-  failureMilestone?: StartupMilestone
-}
-
-export interface StartupReadinessSnapshot {
-  schemaVersion: 1
-  phase: StartupMilestone | null
-  timestamps: Partial<Record<StartupMilestone, number>>
-  durationsFromEntry: Partial<Record<StartupMilestone, number>>
-  attempts: StartupAttemptSnapshot[]
-}
-
-export interface StartupCapabilityFailureSnapshot {
-  attemptId: number
-  failureCode: StartupAttemptFailureCode
-  failureMilestone: StartupMilestone
-  failedAtMs: number
-}
-
-export interface StartupCoordinatorSnapshot {
-  schemaVersion: 1
-  capabilities: Record<StartupCapability, boolean>
-  observerShellEnabled: boolean
-  writerCapabilitiesRevoked: boolean
-  failures: Partial<Record<StartupRetryTarget, StartupCapabilityFailureSnapshot>>
-  completedSteps: StartupStep[]
-}
+export type StartupAttemptSnapshot = ProtocolStartupAttemptSnapshot
+export type StartupReadinessSnapshot = ProtocolStartupReadinessSnapshot
+export type StartupCapabilityFailureSnapshot = ProtocolStartupCapabilityFailureSnapshot
+export type StartupCoordinatorSnapshot = ProtocolStartupCoordinatorSnapshot
 
 export interface StartupCoordinatorReadable {
   subscribe(run: (snapshot: StartupCoordinatorSnapshot) => void): () => void
