@@ -44,7 +44,11 @@ vi.mock('src/ts/characterDisplayName', async (importOriginal) => {
   }
 })
 
-import GridCatalog, { formatGridCatalogCharacterLists, normalizeGridCatalogSearch } from './GridCatalog.svelte'
+import GridCatalog, {
+  formatGridCatalogCharacterLists,
+  formatGridCatalogCharacterListsFromCharacters,
+  normalizeGridCatalogSearch,
+} from './GridCatalog.svelte'
 import MobileCharacters, {
   filterMobileCharacterRows,
   formatMobileCharacterRows,
@@ -315,6 +319,20 @@ describe('GridCatalog derived lists', () => {
     await clickCatalogTab('list')
     await clickCatalogTab('trash')
     expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(getDatabase().characters.length * 2)
+  })
+
+  it('formats the catalog from the character owner rather than an aggregate snapshot', () => {
+    const aggregate = makeCharacter({ chaId: 'aggregate', name: 'Aggregate Character' })
+    const owner = makeCharacter({ chaId: 'owner', name: 'Owner Character' })
+
+    expect(formatGridCatalogCharacterListsFromCharacters([owner] as any, '')).toMatchObject({
+      active: [{ chaId: 'owner', name: 'Owner Character' }],
+      trash: [],
+    })
+    expect(formatGridCatalogCharacterLists({ characters: [aggregate] } as any, '')).toMatchObject({
+      active: [{ chaId: 'aggregate', name: 'Aggregate Character' }],
+      trash: [],
+    })
   })
 
   it('GridCatalog trash actions keep restore and permanent-delete targets', async () => {

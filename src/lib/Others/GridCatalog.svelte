@@ -20,11 +20,18 @@
   }
 
   export function formatGridCatalogCharacterLists(db: Database, normalizedSearch: string): GridCatalogCharacterLists {
+    return formatGridCatalogCharacterListsFromCharacters(db.characters, normalizedSearch)
+  }
+
+  export function formatGridCatalogCharacterListsFromCharacters(
+    characters: readonly Database['characters'][number][],
+    normalizedSearch: string,
+  ): GridCatalogCharacterLists {
     const active: GridCatalogCharacter[] = []
     const trash: GridCatalogCharacter[] = []
 
-    for (let i = 0; i < db.characters.length; i++) {
-      const c = db.characters[i]
+    for (let i = 0; i < characters.length; i++) {
+      const c = characters[i]
       const displayInfo = getCharacterDisplayInfo(c)
       if (!normalizeGridCatalogSearch(displayInfo.searchText).includes(normalizedSearch)) {
         continue
@@ -55,7 +62,7 @@
 
 <script lang="ts">
   import { changeChar, getCharImage, removeChar } from '../../ts/characters'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
@@ -82,7 +89,9 @@
   let search = $state('')
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
-  let catalogCharacters = $derived(formatGridCatalogCharacterLists(getDatabase(), normalizedSearch))
+  let catalogCharacters = $derived(
+    formatGridCatalogCharacterListsFromCharacters(charactersResourceState.characters, normalizedSearch),
+  )
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
   )
