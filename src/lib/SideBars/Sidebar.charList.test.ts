@@ -242,4 +242,15 @@ describe('sidebar character list signature memo', () => {
 
     expect(second).toBe(first)
   })
+
+  it('uses the explicitly supplied character owner when aggregate data conflicts', () => {
+    const owner = [{ chaId: 'owner', name: 'Owner', displayName: '', image: 'owner.png' }]
+    const aggregate = [{ chaId: 'aggregate', name: 'Aggregate', displayName: '', image: 'aggregate.png' }]
+    const order = ['owner']
+
+    expect(createSidebarCharacterListMemo()(order, owner).items).toEqual([
+      { type: 'normal', index: 0, name: 'Owner', img: 'owner.png' },
+    ])
+    expect(createSidebarCharacterListMemo()(order, aggregate).items).toEqual([])
+  })
 })

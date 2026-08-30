@@ -78,6 +78,7 @@
   import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
   import UnreadIndicator from './UnreadIndicator.svelte'
   import { addCharacter, changeChar } from '../../ts/characters'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
   const loadCharConfig = () => import('./CharConfig.svelte')
   const loadDevTool = () => import('./DevTool.svelte')
@@ -364,7 +365,7 @@
 
   const getSidebarCharacterList = createSidebarCharacterListMemo()
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
+    () => getSidebarCharacterList(charactersResourceState.characterOrder, charactersResourceState.characters).items,
   )
   let IconRounded = $derived(getDatabase().roundIcons)
   let warningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
