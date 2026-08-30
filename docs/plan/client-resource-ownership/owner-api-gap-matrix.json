@@ -6,7 +6,7 @@
     "inventoryCursor": "0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f",
     "policyCount": 56,
     "consumerGroupCount": 326,
-    "referenceCount": 9887
+    "referenceCount": 9582
   },
   "capabilityKeys": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
   "owners": {

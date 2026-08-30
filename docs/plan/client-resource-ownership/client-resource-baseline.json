@@ -606,7 +606,7 @@
         },
         {
           "file": "src/ts/process/sendChatContext.ts",
-          "count": 13
+          "count": 11
         },
         {
           "file": "src/ts/process/sendChatErrors.ts",
@@ -614,11 +614,7 @@
         },
         {
           "file": "src/ts/process/serverBackedSendChat.ts",
-          "count": 7
-        },
-        {
-          "file": "src/ts/process/serverGeneratedMessageTranslation.ts",
-          "count": 2
+          "count": 3
         },
         {
           "file": "src/ts/process/templates/chatTemplate.ts",
@@ -633,16 +629,12 @@
       "policy": "character-chat:read",
       "files": [
         {
-          "file": "src/lib/ChatScreens/ChatBodyParseMemo.ts",
-          "count": 12
-        },
-        {
           "file": "src/ts/characterCards.ts",
           "count": 7
         },
         {
           "file": "src/ts/characterCommands.ts",
-          "count": 70
+          "count": 43
         },
         {
           "file": "src/ts/characterImage.ts",
@@ -650,11 +642,11 @@
         },
         {
           "file": "src/ts/characters.ts",
-          "count": 64
+          "count": 38
         },
         {
           "file": "src/ts/characterState.ts",
-          "count": 4
+          "count": 2
         },
         {
           "file": "src/ts/chatCommands.ts",
@@ -670,23 +662,19 @@
         },
         {
           "file": "src/ts/routeHandlers/character.ts",
-          "count": 4
+          "count": 3
         },
         {
           "file": "src/ts/server/characterBridge.svelte.ts",
-          "count": 11
-        },
-        {
-          "file": "src/ts/server/characterShellHydration.svelte.ts",
           "count": 4
         },
         {
           "file": "src/ts/server/chatBridge.svelte.ts",
-          "count": 5
+          "count": 2
         },
         {
           "file": "src/ts/server/chatMessageHydration.svelte.ts",
-          "count": 19
+          "count": 4
         },
         {
           "file": "src/ts/server/selectedCharacterRefresh.ts",
@@ -706,35 +694,23 @@
         },
         {
           "file": "src/lib/ChatScreens/AssetInput.svelte",
-          "count": 4
+          "count": 3
         },
         {
           "file": "src/lib/ChatScreens/BackgroundDom.svelte",
-          "count": 7
+          "count": 2
         },
         {
           "file": "src/lib/ChatScreens/Chat.svelte",
-          "count": 44
-        },
-        {
-          "file": "src/lib/ChatScreens/ChatBody.svelte",
-          "count": 4
+          "count": 42
         },
         {
           "file": "src/lib/ChatScreens/Chats.svelte",
-          "count": 6
+          "count": 5
         },
         {
           "file": "src/lib/ChatScreens/ChatScreen.svelte",
           "count": 4
-        },
-        {
-          "file": "src/lib/ChatScreens/DefaultChatScreen.svelte",
-          "count": 27
-        },
-        {
-          "file": "src/lib/ChatScreens/EmotionBox.svelte",
-          "count": 1
         },
         {
           "file": "src/lib/ChatScreens/PartialEditController.svelte",
@@ -746,11 +722,11 @@
         },
         {
           "file": "src/lib/ChatScreens/Suggestion.svelte",
-          "count": 15
+          "count": 8
         },
         {
           "file": "src/lib/Others/ChatList.svelte",
-          "count": 7
+          "count": 3
         },
         {
           "file": "src/lib/SideBars/ChatDraftHookSelector.svelte",
@@ -762,7 +738,7 @@
         },
         {
           "file": "src/lib/SideBars/SideChatList.svelte",
-          "count": 11
+          "count": 4
         },
         {
           "file": "src/lib/SideBars/SideChatList.testHarness.svelte",
@@ -810,7 +786,7 @@
         },
         {
           "file": "src/ts/process/index.svelte.ts",
-          "count": 3
+          "count": 2
         },
         {
           "file": "src/ts/process/legacyMemoryMigrationNotice.ts",
@@ -866,7 +842,7 @@
         },
         {
           "file": "src/ts/process/recoveredGenerationEffects.ts",
-          "count": 8
+          "count": 7
         },
         {
           "file": "src/ts/process/regexDisplayReload.ts",
@@ -930,7 +906,7 @@
       "files": [
         {
           "file": "src/ts/cbs.ts",
-          "count": 37
+          "count": 1
         },
         {
           "file": "src/ts/filePicker.ts",
@@ -938,7 +914,7 @@
         },
         {
           "file": "src/ts/generationReferenceCascade.ts",
-          "count": 8
+          "count": 6
         },
         {
           "file": "src/ts/gui/animation.ts",
@@ -1038,7 +1014,7 @@
         },
         {
           "file": "src/lib/Others/GridCatalog.svelte",
-          "count": 5
+          "count": 2
         },
         {
           "file": "src/lib/Others/HypaV3Progress.svelte",
@@ -1058,7 +1034,7 @@
         },
         {
           "file": "src/lib/Others/WelcomeRisu.svelte",
-          "count": 4
+          "count": 5
         },
         {
           "file": "src/lib/Playground/PlaygroundSubtitle.svelte",
@@ -1070,7 +1046,7 @@
         },
         {
           "file": "src/lib/Setting/Pages/BotSettings.svelte",
-          "count": 52
+          "count": 36
         },
         {
           "file": "src/lib/Setting/Pages/ClaudeThinkingSeparateParams.svelte",
@@ -1126,7 +1102,7 @@
         },
         {
           "file": "src/lib/SideBars/CharConfig.svelte",
-          "count": 16
+          "count": 7
         },
         {
           "file": "src/lib/SideBars/CustomSidebar.svelte",
@@ -1146,7 +1122,7 @@
         },
         {
           "file": "src/lib/SideBars/Sidebar.svelte",
-          "count": 25
+          "count": 5
         },
         {
           "file": "src/lib/SideBars/Toggles.svelte",
@@ -1166,7 +1142,7 @@
         },
         {
           "file": "src/lib/UI/MainMenu.svelte",
-          "count": 6
+          "count": 5
         },
         {
           "file": "src/lib/UI/NanoGPTDashboard.svelte",
@@ -1206,11 +1182,11 @@
       "files": [
         {
           "file": "src/ts/agentPresets.ts",
-          "count": 17
+          "count": 9
         },
         {
           "file": "src/ts/agents.ts",
-          "count": 4
+          "count": 2
         },
         {
           "file": "src/ts/loadout.ts",
@@ -1218,11 +1194,11 @@
         },
         {
           "file": "src/ts/moduleCommands.ts",
-          "count": 68
+          "count": 22
         },
         {
           "file": "src/ts/persona.ts",
-          "count": 165
+          "count": 129
         },
         {
           "file": "src/ts/pluginCommands.ts",
@@ -1250,7 +1226,7 @@
         },
         {
           "file": "src/ts/presetFieldMirror.ts",
-          "count": 11
+          "count": 13
         }
       ]
     },
@@ -1277,28 +1253,8 @@
           "count": 2
         },
         {
-          "file": "src/lib/Setting/Pages/AgentEditorDrawer.svelte",
-          "count": 4
-        },
-        {
-          "file": "src/lib/Setting/Pages/AgentPresetDiagnosticsPanel.svelte",
-          "count": 2
-        },
-        {
-          "file": "src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte",
-          "count": 7
-        },
-        {
-          "file": "src/lib/Setting/Pages/AgentPresetSettings.svelte",
-          "count": 11
-        },
-        {
-          "file": "src/lib/Setting/Pages/AgentSettingsSection.svelte",
-          "count": 3
-        },
-        {
           "file": "src/lib/Setting/Pages/PersonaSettings.svelte",
-          "count": 4
+          "count": 6
         },
         {
           "file": "src/lib/Setting/Pages/PluginSettings.svelte",
@@ -1398,7 +1354,7 @@
       "files": [
         {
           "file": "src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte",
-          "count": 64
+          "count": 54
         },
         {
           "file": "src/lib/Setting/Pages/Model/ModelPresetList.svelte",
@@ -1454,7 +1410,7 @@
         },
         {
           "file": "src/ts/process/promptAssembly/buildMemoryWindow.ts",
-          "count": 6
+          "count": 5
         },
         {
           "file": "src/ts/process/promptAssembly/buildPlainPromptSections.ts",
@@ -1462,7 +1418,7 @@
         },
         {
           "file": "src/ts/process/promptAssembly/buildStaticPromptSections.ts",
-          "count": 4
+          "count": 3
         },
         {
           "file": "src/ts/process/promptAssembly/formatHistoryMessage.ts",
@@ -1502,7 +1458,7 @@
       "files": [
         {
           "file": "src/ts/promptPresetModelOverrides.svelte.ts",
-          "count": 16
+          "count": 9
         },
         {
           "file": "src/ts/server/promptTemplateBridge.svelte.ts",
@@ -1510,7 +1466,7 @@
         },
         {
           "file": "src/ts/server/promptTemplateHydration.ts",
-          "count": 11
+          "count": 10
         }
       ]
     },
@@ -1946,19 +1902,11 @@
       "files": [
         {
           "file": "src/lib/ChatScreens/Chat.svelte",
-          "count": 2
-        },
-        {
-          "file": "src/lib/ChatScreens/Suggestion.svelte",
-          "count": 2
+          "count": 3
         },
         {
           "file": "src/lib/Others/ChatList.svelte",
           "count": 2
-        },
-        {
-          "file": "src/lib/SideBars/SideChatList.svelte",
-          "count": 3
         },
         {
           "file": "src/ts/server/chatBridge.svelte.ts",
@@ -2018,10 +1966,6 @@
       "files": [
         {
           "file": "src/lib/Others/ChatList.svelte",
-          "count": 2
-        },
-        {
-          "file": "src/lib/SideBars/SideChatList.svelte",
           "count": 2
         },
         {
@@ -2530,7 +2474,7 @@
       "files": [
         {
           "file": "src/ts/server/resourceState.svelte.ts",
-          "count": 2
+          "count": 4
         }
       ]
     },
@@ -3621,6 +3565,14 @@
       "policy": "character-chat:render",
       "files": [
         {
+          "file": "src/lib/ChatScreens/Suggestion.svelte",
+          "count": 1
+        },
+        {
+          "file": "src/lib/Mobile/MobileCharacters.svelte",
+          "count": 2
+        },
+        {
           "file": "src/lib/Others/ChatList.svelte",
           "count": 1
         },
@@ -3825,6 +3777,10 @@
       "policy": "leaf-settings-collections:read",
       "files": [
         {
+          "file": "src/ts/agentPresets.ts",
+          "count": 1
+        },
+        {
           "file": "src/ts/moduleCommands.ts",
           "count": 1
         },
@@ -3930,7 +3886,7 @@
       "files": [
         {
           "file": "src/lib/Setting/Pages/PromptSettings.svelte",
-          "count": 30
+          "count": 31
         },
         {
           "file": "src/lib/UI/PromptDataItem.svelte",
@@ -4078,7 +4034,7 @@
         },
         {
           "file": "src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte",
-          "count": 11
+          "count": 12
         },
         {
           "file": "src/lib/Setting/Pages/PromptSettings.svelte",
@@ -4094,7 +4050,7 @@
         },
         {
           "file": "src/ts/agentPresets.ts",
-          "count": 7
+          "count": 8
         },
         {
           "file": "src/ts/bootstrap.ts",
@@ -4130,7 +4086,7 @@
         },
         {
           "file": "src/ts/moduleCommands.ts",
-          "count": 19
+          "count": 21
         },
         {
           "file": "src/ts/parser/chatVar.svelte.ts",
@@ -4138,7 +4094,7 @@
         },
         {
           "file": "src/ts/persona.ts",
-          "count": 23
+          "count": 22
         },
         {
           "file": "src/ts/playground.ts",
@@ -4209,10 +4165,6 @@
           "count": 6
         },
         {
-          "file": "src/ts/process/promptAssembly/buildMemoryWindow.ts",
-          "count": 2
-        },
-        {
           "file": "src/ts/process/rerollNavigation.svelte.ts",
           "count": 3
         },
@@ -4254,7 +4206,7 @@
         },
         {
           "file": "src/ts/server/chatBridge.svelte.ts",
-          "count": 2
+          "count": 4
         },
         {
           "file": "src/ts/server/chatMessageHydration.svelte.ts",
@@ -4426,11 +4378,11 @@
         },
         {
           "file": "src/ts/bootstrap.test.ts",
-          "count": 191
+          "count": 193
         },
         {
           "file": "src/ts/storage/database.svelte.test.ts",
-          "count": 424
+          "count": 426
         }
       ]
     },
@@ -4474,7 +4426,7 @@
         },
         {
           "file": "src/lib/Others/ChatList.svelte.test.ts",
-          "count": 5
+          "count": 6
         },
         {
           "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
@@ -4489,8 +4441,12 @@
           "count": 1
         },
         {
+          "file": "src/ts/characterState.owner.test.ts",
+          "count": 1
+        },
+        {
           "file": "src/ts/chatCommands.test.ts",
-          "count": 621
+          "count": 628
         },
         {
           "file": "src/ts/parser/tests/chatVar.svelte-node.test.ts",
@@ -4501,8 +4457,12 @@
           "count": 88
         },
         {
+          "file": "src/ts/process/templates/chatTemplate.test.ts",
+          "count": 1
+        },
+        {
           "file": "src/ts/server/characterBridge.svelte.test.ts",
-          "count": 46
+          "count": 50
         },
         {
           "file": "src/ts/server/chatBridge.svelte.test.ts",
@@ -4526,7 +4486,7 @@
         },
         {
           "file": "src/lib/Others/BookmarkList.svelte.test.ts",
-          "count": 8
+          "count": 10
         },
         {
           "file": "src/lib/Others/GridCatalog.svelte.test.ts",
@@ -4597,6 +4557,10 @@
           "count": 35
         },
         {
+          "file": "src/lib/SideBars/DevTool.svelte.test.ts",
+          "count": 2
+        },
+        {
           "file": "src/lib/SideBars/Scripts/TriggerList.svelte.test.ts",
           "count": 1
         },
@@ -4607,6 +4571,10 @@
         {
           "file": "src/ts/alert.test.ts",
           "count": 6
+        },
+        {
+          "file": "src/ts/generationReferenceCascade.test.ts",
+          "count": 2
         },
         {
           "file": "src/ts/gui/animation.test.ts",
@@ -4806,7 +4774,11 @@
         },
         {
           "file": "src/ts/agentPresets.test.ts",
-          "count": 66
+          "count": 71
+        },
+        {
+          "file": "src/ts/agents.test.ts",
+          "count": 1
         },
         {
           "file": "src/ts/moduleCommands.test.ts",
@@ -4818,7 +4790,7 @@
         },
         {
           "file": "src/ts/persona.test.ts",
-          "count": 238
+          "count": 231
         },
         {
           "file": "src/ts/pluginCommands.durable.svelte-node.test.ts",
@@ -4959,6 +4931,10 @@
         {
           "file": "src/ts/process/promptTokenizeMemo.test.ts",
           "count": 1
+        },
+        {
+          "file": "src/ts/promptPresetModelOverrides.svelte.test.ts",
+          "count": 1
         }
       ]
     },
@@ -4986,7 +4962,7 @@
       "files": [
         {
           "file": "src/ts/storage/database.svelte.test.ts",
-          "count": 29
+          "count": 30
         }
       ]
     },
@@ -5202,7 +5178,7 @@
         },
         {
           "file": "src/ts/chatCommands.test.ts",
-          "count": 17
+          "count": 18
         },
         {
           "file": "src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts",
@@ -5226,7 +5202,7 @@
       "files": [
         {
           "file": "src/lib/Others/AlertComp.dom.test.ts",
-          "count": 4
+          "count": 6
         },
         {
           "file": "src/lib/Others/BookmarkList.svelte.test.ts",
@@ -5234,7 +5210,7 @@
         },
         {
           "file": "src/lib/Others/GridCatalog.svelte.test.ts",
-          "count": 5
+          "count": 7
         },
         {
           "file": "src/lib/Others/HypaV3Modal.resetRace.test.ts",
@@ -5258,7 +5234,7 @@
         },
         {
           "file": "src/lib/Setting/Pages/BotSettings.pendingFlush.svelte.test.ts",
-          "count": 15
+          "count": 16
         },
         {
           "file": "src/lib/Setting/Pages/CustomGUISettingMenu.svelte.test.ts",
@@ -5278,7 +5254,7 @@
         },
         {
           "file": "src/lib/Setting/Pages/OtherBotSettings.svelte.test.ts",
-          "count": 7
+          "count": 8
         },
         {
           "file": "src/lib/Setting/pickerGenerationSettings.test.ts",
@@ -5290,7 +5266,7 @@
         },
         {
           "file": "src/lib/SideBars/CharConfig.svelte.test.ts",
-          "count": 3
+          "count": 5
         },
         {
           "file": "src/lib/SideBars/CustomSidebar.svelte.test.ts",
@@ -5298,7 +5274,7 @@
         },
         {
           "file": "src/lib/SideBars/DevTool.svelte.test.ts",
-          "count": 3
+          "count": 4
         },
         {
           "file": "src/lib/SideBars/Sidebar.keyboard.dom.test.ts",
@@ -5350,11 +5326,11 @@
         },
         {
           "file": "src/ts/agentPresets.test.ts",
-          "count": 10
+          "count": 11
         },
         {
           "file": "src/ts/moduleCommands.test.ts",
-          "count": 6
+          "count": 11
         },
         {
           "file": "src/ts/persona.iconUpload.test.ts",
@@ -5749,16 +5725,12 @@
           "count": 5
         },
         {
-          "file": "src/lib/ChatScreens/Suggestion.svelte.test.ts",
-          "count": 5
-        },
-        {
           "file": "src/lib/Others/ChatList.svelte.test.ts",
           "count": 4
         },
         {
           "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
-          "count": 5
+          "count": 4
         },
         {
           "file": "src/ts/chatCommands.test.ts",
@@ -6862,7 +6834,7 @@
         },
         {
           "file": "src/lib/ChatScreens/ChatBody.parseMemo.test.ts",
-          "count": 26
+          "count": 29
         },
         {
           "file": "src/lib/ChatScreens/CreatorQuote.svelte.test.ts",
@@ -6878,7 +6850,11 @@
         },
         {
           "file": "src/lib/ChatScreens/Suggestion.svelte.test.ts",
-          "count": 41
+          "count": 44
+        },
+        {
+          "file": "src/lib/Mobile/MobileCharacters.svelte.test.ts",
+          "count": 1
         },
         {
           "file": "src/lib/Others/ChatList.svelte.test.ts",
@@ -6902,7 +6878,7 @@
         },
         {
           "file": "src/ts/characterCommands.test.ts",
-          "count": 2
+          "count": 3
         },
         {
           "file": "src/ts/characters.changeChar.test.ts",
@@ -6970,7 +6946,7 @@
       "files": [
         {
           "file": "src/ts/server/resourceState.svelte.test.ts",
-          "count": 106
+          "count": 112
         }
       ]
     },
@@ -6998,7 +6974,7 @@
         },
         {
           "file": "src/lib/Others/GridCatalog.svelte.test.ts",
-          "count": 1
+          "count": 3
         },
         {
           "file": "src/lib/Others/SavePopupIcon.svelte.test.ts",
@@ -7041,6 +7017,14 @@
           "count": 1
         },
         {
+          "file": "src/lib/SideBars/CharConfig.svelte.test.ts",
+          "count": 2
+        },
+        {
+          "file": "src/lib/SideBars/Sidebar.keyboard.dom.test.ts",
+          "count": 4
+        },
+        {
           "file": "src/lib/UI/MainMenu.svelte.test.ts",
           "count": 1
         },
@@ -7071,6 +7055,10 @@
         {
           "file": "src/ts/compatibilityAdapters.test.ts",
           "count": 2
+        },
+        {
+          "file": "src/ts/generationReferenceCascade.test.ts",
+          "count": 7
         },
         {
           "file": "src/ts/observerProjectionLifecycle.test.ts",
@@ -7246,7 +7234,7 @@
         },
         {
           "file": "src/ts/server/promptTemplateBridge.svelte.test.ts",
-          "count": 99
+          "count": 104
         }
       ]
     },
@@ -7278,7 +7266,7 @@
         },
         {
           "file": "src/ts/server/resourceState.svelte.test.ts",
-          "count": 20
+          "count": 21
         }
       ]
     },
@@ -7354,15 +7342,15 @@
         },
         {
           "file": "src/lib/Others/BookmarkList.svelte.test.ts",
-          "count": 5
+          "count": 6
         },
         {
           "file": "src/lib/Others/ChatList.svelte.test.ts",
-          "count": 4
+          "count": 6
         },
         {
           "file": "src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts",
-          "count": 8
+          "count": 9
         },
         {
           "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte.test.ts",
@@ -7370,7 +7358,7 @@
         },
         {
           "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
-          "count": 5
+          "count": 4
         },
         {
           "file": "src/ts/__tests__/renderCostHarness.ts",
@@ -7394,7 +7382,7 @@
         },
         {
           "file": "src/ts/chatCommands.test.ts",
-          "count": 104
+          "count": 105
         },
         {
           "file": "src/ts/loadout.test.ts",
@@ -7598,7 +7586,7 @@
         },
         {
           "file": "src/ts/agentPresets.test.ts",
-          "count": 20
+          "count": 22
         },
         {
           "file": "src/ts/bootstrap.test.ts",
@@ -7622,7 +7610,7 @@
         },
         {
           "file": "src/ts/chatCommands.test.ts",
-          "count": 104
+          "count": 106
         },
         {
           "file": "src/ts/compatibilityAdapters.test.ts",

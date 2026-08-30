@@ -121,7 +121,7 @@
           "expectedCount": 2
         },
         {
-          "path": "src/ts/presetSplit.ts",
+          "path": "packages/shared-core/src/presetSplit.ts",
           "kind": "identifier",
           "value": "applyLegacyModelPresetCompatibilitySelection",
           "expectedCount": 2
@@ -284,12 +284,6 @@
           "kind": "identifier",
           "value": "selectedPersonaFieldProjectionValue",
           "expectedCount": 5
-        },
-        {
-          "path": "src/ts/persona.test.ts",
-          "kind": "text",
-          "value": "mirrors selected text fields",
-          "expectedCount": 1
         }
       ]
     },
@@ -643,8 +637,8 @@
         {
           "path": "server/fastify/src/repository.ts",
           "kind": "identifier",
-          "value": "promptTemplate",
-          "expectedCount": 1
+          "value": "projectSelectedPromptTemplate",
+          "expectedCount": 3
         },
         {
           "path": "src/ts/storage/database.svelte.ts",
@@ -780,11 +774,11 @@
         {
           "path": "server/fastify/src/commands/translatorPresets.ts",
           "kind": "identifier",
-          "value": "normalizeTranslatorPresetCollection",
+          "value": "normalizeTranslatorPresetCollectionWithLegacyCompatibility",
           "expectedCount": 1
         },
         {
-          "path": "src/ts/translator/pipeline.ts",
+          "path": "packages/shared-core/src/translatorPipeline.ts",
           "kind": "identifier",
           "value": "resolveTranslatorPipeline",
           "expectedCount": 1
@@ -829,10 +823,10 @@
           "expectedCount": 2
         },
         {
-          "path": "src/ts/translator/presets.ts",
+          "path": "packages/shared-core/src/translatorPresets.ts",
           "kind": "identifier",
           "value": "translatorPrompt",
-          "expectedCount": 4
+          "expectedCount": 3
         }
       ]
     },
@@ -951,7 +945,7 @@
           "path": "server/fastify/src/commands/translatorPresets.ts",
           "kind": "identifier",
           "value": "ensureTranslatorPresetCollection",
-          "expectedCount": 2
+          "expectedCount": 1
         }
       ]
     },

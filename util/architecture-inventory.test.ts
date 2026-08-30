@@ -110,7 +110,7 @@ describe('cross-runtime baseline gate', () => {
     ) as CrossRuntimeBaseline
 
     expect(compareCrossRuntimeBaseline(observation, baseline)).toEqual([])
-    expect(observation.edges.reduce((total, edge) => total + edge.count, 0)).toBe(74)
+    expect(observation.edges.reduce((total, edge) => total + edge.count, 0)).toBe(0)
     expect(
       Object.fromEntries(
         (['production', 'server-test', 'browser-smoke'] as const).map((lane) => [
@@ -118,7 +118,7 @@ describe('cross-runtime baseline gate', () => {
           observation.edges.filter((edge) => edge.lane === lane).reduce((total, edge) => total + edge.count, 0),
         ]),
       ),
-    ).toEqual({ production: 59, 'server-test': 15, 'browser-smoke': 0 })
+    ).toEqual({ production: 0, 'server-test': 0, 'browser-smoke': 0 })
   }, 15_000)
 
   it('rejects inventory drift and incomplete policy ownership', () => {
@@ -158,8 +158,8 @@ describe('compatibility disposition gate', () => {
     ) as CompatibilityBaseline
 
     expect(validateCompatibilityBaseline(REPO_ROOT, baseline)).toEqual([])
-    expect(baseline.surfaces).toHaveLength(20)
-    expect(new Set(baseline.surfaces.map((surface) => surface.id)).size).toBe(20)
+    expect(baseline.surfaces).toHaveLength(28)
+    expect(new Set(baseline.surfaces.map((surface) => surface.id)).size).toBe(28)
     expect(new Set(baseline.surfaces.map((surface) => surface.disposition))).toEqual(
       new Set(['canonical', 'migrate', 'import-only', 'explicit-compatibility', 'temporary', 'remove']),
     )
@@ -265,8 +265,8 @@ describe('client resource ownership gate', () => {
     ) as ClientResourceBaseline
 
     expect(compareClientResourceBaseline(observation, baseline)).toEqual([])
-    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(9887)
-    expect(observation.consumers).toHaveLength(1166)
+    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(9582)
+    expect(observation.consumers).toHaveLength(1163)
     expect(baseline.consumers).toHaveLength(326)
     expect(observation.bridgeFamilies.map((bridge) => bridge.family)).toEqual([
       'character',
