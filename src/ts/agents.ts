@@ -1,4 +1,4 @@
-import type { AgentPresetUseRecord, AgentRecord } from './agentPresetRecords'
+import type { AgentPresetRecord, AgentPresetUseRecord, AgentRecord } from './agentPresetRecords'
 import { safeStructuredClone } from './polyfill'
 import {
   createAgentCommand,
@@ -22,6 +22,7 @@ import {
   stagePendingMutation,
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
+import { settingsResourceState } from './server/resourceState.svelte'
 import { getDatabase } from './storage/database.svelte'
 
 const AGENT_CONFIGURATION_MUTATION_KEY = 'agent-configuration'
@@ -31,19 +32,57 @@ export type AgentMutationOutcome<T extends Record<string, unknown> = Record<stri
   | { status: 'queued'; result: Exclude<ServerCommandResult<T>, { status: 'ok' }>; mutationId: string }
   | { status: 'failed'; result: Exclude<ServerCommandResult<T>, { status: 'ok' }> }
 
+type AgentConfigurationOwner = {
+  agents?: AgentRecord[]
+  agentPresets?: AgentPresetRecord[]
+}
+
 export function getAgents(): AgentRecord[] {
-  return Array.isArray(getDatabase().agents) ? getDatabase().agents : []
+  const owner = readAgentConfigurationOwner()
+  return Array.isArray(owner.agents) ? owner.agents : []
 }
 
 export function getAgentById(agentId: string): AgentRecord | undefined {
-  return getAgents().find((agent) => agent.id === agentId)
+  return uniqueAgentById(readAgentConfigurationOwner().agents, agentId)
 }
 
 export function agentUsageCount(agentId: string): number {
-  return (getDatabase().agentPresets ?? []).reduce(
-    (count, preset) => count + (preset.agentUses ?? []).filter((use) => use.agentId === agentId).length,
-    0,
-  )
+  const owner = readAgentConfigurationOwner()
+  if (!uniqueAgentById(owner.agents, agentId)) return 0
+  return (Array.isArray(owner.agentPresets) ? owner.agentPresets : []).reduce((count, preset) => {
+    const uses = Array.isArray(preset.agentUses) ? preset.agentUses : []
+    return count + uses.filter((use) => use.agentId === agentId).length
+  }, 0)
+}
+
+/**
+ * Agents are delivered in the read-only `agents` settings group today. Keep
+ * this projection narrow so callers do not compose or mutate the Database
+ * compatibility facade. During bootstrap, retain the legacy read only while
+ * the owner has no resident rows; once the group is ready, malformed data
+ * fails closed instead of falling back to stale aggregate state.
+ */
+function readAgentConfigurationOwner(): AgentConfigurationOwner {
+  const owner = settingsResourceState.value as AgentConfigurationOwner
+  const ownerReady = settingsResourceState.groupStatuses.agents === 'ready'
+  const hasResidentRows =
+    (Array.isArray(owner.agents) && owner.agents.length > 0) ||
+    (Array.isArray(owner.agentPresets) && owner.agentPresets.length > 0)
+  if (ownerReady || hasResidentRows) return owner
+
+  return readLegacyAgentConfigurationBeforeReadiness()
+}
+
+/** Compatibility-only path for cold/offline callers before the owner projects rows. */
+function readLegacyAgentConfigurationBeforeReadiness(): AgentConfigurationOwner {
+  const database = getDatabase()
+  return { agents: database.agents, agentPresets: database.agentPresets }
+}
+
+function uniqueAgentById(agents: readonly AgentRecord[] | undefined, agentId: string): AgentRecord | undefined {
+  if (typeof agentId !== 'string' || agentId.trim() === '' || !Array.isArray(agents)) return undefined
+  const matches = agents.filter((agent) => agent?.id === agentId)
+  return matches.length === 1 ? matches[0] : undefined
 }
 
 export function createAgent(agent: AgentSnapshot): Promise<AgentMutationOutcome<{ agentId: string }>> {

@@ -1,0 +1,119 @@
+// @vitest-environment happy-dom
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const legacyConfiguration = vi.hoisted(() => ({
+  agents: [] as AgentRecord[],
+  agentPresets: [] as AgentPresetRecord[],
+}))
+
+vi.mock('./storage/database.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('./storage/database.svelte')>()),
+  getDatabase: () => legacyConfiguration,
+}))
+
+import { agentUsageCount, getAgentById, getAgents } from './agents'
+import type { AgentPresetRecord, AgentRecord } from './agentPresetRecords'
+import { replaceResourceDatabase, resetServerResourceState, settingsResourceState } from './server/resourceState.svelte'
+
+function agent(id: string, name = id): AgentRecord {
+  return {
+    id,
+    name,
+    version: 1,
+    instruction: `${name} instruction`,
+    modelDefaults: { mode: 'inheritMain' },
+    runtimeDefaults: {},
+    inputScopes: [],
+    outputFormat: 'text',
+  }
+}
+
+function preset(id: string, agentIds: string[]): AgentPresetRecord {
+  return {
+    id,
+    name: id,
+    enabled: true,
+    version: 1,
+    steps: [],
+    agentUses: agentIds.map((agentId, index) => ({
+      id: `${id}-use-${index}`,
+      agentId,
+      enabled: true,
+      phase: 'beforeMain',
+      dependencies: [],
+      outputKey: `${id}_${index}`,
+      destination: 'promptOutput',
+      failurePolicy: { mode: 'required' },
+    })),
+  }
+}
+
+function installConfiguration(agents: AgentRecord[], agentPresets: AgentPresetRecord[] = []): void {
+  replaceResourceDatabase({ agents, agentPresets, characters: [] } as never, 4)
+}
+
+beforeEach(() => {
+  resetServerResourceState()
+  legacyConfiguration.agents = []
+  legacyConfiguration.agentPresets = []
+})
+
+describe('agent resource owner reads', () => {
+  it('uses the legacy aggregate only before the owner has resident rows or readiness', () => {
+    const legacyAgent = agent('legacy-agent')
+    legacyConfiguration.agents = [legacyAgent]
+
+    expect(getAgents()).toEqual([legacyAgent])
+
+    const residentAgent = agent('resident-agent')
+    settingsResourceState.value = { agents: [residentAgent] }
+    settingsResourceState.groupStatuses.agents = 'loading'
+    expect(getAgents()).toEqual([residentAgent])
+
+    settingsResourceState.value = {}
+    settingsResourceState.groupStatuses.agents = 'ready'
+    expect(getAgents()).toEqual([])
+  })
+
+  it('keeps the resident owner projection visible while its settings group refreshes', () => {
+    const ownedAgent = agent('agent-owned', 'Owned Agent')
+    installConfiguration([ownedAgent])
+    settingsResourceState.groupStatuses.agents = 'loading'
+
+    expect(getAgents()).toEqual([ownedAgent])
+    expect(getAgentById('agent-owned')).toEqual(ownedAgent)
+  })
+
+  it('resolves stable ids only when exactly one owner exists', () => {
+    const first = agent('duplicate-agent', 'First')
+    const second = agent('duplicate-agent', 'Second')
+    installConfiguration([first, second], [preset('preset-a', ['duplicate-agent'])])
+
+    expect(getAgents()).toEqual([first, second])
+    expect(getAgentById('duplicate-agent')).toBeUndefined()
+    expect(getAgentById('missing-agent')).toBeUndefined()
+    expect(getAgentById('')).toBeUndefined()
+    expect(agentUsageCount('duplicate-agent')).toBe(0)
+  })
+
+  it('counts uses only for a uniquely-resolved agent', () => {
+    const ownedAgent = agent('agent-owned')
+    installConfiguration(
+      [ownedAgent],
+      [preset('preset-a', ['agent-owned', 'agent-owned']), preset('preset-b', ['other-agent'])],
+    )
+
+    expect(agentUsageCount('agent-owned')).toBe(2)
+    expect(agentUsageCount('other-agent')).toBe(0)
+  })
+
+  it('fails closed for malformed data after the owner is ready', () => {
+    installConfiguration([agent('agent-owned')])
+    settingsResourceState.value = { agents: { malformed: true } as never }
+    settingsResourceState.groupStatuses.agents = 'ready'
+
+    expect(getAgents()).toEqual([])
+    expect(getAgentById('agent-owned')).toBeUndefined()
+  })
+})
