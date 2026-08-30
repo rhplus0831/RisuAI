@@ -8,7 +8,7 @@ import { CharEmotion } from '../stores.svelte'
 import type { OpenAIChat } from './index.svelte'
 import random from 'lodash/random'
 import { imageGenerationCredential, requestImageGeneration } from '../server/imageGeneration'
-import type { ImageGenerationRequest } from '../server/imageGenerationProtocol'
+import type { ImageGenerationRequest } from '@risuai/protocol/image-generation-operation'
 
 interface ImageGenerationOptions {
   signal?: AbortSignal

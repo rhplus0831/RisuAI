@@ -10,7 +10,7 @@ import type {
   OpenAiCompatibleImageGenerationRequest,
   StabilityImageGenerationRequest,
   WaveSpeedImageGenerationRequest,
-} from '../../../src/ts/server/imageGenerationProtocol.js'
+} from '@risuai/protocol/image-generation-operation'
 import { readBoundedBodyJson } from './generation/body.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'

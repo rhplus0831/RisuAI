@@ -35,7 +35,7 @@ import {
   type ImageGenerationExecutionOptions,
 } from '../imageGeneration.js'
 import { persistServerInlayAsset } from '../inlayAssetPersistence.js'
-import type { ImageGenerationRequest } from '../../../../src/ts/server/imageGenerationProtocol.js'
+import type { ImageGenerationRequest } from '@risuai/protocol/image-generation-operation'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../protocolMetrics.js'
 import {

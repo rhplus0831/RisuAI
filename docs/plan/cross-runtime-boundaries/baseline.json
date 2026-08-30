@@ -1225,28 +1225,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/imageGeneration.ts",
-      "specifier": "../../../src/ts/server/imageGenerationProtocol.js",
-      "target": "src/ts/server/imageGenerationProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "DallEImageGenerationRequest",
-        "FalImageGenerationRequest",
-        "ImageGenerationCredential",
-        "ImageGenerationRequest",
-        "ImagenImageGenerationRequest",
-        "KeiImageGenerationRequest",
-        "NovelAiImageGenerationRequest",
-        "OpenAiCompatibleImageGenerationRequest",
-        "StabilityImageGenerationRequest",
-        "WaveSpeedImageGenerationRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/mcpOAuthRefresh.ts",
       "specifier": "../../../src/ts/server/mcpOAuthRefreshProtocol.js",
       "target": "src/ts/server/mcpOAuthRefreshProtocol.ts",
@@ -2413,19 +2391,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/server/imageGenerationProtocol.js",
-      "target": "src/ts/server/imageGenerationProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ImageGenerationRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",
@@ -4238,19 +4203,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/imageGeneration.test.ts",
-      "specifier": "../../../src/ts/server/imageGenerationProtocol.js",
-      "target": "src/ts/server/imageGenerationProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ImageGenerationRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/lorebook.test.ts",
       "specifier": "../../../src/ts/process/modules",
       "target": "src/ts/process/modules.ts",
@@ -4657,19 +4609,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/server/imageGenerationProtocol.js",
-      "target": "src/ts/server/imageGenerationProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_IMAGE_GENERATION_PROVIDERS"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "server-test",

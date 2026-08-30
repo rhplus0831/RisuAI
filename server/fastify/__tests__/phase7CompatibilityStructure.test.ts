@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS } from '../../../src/ts/model/modelProfileResolver.js'
 import { LLMFormat, type LLMFormat as LLMFormatValue } from '../../../src/ts/model/types.js'
 import { formatToServerProvider } from '../../../src/ts/process/request/providerCapability.js'
-import { SERVER_IMAGE_GENERATION_PROVIDERS } from '../../../src/ts/server/imageGenerationProtocol.js'
+import { SERVER_IMAGE_GENERATION_PROVIDERS } from '@risuai/protocol/image-generation-operation'
 import { PROVIDER_OPERATIONS } from '@risuai/protocol/provider-operation'
 import { TTS_SYNTHESIS_OPERATIONS } from '../../../src/ts/server/ttsProtocol.js'
 

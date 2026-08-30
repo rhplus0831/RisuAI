@@ -9,6 +9,7 @@
     "./character-summary-resource": "./src/characterSummaryResource.ts",
     "./embedding-operation": "./src/embeddingOperation.ts",
     "./generation-sse": "./src/generationSse.ts",
+    "./image-generation-operation": "./src/imageGenerationOperation.ts",
     "./provider-operation": "./src/providerOperation.ts",
     "./shell-resource": "./src/shellResource.ts",
     "./startup-telemetry": "./src/startupTelemetry.ts"

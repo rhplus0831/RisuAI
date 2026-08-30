@@ -79,6 +79,7 @@ describe('@risuai/protocol import boundary', () => {
       'characterSummaryResource.ts',
       'embeddingOperation.ts',
       'generationSse.ts',
+      'imageGenerationOperation.ts',
       'index.ts',
       'providerOperation.ts',
       'shellResource.ts',
