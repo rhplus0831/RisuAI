@@ -1,6 +1,6 @@
 # Chat-Variable Defaults Seam
 
-Status: ready.
+Status: complete at `43c0ac781`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -15,7 +15,7 @@ with the two exact Fastify-owned inputs its deterministic parser observes.
 
 - Character input: optional/null `defaultVariables` text.
 - Database input: optional/null `templateDefaultVariables` text.
-- Expected delta: one production type-only browser-application-model edge.
+- Delivered delta: one production type-only browser-application-model edge.
 
 ## Behavior Contract
 

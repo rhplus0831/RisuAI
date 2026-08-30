@@ -4,18 +4,18 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [chat-variable defaults seam
-slice](phases/slices/phase-4-server-consumer-migration/chat-variable-defaults-seam.md).
+Execute the [prompt-message value-contract completion
+slice](phases/slices/phase-4-server-consumer-migration/prompt-message-value-contract-completion.md).
 
-1. Replace `chatVarDefaults.ts`'s aggregate browser `Database` and character
-   declarations with two local structural inputs containing only
-   `templateDefaultVariables` and `defaultVariables`.
-2. Preserve character defaults before template defaults, first occurrence wins,
-   and nullish/blank parsing behavior.
-3. Add direct focused fixtures rather than widening the aggregate prompt-variable
-   test dependency.
-4. Add a closed import assertion, then refresh the architecture baseline and run
-   both type gates.
+1. Replace browser `OpenAIChat`/`MultiModal` imports in the ten bounded prompt
+   consumers with `PromptMessage`/`PromptMultimodal` from
+   `prompt/promptMessage.ts`.
+2. Move the direct `tokens.test.ts` and `luaRuntime.test.ts` row fixtures to the
+   same Fastify-owned contract.
+3. Preserve row roles/content, multimodal dimensions, token charges, Lua
+   round-trips, asset parsing, memo keys, and provider-visible ordering.
+4. Expand the closed ownership assertion, refresh the architecture baseline,
+   and run every owning focused suite plus both type gates.
 
 ## Foundations Released
 
@@ -74,13 +74,19 @@ slice](phases/slices/phase-4-server-consumer-migration/chat-variable-defaults-se
   test consumers use a Fastify-owned record.
 - Prompt-row rendering/budget is released at `6adc180fe` with prompt-summary
   reuse at `701bc555f`; six production and five test imports were removed.
+- Chat-variable defaults are released at `43c0ac781`; their parser no longer
+  imports aggregate browser database/character declarations.
+- Trigger transcript caching is released at `68883eba5`; the request-local
+  WeakMap cache now accepts Fastify-owned message/chat inputs.
+- Prompt-template cards are released at `ee87bc6ac`; four production and three
+  test imports now use a closed Fastify-owned union.
 
 ## Not In This Slice
 
-- Do not change parser syntax, chat-variable persistence, CBS evaluation, prompt
-  scope, or mutation tracking.
-- Do not migrate the aggregate prompt-variable test or broader database/chat
-  contracts in this slice.
+- Do not change serialization, row normalization, token formulas, Lua behavior,
+  model/profile selection, provider dispatch, or persistence.
+- Do not include the broader assembly/dispatch/route prompt-row fixtures in this
+  tranche; they remain a separate integration slice.
 
 ## Handoff
 
