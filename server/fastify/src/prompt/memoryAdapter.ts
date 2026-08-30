@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import type { MemoryBudgetAllocatorSettings } from '../memoryBudgetAllocator.js'
 import type { MemorySummary } from '../memoryRepository.js'
 import {
@@ -68,7 +68,7 @@ export interface PromptMemoryRowAssemblyDiagnostics {
 }
 
 export interface PromptMemoryRowAssemblyResult {
-  rows: OpenAIChat[]
+  rows: PromptMessage[]
   diagnostics: PromptMemoryRowAssemblyDiagnostics
   selectionDiagnostics: PromptMemoryAdapterDiagnostics
 }
@@ -131,7 +131,7 @@ export function selectPromptMemory(input: PromptMemoryAdapterInput): PromptMemor
 }
 
 export function assemblePromptMemoryRows(selection: PromptMemoryAdapterResult): PromptMemoryRowAssemblyResult {
-  const rows: OpenAIChat[] = []
+  const rows: PromptMessage[] = []
   const skippedEmptySummaryIds: string[] = []
 
   for (const summary of selection.selectedSummaries) {

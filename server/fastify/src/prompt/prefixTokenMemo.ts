@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { tokenizeChat, type TokenEncoding, type TokenizeChatOptions } from './tokens.js'
 
 const DEFAULT_HYPA_V3_PREFIX_TOKEN_MEMO_ENTRIES = 4096
@@ -19,11 +19,15 @@ export interface HypaV3PrefixTokenMemoStats {
   evictions: number
 }
 
-export type HypaV3RawTokenizeChat = (chat: OpenAIChat, encoding: TokenEncoding, options: TokenizeChatOptions) => number
+export type HypaV3RawTokenizeChat = (
+  chat: PromptMessage,
+  encoding: TokenEncoding,
+  options: TokenizeChatOptions,
+) => number
 
 export interface HypaV3PrefixTokenMemo {
   tokenize(
-    chat: OpenAIChat,
+    chat: PromptMessage,
     encoding?: TokenEncoding,
     options?: TokenizeChatOptions,
     rawTokenizeChat?: HypaV3RawTokenizeChat,
@@ -85,7 +89,7 @@ export function createHypaV3PrefixTokenMemo(
 export const sharedHypaV3PrefixTokenMemo = createHypaV3PrefixTokenMemo()
 
 export function tokenizeHypaV3PrefixChat(
-  chat: OpenAIChat,
+  chat: PromptMessage,
   encoding?: TokenEncoding,
   options?: TokenizeChatOptions,
 ): number {
@@ -101,7 +105,7 @@ export function getHypaV3PrefixTokenMemoStatsForTests(): HypaV3PrefixTokenMemoSt
 }
 
 function createHypaV3PrefixTokenMemoKey(
-  chat: OpenAIChat,
+  chat: PromptMessage,
   encoding: TokenEncoding,
   options: TokenizeChatOptions,
 ): string {

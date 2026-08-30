@@ -5,10 +5,10 @@ import process from 'node:process'
 import { get_encoding, type Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer as WebTokenizer } from '@mlc-ai/web-tokenizers'
 import type { PreTrainedTokenizer } from '@huggingface/transformers'
-import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMultimodal, PromptMessage } from './promptMessage.js'
 
 /**
- * Server text tokenizer plus `OpenAIChat` per-message overhead. Portable client
+ * Server text tokenizer plus `PromptMessage` per-message overhead. Portable client
  * tokenizer families are loaded lazily from the repository's `public/token`
  * assets. Google Cloud network counting, local GGUF tokenization, plugin
  * tokenizer hooks remain out of scope. Multimodal charges mirror the client
@@ -202,7 +202,7 @@ export interface TokenizeChatOptions {
 }
 
 /** Port of the baseline `ChatTokenizer.tokenizeMultiModal` charging rules. */
-export function tokenizeMultiModal(data: MultiModal, options: TokenizeChatOptions = {}): number {
+export function tokenizeMultiModal(data: PromptMultimodal, options: TokenizeChatOptions = {}): number {
   const overhead = options.chatAdditionalTokens ?? 4
   if (options.supportsInlayImage !== true) return overhead
   if ((options.visionQuality ?? 'low') === 'low') return 87
@@ -236,12 +236,12 @@ export function tokenizeMultiModal(data: MultiModal, options: TokenizeChatOption
 }
 
 /**
- * Count tokens for a single `OpenAIChat`. Mirrors the SPA's
+ * Count tokens for a single `PromptMessage`. Mirrors the SPA's
  * `ChatTokenizer.tokenizeChat`: content + overhead, names, every multimodal,
  * and `thoughts[]` when requested.
  */
 export function tokenizeChat(
-  chat: OpenAIChat,
+  chat: PromptMessage,
   encoding: TokenEncoding = 'cl100k_base',
   options: TokenizeChatOptions = {},
 ): number {
@@ -264,9 +264,9 @@ export function tokenizeChat(
   return count
 }
 
-/** Sum `tokenizeChat` across an `OpenAIChat[]`. */
+/** Sum `tokenizeChat` across a `PromptMessage[]`. */
 export function tokenizeChats(
-  chats: OpenAIChat[],
+  chats: PromptMessage[],
   encoding: TokenEncoding = 'cl100k_base',
   options: TokenizeChatOptions = {},
 ): number {

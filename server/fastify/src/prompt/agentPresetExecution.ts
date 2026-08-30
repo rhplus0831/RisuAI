@@ -14,7 +14,7 @@ import {
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
@@ -107,7 +107,7 @@ export interface BuildAgentPresetStepMessagesInput {
 
 export interface AgentPresetProviderDispatchArgs {
   database: Database
-  messages: OpenAIChat[]
+  messages: PromptMessage[]
   outputTokens: number
   profile: ResolvedModelProfile
   signal: AbortSignal
@@ -377,7 +377,7 @@ export function collectAgentPresetPreparedInputs(
   }
 }
 
-export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): OpenAIChat[] {
+export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): PromptMessage[] {
   const { step, preparedInputs, agentOutputs, toggleValues, expandChatMLContent } = input
   if (step.useChatML) {
     const messages = parseChatMLRows(step.instruction)

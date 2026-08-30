@@ -1,5 +1,5 @@
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { MultiModal } from '../../../../src/ts/process/index.svelte'
+import type { PromptMultimodal } from './promptMessage.js'
 import type { AssetLookup } from './history.js'
 import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
 
@@ -25,7 +25,7 @@ import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
 export interface RequestInlayAsset {
   /** The inlay id captured from `{{inlay/inlayed/inlayeddata::id}}`. */
   id: string
-  type: MultiModal['type']
+  type: PromptMultimodal['type']
   /** A base64 data URI (`data:<mime>;base64,…`), as the browser stored it. */
   base64: string
   width?: number
@@ -38,15 +38,18 @@ export interface RequestInlayAsset {
  * this to the on-disk assets store; tests can supply a fake.
  */
 export type StoredAssetPurpose = 'asset_prompt' | 'inlay'
-export type ResolveStoredAsset = (reference: string, purpose: StoredAssetPurpose) => Promise<MultiModal | undefined>
+export type ResolveStoredAsset = (
+  reference: string,
+  purpose: StoredAssetPurpose,
+) => Promise<PromptMultimodal | undefined>
 
-function isMultiModalType(value: unknown): value is MultiModal['type'] {
+function isMultiModalType(value: unknown): value is PromptMultimodal['type'] {
   return value === 'image' || value === 'video' || value === 'audio' || value === 'signature'
 }
 
 /** Parse legacy request `inlayAssets` into an id → bytes map. */
-export function parseRequestInlayAssets(raw: unknown): Map<string, MultiModal> {
-  const map = new Map<string, MultiModal>()
+export function parseRequestInlayAssets(raw: unknown): Map<string, PromptMultimodal> {
+  const map = new Map<string, PromptMultimodal>()
   if (!Array.isArray(raw)) return map
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue
@@ -55,7 +58,7 @@ export function parseRequestInlayAssets(raw: unknown): Map<string, MultiModal> {
     const base64 = record.base64
     if (typeof id !== 'string' || id.length === 0 || typeof base64 !== 'string') continue
     if (!isMultiModalType(record.type)) continue
-    const multimodal: MultiModal = { type: record.type, base64 }
+    const multimodal: PromptMultimodal = { type: record.type, base64 }
     if (typeof record.width === 'number') multimodal.width = record.width
     if (typeof record.height === 'number') multimodal.height = record.height
     map.set(id, multimodal)

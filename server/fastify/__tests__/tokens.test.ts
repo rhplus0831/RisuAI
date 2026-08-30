@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { encodingForModel, tokenize, tokenizeChat, tokenizeChats, tokenizeMultiModal } from '../src/prompt/tokens.js'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 describe('encodingForModel', () => {
   it('routes gpt-4o family to o200k_base', () => {
@@ -62,7 +62,7 @@ describe('tokenize', () => {
 })
 
 describe('tokenizeChat', () => {
-  const baseChat: OpenAIChat = {
+  const baseChat: PromptMessage = {
     role: 'user',
     content: 'hello world',
   }
@@ -78,18 +78,18 @@ describe('tokenizeChat', () => {
   })
 
   it("counts `name` plus 1 separator when useName === 'name'", () => {
-    const named: OpenAIChat = { ...baseChat, name: 'hello world' }
+    const named: PromptMessage = { ...baseChat, name: 'hello world' }
     // Base 6 + name 2 + 1 separator = 9.
     expect(tokenizeChat(named)).toBe(9)
   })
 
   it("skips the `name` field when useName === 'noName'", () => {
-    const named: OpenAIChat = { ...baseChat, name: 'hello world' }
+    const named: PromptMessage = { ...baseChat, name: 'hello world' }
     expect(tokenizeChat(named, 'cl100k_base', { useName: 'noName' })).toBe(6)
   })
 
   it('skips `thoughts` unless countThoughts is set', () => {
-    const withThoughts: OpenAIChat = {
+    const withThoughts: PromptMessage = {
       ...baseChat,
       thoughts: ['hello world', 'hello world'],
     }
@@ -99,7 +99,7 @@ describe('tokenizeChat', () => {
   })
 
   it('charges every multimodal attachment', () => {
-    const withImages: OpenAIChat = {
+    const withImages: PromptMessage = {
       ...baseChat,
       multimodals: [
         { type: 'image', base64: 'a' },
@@ -149,7 +149,7 @@ describe('tokenizeMultiModal', () => {
 
 describe('tokenizeChats', () => {
   it('sums tokenizeChat across messages', () => {
-    const chats: OpenAIChat[] = [
+    const chats: PromptMessage[] = [
       { role: 'system', content: 'hello world' },
       { role: 'user', content: 'hello world' },
       { role: 'assistant', content: '' },

@@ -1017,19 +1017,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1125,19 +1112,6 @@
         "MessagePresetInfo",
         "character",
         "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/assetLookup.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "MultiModal"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1474,19 +1448,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/lorebook.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/lorebook.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1546,19 +1507,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
       "specifier": "../../../../src/ts/process/triggers",
       "target": "src/ts/process/triggers.ts",
       "kind": "static",
@@ -1594,19 +1542,6 @@
       "symbols": [
         "Chat",
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/memoryAdapter.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1673,38 +1608,12 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/plainSections.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/plainSections.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
       "usage": "type-only",
       "symbols": [
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/prefixTokenMemo.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1888,19 +1797,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/staticSections.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/staticSections.ts",
       "specifier": "../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js",
       "target": "src/ts/process/promptAssembly/effectivePromptTemplate.ts",
       "kind": "static",
@@ -2005,33 +1901,6 @@
       "usage": "type-only",
       "symbols": [
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/tokens.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "MultiModal",
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
-      "specifier": "../../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -2997,19 +2866,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/luaRuntime.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/luaRuntime.test.ts",
       "specifier": "../../../src/ts/process/modules",
       "target": "src/ts/process/modules.ts",
       "kind": "static",
@@ -3556,19 +3412,6 @@
       "usage": "type-only",
       "symbols": [
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/tokens.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"

@@ -12,12 +12,22 @@ function source(file: string): string {
 describe('prompt message server type ownership', () => {
   it('keeps rendering and budget consumers behind a Fastify-owned record', () => {
     const consumers = [
+      'server/fastify/src/prompt/agentPresetExecution.ts',
+      'server/fastify/src/prompt/assetLookup.ts',
       'server/fastify/src/prompt/history.ts',
+      'server/fastify/src/prompt/lorebook.ts',
+      'server/fastify/src/prompt/luaRuntime.ts',
       'server/fastify/src/prompt/memory.ts',
+      'server/fastify/src/prompt/memoryAdapter.ts',
       'server/fastify/src/prompt/budgetFinalize.ts',
+      'server/fastify/src/prompt/plainSections.ts',
       'server/fastify/src/prompt/preflight.ts',
+      'server/fastify/src/prompt/prefixTokenMemo.ts',
+      'server/fastify/src/prompt/staticSections.ts',
       'server/fastify/src/prompt/templates.ts',
       'server/fastify/src/prompt/promptSummary.ts',
+      'server/fastify/src/prompt/tokens.ts',
+      'server/fastify/src/prompt/triggerDataEffects.ts',
     ]
 
     for (const consumer of consumers) {

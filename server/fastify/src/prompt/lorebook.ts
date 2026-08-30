@@ -1,7 +1,7 @@
 import { CCardLib } from '@risuai/ccardlib'
 import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
 import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { pickHashRand } from '@risuai/shared-core/lore-hash'
 import { getActiveModules } from './modules.js'
 import {
@@ -1376,9 +1376,9 @@ export function createPositionParser(report: LorebookActivationReport): (text: s
 
 /** The slots `buildLorebookContext` distributes activated entries into. */
 export interface UnformatedLorebookSlots {
-  lorebook: OpenAIChat[]
-  description: OpenAIChat[]
-  postEverything: OpenAIChat[]
+  lorebook: PromptMessage[]
+  description: PromptMessage[]
+  postEverything: PromptMessage[]
 }
 
 export interface LorebookContext {
@@ -1413,7 +1413,7 @@ export function buildLorebookContext(
   report: LorebookActivationReport,
   unformated: UnformatedLorebookSlots,
 ): LorebookContext {
-  const toRow = (lore: LoreEntryActive): OpenAIChat => ({
+  const toRow = (lore: LoreEntryActive): PromptMessage => ({
     role: lore.role,
     content: expandVariables(resolvePosition(lore.prompt, report), {
       ...ctx,

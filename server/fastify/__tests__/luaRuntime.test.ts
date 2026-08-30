@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { Chat, Database, character, loreBook } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { RisuModule } from '../../../src/ts/process/modules'
 import { createTriggerVarEngine, type TriggerVarEngine } from '../src/prompt/triggerVars.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
@@ -140,8 +140,8 @@ function makeRuntime(
   return { ctx, engine }
 }
 
-function rows(...contents: string[]): OpenAIChat[] {
-  return contents.map((content) => ({ role: 'user', content }) as OpenAIChat)
+function rows(...contents: string[]): PromptMessage[] {
+  return contents.map((content) => ({ role: 'user', content }) as PromptMessage)
 }
 
 // A short exec limit keeps the runaway tests fast.
@@ -163,7 +163,7 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
 
     expect(result.error).toBeUndefined()
     expect(result.timedOut).toBe(false)
-    const out = result.res as OpenAIChat[]
+    const out = result.res as PromptMessage[]
     expect(out).toHaveLength(2)
     expect(out[0].content).toBe('alpha')
     expect(out[1].content).toBe('omega [EDIT]')
@@ -464,7 +464,7 @@ describe('server Lua runtime — request() binding + low-level gate', () => {
     // Low-level granted → request runs through the injected fetch.
     const granted = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
     const ok = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, granted.ctx)
-    expect((ok.res as OpenAIChat[])[0].content).toBe('204')
+    expect((ok.res as PromptMessage[])[0].content).toBe('204')
 
     // Low-level denied (edit-hook default) → request returns nil.
     const denied = makeRuntime({ egress, rateState: { count: 0, resetAt: 0 } })
@@ -472,7 +472,7 @@ describe('server Lua runtime — request() binding + low-level gate', () => {
       { code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: false },
       denied.ctx,
     )
-    expect((blocked.res as OpenAIChat[])[0].content).toBe('BLOCKED')
+    expect((blocked.res as PromptMessage[])[0].content).toBe('BLOCKED')
   })
 })
 
@@ -543,7 +543,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    const payload = JSON.parse((result.res as PromptMessage[])[0].content)
     expect(payload).toMatchObject({
       provider: 'debug-echo',
       baseUrl: 'debug://script-aux',
@@ -564,7 +564,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
 
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
-    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    const payload = JSON.parse((result.res as PromptMessage[])[0].content)
     expect(payload).toMatchObject({
       baseUrl: 'debug://character-script',
       requestModel: 'character-script-model',
@@ -597,7 +597,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
       ctx,
     )
 
-    const payload = JSON.parse((result.res as OpenAIChat[])[0].content)
+    const payload = JSON.parse((result.res as PromptMessage[])[0].content)
     expect(payload).toMatchObject({
       baseUrl: 'debug://module-aux',
       requestModel: 'module-aux-model',
@@ -617,8 +617,8 @@ describe('server Lua runtime — low-level LLM bindings', () => {
 
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
-    expect((result.res as OpenAIChat[])[0].content).toContain('missing script model profile')
-    expect((result.res as OpenAIChat[])[0].content).toContain('missing-script-profile')
+    expect((result.res as PromptMessage[])[0].content).toContain('missing script model profile')
+    expect((result.res as PromptMessage[])[0].content).toContain('missing-script-profile')
   })
 
   it('keeps axLLMMain denied without low-level access', async () => {
@@ -634,7 +634,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: false }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect((result.res as OpenAIChat[])[0].content).toBe('DENIED')
+    expect((result.res as PromptMessage[])[0].content).toBe('DENIED')
   })
 
   it('routes LLM and simpleLLM through the scriptMain model role', async () => {
@@ -651,7 +651,7 @@ describe('server Lua runtime — low-level LLM bindings', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    const [full, simple] = (result.res as OpenAIChat[])[0].content.split('\n---\n').map((part) => JSON.parse(part))
+    const [full, simple] = (result.res as PromptMessage[])[0].content.split('\n---\n').map((part) => JSON.parse(part))
     expect(full).toMatchObject({
       provider: 'debug-echo',
       baseUrl: 'debug://script-main',
@@ -680,7 +680,7 @@ describe('server Lua runtime — persona description', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect((result.res as OpenAIChat[])[0].content).toBe('Persona Operator accompanies Tess.')
+    expect((result.res as PromptMessage[])[0].content).toBe('Persona Operator accompanies Tess.')
   })
 })
 
@@ -723,7 +723,7 @@ describe('server Lua runtime — getLoreBooksMain', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
 
     expect(result.error).toBeUndefined()
-    const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
+    const books = JSON.parse((result.res as PromptMessage[])[0].content) as loreBook[]
     expect(books.map((book) => book.id)).toEqual(['local-1', 'local-2', 'global-1', 'module-a-1'])
     expect(books.map((book) => book.content)).toEqual([
       'local Tess',
@@ -748,7 +748,7 @@ describe('server Lua runtime — getLoreBooksMain', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
 
     expect(result.error).toBeUndefined()
-    const books = JSON.parse((result.res as OpenAIChat[])[0].content) as loreBook[]
+    const books = JSON.parse((result.res as PromptMessage[])[0].content) as loreBook[]
     expect(books).toHaveLength(1)
     expect(books[0]).toMatchObject({
       id: expect.any(String),
@@ -824,7 +824,7 @@ describe('server Lua runtime — loadLoreBooks', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect(JSON.parse((result.res as OpenAIChat[])[0].content)).toEqual([
+    expect(JSON.parse((result.res as PromptMessage[])[0].content)).toEqual([
       { data: 'local Tess', role: 'char' },
       { data: 'global Tess', role: 'system' },
       { data: 'module Operator', role: 'user' },
@@ -867,7 +867,7 @@ describe('server Lua runtime — similarity', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect((result.res as OpenAIChat[])[0].content).toBe('right,middle,left')
+    expect((result.res as PromptMessage[])[0].content).toBe('right,middle,left')
   })
 
   it('returns the baseline nil failure value when the embedding provider reaches its deadline', async () => {
@@ -892,7 +892,7 @@ describe('server Lua runtime — similarity', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect((result.res as OpenAIChat[])[0].content).toBe('nil')
+    expect((result.res as PromptMessage[])[0].content).toBe('nil')
   })
 })
 
@@ -940,7 +940,7 @@ describe('server Lua runtime — generateImage', () => {
         model: 'sd3-medium',
         style: 'anime',
       })
-      expect((result.res as OpenAIChat[])[0].content).toBe(`{{inlay::${assetId}}}`)
+      expect((result.res as PromptMessage[])[0].content).toBe(`{{inlay::${assetId}}}`)
       const asset = getAssetMetadataById(assetDb, assetId)
       expect(asset).toMatchObject({ id: assetId, contentType: 'image/png', size: imageBytes.length })
       expect(existsSync(assetPath(dataDir, asset!))).toBe(true)
@@ -970,7 +970,7 @@ describe('server Lua runtime — generateImage', () => {
     const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig'), lowLevelAccess: true }, ctx)
 
     expect(result.error).toBeUndefined()
-    expect((result.res as OpenAIChat[])[0].content).toBe('Error: Image generation failed')
+    expect((result.res as PromptMessage[])[0].content).toBe('Error: Image generation failed')
   })
 })
 
@@ -1244,7 +1244,7 @@ describe('server Lua runtime — pre-warmed engines', () => {
         : result.runtimeMetricFields,
     })
     expect(withoutDuration(pooled)).toEqual(withoutDuration(fresh))
-    expect((pooled.res as OpenAIChat[])[1].content).toBe('omega [EDIT]')
+    expect((pooled.res as PromptMessage[])[1].content).toBe('omega [EDIT]')
   })
 
   it('pooled engines never leak Lua globals between runs (per-call isolation preserved)', async () => {
@@ -1260,13 +1260,13 @@ describe('server Lua runtime — pre-warmed engines', () => {
       { code: `MARKER = 'leaked'\n${readMarker}`, mode: 'editRequest', data: rows('x') },
       writer.ctx,
     )
-    expect((wrote.res as OpenAIChat[])[0].content).toBe('leaked')
+    expect((wrote.res as PromptMessage[])[0].content).toBe('leaked')
 
     // …and run B (a pooled engine under the same default limit) must not see it.
     await settleLuaEnginePool()
     const reader = makeRuntime()
     const read = await runServerLua({ code: readMarker, mode: 'editRequest', data: rows('x') }, reader.ctx)
-    expect((read.res as OpenAIChat[])[0].content).toBe('nil')
+    expect((read.res as PromptMessage[])[0].content).toBe('nil')
   })
 
   it('a fresh boot never overlaps an active run with a pending Lua continuation', async () => {
@@ -1348,7 +1348,7 @@ describe('server Lua runtime — pre-warmed engines', () => {
     expect(resultA.error).toBeUndefined()
     expect(a.engine.getVar('aDone')).toBe('yes')
     expect(resultB.error).toBeUndefined()
-    expect((resultB.res as OpenAIChat[])[0].content).toBe('b [B]')
+    expect((resultB.res as PromptMessage[])[0].content).toBe('b [B]')
     const after = readLuaEngineAcquireStats()
     expect(after.freshAcquires).toBe(duringA.freshAcquires + 1)
   })
@@ -1437,7 +1437,7 @@ describe('server Lua runtime — pre-warmed engines', () => {
     expect(resultA.error).toBeUndefined()
     expect(a.engine.getVar('aDone')).toBe('yes')
     expect(resultB.error).toBeUndefined()
-    expect((resultB.res as OpenAIChat[])[0].content).toBe('b [B]')
+    expect((resultB.res as PromptMessage[])[0].content).toBe('b [B]')
     const after = readLuaEngineAcquireStats()
     expect(after.pooledAcquires).toBe(duringA.pooledAcquires + 1)
   })

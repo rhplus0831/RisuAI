@@ -10,7 +10,7 @@ import { request as httpsRequest } from 'node:https'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import type { ModelRole } from '@risuai/shared-core/model-roles'
 import {
   resolveModelProfile,
@@ -95,7 +95,7 @@ import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } f
  *    exhausted budget short-circuits before any engine boots — so a card stacking
  *    many runaway hooks is bounded by ~`totalMs` (+ at most one per-run limit for
  *    a dispatch already in flight), not `hooks × execTimeoutMs`.
- * 5. **`OpenAIChat` round-trip** is byte-faithful for the text-send subset (proven by
+ * 5. **`PromptMessage` round-trip** is byte-faithful for the text-send subset (proven by
  *    the editRequest unit test).
  */
 
@@ -747,7 +747,7 @@ interface RuntimeState {
 export interface RunServerLuaOptions {
   code: string
   mode: string
-  data?: string | OpenAIChat[]
+  data?: string | PromptMessage[]
   meta?: object
   /** Grants the low-level host fns (`request`/`LLM`/`similarity`/…). Edit hooks run
    * with this `false` (browser parity, `scriptings.ts`). */
@@ -983,13 +983,13 @@ function luaLlmFailure(message: string): LuaLlmResult {
   return { success: false, result: message.startsWith('Error: ') ? message : `Error: ${message}` }
 }
 
-function normalizeLuaLlmRole(role: unknown): OpenAIChat['role'] {
+function normalizeLuaLlmRole(role: unknown): PromptMessage['role'] {
   if (role === 'system' || role === 'sys') return 'system'
   if (role === 'user') return 'user'
   return 'assistant'
 }
 
-function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAIChat[] | LuaLlmResult {
+function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): PromptMessage[] | LuaLlmResult {
   if (useMultimodal) {
     throw new Error(`${SERVER_UNSUPPORTED_LUA_API_ERROR}: multimodal LLM`)
   }
@@ -1005,7 +1005,7 @@ function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAICha
     return luaLlmFailure('Lua LLM prompt must be an array')
   }
 
-  const rows: OpenAIChat[] = []
+  const rows: PromptMessage[] = []
   for (const item of parsed) {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) {
       return luaLlmFailure('Lua LLM prompt entries must be objects')
@@ -1017,7 +1017,7 @@ function parseLuaLlmPrompt(promptStr: string, useMultimodal: boolean): OpenAICha
     rows.push({
       role: normalizeLuaLlmRole(row.role),
       content: row.content ?? '',
-    } as OpenAIChat)
+    } as PromptMessage)
   }
 
   return rows
@@ -1050,7 +1050,7 @@ async function collectLuaLlmFrames(frames: AsyncIterable<CompletionStreamFrame>)
 async function runLuaLlm(
   state: RuntimeState,
   role: ModelRole,
-  prompt: OpenAIChat[],
+  prompt: PromptMessage[],
   options: { streaming?: boolean } = {},
 ): Promise<LuaLlmResult> {
   try {
@@ -2044,7 +2044,7 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
   })
   declare('simpleLLM', async (id: string, prompt: string) => {
     if (!canLowLevel(id)) return
-    return runLuaLlm(state, 'scriptMain', [{ role: 'user', content: String(prompt ?? '') } as OpenAIChat])
+    return runLuaLlm(state, 'scriptMain', [{ role: 'user', content: String(prompt ?? '') } as PromptMessage])
   })
 
   return (next) => {
@@ -2545,7 +2545,7 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
  * Lua failures throw with context instead of returning the original `content`;
  * otherwise callers cannot distinguish a no-op hook from a broken hook.
  */
-export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
+export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
   char: character | simpleCharacterArgument,
   mode: string,
   content: T,

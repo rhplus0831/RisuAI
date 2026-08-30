@@ -1,6 +1,6 @@
 import type { Chat, character } from '../../../../src/ts/storage/database.svelte'
 import type { triggerEffect } from '../../../../src/ts/process/triggers'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import {
@@ -61,7 +61,7 @@ import {
  * container variable names.
  * The request-state arms otherwise match the SPA exactly, including the
  * un-guarded `JSON.parse(displayState.data)`: in `request` mode the
- * caller contractually supplies a valid `OpenAIChat[]` JSON payload.
+ * caller contractually supplies a valid `PromptMessage[]` JSON payload.
  *
  * Unsupported or externally handled effects fall through to `return false`: the
  * persistent character/persona/author-note
@@ -667,7 +667,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       if (!deps.displayMode) {
         return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       engine.setVar(expand(effect.outputVar), json?.[index]?.content ?? 'null')
       return true
@@ -676,7 +676,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       if (!deps.displayMode) {
         return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       json[index].content = resolve(effect.value, effect.valueType === 'value')
       if (deps.displayState) {
@@ -688,7 +688,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       if (!deps.displayMode) {
         return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       engine.setVar(expand(effect.outputVar), json?.[index]?.role ?? 'null')
       return true
@@ -697,7 +697,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       if (!deps.displayMode) {
         return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       const index = Number(resolve(effect.index, effect.indexType === 'value'))
       const value = resolve(effect.value, effect.valueType === 'value')
       if (value === 'user' || value === 'assistant' || value === 'system') {
@@ -712,7 +712,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
       if (!deps.displayMode) {
         return 'abort-run'
       }
-      const json = JSON.parse(deps.displayState?.data ?? 'null') as OpenAIChat[]
+      const json = JSON.parse(deps.displayState?.data ?? 'null') as PromptMessage[]
       engine.setVar(expand(effect.outputVar), json.length.toString())
       return true
     }

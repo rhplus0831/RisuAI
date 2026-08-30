@@ -1,5 +1,5 @@
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { resolveEffectivePromptTemplate } from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
@@ -11,7 +11,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * `{{scenario}}` assembly, the author-note default-text fallback into
  * `db.promptTemplate`, the persona prompt, the chain-of-thought
  * instruction, and the image-gen / emotion view instruction.
- * Each function returns `OpenAIChat[]` (normalized — the SPA's
+ * Each function returns `PromptMessage[]` (normalized — the SPA's
  * `buildDescription` returns a single object; the server smooths the
  * asymmetry so the assembler can `.flatMap` uniformly).
  *
@@ -40,7 +40,7 @@ function expandWith(ctx: ExpandContext, input: string): string {
   return expandVariables(input, ctx).text
 }
 
-export function buildDescription(ctx: ExpandContext, currentChar: character): OpenAIChat[] {
+export function buildDescription(ctx: ExpandContext, currentChar: character): PromptMessage[] {
   const db = ctx.database
   const prefix = db.promptPreprocess ? (db.descriptionPrefix ?? '') : ''
   let description = expandWith(ctx, prefix + (currentChar.desc ?? ''))
@@ -56,7 +56,7 @@ export function buildDescription(ctx: ExpandContext, currentChar: character): Op
   return [{ role: 'system', content: description }]
 }
 
-export function buildAuthorNote(ctx: ExpandContext, currentChat: Chat): OpenAIChat[] {
+export function buildAuthorNote(ctx: ExpandContext, currentChat: Chat): PromptMessage[] {
   if (currentChat.note) {
     return [{ role: 'system', content: expandWith(ctx, currentChat.note) }]
   }
@@ -67,13 +67,13 @@ export function buildAuthorNote(ctx: ExpandContext, currentChat: Chat): OpenAICh
   return []
 }
 
-export function buildPersona(ctx: ExpandContext): OpenAIChat[] {
+export function buildPersona(ctx: ExpandContext): PromptMessage[] {
   const personaPrompt = ctx.database.personaPrompt
   if (!personaPrompt) return []
   return [{ role: 'system', content: expandWith(ctx, personaPrompt) }]
 }
 
-export function buildCotInstruction(ctx: ExpandContext, usingPromptTemplate: boolean): OpenAIChat[] {
+export function buildCotInstruction(ctx: ExpandContext, usingPromptTemplate: boolean): PromptMessage[] {
   const db = ctx.database
   if (!db.chainOfThought) return []
   if (usingPromptTemplate && db.promptSettings?.customChainOfThought) return []
@@ -100,7 +100,7 @@ export function buildCotInstruction(ctx: ExpandContext, usingPromptTemplate: boo
  * Image generation and inlay-screen rendering remain post-generation browser
  * effects; only this instruction text is assembled server-side.
  */
-export function buildInlayViewInstruction(currentChar: character): OpenAIChat[] {
+export function buildInlayViewInstruction(currentChar: character): PromptMessage[] {
   if (!currentChar.inlayViewScreen) return []
   if (currentChar.viewScreen === 'emotion') {
     return [

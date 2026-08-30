@@ -1,5 +1,5 @@
 import type { character } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
@@ -23,13 +23,13 @@ import { expandVariables, type ExpandContext } from './variables.js'
 
 const ROLE_SPLIT_RE = /@@@?(user|assistant|system)\n/
 
-function formatPrompt(data: string): OpenAIChat[] {
+function formatPrompt(data: string): PromptMessage[] {
   let body = data
   if (!body.startsWith('@@')) {
     body = '@@system\n' + body
   }
   const parts = body.split(ROLE_SPLIT_RE)
-  const out: OpenAIChat[] = []
+  const out: PromptMessage[] = []
   for (let i = 1; i < parts.length; i += 2) {
     const role = parts[i] as 'user' | 'assistant' | 'system'
     const content = parts[i + 1]?.trim() ?? ''
@@ -43,9 +43,9 @@ function expand(ctx: ExpandContext, input: string): string {
 }
 
 export interface PlainPromptSections {
-  main: OpenAIChat[]
-  jailbreak: OpenAIChat[]
-  globalNote: OpenAIChat[]
+  main: PromptMessage[]
+  jailbreak: PromptMessage[]
+  globalNote: PromptMessage[]
 }
 
 export function buildPlainPromptSections(ctx: ExpandContext, currentChar: character): PlainPromptSections {
