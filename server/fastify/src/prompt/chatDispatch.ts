@@ -1,6 +1,6 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { LLMFlags, LLMFormat, LLMProvider, type LLMFormat as LLMFormatValue } from '../../../../src/ts/model/types'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai'
 import type { CompletionResult, CompletionStreamFrame } from '../generation/frames.js'
@@ -77,7 +77,7 @@ export type ChatDispatchDatabase = Database
 
 interface ChatDispatchArgs {
   database: ChatDispatchDatabase
-  formated: OpenAIChat[]
+  formated: PromptMessage[]
   outputTokens?: number
   profile?: ResolvedModelProfile
   signal: AbortSignal
@@ -94,7 +94,7 @@ interface ChatDispatchArgs {
   /** Durable diagnostics for one actual provider attempt. */
   history?: ChatDispatchHistoryInput
   /** Provider-flag-normalized messages prepared by the public dispatch boundary. */
-  finalizedMessages?: OpenAIChat[]
+  finalizedMessages?: PromptMessage[]
   /** Effective character selected for this generation, including non-zero database positions. */
   currentCharacterName?: string
   /** Reports a dispatch-time sentinel resolution to generation metadata owners. */
@@ -624,17 +624,17 @@ function needsReformatClone(needs: ReformatBranchNeeds): boolean {
   return needs.systemPrompt || needs.alternateRole || needs.startWithUserInput
 }
 
-function cloneDispatchRows(rows: OpenAIChat[]): OpenAIChat[] {
+function cloneDispatchRows(rows: PromptMessage[]): PromptMessage[] {
   chatDispatchReformatInstrumentation.fullPromptClones++
   return structuredClone(rows)
 }
 
-export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readonly number[]): OpenAIChat[] {
+export function reformatMessages(db: Database, rows: PromptMessage[], flags: readonly number[]): PromptMessage[] {
   const needs = resolveReformatBranchNeeds(flags)
   if (!needsReformatClone(needs)) return rows
 
   let formated = cloneDispatchRows(rows)
-  let systemPrompt: OpenAIChat | null = null
+  let systemPrompt: PromptMessage | null = null
 
   if (needs.systemPrompt) {
     if (needs.firstSystemPrompt) {
@@ -666,7 +666,7 @@ export function reformatMessages(db: Database, rows: OpenAIChat[], flags: readon
   }
 
   if (needs.alternateRole) {
-    const merged: OpenAIChat[] = []
+    const merged: PromptMessage[] = []
     for (const row of formated) {
       const prev = merged[merged.length - 1]
       if (prev && prev.role === row.role) {
@@ -1025,9 +1025,9 @@ export function resolveOpenAIVariant(
   return apiKey ? { apiKey } : null
 }
 
-function extractSystem(messages: OpenAIChat[], newOAIHandle = true): { messages: OpenAIChat[]; system?: string } {
+function extractSystem(messages: PromptMessage[], newOAIHandle = true): { messages: PromptMessage[]; system?: string } {
   const systemTexts: string[] = []
-  const passthrough: OpenAIChat[] = []
+  const passthrough: PromptMessage[] = []
   for (const row of messages) {
     if (row.role === 'system' && typeof row.content === 'string' && row.content.length > 0) {
       if (!(newOAIHandle && row.memo?.startsWith('NewChat'))) systemTexts.push(row.content)
@@ -1040,7 +1040,7 @@ function extractSystem(messages: OpenAIChat[], newOAIHandle = true): { messages:
     : { messages: passthrough }
 }
 
-function applyChatTemplate(db: Database, messages: OpenAIChat[]): string {
+function applyChatTemplate(db: Database, messages: PromptMessage[]): string {
   // Accepted divergence (PR-18/PR-7 sunset): Fastify intentionally does not
   // port the SPA's `src/ts/process/templates/chatTemplate.ts` engine.
   const type = asString(db.instructChatTemplate)
@@ -1056,7 +1056,7 @@ function applyChatTemplate(db: Database, messages: OpenAIChat[]): string {
   return `${rows.join('\n\n')}\n\nassistant:`
 }
 
-function unstringlizeChat(text: string, formated: OpenAIChat[], char: string, username: string): string {
+function unstringlizeChat(text: string, formated: PromptMessage[], char: string, username: string): string {
   const chunks = ['system note:', 'system:', 'system note：', 'system：']
   if (char) chunks.push(`${char}:`, `${char}：`, `${char}: `, `${char}： `)
   if (username) chunks.push(`${username}:`, `${username}：`, `${username}: `, `${username}： `)
@@ -1690,7 +1690,7 @@ async function dispatchChatProviderCore(args: ChatDispatchArgs): Promise<AsyncIt
   if (provider === 'horde') {
     const providerOptions = profile.providerOptions
     const request = resolveHordeRequest({
-      prompt: applyChatTemplate(db, textMessages as OpenAIChat[]),
+      prompt: applyChatTemplate(db, textMessages as PromptMessage[]),
       model,
       apiKey: asString(providerOptions.apiKey),
       maxTokens,

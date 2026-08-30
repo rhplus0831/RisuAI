@@ -14,6 +14,8 @@ describe('prompt message server type ownership', () => {
     const consumers = [
       'server/fastify/src/prompt/agentPresetExecution.ts',
       'server/fastify/src/prompt/assetLookup.ts',
+      'server/fastify/src/prompt/assemble.ts',
+      'server/fastify/src/prompt/chatDispatch.ts',
       'server/fastify/src/prompt/history.ts',
       'server/fastify/src/prompt/lorebook.ts',
       'server/fastify/src/prompt/luaRuntime.ts',
@@ -28,6 +30,8 @@ describe('prompt message server type ownership', () => {
       'server/fastify/src/prompt/promptSummary.ts',
       'server/fastify/src/prompt/tokens.ts',
       'server/fastify/src/prompt/triggerDataEffects.ts',
+      'server/fastify/src/routes/generation.ts',
+      'server/fastify/src/routes/generationChat.ts',
     ]
 
     for (const consumer of consumers) {

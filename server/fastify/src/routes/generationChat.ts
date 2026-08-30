@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database, Message } from '../../../../src/ts/storage/database.svelte'
-import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMultimodal, PromptMessage } from '../prompt/promptMessage.js'
 import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from '../../../../src/ts/process/request/hypaContextTruncation.js'
@@ -366,7 +366,7 @@ function containsBannedScript(text: string, scripts: unknown): boolean {
   return false
 }
 
-function escapedRows(rows: OpenAIChat[], escape: boolean): OpenAIChat[] {
+function escapedRows(rows: PromptMessage[], escape: boolean): PromptMessage[] {
   const cloned = structuredClone(rows)
   if (!escape) return cloned
   for (const row of cloned) row.content = risuUnescape(row.content)
@@ -848,7 +848,7 @@ function assetIdFromReference(reference: string): string | null {
  * stored content-type. Returns `undefined` for an unresolvable reference so the
  * marker is stripped without bytes when assets are missing.
  */
-function multimodalTypeFromContentType(contentType: string): MultiModal['type'] | null {
+function multimodalTypeFromContentType(contentType: string): PromptMultimodal['type'] | null {
   if (contentType === SERVER_INLAY_SIGNATURE_CONTENT_TYPE) return 'signature'
   if (contentType.startsWith('image/')) return 'image'
   if (contentType.startsWith('audio/')) return 'audio'
@@ -861,9 +861,9 @@ type StoredAssetReader = (
   dataDir: string,
   id: string,
   purpose: StoredAssetPurpose,
-) => MultiModal | undefined | Promise<MultiModal | undefined>
+) => PromptMultimodal | undefined | Promise<PromptMultimodal | undefined>
 
-function cloneStoredAssetResult(result: MultiModal | undefined): MultiModal | undefined {
+function cloneStoredAssetResult(result: PromptMultimodal | undefined): PromptMultimodal | undefined {
   return result ? { ...result } : undefined
 }
 
@@ -882,7 +882,7 @@ async function readStoredAsset(
   dataDir: string,
   id: string,
   purpose: StoredAssetPurpose,
-): Promise<MultiModal | undefined> {
+): Promise<PromptMultimodal | undefined> {
   const entry = assetById(db, id)
   if (!entry) return undefined
   const file = assetPath(dataDir, entry)
@@ -904,7 +904,7 @@ export function createRequestScopedStoredAssetResolver(
   dataDir: string,
   read: StoredAssetReader = readStoredAsset,
 ): ResolveStoredAsset {
-  const cache = new Map<string, Promise<MultiModal | undefined>>()
+  const cache = new Map<string, Promise<PromptMultimodal | undefined>>()
   return async (reference, purpose) => {
     const id = assetIdFromReference(reference)
     if (!id) return undefined
@@ -1350,7 +1350,7 @@ async function emitGenerationPromptEmissionMetric(args: {
   metricContext: PromptAssemblyMetricContext
   input: AssembleInput
   promptEvent: Omit<PromptEvent, 'type'>
-  formated: OpenAIChat[]
+  formated: PromptMessage[]
   promptSummary?: PromptRowsSummary
   generationId: string
   durableJobId?: string
@@ -1363,7 +1363,7 @@ async function emitGenerationPromptEmissionMetric(args: {
   const eventSummary =
     args.promptSummary ??
     (Array.isArray((args.promptEvent as Record<string, unknown>).formated)
-      ? summarizePromptRows((args.promptEvent as { formated: OpenAIChat[] }).formated)
+      ? summarizePromptRows((args.promptEvent as { formated: PromptMessage[] }).formated)
       : undefined)
   const fullPromptSidecar = protocolMetricsEnabled()
     ? await writeGenerationTraceSidecar({

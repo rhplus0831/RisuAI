@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from '../prompt/promptMessage.js'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import {
   assertModelProfileGenerationReady,
@@ -1462,7 +1462,7 @@ async function handleServerIntentCompletion(
     const database = buildCompletionDatabase(baseDatabase, body, profile)
     const frames = await dispatchChatProvider({
       database,
-      formated: messages as OpenAIChat[],
+      formated: messages as PromptMessage[],
       outputTokens: finiteNumber(body.maxTokens),
       currentCharacterName: typeof body.currentCharName === 'string' ? body.currentCharName : undefined,
       profile,

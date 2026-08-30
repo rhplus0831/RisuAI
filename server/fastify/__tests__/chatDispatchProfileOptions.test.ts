@@ -9,7 +9,7 @@ import {
   type LLMModel,
 } from '../../../src/ts/model/types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { Database } from '../../../src/ts/storage/database.svelte'
 import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
@@ -253,7 +253,7 @@ function generatePrivateKey(): string {
 async function dispatchWithProfile(
   profile: ResolvedModelProfile,
   database: Database,
-  formated: OpenAIChat[] = [{ role: 'user', content: 'hello' }],
+  formated: PromptMessage[] = [{ role: 'user', content: 'hello' }],
   expectedApiMetadata?: Record<string, unknown>,
 ): Promise<void> {
   const frames = await dispatchChatProvider({
@@ -279,7 +279,7 @@ async function dispatchWithProfile(
 async function dispatchHordeWithProfile(
   profile: ResolvedModelProfile,
   database: Database,
-  formated: OpenAIChat[] = [{ role: 'user', content: 'hello' }],
+  formated: PromptMessage[] = [{ role: 'user', content: 'hello' }],
 ): Promise<void> {
   vi.useFakeTimers()
   const frames = await dispatchChatProvider({
@@ -749,7 +749,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       aiModel: 'gemini-2.5-flash',
       google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
     } as Partial<Database>)
-    const formated: OpenAIChat[] = [
+    const formated: PromptMessage[] = [
       { role: 'system', content: 'slice-2-secret-dispatch-system' },
       { role: 'user', content: 'slice-2-secret-dispatch-user-a' },
       { role: 'user', content: 'slice-2-secret-dispatch-user-b' },

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
 import { openDatabase } from '../src/db.js'
 import {
@@ -260,7 +260,7 @@ function expectIncompleteAssembly(
 
 describe('prompt summary hashes', () => {
   it('produces a stable metadata-only summary without raw prompt strings', () => {
-    const rows: OpenAIChat[] = [
+    const rows: PromptMessage[] = [
       {
         role: 'system',
         content: 'slice-2-secret-content',
@@ -308,7 +308,7 @@ describe('prompt summary hashes', () => {
   })
 
   it('changes the hash for content, name, memo, cachePoint, and multimodal metadata changes', () => {
-    const base: OpenAIChat[] = [
+    const base: PromptMessage[] = [
       {
         role: 'user',
         content: 'base prompt',
@@ -319,7 +319,7 @@ describe('prompt summary hashes', () => {
       },
     ]
     const baseHash = summarizePromptRows(base).promptHash
-    const cases: Array<[string, OpenAIChat[]]> = [
+    const cases: Array<[string, PromptMessage[]]> = [
       ['content', [{ ...base[0], content: 'changed prompt' }]],
       ['name', [{ ...base[0], name: 'changed-name' }]],
       ['memo', [{ ...base[0], memo: 'changed-memo' }]],
@@ -1357,7 +1357,7 @@ describe('dispatch and restoration clone narrowing', () => {
         multimodals: [{ type: 'image', base64: 'data:image/png;base64,AAAA' }],
       },
       { role: 'user', content: 'hello' },
-    ] satisfies OpenAIChat[]) as OpenAIChat[]
+    ] satisfies PromptMessage[]) as PromptMessage[]
     const before = JSON.stringify(rows)
 
     const result = reformatMessages(makeDatabase(), rows, [LLMFlags.hasFullSystemPrompt, LLMFlags.hasStreaming])
@@ -1375,7 +1375,7 @@ describe('dispatch and restoration clone narrowing', () => {
       rows: [
         { role: 'system', content: 'sys' },
         { role: 'user', content: 'hi' },
-      ] satisfies OpenAIChat[],
+      ] satisfies PromptMessage[],
       expected: [
         { role: 'user', content: 'system: sys' },
         { role: 'user', content: 'hi' },
@@ -1385,7 +1385,7 @@ describe('dispatch and restoration clone narrowing', () => {
       name: 'empty system role replacement',
       db: makeDatabase({ systemRoleReplacement: '' as never }),
       flags: [],
-      rows: [{ role: 'system', content: 'sys' }] satisfies OpenAIChat[],
+      rows: [{ role: 'system', content: 'sys' }] satisfies PromptMessage[],
       expected: [{ role: 'user', content: 'system: sys' }],
     },
     {
@@ -1397,7 +1397,7 @@ describe('dispatch and restoration clone narrowing', () => {
         { role: 'system', content: 'sys two' },
         { role: 'user', content: 'hi' },
         { role: 'system', content: 'inner' },
-      ] satisfies OpenAIChat[],
+      ] satisfies PromptMessage[],
       expected: [
         { role: 'system', content: 'sys one\n\nsys two' },
         { role: 'user', content: 'hi' },
@@ -1422,7 +1422,7 @@ describe('dispatch and restoration clone narrowing', () => {
           thoughts: ['think'],
         },
         { role: 'assistant', content: 'reply' },
-      ] satisfies OpenAIChat[],
+      ] satisfies PromptMessage[],
       expected: [
         {
           role: 'user',
@@ -1441,7 +1441,7 @@ describe('dispatch and restoration clone narrowing', () => {
       name: 'must start with user',
       db: makeDatabase(),
       flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.mustStartWithUserInput],
-      rows: [{ role: 'assistant', content: 'prefill' }] satisfies OpenAIChat[],
+      rows: [{ role: 'assistant', content: 'prefill' }] satisfies PromptMessage[],
       expected: [
         { role: 'user', content: ' ' },
         { role: 'assistant', content: 'prefill' },
@@ -1449,7 +1449,7 @@ describe('dispatch and restoration clone narrowing', () => {
     },
   ])('preserves byte-identical output and isolation for $name', ({ db, flags, rows, expected }) => {
     resetChatDispatchReformatInstrumentation()
-    const sourceRows = rows as OpenAIChat[]
+    const sourceRows = rows as PromptMessage[]
     const originalRows = structuredClone(sourceRows)
 
     const result = reformatMessages(db, sourceRows, flags)
@@ -2140,7 +2140,7 @@ function seedPromptMemory(
   })
 }
 
-function chunkPlanningHistory(): OpenAIChat[] {
+function chunkPlanningHistory(): PromptMessage[] {
   return [
     {
       role: 'user',
@@ -3890,7 +3890,7 @@ describe('renderAndBudget + assemblePrompt', () => {
     } as unknown as Partial<Database>)
 
     const result = await assemblePrompt(baseInput(), depsFor(db))
-    const promptText = result.prompt?.promptInfo?.promptText as OpenAIChat[] | undefined
+    const promptText = result.prompt?.promptInfo?.promptText as PromptMessage[] | undefined
 
     expect(result.prompt?.promptInfo).toMatchObject({
       promptName: 'Chat',
@@ -4059,7 +4059,7 @@ describe('renderAndBudget + assemblePrompt', () => {
       ],
     } as Partial<Database>)
     const state = beginAssembly(baseInput(), depsFor(db))
-    const rows: OpenAIChat[] = [{ role: 'user', content: 'original request row' }]
+    const rows: PromptMessage[] = [{ role: 'user', content: 'original request row' }]
 
     await expect(applyRequestTrigger(state, rows)).resolves.toEqual(rows)
   })
@@ -5013,7 +5013,7 @@ describe('history expansion cost', () => {
     expect(spy.mock.calls.filter(([input]) => input === 'depth says {{user}}')).toHaveLength(1)
     expect(spy.mock.calls.filter(([input]) => input === 'tail says {{user}}')).toHaveLength(1)
 
-    const messages: OpenAIChat[] = [
+    const messages: PromptMessage[] = [
       { role: 'system', content: 'NewChat' },
       { role: 'user', content: 'first' },
       { role: 'assistant', content: 'reply' },

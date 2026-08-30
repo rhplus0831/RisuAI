@@ -13,7 +13,7 @@ import type {
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from './promptTemplate.js'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
-import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import type { PromptMessage } from './promptMessage.js'
 import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
 import { EntityNotFoundError } from '../repository.js'
 import {
@@ -372,7 +372,7 @@ export interface AssembleAdditionalSystemPromptMutation {
   origin: 'start' | 'historyend' | 'promptend'
   slot: 'lastChat' | 'postEverything'
   placement: 'push' | 'unshift'
-  row: OpenAIChat
+  row: PromptMessage
 }
 
 export interface AssembleChatMetadataMutation {
@@ -434,8 +434,8 @@ export interface AssembleResult {
   abortReason?: AssembleAbortReason
   /** The `prompt` SSE event payload (messages + promptInfo + lore report). */
   prompt?: Omit<PromptEvent, 'type'>
-  /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
-  formated?: OpenAIChat[]
+  /** The budgeted flat prompt (full `PromptMessage` rows) for dispatch. */
+  formated?: PromptMessage[]
   /** Expanded global + character provider logit-bias rows. */
   biases?: [string, number][]
   /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
@@ -548,7 +548,7 @@ export interface AssemblyState {
   /** `{{position::}}` resolver shared by the template / render walkers. */
   positionParser?: (text: string, loc: string) => string
   /** The base character-description row, retained across lorebook insertion. */
-  descriptionBasePrompt?: OpenAIChat
+  descriptionBasePrompt?: PromptMessage
   /** Index of the base character-description row after lorebook placement. */
   descriptionBaseIndex?: number
   /** Depth-positioned lore the history splicer consumes. */
@@ -569,7 +569,7 @@ export interface AssemblyState {
    * The flattened history rows from `buildHistoryWindow`. Captured here only;
    * the memory window pushes them into `unformated.chats`.
    */
-  historyMessages?: OpenAIChat[]
+  historyMessages?: PromptMessage[]
   biases?: [string, number][]
   /**
    * The start-trigger result threaded out of the history walk. Later assembly
@@ -592,16 +592,16 @@ export interface AssemblyState {
    * Memory-card rows split out of the history by the memory window and fed to
    * `renderFinalPrompt`.
    */
-  memories?: OpenAIChat[]
+  memories?: PromptMessage[]
   promptMemoryChunkPlanningDiagnostics?: PromptMemoryChunkPlanningDiagnostics
   promptMemoryQueryDiagnostics?: PromptMemoryQueryDiagnostics
   promptMemorySelectionDiagnostics?: PromptMemoryAdapterDiagnostics
   promptMemoryRowAssemblyDiagnostics?: PromptMemoryRowAssemblyDiagnostics
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
   bardWikiPromptDiagnostics?: BardWikiPromptDiagnostics
-  bardWikiRows?: OpenAIChat[]
+  bardWikiRows?: PromptMessage[]
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
-  promptMemoryRows?: OpenAIChat[]
+  promptMemoryRows?: PromptMessage[]
   /** Stored-summary boundary applied only when the Hypa V3 prompt-memory path is enabled. */
   promptMemoryHistoryStartIndex?: number
   /** Token cost removed with `promptMemoryHistoryStartIndex`. */
@@ -610,11 +610,11 @@ export interface AssemblyState {
   agentPreset?: AgentPresetRuntimeState
   // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
-  formated?: OpenAIChat[]
+  formated?: PromptMessage[]
   /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
   promptSummary?: PromptRowsSummary
   /** Template-path prompt-info rows (`renderFinalPrompt.promptText`). */
-  promptText?: OpenAIChat[]
+  promptText?: PromptMessage[]
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
   /** Clamped response budget from `finalizeRequestBudget`. */
@@ -1240,7 +1240,7 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
  * mode is deliberately display-only and limited by the trigger runner's
  * request allowlist, matching the retained browser wrapper.
  */
-export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat[]): Promise<OpenAIChat[]> {
+export async function applyRequestTrigger(state: AssemblyState, rows: PromptMessage[]): Promise<PromptMessage[]> {
   const triggerCtx: TriggerRunContext = {
     modules: getActiveModules(state.database, state.currentChar, state.currentChat),
     model: state.database.aiModel,
@@ -1260,7 +1260,7 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
     })
     if (!result || result.aborted || typeof result.displayData !== 'string') return rows
     const parsed = JSON.parse(result.displayData) as unknown
-    return Array.isArray(parsed) ? (parsed as OpenAIChat[]) : rows
+    return Array.isArray(parsed) ? (parsed as PromptMessage[]) : rows
   } catch {
     return rows
   }
@@ -2003,7 +2003,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
 
   const { ctx, currentChar, unformated } = state
   const db = state.database
-  let bardWikiRows: OpenAIChat[] = []
+  let bardWikiRows: PromptMessage[] = []
   let hypaTokenBudget: number | null = null
   if (state.memoryDatabase) {
     try {
@@ -2078,7 +2078,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   if (triggerResult) {
     const sys = triggerResult.additonalSysPrompt
     if (sys.promptend) {
-      const row: OpenAIChat = { role: 'system', content: sys.promptend }
+      const row: PromptMessage = { role: 'system', content: sys.promptend }
       unformated.postEverything.push(row)
       state.additionalSystemPromptMutations?.push({
         type: 'insert_prompt_row',
@@ -2090,7 +2090,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
       })
     }
     if (sys.historyend) {
-      const row: OpenAIChat = { role: 'system', content: sys.historyend }
+      const row: PromptMessage = { role: 'system', content: sys.historyend }
       unformated.lastChat.push(row)
       state.additionalSystemPromptMutations?.push({
         type: 'insert_prompt_row',
@@ -2102,7 +2102,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
       })
     }
     if (sys.start) {
-      const row: OpenAIChat = { role: 'system', content: sys.start }
+      const row: PromptMessage = { role: 'system', content: sys.start }
       unformated.lastChat.unshift(row)
       state.additionalSystemPromptMutations?.push({
         type: 'insert_prompt_row',
@@ -2116,7 +2116,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   }
 }
 
-function buildPromptMemoryRowsForAssembly(state: AssemblyState, hypaTokenBudget: number | null): OpenAIChat[] {
+function buildPromptMemoryRowsForAssembly(state: AssemblyState, hypaTokenBudget: number | null): PromptMessage[] {
   const memoryDb = state.memoryDatabase
   if (!memoryDb) {
     state.promptMemoryRows = []
@@ -2388,7 +2388,7 @@ function buildLuaEditTriggerContext(state: AssemblyState): {
  * `varChanged` into the assembly state.
  */
 function buildLuaEditRequest(state: AssemblyState): {
-  editRequest: (rows: OpenAIChat[]) => Promise<OpenAIChat[]>
+  editRequest: (rows: PromptMessage[]) => Promise<PromptMessage[]>
   varEngine: TriggerVarEngine
   persistedScriptstateChanged: () => boolean
 } {
