@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./character-summary-resource": "./src/characterSummaryResource.ts",
     "./generation-sse": "./src/generationSse.ts",
+    "./provider-operation": "./src/providerOperation.ts",
     "./shell-resource": "./src/shellResource.ts",
     "./startup-telemetry": "./src/startupTelemetry.ts"
   },

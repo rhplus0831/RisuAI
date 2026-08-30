@@ -2,7 +2,7 @@ import type {
   ProviderOperation,
   ProviderOperationCredential,
   ProviderOperationRequest,
-} from '../../../src/ts/server/providerOperationsProtocol.js'
+} from '@risuai/protocol/provider-operation'
 import { readBoundedBodyJson } from './generation/body.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'

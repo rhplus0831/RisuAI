@@ -3300,21 +3300,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/providerOperations.ts",
-      "specifier": "../../../src/ts/server/providerOperationsProtocol.js",
-      "target": "src/ts/server/providerOperationsProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ProviderOperation",
-        "ProviderOperationCredential",
-        "ProviderOperationRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/providerSecrets.ts",
       "specifier": "../../../src/ts/providerSecretMask.js",
       "target": "src/ts/providerSecretMask.ts",
@@ -4734,19 +4719,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/server/providerOperationsProtocol.js",
-      "target": "src/ts/server/providerOperationsProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "PROVIDER_OPERATIONS"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
       "specifier": "../../../src/ts/server/ttsProtocol.js",
       "target": "src/ts/server/ttsProtocol.ts",
       "kind": "static",
@@ -4942,19 +4914,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/providerOperations.test.ts",
-      "specifier": "../../../src/ts/server/providerOperationsProtocol.js",
-      "target": "src/ts/server/providerOperationsProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ProviderOperationRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "server-test",

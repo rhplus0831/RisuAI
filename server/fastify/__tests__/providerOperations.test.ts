@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ProviderOperationRequest } from '../../../src/ts/server/providerOperationsProtocol.js'
+import type { ProviderOperationRequest } from '@risuai/protocol/provider-operation'
 import { buildApp } from '../src/app.js'
 import {
   executeProviderOperation,
