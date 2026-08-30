@@ -6,7 +6,7 @@ Date: 2026-08-31
 
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
   `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`, and
-  `07576969c`
+  `07576969c`, and `d8275c5e9`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
@@ -15,7 +15,7 @@ Date: 2026-08-31
 - Scope: Phase 2 normal-consumer checkpoint for selected model-preset
   composition, browser prompt shape, durable-profile tokenizer/output budgeting
   and image capability, canonical custom-sidebar model authoring, and Fastify
-  server-intent completion projection.
+  server-intent completion projection plus browser request sampling.
 
 ## Consumer-Cutover Proof
 
@@ -48,6 +48,10 @@ Date: 2026-08-31
 - Fastify server-intent completion applies the shared durable runtime projection
   before its explicit stream, max-token, temperature, and character-name
   overrides. Conflicting flat top-p and penalty fields no longer reach dispatch.
+- Ordinary OpenAI, Anthropic, Gemini, Mistral, Cohere, Ooba, and plugin request
+  parameter builders receive the resolved profile runtime options. Those values
+  outrank conflicting flat samplers, while explicit separate-parameter settings
+  retain their compatibility precedence.
 
 ## Commands And Results
 
@@ -63,17 +67,21 @@ Date: 2026-08-31
   ownership files passed 36, 16, 5, and 3 tests.
 - The server-intent completion owner passed all 96 tests with conflicting
   profile/flat sampling values.
+- Browser request role routing, parameter ownership, OpenAI, Anthropic, and
+  Google provider files passed 19, 1, 16, 5, and 11 tests.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at 294 cross-runtime edges, 20 compatibility
+- Architecture inventory passed at 271 cross-runtime edges after interleaved
+  Workstream 1 server-input migrations, 20 compatibility
   surfaces/42 probes, 9,892 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `07576969c`. Selected legacy
+The normal-consumer checkpoint passes through `d8275c5e9`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
-canonical presets; and server-intent completion projects durable runtime fields.
-The broader normal consumer cutover remains active; the model-owner cursor is not
-released yet.
+canonical presets; server-intent completion projects durable runtime fields; and
+ordinary provider request samplers use resolved runtime options. The broader
+normal consumer cutover remains active; the model-owner cursor is not released
+yet.

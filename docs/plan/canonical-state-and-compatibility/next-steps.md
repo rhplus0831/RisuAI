@@ -7,14 +7,14 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Thread resolved profile runtime sampling into the browser request parameter
-   builder so normal OpenAI, Anthropic, Gemini, Mistral, Cohere, Ooba, and plugin
-   adapters cannot read conflicting flat fields.
-2. Preserve the explicitly classified separate-parameter compatibility branch
-   while moving ordinary calls to the selected profile runtime input.
+1. Replace Anthropic thinking, DeepSeek thinking/reasoning, and V2 plugin
+   post-parameter reads with the resolved profile runtime values so stale flat
+   settings cannot overwrite the canonical sampler projection.
+2. Preserve flat behavior only when no resolved profile is present and retain
+   the explicitly classified separate-parameter compatibility branch.
 3. Continue replacing ordinary runtime reads of flat CBS, translation, agent,
-   and auxiliary settings with resolved durable-profile inputs; browser inlay
-   and Fastify server-intent completion are now canonical.
+   and auxiliary settings with resolved durable-profile inputs; browser inlay,
+   Fastify server-intent completion, and shared request samplers are canonical.
 4. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
 5. Prove provider/model/options/fallback parity in browser reload and request

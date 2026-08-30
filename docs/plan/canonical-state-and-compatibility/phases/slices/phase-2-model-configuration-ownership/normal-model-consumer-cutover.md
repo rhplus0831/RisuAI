@@ -1,7 +1,7 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; server-intent completion projection checkpoint through
-`07576969c`.
+Status: in progress; profile-owned request-sampling checkpoint through
+`d8275c5e9`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -82,6 +82,10 @@ classified static/legacy boundary removed to complete the cutover.
 - Fastify `/generate/completion` applies the same durable profile runtime
   projection as normal chat at `07576969c`, then applies only its explicit
   stream, max-token, temperature, and character-name request overrides.
+- Ordinary browser request adapters pass `resolvedProfile.runtimeOptions` into
+  the shared parameter builder at `d8275c5e9`; conflicting flat sampling values
+  no longer override durable profiles, while explicit separate-parameter
+  settings retain their classified precedence.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar
