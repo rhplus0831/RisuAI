@@ -13,8 +13,6 @@
   import { translateHTML } from '../../ts/translator/translator'
   import { pruneEmptyBilingualPairs } from '../../ts/translator/bilingualInterleave'
   import { getModuleAssets } from 'src/ts/process/modules'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
-  import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import {
     RegexDisplayReloadPointer,
@@ -27,6 +25,7 @@
     getChatBodyCachedOnlyLlmDetectionKey,
     getChatBodyParseMemoKey,
     memoizedChatBodyParse,
+    createChatBodyParseOwnerReaders,
   } from './ChatBodyParseMemo'
   import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
   import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
@@ -72,6 +71,7 @@
     onInitialDisplayParseStart = () => {},
     onInitialDisplayParseSettled = () => {},
   }: Props = $props()
+  const parseOwners = createChatBodyParseOwnerReaders()
 
   // svelte-ignore non_reactive_update
   let lastParsed = ''
@@ -125,8 +125,7 @@
   }
 
   function automaticClientTranslationEnabled(): boolean {
-    const characterOwner = getSelectedCharacterOwner()
-    const chat = characterOwner?.chats?.[characterOwner.chatPage]
+    const chat = parseOwners.activeChatOwner()
     return chat?.autoTranslate === true && !(chat.autoTranslateBotOnly === true && role === 'user')
   }
 
@@ -189,6 +188,7 @@
     try {
       const cachedOnlyDetectionMode = getChatBodyCachedOnlyLlmDetectionMode({
         fallbackMode: mode,
+        owners: parseOwners,
       })
       const cachedOnlyParseKey =
         cachedOnlyDetectionMode === 'raw'
@@ -196,6 +196,7 @@
           : getChatBodyParseMemoKey({
               data,
               charArg,
+              owners: parseOwners,
               mode: cachedOnlyDetectionMode,
               chatID,
               cbsConditions,
@@ -208,6 +209,7 @@
       const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
         data,
         charArg,
+        owners: parseOwners,
         chatID,
         cbsConditions,
         fallbackMode: mode,
@@ -218,12 +220,13 @@
         lastTranslationDetectionKey = detectionKey
         let translateText = false
         try {
-          const database = getDatabase()
+          const settings = parseOwners.settingsOwner()
           if (automaticClientTranslationEnabled()) {
-            if (database.autoTranslateCachedOnly && database.translatorType === 'llm') {
+            if (settings.autoTranslateCachedOnly && settings.translatorType === 'llm') {
               translateText = await getChatBodyCachedOnlyLlmDecision({
                 data,
                 charArg,
+                owners: parseOwners,
                 chatID,
                 cbsConditions,
                 displayLayer,
@@ -259,12 +262,12 @@
       }
 
       if (allowClientTranslation && (retranslate || translated)) {
-        const database = getDatabase()
-        if (database.showTranslationLoading) {
+        const settings = parseOwners.settingsOwner()
+        if (settings.showTranslationLoading) {
           lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
         }
 
-        if (database.translatorType === 'llm' && database.translateBeforeHTMLFormatting) {
+        if (settings.translatorType === 'llm' && settings.translateBeforeHTMLFormatting) {
           await sleep(100)
           const translatedHtml = await translateHTMLOnce(data, charArg, chatID, retranslate, data, setTranslatingForRun)
           if (!translatedHtml.ok) {
@@ -275,6 +278,7 @@
               memoizedChatBodyParse({
                 data: translatedHtml.value,
                 charArg,
+                owners: parseOwners,
                 mode,
                 chatID,
                 cbsConditions,
@@ -296,12 +300,13 @@
             }
           }, 10)
           return marked.value
-        } else if (!database.legacyTranslation) {
+        } else if (!settings.legacyTranslation) {
           const marked = await parseWithRetry(
             () =>
               memoizedChatBodyParse({
                 data,
                 charArg,
+                owners: parseOwners,
                 mode: 'pretranslate',
                 chatID,
                 cbsConditions,
@@ -347,6 +352,7 @@
               memoizedChatBodyParse({
                 data,
                 charArg,
+                owners: parseOwners,
                 mode,
                 chatID,
                 cbsConditions,
@@ -386,6 +392,7 @@
             memoizedChatBodyParse({
               data,
               charArg,
+              owners: parseOwners,
               mode,
               chatID,
               cbsConditions,
@@ -413,7 +420,7 @@
   }
 
   const checkImg = () => {
-    if (!getDatabase().newImageHandlingBeta || !bodyRoot) {
+    if (!parseOwners.settingsOwner().newImageHandlingBeta || !bodyRoot) {
       return
     }
     const imgs = bodyRoot.querySelectorAll(
@@ -421,10 +428,12 @@
     ) as NodeListOf<HTMLImageElement>
 
     if (imgs.length > 0) {
-      const currentCharacter = getSelectedCharacterOwner()
+      const currentCharacter = parseOwners.activeCharacterOwner()
       if (!currentCharacter) return
       const styl = currentCharacter.prebuiltAssetStyle
-      const assets = getModuleAssets().concat(currentCharacter.additionalAssets ?? [])
+      const assets = getModuleAssets({ character: currentCharacter, chat: parseOwners.activeChatOwner() }).concat(
+        currentCharacter.additionalAssets ?? [],
+      )
       const normalizedAssets = assets.map((asset) => {
         return {
           name: asset[0].toLocaleLowerCase(),

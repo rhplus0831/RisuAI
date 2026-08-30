@@ -5,7 +5,7 @@
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { selectMultipleFile } from 'src/ts/filePicker'
-  import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
   import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     appendFreshCharacterAdditionalAssets,
@@ -63,19 +63,25 @@
     index: number
     character: character | undefined
   } {
-    const database = getDatabase()
-    const index = database.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
+    const characters =
+      charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
+    const index = characters.findIndex((candidate) => candidate.chaId === characterId)
     return {
       index,
-      character: index >= 0 ? database.characters[index] : undefined,
+      character: selectCharacterOwner(characters, index),
     }
+  }
+
+  function selectedAdditionalAssetUploadCharacter(): character | undefined {
+    if (charactersResourceState.status === 'ready') return getSelectedCharacterOwner()
+    return selectCharacterOwner(getDatabase().characters, $selectedCharID)
   }
 
   function quickAddAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
     const live = findAdditionalAssetUploadCharacter(operation.characterId)
 
     return {
-      currentCharacterId: getDatabase().characters?.[$selectedCharID]?.chaId,
+      currentCharacterId: selectedAdditionalAssetUploadCharacter()?.chaId,
       rowCharacterId: live.character?.chaId ?? null,
       additionalAssets: live.character?.additionalAssets,
     }
@@ -112,7 +118,7 @@
     const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
       operation,
       freshness: {
-        currentCharacterId: getDatabase().characters?.[$selectedCharID]?.chaId,
+        currentCharacterId: selectedAdditionalAssetUploadCharacter()?.chaId,
         rowCharacterId: live.character?.chaId ?? null,
         additionalAssets: live.character?.additionalAssets,
       },

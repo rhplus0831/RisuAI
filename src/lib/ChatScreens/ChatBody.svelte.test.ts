@@ -9,7 +9,7 @@ const chatBodyMocks = vi.hoisted(() => ({
     additionalAssets: [],
     prebuiltAssetStyle: 'none',
   })),
-  getCurrentChat: vi.fn(() => ({ autoTranslate: true })),
+  getCurrentChat: vi.fn(() => ({ id: 'chat-a', autoTranslate: true })),
   getSelectedCharacterOwner: vi.fn(() => ({
     additionalAssets: [],
     prebuiltAssetStyle: 'none',
@@ -22,6 +22,10 @@ const chatBodyMocks = vi.hoisted(() => ({
   getLLMCache: vi.fn(async () => null),
   getLLMCacheMutationEpoch: vi.fn(() => 0),
   getModuleAssets: vi.fn(() => []),
+  chatMetadataOwner: { chatId: 'chat-a', autoTranslate: true } as
+    | { chatId: string; autoTranslate: boolean }
+    | undefined,
+  settingsOwner: {} as Record<string, unknown>,
   ParseMarkdown: vi.fn(async (text: string) => text),
   postTranslationParse: vi.fn(async (html: string) => html),
   sleep: vi.fn(async () => {}),
@@ -74,14 +78,25 @@ vi.mock('src/ts/characterState', () => ({
   getSelectedCharacterOwner: chatBodyMocks.getSelectedCharacterOwner,
 }))
 
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  collectionsResourceState: { values: { promptPresets: [] } },
+  getCharacterResourceOwner: () => chatBodyMocks.getSelectedCharacterOwner(),
+  getChatMetadataOwnerState: (chatId: string) =>
+    chatBodyMocks.chatMetadataOwner?.chatId === chatId ? chatBodyMocks.chatMetadataOwner : undefined,
+  settingsResourceState: {
+    get value() {
+      return chatBodyMocks.settingsOwner
+    },
+  },
+}))
+
 vi.mock('src/ts/globalApi.svelte', () => ({
   getFileSrc: chatBodyMocks.getFileSrc,
 }))
 
 import ChatBody from './ChatBody.svelte'
-import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
 
-chatBodyMocks.getDatabase.mockImplementation(() => testDatabaseState.db)
+chatBodyMocks.getDatabase.mockImplementation(() => chatBodyMocks.settingsOwner)
 
 async function flushComponentPromises() {
   for (let i = 0; i < 8; i++) {
@@ -91,7 +106,7 @@ async function flushComponentPromises() {
 }
 
 function setChatBodyDatabase(overrides: Record<string, unknown> = {}) {
-  testDatabaseState.db = {
+  chatBodyMocks.settingsOwner = {
     autoTranslateCachedOnly: false,
     legacyTranslation: false,
     newImageHandlingBeta: false,
@@ -99,7 +114,7 @@ function setChatBodyDatabase(overrides: Record<string, unknown> = {}) {
     translateBeforeHTMLFormatting: false,
     translatorType: 'google',
     ...overrides,
-  } as never
+  }
 }
 
 describe('ChatBody translation parse bounds', () => {
@@ -110,6 +125,15 @@ describe('ChatBody translation parse bounds', () => {
     target = document.createElement('div')
     document.body.appendChild(target)
     vi.clearAllMocks()
+    chatBodyMocks.chatMetadataOwner = { chatId: 'chat-a', autoTranslate: true }
+    chatBodyMocks.getCurrentChat.mockReturnValue({ id: 'chat-a', autoTranslate: true })
+    chatBodyMocks.getSelectedCharacterOwner.mockImplementation(() => ({
+      additionalAssets: [],
+      prebuiltAssetStyle: 'none',
+      chaId: 'char-a',
+      chatPage: 0,
+      chats: [chatBodyMocks.getCurrentChat()],
+    }))
     setChatBodyDatabase()
   })
 
@@ -120,7 +144,7 @@ describe('ChatBody translation parse bounds', () => {
     }
     target.remove()
     document.body.innerHTML = ''
-    testDatabaseState.db = {}
+    chatBodyMocks.settingsOwner = {}
   })
 
   it('surfaces translateHTML failure once without retrying the full pipeline', async () => {
@@ -187,7 +211,11 @@ describe('ChatBody translation parse bounds', () => {
   })
 
   it('skips client-path auto-translation for user rows in active-chat bot-only mode', async () => {
-    chatBodyMocks.getCurrentChat.mockReturnValue({ autoTranslate: true, autoTranslateBotOnly: true } as never)
+    chatBodyMocks.getCurrentChat.mockReturnValue({
+      id: 'chat-a',
+      autoTranslate: true,
+      autoTranslateBotOnly: true,
+    } as never)
     component = mount(ChatBody, {
       target,
       props: {
@@ -205,6 +233,68 @@ describe('ChatBody translation parse bounds', () => {
 
     expect(chatBodyMocks.translateHTML).not.toHaveBeenCalled()
     expect(target.textContent).toContain('preview user message')
+  })
+
+  it('fails closed for automatic translation when the active chat owner is missing or ambiguous', async () => {
+    chatBodyMocks.chatMetadataOwner = undefined
+    component = mount(ChatBody, {
+      target,
+      props: {
+        idx: -1,
+        modelShortName: '',
+        msgDisplay: 'ownerless preview message',
+        role: 'char',
+        translated: false,
+        translating: false,
+        retranslate: false,
+      },
+    })
+    flushSync()
+    await flushComponentPromises()
+
+    expect(chatBodyMocks.translateHTML).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('ownerless preview message')
+  })
+
+  it('resolves rendered image assets from the selected character and chat owners', async () => {
+    setChatBodyDatabase({ newImageHandlingBeta: true })
+    const owner = {
+      additionalAssets: [['portrait.png', 'owner-asset-id', 'png']],
+      prebuiltAssetStyle: 'contain',
+      chaId: 'char-a',
+      chatPage: 0,
+      chats: [chatBodyMocks.getCurrentChat()],
+    }
+    chatBodyMocks.getSelectedCharacterOwner.mockReturnValue(owner as never)
+    chatBodyMocks.getFileSrc.mockResolvedValue('/api/v1/assets/owner-asset-id')
+    const bodyRoot = document.createElement('span')
+    bodyRoot.innerHTML = '<img src="portrait.png">'
+    target.appendChild(bodyRoot)
+
+    component = mount(ChatBody, {
+      target,
+      props: {
+        bodyRoot,
+        idx: 0,
+        modelShortName: '',
+        msgDisplay: 'image owner body',
+        role: 'char',
+        translated: false,
+        translating: false,
+        retranslate: false,
+        allowClientTranslation: false,
+      },
+    })
+    flushSync()
+    await flushComponentPromises()
+
+    expect(chatBodyMocks.getModuleAssets).toHaveBeenCalledWith({
+      character: owner,
+      chat: owner.chats[0],
+    })
+    expect(chatBodyMocks.getFileSrc).toHaveBeenCalledWith('owner-asset-id')
+    expect(bodyRoot.querySelector('img')?.getAttribute('src')).toBe('/api/v1/assets/owner-asset-id')
+    expect(bodyRoot.querySelector('img')?.classList.contains('root-loaded-image-contain')).toBe(true)
   })
 
   it('reports the first display parse as pending until its rendered body settles', async () => {

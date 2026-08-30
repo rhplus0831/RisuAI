@@ -3,20 +3,20 @@ import { untrack } from 'svelte'
 import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
 import { getModules } from '../../ts/process/modules'
 import {
-  getDatabase,
+  type Chat,
   type customscript,
   type triggerscript,
   type character,
   type Database,
 } from '../../ts/storage/database.svelte'
 import { getSelectedCharacterOwner } from '../../ts/characterState'
-import { charactersResourceState } from '../../ts/server/resourceState.svelte'
 import {
-  CurrentTriggerIdStore,
-  ReloadGUIPointer,
-  VariableReloadGUIPointer,
-  selectedCharID,
-} from '../../ts/stores.svelte'
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+  settingsResourceState,
+} from '../../ts/server/resourceState.svelte'
+import { CurrentTriggerIdStore, ReloadGUIPointer, VariableReloadGUIPointer } from '../../ts/stores.svelte'
 import { getLLMCache, getLLMCacheMutationEpoch } from '../../ts/translator/translator'
 import { getActivePromptPresetRegexScripts } from '../../ts/process/promptPresetRegex'
 import {
@@ -26,11 +26,42 @@ import {
 import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
 import type { DisplaySourcePriority } from '../../ts/server/displaySources'
 
-type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'
+export type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'
 
-interface ChatBodyParseMemoInput {
+export interface ChatBodyParseOwnerReaders {
+  characterOwner: (
+    charArg: string | simpleCharacterArgument | character | null,
+  ) => simpleCharacterArgument | character | undefined
+  activeCharacterOwner: () => character | undefined
+  activeChatOwner: () => Chat | undefined
+  settingsOwner: () => Partial<Database>
+  promptPresetOwners: () => Database['promptPresets'] | undefined
+}
+
+export function createChatBodyParseOwnerReaders(): ChatBodyParseOwnerReaders {
+  const activeChatOwner = (): Chat | undefined => {
+    const character = getSelectedCharacterOwner()
+    const chat = character?.chats?.[character.chatPage]
+    if (!chat?.id || getChatMetadataOwnerState(chat.id)?.chatId !== chat.id) return undefined
+    return chat
+  }
+
+  return {
+    characterOwner: (charArg) => {
+      if (typeof charArg === 'string') return getCharacterResourceOwner(charArg)
+      return charArg ?? undefined
+    },
+    activeCharacterOwner: getSelectedCharacterOwner,
+    activeChatOwner,
+    settingsOwner: () => settingsResourceState.value as Partial<Database>,
+    promptPresetOwners: () => collectionsResourceState.values.promptPresets,
+  }
+}
+
+export interface ChatBodyParseMemoInput {
   data: string
   charArg: string | simpleCharacterArgument | character | null
+  owners: ChatBodyParseOwnerReaders
   mode: ChatBodyParseMode
   chatID: number
   cbsConditions: CbsConditions
@@ -42,9 +73,10 @@ interface ChatBodyParseMemoInput {
   memoKey?: string
 }
 
-interface ChatBodyCachedOnlyInput {
+export interface ChatBodyCachedOnlyInput {
   data: string
   charArg: string | simpleCharacterArgument | character | null
+  owners: ChatBodyParseOwnerReaders
   chatID: number
   cbsConditions: CbsConditions
   fallbackMode: ChatBodyParseMode
@@ -198,19 +230,13 @@ function tupleListSignature(tuples?: readonly unknown[] | null) {
   )
 }
 
-function findCharacterByArg(charArg: ChatBodyParseMemoInput['charArg']) {
-  if (!charArg || typeof charArg !== 'string') {
-    return charArg
-  }
-  const matches = charactersResourceState.characters.filter((char: character) => char?.chaId === charArg)
-  return matches.length === 1 ? matches[0] : charArg
+function findCharacterByArg(charArg: ChatBodyParseMemoInput['charArg'], owners: ChatBodyParseOwnerReaders) {
+  return owners.characterOwner(charArg)
 }
 
-function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
-  const char = untrack(() => findCharacterByArg(charArg))
-  if (!char || typeof char === 'string') {
-    return char
-  }
+function characterSignature(charArg: ChatBodyParseMemoInput['charArg'], owners: ChatBodyParseOwnerReaders) {
+  const char = untrack(() => findCharacterByArg(charArg, owners))
+  if (!char) return null
 
   return {
     type: char.type,
@@ -226,13 +252,13 @@ function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
   }
 }
 
-function characterSignatureToken(charArg: ChatBodyParseMemoInput['charArg']) {
+function characterSignatureToken(charArg: ChatBodyParseMemoInput['charArg'], owners: ChatBodyParseOwnerReaders) {
   const reloadEpoch = get(ReloadGUIPointer)
-  const char = untrack(() => findCharacterByArg(charArg))
-  if (!char || typeof char === 'string') {
+  const char = untrack(() => findCharacterByArg(charArg, owners))
+  if (!char) {
     return {
       reloadEpoch,
-      primitive: char ?? null,
+      primitive: null,
     }
   }
 
@@ -252,33 +278,40 @@ function characterSignatureToken(charArg: ChatBodyParseMemoInput['charArg']) {
   }
 }
 
-function serializedCharacterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
+function serializedCharacterSignature(charArg: ChatBodyParseMemoInput['charArg'], owners: ChatBodyParseOwnerReaders) {
   return cachedSerializedSignature(
     characterSignatureMemo,
-    characterSignatureToken(charArg),
-    () => characterSignature(charArg),
+    characterSignatureToken(charArg, owners),
+    () => characterSignature(charArg, owners),
     'characterSignatureBuilds',
   )
 }
 
-function safeGetModules() {
+function safeGetModules(owners: ChatBodyParseOwnerReaders) {
   try {
-    return getModules()
+    return getModules({ character: owners.activeCharacterOwner(), chat: owners.activeChatOwner() })
   } catch {
     return []
   }
 }
 
-function safeGetActivePromptPresetRegexScripts() {
+function safeGetActivePromptPresetRegexScripts(owners: ChatBodyParseOwnerReaders) {
   try {
-    return getActivePromptPresetRegexScripts(getDatabase())
+    const settings = owners.settingsOwner()
+    return getActivePromptPresetRegexScripts(
+      {
+        ...settings,
+        promptPresets: owners.promptPresetOwners() ?? [],
+      } as Database,
+      owners.activeChatOwner(),
+    )
   } catch {
-    const db = getDatabase() as Partial<Database>
-    return Array.isArray(db.presetRegex) ? db.presetRegex : []
+    const settings = owners.settingsOwner()
+    return Array.isArray(settings.presetRegex) ? settings.presetRegex : []
   }
 }
 
-function moduleSignature(modules = safeGetModules()) {
+function moduleSignature(modules: ReturnType<typeof getModules>) {
   try {
     return modules.map((module) => ({
       id: module?.id,
@@ -294,7 +327,7 @@ function moduleSignature(modules = safeGetModules()) {
   }
 }
 
-function moduleSignatureToken(modules = safeGetModules()) {
+function moduleSignatureToken(modules: ReturnType<typeof getModules>) {
   return {
     reloadEpoch: get(ReloadGUIPointer),
     modules: modules.map((module) => ({
@@ -309,7 +342,7 @@ function moduleSignatureToken(modules = safeGetModules()) {
   }
 }
 
-function serializedModuleSignature(modules = safeGetModules()) {
+function serializedModuleSignature(modules: ReturnType<typeof getModules>) {
   return cachedSerializedSignature(
     moduleSignatureMemo,
     moduleSignatureToken(modules),
@@ -318,87 +351,57 @@ function serializedModuleSignature(modules = safeGetModules()) {
   )
 }
 
-function activeChatSignature() {
-  const selectedChar = get(selectedCharID)
-  const char = getSelectedCharacterOwner()
-  let chatId: string | undefined
-  let chatModules: unknown
-  let scriptstate: unknown
-  try {
-    const currentChat = char?.chats?.[char.chatPage]
-    chatId = currentChat?.id
-    chatModules = currentChat?.modules
-    scriptstate = currentChat?.scriptstate
-  } catch {
-    const fallbackChat = char?.chats?.[char?.chatPage]
-    chatId = fallbackChat?.id
-    chatModules = fallbackChat?.modules
-    scriptstate = fallbackChat?.scriptstate
-  }
+function activeChatSignature(owners: ChatBodyParseOwnerReaders) {
+  const char = owners.activeCharacterOwner()
+  const chat = owners.activeChatOwner()
 
   return {
-    selectedChar,
     chaId: char?.chaId,
     chatPage: char?.chatPage,
-    chatId,
-    chatModules,
-    scriptstate: normalizeForSignature(scriptstate ?? null),
+    chatId: chat?.id,
+    chatModules: chat?.modules,
+    scriptstate: normalizeForSignature(chat?.scriptstate ?? null),
   }
 }
 
-function activeChatSignatureToken() {
-  const selectedChar = get(selectedCharID)
-  const char = getSelectedCharacterOwner()
-  let chatId: string | undefined
-  let chatModules: unknown
-  let scriptstate: unknown
-  try {
-    const currentChat = char?.chats?.[char.chatPage]
-    chatId = currentChat?.id
-    chatModules = currentChat?.modules
-    scriptstate = currentChat?.scriptstate
-  } catch {
-    const fallbackChat = char?.chats?.[char?.chatPage]
-    chatId = fallbackChat?.id
-    chatModules = fallbackChat?.modules
-    scriptstate = fallbackChat?.scriptstate
-  }
+function activeChatSignatureToken(owners: ChatBodyParseOwnerReaders) {
+  const char = owners.activeCharacterOwner()
+  const chat = owners.activeChatOwner()
 
   return {
     reloadEpoch: get(ReloadGUIPointer),
-    selectedChar,
     chaId: char?.chaId,
     chatPage: char?.chatPage,
-    chatId,
-    chatModules: scalarListSignature(chatModules),
-    scriptstate: normalizeForSignature(scriptstate ?? null),
+    chatId: chat?.id,
+    chatModules: scalarListSignature(chat?.modules),
+    scriptstate: normalizeForSignature(chat?.scriptstate ?? null),
   }
 }
 
-function serializedActiveChatSignature() {
+function serializedActiveChatSignature(owners: ChatBodyParseOwnerReaders) {
   return cachedSerializedSignature(
     activeChatSignatureMemo,
-    activeChatSignatureToken(),
-    activeChatSignature,
+    activeChatSignatureToken(owners),
+    () => activeChatSignature(owners),
     'activeChatSignatureBuilds',
   )
 }
 
-function moduleRegexSignature(modules = safeGetModules()) {
+function moduleRegexSignature(modules: ReturnType<typeof getModules>) {
   return modules.flatMap((module) => scriptListSignature(module?.regex))
 }
 
-function moduleAssetsSignature(modules = safeGetModules()) {
+function moduleAssetsSignature(modules: ReturnType<typeof getModules>) {
   return modules.flatMap((module) => module?.assets ?? [])
 }
 
-function parseSettingsSignature(modules = safeGetModules()) {
-  const db = getDatabase() as Partial<Database>
+function parseSettingsSignature(owners: ChatBodyParseOwnerReaders, modules: ReturnType<typeof getModules>) {
+  const db = owners.settingsOwner()
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
     globalRegex: untrackedScriptListSignature(() => db.globalscript),
-    presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts()),
+    presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts(owners)),
     moduleRegex: untrack(() => moduleRegexSignature(modules)),
     moduleAssets: moduleAssetsSignature(modules),
     hideAllImages: db.hideAllImages,
@@ -417,13 +420,13 @@ function parseSettingsSignature(modules = safeGetModules()) {
   }
 }
 
-function settingsSignatureToken(modules = safeGetModules()) {
-  const db = getDatabase() as Partial<Database>
+function settingsSignatureToken(owners: ChatBodyParseOwnerReaders, modules: ReturnType<typeof getModules>) {
+  const db = owners.settingsOwner()
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
     globalRegex: untrackedScriptListSignature(() => db.globalscript),
-    presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts()),
+    presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts(owners)),
     moduleRegex: untrack(() => moduleRegexSignature(modules)),
     moduleAssets: tupleListSignature(moduleAssetsSignature(modules)),
     hideAllImages: db.hideAllImages,
@@ -442,11 +445,11 @@ function settingsSignatureToken(modules = safeGetModules()) {
   }
 }
 
-function serializedSettingsSignature(modules = safeGetModules()) {
+function serializedSettingsSignature(owners: ChatBodyParseOwnerReaders, modules: ReturnType<typeof getModules>) {
   return cachedSerializedSignature(
     settingsSignatureMemo,
-    settingsSignatureToken(modules),
-    () => parseSettingsSignature(modules),
+    settingsSignatureToken(owners, modules),
+    () => parseSettingsSignature(owners, modules),
     'settingsSignatureBuilds',
   )
 }
@@ -454,25 +457,24 @@ function serializedSettingsSignature(modules = safeGetModules()) {
 export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
   return untrack(() => {
     debugStats.parseKeyBuilds += 1
-    const modules = safeGetModules()
-    return `{"activeChat":${serializedActiveChatSignature()},"cbsConditions":${stableFragment(
+    const modules = safeGetModules(input.owners)
+    return `{"activeChat":${serializedActiveChatSignature(input.owners)},"cbsConditions":${stableFragment(
       input.cbsConditions ?? {},
-    )},"character":${serializedCharacterSignature(input.charArg)},"chatID":${stableFragment(
+    )},"character":${serializedCharacterSignature(input.charArg, input.owners)},"chatID":${stableFragment(
       input.chatID,
     )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
       input.mode,
     )},"displayLayer":${stableFragment(input.displayLayer)},"messageId":${stableFragment(
       input.messageId,
-    )},"name":${stableFragment(input.name)},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(
-      modules,
-    )},"streaming":${stableFragment(input.streaming)},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
+    )},"name":${stableFragment(input.name)},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(input.owners, modules)},"streaming":${stableFragment(
+      input.streaming,
+    )},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
   })
 }
 
-function getTranslateSettingsSignature() {
-  const db = getDatabase() as Partial<Database>
-  const selectedCharacter = getSelectedCharacterOwner()
-  const chat = selectedCharacter?.chats?.[selectedCharacter.chatPage]
+function getTranslateSettingsSignature(owners: ChatBodyParseOwnerReaders) {
+  const db = owners.settingsOwner()
+  const chat = owners.activeChatOwner()
   return {
     autoTranslate: chat?.autoTranslate,
     autoTranslateBotOnly: chat?.autoTranslateBotOnly,
@@ -487,14 +489,14 @@ function getTranslateSettingsSignature() {
 }
 
 export function getChatBodyCachedOnlyLlmDetectionMode(
-  input: Pick<ChatBodyCachedOnlyInput, 'fallbackMode'>,
+  input: Pick<ChatBodyCachedOnlyInput, 'fallbackMode' | 'owners'>,
 ): ChatBodyParseMode | 'raw' {
-  const db = getDatabase() as Partial<Database>
+  const db = input.owners.settingsOwner()
   return db.translateBeforeHTMLFormatting ? 'raw' : db.legacyTranslation ? input.fallbackMode : 'pretranslate'
 }
 
 export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyInput): string {
-  const db = getDatabase() as Partial<Database>
+  const db = input.owners.settingsOwner()
   const detectionMode = getChatBodyCachedOnlyLlmDetectionMode(input)
   const parseKey =
     detectionMode === 'raw'
@@ -503,6 +505,7 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
         getChatBodyParseMemoKey({
           data: input.data,
           charArg: input.charArg,
+          owners: input.owners,
           mode: detectionMode,
           chatID: input.chatID,
           cbsConditions: input.cbsConditions,
@@ -519,7 +522,7 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
   return `{"detectionMode":${stableFragment(
     detectionMode,
   )},"kind":"chat-body-llm-cache-exists"${parseKeyFragment}${rawDataFragment},"translateSettings":${stableFragment(
-    getTranslateSettingsSignature(),
+    getTranslateSettingsSignature(input.owners),
   )}}`
 }
 
@@ -531,13 +534,20 @@ export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<st
       return refresh(parseMemo, key, cached)
     }
 
-    const promise = ParseMarkdown(input.data, input.charArg, input.mode, input.chatID, input.cbsConditions, {
-      layer: input.displayLayer,
-      messageId: input.messageId,
-      name: input.name,
-      streaming: input.streaming,
-      priority: input.displayPriority,
-    }).catch((error) => {
+    const promise = ParseMarkdown(
+      input.data,
+      input.owners.characterOwner(input.charArg) ?? null,
+      input.mode,
+      input.chatID,
+      input.cbsConditions,
+      {
+        layer: input.displayLayer,
+        messageId: input.messageId,
+        name: input.name,
+        streaming: input.streaming,
+        priority: input.displayPriority,
+      },
+    ).catch((error) => {
       parseMemo.delete(key)
       throw error
     })
@@ -554,12 +564,13 @@ export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnly
   }
 
   const promise = (async () => {
-    const db = getDatabase() as Partial<Database>
+    const db = input.owners.settingsOwner()
     const cacheKey = db.translateBeforeHTMLFormatting
       ? input.data
       : await memoizedChatBodyParse({
           data: input.data,
           charArg: input.charArg,
+          owners: input.owners,
           mode: getChatBodyCachedOnlyLlmDetectionMode(input) as ChatBodyParseMode,
           chatID: input.chatID,
           cbsConditions: input.cbsConditions,

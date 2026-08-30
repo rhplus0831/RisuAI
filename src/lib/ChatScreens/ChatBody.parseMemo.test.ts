@@ -306,6 +306,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'L30 parse memo body one',
       charArg: dbChar.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -449,6 +450,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'Sentence paragraph memo body',
       charArg: getResourceDatabase().characters[0].chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -498,6 +500,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'active prompt regex memo body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -528,6 +531,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'global regex memo body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -558,6 +562,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'synthetic greeting body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: -1,
       cbsConditions: { firstmsg: true, chatRole: 'char' },
@@ -606,6 +611,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'heavy lua memo body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       mode: 'notrim' as const,
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
@@ -662,6 +668,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'prebuilt cached body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
       fallbackMode: 'notrim' as const,
@@ -669,6 +676,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const cachedOnlyParseKey = memoModule.getChatBodyParseMemoKey({
       data: input.data,
       charArg: input.charArg,
+      owners: input.owners,
       mode: 'pretranslate',
       chatID: input.chatID,
       cbsConditions: input.cbsConditions,
@@ -848,6 +856,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'cached body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
       fallbackMode: 'notrim' as const,
@@ -901,6 +910,7 @@ describe('ChatBody content-keyed parse memo', () => {
     const input = {
       data: 'epoch cached body',
       charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
       chatID: 0,
       cbsConditions: { firstmsg: false, chatRole: 'char' },
       fallbackMode: 'notrim' as const,
@@ -928,6 +938,76 @@ describe('ChatBody content-keyed parse memo', () => {
     await expect(memoModule.getChatBodyCachedOnlyLlmDecision(input)).resolves.toBe(false)
     expect(getLLMCacheSpy).toHaveBeenCalledTimes(3)
     expect(clearSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails closed on duplicate character owners before invoking the parser', async () => {
+    const char = seedDb()
+    getResourceDatabase().characters.push(structuredClone(char))
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    const parseSpy = vi.spyOn(parserModule, 'ParseMarkdown').mockResolvedValue('ownerless parse')
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const owners = memoModule.createChatBodyParseOwnerReaders()
+
+    expect(owners.characterOwner(char.chaId)).toBeUndefined()
+    expect(owners.activeCharacterOwner()).toBeUndefined()
+    await memoModule.memoizedChatBodyParse({
+      data: 'duplicate owner body',
+      charArg: char.chaId,
+      owners,
+      mode: 'notrim',
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    })
+
+    expect(parseSpy).toHaveBeenCalledWith(
+      'duplicate owner body',
+      null,
+      'notrim',
+      0,
+      { firstmsg: false, chatRole: 'char' },
+      expect.any(Object),
+    )
+  })
+
+  it('fails closed on duplicate active chat IDs', async () => {
+    seedDb()
+    const ownerCharacter = getResourceDatabase().characters[0]
+    ownerCharacter.chats.push({
+      ...(JSON.parse(JSON.stringify(ownerCharacter.chats[0])) as (typeof ownerCharacter.chats)[number]),
+      name: 'Duplicate chat',
+    })
+    const memoModule = await import('./ChatBodyParseMemo')
+    const owners = memoModule.createChatBodyParseOwnerReaders()
+
+    expect(owners.activeCharacterOwner()?.chaId).toBe(ownerCharacter.chaId)
+    expect(owners.activeChatOwner()).toBeUndefined()
+  })
+
+  it('keys display settings from the explicit settings owner', async () => {
+    const char = seedDb({ customQuotes: false })
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    let settingsOwner: Partial<Database> = { customQuotes: false }
+    const owners = {
+      ...memoModule.createChatBodyParseOwnerReaders(),
+      settingsOwner: () => settingsOwner,
+    }
+    const input = {
+      data: 'explicit settings owner body',
+      charArg: char.chaId,
+      owners,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const initialKey = memoModule.getChatBodyParseMemoKey(input)
+    getResourceDatabase().customQuotes = true
+    expect(memoModule.getChatBodyParseMemoKey(input)).toBe(initialKey)
+
+    settingsOwner = { customQuotes: true }
+    expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(initialKey)
   })
 
   it('explicit retranslate still calls translateHTML with regenerate enabled', async () => {

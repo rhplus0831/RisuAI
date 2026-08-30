@@ -5,6 +5,7 @@ const assetInputMocks = vi.hoisted(() => ({
   database: {
     characters: [] as Array<Record<string, unknown>>,
   },
+  characters: [] as Array<Record<string, unknown>>,
   getFileSrc: vi.fn(async (assetId: string) => `/api/v1/assets/${assetId}`),
   owner: undefined as unknown,
   status: 'idle' as string,
@@ -28,6 +29,11 @@ vi.mock('src/ts/stores.svelte', async () => {
 
 vi.mock('src/ts/characterState', () => ({
   getSelectedCharacterOwner: () => assetInputMocks.owner,
+  selectCharacterOwner: (characters: Array<Record<string, unknown>>, selectedIndex: number) => {
+    const candidate = characters[selectedIndex]
+    if (typeof candidate?.chaId !== 'string') return undefined
+    return characters.filter((character) => character.chaId === candidate.chaId).length === 1 ? candidate : undefined
+  },
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
@@ -55,6 +61,7 @@ afterEach(() => {
   vi.clearAllMocks()
   assetInputMocks.owner = undefined
   assetInputMocks.status = 'idle'
+  assetInputMocks.characters = []
 })
 
 describe('AssetInput', () => {
@@ -134,6 +141,41 @@ describe('AssetInput', () => {
     ])
   })
 
+  it('renders the ready resource owner instead of a divergent compatibility prop', async () => {
+    const aggregateCharacter = {
+      type: 'character',
+      chaId: 'character-a',
+      additionalAssets: [['aggregate.png', 'aggregate-asset-id', 'png']],
+    }
+    const ownerCharacter = {
+      type: 'character',
+      chaId: 'character-a',
+      additionalAssets: [['owner.png', 'owner-asset-id', 'png']],
+    }
+    assetInputMocks.database.characters = [aggregateCharacter]
+    assetInputMocks.characters = [ownerCharacter]
+    assetInputMocks.owner = ownerCharacter
+    assetInputMocks.status = 'ready'
+    target = document.createElement('div')
+    document.body.appendChild(target)
+
+    component = mount(AssetInput, {
+      target,
+      props: {
+        currentCharacter: aggregateCharacter as any,
+        onSelect: vi.fn(),
+      },
+    })
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(target.querySelector('button[aria-label="owner.png"]')).not.toBeNull()
+    expect(target.querySelector('button[aria-label="aggregate.png"]')).toBeNull()
+    expect(assetInputMocks.getFileSrc).toHaveBeenCalledWith('owner-asset-id')
+    expect(assetInputMocks.getFileSrc).not.toHaveBeenCalledWith('aggregate-asset-id')
+  })
+
   it('fails closed when the ready resource projection has no unique owner', async () => {
     const duplicateCharacter = {
       type: 'character',
@@ -142,6 +184,7 @@ describe('AssetInput', () => {
     }
     assetInputMocks.status = 'ready'
     assetInputMocks.owner = undefined
+    assetInputMocks.characters = [duplicateCharacter, { ...duplicateCharacter }]
     target = document.createElement('div')
     document.body.appendChild(target)
 
