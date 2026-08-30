@@ -203,9 +203,11 @@ and `vitest.frontend-routing.ts` owns their disjoint filename/registration
 contract. Plain `*.test.ts` files default to Node; `*.svelte-node.test.ts` uses
 client-mode Svelte transformation against Node globals; `.svelte.test.ts` and
 `.dom.test.ts` use Svelte/Happy-DOM. The DOM project also positively includes
-187 reviewed pre-suffix owners whose Phase 3-5 probes proved transitive browser
-requirements. This registration avoids rename-only churn; there is no
-unclassified-to-DOM fallback. The Svelte+Node custom environment
+167 reviewed pre-suffix owners whose current probes still require browser
+behavior or transitive browser access. A fresh 2026-08-30 probe moved 20 legacy
+registrations and one state-only `.svelte.test.ts` owner to Node. This
+registration avoids rename-only churn; there is no unclassified-to-DOM
+fallback. The Svelte+Node custom environment
 delegates to Vitest's Node setup while selecting Vite's client transform so
 `$effect` retains client semantics.
 

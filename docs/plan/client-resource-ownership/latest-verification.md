@@ -21,7 +21,7 @@ Environment: Node.js `v24.19.0`, pnpm `11.23.0`.
 
 ## Commands
 
-- `pnpm exec vitest run packages/protocol/src/durableCommandOperation.test.ts src/ts/server/lorebookPageOwner.svelte.test.ts src/ts/server/lorebookPageSelectionPersistence.test.ts`
+- `pnpm exec vitest run packages/protocol/src/durableCommandOperation.test.ts src/ts/server/lorebookPageOwner.test.ts src/ts/server/lorebookPageSelectionPersistence.test.ts`
   — passed, 3 files and 28 tests.
 - `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts`
   — passed, 1 file and 15 tests, including settings-row-only lorebook
