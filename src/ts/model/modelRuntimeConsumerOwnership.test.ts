@@ -60,4 +60,11 @@ describe('browser model-runtime consumer ownership', () => {
     expect(translator).toContain('isNovelListModelProfile(profile)')
     expect(translator).toContain('translateSourceLanguage: getTranslateSourceLanguage(db)')
   })
+
+  it('routes settings metadata through the resolved model context', () => {
+    const parameters = source('src/ts/setting/botSettingsParamsData.ts')
+
+    expect(parameters).not.toContain('ctx.db.aiModel')
+    expect(parameters).toContain('ctx.modelInfo.id')
+  })
 })
