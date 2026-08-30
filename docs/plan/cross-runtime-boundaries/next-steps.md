@@ -4,17 +4,17 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [MCP identifier ownership
-slice](phases/slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md).
+Execute the [mutation-certificate ownership
+slice](phases/slices/phase-4-server-consumer-migration/mutation-certificate-ownership.md).
 
-1. Move the dependency-free MCP importability predicate to a dedicated
-   `@risuai/shared-core` subpath.
-2. Point the browser import flow and Fastify module command validator at that
-   owner without widening accepted identifiers.
-3. Preserve HTTPS, loopback HTTP, and non-whitespace `internal:`, `stdio:`, and
-   `plugin:` syntax exactly; do not move DNS, OAuth, or runtime egress policy.
-4. Add behavior and closed ownership proof, refresh the architecture baseline,
-   and run the focused module and Phase 10 suites plus both type gates.
+1. Move persona ID, collection, and legacy-profile digest inputs plus script
+   definition collection digest inputs to one dependency-free shared leaf.
+2. Retain browser facades for existing callers; point Fastify commands and
+   focused server tests directly at the shared owner.
+3. Preserve version prefixes, recursive lexical object-key sorting, array
+   order, own `__proto__` keys, and profile field order exactly.
+4. Do not move mutation classification, hashing, command validation,
+   persistence, revisions, receipts, or events.
 
 ## Foundations Released
 
@@ -94,16 +94,20 @@ slice](phases/slices/phase-4-server-consumer-migration/mcp-identifier-ownership.
   consumers use a closed server-owned module projection with AST parity proof.
 - Bounded-regex settings are released at `9bcffa62e`; Fastify accepts only the
   five compatibility, timeout, and output-bound fields it reads.
+- MCP identifier validation is released at `12076cc52`; browser and Fastify
+  consumers use the eighteenth audited shared-core leaf.
+- The large deterministic corpus and Phase 9 CBS fixtures are released at
+  `e75d742b6` under the neutral `test/fixtures` owner.
 
 ## Not In This Slice
 
-- Do not change module activation, module persistence, MCP execution, OAuth,
-  credential handling, or egress validation.
-- Do not fold identifier importability into Fastify's network authorization
-  policy; the predicate is shared input syntax only.
+- Do not move the script mutation classifier or any persona/script command
+  policy into shared core.
+- Do not change SHA-256 use, certificate envelopes, request bodies, response
+  validation, collection writes, or rollback behavior.
 
 ## Handoff
 
-After this slice closes, relocate the two neutral test-fixture families from the
-browser tree, then select the next production Phase 4 consumer migration from
-the refreshed inventory.
+After this slice closes, select the next production Phase 4 consumer migration
+from the refreshed inventory; the parser core, prompt-template consumers, and
+model-owned configuration remain separate domains.

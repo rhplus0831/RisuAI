@@ -57,5 +57,7 @@ Completed slices:
 - [Generation-finalization retry message seam](slices/phase-4-server-consumer-migration/generation-finalization-retry-message-seam.md)
 - [Module/trigger descriptor ownership](slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md)
 - [Bounded-regex settings seam](slices/phase-4-server-consumer-migration/bounded-regex-settings-seam.md)
+- [MCP identifier ownership](slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md)
+- [Neutral cross-runtime test fixtures](slices/phase-4-server-consumer-migration/neutral-cross-runtime-test-fixtures.md)
 
-Active slice: [MCP identifier ownership](slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md).
+Active slice: [Mutation-certificate ownership](slices/phase-4-server-consumer-migration/mutation-certificate-ownership.md).

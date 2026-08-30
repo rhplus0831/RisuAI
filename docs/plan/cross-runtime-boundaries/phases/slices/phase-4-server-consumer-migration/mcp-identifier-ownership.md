@@ -1,6 +1,6 @@
 # MCP Identifier Ownership
 
-Status: ready.
+Status: complete at `12076cc52`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -16,7 +16,7 @@ neutral shared owner used by browser import and Fastify command validation.
 - Non-whitespace `internal:`, `stdio:`, and `plugin:` identifiers.
 - HTTPS URLs.
 - HTTP URLs limited to localhost, IPv6 loopback, and `127.*` hosts.
-- Expected delta: one production runtime root-`src` edge; 211 total edges become
+- Delivered delta: one production runtime root-`src` edge; 211 total edges became
   210.
 
 ## Behavior Contract
@@ -28,6 +28,6 @@ current owners.
 
 ## Validation
 
-Run the shared behavior/ownership suite, browser module import tests, Phase 10
-compatibility structure, both typechecks, architecture inventory, formatting,
-and diff checks.
+Shared behavior/ownership, browser module import, and Phase 10 structure suites
+passed 15, 1, 40, and 4 tests. Both typechecks, the 210-edge architecture
+inventory, formatting, and diff checks passed.
