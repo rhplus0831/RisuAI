@@ -68,12 +68,12 @@ entrypoints are:
 | Full local quality aggregate | `pnpm test:all` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
-Use the owning test file or `test:affected` during edits, and reuse an exact
-passing watcher result instead of rerunning `check` plus `test:affected`. Run a
-complete owning lane or `test:all` once per coherent verification batch. Do not
-run all component checks and lanes immediately before `test:all`; the aggregate
-already owns them. Related additive protocol exports are intentionally batched
-on targeted feedback before the one integration-boundary aggregate.
+Use the owning test file during edits, then run `test:affected` once per coherent
+verification batch. A commit alone is not a verification boundary. Run a
+complete owning lane or `test:all` only when the changed scope requires it, and
+do not run all component checks and lanes immediately before `test:all`; the
+aggregate already owns them. Related additive protocol exports are intentionally
+batched on targeted feedback before the one integration-boundary aggregate.
 
 ### Compatibility evidence ownership
 

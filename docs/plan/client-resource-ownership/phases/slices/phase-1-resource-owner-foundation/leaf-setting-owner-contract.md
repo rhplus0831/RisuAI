@@ -59,9 +59,8 @@ local to the unused owner API until the later Phase 2 migration slice.
 
 ## Validation
 
-Focused owner/read/command/outbox tests, the affected frontend set or current
-watcher proof, mandatory architecture gates, relevant typechecks, formatting,
-and `git diff --check`.
+Focused owner/read/command/outbox tests, the affected frontend set, mandatory
+architecture gates, relevant typechecks, formatting, and `git diff --check`.
 
 ## Done When
 

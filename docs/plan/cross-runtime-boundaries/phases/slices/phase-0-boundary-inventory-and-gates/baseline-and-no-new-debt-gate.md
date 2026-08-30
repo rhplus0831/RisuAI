@@ -58,8 +58,6 @@ application model, test fixture, server-only behavior, or accidental dependency.
 - `pnpm format:check`
 - `git diff --check`
 
-Use the repository watcher result when it is live and valid under `AGENTS.md`.
-
 ## Done When
 
 - The inventory is deterministic on a clean worktree and covers production,

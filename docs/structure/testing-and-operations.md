@@ -38,13 +38,9 @@ current commands and behavior stay authoritative here.
 | `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the Phase 7 direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                      |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
-| `pnpm check:watch`                 | Keep the same Svelte project warm, rerun incremental diagnostics after source edits, and emit machine-readable cycles for `test:watch`.                                      |
 | `pnpm check:server`                | Check protocol types, emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting server code.        |
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane, including UI audit probes but excluding explicit performance gates.                                |
 | `pnpm test:quick`, `pnpm test:affected` | Run changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD`.                            |
-| `pnpm test:watch:agent`            | Supervise the worktree watcher, keep Svelte diagnostics and ordinary frontend/server Vitest contexts warm, restart failed workers, and publish ignored status/log artifacts under `.test-watch/`. |
-| `pnpm test:watch:await`            | Wait for the supervised watcher to finish the exact current worktree; exits `0` for pass, `1` for failure, `2` while still pending at the timeout, and `3` when unavailable. |
-| `pnpm test:watch:status`           | Show the non-blocking supervised-worker health and exact-fingerprint result with the same `0`/`1`/`2`/`3` outcome classes. |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                                              |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit performance gates.                                                                                                       |
 | `pnpm test:gates`                  | Run the UI-audit and explicit performance gates together; UI-audit coverage is also present in `test:frontend`.                                                              |
@@ -101,116 +97,6 @@ and run the aggregate once at the integration boundary. On a fresh machine, run
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
-
-### Background Svelte-check and affected-test watcher
-
-Run `pnpm test:watch:agent` in the task's integrated terminal to move the
-Svelte-check and affected-test feedback loops into a persistent process. It
-debounces edit bursts, captures the complete Git diff plus untracked files,
-hashes the contents and metadata of every changed path, and builds the same plan
-as `pnpm test:affected`. The first compatible affected scope runs as a full
-baseline. After it passes, the watcher compares per-path fingerprints with that
-passing snapshot and executes only the latest compatible delta while retaining
-the full affected scope as the reported coverage. Modified tests rerun directly;
-new test files are registered with their matching Vitest project and run
-directly; modified source files use dependency-aware selection. Source additions,
-deletions, renames, HEAD changes, and affected-lane shape changes fall back to a
-new full baseline. A failed generation cannot seed an incremental test run.
-
-The watcher starts the Svelte-check process exposed as `pnpm check:watch` once
-and treats each completed diagnostic cycle as the frontend-check command.
-Svelte-check retains its language-service state, so the initial project
-diagnostic pass is full while later source edits reuse the warm TypeScript/Svelte
-program. A relevant edit invalidates an older cycle; diagnostics that finish
-after another edit are discarded until a cycle for the newest source version
-completes. Warnings remain visible but preserve the ordinary `pnpm check` exit
-policy: only errors fail the command. Source additions, deletions, and renames
-conservatively recycle the warm process after the edit debounce so newly imported
-modules cannot retain a transient pre-save snapshot. Changes outside the root
-Svelte project otherwise reuse its latest diagnostic cycle; imported JSON and
-checker-configuration edits also recycle the warm process before publishing a
-new result.
-
-Ordinary direct/dependency-aware frontend and server runs reuse long-lived
-Vitest/Vite contexts, including their test-file discovery caches. Changed test
-specifications are invalidated individually, and all changed modules are
-invalidated in both the host module graph and reused worker pools. Protocol,
-performance, browser-smoke, compatibility, Realm-scale, and full-quality
-commands retain their package-script process and environment behavior.
-Full-lane runs recreate their warm context first so deleted files or runner
-changes cannot use an old module graph.
-
-The lightweight supervisor owns the exclusive worktree lock, independent
-heartbeat, and worker restart loop. The worker eagerly starts Svelte-check and
-initializes both ordinary Vitest contexts in the background at startup without
-executing tests.
-Vitest's standalone initialization populates each context's test-discovery
-cache, so a clean initial generation can use idle startup time to prepare all
-three warm lanes before the first edit. A context that fails to warm logs the
-failure and retries initialization when its lane is selected. A context whose
-Vitest/Vite execution throws is discarded and recreated before that lane runs
-again. Unexpected worker exits are restarted with bounded backoff and a fresh
-full baseline. A worker whose coordinator heartbeat makes no progress for five
-minutes is replaced as wedged; repeated rapid exits eventually publish an
-unavailable supervisor rather than looping forever. The diagnostic `--once`
-mode skips the supervisor and eager warm-up and starts Svelte-check when its
-command runs.
-
-The supervisor writes `.test-watch/supervisor.json`; the worker writes
-`.test-watch/status.json` atomically and streams the latest generation to both
-the terminal and `.test-watch/latest.log`. A relevant filesystem event during
-execution leaves the active generation visibly running and records that a rerun
-is pending. A run is published as `passed` or `failed` only when a second
-worktree fingerprint taken after the commands exactly matches the fingerprint
-taken before them; otherwise the result is discarded and the queued generation
-runs. The status includes the worker PID/heartbeat, supervisor identity, base
-ref, generation, target, tested, and targeted-feedback fingerprints, full
-affected commands, actually executed commands, execution mode and changed
-paths, queued-rerun state, any reused tested fingerprint, notes, per-command
-results, timings, and any deferred quality commands. Status validation trusts
-the independent supervisor heartbeat while the embedded test worker is busy, so
-a long in-process transform or test cannot make active work appear abandoned.
-
-When build, dependency, aggregate-runner, or CI configuration changes make the
-final targeted selection unsafe, the watcher records `test:all` as the deferred
-authoritative gate but still runs warm Svelte diagnostics and safe affected
-feedback for non-configuration paths. A matching feedback pass is published as
-`waiting-for-commit` with a separate feedback fingerprint; it never populates
-the authoritative tested fingerprint. Further edits on the same `HEAD` rerun
-only that safe feedback. After the coherent configuration batch is committed
-and the worktree is clean, the watcher runs the deferred `test:all` once for the
-new commit. The deferred command and originating `HEAD` are stored in status so
-a supervised worker restart cannot silently lose the requirement.
-
-Use `pnpm test:watch:await` as the handoff trust boundary. It independently
-fingerprints the current worktree, validates the supervisor lease, and follows
-queued or recovering work until the exact fingerprint completes. Use
-`pnpm test:watch:status` for an immediate diagnostic snapshot. Their exit
-statuses mean:
-
-- `0`: the watched Svelte-check and affected plan passed for the exact current
-  worktree. This may replace redundant `pnpm check` and `pnpm test:affected`
-  runs with the same watcher options.
-- `1`: the watched affected plan failed for the exact current worktree. Read
-  `.test-watch/latest.log`; rerunning is needed only for additional diagnostics.
-- `2`: work is starting, running, queued, recovering, waiting for a commit,
-  still pending at timeout, or targeted feedback passed while a final full gate
-  remains. `test:watch:await` returns immediately for the latter case: commit
-  the completed batch so the watcher can run the deferred aggregate. Do not
-  start a duplicate while a command is active.
-- `3`: the supervisor is missing, stopped, incompatible, stale, or exhausted its
-  automatic recovery. Restart `test:watch:agent` or use the normal command.
-
-Raw status JSON is not sufficient evidence. A watched pass replaces `pnpm check`
-and only the affected plan it records; browser-smoke/compatibility notes and
-broader owning lane or final-handoff requirements still apply. Pass
-`--base <git-ref>` to use a branch base and pass that same base to the await or
-status command. Use
-`--debounce-ms <ms>` to tune coalescing, or `--include-smoke` to let relevant
-browser changes trigger the smoke lane automatically; pass `--include-smoke` to
-the await or status command when smoke coverage is required. `--timeout-ms`
-changes the default ten-minute await bound. Stop the watcher when the task is
-complete.
 
 `pnpm validate:compat-registers` and `pnpm test:compat-current` are ordinary
 quality owners. The current harness validates current-stack and cluster goldens
@@ -287,12 +173,13 @@ start/finish offsets, dependency metadata, isolation flag, and exit code. This
 is observational only and is intended to expose the real critical path before
 changing concurrency or isolation.
 
-Use focused tests or the watcher during an edit batch, then one complete owning
-lane or one `test:all` at the batch boundary. Do not stack `check:protocol`,
-`check:server`, `check`, component lanes, and `test:all` as independent handoff
-steps: `check:server` already owns the protocol check, while `test:all` owns both
-check families and every local aggregate lane. Repeat a component only when it
-is needed to diagnose a failure.
+Use focused owning tests during an edit batch, then run `test:affected` once at
+the coherent batch boundary unless the change requires one complete owning lane
+or one `test:all`. A commit alone is not a verification boundary. Do not stack
+`check:protocol`, `check:server`, `check`, component lanes, and `test:all` as
+independent handoff steps: `check:server` already owns the protocol check, while
+`test:all` owns both check families and every local aggregate lane. Repeat a
+component only when it is needed to diagnose a failure.
 
 Config details: `vitest.config.ts` composes three isolated thread-pool projects,
 and `vitest.frontend-routing.ts` owns their disjoint filename/registration

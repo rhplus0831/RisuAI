@@ -34,8 +34,6 @@ export const FULL_QUALITY_CHANGE_NOTE =
   'Build, dependency, or CI configuration changed; targeted test selection is unsafe.'
 export const ADDITIVE_PROTOCOL_EXPORT_NOTE =
   'The protocol manifest only adds explicit local source exports; targeted lanes are selected. Run test:all once at the integration boundary.'
-export const DEFERRED_FULL_QUALITY_FEEDBACK_NOTE =
-  'The final full quality suite is deferred until the configuration batch is committed; running safe targeted feedback now.'
 
 interface CliOptions extends AffectedTestOptions {
   all: boolean
@@ -54,7 +52,7 @@ const rootRunnerFiles = new Set([
   'vitest.setup.ts',
   'vitest.setup.test.ts',
 ])
-const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts', 'util/test-watch.ts'])
+const fullQualityRunnerFiles = new Set(['util/affected-tests.ts', 'util/test-all.ts'])
 const compatibilityBaselineFiles = new Set(['util/compat-baseline.ts', 'util/compat-baseline.test.ts'])
 const compatibilityRegisterValidatorFiles = new Set([
   'util/validate-original-risu-compatibility-registers.ts',
@@ -388,28 +386,6 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   }
 
   return { commands, notes }
-}
-
-export function planAffectedTestFeedback(
-  changes: readonly ChangedPath[],
-  options: AffectedTestOptions,
-): AffectedTestPlan {
-  const affectedPlan = planAffectedTests(changes, options)
-  if (!affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE)) return affectedPlan
-
-  const targetedPlan = planAffectedTests(
-    changes.filter((change) => !requiresFullQuality({ ...change, path: normalizeRepoPath(change.path) })),
-    options,
-  )
-  return {
-    commands: targetedPlan.commands,
-    notes: [
-      DEFERRED_FULL_QUALITY_FEEDBACK_NOTE,
-      ...targetedPlan.notes.filter(
-        (note) => note !== 'No affected automated test lane was found for the changed paths.',
-      ),
-    ],
-  }
 }
 
 function gitOutput(args: string[], cwd = process.cwd()): string {

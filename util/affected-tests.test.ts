@@ -4,10 +4,8 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   ADDITIVE_PROTOCOL_EXPORT_NOTE,
-  DEFERRED_FULL_QUALITY_FEEDBACK_NOTE,
   isAdditiveProtocolExportChange,
   parseNameStatus,
-  planAffectedTestFeedback,
   planAffectedTests,
   type ChangedPath,
 } from './affected-tests.js'
@@ -173,24 +171,6 @@ describe('affected test planning', () => {
     }
   })
 
-  it('builds safe targeted feedback while retaining the full-quality requirement', () => {
-    const result = planAffectedTestFeedback(
-      [
-        { path: 'package.json', status: 'M' },
-        { path: 'src/ts/model/modelProfileResolver.ts', status: 'M' },
-      ],
-      options,
-    )
-
-    expect(result.commands.map((command) => command.label)).toEqual([
-      'affected frontend tests',
-      'affected server tests',
-      'current compatibility harness',
-    ])
-    expect(result.notes).toContain(DEFERRED_FULL_QUALITY_FEEDBACK_NOTE)
-    expect(result.commands.some((command) => command.label === 'full quality suite')).toBe(false)
-  })
-
   it('selects shared Fastify test support and widens its deletion', () => {
     const helper = 'server/fastify/__tests__/helpers/terminalFrameAssertions.ts'
     const fixture = 'server/fastify/__fixtures__/risuSave/fixtures.ts'
@@ -319,9 +299,6 @@ describe('affected test planning', () => {
       { label: 'full quality suite', args: ['test:all'] },
     ])
     expect(plan([{ path: 'util/affected-tests.ts', status: 'M' }]).commands).toEqual([
-      { label: 'full quality suite', args: ['test:all'] },
-    ])
-    expect(plan([{ path: 'util/test-watch.ts', status: 'M' }]).commands).toEqual([
       { label: 'full quality suite', args: ['test:all'] },
     ])
   })

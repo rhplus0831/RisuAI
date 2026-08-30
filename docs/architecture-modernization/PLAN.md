@@ -688,9 +688,9 @@ The expected ladder is:
 
 1. Architecture/import/contract gates relevant to the slice.
 2. Focused unit and integration tests for changed owners.
-3. `pnpm test:affected` or the exact fresh watcher result.
-4. `pnpm check` and `pnpm check:server` when the watcher does not provide the
-   corresponding current proof.
+3. `pnpm test:affected` once for the coherent slice.
+4. `pnpm check` and `pnpm check:server` when their current proof is not already
+   owned by the affected or aggregate run.
 5. Complete frontend or server owning lanes for broad changes.
 6. Compatibility/current-format tests for migration and interchange changes.
 7. Fastify browser smoke for cross-layer ownership, startup, recovery, generation,
