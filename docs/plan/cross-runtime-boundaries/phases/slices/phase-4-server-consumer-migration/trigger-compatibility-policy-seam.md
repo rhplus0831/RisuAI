@@ -1,6 +1,6 @@
 # Trigger-Compatibility Policy Seam
 
-Status: ready.
+Status: complete at `68d41f2cd` with parity proof at `75b0f6278`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -16,7 +16,7 @@ tree and into Fastify without changing the trigger/effect descriptor contract.
 - Exact unsupported trigger-effect set and membership predicate.
 - `@@emo` regex-output classifier.
 - Empty unsupported server-CBS callback set and sorted diagnostic records.
-- Expected delta: two production and two server-test runtime/mixed root-`src`
+- Delivered delta: two production and two server-test runtime/mixed root-`src`
   edges.
 
 ## Behavior Contract
@@ -28,5 +28,7 @@ resolution, persistence, revisions, receipts, or events.
 
 ## Validation
 
-Run scripts, triggers, Phase 9 compatibility structure, and a closed ownership
-suite; run both typechecks, architecture inventory, formatting, and diff checks.
+Scripts, triggers, Phase 9 compatibility structure, and closed
+ownership/browser-mirror parity suites passed 58, 143, 4, and 4 tests. Both
+typechecks, the 228-edge architecture inventory, formatting, and diff checks
+passed.

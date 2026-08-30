@@ -12,17 +12,17 @@ in [`latest-verification.md`](latest-verification.md).
 - Plan state: Active; Phases 0 through 3 complete; seventeen neutral shared-core
   leaves are released.
 - Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
-- Active slice: [Trigger-compatibility policy seam](phases/slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md), ready.
+- Active slice: [Module/trigger descriptor ownership](phases/slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: prompt-memory query inputs at `e520f5bb7`,
-  following complete prompt-message value ownership at `d31f0eb16` and
-  `53e9fa0c3`; focused memory query, generation, prompt, dispatch, route, and
-  ownership suites,
+- Latest implementation candidate: generation-finalization retry messages at
+  `79041383f`, following Fastify trigger-compatibility ownership at `68d41f2cd`
+  with mirror-parity proof at `75b0f6278`; focused finalization, script,
+  trigger, compatibility, and ownership suites,
   architecture inventory, shared-core/root/downstream typechecks, formatting,
   and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
@@ -74,6 +74,8 @@ in [`latest-verification.md`](latest-verification.md).
 | Prompt-template card seam | `ee87bc6ac` | Released through a closed Fastify-owned card union; four production and three focused test consumers dropped seven type-only browser prompt-model edges. |
 | Prompt-message value contract | `d31f0eb16` (`53e9fa0c3` integration follow-up) | Released across all prompt, assembly, dispatch, and generation consumers; fourteen production and four server-test browser prompt-row type edges were removed. |
 | Prompt-memory query seam | `e520f5bb7` | Released through Fastify-owned character/chat/message query projections and the existing embedding settings contract; one production aggregate browser-model edge was removed. |
+| Trigger-compatibility policy seam | `68d41f2cd` (`75b0f6278` parity proof) | Released through a Fastify-owned runtime policy and a source-level parity assertion against the browser warning mirror; two production and two server-test runtime edges were removed. |
+| Generation-finalization retry message seam | `79041383f` | Released through a narrow Fastify-owned retained-message envelope with optional legacy message IDs; one production type-only aggregate browser-model edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -98,13 +100,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 232 direct root-`src` edges remain: 150 production, 74 server-test, and 8
-  browser-smoke, spanning 104 importers and 50 targets.
-- Usage is 97 runtime, 38 mixed, and 97 type-only; 135 runtime/mixed edges
+- 227 direct root-`src` edges remain: 147 production, 72 server-test, and 8
+  browser-smoke, spanning 102 importers and 49 targets.
+- Usage is 93 runtime, 38 mixed, and 96 type-only; 131 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse and completed Phase 4 server seams, removed 143 edges and
-  29 source targets.
+  shared-helper reuse and completed Phase 4 server seams, removed 148 edges and
+  30 source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
@@ -116,7 +118,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb` after seventeen audited neutral leaves. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Prompt rows and memory-query inputs are server-owned; trigger compatibility policy is next. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Trigger compatibility and finalization retry messages are server-owned; module/trigger descriptors are next. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
@@ -137,6 +139,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move the server-only unsupported-trigger
-policy from the browser tree into Fastify while preserving the exact effect set,
-`@@emo` classification, sorted diagnostics, and no-op behavior.
+Use [`next-steps.md`](next-steps.md). Move the bounded module/trigger descriptor
+family behind a Fastify-owned closed contract while preserving activation,
+source attribution, execution, and effect-union behavior.

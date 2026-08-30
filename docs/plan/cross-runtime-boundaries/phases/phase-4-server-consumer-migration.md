@@ -53,5 +53,7 @@ Completed slices:
 - [Prompt-template card seam](slices/phase-4-server-consumer-migration/prompt-template-card-seam.md)
 - [Prompt-message value-contract completion](slices/phase-4-server-consumer-migration/prompt-message-value-contract-completion.md)
 - [Prompt-memory query seam](slices/phase-4-server-consumer-migration/prompt-memory-query-seam.md)
+- [Trigger-compatibility policy seam](slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md)
+- [Generation-finalization retry message seam](slices/phase-4-server-consumer-migration/generation-finalization-retry-message-seam.md)
 
-Active slice: [Trigger-compatibility policy seam](slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md).
+Active slice: [Module/trigger descriptor ownership](slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md).
