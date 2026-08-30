@@ -148,6 +148,17 @@ function seedDatabase(): void {
   } as any
 }
 
+function seedReadyCharacterOwners(
+  characters: Array<Record<string, unknown>>,
+  characterOrder: unknown[],
+  currentChar: number,
+): void {
+  charactersResourceState.characters = characters as any
+  charactersResourceState.characterOrder = characterOrder as any
+  charactersResourceState.currentChar = currentChar
+  charactersResourceState.status = 'ready'
+}
+
 beforeEach(() => {
   changeCharMock.mockClear()
   for (const spy of Object.values(alertSpies)) spy.mockReset()
@@ -175,53 +186,119 @@ describe('hotkey handling under the resource guard', () => {
   })
 
   it('uses the normal character selection flow for adjacent-character hotkeys', async () => {
-    testDatabaseState.db.characters = [
+    const characters = [
       { name: 'Charlie', chaId: 'char-c' },
       { name: 'Alpha', chaId: 'char-a' },
       { name: 'Bravo', chaId: 'char-b' },
-    ] as any
+    ]
 
-    selectedCharID.set(1)
+    seedReadyCharacterOwners(characters, ['char-c', 'char-a', 'char-b'], 1)
+    selectedCharID.set(0)
     await expect(changeToAdjacentCharacter('next')).resolves.toBe(true)
     expect(changeCharMock).toHaveBeenLastCalledWith(2)
 
-    selectedCharID.set(0)
+    seedReadyCharacterOwners(characters, ['char-c', 'char-a', 'char-b'], 0)
+    selectedCharID.set(1)
     await expect(changeToAdjacentCharacter('previous')).resolves.toBe(true)
     expect(changeCharMock).toHaveBeenLastCalledWith(2)
 
-    selectedCharID.set(1)
+    seedReadyCharacterOwners(characters, ['char-c', 'char-a', 'char-b'], 1)
+    selectedCharID.set(2)
     await expect(changeToAdjacentCharacter('previous')).resolves.toBe(false)
     expect(changeCharMock).toHaveBeenCalledTimes(2)
   })
 
   it('fails closed for malformed or duplicate ready character owners', async () => {
-    testDatabaseState.db.characters = [
-      { name: 'Charlie', chaId: 'duplicate-character' },
-      { name: 'Alpha', chaId: 'duplicate-character' },
-    ] as any
+    seedReadyCharacterOwners(
+      [
+        { name: 'Charlie', chaId: 'duplicate-character' },
+        { name: 'Alpha', chaId: 'duplicate-character' },
+      ],
+      ['duplicate-character'],
+      0,
+    )
     selectedCharID.set(0)
 
     await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
     expect(changeCharMock).not.toHaveBeenCalled()
 
-    testDatabaseState.db.characters = [
-      { name: 'Charlie', chaId: '' },
+    seedReadyCharacterOwners(
+      [
+        { name: 'Charlie', chaId: '' },
+        { name: 'Alpha', chaId: 'char-a' },
+      ],
+      ['char-a'],
+      0,
+    )
+    selectedCharID.set(0)
+
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+    expect(changeCharMock).not.toHaveBeenCalled()
+  })
+
+  it('fails closed for malformed or duplicate ready character-order ids', async () => {
+    const characters = [
       { name: 'Alpha', chaId: 'char-a' },
-    ] as any
+      { name: 'Bravo', chaId: 'char-b' },
+    ]
+
+    seedReadyCharacterOwners(characters, ['char-a', 'char-a'], 0)
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+
+    seedReadyCharacterOwners(characters, ['char-a', 'missing-character'], 0)
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+
+    seedReadyCharacterOwners(
+      characters,
+      [{ id: 'folder-a', name: 'Folder', color: '', data: ['char-a', 'char-b', 'char-b'] }],
+      0,
+    )
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+    expect(changeCharMock).not.toHaveBeenCalled()
+  })
+
+  it('fails closed for an invalid ready selection owner without using the selected-index mirror', async () => {
+    seedReadyCharacterOwners(
+      [
+        { name: 'Alpha', chaId: 'char-a' },
+        { name: 'Bravo', chaId: 'char-b' },
+      ],
+      ['char-a', 'char-b'],
+      9,
+    )
     selectedCharID.set(0)
 
     await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
     expect(changeCharMock).not.toHaveBeenCalled()
   })
 
-  it('keeps aggregate adjacent navigation only while character resources are pre-ready', async () => {
-    testDatabaseState.db.characters = [{ name: 'Charlie' }, { name: 'Alpha' }] as any
-    charactersResourceState.status = 'loading'
-    selectedCharID.set(1)
+  it('fails closed when character resources are in an error state', async () => {
+    seedReadyCharacterOwners(
+      [
+        { name: 'Alpha', chaId: 'char-a' },
+        { name: 'Bravo', chaId: 'char-b' },
+      ],
+      ['char-a', 'char-b'],
+      0,
+    )
+    charactersResourceState.status = 'error'
+    selectedCharID.set(0)
 
-    await expect(changeToAdjacentCharacter('next')).resolves.toBe(true)
-    expect(changeCharMock).toHaveBeenLastCalledWith(0)
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+    expect(changeCharMock).not.toHaveBeenCalled()
   })
+
+  it.each(['idle', 'loading'] as const)(
+    'keeps aggregate adjacent navigation only while character resources are %s',
+    async (status) => {
+      testDatabaseState.db.characters = [{ name: 'Charlie' }, { name: 'Alpha' }] as any
+      charactersResourceState.status = status
+      selectedCharID.set(1)
+
+      await expect(changeToAdjacentCharacter('next')).resolves.toBe(true)
+      expect(changeCharMock).toHaveBeenLastCalledWith(0)
+    },
+  )
 
   it('maps hotkeys to sidebar settings group', () => {
     expect(settingsGroupForKey('hotkeys')).toBe('sidebar')

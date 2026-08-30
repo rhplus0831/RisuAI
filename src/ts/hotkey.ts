@@ -444,9 +444,24 @@ export function adjacentCharacterIndex(
   selectedIndex: number,
   direction: 'previous' | 'next',
 ): number | null {
-  const sorted = characters
-    .map((character, index) => ({ name: character.name ?? '', index }))
-    .sort((left, right) => left.name.localeCompare(right.name))
+  return adjacentCharacterCandidateIndex(
+    characters.map((character, index) => ({ name: character.name ?? '', index })),
+    selectedIndex,
+    direction,
+  )
+}
+
+interface AdjacentCharacterCandidate {
+  name: string
+  index: number
+}
+
+function adjacentCharacterCandidateIndex(
+  candidates: readonly AdjacentCharacterCandidate[],
+  selectedIndex: number,
+  direction: 'previous' | 'next',
+): number | null {
+  const sorted = [...candidates].sort((left, right) => left.name.localeCompare(right.name))
   const currentSortedIndex = sorted.findIndex((character) => character.index === selectedIndex)
   if (currentSortedIndex < 0) return null
 
@@ -455,15 +470,17 @@ export function adjacentCharacterIndex(
 }
 
 export async function changeToAdjacentCharacter(direction: 'previous' | 'next'): Promise<boolean> {
-  const characters =
-    charactersResourceState.status === 'ready'
-      ? canonicalCharacterOwners()
-      : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-        ? getDatabase().characters
-        : null
-  if (!characters) return false
-
-  const targetIndex = adjacentCharacterIndex(characters, get(selectedCharID), direction)
+  const status = charactersResourceState.status
+  let targetIndex: number | null
+  if (status === 'ready') {
+    const owners = canonicalAdjacentCharacterOwners()
+    if (!owners) return false
+    targetIndex = adjacentCharacterCandidateIndex(owners.candidates, owners.selectedIndex, direction)
+  } else if (status === 'idle' || status === 'loading') {
+    targetIndex = adjacentCharacterIndex(getDatabase().characters ?? [], get(selectedCharID), direction)
+  } else {
+    return false
+  }
   if (targetIndex === null) return false
 
   PlaygroundStore.set(0)
@@ -472,14 +489,70 @@ export async function changeToAdjacentCharacter(direction: 'previous' | 'next'):
   return true
 }
 
-function canonicalCharacterOwners(): Database['characters'] | null {
-  const owners = charactersResourceState.characters.map((candidate) => {
+function canonicalAdjacentCharacterOwners(): {
+  candidates: AdjacentCharacterCandidate[]
+  selectedIndex: number
+} | null {
+  const characters = charactersResourceState.characters
+  const characterOrder = charactersResourceState.characterOrder
+  const selectedIndex = charactersResourceState.currentChar
+  if (!Array.isArray(characters) || !Array.isArray(characterOrder) || !Number.isInteger(selectedIndex)) return null
+  if (selectedIndex < 0 || selectedIndex >= characters.length) return null
+
+  const activeOwners = new Map<string, AdjacentCharacterCandidate>()
+  for (const [index, candidate] of characters.entries()) {
     const characterId = candidate?.chaId
-    if (typeof characterId !== 'string' || characterId.trim().length === 0) return undefined
-    return getCharacterResourceOwner(characterId)
-  })
-  if (owners.some((owner) => !owner)) return null
-  return owners as Database['characters']
+    if (!stableOwnerId(characterId) || getCharacterResourceOwner(characterId) !== candidate) return null
+    if (characterId !== '§temp' && !candidate.trashTime) {
+      activeOwners.set(characterId, { name: candidate.name ?? '', index })
+    }
+  }
+
+  const orderedIds = canonicalCharacterOrderIds(characterOrder, new Set(activeOwners.keys()))
+  if (!orderedIds) return null
+  const selectedCharacterId = characters[selectedIndex]?.chaId
+  if (!selectedCharacterId || !orderedIds.has(selectedCharacterId)) return null
+
+  return { candidates: [...activeOwners.values()], selectedIndex }
+}
+
+function canonicalCharacterOrderIds(
+  characterOrder: Database['characterOrder'],
+  activeCharacterIds: ReadonlySet<string>,
+): Set<string> | null {
+  const orderedIds = new Set<string>()
+  const folderIds = new Set<string>()
+
+  for (const entry of characterOrder) {
+    if (typeof entry === 'string') {
+      if (!appendCharacterOrderId(entry, activeCharacterIds, orderedIds)) return null
+      continue
+    }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null
+    if (!stableOwnerId(entry.id) || folderIds.has(entry.id) || !Array.isArray(entry.data) || entry.data.length === 0) {
+      return null
+    }
+    folderIds.add(entry.id)
+    for (const characterId of entry.data) {
+      if (!appendCharacterOrderId(characterId, activeCharacterIds, orderedIds)) return null
+    }
+  }
+
+  return orderedIds.size === activeCharacterIds.size ? orderedIds : null
+}
+
+function appendCharacterOrderId(
+  characterId: unknown,
+  activeCharacterIds: ReadonlySet<string>,
+  orderedIds: Set<string>,
+): boolean {
+  if (!stableOwnerId(characterId) || !activeCharacterIds.has(characterId) || orderedIds.has(characterId)) return false
+  orderedIds.add(characterId)
+  return true
+}
+
+function stableOwnerId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function clickQuery(query: string) {
