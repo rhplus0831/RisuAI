@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../../src/ts/process/modules'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
+import type { ServerModule as RisuModule } from './moduleDescriptors.js'
 import {
   compileBoundedRegex,
   compileBoundedRegexWithCompatibility,

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Chat, Database, Message, character, customscript } from '../../../../src/ts/storage/database.svelte'
 import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
-import type { RisuModule } from '../../../../src/ts/process/modules'
+import type { ServerModule as RisuModule } from './moduleDescriptors.js'
 import {
   assertBoundedRegexHaystack,
   assertBoundedRegexOutput,

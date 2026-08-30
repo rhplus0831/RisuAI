@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
-import type { RisuModule } from '../../../src/ts/process/modules'
+import type { ServerModule as RisuModule } from '../src/prompt/moduleDescriptors.js'
 import { getActiveModules } from '../src/prompt/modules.js'
 
 /**

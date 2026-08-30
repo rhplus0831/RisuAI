@@ -1513,19 +1513,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/modules.ts",
-      "specifier": "../../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/modules.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1533,9 +1520,7 @@
       "symbols": [
         "Chat",
         "Database",
-        "character",
-        "customscript",
-        "loreBook"
+        "character"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1689,19 +1674,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/scripts.ts",
-      "specifier": "../../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/scripts.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1850,19 +1822,6 @@
       "symbols": [
         "Chat",
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggers.ts",
-      "specifier": "../../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -2637,19 +2596,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/lorebook.test.ts",
-      "specifier": "../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/lorebook.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -2660,19 +2606,6 @@
         "Message",
         "character",
         "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/luaRuntime.test.ts",
-      "specifier": "../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -2776,19 +2709,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/modules.test.ts",
-      "specifier": "../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/modules.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -2799,19 +2719,6 @@
         "character",
         "customscript",
         "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/modulesMemo.test.ts",
-      "specifier": "../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -3200,19 +3107,6 @@
       "usage": "type-only",
       "symbols": [
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/triggers.test.ts",
-      "specifier": "../../../src/ts/process/modules",
-      "target": "src/ts/process/modules.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "RisuModule"
       ],
       "count": 1,
       "policy": "browser-application-model"
