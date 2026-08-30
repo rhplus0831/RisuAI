@@ -1,7 +1,7 @@
 # Phase 0 Slice — Baseline, Authority Import, And Pilot
 
 Status: Complete
-Phase: [Phase 0](../../phase-0-cursors-contract-and-inventory.md)  
+Phase: [Phase 0](../../phase-0-cursors-contract-and-inventory.md)<br>
 Opened from Fastify: `1933c43ff7b4d35b57b0852013d95f3881a8cb28`
 
 ## Outcome
