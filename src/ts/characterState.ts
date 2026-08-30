@@ -2,8 +2,19 @@ import { get } from 'svelte/store'
 import { createBlankChar } from './characterDefaults'
 import { getCharImage } from './characterImage'
 import { selectedCharID } from './stores/coreStores.svelte'
-import { getDatabase, type Database } from './storage/database.svelte'
+import { getDatabase, type character, type Database } from './storage/database.svelte'
+import { charactersResourceState } from './server/resourceState.svelte'
 import { defaultEmotion } from './util'
+
+export function selectCharacterOwner(characters: readonly character[], selectedIndex: number): character | undefined {
+  const candidate = characters[selectedIndex]
+  if (!candidate?.chaId) return undefined
+  return characters.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+}
+
+export function getSelectedCharacterOwner(): character | undefined {
+  return selectCharacterOwner(charactersResourceState.characters, charactersResourceState.currentChar)
+}
 
 export async function getCustomBackground(db: unknown) {
   if (typeof db !== 'string' || db.length < 2) {
@@ -48,40 +59,35 @@ export function getCharacterIndexObject() {
   return result
 }
 
+export async function getEmotionForCharacter(
+  currentChar: character | undefined,
+  chaEmotion: { [key: string]: [string, string, number][] },
+  type: 'contain' | 'plain' | 'css',
+) {
+  if (!currentChar) return []
+  const datas: string[] = ['normal' as const]
+  if (currentChar.viewScreen === 'emotion') {
+    const currEmotion = chaEmotion[currentChar.chaId]
+    const image = currEmotion?.length
+      ? await getCharImage(currEmotion[currEmotion.length - 1][1], type)
+      : await getCharImage(defaultEmotion(currentChar.emotionImages), type)
+    if (image && image.length > 2) datas.push(image)
+  } else if (currentChar.viewScreen === 'imggen') {
+    const currEmotion = chaEmotion[currentChar.chaId]
+    if (!currEmotion || currEmotion.length === 0) {
+      datas.push(await getCharImage(currentChar.image ?? '', 'plain'))
+    } else {
+      datas.push(currEmotion[currEmotion.length - 1][1])
+    }
+  }
+  return datas
+}
+
+/** @deprecated Use getEmotionForCharacter with an explicit owner row. */
 export async function getEmotion(
   db: Database,
   chaEmotion: { [key: string]: [string, string, number][] },
   type: 'contain' | 'plain' | 'css',
 ) {
-  const selectedChar = get(selectedCharID)
-  const currentDat = db.characters[selectedChar]
-  if (!currentDat) {
-    return []
-  }
-  const charIdList: string[] = [currentDat.chaId]
-
-  const datas: string[] = ['normal' as const]
-  for (const chaid of charIdList) {
-    const currentChar = findCharacterbyId(chaid)
-    if (currentChar.viewScreen === 'emotion') {
-      const currEmotion = chaEmotion[currentChar.chaId]
-      let im = ''
-      if (!currEmotion || currEmotion.length === 0) {
-        im = await getCharImage(defaultEmotion(currentChar?.emotionImages), type)
-      } else {
-        im = await getCharImage(currEmotion[currEmotion.length - 1][1], type)
-      }
-      if (im && im.length > 2) {
-        datas.push(im)
-      }
-    } else if (currentChar.viewScreen === 'imggen') {
-      const currEmotion = chaEmotion[currentChar.chaId]
-      if (!currEmotion || currEmotion.length === 0) {
-        datas.push(await getCharImage(currentChar.image ?? '', 'plain'))
-      } else {
-        datas.push(currEmotion[currEmotion.length - 1][1])
-      }
-    }
-  }
-  return datas
+  return getEmotionForCharacter(db.characters[get(selectedCharID)], chaEmotion, type)
 }

@@ -1,10 +1,9 @@
 <script>
-  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { CharEmotion } from '../../ts/stores.svelte'
-  import { getEmotion } from '../../ts/characterState'
+  import { getEmotionForCharacter, getSelectedCharacterOwner } from '../../ts/characterState'
 </script>
 
-{#await getEmotion(getDatabase(), $CharEmotion, 'contain') then images}
+{#await getEmotionForCharacter(getSelectedCharacterOwner(), $CharEmotion, 'contain') then images}
   {#each images as image, i}
     <div
       style={image + `width:${100 / images.length}%;bottom:0;left:${(100 / images.length) * i}%`}
