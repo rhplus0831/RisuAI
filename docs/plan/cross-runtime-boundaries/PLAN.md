@@ -1,8 +1,8 @@
 # Cross-Runtime Boundaries Plan
 
-Date: 2026-08-30
+Date: 2026-08-31
 
-Status: active. Phases 0 through 2 are complete; Phase 3 is the execution cursor.
+Status: complete. All phases and closeout gates passed; the workstream is archived.
 
 ## Goal
 
@@ -47,8 +47,8 @@ These are planning observations, not the authoritative Phase 0 inventory.
   behavior remain server-owned.
 - Route policy and browser operation metadata have one machine-checkable owner
   or an exact parity gate keyed by stable operation identifiers.
-- `pnpm check:server` passes in a clean worktree without first generating
-  `dist/client-types`.
+- `pnpm check:server` directly checks both downstream projects without first
+  generating browser application declarations.
 
 ## Invariants
 

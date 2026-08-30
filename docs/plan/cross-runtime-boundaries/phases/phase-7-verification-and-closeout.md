@@ -1,6 +1,6 @@
 # Phase 7: Verification And Closeout
 
-Status: queued.
+Status: complete at `281d0e9f7` and `d9b1f8633`.
 
 Depends on: Phases 0-6 complete.
 

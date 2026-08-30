@@ -1,6 +1,6 @@
 # Phase 6: Typecheck And Package Decoupling
 
-Status: queued.
+Status: complete at `ba7f95c09` with direct typecheck closure at `831361daa`.
 
 Depends on: Phase 4/5 import inventories contain no consumer that requires the
 client declaration project.

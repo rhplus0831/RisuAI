@@ -1,6 +1,6 @@
 # Phase 5: Browser Adapter Migration
 
-Status: queued.
+Status: complete at `18031f9c3`.
 
 Depends on: matching Phase 1/2 contracts and stable Fastify consumers.
 

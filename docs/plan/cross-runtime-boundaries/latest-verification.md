@@ -4,41 +4,43 @@ Date: 2026-08-31
 
 ## Candidate
 
-- Implementation commit: `663019ccb`
-- Immediate Phase 4 predecessors: browser-smoke support isolation at
-  `85b01059c` with count-gate follow-up `589d7a893`, parser character seam at
-  `0fb61855a`, and shared prompt-info snapshots at `8d7bc6256`
-- Phase 3 predecessor: prompt-settings vocabulary at `96e0dedfb`
-- Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
+- Zero-edge baseline: `281d0e9f7`
+- Final direct downstream typing fix: `831361daa`
+- Declaration-project removal: `ba7f95c09`
+- Final shared CBS/parser owner: `18031f9c3`
+- Documentation candidate: `d9b1f8633`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 4 browser-smoke support isolation and neutral prompt-role/template
-  row normalization; no router/resource behavior, prompt persistence, selection,
-  rendering policy, command authority, or compatibility behavior changed.
 
-## Server-Consumer Proof
+## Boundary Proof
 
-- Startup snapshot types use the protocol telemetry owner and the smoke-only
-  English fixture is parity-checked against the browser labels.
-- Browser prompt role/template normalization facades and Fastify direct
-  consumers use two dependency-free shared-core leaves.
-- Closed ownership and exact count assertions prevent migrated imports from
-  returning.
-- The architecture inventory records 158 root-`src` edges: 103 production, 52
-  server-test, and 3 browser-smoke. Of these, 90 are runtime/mixed.
+- Cross-runtime edges: `0` total; production `0`, server-test `0`, and
+  browser-smoke `0`.
+- Runtime/mixed edges: `0`.
+- Non-literal module references: `0`.
+- TypeScript project references to browser application declarations: `0`.
+- Retained exceptions: none.
 
 ## Commands And Results
 
-- Browser-smoke support ownership passed 2 focused tests and all 9 browser
-  scenarios. Prompt-block role, closed ownership, and template normalization
-  passed 4, 4, and 5 focused tests.
-- Architecture inventory passed at 158 edges, 20 compatibility surfaces/42
-  probes, 9,888 client references/326 groups, and 56 owner-gap rows.
-- Shared-core, client declarations, Fastify, browser-smoke, and root Svelte
-  typechecks passed. Focused Prettier and `git diff --check` passed.
+- `pnpm check:server` passed. Its architecture stage reported zero cross-runtime
+  edges, 28 compatibility surfaces/64 probes, 9,582 client compatibility
+  references/326 groups, six bridge families, 20 temporary seams, and 56 owner
+  gap rows; direct Fastify and browser-smoke typechecks both passed.
+- `pnpm check` passed with zero errors and zero warnings.
+- `pnpm check:protocol` passed.
+- `pnpm check:shared-core:boundary` passed 32 files and 58 tests.
+- `pnpm test -- util/architecture-inventory.test.ts` passed 10 tests.
+- Focused CBS/parser browser, shared-core, prompt assembly, and Fastify prompt
+  suites passed during the final extraction; focused declaration-orchestration,
+  server runtime, translator, resource-owner, and component suites passed at
+  their owning commits.
+- Focused Prettier checks and `git diff --check` passed for the closing changes.
 
-## Dependency Release And Verdict
+The full `test:all` and Playwright browser-smoke aggregates remain user/CI-owned
+commands and were not invoked by the agent.
 
-Browser-smoke support isolation and both prompt normalization leaves are
-released through `85b01059c`/`589d7a893` and `663019ccb`. The checked boundary
-is 158 edges. Phase 4 continues with the Agent lorebook resolver; declaration
-decoupling and the remaining edges stay open.
+## Verdict
+
+The workstream satisfies its dependency-direction, package-audit, zero-edge,
+typecheck-decoupling, documentation, and exception gates and can be archived
+intact.

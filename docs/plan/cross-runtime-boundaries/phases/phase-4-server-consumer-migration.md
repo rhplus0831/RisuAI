@@ -1,6 +1,6 @@
 # Phase 4: Server Consumer Migration
 
-Status: active.
+Status: complete at `18031f9c3` with final strict downstream typing at `831361daa`.
 
 Depends on: destination protocol/shared contracts passing their boundary and
 parity gates.
