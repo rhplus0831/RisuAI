@@ -4,7 +4,7 @@ import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyText } from './body.js'
 import { appendOpenAIResponsesToolRounds, parseOpenAIResponsesToolCalls } from './serverTools.js'
 import type { ServerToolRound } from '@risuai/protocol/server-tool'
-import { normalizeLegacyOpenAIModelId } from '../../../../src/ts/model/legacyOpenAIModelAliases.js'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 export interface OpenAIResponsesRequest {
   model: string

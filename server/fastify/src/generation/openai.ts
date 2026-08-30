@@ -18,7 +18,7 @@ import {
 import type { ServerToolDefinition } from '@risuai/protocol/server-tool'
 import { openAIToolDefinitions, parseOpenAIToolCalls } from './serverTools.js'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
-import { normalizeLegacyOpenAIModelId } from '../../../../src/ts/model/legacyOpenAIModelAliases.js'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 export interface OpenAIRequest {
   model: string

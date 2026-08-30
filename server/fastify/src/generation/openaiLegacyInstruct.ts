@@ -2,7 +2,7 @@ import { applyAdditionalParameters, setCanonicalHeader } from './additionalParam
 import type { CompletionResult } from './frames.js'
 import { extractApiResponseMetadata } from './apiMetadata.js'
 import { readBoundedBodyJson } from './body.js'
-import { normalizeLegacyOpenAIModelId } from '../../../../src/ts/model/legacyOpenAIModelAliases.js'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 export interface OpenAILegacyInstructRequest {
   model: string

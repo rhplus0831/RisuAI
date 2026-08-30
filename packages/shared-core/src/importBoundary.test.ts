@@ -68,6 +68,7 @@ describe('@risuai/shared-core import boundary', () => {
         'chatLoadPages.ts',
         'chatPage.ts',
         'index.ts',
+        'legacyOpenAIModelAliases.ts',
         'regexOutputSizeLimit.ts',
       ],
       violations: [],

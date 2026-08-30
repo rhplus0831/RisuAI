@@ -7,7 +7,7 @@ import { getFreeOpenRouterModels } from 'src/ts/model/openrouter'
 import { addFetchLog, fetchNative, globalFetch, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { simplifySchema } from 'src/ts/util'
 import { isLocalNetworkUrl } from 'src/ts/network/localNetwork'
-import { normalizeLegacyOpenAIModelId } from 'src/ts/model/legacyOpenAIModelAliases'
+import { normalizeLegacyOpenAIModelId } from '@risuai/shared-core/legacy-openai-model-aliases'
 
 import { extractJSON, getOpenAIJSONSchema } from '../../templates/jsonSchema'
 import { applyChatTemplate } from '../../templates/chatTemplate'
