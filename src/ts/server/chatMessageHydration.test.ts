@@ -446,10 +446,13 @@ describe('chat message hydration bridge', () => {
       okResult('chat-1', [{ role: 'user', data: 'before', chatId: 'm-before' }]),
     )
     await hydrateActiveChatFully()
-    expect(getChatMessageOwnerState('chat-1')?.resourceLoaded).toBe(true)
+    const ownedBeforeReset = getChatMessageOwnerState('chat-1')?.messages
+    expect(ownedBeforeReset).toEqual([{ role: 'user', data: 'before', chatId: 'm-before' }])
 
     resetChatHydration()
-    expect(getChatMessageOwnerState('chat-1')?.resourceLoaded).toBe(false)
+    db().characters[0].chats[0].message = [{ role: 'user', data: 'legacy fallback', chatId: 'm-fallback' }]
+    expect(getChatMessageOwnerState('chat-1')?.messages).toEqual(db().characters[0].chats[0].message)
+    expect(getChatMessageOwnerState('chat-1')?.messages).not.toBe(ownedBeforeReset)
 
     projectionState.fetchChat.mockResolvedValue(
       okResult('chat-1', [{ role: 'user', data: 'after', chatId: 'm-after' }]),

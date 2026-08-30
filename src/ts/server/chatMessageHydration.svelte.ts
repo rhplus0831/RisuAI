@@ -1291,7 +1291,6 @@ export function resetChatHydration(): void {
   chatProjectionEpochs.clear()
   chatMessageOwnerProjections.clear()
   pendingChatHydrationFreshness.clear()
-  chatMessageOwnerProjections.clear()
   // A re-stub also re-stubs character globalLore; forget these marks so the open
   // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
   hydratedCharLorebookIds.clear()
