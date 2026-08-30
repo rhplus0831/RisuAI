@@ -14,8 +14,24 @@ export const ServerCharacterDetailResourceSchema = Type.Object(
   { additionalProperties: false },
 )
 
+export const ServerCharacterOrderFolderSchema = Type.Object(
+  {
+    id: Type.String({ minLength: 1 }),
+    name: Type.String(),
+    data: Type.Array(Type.String()),
+    color: Type.String(),
+    askBeforeOpening: Type.Optional(Type.Boolean()),
+    imgFile: Type.Optional(Type.String()),
+    img: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+)
+
 export const ServerCharacterOrderResourceSchema = Type.Object(
-  { revision: Type.Integer({ minimum: 0 }), characterOrder: Type.Array(Type.Unknown()) },
+  {
+    revision: Type.Integer({ minimum: 0 }),
+    characterOrder: Type.Array(Type.Union([Type.String(), ServerCharacterOrderFolderSchema])),
+  },
   { additionalProperties: false },
 )
 

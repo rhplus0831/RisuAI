@@ -12,7 +12,12 @@ describe('targeted character resource protocol', () => {
     expect(
       isServerCharacterDetailResource({ revision: 3, character: { chaId: 'char-a', name: 'Ada', chats: [] } }),
     ).toBe(true)
-    expect(isServerCharacterOrderResource({ revision: 3, characterOrder: ['char-a'] })).toBe(true)
+    expect(
+      isServerCharacterOrderResource({
+        revision: 3,
+        characterOrder: ['char-a', { id: 'folder-a', name: 'Folder', data: ['char-b'], color: 'blue' }],
+      }),
+    ).toBe(true)
     expect(isServerCharacterSelectionResource({ revision: 3, characterId: 'char-a', currentChar: 0 })).toBe(true)
   })
 
@@ -21,6 +26,7 @@ describe('targeted character resource protocol', () => {
     expect(isServerCharacterDetailResource({ revision: 0, character: { name: 'missing id' } })).toBe(false)
     expect(isServerCharacterDetailResource({ revision: -1, character: { chaId: 'char-a' } })).toBe(false)
     expect(isServerCharacterOrderResource({ revision: 1, characterOrder: [], extra: true })).toBe(false)
+    expect(isServerCharacterOrderResource({ revision: 1, characterOrder: [{ id: '', data: [] }] })).toBe(false)
     expect(isServerCharacterSelectionResource({ revision: 1, characterId: ' ', currentChar: 0 })).toBe(false)
     expect(isServerCharacterSelectionResource({ revision: 1, characterId: 'char-a', currentChar: -1 })).toBe(false)
     expect(
