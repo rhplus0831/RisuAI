@@ -4782,6 +4782,26 @@
   ],
   "metadata": [
     {
+      "id": "browser-operation-bindings",
+      "owner": "Browser-safe route operation relations; never a security authority",
+      "path": "src/ts/server/browserOperationManifest.ts#BROWSER_OPERATION_BINDINGS",
+      "count": 55,
+      "authority": "Browser-safe route operation relations; never a security authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "browser-operation-non-overlaps",
+      "owner": "Reviewed browser-only operation vocabulary distinctions",
+      "path": "src/ts/server/browserOperationManifest.ts#BROWSER_OPERATION_NON_OVERLAPS",
+      "count": 7,
+      "authority": "Reviewed browser-only operation vocabulary distinctions",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
       "id": "browser-resource-surfaces",
       "owner": "Browser hydration and cache resource metadata",
       "path": "src/ts/server/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST",

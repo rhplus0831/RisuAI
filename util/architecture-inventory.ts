@@ -504,6 +504,22 @@ function collectMetadata(repoRoot: string): MetadataObservation[] {
       ),
     },
     {
+      id: 'browser-operation-bindings',
+      owner: 'Browser-safe route operation relations; never a security authority',
+      path: 'src/ts/server/browserOperationManifest.ts#BROWSER_OPERATION_BINDINGS',
+      count: collectionSize(
+        namedInitializer(repoRoot, 'src/ts/server/browserOperationManifest.ts', 'BROWSER_OPERATION_BINDINGS'),
+      ),
+    },
+    {
+      id: 'browser-operation-non-overlaps',
+      owner: 'Reviewed browser-only operation vocabulary distinctions',
+      path: 'src/ts/server/browserOperationManifest.ts#BROWSER_OPERATION_NON_OVERLAPS',
+      count: collectionSize(
+        namedInitializer(repoRoot, 'src/ts/server/browserOperationManifest.ts', 'BROWSER_OPERATION_NON_OVERLAPS'),
+      ),
+    },
+    {
       id: 'server-command-event-catalog',
       owner: 'Fastify persisted command event vocabulary',
       path: 'server/fastify/src/commands/events.ts#COMMAND_EVENT_CATALOG',

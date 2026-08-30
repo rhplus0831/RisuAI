@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { BROWSER_RAW_GENERATION_OPERATION_IDS } from '../server/browserOperationManifest'
 
 interface RawSendBinding {
   file: string
@@ -106,6 +107,10 @@ describe('raw chat generation caller allowlist', () => {
   })
 
   it('keeps every Wave 3 append-and-generate caller on the capability-gated atomic submit path', () => {
+    expect(BROWSER_RAW_GENERATION_OPERATION_IDS).toEqual({
+      atomicSubmit: 'generation-operation-submit',
+      compatibilityChat: 'generation-chat',
+    })
     const expectedAtomicCalls = [
       ['src/lib/ChatScreens/DefaultChatScreen.svelte', 'message: userMessage'],
       ['src/lib/SideBars/DevTool.svelte', 'message: autopilot[i]'],
