@@ -1376,11 +1376,11 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
 
   migrateLegacyFlatModelConfiguration(database)
   repairPersistedGlobalLorebookIds(database)
+  repairChatIds(database)
   replaceAllSettingsInTable(db, database)
   replaceAllCharactersInTable(db, database)
   replaceAllCollectionsInTable(db, database)
 
-  repairChatIds(database)
   const chats: { chatId: string; messages: unknown[] }[] = []
   const hypa: { chatId: string; hypaV3Data: unknown }[] = []
   eachChat(database, (chat) => {

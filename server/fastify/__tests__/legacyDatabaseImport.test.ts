@@ -150,6 +150,79 @@ describe('legacy db.json boot import', () => {
     expect(readFileSync(`${filePath}.migrated`, 'utf8')).toBe(raw)
   })
 
+  it('repairs missing and duplicate chat ids before extracting transcript and Hypa rows', () => {
+    const dataDir = makeDataDir()
+    const filePath = path.join(dataDir, 'db.json')
+    const legacy: Persisted = {
+      _version: 1,
+      database: {
+        characters: [
+          {
+            chaId: 'legacy-character',
+            chats: [
+              {
+                id: 'duplicate-chat',
+                name: 'First',
+                message: [{ role: 'user', data: 'first transcript', chatId: 'message-first' }],
+                hypaV3Data: { summaries: [{ text: 'first memory' }] },
+              },
+              {
+                id: 'duplicate-chat',
+                name: 'Second',
+                message: [{ role: 'char', data: 'second transcript', chatId: 'message-second' }],
+                hypaV3Data: { summaries: [{ text: 'second memory' }] },
+              },
+              {
+                name: 'Missing',
+                message: [{ role: 'user', data: 'missing-id transcript', chatId: 'message-missing' }],
+                hypaV3Data: { summaries: [{ text: 'missing-id memory' }] },
+              },
+            ],
+          },
+        ],
+      },
+      assets: [],
+    }
+    writeFileSync(filePath, JSON.stringify(legacy))
+
+    const firstDb = makeDb(dataDir)
+    ensureDbJsonImported(firstDb, dataDir, makeLogger())
+    const afterFirstBoot = loadPersistedWithMessages(firstDb, dataDir)
+    closeDb(firstDb)
+
+    const importedDatabase = afterFirstBoot.database as {
+      characters: Array<{ chats: Array<Record<string, unknown>> }>
+    }
+    const chats = importedDatabase.characters[0].chats
+    const ids = chats.map((chat) => chat.id)
+    expect(ids).toHaveLength(3)
+    expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true)
+    expect(new Set(ids).size).toBe(3)
+    expect(chats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'First',
+          message: [expect.objectContaining({ data: 'first transcript' })],
+          hypaV3Data: { summaries: [{ text: 'first memory' }] },
+        }),
+        expect.objectContaining({
+          name: 'Second',
+          message: [expect.objectContaining({ data: 'second transcript' })],
+          hypaV3Data: { summaries: [{ text: 'second memory' }] },
+        }),
+        expect.objectContaining({
+          name: 'Missing',
+          message: [expect.objectContaining({ data: 'missing-id transcript' })],
+          hypaV3Data: { summaries: [{ text: 'missing-id memory' }] },
+        }),
+      ]),
+    )
+
+    const secondDb = makeDb(dataDir)
+    ensureDbJsonImported(secondDb, dataDir, makeLogger())
+    expect(loadPersistedWithMessages(secondDb, dataDir)).toEqual(afterFirstBoot)
+  })
+
   it('quarantines an invalid envelope without clobbering an existing quarantine or touching tables', () => {
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)
