@@ -165,8 +165,8 @@ import shape.
   `server/fastify`.
 - Route policy and browser operation metadata have one machine-checkable owner
   or an exact parity gate.
-- `pnpm check:server` succeeds from a clean worktree without first generating
-  `dist/client-types`.
+- `pnpm check:server` directly checks protocol/shared-core ownership, Fastify,
+  and browser-smoke projects without a generated browser declaration tree.
 
 ### Non-goals
 
@@ -252,10 +252,13 @@ client-specific behavior remains explicit.
 
 #### Phase 6: Typecheck and package decoupling
 
-- Remove the Fastify and browser-smoke references to the client declaration
-  project.
-- Remove the client-declaration prerequisite from `check:server`.
-- Delete obsolete generated declaration configuration and artifacts.
+Completed in the cross-runtime-boundaries workstream:
+
+- Fastify and browser-smoke no longer reference a client declaration project.
+- `check:server` checks protocol/shared-core ownership before directly checking
+  both downstream projects.
+- The obsolete declaration configuration and generated-output contract were
+  deleted.
 - Decide whether a separate server package manifest now improves dependency or
   deployment ownership; do not require it for workstream success.
 

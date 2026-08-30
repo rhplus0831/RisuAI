@@ -38,7 +38,7 @@ current commands and behavior stay authoritative here.
 | `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the Phase 7 direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                      |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
-| `pnpm check:server`                | Check protocol types, emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting server code.        |
+| `pnpm check:server`                | Check protocol/shared-core types and architecture inventories, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting code.       |
 | `pnpm test -- <file>`              | Agent-facing focused runner. Requires exactly one repository test or source file, routes it to the owning runtime, and uses related-test discovery for source files.          |
 | `pnpm validate:compat-registers`   | Validate the compatibility inventory/findings schemas, cross-register references, and pinned upstream commit coverage.                                                       |
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
@@ -323,15 +323,17 @@ not belong in a browser journey.
   bundler resolution.
 - `packages/protocol/tsconfig.json` strictly checks the browser-safe shared wire
   schemas. `pnpm check:protocol` runs it directly and `pnpm check:server` includes
-  it before the client-library and Fastify checks.
-- `tsconfig.client-lib.json` emits declarations only into `dist/client-types`
-  for server imports from client code; `tsconfig.node.json` covers
-  `vite.config.ts`.
-- `server/fastify/tsconfig.json` is strict, `noEmit: true`, and references
-  `tsconfig.client-lib.json`.
+  it before the shared-core and downstream checks.
+- `packages/shared-core/tsconfig.json` strictly checks framework-neutral shared
+  runtime behavior. The architecture inventory then rejects browser-application
+  imports and stale project references before downstream typechecks begin.
+- `tsconfig.node.json` covers `vite.config.ts`.
+- `server/fastify/tsconfig.json` is strict and `noEmit: true`; it has no browser
+  project reference or generated-declaration prerequisite.
 - `tsconfig.browser-smoke.json` typechecks Playwright config/spec/helper sources
-  in the same `pnpm check:server` lane. After the protocol and declaration
-  prerequisites pass, the Fastify and browser-smoke checks run concurrently.
+  in the same `pnpm check:server` lane. After protocol, shared-core, and
+  architecture prerequisites pass, the Fastify and browser-smoke checks run
+  concurrently.
 - Prettier uses `prettier-plugin-svelte`, no semicolons, single quotes, and
   print width 120.
 - `.prettierignore` excludes Markdown docs, `docs/`, archived docs, and agent

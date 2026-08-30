@@ -437,7 +437,8 @@ answer a concrete implementation question. The user/CI-owned full matrix is in
 pnpm test -- <test-or-source-file>
 ```
 
-For the client declaration, server, and browser-smoke TypeScript lane:
+For the protocol/shared-core architecture checks and the independent server and
+browser-smoke TypeScript projects:
 
 ```sh
 pnpm check:server

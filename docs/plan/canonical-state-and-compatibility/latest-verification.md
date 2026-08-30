@@ -120,7 +120,7 @@ Date: 2026-08-31
   missing/duplicate chat-id transcript and Hypa preservation across a second
   boot. The message store passed all 28 split/rejoin, row-owner, empty
   transcript, import fallback, and cleanup tests.
-- `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
+- `pnpm check`, shared-core, direct Fastify, browser-smoke, and
   root typechecks passed.
 - Architecture inventory passed at the current 158 cross-runtime edges after
   interleaved Workstream 1 server-input migrations, 20 compatibility

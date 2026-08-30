@@ -152,8 +152,7 @@ The user-owned `test:all` command defaults to two concurrent outer lanes; overri
 `RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
 `--dry-run`. Pass `--timings=json` to append a machine-readable lane schedule
 and timing record for critical-path analysis. It waits to build browser smoke
-until the server typecheck has finished writing client declarations under
-`dist/`. Its ordinary frontend
+until the independent server typecheck lane has completed. Its ordinary frontend
 subprocess omits the six UI-map files, then the coverage lane executes them once
 with thresholds after the remaining frontend tests finish. Browser smoke,
 server, and performance lanes run outside the outer pool. Smoke uses its own
