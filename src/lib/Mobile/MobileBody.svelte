@@ -1,16 +1,47 @@
 <script lang="ts" module>
+  import { selectCharacterOwner } from 'src/ts/characterState'
   import { isServerCharacterShell, type character } from 'src/ts/storage/database.svelte'
 
-  export function resolveMobileSideChatCharacter(
-    ownerCharacters: readonly character[],
-    aggregateCharacter: character | undefined,
-    selectedIndex: number,
-  ): character | undefined {
-    const characterId = aggregateCharacter?.chaId ?? ownerCharacters[selectedIndex]?.chaId
-    const owner = characterId
-      ? ownerCharacters.find((candidate) => candidate?.chaId === characterId)
-      : ownerCharacters[selectedIndex]
-    return owner && !isServerCharacterShell(owner) ? owner : aggregateCharacter
+  interface MobileSelectedCharacterInput {
+    ownerCharacters: readonly character[]
+    ownerReady: boolean
+    ownerSelectedIndex: number
+    compatibilitySelectedIndex: number
+    readCompatibilityCharacters: () => readonly character[]
+  }
+
+  export function resolveMobileSelectedCharacter({
+    ownerCharacters,
+    ownerReady,
+    ownerSelectedIndex,
+    compatibilitySelectedIndex,
+    readCompatibilityCharacters,
+  }: MobileSelectedCharacterInput): character | undefined {
+    if (ownerReady) {
+      return selectCharacterOwner(ownerCharacters, ownerSelectedIndex)
+    }
+
+    const compatibilityCharacters = readCompatibilityCharacters()
+    const compatibilityCandidate = compatibilityCharacters[compatibilitySelectedIndex]
+    const compatibilityCharacter = compatibilityCandidate?.chaId
+      ? selectCharacterOwner(compatibilityCharacters, compatibilitySelectedIndex)
+      : compatibilityCandidate
+    if (compatibilityCandidate?.chaId && !compatibilityCharacter) return undefined
+
+    const characterId = compatibilityCharacter?.chaId ?? ownerCharacters[compatibilitySelectedIndex]?.chaId
+    if (!characterId) {
+      const owner = ownerCharacters[compatibilitySelectedIndex]
+      return owner && !isServerCharacterShell(owner) ? owner : compatibilityCharacter
+    }
+
+    const ownerIndex = ownerCharacters.findIndex((candidate) => candidate?.chaId === characterId)
+    const owner = selectCharacterOwner(ownerCharacters, ownerIndex)
+    if (ownerIndex >= 0 && !owner) return undefined
+    return owner && !isServerCharacterShell(owner) ? owner : compatibilityCharacter
+  }
+
+  export function shouldRenderMobileChat(selectedCharacter: character | undefined): boolean {
+    return selectedCharacter !== undefined
   }
 </script>
 
@@ -29,12 +60,14 @@
 
   import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
-  let selectedSideChatCharacter = $derived(
-    resolveMobileSideChatCharacter(
-      charactersResourceState.characters,
-      getDatabase().characters[$selectedCharID],
-      $selectedCharID,
-    ),
+  let selectedMobileCharacter = $derived(
+    resolveMobileSelectedCharacter({
+      ownerCharacters: charactersResourceState.characters,
+      ownerReady: charactersResourceState.status === 'ready',
+      ownerSelectedIndex: charactersResourceState.currentChar,
+      compatibilitySelectedIndex: $selectedCharID,
+      readCompatibilityCharacters: () => getDatabase().characters,
+    }),
   )
 </script>
 
@@ -72,14 +105,16 @@
   {#if $MobileSideBar > 0}
     <div class="w-full flex flex-col p-2 mt-2 h-full">
       {#if $MobileSideBar === 1}
-        <SideChatList chara={selectedSideChatCharacter} />
+        {#if selectedMobileCharacter}
+          <SideChatList chara={selectedMobileCharacter} />
+        {/if}
       {:else if $MobileSideBar === 2}
         <CharConfig />
       {:else if $MobileSideBar === 3}
         <DevTool />
       {/if}
     </div>
-  {:else if $selectedCharID !== -1}
+  {:else if shouldRenderMobileChat(selectedMobileCharacter)}
     <ChatScreen />
   {:else if $MobileGUIStack === 0}
     <RealmMain />
