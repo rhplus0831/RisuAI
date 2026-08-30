@@ -5,6 +5,8 @@
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { selectMultipleFile } from 'src/ts/filePicker'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     appendFreshCharacterAdditionalAssets,
     beginCharacterAdditionalAssetUpload,
@@ -21,6 +23,12 @@
   }
 
   const { currentCharacter, onSelect }: Props = $props()
+  // Resource ownership is authoritative once the character list is ready. A
+  // missing owner then deliberately fails closed (including duplicate IDs);
+  // the prop remains a bootstrap-only compatibility fallback.
+  let assetCharacter = $derived(
+    getSelectedCharacterOwner() ?? (charactersResourceState.status === 'ready' ? undefined : currentCharacter),
+  )
   const QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS = ['png', 'webp', 'mp4', 'mp3', 'gif']
   type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
 
@@ -29,8 +37,8 @@
   let assetPreviewRun = 0
 
   const assetSourceKey = $derived(
-    currentCharacter.type === 'character'
-      ? (currentCharacter.additionalAssets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
+    assetCharacter?.type === 'character'
+      ? (assetCharacter.additionalAssets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
       : '',
   )
 
@@ -43,11 +51,11 @@
   }
 
   function currentQuickAddAdditionalAssetUploadTarget() {
-    if (currentCharacter.type !== 'character' || !currentCharacter.chaId) return null
+    if (assetCharacter?.type !== 'character' || !assetCharacter.chaId) return null
 
     return captureCharacterAdditionalAssetUploadTarget({
-      characterId: currentCharacter.chaId,
-      additionalAssets: currentCharacter.additionalAssets,
+      characterId: assetCharacter.chaId,
+      additionalAssets: assetCharacter.additionalAssets,
     })
   }
 
@@ -147,9 +155,9 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (currentCharacter.type === 'character') {
-      if (currentCharacter.additionalAssets) {
-        for (const additionalAsset of currentCharacter.additionalAssets) {
+    if (assetCharacter?.type === 'character') {
+      if (assetCharacter.additionalAssets) {
+        for (const additionalAsset of assetCharacter.additionalAssets) {
           const assetPath = additionalAsset[1]
           if (additionalAsset.length > 2 && additionalAsset[2]) {
             nextExtensions[assetPath] = additionalAsset[2].toLowerCase()
@@ -167,7 +175,7 @@
   })
 </script>
 
-{#if currentCharacter.type === 'character'}
+{#if assetCharacter?.type === 'character'}
   <button
     aria-label={`${language.add} ${language.additionalAssets}`}
     class="hover:text-green-500 bg-textcolor2 flex justify-center items-center w-16 h-16 m-1 rounded-md"
@@ -176,8 +184,8 @@
     }}>
     <PlusIcon />
   </button>
-  {#if currentCharacter.additionalAssets}
-    {#each currentCharacter.additionalAssets as additionalAsset, index (assetListRenderKey(additionalAsset, index))}
+  {#if assetCharacter.additionalAssets}
+    {#each assetCharacter.additionalAssets as additionalAsset, index (assetListRenderKey(additionalAsset, index))}
       <button
         aria-label={additionalAsset[0]}
         onclick={() => {

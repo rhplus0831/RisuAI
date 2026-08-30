@@ -6,6 +6,8 @@ const assetInputMocks = vi.hoisted(() => ({
     characters: [] as Array<Record<string, unknown>>,
   },
   getFileSrc: vi.fn(async (assetId: string) => `/api/v1/assets/${assetId}`),
+  owner: undefined as unknown,
+  status: 'idle' as string,
   setCharacterByIndex: vi.fn(),
 }))
 
@@ -23,6 +25,14 @@ vi.mock('src/ts/stores.svelte', async () => {
   const { writable } = await import('svelte/store')
   return { selectedCharID: writable(0) }
 })
+
+vi.mock('src/ts/characterState', () => ({
+  getSelectedCharacterOwner: () => assetInputMocks.owner,
+}))
+
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  charactersResourceState: assetInputMocks,
+}))
 
 vi.mock('src/ts/filePicker', () => ({
   selectMultipleFile: vi.fn(),
@@ -43,6 +53,8 @@ afterEach(() => {
   }
   target?.remove()
   vi.clearAllMocks()
+  assetInputMocks.owner = undefined
+  assetInputMocks.status = 'idle'
 })
 
 describe('AssetInput', () => {
@@ -120,5 +132,29 @@ describe('AssetInput', () => {
       'first.png',
       'second.png',
     ])
+  })
+
+  it('fails closed when the ready resource projection has no unique owner', async () => {
+    const duplicateCharacter = {
+      type: 'character',
+      chaId: 'duplicate-character',
+      additionalAssets: [['asset.png', 'asset-id', 'png']],
+    }
+    assetInputMocks.status = 'ready'
+    assetInputMocks.owner = undefined
+    target = document.createElement('div')
+    document.body.appendChild(target)
+
+    component = mount(AssetInput, {
+      target,
+      props: {
+        currentCharacter: duplicateCharacter as any,
+        onSelect: vi.fn(),
+      },
+    })
+    await tick()
+
+    expect(target.querySelectorAll('button')).toHaveLength(0)
+    expect(assetInputMocks.getFileSrc).not.toHaveBeenCalled()
   })
 })
