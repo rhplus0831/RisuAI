@@ -25,6 +25,11 @@ import {
   sourceHash,
   upsertGreetingTranslation,
 } from '../src/translation/greetingTranslationStore.js'
+import {
+  EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+  canonicalOwnerPersistenceDatabase,
+  canonicalOwnerPersistenceSnapshot,
+} from './helpers/canonicalOwnerPersistence.js'
 
 // Targeted writer kit: each writer must touch exactly its rows and leave every
 // unrelated character / chat / collection rowid stable. A SQLite rowid only
@@ -125,6 +130,21 @@ afterEach(() => {
 })
 
 describe('targeted writer kit', () => {
+  it('rehydrates canonical owner identities after the repository is reopened', () => {
+    writePersistedWithMessages(db, dataDir, {
+      _version: 1,
+      database: canonicalOwnerPersistenceDatabase(),
+      assets: [],
+    })
+
+    db.close()
+    db = openDatabase(dataDir)
+
+    expect(canonicalOwnerPersistenceSnapshot(loadPersisted(db, dataDir).database)).toEqual(
+      EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+    )
+  })
+
   it('broad character rewrites drop poisoned greeting cache rows but preserve valid rows', () => {
     const validTranslation = {
       text: 'translated',

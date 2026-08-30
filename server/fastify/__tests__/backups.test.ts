@@ -28,6 +28,11 @@ import {
   reserveGenerationOperationAttempt,
   transitionGenerationOperation,
 } from '../src/generationOperations.js'
+import {
+  EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+  canonicalOwnerPersistenceDatabase,
+  canonicalOwnerPersistenceSnapshot,
+} from './helpers/canonicalOwnerPersistence.js'
 
 const subtle = webcrypto.subtle
 const PNG_BYTES = Buffer.from(
@@ -524,6 +529,36 @@ describe('backups', () => {
       pluginCustomStorage: {},
     })
     expect(afterRestore.json().revision).toBe(revisionAfter)
+  })
+
+  it('restores canonical owner identities and cache inputs across a server restart', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, canonicalOwnerPersistenceDatabase())
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'canonical owner snapshot' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    await importDb(harness.app, assertion, { tag: 'replacement state' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    await restartHarness(harness)
+    const reopened = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(canonicalOwnerPersistenceSnapshot(loadPersistedWithMessages(reopened, harness.dataDir).database)).toEqual(
+        EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+      )
+    } finally {
+      reopened.close()
+    }
   })
 
   it('round-trips every BardWiki-owned table and rebuilds excluded search and link resolution', async () => {

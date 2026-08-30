@@ -40,6 +40,11 @@ import {
   sourceHash,
   upsertGreetingTranslation,
 } from '../src/translation/greetingTranslationStore.js'
+import {
+  EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT,
+  canonicalOwnerPersistenceDatabase,
+  canonicalOwnerPersistenceSnapshot,
+} from './helpers/canonicalOwnerPersistence.js'
 
 const dataDirs: string[] = []
 
@@ -1095,6 +1100,68 @@ describe('server .risu fixture harness', () => {
         expect(reloadedChat.bookmarks, envelopeCase.expected).toEqual(['active-response'])
       } finally {
         targetDb.close()
+      }
+    }
+  })
+
+  it('round-trips canonical owner identities and translator cache inputs through every portable .risu codec', async () => {
+    const envelopeCases = [
+      {
+        expected: 'legacy-raw',
+        encode: (db: DatabaseSync, dataDir: string) => encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-raw'),
+      },
+      {
+        expected: 'legacy-compressed',
+        encode: (db: DatabaseSync, dataDir: string) =>
+          encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-compressed'),
+      },
+      {
+        expected: 'legacy-stream',
+        encode: (db: DatabaseSync, dataDir: string) =>
+          encodeRepositoryRisuSaveLegacyExport(db, dataDir, 'legacy-stream'),
+      },
+      {
+        expected: 'risusave-blocks',
+        encode: (db: DatabaseSync, dataDir: string) => encodeRepositoryRisuSaveBlockExport(db, dataDir),
+      },
+    ] as const
+
+    for (const envelopeCase of envelopeCases) {
+      const sourceDataDir = makeDataDir()
+      const sourceDb = openDatabase(sourceDataDir)
+      let encoded: Uint8Array
+      try {
+        writePersistedWithMessages(sourceDb, sourceDataDir, {
+          _version: 1,
+          database: canonicalOwnerPersistenceDatabase(),
+          assets: [],
+        })
+        encoded = envelopeCase.encode(sourceDb, sourceDataDir)
+      } finally {
+        sourceDb.close()
+      }
+
+      const decoded = decodeRisuSaveImportSnapshot(encoded)
+      expect(decoded.envelope, envelopeCase.expected).toBe(envelopeCase.expected)
+      const targetDataDir = makeDataDir()
+      const targetDb = openDatabase(targetDataDir)
+      try {
+        await applyImport(targetDb, targetDataDir, decoded.database, {
+          greetingTranslations: decoded.greetingTranslations,
+          automaticBackupRetention: 0,
+        })
+      } finally {
+        targetDb.close()
+      }
+
+      const reopened = openDatabase(targetDataDir)
+      try {
+        expect(
+          canonicalOwnerPersistenceSnapshot(loadPersistedWithMessages(reopened, targetDataDir).database),
+          envelopeCase.expected,
+        ).toEqual(EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT)
+      } finally {
+        reopened.close()
       }
     }
   })
