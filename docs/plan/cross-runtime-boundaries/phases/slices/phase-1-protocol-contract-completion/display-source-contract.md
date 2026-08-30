@@ -1,6 +1,6 @@
 # Display-Source Contract
 
-Status: ready.
+Status: complete at `07abd8aa562c6486b41935b016ca30a4b40bd33f`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -56,3 +56,19 @@ and `git diff --check`.
 
 Stop if extraction changes any accepted request/response or canonical string,
 weakens a limit, or requires display execution/server authority to move.
+
+## Result
+
+- `@risuai/protocol/display-source` now owns TypeBox schemas and derived types
+  for versions, layers, contexts, targets, requests, response variants, and
+  namespace inputs plus the existing limits and canonicalization helpers.
+- Protocol fixtures prove taxonomies and limits, context normalization, nested
+  dependency normalization, stable namespace serialization, every layer and
+  fallback status, exact success responses, and rejected cross-pairings.
+- Browser parser/display consumers and Fastify bootstrap, route, and service
+  consumers use the explicit package subpath; the old application-tree module
+  and test owner are removed.
+- Rendering, parser/CBS execution, cache behavior, batching, persistence,
+  authorization, revisions, and writer policy did not move.
+- The boundary cursor fell by exactly three production runtime/mixed edges, from
+  341 to 338.

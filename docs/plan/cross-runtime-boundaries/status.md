@@ -11,21 +11,21 @@ in [`latest-verification.md`](latest-verification.md).
 
 - Plan state: Active; Phase 0 complete.
 - Current phase: [Phase 1 protocol contract completion](phases/phase-1-protocol-contract-completion.md).
-- Active slice: [Display-source contract](phases/slices/phase-1-protocol-contract-completion/display-source-contract.md), ready to start.
+- Active slice: [MCP OAuth refresh contract](phases/slices/phase-1-protocol-contract-completion/mcp-oauth-refresh-contract.md), ready to start.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through the current slice: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
-  server-tool, and client-context contracts moved to explicit protocol subpaths
-  without wire changes.
-- Latest verification: client-context contract passed at
-  `e729dabe489ce4974cf0f669a74e47ba69927008`; see
+  server-tool, client-context, and display-source contracts moved to explicit
+  protocol subpaths without wire changes.
+- Latest verification: display-source contract passed at
+  `07abd8aa562c6486b41935b016ca30a4b40bd33f`; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
 
 | Consumer or prerequisite | Cursor | State |
 | --- | --- | --- |
-| Portfolio no-new-debt requirement | `b01e88b03` | Released from the 375-edge opening cursor; the reviewed 341-edge baseline is mandatory in `check:server`. |
+| Portfolio no-new-debt requirement | `b01e88b03` | Released from the 375-edge opening cursor; the reviewed 338-edge baseline is mandatory in `check:server`. |
 | Shell resource contract | `159b6eccf` | Released through `@risuai/protocol/shell-resource`. |
 | Character-summary resource contract | `159b6eccf` | Released through `@risuai/protocol/character-summary-resource`. |
 | Provider-operation contract | `9c1d0f114` | Released through `@risuai/protocol/provider-operation`; credential resolution and dispatch remain Fastify-owned. |
@@ -34,6 +34,7 @@ in [`latest-verification.md`](latest-verification.md).
 | TTS-synthesis contract | `cc7cfc0fd` | Released through `@risuai/protocol/tts-synthesis`; credentials, character configuration, endpoints, provider execution, bounds, audio validation, and errors remain Fastify-owned. |
 | Server-tool contract | `8a1084a53` | Released through `@risuai/protocol/server-tool`; tool execution, provider translation, prompts, authorization, writer authority, and persistence remain in their current owners. |
 | Client-context contract | `e729dabe4` | Released through `@risuai/protocol/client-context`; browser environment capture, prompt/CBS behavior, authorization, and writer policy remain in their current owners. |
+| Display-source contract | `07abd8aa5` | Released through `@risuai/protocol/display-source`; rendering, parser/CBS execution, caches, persistence, authorization, revision checks, and writer policy remain in their current owners. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -58,11 +59,11 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 341 direct root-`src` edges remain: 238 production, 95 server-test, and 8
-  browser-smoke, spanning 128 importers and 71 targets.
-- Usage is 135 runtime, 42 mixed, and 164 type-only; 177 runtime/mixed edges
+- 338 direct root-`src` edges remain: 235 production, 95 server-test, and 8
+  browser-smoke, spanning 125 importers and 70 targets.
+- Usage is 134 runtime, 40 mixed, and 164 type-only; 174 runtime/mixed edges
   remain.
-- The completed Phase 1 slices have removed 34 edges and eight source targets.
+- The completed Phase 1 slices have removed 37 edges and nine source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
