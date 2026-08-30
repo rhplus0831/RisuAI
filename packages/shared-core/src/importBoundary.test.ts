@@ -70,6 +70,7 @@ describe('@risuai/shared-core import boundary', () => {
         'chatLoadPages.ts',
         'chatMLRows.ts',
         'chatPage.ts',
+        'defaultHotkeys.ts',
         'historySlots.ts',
         'index.ts',
         'inlayTokens.ts',

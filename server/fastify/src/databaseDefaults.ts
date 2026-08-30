@@ -1,6 +1,6 @@
 import { createDefaultInputHooks, defaultAutoSuggestPrompt } from '../../../src/ts/storage/defaultPrompts.js'
 import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/templates/templates.js'
-import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS } from '../../../src/ts/defaulthotkeys.js'
+import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS } from '@risuai/shared-core/default-hotkeys'
 import { LLMFormat } from '../../../src/ts/model/types.js'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '@risuai/shared-core/chat-display-tail-count'
 import {
