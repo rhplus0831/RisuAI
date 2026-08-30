@@ -213,21 +213,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/commands/modelProfiles.ts",
-      "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
-      "target": "src/ts/model/providerCredentialRecords.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "ProviderCredentialRecord",
-        "ProviderCredentialRecordValidationError",
-        "readProviderCredentials"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/modelProfiles.ts",
       "specifier": "../../../../src/ts/model/providers/anthropic.js",
       "target": "src/ts/model/providers/anthropic.ts",
       "kind": "static",
@@ -321,21 +306,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/providerCredentials.ts",
-      "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
-      "target": "src/ts/model/providerCredentialRecords.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "ProviderCredentialRecord",
-        "ProviderCredentialRecordValidationError",
-        "readProviderCredentials"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/splitPresets.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
@@ -408,19 +378,6 @@
         "normalizeModelProfiles",
         "normalizeModelRoleProfiles",
         "normalizeModelRuntimeDefaults"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/model/providerCredentialRecords.js",
-      "target": "src/ts/model/providerCredentialRecords.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeProviderCredentials"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -1462,21 +1419,6 @@
         "readModelProfiles",
         "readModelRoleProfiles",
         "readModelRuntimeDefaults"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/commands.ts",
-      "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
-      "target": "src/ts/model/providerCredentialRecords.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "ProviderCredentialRecordValidationError",
-        "normalizeProviderCredentials",
-        "readProviderCredentials"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

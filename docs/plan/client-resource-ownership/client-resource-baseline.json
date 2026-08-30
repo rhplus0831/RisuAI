@@ -1021,10 +1021,6 @@
           "count": 1
         },
         {
-          "file": "src/lib/Mobile/MobileHeader.svelte",
-          "count": 1
-        },
-        {
           "file": "src/lib/ObserverShell.svelte",
           "count": 2
         },
@@ -3710,10 +3706,6 @@
       "files": [
         {
           "file": "src/lib/Mobile/MobileBody.svelte",
-          "count": 1
-        },
-        {
-          "file": "src/lib/Mobile/MobileHeader.svelte",
           "count": 1
         },
         {
