@@ -5,7 +5,7 @@ import { hydrateActiveChat, hydrateChatMessageWindow } from './chatMessageHydrat
 import { getInitialChatLoadPages } from '../chatLoadPages'
 import { peekAppliedServerResourceRevision } from './commands'
 import { getServerInlayCatalogResource } from './inlayCatalog'
-import { SERVER_CHARACTER_SHELL_MARKER } from './characterSummaryProtocol'
+import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 import {
   RESOURCE_SURFACE_MANIFEST,
   resolveResourceRequirements,

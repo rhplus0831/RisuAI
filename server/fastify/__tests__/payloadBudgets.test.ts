@@ -7,8 +7,8 @@ import { buildApp } from '../src/app.js'
 import { jsonPayloadBytes } from '../src/protocolMetrics.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { buildLargeCorpusFixture } from '../../../src/ts/__tests__/largeCorpusFixture.js'
-import { isServerCharactersSummaryPayload } from '../../../src/ts/server/characterSummaryProtocol.js'
-import { isServerShellPayload } from '../../../src/ts/server/shellProtocol.js'
+import { isServerCharactersSummaryPayload } from '@risuai/protocol/character-summary-resource'
+import { isServerShellPayload } from '@risuai/protocol/shell-resource'
 
 interface Harness {
   app: FastifyInstance

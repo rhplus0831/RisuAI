@@ -16,7 +16,7 @@ import {
 } from './resourceManifest'
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
 import { SERVER_SETTINGS_GROUP_BY_KEY, SERVER_SETTINGS_KEYS_BY_GROUP, SETTINGS_GROUPS } from './settingsGroups'
-import { SERVER_SHELL_SETTINGS_KEYS } from './shellProtocol'
+import { SERVER_SHELL_SETTINGS_KEYS } from '@risuai/protocol/shell-resource'
 
 const canonicalSettingsRoutes = [
   ['/settings/backup', 0],

@@ -20,8 +20,15 @@ import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } fr
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
 import { applyPendingSettingsProjectionOverlays } from './settingsPendingProjection'
 import { reapplyRetainedCharacterProjections } from './chatRetainedProjection'
-import { SERVER_CHARACTER_SHELL_MARKER, SERVER_CHARACTER_SUMMARY_VERSION } from './characterSummaryProtocol'
-import { SERVER_SHELL_SETTINGS_KEYS, isServerShellSettings, type ServerShellSettings } from './shellProtocol'
+import {
+  SERVER_CHARACTER_SHELL_MARKER,
+  SERVER_CHARACTER_SUMMARY_VERSION,
+} from '@risuai/protocol/character-summary-resource'
+import {
+  SERVER_SHELL_SETTINGS_KEYS,
+  isServerShellSettings,
+  type ServerShellSettings,
+} from '@risuai/protocol/shell-resource'
 import {
   SERVER_STANDALONE_SETTING_NAMES,
   type ServerStandaloneSettingName,

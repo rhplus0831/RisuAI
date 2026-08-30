@@ -9,7 +9,7 @@ import {
   isServerCharactersSummaryPayload,
   type ServerCharacterSummary,
   type ServerCharactersSummaryPayload,
-} from './characterSummaryProtocol'
+} from '@risuai/protocol/character-summary-resource'
 
 function characterSummary(overrides: Partial<ServerCharacterSummary> = {}): ServerCharacterSummary {
   return {

@@ -16,7 +16,7 @@ import {
   settingsResourceState,
 } from './resourceState.svelte'
 import { applyServerShellResource } from './shellHydration'
-import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from './shellProtocol'
+import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from '@risuai/protocol/shell-resource'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 
 function shellSettings(language = 'en'): ServerShellSettings {

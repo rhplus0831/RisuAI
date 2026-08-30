@@ -2,10 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
-import {
-  SERVER_CHARACTER_SHELL_MARKER,
-  type ServerCharacterSummary,
-} from '../../../src/ts/server/characterSummaryProtocol.js'
+import { SERVER_CHARACTER_SHELL_MARKER, type ServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
 import { createInitialDatabase } from './databaseDefaults.js'
 import { rebuildAllBardWikiDerivedState } from './bardWikiRepository.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'

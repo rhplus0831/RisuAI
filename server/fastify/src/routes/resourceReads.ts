@@ -1,13 +1,13 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { SERVER_CHARACTER_SUMMARY_VERSION } from '../../../../src/ts/server/characterSummaryProtocol.js'
+import { SERVER_CHARACTER_SUMMARY_VERSION } from '@risuai/protocol/character-summary-resource'
 import {
   SERVER_SHELL_PROTOCOL_VERSION,
   SERVER_SHELL_SETTINGS_KEYS,
   isServerShellSettings,
   type ServerShellSettings,
-} from '../../../../src/ts/server/shellProtocol.js'
+} from '@risuai/protocol/shell-resource'
 import {
   isServerStandaloneSettingName,
   type ServerStandaloneSettingName,

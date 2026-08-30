@@ -6,7 +6,7 @@ import {
   canApplyShellSettingsResource,
 } from './resourceState.svelte'
 import type { ServerShellResourcePayload } from './resourceReads'
-import { SERVER_SHELL_PROTOCOL_VERSION } from './shellProtocol'
+import { SERVER_SHELL_PROTOCOL_VERSION } from '@risuai/protocol/shell-resource'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
 
 /** Apply one already-validated shell response as an atomic client projection. */

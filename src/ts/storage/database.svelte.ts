@@ -55,7 +55,7 @@ import {
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
-import { SERVER_CHARACTER_SHELL_MARKER } from '../server/characterSummaryProtocol'
+import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 import {
   DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
   isBardWikiGlobalSettings,
@@ -3495,7 +3495,7 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
   })
 }
 
-export { SERVER_CHARACTER_SHELL_MARKER } from '../server/characterSummaryProtocol'
+export { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 
 export function isServerCharacterShell(character: unknown): boolean {
   return (

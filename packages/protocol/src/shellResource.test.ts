@@ -5,8 +5,11 @@ import {
   SERVER_SHELL_SETTINGS_KEYS,
   isServerShellPayload,
   type ServerShellSettings,
-} from './shellProtocol'
-import { SERVER_CHARACTER_SHELL_MARKER, SERVER_CHARACTER_SUMMARY_VERSION } from './characterSummaryProtocol'
+} from '@risuai/protocol/shell-resource'
+import {
+  SERVER_CHARACTER_SHELL_MARKER,
+  SERVER_CHARACTER_SUMMARY_VERSION,
+} from '@risuai/protocol/character-summary-resource'
 
 function shellSettings(): ServerShellSettings {
   return {

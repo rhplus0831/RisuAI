@@ -74,9 +74,9 @@ import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from './staleStateGuards'
 import { applyServerInlayCatalogResource, getServerInlayCatalogResource } from './inlayCatalog'
 import { applyServerShellResource } from './shellHydration'
-import { SERVER_SHELL_SETTINGS_KEYS } from './shellProtocol'
+import { SERVER_SHELL_SETTINGS_KEYS } from '@risuai/protocol/shell-resource'
 import type { ServerStandaloneSettingName } from './standaloneSettingsProtocol'
-import { SERVER_CHARACTER_SHELL_MARKER } from './characterSummaryProtocol'
+import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 import {
   isBardWikiChatResourceLoaded,
   isBardWikiDocumentResourceLoaded,

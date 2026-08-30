@@ -3332,20 +3332,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/repository.ts",
-      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
-      "target": "src/ts/server/characterSummaryProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "SERVER_CHARACTER_SHELL_MARKER",
-        "ServerCharacterSummary"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/requestHistory.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -3706,35 +3692,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/resourceReads.ts",
-      "specifier": "../../../../src/ts/server/characterSummaryProtocol.js",
-      "target": "src/ts/server/characterSummaryProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_CHARACTER_SUMMARY_VERSION"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/resourceReads.ts",
-      "specifier": "../../../../src/ts/server/shellProtocol.js",
-      "target": "src/ts/server/shellProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "SERVER_SHELL_PROTOCOL_VERSION",
-        "SERVER_SHELL_SETTINGS_KEYS",
-        "ServerShellSettings",
-        "isServerShellSettings"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",
@@ -4668,32 +4625,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/payloadBudgets.test.ts",
-      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
-      "target": "src/ts/server/characterSummaryProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isServerCharactersSummaryPayload"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/payloadBudgets.test.ts",
-      "specifier": "../../../src/ts/server/shellProtocol.js",
-      "target": "src/ts/server/shellProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isServerShellPayload"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
       "specifier": "../../../src/ts/moduleActivation.js",
       "target": "src/ts/moduleActivation.ts",
@@ -5053,37 +4984,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/resourceReads.test.ts",
-      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
-      "target": "src/ts/server/characterSummaryProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_CHARACTER_SUMMARY_KEYS",
-        "SERVER_CHARACTER_SUMMARY_VERSION",
-        "isServerCharactersSummaryPayload"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/resourceReads.test.ts",
-      "specifier": "../../../src/ts/server/shellProtocol.js",
-      "target": "src/ts/server/shellProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_SHELL_PAYLOAD_KEYS",
-        "SERVER_SHELL_PROTOCOL_VERSION",
-        "SERVER_SHELL_SETTINGS_KEYS",
-        "isServerShellPayload"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/scripts.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
@@ -5111,19 +5011,6 @@
       ],
       "count": 1,
       "policy": "test-fixture"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/serverLoadCostHarness.test.ts",
-      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
-      "target": "src/ts/server/characterSummaryProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isServerCharacterSummary"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "server-test",
@@ -5399,4 +5286,3 @@
     }
   ]
 }
-

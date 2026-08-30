@@ -5,7 +5,7 @@ import {
   isServerCharactersSummaryPayload,
   type ServerCharacterSummary,
   type ServerCharactersSummaryPayload,
-} from './characterSummaryProtocol'
+} from '@risuai/protocol/character-summary-resource'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   isResourceCacheMetadata,
@@ -31,7 +31,11 @@ import {
   type ServerSettingsValues,
 } from './resourceState.svelte'
 import { isServerInlayCatalogPayload, type ServerInlayCatalogResourcePayload } from './inlayCatalog'
-import { SERVER_SHELL_PROTOCOL_VERSION, isServerShellPayload, type ServerShellSettings } from './shellProtocol'
+import {
+  SERVER_SHELL_PROTOCOL_VERSION,
+  isServerShellPayload,
+  type ServerShellSettings,
+} from '@risuai/protocol/shell-resource'
 import {
   isServerStandaloneSettingName,
   isServerStandaloneSettingPayload,

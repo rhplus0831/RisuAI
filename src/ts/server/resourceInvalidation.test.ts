@@ -134,7 +134,7 @@ import {
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
-import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from './shellProtocol'
+import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from '@risuai/protocol/shell-resource'
 import {
   applyServerInlayCatalogResource,
   getServerInlayCatalogResource,

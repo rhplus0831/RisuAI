@@ -6,7 +6,9 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./character-summary-resource": "./src/characterSummaryResource.ts",
     "./generation-sse": "./src/generationSse.ts",
+    "./shell-resource": "./src/shellResource.ts",
     "./startup-telemetry": "./src/startupTelemetry.ts"
   },
   "dependencies": {

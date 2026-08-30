@@ -18,8 +18,8 @@ import {
   SERVER_CHARACTER_SHELL_MARKER,
   SERVER_CHARACTER_SUMMARY_VERSION,
   type ServerCharacterSummary,
-} from './characterSummaryProtocol'
-import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from './shellProtocol'
+} from '@risuai/protocol/character-summary-resource'
+import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from '@risuai/protocol/shell-resource'
 import {
   fetchServerCharacter,
   fetchServerCharacterOrder,

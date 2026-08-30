@@ -16,13 +16,13 @@ import {
   SERVER_CHARACTER_SUMMARY_KEYS,
   SERVER_CHARACTER_SUMMARY_VERSION,
   isServerCharactersSummaryPayload,
-} from '../../../src/ts/server/characterSummaryProtocol.js'
+} from '@risuai/protocol/character-summary-resource'
 import {
   SERVER_SHELL_PAYLOAD_KEYS,
   SERVER_SHELL_PROTOCOL_VERSION,
   SERVER_SHELL_SETTINGS_KEYS,
   isServerShellPayload,
-} from '../../../src/ts/server/shellProtocol.js'
+} from '@risuai/protocol/shell-resource'
 
 interface Harness {
   app: FastifyInstance
