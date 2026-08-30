@@ -1,4 +1,13 @@
-import { getCurrentCharacter } from '../storage/database.svelte'
+import { get } from 'svelte/store'
+import { getSelectedCharacterOwner, selectCharacterOwner } from '../characterState'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+} from '../server/resourceState.svelte'
+import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
+import { selectedCharID } from '../stores/coreStores.svelte'
+import { getDatabase, type Chat, type character, type Message } from '../storage/database.svelte'
 
 type ChatBranch = {
   children: Map<string, ChatBranch>
@@ -66,7 +75,7 @@ function renderBranch(branch: ChatBranch, x: number, y: number, connectX = -1, c
 }
 
 export function getChatBranches() {
-  const character = getCurrentCharacter()
+  const character = selectedBranchCharacterOwner()
   if (!character) return []
 
   const mainBranch: ChatBranch = {
@@ -76,10 +85,15 @@ export function getChatBranches() {
   }
 
   let i = 0
-  for (const chat of character.chats) {
+  for (const candidate of character.chats) {
+    const chat = candidate?.id ? uniqueBranchChatOwner(character, candidate.id) : undefined
+    const messages =
+      chat && charactersResourceState.status === 'ready' ? getChatMessageOwnerState(chat.id)?.messages : chat?.message
+    if (!chat || !messages || !hasUniqueMessageOwners(messages)) return []
+
     const fm = chat.fmIndex === -1 ? character.firstMessage : character.alternateGreetings?.[chat.fmIndex ?? 0]
     const chatList: string[] = [simpleHasher(fm)]
-    for (const message of chat.message) {
+    for (const message of messages) {
       chatList.push(simpleHasher(message.data))
     }
 
@@ -89,6 +103,44 @@ export function getChatBranches() {
   getMaxChildren(mainBranch)
 
   return renderBranch(mainBranch, 0, 0)
+}
+
+function selectedBranchCharacterOwner(): character | undefined {
+  if (charactersResourceState.status === 'ready') {
+    const owner = getSelectedCharacterOwner()
+    return owner?.chaId && getCharacterResourceOwner(owner.chaId) === owner ? owner : undefined
+  }
+  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+  return selectCharacterOwner(getDatabase().characters ?? [], get(selectedCharID))
+}
+
+function uniqueBranchChatOwner(character: character, chatId: string): Chat | undefined {
+  if (!chatId) return undefined
+  const matches = (character.chats ?? []).filter((candidate) => candidate?.id === chatId)
+  if (matches.length !== 1) return undefined
+
+  if (charactersResourceState.status === 'ready') {
+    return getChatMetadataOwnerState(chatId) ? matches[0] : undefined
+  }
+
+  let matchCount = 0
+  for (const candidateCharacter of getDatabase().characters ?? []) {
+    for (const candidateChat of candidateCharacter.chats ?? []) {
+      if (candidateChat?.id === chatId) matchCount += 1
+      if (matchCount > 1) return undefined
+    }
+  }
+  return matchCount === 1 ? matches[0] : undefined
+}
+
+function hasUniqueMessageOwners(messages: readonly Message[]): boolean {
+  const ids = new Set<string>()
+  for (const message of messages) {
+    const messageId = message?.chatId
+    if (typeof messageId !== 'string' || !messageId.trim() || ids.has(messageId)) return false
+    ids.add(messageId)
+  }
+  return true
 }
 
 function simpleHasher(str: string) {
