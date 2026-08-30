@@ -348,6 +348,19 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
 })
 
 describe('static architecture gate: prompt-template dispatch boundaries', () => {
+  it('routes normal prompt-template reads through the unique owner policy', () => {
+    const promptSettings = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
+    const botSettings = readSource('src/lib/Setting/Pages/BotSettings.svelte')
+    const otherBotSettings = readSource('src/lib/Setting/Pages/OtherBotSettings.svelte')
+    const devTool = readSource('src/lib/SideBars/DevTool.svelte')
+
+    expect(promptSettings).toContain('resolveUniquePromptPreset(')
+    expect(botSettings).toContain('function selectedPromptPresetOwner()')
+    expect(botSettings).toContain('const preset = selectedPromptPresetOwner()')
+    expect(otherBotSettings).toContain('resolveEffectivePromptTemplate(database)')
+    expect(devTool).toContain('resolveEffectivePromptTemplate(getDatabase()).promptTemplate')
+  })
+
   it('does not redispatch PromptSettings drafts after accepting projection changes', () => {
     const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
     expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')

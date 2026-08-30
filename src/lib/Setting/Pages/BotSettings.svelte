@@ -47,6 +47,7 @@
   import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
   import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
+  import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import { allBasicParameterItems } from 'src/ts/setting/botSettingsParamsData'
@@ -290,7 +291,7 @@
   })
 
   let promptTemplateHydrated = $derived(isPromptTemplateHydratedInState($promptTemplateHydrationStateStore))
-  let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
+  let selectedPromptPreset = $derived(selectedPromptPresetOwner())
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
   let recommendedModelPresetMutation = $state<{
     operation: number
@@ -694,29 +695,34 @@
   }
 
   function promptFieldOwnerSignature(): string {
-    const selectedIndex = getDatabase().promptPresetsId
-    const selectedId =
-      Number.isInteger(selectedIndex) && selectedIndex >= 0
-        ? getDatabase().promptPresets?.[selectedIndex]?.id
-        : undefined
+    const selectedId = selectedPromptPresetOwner()?.id
     return selectedId ? `preset:${selectedId}` : 'root'
   }
 
-  function currentPromptFieldDraftOwnerKey(key: string): string {
+  function selectedPromptPresetCandidate(): PromptPreset | undefined {
     const selectedIndex = getDatabase().promptPresetsId
-    const selectedId =
-      Number.isInteger(selectedIndex) && selectedIndex >= 0
-        ? getDatabase().promptPresets?.[selectedIndex]?.id
-        : undefined
+    return Number.isInteger(selectedIndex) && selectedIndex >= 0
+      ? (getDatabase().promptPresets?.[selectedIndex] as PromptPreset | undefined)
+      : undefined
+  }
+
+  function selectedPromptPresetOwner(): PromptPreset | undefined {
+    const candidate = selectedPromptPresetCandidate()
+    if (!candidate) return undefined
+    return resolveUniquePromptPreset(getDatabase().promptPresets, candidate.id) as PromptPreset | undefined
+  }
+
+  function currentPromptFieldDraftOwnerKey(key: string): string {
+    const selectedId = selectedPromptPresetOwner()?.id
     return selectedId ? splitPresetSettingDraftOwnerKey('prompt', selectedId, key) : serverSettingDraftOwnerKey(key)
   }
 
   function reassertDirtyPromptFieldDraftValue<T>(key: string, value: T): void {
+    if (selectedPromptPresetCandidate() && !selectedPromptPreset) return
     withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       target[key] = cloneJsonValue(value)
-      const selectedIndex = getDatabase().promptPresetsId
-      const preset = getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+      const preset = selectedPromptPreset
       if (!preset) return
       preset[key] = cloneJsonValue(value)
       if (key === 'presetRegex') preset.regex = []
@@ -915,7 +921,7 @@
   }
 
   function currentPromptFieldValue<T>(key: string, fallback: T): T {
-    const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
+    const preset = selectedPromptPresetOwner()
     if (preset) {
       if (key === 'presetRegex') {
         const regexField = resolvePromptPresetRegexField(preset)
@@ -923,6 +929,7 @@
       }
       if (Object.prototype.hasOwnProperty.call(preset, key)) return preset[key] as T
     }
+    if (selectedPromptPresetCandidate()) return fallback
     const target = getDatabase() as unknown as Record<string, unknown> | undefined
     const value = target?.[key]
     return value === undefined ? fallback : (value as T)
@@ -930,18 +937,19 @@
 
   function writeSelectedPromptPresetField<T>(key: string, value: T): boolean {
     if (value === undefined) return false
-    const selectedIndex = getDatabase().promptPresetsId
-    if (selectedIndex < 0) return false
-    const preset = getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+    const preset = selectedPromptPreset
     if (!preset) return false
+    const selectedIndex = getDatabase().promptPresets?.findIndex((candidate) => candidate === preset) ?? -1
+    if (selectedIndex < 0) return false
     if (snapshotJson(preset[key]) === snapshotJson(value)) return false
     updatePromptPreset(selectedIndex, { [key]: cloneJsonValue(value) } as Partial<PromptPreset>)
     return true
   }
 
   function selectedPromptPresetHasOwnPromptTemplate(): boolean {
-    const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-    return preset ? Array.isArray(preset.promptTemplate) : Array.isArray(getDatabase().promptTemplate)
+    const candidate = selectedPromptPresetCandidate()
+    if (candidate) return !!selectedPromptPreset && Array.isArray(selectedPromptPreset.promptTemplate)
+    return Array.isArray(getDatabase().promptTemplate)
   }
 
   function promptTemplatePresetSelectionSignature(): string {
@@ -961,7 +969,7 @@
       }
       return { hasTemplate: true, template: cloneJsonValue(getDatabase().promptTemplate) }
     }
-    const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
+    const preset = selectedPromptPreset
     if (preset?.id !== ownerId || !Array.isArray(preset.promptTemplate)) {
       return { hasTemplate: false, template: undefined }
     }
@@ -1122,14 +1130,15 @@
 
   function currentPromptPresetIconUploadTarget() {
     const selectedIndex = getDatabase().promptPresetsId
+    const preset = selectedPromptPreset
     return capturePromptPresetIconUploadTarget({
       presetIndex: selectedIndex,
-      preset: getDatabase().promptPresets?.[selectedIndex],
+      preset,
     })
   }
 
   function promptPresetIconUploadFreshness(operation: PromptPresetIconUploadOperation) {
-    const selectedPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
+    const selectedPreset = selectedPromptPreset
     const rowPreset = getDatabase().promptPresets?.[operation.presetIndex]
 
     return {
@@ -1144,7 +1153,7 @@
   }
 
   function currentBiasImportFreshness() {
-    const selectedPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
+    const selectedPreset = selectedPromptPreset
     return {
       selectedPromptPresetId: selectedPreset?.id,
       bias: biasDraft.value,

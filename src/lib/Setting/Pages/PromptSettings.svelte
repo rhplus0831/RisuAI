@@ -25,6 +25,7 @@
   import { onDestroy, onMount, untrack } from 'svelte'
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
   import { normalizePromptTemplateIds, promptTemplateIdsNeedNormalization } from 'src/ts/storage/database.svelte'
+  import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
@@ -256,6 +257,13 @@
     return typeof selectedId === 'string' && selectedId.length > 0 ? selectedId : null
   }
 
+  function selectedPromptPresetCandidate(): Record<string, unknown> | undefined {
+    const selectedIndex = selectedPromptPresetIndex()
+    return selectedIndex >= 0
+      ? (getResourceDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined)
+      : undefined
+  }
+
   function selectedModelPresetId(): string | null {
     const selectedIndex = selectedModelPresetIndex()
     const selectedId =
@@ -264,10 +272,11 @@
   }
 
   function selectedPromptPreset(): Record<string, unknown> | undefined {
-    const selectedIndex = selectedPromptPresetIndex()
-    return selectedIndex >= 0
-      ? (getResourceDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined)
-      : undefined
+    const candidate = selectedPromptPresetCandidate()
+    if (!candidate) return undefined
+    return resolveUniquePromptPreset(getResourceDatabase().promptPresets, candidate.id) as
+      | Record<string, unknown>
+      | undefined
   }
 
   function selectedPromptPresetHasOwnPromptTemplate(): boolean {
@@ -276,6 +285,7 @@
   }
 
   function cloneSelectedPromptPresetTemplate(): PromptItem[] {
+    if (selectedPromptPresetCandidate() && !selectedPromptPreset()) return []
     const preset = selectedPromptPreset()
     if (preset) {
       if (Array.isArray(preset.promptTemplate)) return cloneJsonValue(preset.promptTemplate as PromptItem[])

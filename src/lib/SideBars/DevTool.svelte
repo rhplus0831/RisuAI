@@ -8,6 +8,7 @@
   import Accordion from '../UI/Accordion.svelte'
   import { getCharToken, getChatToken } from 'src/ts/tokenizer'
   import { tokenizePreset } from 'src/ts/process/prompt'
+  import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
   import { getDatabase, type Chat } from 'src/ts/storage/database.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -161,6 +162,7 @@
 </Accordion>
 
 <Accordion styled name={'Tokens'}>
+  {@const promptTemplate = resolveEffectivePromptTemplate(getDatabase()).promptTemplate}
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
     {#await getCharToken(getDatabase().characters[$selectedCharID])}
       <span>Character Persistant</span>
@@ -180,8 +182,8 @@
       <span>Current Chat</span>
       <div class="p-2 text-center">{token} Tokens</div>
     {/await}
-    {#if getDatabase().promptTemplate}
-      {#await tokenizePreset(getDatabase().promptTemplate)}
+    {#if promptTemplate}
+      {#await tokenizePreset(promptTemplate)}
         <span>Prompt Template</span>
         <div class="p-2 text-center">Loading...</div>
       {:then token}

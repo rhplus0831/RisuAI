@@ -13,6 +13,7 @@ const devToolMocks = vi.hoisted(() => ({
   alertNormal: vi.fn(),
   beginAlertWait: vi.fn(() => Symbol('preview-wait')),
   clearAlertWait: vi.fn(() => true),
+  tokenizePreset: vi.fn(async () => 0),
   appendCurrentChatUserMessageForSend: vi.fn<(...args: any[]) => Promise<any>>(async () => ({
     status: 'ok',
     messageId: 'message-b',
@@ -52,7 +53,10 @@ vi.mock('src/ts/alert', async (importActual) => ({
 vi.mock('src/ts/tokenizer', () => ({
   getCharToken: vi.fn(async () => ({ persistant: 0, dynamic: 0 })),
   getChatToken: vi.fn(async () => 0),
-  tokenizePreset: vi.fn(async () => 0),
+}))
+
+vi.mock('src/ts/process/prompt', () => ({
+  tokenizePreset: devToolMocks.tokenizePreset,
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -75,7 +79,7 @@ vi.mock('src/ts/filePicker', () => ({
 import DevTool from './DevTool.svelte'
 import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
@@ -154,6 +158,7 @@ beforeEach(() => {
     devToolMocks.alertMd,
     devToolMocks.alertNormal,
     devToolMocks.setChatScriptstateValue,
+    devToolMocks.tokenizePreset,
   ]) {
     mock.mockReset()
   }
@@ -338,4 +343,24 @@ describe('DevTool chat generation ownership', () => {
     expect(devToolMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
     expect(devToolMocks.coordinateAcceptedChatSend).toHaveBeenCalledTimes(1)
   })
+
+  it('counts the selected prompt owner instead of a stale flat projection', async () => {
+    const canonicalTemplate = [{ id: 'canonical-row', role: 'system', content: 'canonical' }]
+    setDatabaseLite({
+      ...(getDatabaseSnapshot() as unknown as Record<string, unknown>),
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', promptTemplate: canonicalTemplate }],
+      promptPresetsId: 0,
+      promptTemplate: [{ id: 'stale-row', role: 'system', content: 'stale' }],
+    } as unknown as Database)
+    devToolMocks.tokenizePreset.mockClear().mockResolvedValue(7)
+
+    await openSection('Tokens')
+    await settle()
+
+    expect(devToolMocks.tokenizePreset).toHaveBeenCalledWith(canonicalTemplate)
+  })
 })
+
+function getDatabaseSnapshot(): Database {
+  return getDatabase({ snapshot: true })
+}

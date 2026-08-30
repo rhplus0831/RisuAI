@@ -493,6 +493,32 @@ describe('BotSettings pending prompt persistence', () => {
     )
   }
 
+  it('displays selected prompt-owner fields when the flat projection is stale', async () => {
+    if (component) {
+      unmount(component)
+      component = undefined
+    }
+
+    setDatabaseLite({
+      aiModel: 'gpt35',
+      subModel: 'gpt35',
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', mainPrompt: 'canonical prompt owner' }],
+      promptPresetsId: 0,
+      promptTemplate: [],
+      mainPrompt: 'stale flat projection',
+      botPresets: [],
+      useLegacyGUI: false,
+      formatingOrder: [],
+    } as any)
+    component = mount(BotSettings, { target, props: { settingsKind: 'prompt' } })
+
+    await tick()
+
+    expect(target.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${language.mainPrompt}"]`)?.value).toBe(
+      'canonical prompt owner',
+    )
+  })
+
   it('persists a selection that matches the provider from before an authoritative update', async () => {
     if (component) {
       unmount(component)

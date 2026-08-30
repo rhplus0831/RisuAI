@@ -224,13 +224,16 @@
     const database = getDatabase()
     const char = database.characters[$selectedCharID]
     const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
+    const promptTemplate = resolveEffectivePromptTemplate(database)
 
     // The await block can only subscribe to values read before the async
     // boundary. Capture every input used by token counting here so a later
     // character, prompt, or context change starts a fresh calculation.
     return JSON.stringify([
       $selectedCharID,
-      database.promptTemplate,
+      promptTemplate.source,
+      promptTemplate.promptPresetId ?? '',
+      promptTemplate.promptTemplate,
       char,
       database.loreBookToken,
       mainProfile.runtimeOptions.maxResponse,

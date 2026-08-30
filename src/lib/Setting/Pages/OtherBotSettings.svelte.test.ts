@@ -808,6 +808,57 @@ describe('OtherBotSettings Hypa memory ratio', () => {
     expect(otherBotMocks.tokenizePreset).toHaveBeenCalledTimes(2)
     expect(otherBotMocks.getCharToken).toHaveBeenCalledTimes(2)
   })
+
+  it('counts the selected prompt owner when the flat template projection is stale', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [
+      {
+        name: 'Default',
+        settings: {
+          summarizationModel: 'subModel',
+          memoryTokensRatio: 0.2,
+          extraSummarizationRatio: 0,
+          maxChatsPerSummary: 6,
+          recentMemoryRatio: 0.4,
+          similarMemoryRatio: 0.4,
+        },
+      },
+    ]
+    const canonicalTemplate = [{ id: 'canonical-row', role: 'system', content: 'canonical' }]
+    setDatabaseLite({
+      useLegacyGUI: false,
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A', promptTemplate: canonicalTemplate }],
+      promptPresetsId: 0,
+      promptTemplate: [{ id: 'stale-row', role: 'system', content: 'stale' }],
+      characters: [
+        {
+          chaId: 'character-1',
+          chats: [],
+          chatPage: 0,
+          loreSettings: { tokenBudget: 0 },
+        },
+      ],
+      loreBookToken: 0,
+      maxResponse: 20,
+      maxContext: 8000,
+      modelProfiles: [
+        {
+          id: 'hypa-main',
+          name: 'Hypa Main',
+          modelId: 'gpt-5',
+          runtimeOptions: { maxResponse: 100, maxContext: 1000 },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'hypa-main' } },
+    } as any)
+    otherBotMocks.tokenizePreset.mockResolvedValue(100)
+    otherBotMocks.getCharToken.mockResolvedValue({ dynamic: 0, persistant: 100 })
+    selectedCharID.set(0)
+
+    component = mount(OtherBotSettings, { target })
+
+    await vi.waitFor(() => expect(otherBotMocks.tokenizePreset).toHaveBeenCalledWith(canonicalTemplate))
+  })
 })
 
 describe('OtherBotSettings Hypa preset async actions', () => {
