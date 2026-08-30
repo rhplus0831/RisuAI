@@ -1,3 +1,19 @@
+<script lang="ts" module>
+  import { isServerCharacterShell, type character } from 'src/ts/storage/database.svelte'
+
+  export function resolveMobileSideChatCharacter(
+    ownerCharacters: readonly character[],
+    aggregateCharacter: character | undefined,
+    selectedIndex: number,
+  ): character | undefined {
+    const characterId = aggregateCharacter?.chaId ?? ownerCharacters[selectedIndex]?.chaId
+    const owner = characterId
+      ? ownerCharacters.find((candidate) => candidate?.chaId === characterId)
+      : ownerCharacters[selectedIndex]
+    return owner && !isServerCharacterShell(owner) ? owner : aggregateCharacter
+  }
+</script>
+
 <script lang="ts">
   import { MobileGUIStack, MobileSideBar, selectedCharID } from 'src/ts/stores.svelte'
   import Settings from '../Setting/Settings.svelte'
@@ -11,7 +27,15 @@
   import DevTool from '../SideBars/DevTool.svelte'
   import { isLite } from 'src/ts/lite'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+
+  let selectedSideChatCharacter = $derived(
+    resolveMobileSideChatCharacter(
+      charactersResourceState.characters,
+      getDatabase().characters[$selectedCharID],
+      $selectedCharID,
+    ),
+  )
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}
@@ -48,7 +72,7 @@
   {#if $MobileSideBar > 0}
     <div class="w-full flex flex-col p-2 mt-2 h-full">
       {#if $MobileSideBar === 1}
-        <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+        <SideChatList chara={selectedSideChatCharacter} />
       {:else if $MobileSideBar === 2}
         <CharConfig />
       {:else if $MobileSideBar === 3}
