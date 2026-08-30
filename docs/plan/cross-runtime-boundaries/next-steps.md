@@ -4,18 +4,17 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [RisuChat parser-helper ownership
-slice](phases/slices/phase-4-server-consumer-migration/risuchat-parser-helper-ownership.md).
+Reconcile the remaining Phase 4 inventory with Workstream 2's active model
+consumer cutover before opening another ownership slice.
 
-1. Move escaping, date/time formatting, legacy block matching, array/dictionary
-   parsing, array construction, and line trimming to one dependency-free shared
-   leaf.
-2. Retain the browser facade; point Fastify CBS and generation consumers
-   directly at the shared owner.
-3. Preserve private-use escape mappings, token replacement order, 300-character
-   format bound, JSON/fallback behavior, `::` escaping, and whitespace rules.
-4. Do not move the RisuChat parser, CBS registry/callbacks, `calcString`, or the
-   request-local chat-variable backend.
+1. Complete the bounded translation cache/locale identity cutover named by
+   Workstream 2.
+2. Re-run the cross-runtime inventory and classify the remaining model,
+   prompt-template, translator, parser, and aggregate-database edges.
+3. Open only a review-sized slice whose behavior and policy owner are explicit;
+   do not move application state into shared core.
+4. Keep both consuming TypeScript project references until every unapproved
+   edge is gone and Phase 6 can prove declaration decoupling.
 
 ## Foundations Released
 
@@ -103,16 +102,26 @@ slice](phases/slices/phase-4-server-consumer-migration/risuchat-parser-helper-ow
   settings are released through four audited shared-core subpaths.
 - The Hypa truncation confirmation code is released through
   `@risuai/protocol/hypa-context-truncation` at `d82d1b86b`.
+- RisuChat parser helpers are released through
+  `@risuai/shared-core/risuchat-parser-helpers` at `574eacd3c`.
+- Fastify owns its request-local chat-variable backend at `e823b18f7`; browser
+  state remains browser-owned.
+- Deterministic calculation is released through
+  `@risuai/shared-core/calculation` at `645f562a3`, with runtime-specific
+  variable resolvers injected by each host.
+- Settings group/projection vocabulary is released through
+  `@risuai/shared-core/settings-groups` at `a0f8931c5`.
 
-## Not In This Slice
+## Holds
 
-- Do not move CBS registration state, request-local prompt scope, chat-variable
-  storage, parser budgets, or matcher dispatch.
-- Do not include `calcString`; it requires a separate dependency-injection
-  contract for chat/global variable reads.
+- Prompt-template and model-configuration boundaries remain Workstream
+  2-dependent.
+- Do not move CBS registration state, request-local prompt scope, browser
+  application state, parser budgets, or matcher dispatch into shared core.
+- Do not remove either consuming TypeScript project reference while approved
+  runtime or type-only edges remain.
 
 ## Handoff
 
-After this slice closes, decide the bounded `calcString` injection seam, then
-select the next production Phase 4 consumer domain; prompt-template and
-model-owned configuration remain Workstream 2-dependent.
+After the Workstream 2 translation slice closes, refresh the target/consumer
+ranking and select the smallest non-overlapping Phase 4 owner migration.
