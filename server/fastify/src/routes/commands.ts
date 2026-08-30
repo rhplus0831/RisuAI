@@ -164,7 +164,7 @@ import {
 import { rehomeGenerationReferences, type GenerationReferenceCascadeResult } from '../commands/generationReferences.js'
 import {
   type CharacterRecord,
-  buildPatchedCharacterCollectionRow,
+  buildStrictPatchedCharacterRow,
   createCharacterRecord,
   ensureCharacterCollection,
   ensureDatabaseObject as ensureCharacterDatabaseObject,
@@ -189,6 +189,7 @@ import {
   ensureCharacterChatFolders,
   ensureCharacterChats,
   requireChatLocationExact,
+  requireStrictChatLocation,
   normalizeAllCharacterChats,
   readChatFolderId,
   readChatFolderIdList,
@@ -200,12 +201,14 @@ import {
   readChatPatch,
   readChatScriptstateDeleteKeys,
   readChatScriptstatePatch,
+  readStrictCharacterChatFolders,
   readOptionalBoolean as readChatOptionalBoolean,
   readOptionalFolderByChatId,
   requireChatFolderIndex,
   requireChatLocation,
   selectChat,
   selectedChatId,
+  selectedChatIdStrict,
   validateChatScriptstateCommand,
   validateFullChatFolderOrder,
   validateFullChatOrder,
@@ -218,6 +221,7 @@ import {
   readMessageId,
   readMessagePatch,
   readReplacementMessages,
+  readStrictStoredMessageRecord,
   readTruncateAfterMessageId,
   type MessageRecord,
   validateUniqueMessageIds,
@@ -357,6 +361,8 @@ import {
 import {
   deleteCharacterChatRow,
   clearChatTranslatorPresetBindings,
+  characterRowExists,
+  chatRowExists,
   deleteCharacterRow,
   deletePluginStorageKey,
   deleteInlayCatalogEntry,
@@ -543,6 +549,12 @@ function readScopedCharacterRecords(database: unknown): CharacterRecord[] {
     return []
   }
   return [candidate as CharacterRecord]
+}
+
+function requireOrdinaryChatLocation(characters: readonly CharacterRecord[], chatId: string, db: DatabaseSync) {
+  return chatRowExists(db, chatId)
+    ? requireStrictChatLocation(characters, chatId)
+    : requireChatLocationExact(characters, chatId)
 }
 
 function findJsonRecordById(
@@ -1238,7 +1250,7 @@ function pruneChatBookmarkMetadata(
   else chat.bookmarks = bookmarks
   if (bookmarkNames === undefined) delete chat.bookmarkNames
   else chat.bookmarkNames = bookmarkNames
-  writeSingleChatRow(targetDb, chat.id, chat)
+  writeSingleChatRowExact(targetDb, chat.id, chat)
 }
 
 interface ScriptDefinitionCommandBody {
@@ -5636,17 +5648,20 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
-        characterScopedRead: { characterId },
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
           const characters = Array.isArray(target.characters) ? target.characters : []
-          const index = characters.findIndex(
+          let index = characters.findIndex(
             (character) =>
               !!character &&
               typeof character === 'object' &&
               !Array.isArray(character) &&
               (character as Record<string, unknown>).chaId === characterId,
           )
+          if (index === -1 && characters.length === 1 && characterRowExists(innerDb, characterId)) {
+            index = 0
+          }
           if (index === -1) {
             throw new EntityNotFoundError(`Character not found: ${characterId}`)
           }
@@ -5657,7 +5672,7 @@ export function registerCommandRoutes(
           const resolvedPatch = { ...resolvedRow }
           delete resolvedPatch.chaId
           const before = structuredClone(characters[index]) as Record<string, unknown>
-          const patched = buildPatchedCharacterCollectionRow(characters[index], resolvedPatch, characterId, index)
+          const patched = buildStrictPatchedCharacterRow(characters[index], resolvedPatch, characterId)
           characters[index] = patched
           writeSingleCharacterRow(innerDb, characterId, patched)
           deleteChangedGreetingTranslations(innerDb, characterId, before, patched)
@@ -6199,27 +6214,28 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
-        ...(hasModulePatch ? {} : { chatScopedRead: { chatId } }),
+        ...(hasModulePatch ? {} : { chatScopedRead: { chatId, exactChatRow: true } }),
         mutate(database, innerDb) {
           const target = hasModulePatch
             ? ensureModuleCommandDatabase(database)
             : ensureCharacterDatabaseObject(database)
           const characters = hasModulePatch ? normalizeAllCharacterChats(target) : readScopedCharacterRecords(target)
-          const { character, chatIndex } = (hasModulePatch ? requireChatLocation : requireChatLocationExact)(
-            characters,
-            chatId,
-          )
+          const { character, chatIndex } = hasModulePatch
+            ? requireChatLocation(characters, chatId)
+            : requireOrdinaryChatLocation(characters, chatId, innerDb)
           if (hasModulePatch) {
             const modules = ensureModuleRecords(target)
             validateNormalModuleLinks(modules, patch.modules as string[], 'patch.modules')
           }
           if (patch.folderId) {
-            const folders = ensureCharacterChatFolders(character)
+            const folders = hasModulePatch
+              ? ensureCharacterChatFolders(character)
+              : readStrictCharacterChatFolders(character)
             if (!folders.some((folder) => folder.id === patch.folderId)) {
               throw new ValidationError(`Unknown chat folder id: ${patch.folderId}`)
             }
           }
-          const chats = ensureCharacterChats(character)
+          const chats = hasModulePatch ? ensureCharacterChats(character) : (character.chats as ChatRecord[])
           const updatedChat = {
             ...chats[chatIndex],
             ...patch,
@@ -6227,7 +6243,7 @@ export function registerCommandRoutes(
           }
           if (patch.translatorPresetId === null) delete updatedChat.translatorPresetId
           chats[chatIndex] = updatedChat
-          writeSingleChatRow(innerDb, chatId, chats[chatIndex])
+          ;(hasModulePatch ? writeSingleChatRow : writeSingleChatRowExact)(innerDb, chatId, chats[chatIndex])
           // The parent character row is rewritten only when `select:true` moves
           // its `chatPage` pointer.
           if (selectUpdated) {
@@ -6236,7 +6252,10 @@ export function registerCommandRoutes(
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
-            extra: { chatId, selectedChatId: selectedChatId(character) },
+            extra: {
+              chatId,
+              selectedChatId: hasModulePatch ? selectedChatId(character) : selectedChatIdStrict(character),
+            },
           }
         },
       })
@@ -6846,10 +6865,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         // This callback only locates + rewrites the one chat row.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
           const characters = readScopedCharacterRecords(database)
-          const { character, chat } = requireChatLocationExact(characters, chatId)
+          const { character, chat } = requireOrdinaryChatLocation(characters, chatId, innerDb)
           // This path updates only the chat row's `scriptstate`; sibling chat
           // normalization is validate-only.
           chat.scriptstate ??= {}
@@ -6860,7 +6879,7 @@ export function registerCommandRoutes(
           if (Object.keys(chat.scriptstate).length === 0) {
             delete chat.scriptstate
           }
-          writeSingleChatRow(innerDb, chatId, chat)
+          writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.chatScriptstateUpdated,
@@ -6897,10 +6916,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; writes go to the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
           const characters = readScopedCharacterRecords(database)
-          requireChatLocationExact(characters, chatId)
+          requireOrdinaryChatLocation(characters, chatId, targetDb)
           if (activeMessageIdExists(targetDb, message.chatId)) {
             throw new ValidationError(`Duplicate message id: ${message.chatId}`)
           }
@@ -6945,7 +6964,7 @@ export function registerCommandRoutes(
         mutationPath: 'targeted-message',
         // The loader resolves the parent chat from the message id;
         // a missing message falls back broad and the callback throws as before.
-        chatScopedRead: { messageId },
+        chatScopedRead: { messageId, exactChatRow: true },
         mutate(database, targetDb) {
           const characters = readScopedCharacterRecords(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
@@ -6956,7 +6975,8 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          requireChatLocationExact(characters, location.chatId)
+          requireOrdinaryChatLocation(characters, location.chatId, targetDb)
+          readStrictStoredMessageRecord(location.message, messageId)
           const liveGenerationInfo = location.message.generationInfo
           const liveGenerationId =
             liveGenerationInfo && typeof liveGenerationInfo === 'object' && !Array.isArray(liveGenerationInfo)
@@ -7044,7 +7064,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Same message-id-resolved scoped read as the PATCH route.
-        chatScopedRead: { messageId },
+        chatScopedRead: { messageId, exactChatRow: true },
         mutate(database, targetDb) {
           const characters = readScopedCharacterRecords(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
@@ -7055,7 +7075,7 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          const { chat } = requireChatLocationExact(characters, location.chatId)
+          const { chat } = requireOrdinaryChatLocation(characters, location.chatId, targetDb)
           const deleted = deleteActiveMessageById(targetDb, messageId)
           if (deleted.ok === false) {
             if (deleted.reason === 'ambiguous') {
@@ -7107,10 +7127,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; truncate hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
           const characters = readScopedCharacterRecords(database)
-          const { chat } = requireChatLocationExact(characters, chatId)
+          const { chat } = requireOrdinaryChatLocation(characters, chatId, targetDb)
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
             if (truncated.reason === 'ambiguous-after') {
@@ -7156,10 +7176,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; replacement hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
           const characters = readScopedCharacterRecords(database)
-          const { chat } = requireChatLocationExact(characters, chatId)
+          const { chat } = requireOrdinaryChatLocation(characters, chatId, targetDb)
           const base = getChatMessages(targetDb, chatId)
           let keepCount = 0
           if (afterMessageId !== null) {
@@ -7217,10 +7237,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         // Chat is located for validation only; replacement hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { chat } = requireChatLocation(characters, chatId)
+          const characters = readScopedCharacterRecords(database)
+          const { chat } = requireOrdinaryChatLocation(characters, chatId, targetDb)
           validateUniqueMessageIds(replacement)
           for (const message of replacement) {
             if (activeMessageIdExistsOutsideChat(targetDb, message.chatId, chatId)) {
@@ -7261,10 +7281,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-generation',
         // Chat is located for validation only; persistence hits the message store.
-        chatScopedRead: { chatId },
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, targetDb) {
           const characters = readScopedCharacterRecords(database)
-          requireChatLocationExact(characters, chatId)
+          requireOrdinaryChatLocation(characters, chatId, targetDb)
           const write = writeGenerationChatMessage(
             targetDb,
             chatId,

@@ -781,6 +781,13 @@ export function characterRowExists(db: DatabaseSync, characterId: string): boole
   return !!row
 }
 
+export function chatRowExists(db: DatabaseSync, chatId: string): boolean {
+  const row = db.prepare('SELECT 1 AS found FROM chats WHERE id = ? LIMIT 1').get(chatId) as
+    | { found: number }
+    | undefined
+  return !!row
+}
+
 export function nextCharacterRowPosition(db: DatabaseSync): number {
   const row = db.prepare('SELECT COALESCE(MAX(position) + 1, 0) AS position FROM characters').get() as {
     position: number

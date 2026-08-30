@@ -115,18 +115,20 @@ export function repairCharacterCollectionRow(
   return repairCharacterRecord({ ...characterCollectionRowDefaults(index), ...character }, options)
 }
 
-export function buildPatchedCharacterCollectionRow(
+/**
+ * Apply an ordinary character-row patch without filling legacy defaults or
+ * normalizing any field outside the declared patch. Damaged stored identity is
+ * rejected; import/recovery callers retain the repair helpers above.
+ */
+export function buildStrictPatchedCharacterRow(
   input: unknown,
   patch: JsonRecord,
   characterId: string,
-  index = 0,
   options: { assetDb?: DatabaseSync } = {},
 ): CharacterRecord {
-  const character = input && typeof input === 'object' && !Array.isArray(input) ? (input as JsonRecord) : {}
+  const character = readStrictCharacterRecord(input, characterId, options)
   const patched: JsonRecord = {
-    ...characterCollectionRowDefaults(index),
     ...character,
-    chats: [],
     ...patch,
     chaId: characterId,
   }
@@ -135,6 +137,22 @@ export function buildPatchedCharacterCollectionRow(
   }
   validateCharacterRecord(patched, 'character', options)
   return patched as CharacterRecord
+}
+
+export function readStrictCharacterRecord(
+  input: unknown,
+  characterId: string,
+  options: { assetDb?: DatabaseSync } = {},
+): CharacterRecord {
+  const character = readJsonObject(input, 'character')
+  const storedCharacterId = readCharacterId(character.chaId, 'character.chaId')
+  if (storedCharacterId !== characterId) {
+    throw new ValidationError(`character.chaId must match characterId: ${characterId}`)
+  }
+  // Character validation can canonicalize scriptModelOverrides. Validate a
+  // shallow copy so an ordinary read never repairs the persisted target.
+  validateCharacterRecord({ ...character }, 'character', options)
+  return character as CharacterRecord
 }
 
 export function repairCharacterRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): CharacterRecord {

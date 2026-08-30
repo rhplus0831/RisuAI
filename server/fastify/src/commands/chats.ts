@@ -164,6 +164,23 @@ export function ensureCharacterChatFolders(character: CharacterRecord): ChatFold
   return folders
 }
 
+export function readStrictCharacterChatFolders(character: CharacterRecord): ChatFolderRecord[] {
+  if (!Array.isArray(character.chatFolders)) {
+    throw new ValidationError('character.chatFolders must be an array')
+  }
+  const seen = new Set<string>()
+  return character.chatFolders.map((raw, index) => {
+    const folder = readJsonObject(raw, `chatFolder[${index}]`) as ChatFolderRecord
+    const folderId = readChatFolderId(folder.id, `chatFolder[${index}].id`)
+    if (seen.has(folderId)) {
+      throw new ValidationError(`Duplicate chat folder id: ${folderId}`)
+    }
+    seen.add(folderId)
+    validateChatFolderRecord(folder, `chatFolder[${index}]`)
+    return folder
+  })
+}
+
 export function chatFolderIdExists(characters: readonly CharacterRecord[], folderId: string): boolean {
   return characters.some(
     (character) =>
@@ -657,6 +674,22 @@ export function requireChatLocationExact(characters: readonly CharacterRecord[],
   throw new EntityNotFoundError(`Chat not found: ${chatId}`)
 }
 
+/**
+ * Strict ordinary-command locator. It validates only the addressed character
+ * and chat rows and never fills defaults, repairs generation settings, or
+ * touches the id-only sibling chat shells supplied by scoped loaders.
+ */
+export function requireStrictChatLocation(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
+  const location = requireChatLocationExact(characters, chatId)
+  readCharacterId(location.character.chaId, 'character.chaId')
+  const storedChatId = readChatId(location.chat.id, 'chat.id')
+  if (storedChatId !== chatId) {
+    throw new ValidationError(`chat.id must match chatId: ${chatId}`)
+  }
+  validateChatRecord(location.chat, 'chat', { stored: true })
+  return location
+}
+
 export function requireCharacterChat(
   character: CharacterRecord,
   chatId: string,
@@ -741,6 +774,26 @@ export function selectedChatId(character: CharacterRecord): string | null {
   return chats[index]?.id ?? null
 }
 
+/** Read the selected chat pointer without normalizing chatPage or chat rows. */
+export function selectedChatIdStrict(character: CharacterRecord): string | null {
+  if (!Array.isArray(character.chats)) {
+    throw new ValidationError('character.chats must be an array')
+  }
+  if (!Number.isInteger(character.chatPage)) {
+    throw new ValidationError('character.chatPage must be an integer')
+  }
+  const index = character.chatPage as number
+  if (index === -1 && character.chats.length === 0) return null
+  if (index < 0 || index >= character.chats.length) {
+    throw new ValidationError('character.chatPage must select an existing chat')
+  }
+  const selected = character.chats[index]
+  if (!selected || typeof selected !== 'object' || Array.isArray(selected)) {
+    throw new ValidationError('selected chat must be an object')
+  }
+  return readChatId((selected as JsonRecord).id, 'selected chat.id')
+}
+
 export function selectChat(character: CharacterRecord, chatId: string): void {
   const { chatIndex } = requireCharacterChat(character, chatId)
   character.chatPage = chatIndex
@@ -802,7 +855,11 @@ function readOptionalJsonObject(value: unknown): JsonRecord {
   return value as JsonRecord
 }
 
-function validateChatRecord(record: JsonRecord, label: string, options: { partial?: boolean } = {}): void {
+function validateChatRecord(
+  record: JsonRecord,
+  label: string,
+  options: { partial?: boolean; stored?: boolean } = {},
+): void {
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
@@ -816,7 +873,7 @@ function validateChatRecord(record: JsonRecord, label: string, options: { partia
       throw new ValidationError(`${label}.note must be a string`)
     }
   }
-  if (!options.partial || 'message' in record) {
+  if ((!options.partial && !options.stored) || 'message' in record) {
     if (!Array.isArray(record.message)) {
       throw new ValidationError(`${label}.message must be an array`)
     }
