@@ -36,6 +36,7 @@ import {
   hasCharacterLorebookBodyProjectionEpochChanged,
   hasChatBodyProjectionEpochChanged,
   hasNewerChatBodyResourceRevision,
+  isChatBodyResourceLoaded,
   markCharacterLorebookBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
   markChatBodyProjectionApplied,
@@ -143,6 +144,35 @@ function chatMessageArray(chatId: string): Message[] | undefined {
   return getDatabase()
     .characters?.flatMap((character) => character.chats ?? [])
     .find((chat) => chat.id === chatId)?.message
+}
+
+export interface ChatMessageOwnerState {
+  chatId: string
+  messages: Message[]
+  projectionEpoch: number
+  resourceLoaded: boolean
+  hydrationPending: boolean
+  hydrationFailed: boolean
+}
+
+/**
+ * Read-only owner boundary for transcript consumers. The returned message
+ * array is the live projection updated by full, ranged, suffix, optimistic,
+ * and generation persistence effects; callers must use the epoch to reject
+ * work captured before a newer projection.
+ */
+export function getChatMessageOwnerState(chatId: string): ChatMessageOwnerState | undefined {
+  if (!chatId) return undefined
+  const messages = chatMessageArray(chatId)
+  if (!messages) return undefined
+  return {
+    chatId,
+    messages,
+    projectionEpoch: captureChatBodyProjectionEpoch(chatId),
+    resourceLoaded: isChatBodyResourceLoaded(chatId),
+    hydrationPending: isChatMessageHydrationPending(chatId, messages.length),
+    hydrationFailed: hasChatMessageHydrationFailed(chatId, messages.length),
+  }
 }
 
 function rerollTargetForChatId(chatId: string): ActiveChatTarget | null {

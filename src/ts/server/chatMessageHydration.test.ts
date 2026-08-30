@@ -39,6 +39,7 @@ import {
   hydrateActiveChatFully,
   hydrateChatMessageWindow,
   hydrateChatMessages,
+  getChatMessageOwnerState,
   reconcileAcceptedSendCompletion,
   applyServerChatMessagesResource,
   applyMessageTranslationLocalEffect,
@@ -407,6 +408,23 @@ describe('chat message hydration bridge', () => {
     projectionState.fetchChat.mockClear()
     await hydrateActiveChatWindow(3)
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+
+  it('exposes the live owner array and advances its epoch after authoritative projection', async () => {
+    const before = getChatMessageOwnerState('chat-1')
+    expect(before?.messages).toBe(db().characters[0].chats[0].message)
+    const initialEpoch = before?.projectionEpoch
+
+    projectionState.fetchChat.mockResolvedValue(
+      okResult('chat-1', [{ role: 'user', data: 'owner', chatId: 'm-owner' }]),
+    )
+    await hydrateActiveChatFully()
+
+    const after = getChatMessageOwnerState('chat-1')
+    expect(after?.messages).toBe(db().characters[0].chats[0].message)
+    expect(after?.messages).toEqual([{ role: 'user', data: 'owner', chatId: 'm-owner' }])
+    expect(after?.projectionEpoch).not.toBe(initialEpoch)
+    expect(after?.resourceLoaded).toBe(true)
   })
 
   it('preserves resident Hypa state when a narrow generation payload omits it', async () => {
