@@ -4,19 +4,19 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [agent-preset output references
-slice](phases/slices/phase-3-pure-shared-core/agent-preset-output-references.md).
+Execute the [punctuation trimming
+slice](phases/slices/phase-3-pure-shared-core/punctuation-trimming.md).
 
-1. Move `AgentPresetOutputReference`, the exact token matcher, discovery, and
-   expansion into an explicit shared-core subpath.
-2. Preserve identifier boundaries, optional whitespace, exact token/index
-   metadata, repeated callback order, and unresolved-token identity.
-3. Migrate browser agent dependency resolution plus Fastify prompt-variable and
-   agent-execution consumers together.
-4. Delete `src/ts/agentPresetReferences.ts` only after differential fixtures and
+1. Move `isLastCharPunctuation` and `trimUntilPunctuation` into an explicit
+   shared-core subpath.
+2. Preserve empty/whitespace behavior, the exact punctuation table and Unicode
+   ranges, code-unit slicing, and the untrimmed returned prefix.
+3. Keep the browser utility facade export stable while migrating both browser
+   post-generation owners and both Fastify consumers.
+4. Delete `src/ts/util/punctuation.ts` only after differential fixtures and
    closed-world consumer ownership pass.
-5. Keep agent validation, prompt assembly, execution, output bounds,
-   persistence, and UI behavior unchanged.
+5. Keep response streaming, prompt assembly, request routing, provider policy,
+   and UI behavior unchanged.
 
 ## Foundations Released
 
@@ -42,13 +42,15 @@ slice](phases/slices/phase-3-pure-shared-core/agent-preset-output-references.md)
   released at `23e5a4b30`.
 - Internal-reasoning stripping and all five production consumers are released
   at `251c9d043`.
+- Agent-preset output references and all three production consumers are released
+  at `12d2840b1`.
 
 ## Not In This Slice
 
-- Do not move agent records, dependency graphs, prompt assembly/execution,
-  persistence, or UI orchestration into shared core.
-- Do not broaden the output-token grammar or normalize token/key text in this
-  boundary move.
+- Do not move response streaming, prompt assembly, request routing, provider
+  policy, or UI orchestration into shared core.
+- Do not alter the punctuation set, Unicode ranges, code-unit semantics, or
+  returned prefix in this boundary move.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

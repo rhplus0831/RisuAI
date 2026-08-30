@@ -1,6 +1,6 @@
 # Agent-Preset Output References
 
-Status: ready.
+Status: complete at `12d2840b1`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -47,3 +47,17 @@ architecture inventory; formatting; and `git diff --check`.
 
 Stop if the helper needs agent records, aggregate database state, prompt
 assembly, persistence, browser reactivity, or host-specific behavior.
+
+## Completion
+
+- `AgentPresetOutputReference`, the exact matcher, discovery, and expansion now
+  live at `@risuai/shared-core/agent-preset-output-references` with no runtime
+  imports.
+- Differential fixtures preserve key boundaries, optional whitespace, exact
+  tokens, repeated order, callback order, unresolved identity, the 64-character
+  limit, and UTF-16 indexes.
+- Browser dependency resolution and both Fastify expansion consumers use the
+  shared subpath. The browser-tree owner and two production root-`src` edges
+  were removed.
+- Shared-core ownership checks are part of the maintained boundary command,
+  including the previously released internal-reasoning ownership proof.

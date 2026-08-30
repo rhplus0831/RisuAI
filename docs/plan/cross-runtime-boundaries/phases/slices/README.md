@@ -6,3 +6,6 @@ keep completed slices as execution evidence.
 
 The initial slice is
 [Boundary baseline and no-new-debt gate](phase-0-boundary-inventory-and-gates/baseline-and-no-new-debt-gate.md).
+
+The active slice is
+[Punctuation trimming](phase-3-pure-shared-core/punctuation-trimming.md).

@@ -50,4 +50,6 @@ Completed slice: [Legacy OpenAI model-alias normalization](slices/phase-3-pure-s
 
 Completed slice: [Internal-reasoning stripping](slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
 
-Active slice: [Agent-preset output references](slices/phase-3-pure-shared-core/agent-preset-output-references.md).
+Completed slice: [Agent-preset output references](slices/phase-3-pure-shared-core/agent-preset-output-references.md).
+
+Active slice: [Punctuation trimming](slices/phase-3-pure-shared-core/punctuation-trimming.md).
