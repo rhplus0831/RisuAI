@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { serverUnsupportedTriggerEffectTypes } from '../../../src/ts/process/triggerServerSupport.js'
+import { serverUnsupportedTriggerEffectTypes } from '../src/prompt/triggerCompatibility.js'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 

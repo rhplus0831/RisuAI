@@ -16,7 +16,7 @@ import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizer
 import { createTriggerVarEngine, type TriggerVarEngine } from './triggerVars.js'
 import { getChatDefaultVariables } from './chatVarDefaults.js'
 import { applyV2DataEffectAsync } from './triggerDataEffects.js'
-import { isServerUnsupportedTriggerEffectType } from '../../../../src/ts/process/triggerServerSupport.js'
+import { isServerUnsupportedTriggerEffectType } from './triggerCompatibility.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
 import {

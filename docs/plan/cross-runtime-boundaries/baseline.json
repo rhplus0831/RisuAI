@@ -1741,19 +1741,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/scripts.ts",
-      "specifier": "../../../../src/ts/process/triggerServerSupport.js",
-      "target": "src/ts/process/triggerServerSupport.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "serverUnsupportedRegexEffectType"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/scripts.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1931,19 +1918,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggers.ts",
-      "specifier": "../../../../src/ts/process/triggerServerSupport.js",
-      "target": "src/ts/process/triggerServerSupport.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isServerUnsupportedTriggerEffectType"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",
@@ -3047,19 +3021,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/process/triggerServerSupport.js",
-      "target": "src/ts/process/triggerServerSupport.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "serverUnsupportedTriggerEffectTypes"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/plainSections.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
@@ -3335,19 +3296,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/triggers.test.ts",
-      "specifier": "../../../src/ts/process/triggerServerSupport.js",
-      "target": "src/ts/process/triggerServerSupport.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "serverUnsupportedTriggerEffectTypes"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "server-test",
