@@ -10,8 +10,8 @@ import type {
   FastifyMessage as Message,
   FastifyMessagePresetInfo as MessagePresetInfo,
 } from './serverTypes.js'
-import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from './promptTemplate.js'
+import type { CbsCallbackMemo } from './cbsCallbackMemo.js'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
 import type { PromptMessage } from './promptMessage.js'
 import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'

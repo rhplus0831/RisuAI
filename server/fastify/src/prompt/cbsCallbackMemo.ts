@@ -1,4 +1,19 @@
-import type { CbsCallbackMemo, CbsCallbackMemoName } from '../../../../src/ts/cbs'
+/** Names of the assembly-scoped CBS callbacks that are memoized. */
+export type CbsCallbackMemoName = 'charhistory' | 'userhistory' | 'lorebook'
+
+/**
+ * Fastify-owned callback memo contract.
+ *
+ * The parser only observes this small cache surface; it does not need the
+ * browser's aggregate CBS registration or database declarations. The memo is
+ * intentionally created per assembly by this module, never shared globally.
+ */
+export interface CbsCallbackMemo {
+  entries: Map<string, string>
+  historyGeneration: number
+  loreGeneration?: number
+  recordMiss?: (name: CbsCallbackMemoName, key: string) => void
+}
 
 export interface AssemblyCbsCallbackMemoInstrumentation {
   callbackMisses: Record<CbsCallbackMemoName, number>
