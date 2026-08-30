@@ -10,7 +10,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
 | [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 memory-embedding configuration seam](cross-runtime-boundaries/status.md) | Phase 3 closed with seventeen neutral leaves; the first server domain migrated at `44e53527a`, leaving 286 direct root-`src` edges. |
-| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Migration is durable; prompt shape, tokenizer, output budget, image capability, and normal sidebar authoring resolve durable owners through `c7ab6beaf`; each resource-family closeout releases the matching Workstream 3 phase. |
+| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Migration is durable; prompt shape, tokenizer, output budget, image capability, sidebar authoring, and server-intent completion resolve durable owners through `07576969c`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat dependency gate](client-resource-ownership/status.md) | Phase 2 closed the standalone page pointer at `aaf66b75d`; the next runtime slice waits for matching Workstream 1/2 releases. |
 
 The portfolio-level dependency model and the conditional fourth workstream are

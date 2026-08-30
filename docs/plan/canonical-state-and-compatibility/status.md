@@ -11,7 +11,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 - Plan state: Active; Phases 0 and 1 complete.
 - Current phase: [Phase 2 model configuration ownership](phases/phase-2-model-configuration-ownership.md).
-- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), in progress through profile-owned image capability at `c7ab6beaf`, after canonical sidebar authoring at `f986cf1ff`.
+- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), in progress through server-intent completion projection at `07576969c`, after profile-owned image capability at `c7ab6beaf`.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through the current Phase 2 checkpoint: schema v34 transactionally
   creates deterministic profiles/bindings for usable flat selections at
@@ -19,8 +19,8 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
   selected legacy model/preset role ownership is isolated to effective clones,
   profile-local tokenizer configuration outranks global defaults, browser prompt
   shape/token budgeting/image capability use one resolved request profile, and
-  the custom sidebar routes model selection through the canonical preset picker.
-- Latest verification: normal-consumer checkpoint passed through `c7ab6beaf`.
+  the custom sidebar and Fastify completion path use canonical owners.
+- Latest verification: normal-consumer checkpoint passed through `07576969c`.
 
 ## Dependency Cursors
 
@@ -29,7 +29,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | Workstream 1 package/boundary conventions | `b01e88b03` | Released; Phase 0 may execute. |
 | Workstream 1 shared contracts | Per contract family | Required only before a slice introduces or consumes that shared contract. |
 | Migration/recovery foundation | `1e758cd22` | Released with named-step validation, rollback/retry/reopen injection proof, damaged-database refusal, and all 19 historical fixture adapters. |
-| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; selected-preset compatibility is isolated, prompt shape/tokenizer/output budgets/image capability resolve durable profiles, and normal sidebar authoring uses canonical presets through `c7ab6beaf`; not yet released to Workstream 3. |
+| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; selected-preset compatibility is isolated, prompt shape/tokenizer/output budgets/image capability and Fastify completion resolve durable profiles, and normal sidebar authoring uses canonical presets through `07576969c`; not yet released to Workstream 3. |
 | Prompt-template canonical owner | Phase 3 | Not released to Workstream 3. |
 | Translator/smaller canonical owners | Phase 4 per family | Not released to Workstream 3. |
 | Repair/interchange cleanup | Phases 5-6 | Not started; may add per-family holds to earlier releases. |

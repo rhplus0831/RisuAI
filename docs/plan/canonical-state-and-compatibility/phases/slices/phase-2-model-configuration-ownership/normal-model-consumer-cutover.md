@@ -1,7 +1,7 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; profile-owned image capability checkpoint through
-`c7ab6beaf`.
+Status: in progress; server-intent completion projection checkpoint through
+`07576969c`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -79,6 +79,9 @@ classified static/legacy boundary removed to complete the cutover.
 - OpenAI request shaping and multimodal token accounting read image-input
   capability from the resolved profile at `c7ab6beaf`; only explicitly
   context-free callers retain the aggregate `aiModel` fallback.
+- Fastify `/generate/completion` applies the same durable profile runtime
+  projection as normal chat at `07576969c`, then applies only its explicit
+  stream, max-token, temperature, and character-name request overrides.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar

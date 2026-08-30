@@ -7,17 +7,19 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Reuse profile-bound generation projection in Fastify `/generate/completion`
-   so durable sampling, reasoning, tool, and response controls outrank stale flat
-   fields before explicit completion request overrides are applied.
-2. Continue replacing ordinary runtime reads of flat CBS, translation, agent,
-   and auxiliary settings with resolved durable-profile inputs; the custom
-   sidebar authoring path and browser inlay capability are now canonical.
-3. Preserve the named clone-only selected-preset seam for legacy inline
+1. Thread resolved profile runtime sampling into the browser request parameter
+   builder so normal OpenAI, Anthropic, Gemini, Mistral, Cohere, Ooba, and plugin
+   adapters cannot read conflicting flat fields.
+2. Preserve the explicitly classified separate-parameter compatibility branch
+   while moving ordinary calls to the selected profile runtime input.
+3. Continue replacing ordinary runtime reads of flat CBS, translation, agent,
+   and auxiliary settings with resolved durable-profile inputs; browser inlay
+   and Fastify server-intent completion are now canonical.
+4. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
-4. Prove provider/model/options/fallback parity in browser reload and request
+5. Prove provider/model/options/fallback parity in browser reload and request
    lanes while retaining explicit legacy conversion/import/export.
-5. Isolate the remaining legacy-reader removal and prepare the Phase 2
+6. Isolate the remaining legacy-reader removal and prepare the Phase 2
    model-owner release cursor for Workstream 3.
 
 ## Phase 0 Release
