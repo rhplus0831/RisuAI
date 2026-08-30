@@ -321,7 +321,9 @@
     unregisterAcceptedDraftGeneration()
   })
 
-  let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
+  // The owner projection is authoritative once character resources are ready;
+  // retain the aggregate only for the pre-readiness bootstrap gap.
+  let currentCharacter = $derived(getSelectedCharacterOwner() ?? getDatabase().characters[$selectedCharID])
   let selectedCharacterOwner = $derived(getSelectedCharacterOwner() ?? currentCharacter)
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
@@ -343,7 +345,7 @@
   })
   let activeChatOpen = $derived.by(() => {
     if ($selectedCharID < 0) return false
-    const character = getDatabase().characters?.[$selectedCharID]
+    const character = currentCharacter
     if (character?.chaId === '§playground') {
       const activePlaygroundChat = character.chats?.[character.chatPage]
       return $PlaygroundStore === 2 && Array.isArray(activePlaygroundChat?.message)
@@ -770,7 +772,7 @@
 
   function getActiveTranscriptWindowIdentity(): string | null {
     const selectedCharacterIndex = $selectedCharID
-    const character = getDatabase().characters?.[selectedCharacterIndex]
+    const character = currentCharacter
     const chatPage = character?.chatPage ?? null
     const chat = chatPage === null ? null : character?.chats?.[chatPage]
 
@@ -1226,12 +1228,12 @@
   }
 
   let mostRecentChat = $derived.by(() => {
-    const character = getDatabase().characters?.[$selectedCharID]
+    const character = currentCharacter
     return character?.chats?.[character.chatPage] ?? character?.chats?.[0] ?? null
   })
 
   function openMostRecentChat() {
-    const character = getDatabase().characters?.[$selectedCharID]
+    const character = currentCharacter
     const chat = character?.chats?.[character.chatPage] ?? character?.chats?.[0]
     if (!character?.chaId || !chat?.id) return
 
@@ -2664,7 +2666,7 @@
                 <Send />
               </button>
             {/if}
-            {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+            {#if currentCharacter?.chaId !== '§playground'}
               <button
                 bind:this={chatMenuButton}
                 type="button"
@@ -2690,7 +2692,7 @@
             {/if}
           </div>
 
-          {#if showDraftArea && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+          {#if showDraftArea && currentCharacter?.chaId !== '§playground'}
             <div
               class="chat-screen-content-width flex flex-col gap-2 rounded-md border border-darkborderc bg-darkbg/50 px-2 py-1.5 text-textcolor"
               data-testid="default-chat-draft-area"
@@ -2758,7 +2760,7 @@
               </div>
             </div>
           {/if}
-          {#if getDatabase().useAutoTranslateInput && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
+          {#if getDatabase().useAutoTranslateInput && currentCharacter?.chaId !== '§playground'}
             <div class="chat-screen-content-width flex items-center mt-2 mb-2">
               <label for="messageInputTranslate" class="text-textcolor ml-4">
                 <LanguagesIcon />
@@ -2887,11 +2889,7 @@
           chatsInstance?.handleTranscriptScroll()
           //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
           const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
-          if (
-            scrolled < 100 &&
-            getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message
-              .length > loadPages
-          ) {
+          if (scrolled < 100 && currentChat.length > loadPages) {
             void expandTranscriptWindow(loadPages + getAdditionalChatLoadPages(getDatabase()))
           }
           const chatTarget = e.target as HTMLElement
@@ -2926,8 +2924,8 @@
         {/if}
         {#if activeChatMessagesLoading}
           {@render chatMessageSkeleton('hydration')}
-        {:else if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
-          {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
+        {:else if currentChatRecord?.message?.[0]?.data?.startsWith(coldStorageHeader)}
+          {#await preLoadChat($selectedCharID, currentCharacter?.chatPage ?? 0)}
             <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">
               {language.loadingChatData}
             </div>
@@ -2935,9 +2933,7 @@
             {#if !recovered}
               <div class="chat-screen-content-width w-full flex justify-center text-red-400 italic mb-12" role="alert">
                 {language.errors.coldStorageRecoveryFailed}
-                ({getDatabase().characters[$selectedCharID].chats[
-                  getDatabase().characters[$selectedCharID].chatPage
-                ].message[0].data.slice(coldStorageHeader.length)})
+                ({currentChatRecord?.message?.[0]?.data?.slice(coldStorageHeader.length)})
               </div>
             {/if}
           {/await}
@@ -3012,25 +3008,20 @@
               character={currentDisplayCharacter}
               greetingTarget={greetingTranslationTarget}
               translation={greetingTranslation}
-              name={getCharacterDisplayName(getDatabase().characters[$selectedCharID])}
-              message={getDatabase().characters[$selectedCharID].chats[
-                getDatabase().characters[$selectedCharID].chatPage
-              ].fmIndex === -1
-                ? getDatabase().characters[$selectedCharID].firstMessage
-                : getDatabase().characters[$selectedCharID].alternateGreetings[
-                    getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                      .fmIndex
-                  ]}
+              name={getCharacterDisplayName(currentCharacter)}
+              message={currentChatRecord?.fmIndex === -1
+                ? currentCharacter.firstMessage
+                : currentCharacter.alternateGreetings[currentChatRecord?.fmIndex ?? 0]}
               role="char"
-              img={getCharImage(getDatabase().characters[$selectedCharID].image, 'css')}
+              img={getCharImage(currentCharacter.image, 'css')}
               idx={-1}
-              altGreeting={getDatabase().characters[$selectedCharID].alternateGreetings.length > 0}
-              largePortrait={getDatabase().characters[$selectedCharID].largePortrait}
+              altGreeting={currentCharacter.alternateGreetings.length > 0}
+              largePortrait={currentCharacter.largePortrait}
               firstMessage={true}
               onReroll={() => {
                 const cha = getDatabase().characters[$selectedCharID]
-                const chat =
-                  getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                const chat = cha?.chats?.[cha.chatPage]
+                if (!cha || !chat) return
                 if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
                   updateGreetingIndex(-1)
                 } else {
@@ -3039,8 +3030,8 @@
               }}
               unReroll={() => {
                 const cha = getDatabase().characters[$selectedCharID]
-                const chat =
-                  getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                const chat = cha?.chats?.[cha.chatPage]
+                if (!cha || !chat) return
                 if (chat.fmIndex === -1) {
                   updateGreetingIndex(cha.alternateGreetings.length - 1)
                 } else {
@@ -3048,19 +3039,17 @@
                 }
               }}
               isLastMemory={false}
-              currentPage={(getDatabase().characters[$selectedCharID].chats[
-                getDatabase().characters[$selectedCharID].chatPage
-              ].fmIndex ?? -1) + 2}
-              totalPages={getDatabase().characters[$selectedCharID].alternateGreetings.length + 1} />
+              currentPage={(currentChatRecord?.fmIndex ?? -1) + 2}
+              totalPages={currentCharacter.alternateGreetings.length + 1} />
             {#if aiLawApplies() && renderChat.length === 0}
               <div
                 class="chat-screen-content-width ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
                 {language.aiGenerationWarning}
               </div>
             {/if}
-            {#if !getDatabase().characters[$selectedCharID].removedQuotes && getDatabase().characters[$selectedCharID].creatorNotes.length >= 2}
+            {#if !currentCharacter.removedQuotes && currentCharacter.creatorNotes.length >= 2}
               <CreatorQuote
-                quote={getDatabase().characters[$selectedCharID].creatorNotes}
+                quote={currentCharacter.creatorNotes}
                 onRemove={() => {
                   const cha = getCharacterByIndex($selectedCharID, { snapshot: true })
                   cha.removedQuotes = true
@@ -3116,7 +3105,7 @@
             </button>
           {/if}
           <!-- svelte-ignore block_empty -->
-          {#if getDatabase().characters[$selectedCharID].ttsMode && getDatabase().characters[$selectedCharID].ttsMode !== 'none'}
+          {#if currentCharacter?.ttsMode && currentCharacter.ttsMode !== 'none'}
             <button
               type="button"
               role="menuitem"
