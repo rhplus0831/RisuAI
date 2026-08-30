@@ -285,6 +285,7 @@ import ChatList from './ChatList.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { currentChatSelectionSnapshot, dispatchSelectChat, restoreChatRowMetadata } from 'src/ts/chatCommands'
 import {
+  charactersResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
@@ -440,6 +441,22 @@ describe('ChatList DOM contract harness', () => {
     document.body.innerHTML = ''
     selectedCharID.set(-1)
     setDatabaseLite({} as never)
+  })
+
+  it('renders chat metadata from the hydrated character owner when it conflicts with the aggregate', async () => {
+    const aggregate = seedModalDatabase()
+    charactersResourceState.characters = [
+      {
+        ...aggregate,
+        chats: aggregate.chats.map((chat, index) => ({ ...chat, name: `Owner Chat ${index}` })),
+      },
+    ]
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await flushCommandWork()
+
+    expect(rowByChatId('chat-a').textContent).toContain('Owner Chat 0')
+    expect(rowByChatId('chat-a').textContent).not.toContain('Modal Chat A')
   })
 
   it('uses a blocking focus contract and owns Escape and backdrop close interactions', async () => {

@@ -4,7 +4,8 @@
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
@@ -67,6 +68,15 @@
     const character = resolveOriginCharacter(ownerCharacterId, ownerSelectedCharIndex, ownerCharacterReference)
     if (!character || !isOriginCharacterSelected(character, ownerCharacterId)) return undefined
     return character
+  })
+
+  // The owner detail is authoritative when hydrated; shell rows intentionally
+  // fall back to the compatibility character for the existing lazy path.
+  let renderedCharacter = $derived.by(() => {
+    const owner = ownerCharacterId
+      ? charactersResourceState.characters.find((candidate) => candidate?.chaId === ownerCharacterId)
+      : undefined
+    return owner && !isServerCharacterShell(owner) ? owner : modalCharacter
   })
 
   function invalidateModal() {
@@ -524,15 +534,15 @@
           </div>
         {/each}
       </div>
-      {#each modalCharacter.chats as chat, i}
+      {#each renderedCharacter?.chats ?? [] as chat, i}
         <div
           data-risu-chat-id={chat.id ?? ''}
           data-risu-chat-idx={i}
-          data-risu-chat-selected={i === modalCharacter.chatPage ? 'true' : 'false'}
+          data-risu-chat-selected={i === renderedCharacter?.chatPage ? 'true' : 'false'}
           data-risu-chat-mutation-status={mutationForChat(chat.id)?.status ?? ''}
           aria-busy={isChatMutationPending(chat.id)}
           class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-          class:bg-selected={i === modalCharacter.chatPage}>
+          class:bg-selected={i === renderedCharacter?.chatPage}>
           {#if editMode}
             <TextInput
               bind:value={chatNameDrafts[chat.id]}
