@@ -255,6 +255,7 @@ function seedDb(): void {
   selectedCharID.set(0)
   replaceResourceDatabase({
     username: 'Global User',
+    currentChar: 0,
     selectedPersona: 0,
     modelPresetsId: 0,
     promptPresetsId: 0,
