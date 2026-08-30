@@ -21,7 +21,11 @@
 
 <script lang="ts">
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { charactersResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getResourceDatabase,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
   import { MobileSearch } from 'src/ts/stores.svelte'
@@ -43,8 +47,11 @@
   let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(settingsResourceState.value.language))
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
+  let selectedCharacterIndex = $derived(
+    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID,
+  )
   let mobileCharacterRows = $derived(
-    formatMobileCharacterRows(charactersResourceState.characters, {
+    formatMobileCharacterRows(readCharacterOwners(), {
       hideTrash,
       agoFormatter,
       unknownText: language.unknownInteractionTime,
@@ -61,10 +68,11 @@
   })
 
   function openCharacterRoute(row: { chaId?: string; index: number }) {
-    const characters = charactersResourceState.characters ?? []
-    const index = row.chaId ? characters.findIndex((character) => character.chaId === row.chaId) : row.index
+    const characters = readCharacterOwners()
+    const owner = row.chaId ? uniqueCharacterOwner(characters, row.chaId) : undefined
+    const index = owner?.index ?? (row.chaId ? -1 : row.index)
     if (index < 0) return
-    const character = characters[index] as MobileCharacterSummary
+    const character = (owner?.character ?? characters[index]) as MobileCharacterSummary | undefined
     if (!character?.chaId) {
       changeChar(index)
       endGrid()
@@ -72,10 +80,36 @@
     }
     navigate(characterRoutePath(character.chaId, character.activeChatId ?? character.chats?.[character.chatPage]?.id))
   }
+
+  function readCharacterOwners(): readonly MobileCharacterSummary[] {
+    const ownedCharacters = charactersResourceState.characters
+    if (ownedCharacters.length > 0 || charactersResourceState.status === 'ready') {
+      return ownedCharacters as MobileCharacterSummary[]
+    }
+    // Compatibility is limited to the pre-readiness empty state. Once the
+    // owner resource has rows (including during a refresh), keep rendering
+    // that resident projection rather than switching sources.
+    return (getResourceDatabase().characters ?? []) as MobileCharacterSummary[]
+  }
+
+  function uniqueCharacterOwner(characters: readonly MobileCharacterSummary[], characterId: string) {
+    let owner: { character: MobileCharacterSummary; index: number } | undefined
+    for (const [index, character] of characters.entries()) {
+      if (character.chaId !== characterId) continue
+      if (owner) return undefined
+      owner = { character, index }
+    }
+    return owner
+  }
+
+  function isSelectedRow(row: { chaId?: string; index: number }): boolean {
+    if (row.index !== selectedCharacterIndex) return false
+    return !row.chaId || uniqueCharacterOwner(readCharacterOwners(), row.chaId)?.index === row.index
+  }
 </script>
 
 <div class="flex flex-col items-center w-full overflow-y-auto h-full">
-  {#each visibleMobileCharacterRows as char (mobileCharacterRowKey(char))}
+  {#each visibleMobileCharacterRows as char (char.chaId ? `${char.chaId}:${char.index}` : mobileCharacterRowKey(char))}
     <button
       class="flex p-2 border-t-darkborderc gap-2 w-full"
       class:border-t={char.sortedIndex !== 0}
@@ -84,11 +118,11 @@
       data-risu-row-index={char.index}
       data-risu-row-sorted-index={char.sortedIndex}
       data-risu-list-kind={hideTrash ? 'active' : 'all'}
-      data-risu-selected={char.index === $selectedCharID ? 'true' : 'false'}
+      data-risu-selected={isSelectedRow(char) ? 'true' : 'false'}
       data-risu-mobile-character-action="open"
       onpointerenter={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
       onfocus={() => char.chaId && prefetchCharacterRouteResource(char.chaId)}
-      aria-current={char.index === $selectedCharID ? 'true' : undefined}
+      aria-current={isSelectedRow(char) ? 'true' : undefined}
       onclick={() => {
         openCharacterRoute(char)
       }}>

@@ -2,8 +2,13 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mobileCharacterMocks = vi.hoisted(() => ({
-  charactersResourceState: { characters: [] as Array<Record<string, unknown>> },
+  charactersResourceState: {
+    characters: [] as Array<Record<string, unknown>>,
+    currentChar: -1,
+    status: 'ready' as 'idle' | 'ready',
+  },
   settingsResourceState: { value: { language: 'en' } },
+  legacyCharacters: [] as Array<Record<string, unknown>>,
 }))
 
 const characterActionSpies = vi.hoisted(() => ({
@@ -19,6 +24,7 @@ vi.mock('src/ts/server/resourceState.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/resourceState.svelte')>()),
   charactersResourceState: mobileCharacterMocks.charactersResourceState,
   settingsResourceState: mobileCharacterMocks.settingsResourceState,
+  getResourceDatabase: vi.fn(() => ({ characters: mobileCharacterMocks.legacyCharacters })),
 }))
 
 vi.mock('src/ts/characters', () => ({
@@ -52,6 +58,8 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
   selectedCharID.set(-1)
   MobileSearch.set('')
+  mobileCharacterMocks.charactersResourceState.currentChar = 0
+  mobileCharacterMocks.charactersResourceState.status = 'ready'
   mobileCharacterMocks.charactersResourceState.characters = [
     {
       chaId: 'character-a',
@@ -64,6 +72,7 @@ beforeEach(() => {
       activeChatId: 'chat-a',
     },
   ]
+  mobileCharacterMocks.legacyCharacters = []
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -127,5 +136,68 @@ describe('MobileCharacters actions', () => {
 
     expect(routerActionSpies.navigate).toHaveBeenCalledTimes(1)
     expect(characterActionSpies.changeChar).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when a stable character id is duplicated', async () => {
+    mobileCharacterMocks.charactersResourceState.characters = [
+      {
+        chaId: 'duplicate-character',
+        name: 'First duplicate',
+        image: '',
+        chatPage: 0,
+        chats: [{ id: 'chat-a' }],
+        chatCount: 1,
+        activeChatId: 'chat-a',
+      },
+      {
+        chaId: 'duplicate-character',
+        name: 'Second duplicate',
+        image: '',
+        chatPage: 0,
+        chats: [{ id: 'chat-b' }],
+        chatCount: 1,
+        activeChatId: 'chat-b',
+      },
+    ]
+    component = mount(MobileCharacters, { target })
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[data-risu-mobile-character-action="open"]')?.click()
+
+    expect(routerActionSpies.navigate).not.toHaveBeenCalled()
+    expect(characterActionSpies.changeChar).not.toHaveBeenCalled()
+  })
+
+  it('uses the owner selection rather than a stale selection index', async () => {
+    selectedCharID.set(99)
+    component = mount(MobileCharacters, { target })
+    await tick()
+
+    const row = target.querySelector<HTMLButtonElement>('[data-risu-mobile-character-action="open"]')
+    expect(row?.dataset.risuSelected).toBe('true')
+    expect(row?.getAttribute('aria-current')).toBe('true')
+  })
+
+  it('keeps the legacy database fallback only before the owner list is ready', async () => {
+    mobileCharacterMocks.charactersResourceState.characters = []
+    mobileCharacterMocks.charactersResourceState.status = 'idle'
+    mobileCharacterMocks.charactersResourceState.currentChar = -1
+    mobileCharacterMocks.legacyCharacters = [
+      {
+        chaId: 'legacy-character',
+        name: 'Legacy character',
+        image: '',
+        chatPage: 0,
+        chats: [{ id: 'legacy-chat' }],
+        chatCount: 1,
+        activeChatId: 'legacy-chat',
+      },
+    ]
+    component = mount(MobileCharacters, { target })
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[data-risu-mobile-character-action="open"]')?.click()
+
+    expect(routerActionSpies.navigate).toHaveBeenCalledWith('/character/legacy-character/legacy-chat')
   })
 })
