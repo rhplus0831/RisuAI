@@ -8,6 +8,8 @@ import {
   deleteCharacterRow,
   deletePluginStorageKey,
   loadPersisted,
+  loadPersistedDatabaseFields,
+  loadPersistedDatabaseForMemoryJob,
   replaceAllCharactersInTable,
   writePersistedWithMessages,
   writePluginStorageKey,
@@ -289,6 +291,60 @@ describe('targeted writer kit', () => {
     expect(allCollectionRowids()).toEqual(collectionsBefore)
     expect(rowids('characters', 'id')).toEqual(charsBefore)
     expect(rowids('chats', 'id')).toEqual(chatsBefore)
+  })
+
+  it('hydrates the selected modern prompt body over a stale compatibility mirror', () => {
+    const canonicalTemplate = [{ id: 'canonical-row', type: 'plain', text: 'canonical body' }]
+    writeSingleCollectionTable(db, 'promptPresets', [
+      { id: 'prompt-owner', name: 'Prompt Owner', promptTemplate: canonicalTemplate },
+    ])
+    writeSingleCollectionTable(db, 'promptTemplate', [{ id: 'stale-row', type: 'plain', text: 'stale mirror' }])
+    const settings = readSettings()
+    settings.promptPresetsId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toEqual(canonicalTemplate)
+    expect(loadPersistedDatabaseFields(db, dataDir, ['promptPresets', 'promptTemplate']).promptTemplate).toEqual(
+      canonicalTemplate,
+    )
+  })
+
+  it('does not project a body from an ambiguous modern prompt selection', () => {
+    writeSingleCollectionTable(db, 'promptPresets', [
+      { id: 'prompt-duplicate', name: 'Prompt A', promptTemplate: [{ id: 'canonical-a' }] },
+      { id: 'prompt-duplicate', name: 'Prompt B', promptTemplate: [{ id: 'canonical-b' }] },
+    ])
+    const staleTemplate = [{ id: 'stale-row', type: 'plain', text: 'stale mirror' }]
+    writeSingleCollectionTable(db, 'promptTemplate', staleTemplate)
+    const settings = readSettings()
+    settings.promptPresetsId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toEqual(staleTemplate)
+  })
+
+  it('projects an explicit missing modern prompt body as disabled', () => {
+    writeSingleCollectionTable(db, 'promptPresets', [{ id: 'prompt-disabled', name: 'Disabled Prompt' }])
+    writeSingleCollectionTable(db, 'promptTemplate', [{ id: 'stale-row', type: 'plain', text: 'stale mirror' }])
+    const settings = readSettings()
+    settings.promptPresetsId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toBeNull()
+  })
+
+  it('does not bind a memory job to an ambiguous prompt preset row', () => {
+    writeSingleCollectionTable(db, 'promptPresets', [
+      { id: 'prompt-duplicate', name: 'Prompt A' },
+      { id: 'prompt-duplicate', name: 'Prompt B' },
+    ])
+    const chat = db.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-a-1') as { data_json: string }
+    const chatBody = JSON.parse(chat.data_json) as Record<string, unknown>
+    chatBody.generationSettings = { promptPresetId: 'prompt-duplicate' }
+    db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatBody), 'chat-a-1')
+
+    const scoped = loadPersistedDatabaseForMemoryJob(db, dataDir, 'chat-a-1') as Record<string, unknown>
+    expect(scoped).not.toHaveProperty('promptPresets')
   })
 
   it('writeSingleCollectionTable rebuilds one table and leaves the other eight + characters alone', () => {

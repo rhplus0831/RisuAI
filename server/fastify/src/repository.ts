@@ -364,6 +364,7 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
     }
     // SQLite empty → keep existing value ([] marker or absent); don't fabricate a field.
   }
+  projectSelectedPromptTemplate(merged, merged.promptPresetsId)
   const storageRows = db.prepare('SELECT key, value_json FROM plugin_custom_storage').all() as unknown as Array<{
     key: string
     value_json: string
@@ -378,6 +379,49 @@ function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, un
   }
   // SQLite empty → keep existing value ({} marker or absent).
   return merged
+}
+
+/**
+ * The extracted prompt-template table is only a compatibility projection. A
+ * selected modern preset owns its body, so a stale top-level row must never
+ * become the body seen by a normal repository consumer. Invalid selection
+ * state is deliberately left untouched: the shared prompt resolver can fail
+ * closed (and the legacy projection remains available to explicit recovery
+ * and import/export paths).
+ */
+function projectSelectedPromptTemplate(database: Record<string, unknown>, selectedIndex: unknown): void {
+  if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return
+  const presets = Array.isArray(database.promptPresets) ? database.promptPresets : []
+  const selected = presets[selectedIndex as number]
+  if (!isRecord(selected)) return
+  const selectedId = stablePromptPresetId(selected.id)
+  if (!selectedId || !hasUniquePromptPresetId(presets, selectedId)) return
+
+  if (Object.prototype.hasOwnProperty.call(selected, 'promptTemplate')) {
+    database.promptTemplate = selected.promptTemplate
+    return
+  }
+
+  // The default scaffold intentionally retains the top-level projection as
+  // its supported missing-template fallback. Every other selected modern
+  // preset explicitly owns a disabled/null body when the field is absent.
+  if (!isDefaultPromptPreset(selected)) database.promptTemplate = null
+}
+
+function hasUniquePromptPresetId(presets: readonly unknown[], id: string): boolean {
+  let matches = 0
+  for (const candidate of presets) {
+    if (isRecord(candidate) && stablePromptPresetId(candidate.id) === id) matches += 1
+  }
+  return matches === 1
+}
+
+function stablePromptPresetId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value : null
+}
+
+function isDefaultPromptPreset(preset: Record<string, unknown>): boolean {
+  return preset.id === 'default-prompt-preset' && preset.name === 'Default Prompt'
 }
 
 export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown): void {
@@ -1717,6 +1761,10 @@ function loadDatabaseFieldsFromSqlite(
     }
   }
 
+  if (fieldKeys.includes('promptPresets') && fieldKeys.includes('promptTemplate')) {
+    projectSelectedPromptTemplate(fields, settings.promptPresetsId)
+  }
+
   return { fields, settings }
 }
 
@@ -2140,12 +2188,26 @@ function loadMemoryJobBoundPreset(
   tableName: 'model_presets' | 'prompt_presets',
   presetId: string,
 ): Record<string, unknown> | null {
-  const row = db
-    .prepare(`SELECT data_json FROM ${tableName} WHERE json_extract(data_json, '$.id') = ? LIMIT 1`)
-    .get(presetId) as { data_json: string } | undefined
-  if (!row) return null
-  const preset = JSON.parse(row.data_json) as unknown
-  return isRecord(preset) ? preset : null
+  if (tableName !== 'prompt_presets') {
+    const row = db
+      .prepare(`SELECT data_json FROM ${tableName} WHERE json_extract(data_json, '$.id') = ? LIMIT 1`)
+      .get(presetId) as { data_json: string } | undefined
+    if (!row) return null
+    const preset = JSON.parse(row.data_json) as unknown
+    return isRecord(preset) ? preset : null
+  }
+
+  const rows = db
+    .prepare(`SELECT data_json FROM ${tableName} WHERE json_extract(data_json, '$.id') = ? ORDER BY position`)
+    .all(presetId) as unknown as Array<{ data_json: string }>
+  let match: Record<string, unknown> | null = null
+  for (const row of rows) {
+    const preset = JSON.parse(row.data_json) as unknown
+    if (!isRecord(preset) || stablePromptPresetId(preset.id) !== presetId) continue
+    if (match) return null
+    match = preset
+  }
+  return match
 }
 
 /**
