@@ -619,20 +619,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/storage/defaultPrompts.js",
-      "target": "src/ts/storage/defaultPrompts.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "createDefaultInputHooks",
-        "defaultAutoSuggestPrompt"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
       "specifier": "../../../src/ts/translator/presets.js",
       "target": "src/ts/translator/presets.ts",
       "kind": "static",

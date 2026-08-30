@@ -71,6 +71,7 @@ describe('@risuai/shared-core import boundary', () => {
         'chatMLRows.ts',
         'chatPage.ts',
         'defaultHotkeys.ts',
+        'defaultPromptSettings.ts',
         'historySlots.ts',
         'index.ts',
         'inlayTokens.ts',

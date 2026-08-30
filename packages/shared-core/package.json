@@ -13,6 +13,7 @@
     "./chatml-rows": "./src/chatMLRows.ts",
     "./chat-page": "./src/chatPage.ts",
     "./default-hotkeys": "./src/defaultHotkeys.ts",
+    "./default-prompt-settings": "./src/defaultPromptSettings.ts",
     "./history-slots": "./src/historySlots.ts",
     "./inlay-tokens": "./src/inlayTokens.ts",
     "./internal-reasoning": "./src/internalReasoning.ts",

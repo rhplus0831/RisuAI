@@ -1,4 +1,4 @@
-import { createDefaultInputHooks, defaultAutoSuggestPrompt } from '../../../src/ts/storage/defaultPrompts.js'
+import { createDefaultInputHooks, defaultAutoSuggestPrompt } from '@risuai/shared-core/default-prompt-settings'
 import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/templates/templates.js'
 import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS } from '@risuai/shared-core/default-hotkeys'
 import { LLMFormat } from '../../../src/ts/model/types.js'
