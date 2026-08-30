@@ -45,6 +45,7 @@ import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 import { findChatGenerationActivity } from './process/generationActivity.svelte'
 import { requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
 import { changeChar } from './characters'
+import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
@@ -454,14 +455,31 @@ export function adjacentCharacterIndex(
 }
 
 export async function changeToAdjacentCharacter(direction: 'previous' | 'next'): Promise<boolean> {
-  const database = getDatabase()
-  const targetIndex = adjacentCharacterIndex(database.characters, get(selectedCharID), direction)
+  const characters =
+    charactersResourceState.status === 'ready'
+      ? canonicalCharacterOwners()
+      : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+        ? getDatabase().characters
+        : null
+  if (!characters) return false
+
+  const targetIndex = adjacentCharacterIndex(characters, get(selectedCharID), direction)
   if (targetIndex === null) return false
 
   PlaygroundStore.set(0)
   OpenRealmStore.set(false)
   await changeChar(targetIndex)
   return true
+}
+
+function canonicalCharacterOwners(): Database['characters'] | null {
+  const owners = charactersResourceState.characters.map((candidate) => {
+    const characterId = candidate?.chaId
+    if (typeof characterId !== 'string' || characterId.trim().length === 0) return undefined
+    return getCharacterResourceOwner(characterId)
+  })
+  if (owners.some((owner) => !owner)) return null
+  return owners as Database['characters']
 }
 
 function clickQuery(query: string) {

@@ -49,6 +49,7 @@ import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotk
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+import { charactersResourceState } from './server/resourceState.svelte'
 import { alertStore, selectedCharID } from './stores.svelte'
 import { language } from 'src/lang'
 
@@ -191,6 +192,35 @@ describe('hotkey handling under the resource guard', () => {
     selectedCharID.set(1)
     await expect(changeToAdjacentCharacter('previous')).resolves.toBe(false)
     expect(changeCharMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('fails closed for malformed or duplicate ready character owners', async () => {
+    testDatabaseState.db.characters = [
+      { name: 'Charlie', chaId: 'duplicate-character' },
+      { name: 'Alpha', chaId: 'duplicate-character' },
+    ] as any
+    selectedCharID.set(0)
+
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+    expect(changeCharMock).not.toHaveBeenCalled()
+
+    testDatabaseState.db.characters = [
+      { name: 'Charlie', chaId: '' },
+      { name: 'Alpha', chaId: 'char-a' },
+    ] as any
+    selectedCharID.set(0)
+
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(false)
+    expect(changeCharMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps aggregate adjacent navigation only while character resources are pre-ready', async () => {
+    testDatabaseState.db.characters = [{ name: 'Charlie' }, { name: 'Alpha' }] as any
+    charactersResourceState.status = 'loading'
+    selectedCharID.set(1)
+
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(true)
+    expect(changeCharMock).toHaveBeenLastCalledWith(0)
   })
 
   it('maps hotkeys to sidebar settings group', () => {
