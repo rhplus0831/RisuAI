@@ -70,6 +70,7 @@ import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
+import { charactersResourceState, getResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
@@ -412,6 +413,43 @@ describe('Sidebar generation indicator pointer activation', () => {
 })
 
 describe('Sidebar unread indicator pointer activation', () => {
+  it('uses ready owner chat rows when the aggregate character row is stale', async () => {
+    seedPinnedSidebarDatabase()
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [
+      {
+        ...staleAggregate[0],
+        name: 'Owner Alpha',
+        chats: [{ id: 'chat-a', name: 'Owner pinned', pinned: true, message: [] }],
+      },
+    ] as any
+    staleAggregate[0].chats = []
+    markChatUnread('chat-a')
+
+    component = mount(Sidebar, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-pinned-chat="chat-a"]')).toBeTruthy()
+    const avatar = target.querySelector<HTMLElement>('[data-char-id="char-a"]')
+    const characterRow = avatar?.closest<HTMLElement>('[draggable="true"]')
+    expect(characterRow?.querySelector('[data-risu-unread-indicator]')?.getAttribute('title')).toBe(
+      `${language.newMessage}: Owner Alpha`,
+    )
+  })
+
+  it('fails closed for duplicate ready owner IDs instead of using ambiguous chat rows', async () => {
+    seedPinnedSidebarDatabase()
+    charactersResourceState.characters = [
+      { ...getResourceDatabase().characters[0], chats: [{ id: 'chat-a', pinned: true, message: [] }] },
+      { ...getResourceDatabase().characters[0], chats: [{ id: 'chat-b', pinned: true, message: [] }] },
+    ] as any
+
+    component = mount(Sidebar, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-pinned-chat]')).toBeNull()
+  })
+
   it('aggregates unread state onto the character and the exact pinned chat', async () => {
     seedPinnedSidebarDatabase()
     markChatUnread('chat-a')
