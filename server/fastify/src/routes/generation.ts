@@ -36,6 +36,7 @@ import { requireAuth } from '../http.js'
 import type { DatabaseSync } from 'node:sqlite'
 import { loadServerIntentCompletionSettings } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
+import { applyProfileBoundGenerationFields } from '../prompt/effectiveGenerationConfig.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { attachAbort } from '../requestAbort.js'
 import { writeBoundedRaw } from '../streamBackpressure.js'
@@ -357,14 +358,13 @@ function selectedCompletionProfile(db: Database, body: CompletionRequestBody): R
 }
 
 function buildCompletionDatabase(db: Database, body: CompletionRequestBody, profile: ResolvedModelProfile): Database {
-  const next = {
-    ...db,
-    aiModel: profile.modelId,
-    // `/completion` callers explicitly negotiate their transport via `stream`.
-    // Half-streaming callers promote that flag before reaching this route.
-    halfStreaming: false,
-    useStreaming: body.stream === true,
-  } as Database
+  const next = { ...db } as Database
+  applyProfileBoundGenerationFields(next, profile)
+  next.aiModel = profile.modelId
+  // `/completion` callers explicitly negotiate their transport via `stream`.
+  // Half-streaming callers promote that flag before reaching this route.
+  next.halfStreaming = false
+  next.useStreaming = body.stream === true
   const maxTokens = finiteNumber(body.maxTokens)
   if (maxTokens !== undefined) {
     next.maxResponse = maxTokens

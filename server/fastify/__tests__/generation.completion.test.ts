@@ -907,6 +907,9 @@ describe('POST /api/v1/generate/completion', () => {
   it('server-intent completion resolves fallbackProfileId from durable profile settings', async () => {
     writeDatabase({
       aiModel: 'echo_model',
+      top_p: 0.91,
+      frequencyPenalty: 88,
+      PresensePenalty: 77,
       providerCredentials: [
         { id: 'credential-fallback', name: 'Fallback', type: 'apiKey', apiKey: 'sk-fallback-profile' },
       ],
@@ -923,6 +926,9 @@ describe('POST /api/v1/generate/completion', () => {
           runtimeOptions: {
             maxResponse: 77,
             temperature: 33,
+            topP: 0.42,
+            frequencyPenalty: 25,
+            presencePenalty: -50,
           },
         },
       ],
@@ -961,6 +967,9 @@ describe('POST /api/v1/generate/completion', () => {
         model: 'fallback-wire-model',
         max_tokens: 77,
         temperature: 0.33,
+        top_p: 0.42,
+        frequency_penalty: 0.25,
+        presence_penalty: -0.5,
       },
     })
     expect(sentRequest.headers.authorization).toBe('Bearer sk-fallback-profile')
