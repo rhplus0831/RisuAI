@@ -1,6 +1,9 @@
 import { agentToggleStorageKey, type AgentPresetUseRecord, type AgentToggleDefinition } from './agentPresetRecords'
 import { resolveModuleActivationStates } from './moduleActivation'
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
+import type { ChatGenerationSidebarToggleKind } from '@risuai/shared-core/chat-generation-toggle-preset-records'
+
+export type { ChatGenerationSidebarToggleKind } from '@risuai/shared-core/chat-generation-toggle-preset-records'
 
 export const CHAT_GENERATION_SETTINGS_FIELD = 'generationSettings' as const
 
@@ -201,7 +204,6 @@ export interface ChatGenerationModuleReference {
   customModuleToggle?: string | null
 }
 
-export type ChatGenerationSidebarToggleKind = 'boolean' | 'select' | 'text' | 'textarea'
 export type ChatGenerationSidebarToggleLayoutKind = 'group' | 'groupEnd' | 'divider' | 'caption'
 
 type ChatGenerationSidebarToggleSource =
