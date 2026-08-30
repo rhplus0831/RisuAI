@@ -5,14 +5,15 @@ Date: 2026-08-31
 ## Candidate
 
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
-  `29775b825`, and `c0b8776b3`
+  `29775b825`, `c0b8776b3`, `0b134b24d`, and `f986cf1ff`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
 - Workstream 1 convention release: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
 - Scope: Phase 2 normal-consumer checkpoint for selected model-preset
-  composition, browser prompt shape, and durable-profile tokenizer budgeting.
+  composition, browser prompt shape, durable-profile tokenizer/output budgeting,
+  and canonical custom-sidebar model authoring.
 
 ## Consumer-Cutover Proof
 
@@ -34,6 +35,11 @@ Date: 2026-08-31
   profile even when flat fields conflict.
 - Fastify and browser budgeting share the tokenizer-selection precedence helper;
   the duplicate Fastify record-type dependency is gone.
+- Local prompt assembly uses the selected profile's response-token budget for
+  both initial reservation and final request fitting even when flat
+  `maxResponse` conflicts.
+- The custom sidebar routes its model control to the canonical global
+  model-preset picker and contains no server-backed flat `aiModel` draft.
 
 ## Commands And Results
 
@@ -43,16 +49,18 @@ Date: 2026-08-31
 - Prompt build-history, history-format, final-render, assembly, and ownership
   files passed 11, 16, 24, 2, and 2 tests; the model-runtime ownership file
   passed 2.
+- Conflicting prompt response-budget fixtures passed 2 assembly and 2 ownership
+  tests, the generation fixture owner passed 39, and the sidebar owner passed 2.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at 316 cross-runtime edges, 20 compatibility
-  surfaces/42 probes, 9,889 client references/326 groups, and 56 owner-gap rows.
+- Architecture inventory passed at 298 cross-runtime edges, 20 compatibility
+  surfaces/42 probes, 9,888 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `c0b8776b3`. Selected legacy
-preset ownership is request-local, prompt shape and tokenizer budgeting use the
-selected durable profile, and canonical configuration has shared tokenizer
-precedence. The broader normal consumer cutover remains active; the model-owner
-cursor is not released yet.
+The normal-consumer checkpoint passes through `f986cf1ff`. Selected legacy
+preset ownership is request-local; prompt shape, tokenizer, and output budgeting
+use the selected durable profile; and the remaining normal sidebar authoring
+surface uses canonical presets. The broader normal consumer cutover remains
+active; the model-owner cursor is not released yet.

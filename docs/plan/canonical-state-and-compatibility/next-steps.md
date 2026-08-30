@@ -7,11 +7,11 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Replace ordinary runtime reads of flat pre-prompt, tokenizer, CBS,
-   translation, agent, and auxiliary settings with resolved durable-profile
-   inputs.
-2. Move normal model authoring surfaces away from flat model/runtime writes;
-   keep explicit import/export/conversion paths classified.
+1. Thread resolved profile model capability into browser inlay request and token
+   accounting so stale flat `aiModel` cannot control image handling.
+2. Continue replacing ordinary runtime reads of flat CBS, translation, agent,
+   and auxiliary settings with resolved durable-profile inputs; the custom
+   sidebar authoring path is now canonical.
 3. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
 4. Prove provider/model/options/fallback parity in browser reload and request

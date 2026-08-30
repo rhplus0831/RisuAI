@@ -1,6 +1,7 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; prompt-shape and tokenizer checkpoint at `c0b8776b3`.
+Status: in progress; output-budget and canonical sidebar checkpoint through
+`f986cf1ff`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -69,8 +70,14 @@ classified static/legacy boundary removed to complete the cutover.
   model overhead, name handling, maximum context, tokenizer family, provider
   credential, and cache identity. Fastify uses the same tokenizer precedence
   helper at `c0b8776b3`.
+- Local prompt assembly reserves and finalizes output tokens from that same
+  selected profile's `runtimeOptions.maxResponse`, with legacy flat fallback
+  only when the resolved profile has no value, at `0b134b24d`.
+- The custom sidebar model control opens the canonical global model-preset
+  picker and no longer creates an ordinary server-backed `aiModel` draft at
+  `f986cf1ff`.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
-  split presets, tokenizer, and static ownership owners pass; ordinary flat
-  runtime/authoring consumers remain to be cut over before this slice can
-  close.
+  split presets, tokenizer, static ownership, prompt-budget, and sidebar
+  authoring owners pass; ordinary flat runtime/authoring consumers remain to be
+  cut over before this slice can close.
