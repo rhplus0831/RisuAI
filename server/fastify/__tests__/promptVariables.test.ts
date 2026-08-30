@@ -289,6 +289,20 @@ describe('expandVariables — conditionals', () => {
     expect(expandVariables('{{#when::1::and::1}}A{{:else}}B{{/when}}', ctx()).text).toBe('A')
     expect(expandVariables('{{#when::1::and::0}}A{{:else}}B{{/when}}', ctx()).text).toBe('B')
   })
+
+  it('reads #when chat variables and toggles from the request-scoped Fastify backend', () => {
+    const database = makeDatabase({
+      globalChatVariables: { toggle_mode: '1' },
+      characters: [makeCharacter({ chats: [makeChat({ scriptstate: { $ready: '1' } })] })],
+    })
+
+    expect(
+      expandVariables(
+        '{{#when::var::ready}}VAR{{/when}}|{{#when::toggle::mode}}TOGGLE{{/when}}|{{#when::mode::tis::1}}ON{{/when}}',
+        { database },
+      ).text,
+    ).toBe('VAR|TOGGLE|ON')
+  })
 })
 
 describe('expandVariables — loops and expressions', () => {

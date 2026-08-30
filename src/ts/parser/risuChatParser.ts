@@ -27,6 +27,17 @@ export type RisuChatParserArg = {
   callStack?: number
   cbsConditions?: CbsConditions
   callbackMemo?: CbsCallbackMemo
+  chatVariables?: RisuChatParserVariableResolver
+}
+
+export interface RisuChatParserVariableResolver {
+  getChatVar: (key: string) => string
+  getGlobalChatVar: (key: string) => string
+}
+
+const browserChatVariables: RisuChatParserVariableResolver = {
+  getChatVar,
+  getGlobalChatVar,
 }
 
 export const matcherMap = new Map<string, RegisterCallback>()
@@ -168,6 +179,7 @@ export function matcher(
 export function blockStartMatcher(
   p1: string,
   _matcherArg: matcherArg,
+  chatVariables: RisuChatParserVariableResolver = browserChatVariables,
 ): { type: blockMatch; type2?: string; funcArg?: string[]; mode?: string } {
   if (p1.startsWith('#if') || p1.startsWith('#if_pure ')) {
     const statement = p1.split(' ', 2)
@@ -255,7 +267,7 @@ export function blockStartMatcher(
             break
           }
           case 'var': {
-            const variable = getChatVar(condition)
+            const variable = chatVariables.getChatVar(condition)
             if (isTruthy(variable)) {
               statement.push('1')
             } else {
@@ -264,7 +276,7 @@ export function blockStartMatcher(
             break
           }
           case 'toggle': {
-            const variable = getGlobalChatVar('toggle_' + condition)
+            const variable = chatVariables.getGlobalChatVar('toggle_' + condition)
             if (isTruthy(variable)) {
               statement.push('1')
             } else {
@@ -274,7 +286,7 @@ export function blockStartMatcher(
           }
           case 'vis': {
             //vis = variable is
-            const variable = getChatVar(statement.pop())
+            const variable = chatVariables.getChatVar(statement.pop())
             if (variable === condition) {
               statement.push('1')
             } else {
@@ -284,7 +296,7 @@ export function blockStartMatcher(
           }
           case 'visnot': {
             //visnot = variable is not
-            const variable = getChatVar(statement.pop())
+            const variable = chatVariables.getChatVar(statement.pop())
             if (variable !== condition) {
               statement.push('1')
             } else {
@@ -294,7 +306,7 @@ export function blockStartMatcher(
           }
           case 'tis': {
             //tis = toggle is
-            const variable = getGlobalChatVar('toggle_' + statement.pop())
+            const variable = chatVariables.getGlobalChatVar('toggle_' + statement.pop())
             if (variable === condition) {
               statement.push('1')
             } else {
@@ -304,7 +316,7 @@ export function blockStartMatcher(
           }
           case 'tisnot': {
             //tisnot = toggle is not
-            const variable = getGlobalChatVar('toggle_' + statement.pop())
+            const variable = chatVariables.getGlobalChatVar('toggle_' + statement.pop())
             if (variable !== condition) {
               statement.push('1')
             } else {
@@ -577,6 +589,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
     elements: 0,
     expandedChars: 0,
   }
+  const chatVariables = arg.chatVariables ?? browserChatVariables
   let functions: Map<
     string,
     {
@@ -659,7 +672,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
             }
             break
           }
-          const matchResult = blockStartMatcher(dat, matcherObj)
+          const matchResult = blockStartMatcher(dat, matcherObj, chatVariables)
           if (matchResult.type === 'nothing') {
             nested[0] += `{{${dat}}}`
             break

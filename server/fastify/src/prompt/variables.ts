@@ -10,6 +10,9 @@ import { AgentPresetGenerationError } from './agentPresetErrors.js'
 import { expandAgentPresetOutputCbs } from '@risuai/shared-core/agent-preset-output-references'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
 import type { ServerCbsCallbackDiagnosticReason } from './promptScope.js'
+import { getChatVar, getGlobalChatVar } from './chatVarBackend.js'
+
+const parserChatVariables = { getChatVar, getGlobalChatVar }
 
 /**
  * Server-side `risuChatParser` entry point.
@@ -125,6 +128,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
       cbsConditions: ctx.cbsConditions,
       callStack: ctx.callStack,
       callbackMemo: ctx.cbsCallbackMemo,
+      chatVariables: parserChatVariables,
     })
     return { text, dirty: isActivePromptScopeDirty() }
   } finally {
