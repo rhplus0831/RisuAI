@@ -227,10 +227,10 @@
           "expectedCount": 2
         },
         {
-          "path": "src/ts/process/promptAssembly/effectivePromptTemplate.ts",
+          "path": "packages/shared-core/src/effectivePromptTemplate.ts",
           "kind": "identifier",
           "value": "promptPresetsId",
-          "expectedCount": 1
+          "expectedCount": 2
         }
       ]
     },
@@ -346,7 +346,7 @@
       "id": "prompt-effective-fallback",
       "family": "prompt-template",
       "surface": "effective prompt-template precedence resolver",
-      "currentOwner": "shared browser-tree prompt assembly helper",
+      "currentOwner": "@risuai/shared-core/effective-prompt-template",
       "roles": [
         "read",
         "fallback"
@@ -365,7 +365,7 @@
       "workstream3Cursor": "Hold prompt generation consumer migration until canonical resolver release.",
       "probes": [
         {
-          "path": "src/ts/process/promptAssembly/effectivePromptTemplate.ts",
+          "path": "packages/shared-core/src/effectivePromptTemplate.ts",
           "kind": "identifier",
           "value": "resolveEffectivePromptTemplate",
           "expectedCount": 1
