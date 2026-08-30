@@ -1,9 +1,9 @@
 import { get } from 'svelte/store'
 import { characterRoutePath, type AppRoute } from '../routerRoute'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 import { OpenRealmStore, PlaygroundStore, selectedCharID, settingsOpen } from '../stores.svelte'
-import { findCharacterIndexbyId } from '../characterState'
 import { changeChar } from '../characters'
+import type { character } from '../storage/database.svelte'
 
 interface CharacterRouteContext {
   isFresh: () => boolean
@@ -16,7 +16,7 @@ export async function applyCharacterRoute(
 ): Promise<void> {
   if (!context.isFresh()) return
 
-  const index = findCharacterIndexbyId(route.chaId)
+  const index = findRouteCharacterIndex(route.chaId)
   if (index < 0) {
     selectedCharID.set(-1)
     settingsOpen.set(false)
@@ -33,19 +33,19 @@ export async function applyCharacterRoute(
   if (get(selectedCharID) !== index) await changeChar(index, { isFresh: context.isFresh })
   if (!context.isFresh()) return
 
-  const liveIndex = findCharacterIndexbyId(route.chaId)
+  const liveIndex = findRouteCharacterIndex(route.chaId)
   if (liveIndex < 0) {
     restoreSelectedCharacterRoute(context.replacePath)
     return
   }
   const liveSelectedIndex = get(selectedCharID)
-  if (liveSelectedIndex !== liveIndex || getDatabase().characters?.[liveSelectedIndex]?.chaId !== route.chaId) {
+  if (liveSelectedIndex !== liveIndex || selectedCharacterForRoute(liveSelectedIndex)?.chaId !== route.chaId) {
     restoreSelectedCharacterRoute(context.replacePath)
     return
   }
 
   if (!route.chatId) return
-  const character = getDatabase().characters?.[liveIndex]
+  const character = selectedCharacterForRoute(liveIndex)
   const chatIndex = character?.chats?.findIndex((chat) => chat.id === route.chatId) ?? -1
   if (!character) return
   if (chatIndex < 0) {
@@ -59,7 +59,7 @@ export async function applyCharacterRoute(
 }
 
 function restoreSelectedCharacterRoute(replacePath: (path: string) => void): void {
-  const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
+  const selectedCharacter = selectedCharacterForRoute(get(selectedCharID))
   if (!selectedCharacter?.chaId) {
     replacePath('/')
     return
@@ -67,4 +67,32 @@ function restoreSelectedCharacterRoute(replacePath: (path: string) => void): voi
 
   const selectedChatId = selectedCharacter.chats?.[selectedCharacter.chatPage]?.id
   replacePath(characterRoutePath(selectedCharacter.chaId, selectedChatId))
+}
+
+function findRouteCharacterIndex(characterId: string): number {
+  const ownerIndex = uniqueCharacterOwnerIndex(characterId)
+  if (ownerIndex >= 0 || charactersResourceState.status === 'ready') return ownerIndex
+  return legacyCharacterIndex(characterId)
+}
+
+function uniqueCharacterOwnerIndex(characterId: string): number {
+  let ownerIndex = -1
+  for (const [index, candidate] of charactersResourceState.characters.entries()) {
+    if (candidate?.chaId !== characterId) continue
+    if (ownerIndex >= 0) return -1
+    ownerIndex = index
+  }
+  return ownerIndex
+}
+
+function selectedCharacterForRoute(selectedIndex: number): character | undefined {
+  const owner = charactersResourceState.characters[selectedIndex]
+  if (owner?.chaId && uniqueCharacterOwnerIndex(owner.chaId) === selectedIndex) return owner
+  if (charactersResourceState.status === 'ready') return undefined
+  return getDatabase().characters?.[selectedIndex]
+}
+
+/** Compatibility fallback for local/offline databases before the owner list is ready. */
+function legacyCharacterIndex(characterId: string): number {
+  return getDatabase().characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
 }
