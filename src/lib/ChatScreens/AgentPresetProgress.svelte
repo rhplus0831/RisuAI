@@ -6,11 +6,12 @@
     getAgentPresetProgressPercent,
     type ActiveAgentPresetProgress,
   } from 'src/ts/process/agentPresetProgress'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
   let activeChatId = $derived.by(() => {
-    const character = getDatabase().characters?.[$selectedCharID]
+    const character = getSelectedCharacterOwner() ?? getDatabase().characters?.[$selectedCharID]
     return character?.chats?.[character.chatPage]?.id ?? ''
   })
   let progress = $derived.by(() => {

@@ -67,6 +67,7 @@
     type Message,
   } from '../../ts/storage/database.svelte'
   import { getCharImage } from '../../ts/characterImage'
+  import { getSelectedCharacterOwner } from '../../ts/characterState'
   import {
     abortActiveGeneration,
     clearActiveGenerationAbortController,
@@ -321,6 +322,7 @@
   })
 
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
+  let selectedCharacterOwner = $derived(getSelectedCharacterOwner() ?? currentCharacter)
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: currentCharacter?.chaId,
@@ -2355,7 +2357,7 @@
     {/if}
   {:else if !activeChatOpen}
     <div class="h-full w-full flex flex-col items-center justify-center text-center px-6" data-risu-chat-empty-state>
-      <h2 class="text-2xl font-bold mb-2">{getCharacterDisplayName(getDatabase().characters[$selectedCharID])}</h2>
+      <h2 class="text-2xl font-bold mb-2">{getCharacterDisplayName(selectedCharacterOwner)}</h2>
       <p class="text-textcolor2">{language.selectChatToOpen}</p>
       {#if mostRecentChat}
         <Button className="mt-4 flex flex-col gap-2" onclick={openMostRecentChat}>

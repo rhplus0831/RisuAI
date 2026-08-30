@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getCustomBackground, getEmotion } from '../../ts/characterState'
+  import { getCustomBackground, getEmotionForCharacter, getSelectedCharacterOwner } from '../../ts/characterState'
 
   import { getDatabase, isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { CharEmotion, selectedCharID } from '../../ts/stores.svelte'
@@ -25,7 +25,9 @@
   let openModuleList = $state(false)
   let openBardWiki = $state(false)
   let bardWikiChatId = $state<string | null>(null)
-  let selectedCharacter = $derived($selectedCharID >= 0 ? getDatabase().characters?.[$selectedCharID] : undefined)
+  let selectedCharacter = $derived(
+    $selectedCharID >= 0 ? (getSelectedCharacterOwner() ?? getDatabase().characters?.[$selectedCharID]) : undefined,
+  )
   let selectedChatId = $derived(selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id ?? null)
   let selectedCharacterShellId = $derived(
     isServerCharacterShell(selectedCharacter) ? (selectedCharacter?.chaId ?? null) : null,
@@ -83,16 +85,16 @@
     <SideBarArrow />
     <BackgroundDom />
     {#if $selectedCharID >= 0}
-      {#if getDatabase().characters[$selectedCharID].viewScreen !== 'none'}
+      {#if selectedCharacter?.viewScreen !== 'none'}
         <div class="h-full mr-10 flex justify-end halfw" style:width="{42 * (getDatabase().waifuWidth2 / 100)}rem">
-          <TransitionImage classType="waifu" src={getEmotion(getDatabase(), $CharEmotion, 'plain')} />
+          <TransitionImage classType="waifu" src={getEmotionForCharacter(selectedCharacter, $CharEmotion, 'plain')} />
         </div>
       {/if}
     {/if}
     <div
       class="h-full w-2xl"
       style:width="{42 * (getDatabase().waifuWidth / 100)}rem"
-      class:halfwp={$selectedCharID >= 0 && getDatabase().characters[$selectedCharID].viewScreen !== 'none'}>
+      class:halfwp={$selectedCharID >= 0 && selectedCharacter?.viewScreen !== 'none'}>
       <DefaultChatScreen
         route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
@@ -107,8 +109,8 @@
     <BackgroundDom />
     <div
       class="w-full absolute z-10 bottom-0 left-0"
-      class:per33={$selectedCharID >= 0 && getDatabase().characters[$selectedCharID].viewScreen !== 'none'}
-      class:h-full={!($selectedCharID >= 0 && getDatabase().characters[$selectedCharID].viewScreen !== 'none')}>
+      class:per33={$selectedCharID >= 0 && selectedCharacter?.viewScreen !== 'none'}
+      class:h-full={!($selectedCharID >= 0 && selectedCharacter?.viewScreen !== 'none')}>
       <DefaultChatScreen
         route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
@@ -117,9 +119,9 @@
         bind:openBardWiki />
     </div>
     {#if $selectedCharID >= 0}
-      {#if getDatabase().characters[$selectedCharID].viewScreen !== 'none'}
+      {#if selectedCharacter?.viewScreen !== 'none'}
         <div class="h-full w-full absolute bottom-0 left-0 max-w-full">
-          <TransitionImage classType="mobile" src={getEmotion(getDatabase(), $CharEmotion, 'plain')} />
+          <TransitionImage classType="mobile" src={getEmotionForCharacter(selectedCharacter, $CharEmotion, 'plain')} />
         </div>
       {/if}
     {/if}
@@ -130,7 +132,7 @@
     <BackgroundDom />
     <div style={bgImg} class="h-full w-full" class:max-w-6xl={getDatabase().classicMaxWidth}>
       {#if $selectedCharID >= 0}
-        {#if getDatabase().characters[$selectedCharID].viewScreen !== 'none' && !getDatabase().characters[$selectedCharID].inlayViewScreen}
+        {#if selectedCharacter?.viewScreen !== 'none' && !selectedCharacter?.inlayViewScreen}
           <ResizeBox />
         {/if}
       {/if}

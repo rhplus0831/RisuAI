@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { ParseMarkdown, risuChatParser } from 'src/ts/parser/parser.svelte'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { getDatabase, type character } from 'src/ts/storage/database.svelte'
   import {
     moduleBackgroundEmbedding,
@@ -51,7 +52,8 @@
 
   $effect(() => {
     const selectedId = selIdState.selId
-    const selectedCharacter = getDatabase().characters?.[selectedId] as character | undefined
+    const selectedCharacter =
+      getSelectedCharacterOwner() ?? (getDatabase().characters?.[selectedId] as character | undefined)
     const nextHTML = selectedCharacter?.backgroundHTML ?? ''
     const nextCharacterKey = backgroundCharacterSignature(selectedId, selectedCharacter)
 
