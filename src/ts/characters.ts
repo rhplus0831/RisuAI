@@ -1431,33 +1431,29 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   const isFreshSelectionAttempt = () => selectionAttemptId === changeCharSelectionAttemptId && (arg.isFresh?.() ?? true)
   reseter()
   botMakerMode.set(false)
-  if (getDatabase().characters?.[index]?.coldstorage) {
+  if (characterOwnerAt(index)?.coldstorage) {
     const recovered = await recoverColdStorageCharacter(index)
     if (!isFreshSelectionAttempt() || !recovered) return
   }
-  const characterId =
-    charactersResourceState.status === 'ready'
-      ? characterOwnerAt(index)?.chaId
-      : getDatabase().characters?.[index]?.chaId
+  const character = characterOwnerAt(index)
+  const characterId = character?.chaId
   if (!characterId) return
-  if (isServerCharacterShell(getDatabase().characters?.[index])) {
+  if (isServerCharacterShell(character)) {
     const hydrated = await hydrateCharacterShell(characterId)
     if (!isFreshSelectionAttempt()) return
     const hydratedIndex = findLiveCharacterIndex(characterId)
     if (hydratedIndex < 0) return
-    if (!hydrated && isServerCharacterShell(getDatabase().characters?.[hydratedIndex])) return
+    if (!hydrated && isServerCharacterShell(characterOwnerAt(hydratedIndex))) return
   }
   if (!isFreshSelectionAttempt()) return
   const liveIndex = findLiveCharacterIndex(characterId)
-  if (liveIndex < 0 || isServerCharacterShell(getDatabase().characters?.[liveIndex])) return
+  const liveCharacter = liveIndex >= 0 ? characterOwnerAt(liveIndex) : undefined
+  if (!liveCharacter || isServerCharacterShell(liveCharacter)) return
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
   withTrustedResourceWrite(() => {
-    const character = getDatabase().characters?.[liveIndex]
-    if (character) {
-      character.lastInteraction = lastInteraction
-    }
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = liveIndex
+    liveCharacter.lastInteraction = lastInteraction
+    setCurrentCharacterIndexOwner(liveIndex)
     selectedCharID.set(liveIndex)
   })
   dispatchSelectCharacter(characterId, previous, lastInteraction)
@@ -1487,6 +1483,16 @@ function currentCharacterIndexOwner(): number | undefined {
   return charactersResourceState.status === 'ready'
     ? charactersResourceState.currentChar
     : (getDatabase() as unknown as { currentChar?: number }).currentChar
+}
+
+function setCurrentCharacterIndexOwner(index: number): void {
+  if (charactersResourceState.status === 'ready') {
+    charactersResourceState.currentChar = index
+    // A revision-less ready projection is the local/legacy compatibility
+    // state; keep its facade pointer mirrored until the server owner is fenced.
+    if (charactersResourceState.selectionRevision !== null) return
+  }
+  ;(getDatabase() as unknown as { currentChar?: number }).currentChar = index
 }
 
 function characterOwnerAt(index: number): character | undefined {

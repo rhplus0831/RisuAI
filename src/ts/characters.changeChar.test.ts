@@ -179,6 +179,43 @@ afterEach(() => {
 })
 
 describe('changeChar shell selection freshness', () => {
+  it('fails closed when the ready character owner has a duplicate stable id', async () => {
+    testDatabaseState.db = {
+      currentChar: -1,
+      characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-a', 'Duplicate A')],
+      characterOrder: ['char-a'],
+    } as any
+    const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+
+    await changeChar(0)
+    await drainServerCommandExecutionForTests()
+
+    expect(get(selectedCharID)).toBe(-1)
+    expect((testDatabaseState.db as any).currentChar).toBe(-1)
+    expect(selectedCharacterCommandIds(calls)).toEqual([])
+  })
+
+  it('uses the compatibility character owner until the resource projection is ready', async () => {
+    testDatabaseState.db = {
+      currentChar: -1,
+      characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
+      characterOrder: ['char-a', 'char-b'],
+    } as any
+    const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+    charactersResourceState.status = 'loading'
+
+    try {
+      await changeChar(1)
+
+      expect(get(selectedCharID)).toBe(1)
+      expect((testDatabaseState.db as any).currentChar).toBe(1)
+      await drainServerCommandExecutionForTests()
+      expect(selectedCharacterCommandIds(calls)).toEqual(['char-b'])
+    } finally {
+      charactersResourceState.status = 'ready'
+    }
+  })
+
   it('allows selecting another character while a generation is active', async () => {
     testDatabaseState.db = {
       currentChar: -1,
