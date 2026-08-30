@@ -1,5 +1,5 @@
 import type { Chat, Database } from '../../../../src/ts/storage/database.svelte'
-import type { PromptItem } from '../../../../src/ts/process/prompt'
+import type { PromptItem } from './promptTemplate.js'
 import type { UnformatedPromptSlots } from './templates.js'
 import { tokenizeChat } from './tokens.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'

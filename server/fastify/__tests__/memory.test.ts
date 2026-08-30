@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Chat, Database } from '../../../src/ts/storage/database.svelte'
-import type { PromptItem } from '../../../src/ts/process/prompt'
+import type { PromptItem } from '../src/prompt/promptTemplate.js'
 import { buildMemoryWindow } from '../src/prompt/memory.js'
 import { createEmptyUnformatedSlots } from '../src/prompt/assemble.js'
 import { tokenizeChat } from '../src/prompt/tokens.js'

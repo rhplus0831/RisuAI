@@ -1,5 +1,5 @@
 import type { character } from '../../../../src/ts/storage/database.svelte'
-import type { PromptItem } from '../../../../src/ts/process/prompt'
+import type { PromptItem } from './promptTemplate.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { createPositionParser, type LorebookActivationReport } from './lorebook.js'
 import { tokenizeChat } from './tokens.js'

@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Database, character } from '../../../src/ts/storage/database.svelte'
-import type { PromptItem } from '../../../src/ts/process/prompt'
+import type { PromptItem } from '../src/prompt/promptTemplate.js'
 import {
   buildFormatOrder,
   coalesceRows,

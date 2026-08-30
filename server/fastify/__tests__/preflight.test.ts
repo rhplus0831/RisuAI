@@ -8,7 +8,7 @@ import type {
   PromptItemChatML,
   PromptItemPlain,
   PromptItemTyped,
-} from '../../../src/ts/process/prompt'
+} from '../src/prompt/promptTemplate.js'
 import { preflightTemplateTokens, type PromptUnformatedSlots } from '../src/prompt/preflight.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { ExpandContext } from '../src/prompt/variables.js'

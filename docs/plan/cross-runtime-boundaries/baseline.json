@@ -1114,19 +1114,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/assemble.ts",
-      "specifier": "../../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/assemble.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1600,19 +1587,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/memory.ts",
-      "specifier": "../../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/memory.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1731,19 +1705,6 @@
       "usage": "type-only",
       "symbols": [
         "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/preflight.ts",
-      "specifier": "../../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1992,19 +1953,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/templates.ts",
-      "specifier": "../../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -3091,19 +3039,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/memory.test.ts",
-      "specifier": "../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memory.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3378,25 +3313,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/preflight.test.ts",
-      "specifier": "../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem",
-        "PromptItemAuthorNote",
-        "PromptItemCache",
-        "PromptItemChat",
-        "PromptItemChatML",
-        "PromptItemPlain",
-        "PromptItemTyped"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/preflight.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -3600,19 +3516,6 @@
         "Chat",
         "Database",
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/templates.test.ts",
-      "specifier": "../../../src/ts/process/prompt",
-      "target": "src/ts/process/prompt.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "PromptItem"
       ],
       "count": 1,
       "policy": "browser-application-model"

@@ -1,5 +1,5 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { PromptItem } from '../../../../src/ts/process/prompt'
+import type { PromptItem } from './promptTemplate.js'
 import { applyDescriptionPromptRole, applyPromptBlockRole } from '../../../../src/ts/process/promptBlockRole.js'
 import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import {
