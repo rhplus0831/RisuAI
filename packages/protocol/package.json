@@ -9,6 +9,7 @@
     "./character-summary-resource": "./src/characterSummaryResource.ts",
     "./client-context": "./src/clientContext.ts",
     "./display-source": "./src/displaySource.ts",
+    "./durable-command-operation": "./src/durableCommandOperation.ts",
     "./embedding-operation": "./src/embeddingOperation.ts",
     "./generation-sse": "./src/generationSse.ts",
     "./image-generation-operation": "./src/imageGenerationOperation.ts",

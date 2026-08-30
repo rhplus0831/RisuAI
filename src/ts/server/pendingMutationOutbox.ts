@@ -1,4 +1,8 @@
 import { gcm } from '@noble/ciphers/aes.js'
+import {
+  findProtocolDurableCommandOperation,
+  protocolDurableGenerationOperationMatches,
+} from '@risuai/protocol/durable-command-operation'
 
 import { clearRetainedChatProjections } from './chatRetainedProjection'
 import { beginPersistenceActivity, setPendingMutationOutboxActive } from './persistenceActivity.svelte'
@@ -157,141 +161,6 @@ const MUTATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,96}$/
 const SCOPE_VALUE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 
 let pendingMutationActivityRefresh = 0
-
-const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
-  method: DurableMutationRequestMethod
-  path: RegExp
-}> = [
-  { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*$/ },
-  { method: 'PATCH', path: /^\/settings\/[a-z][a-z-]*\/objects\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/characters$/ },
-  { method: 'POST', path: /^\/characters\/create-and-select$/ },
-  { method: 'PATCH', path: /^\/characters\/[^/?#]+\/alternate-greetings$/ },
-  { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/characters\/select$/ },
-  { method: 'POST', path: /^\/characters\/reorder$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chats$/ },
-  { method: 'PUT', path: /^\/characters\/[^/?#]+\/chats$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chats\/reorder$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders\/reorder$/ },
-  { method: 'POST', path: /^\/characters\/[^/?#]+\/modules\/reorder$/ },
-  { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
-  { method: 'PATCH', path: /^\/chats\/[^/?#]+\/scriptstate$/ },
-  { method: 'DELETE', path: /^\/chats\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/fork$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages\/truncate$/ },
-  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages\/tail$/ },
-  { method: 'PUT', path: /^\/chats\/[^/?#]+\/messages$/ },
-  { method: 'PUT', path: /^\/chats\/[^/?#]+\/generation-settings$/ },
-  { method: 'PATCH', path: /^\/messages\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/messages\/[^/?#]+$/ },
-  { method: 'PATCH', path: /^\/chat-folders\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/chat-folders\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/prompt-items$/ },
-  { method: 'POST', path: /^\/prompt-items\/reorder$/ },
-  { method: 'PATCH', path: /^\/prompt-items\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/prompt-items\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/prompt-items\/enable$/ },
-  { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/personas\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/personas$/ },
-  { method: 'POST', path: /^\/personas\/select$/ },
-  { method: 'POST', path: /^\/personas\/reorder$/ },
-  { method: 'POST', path: /^\/presets$/ },
-  { method: 'PATCH', path: /^\/presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/presets\/[^/?#]+\/copy$/ },
-  { method: 'POST', path: /^\/presets\/select$/ },
-  { method: 'POST', path: /^\/presets\/reorder$/ },
-  { method: 'POST', path: /^\/model-presets$/ },
-  { method: 'PATCH', path: /^\/model-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/model-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/model-presets\/select$/ },
-  { method: 'POST', path: /^\/model-presets\/reorder$/ },
-  { method: 'POST', path: /^\/model-profiles$/ },
-  { method: 'PATCH', path: /^\/model-profiles\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/model-profiles\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/model-profiles\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/model-profiles\/convert-legacy$/ },
-  { method: 'POST', path: /^\/model-profiles\/reorder$/ },
-  { method: 'POST', path: /^\/provider-credentials$/ },
-  { method: 'PATCH', path: /^\/provider-credentials\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/provider-credentials\/[^/?#]+$/ },
-  { method: 'PUT', path: /^\/model-role-profiles$/ },
-  { method: 'PUT', path: /^\/model-runtime-defaults$/ },
-  { method: 'POST', path: /^\/agent-presets$/ },
-  { method: 'POST', path: /^\/agents$/ },
-  { method: 'PATCH', path: /^\/agents\/(?!reorder$)[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/agents\/(?!reorder$)[^/?#]+$/ },
-  { method: 'POST', path: /^\/agents\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/agents\/reorder$/ },
-  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/agent-presets\/reorder$/ },
-  { method: 'POST', path: /^\/agent-presets\/default$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/uses$/ },
-  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+\/uses\/(?!reorder$)[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+\/uses\/(?!reorder$)[^/?#]+$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/uses\/reorder$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps$/ },
-  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+\/duplicate$/ },
-  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps\/reorder$/ },
-  { method: 'POST', path: /^\/prompt-presets$/ },
-  { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/prompt-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/prompt-presets\/select$/ },
-  { method: 'POST', path: /^\/prompt-presets\/reorder$/ },
-  { method: 'POST', path: /^\/legacy-bot-presets\/[^/?#]+\/extract$/ },
-  { method: 'POST', path: /^\/translator-presets$/ },
-  { method: 'PATCH', path: /^\/translator-presets\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/translator-presets\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/translator-presets\/select$/ },
-  { method: 'POST', path: /^\/modules$/ },
-  { method: 'PATCH', path: /^\/modules\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/modules\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/modules\/enable$/ },
-  { method: 'POST', path: /^\/modules\/reorder$/ },
-  { method: 'POST', path: /^\/plugins$/ },
-  { method: 'PATCH', path: /^\/plugins\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/plugins\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/plugins\/[^/?#]+\/enable$/ },
-  { method: 'POST', path: /^\/plugins\/provider$/ },
-  { method: 'POST', path: /^\/plugins\/reorder$/ },
-  { method: 'PUT', path: /^\/plugin-storage\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/plugin-storage\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/plugin-storage\/bulk$/ },
-  { method: 'POST', path: /^\/loadouts$/ },
-  { method: 'DELETE', path: /^\/loadouts\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/loadouts\/[^/?#]+\/favorite$/ },
-  { method: 'POST', path: /^\/loadouts\/[^/?#]+\/touch$/ },
-  { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },
-  { method: 'PUT', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
-  { method: 'PATCH', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
-  { method: 'POST', path: /^\/lorebooks$/ },
-  { method: 'POST', path: /^\/lorebooks\/reorder$/ },
-  { method: 'PATCH', path: /^\/lorebooks\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/lorebooks\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/lorebooks\/[^/?#]+\/select$/ },
-  { method: 'PUT', path: /^\/lorebooks\/[^/?#]+\/entries$/ },
-  { method: 'PUT', path: /^\/lorebooks\/[^/?#]+\/entries\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/lorebooks\/[^/?#]+\/entries\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/lorebooks\/[^/?#]+\/entries\/reorder$/ },
-  { method: 'PATCH', path: /^\/bardwiki\/chats\/[^/?#]+\/settings$/ },
-  { method: 'POST', path: /^\/bardwiki\/chats\/[^/?#]+\/documents$/ },
-  { method: 'PATCH', path: /^\/bardwiki\/chats\/[^/?#]+\/documents\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/bardwiki\/chats\/[^/?#]+\/documents\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/bardwiki\/chats\/[^/?#]+\/confirmations$/ },
-  { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks$/ },
-  { method: 'PUT', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
-  { method: 'DELETE', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/[^/?#]+$/ },
-  { method: 'POST', path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks\/entries\/reorder$/ },
-]
 
 let outboxDatabasePromise: Promise<IDBDatabase | null> | null = null
 let outboxRawEncryptionKeyPromise: Promise<OutboxEncryptionKey | null> | null = null
@@ -1629,16 +1498,9 @@ function normalizeRequest(value: unknown, kind?: DurableMutationIntent['kind']):
   }
   const method = request.method as DurableMutationRequestMethod
   const generationOperationPathAllowed =
-    (kind === 'generation-operation-submit' && method === 'POST' && request.path === '/generation-operations') ||
-    (kind === 'generation-operation-cancel' &&
-      method === 'PUT' &&
-      /^\/generation-operations\/[^/?#]+\/cancellation$/.test(request.path)) ||
-    (kind === 'generation-operation-retry' &&
-      method === 'POST' &&
-      /^\/generation-operations\/[^/?#]+\/retries$/.test(request.path))
+    kind !== undefined && protocolDurableGenerationOperationMatches(kind, method, request.path)
   const commandPathAllowed =
-    kind === undefined &&
-    ALLOWED_DURABLE_COMMANDS.some((candidate) => candidate.method === method && candidate.path.test(request.path!))
+    kind === undefined && findProtocolDurableCommandOperation(method, request.path) !== undefined
   if (!generationOperationPathAllowed && !commandPathAllowed) {
     throw new TypeError('Pending mutation command path is not allowlisted')
   }

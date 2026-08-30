@@ -484,11 +484,15 @@ function collectMetadata(repoRoot: string): MetadataObservation[] {
       count: countLiteralRouteRegistrations(repoRoot),
     },
     {
-      id: 'browser-durable-operation-allowlist',
-      owner: 'Browser retained-intent safety filter; never a security authority',
-      path: 'src/ts/server/pendingMutationOutbox.ts#ALLOWED_DURABLE_COMMANDS',
+      id: 'shared-durable-command-operation-catalog',
+      owner: 'Browser-safe retained-intent operation catalog; never a security authority',
+      path: 'packages/protocol/src/durableCommandOperation.ts#PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG',
       count: collectionSize(
-        namedInitializer(repoRoot, 'src/ts/server/pendingMutationOutbox.ts', 'ALLOWED_DURABLE_COMMANDS'),
+        namedInitializer(
+          repoRoot,
+          'packages/protocol/src/durableCommandOperation.ts',
+          'PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG',
+        ),
       ),
     },
     {
