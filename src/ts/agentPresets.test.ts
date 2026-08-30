@@ -25,6 +25,9 @@ import {
   deleteAgentPresetStep,
   duplicateAgentPreset,
   duplicateAgentPresetStep,
+  getAgentPresetById,
+  getAgentPresetDefaultId,
+  getAgentPresets,
   isAgentPresetGeneratedProjectionResolved,
   mergePendingAgentPresetCharactersResource,
   mergePendingAgentPresetLoadoutsResource,
@@ -46,8 +49,11 @@ import {
 import {
   applyCharacterResource,
   applyCollectionsResource,
+  charactersResourceState,
+  collectionsResourceState,
   isSettingsGroupAcknowledgementTainted,
   resetServerResourceState,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import {
   MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
@@ -191,6 +197,80 @@ afterEach(() => {
   setServerCommandSuccessReconciler(null)
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
+})
+
+describe('Agent Preset resource owners', () => {
+  it('fails closed on duplicate ready owner ids without falling back to the compatibility projection', async () => {
+    setResourceWriteGuardEnabled(false)
+    resetServerResourceState()
+    setDatabaseLite(
+      {
+        agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
+        agentPresetDefaultId: 'ap_a',
+        characters: [],
+      } as never,
+      1,
+    )
+    ;(settingsResourceState.value as Record<string, unknown>).agentPresets = [
+      preset(),
+      preset({ id: 'ap_a', name: 'Duplicate Preset A', steps: [] }),
+    ]
+    setResourceWriteGuardEnabled(true)
+    const fetchMock = vi.fn(async () => response({ error: 'rejected' }, 400))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(getAgentPresets()).toEqual([])
+    expect(getAgentPresetById('ap_a')).toBeUndefined()
+    expect(getAgentPresetDefaultId()).toBeUndefined()
+    await expect(updateAgentPreset('ap_a', { name: 'Must not write' })).resolves.toMatchObject({ status: 'failed' })
+    expect((settingsResourceState.value as Record<string, any>).agentPresets[0].name).toBe('Preset A')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('does not clear references when ready character or loadout owners lose stable-id uniqueness', async () => {
+    seedAgentPresetDeleteReferences()
+    charactersResourceState.characters = [
+      ...charactersResourceState.characters,
+      clonePlain(charactersResourceState.characters[0]),
+    ]
+    collectionsResourceState.values.loadouts = [
+      ...(collectionsResourceState.values.loadouts ?? []),
+      clonePlain(collectionsResourceState.values.loadouts?.[0]),
+    ] as never
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    await expect(deleteAgentPreset('ap_a')).resolves.toMatchObject({ status: 'failed' })
+    expect(charactersResourceState.characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(collectionsResourceState.values.loadouts?.[0]).toMatchObject({
+      agentPresetId: 'ap_a',
+      agentPresetName: 'Preset A',
+    })
+  })
+
+  it('uses character and loadout owners for delete references while retaining pre-readiness compatibility', async () => {
+    seedAgentPresetDeleteReferences()
+    settingsResourceState.groupStatuses.agents = 'loading'
+    collectionsResourceState.statuses.loadouts = 'loading'
+    charactersResourceState.status = 'loading'
+    const pendingResponse = deferred<Response>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => pendingResponse.promise),
+    )
+
+    const resultPromise = deleteAgentPreset('ap_a')
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBeUndefined()
+    expect(getDatabase().loadouts[0].agentPresetId).toBeUndefined()
+    expect(getDatabase().loadouts[0].agentPresetName).toBeUndefined()
+    pendingResponse.resolve(response({ error: 'rejected' }, 400))
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'failed' })
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(getDatabase().loadouts[0]).toMatchObject({ agentPresetId: 'ap_a', agentPresetName: 'Preset A' })
+  })
 })
 
 describe('Agent Preset optimistic field rollback', () => {
