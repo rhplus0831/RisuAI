@@ -69,11 +69,15 @@ entrypoints are:
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
 Use the owning test file during edits, then run `test:affected` once per coherent
-verification batch. A commit alone is not a verification boundary. Run a
-complete owning lane or `test:all` only when the changed scope requires it, and
-do not run all component checks and lanes immediately before `test:all`; the
-aggregate already owns them. Related additive protocol exports are intentionally
-batched on targeted feedback before the one integration-boundary aggregate.
+verification batch. If it prints
+`TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED`, its safe targeted feedback
+may be green but the final aggregate remains outstanding; `test:affected` never
+launches that aggregate. A commit alone is not a verification boundary. Run a
+complete owning lane when the changed scope requires it, and invoke `test:all`
+directly once for the coherent final candidate. Do not run all component checks
+and lanes immediately before `test:all`; the aggregate already owns them.
+Related additive protocol exports are intentionally batched on targeted feedback
+before the one integration-boundary aggregate.
 
 ### Compatibility evidence ownership
 

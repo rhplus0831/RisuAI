@@ -4,6 +4,7 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   ADDITIVE_PROTOCOL_EXPORT_NOTE,
+  FINAL_VERIFICATION_REQUIRED_NOTE,
   isAdditiveProtocolExportChange,
   parseNameStatus,
   planAffectedTests,
@@ -86,10 +87,12 @@ describe('affected test planning', () => {
     ])
   })
 
-  it('escalates dependency and CI changes to the full quality suite', () => {
+  it('defers dependency and CI changes to explicit final verification', () => {
     const result = plan([{ path: 'package.json', status: 'M' }])
 
-    expect(result.commands).toEqual([{ label: 'full quality suite', args: ['test:all'] }])
+    expect(result.commands).toEqual([])
+    expect(result.finalVerificationRequired).toBe(true)
+    expect(result.notes).toContain(FINAL_VERIFICATION_REQUIRED_NOTE)
   })
 
   it('routes protocol sources through typecheck and both dependency-aware test lanes', () => {
@@ -125,17 +128,33 @@ describe('affected test planning', () => {
     ])
 
     expect(additive.commands).toEqual([{ label: 'protocol typecheck', args: ['check:protocol'] }])
+    expect(additive.finalVerificationRequired).toBe(false)
     expect(additive.notes).toContain(ADDITIVE_PROTOCOL_EXPORT_NOTE)
     for (const file of ['packages/protocol/package.json', 'packages/protocol/tsconfig.json']) {
-      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
-        { label: 'full quality suite', args: ['test:all'] },
-      ])
+      const result = plan([{ path: file, status: 'M' }])
+      expect(result.commands).toEqual([])
+      expect(result.finalVerificationRequired).toBe(true)
     }
     for (const file of ['packages/shared-core/package.json', 'packages/shared-core/tsconfig.json']) {
-      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
-        { label: 'full quality suite', args: ['test:all'] },
-      ])
+      const result = plan([{ path: file, status: 'M' }])
+      expect(result.commands).toEqual([])
+      expect(result.finalVerificationRequired).toBe(true)
     }
+  })
+
+  it('runs safe targeted feedback beside a deferred configuration change', () => {
+    const result = plan([
+      { path: 'package.json', status: 'M' },
+      { path: 'src/ts/model/modelProfileResolver.ts', status: 'M' },
+    ])
+
+    expect(result.commands.map((command) => command.label)).toEqual([
+      'affected frontend tests',
+      'affected server tests',
+      'current compatibility harness',
+    ])
+    expect(result.finalVerificationRequired).toBe(true)
+    expect(result.commands.some((command) => command.args.includes('test:all'))).toBe(false)
   })
 
   it('accepts only additive explicit protocol exports to existing local TypeScript files', () => {
@@ -294,24 +313,24 @@ describe('affected test planning', () => {
     ).toBe(false)
   })
 
-  it('widens aggregate and affected-runner changes to the full quality suite', () => {
-    expect(plan([{ path: 'util/test-all.ts', status: 'M' }]).commands).toEqual([
-      { label: 'full quality suite', args: ['test:all'] },
-    ])
-    expect(plan([{ path: 'util/affected-tests.ts', status: 'M' }]).commands).toEqual([
-      { label: 'full quality suite', args: ['test:all'] },
-    ])
+  it('defers aggregate and affected-runner changes to explicit final verification', () => {
+    for (const file of ['util/test-all.ts', 'util/affected-tests.ts']) {
+      const result = plan([{ path: file, status: 'M' }])
+      expect(result.commands).toEqual([])
+      expect(result.finalVerificationRequired).toBe(true)
+    }
   })
 
-  it('retains the pinned differential when compatibility and full-quality paths change together', () => {
+  it('retains compatibility feedback when final verification is deferred', () => {
     const result = plan([
       { path: 'util/affected-tests.ts', status: 'M' },
       { path: 'test/compat-harness/normalize.ts', status: 'M' },
     ])
 
     expect(result.commands).toEqual([
-      { label: 'full quality suite', args: ['test:all'] },
+      { label: 'current compatibility harness', args: ['test:compat-current'] },
       { label: 'full pinned compatibility harness', args: ['test:compat-harness'] },
     ])
+    expect(result.finalVerificationRequired).toBe(true)
   })
 })

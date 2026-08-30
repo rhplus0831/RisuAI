@@ -49,19 +49,22 @@ Start by reading `STRUCTURE.md` to understand the project structure.
   the current uncommitted diff or pass `--base <git-ref>` for a branch diff. Use
   `--dry-run` to inspect the selected lanes and `--include-smoke` when
   browser-smoke files changed. A commit is a checkpoint, not automatically a
-  verification boundary.
+  verification boundary. `test:affected` never launches `test:all`; when it
+  prints `TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED`, targeted feedback
+  may have passed but final certification remains outstanding. Record that
+  requirement instead of starting the aggregate during implementation.
   Additive explicit `packages/protocol` exports stay on targeted protocol and
   dependency-aware lanes; batch related exports and run the aggregate once at
   the integration boundary.
 - Run the complete owning frontend or server lane before handoff when the change
   is broader than one focused contract.
-- Reserve `pnpm test:all` for build/configuration changes and final pre-merge or
-  CI verification; run it once per coherent verification batch, not after every
-  edit or small contract slice. It already owns `check:server` (including
-  `check:protocol`), `pnpm check`, formatting, frontend/server tests, smoke,
-  compatibility, coverage, scale, and performance lanes, so do not run those
-  commands separately immediately before the aggregate unless diagnosing a
-  failure.
+- Invoke `pnpm test:all` directly only for final pre-merge, CI, or an explicit
+  build/configuration verification boundary; run it once per coherent final
+  candidate, not after every edit or small contract slice. It already owns
+  `check:server` (including `check:protocol`), `pnpm check`, formatting,
+  frontend/server tests, smoke, compatibility, coverage, scale, and performance
+  lanes, so do not run those commands separately immediately before the
+  aggregate unless diagnosing a failure.
 
 # Language File
 

@@ -40,7 +40,7 @@ current commands and behavior stay authoritative here.
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:server`                | Check protocol types, emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting server code.        |
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane, including UI audit probes but excluding explicit performance gates.                                |
-| `pnpm test:quick`, `pnpm test:affected` | Run changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD`.                            |
+| `pnpm test:quick`, `pnpm test:affected` | Run safe changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD` and never launches `test:all`. |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                                              |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit performance gates.                                                                                                       |
 | `pnpm test:gates`                  | Run the UI-audit and explicit performance gates together; UI-audit coverage is also present in `test:frontend`.                                                              |
@@ -85,14 +85,18 @@ There is no ESLint config or `lint` script.
 Pick the smallest command that covers the changed area. `pnpm test:affected`
 uses exact paths when only tests changed and dependency-aware `--changed`
 selection when source changed. `--base <git-ref>` selects a branch diff,
-`--dry-run` prints the plan, `--include-smoke` opts into relevant Playwright
-work, and `--all` selects `test:all`. Deleted tests/source and runner changes
-conservatively widen to their complete lanes. Aggregate/affected runner and CI
-changes widen to `test:all`. A protocol-package manifest change stays targeted
-only when it adds explicit subpath exports to existing local `src/*.ts` files
-without changing or removing an existing export or another package field; every
-other manifest edit fails closed to `test:all`. Batch related additive exports
-and run the aggregate once at the integration boundary. On a fresh machine, run
+`--dry-run` prints the plan, and `--include-smoke` opts into relevant Playwright
+work. Deleted tests/source and runner changes conservatively widen to their
+complete safe lanes. Build, dependency, aggregate-runner, affected-runner, and
+CI configuration paths are excluded from targeted selection and produce
+`TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED` with the explicit final
+command `pnpm test:all`; the affected command exits successfully when its safe
+targeted feedback passes, but that exit is not final verification. A
+protocol-package manifest change stays targeted only when it adds explicit
+subpath exports to existing local `src/*.ts` files without changing or removing
+an existing export or another package field; every other manifest edit requires
+the explicit final aggregate. Batch related additive exports and run the
+aggregate once at the integration boundary. On a fresh machine, run
 `pnpm exec playwright install --with-deps chromium` before browser smoke.
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
@@ -174,12 +178,13 @@ is observational only and is intended to expose the real critical path before
 changing concurrency or isolation.
 
 Use focused owning tests during an edit batch, then run `test:affected` once at
-the coherent batch boundary unless the change requires one complete owning lane
-or one `test:all`. A commit alone is not a verification boundary. Do not stack
-`check:protocol`, `check:server`, `check`, component lanes, and `test:all` as
-independent handoff steps: `check:server` already owns the protocol check, while
-`test:all` owns both check families and every local aggregate lane. Repeat a
-component only when it is needed to diagnose a failure.
+the coherent batch boundary unless the change requires one complete owning lane.
+Record any final-verification marker and invoke `test:all` directly only for the
+coherent final candidate. A commit alone is not a verification boundary. Do not
+stack `check:protocol`, `check:server`, `check`, component lanes, and `test:all`
+as independent handoff steps: `check:server` already owns the protocol check,
+while `test:all` owns both check families and every local aggregate lane. Repeat
+a component only when it is needed to diagnose a failure.
 
 Config details: `vitest.config.ts` composes three isolated thread-pool projects,
 and `vitest.frontend-routing.ts` owns their disjoint filename/registration

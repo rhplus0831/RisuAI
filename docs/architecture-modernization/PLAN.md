@@ -688,7 +688,9 @@ The expected ladder is:
 
 1. Architecture/import/contract gates relevant to the slice.
 2. Focused unit and integration tests for changed owners.
-3. `pnpm test:affected` once for the coherent slice.
+3. `pnpm test:affected` once for the coherent slice; record
+   `TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED` without starting the
+   aggregate during implementation.
 4. `pnpm check` and `pnpm check:server` when their current proof is not already
    owned by the affected or aggregate run.
 5. Complete frontend or server owning lanes for broad changes.

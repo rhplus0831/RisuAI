@@ -27,16 +27,17 @@ export interface TestCommand {
 
 export interface AffectedTestPlan {
   commands: TestCommand[]
+  finalVerificationRequired: boolean
   notes: string[]
 }
 
-export const FULL_QUALITY_CHANGE_NOTE =
-  'Build, dependency, or CI configuration changed; targeted test selection is unsafe.'
+export const FINAL_VERIFICATION_REQUIRED_MARKER = 'TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED'
+export const FINAL_VERIFICATION_REQUIRED_NOTE =
+  'Build, dependency, or CI configuration changed; safe targeted feedback is limited and final verification with pnpm test:all is required.'
 export const ADDITIVE_PROTOCOL_EXPORT_NOTE =
   'The protocol manifest only adds explicit local source exports; targeted lanes are selected. Run test:all once at the integration boundary.'
 
 interface CliOptions extends AffectedTestOptions {
-  all: boolean
   dryRun: boolean
 }
 
@@ -196,8 +197,10 @@ function requiresFullQuality(change: ChangedPath): boolean {
 }
 
 export function planAffectedTests(changes: readonly ChangedPath[], options: AffectedTestOptions): AffectedTestPlan {
-  const normalized = changes.map((change) => ({ ...change, path: normalizeRepoPath(change.path) }))
-  const notes: string[] = []
+  const allNormalized = changes.map((change) => ({ ...change, path: normalizeRepoPath(change.path) }))
+  const finalVerificationRequired = allNormalized.some(requiresFullQuality)
+  const normalized = allNormalized.filter((change) => !requiresFullQuality(change))
+  const notes: string[] = finalVerificationRequired ? [FINAL_VERIFICATION_REQUIRED_NOTE] : []
   const commands: TestCommand[] = []
   const existing = normalized.filter((change) => change.status !== 'D')
   const deleted = normalized.filter((change) => change.status === 'D')
@@ -223,17 +226,6 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     (change) => change.path === protocolManifestPath && change.impact === 'protocol-additive-exports',
   )
 
-  const fullQualityChanged = normalized.some(requiresFullQuality)
-  if (fullQualityChanged) {
-    const fullQualityCommands: TestCommand[] = [{ label: 'full quality suite', args: ['test:all'] }]
-    if (compatibilityInfrastructureChanged) {
-      fullQualityCommands.push({ label: 'full pinned compatibility harness', args: ['test:compat-harness'] })
-    }
-    return {
-      commands: fullQualityCommands,
-      notes: [FULL_QUALITY_CHANGE_NOTE],
-    }
-  }
   const rootRunnerChanged = changedFiles.some(isRootRunnerFile)
   const serverRunnerChanged = changedFiles.some(
     (file) => file === 'server/fastify/vitest.config.ts' || file === 'server/fastify/tsconfig.json',
@@ -382,10 +374,14 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   }
 
   if (commands.length === 0) {
-    notes.push('No affected automated test lane was found for the changed paths.')
+    notes.push(
+      finalVerificationRequired
+        ? 'No safe targeted automated test lane was found; no tests were selected before final verification.'
+        : 'No affected automated test lane was found for the changed paths.',
+    )
   }
 
-  return { commands, notes }
+  return { commands, finalVerificationRequired, notes }
 }
 
 function gitOutput(args: string[], cwd = process.cwd()): string {
@@ -458,7 +454,6 @@ function parseCli(args: string[]): CliOptions {
   let base = process.env.RISU_TEST_BASE?.trim() || 'HEAD'
   let bail = true
   let includeSmoke = false
-  let all = false
   let dryRun = false
 
   for (let index = 0; index < args.length; index += 1) {
@@ -474,24 +469,24 @@ function parseCli(args: string[]): CliOptions {
       bail = false
     } else if (arg === '--include-smoke') {
       includeSmoke = true
-    } else if (arg === '--all') {
-      all = true
     } else if (arg === '--dry-run') {
       dryRun = true
     } else if (arg === '--') {
       continue
     } else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage: pnpm test:affected [--base <git-ref>] [--no-bail] [--include-smoke] [--all] [--dry-run]
+      console.log(`Usage: pnpm test:affected [--base <git-ref>] [--no-bail] [--include-smoke] [--dry-run]
 
 Runs changed test files directly and uses Vitest's dependency-aware --changed mode
-for changed source files. The default base is HEAD, which targets uncommitted work.`)
+for changed source files. The default base is HEAD, which targets uncommitted work.
+Unsafe build/configuration changes report that explicit pnpm test:all verification
+is required; this command never launches the aggregate.`)
       process.exit(0)
     } else {
       throw new Error(`unknown option: ${arg}`)
     }
   }
 
-  return { base, bail, includeSmoke, all, dryRun }
+  return { base, bail, includeSmoke, dryRun }
 }
 
 function displayCommand(command: TestCommand): string {
@@ -505,18 +500,6 @@ function displayCommand(command: TestCommand): string {
 
 function run(): void {
   const options = parseCli(process.argv.slice(2))
-  if (options.all) {
-    const command = { label: 'full quality suite', args: ['test:all'] }
-    console.log(`[test:affected] ${command.label}: ${displayCommand(command)}`)
-    if (options.dryRun) return
-    const result = spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', command.args, {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: 'inherit',
-    })
-    if (result.error) throw result.error
-    process.exit(result.status ?? 1)
-  }
   const changes = collectChangedPaths(options.base)
   if (changes.length === 0) {
     console.log(`[test:affected] no changes found relative to ${options.base}`)
@@ -529,7 +512,10 @@ function run(): void {
   const plan = planAffectedTests(changes, options)
   for (const note of plan.notes) console.log(`[test:affected] ${note}`)
   for (const command of plan.commands) console.log(`[test:affected] ${command.label}: ${displayCommand(command)}`)
-  if (options.dryRun) return
+  if (options.dryRun) {
+    printFinalVerificationRequirement(plan)
+    return
+  }
 
   for (const command of plan.commands) {
     const result = spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', command.args, {
@@ -540,6 +526,13 @@ function run(): void {
     if (result.error) throw result.error
     if (result.status !== 0) process.exit(result.status ?? 1)
   }
+  printFinalVerificationRequirement(plan)
+}
+
+function printFinalVerificationRequirement(plan: AffectedTestPlan): void {
+  if (!plan.finalVerificationRequired) return
+  console.log(`[test:affected] ${FINAL_VERIFICATION_REQUIRED_MARKER}`)
+  console.log('[test:affected] final verification command: pnpm test:all')
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
