@@ -7,7 +7,7 @@ import type { Database, Message } from '../../../../src/ts/storage/database.svel
 import type { PromptMultimodal, PromptMessage } from '../prompt/promptMessage.js'
 import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
 import type { CompletionStreamFrame } from '../generation/frames.js'
-import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from '../../../../src/ts/process/request/hypaContextTruncation.js'
+import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from '@risuai/protocol/hypa-context-truncation'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'

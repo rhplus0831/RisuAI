@@ -82,6 +82,7 @@ describe('@risuai/protocol import boundary', () => {
       'durableCommandOperation.ts',
       'embeddingOperation.ts',
       'generationSse.ts',
+      'hypaContextTruncation.ts',
       'imageGenerationOperation.ts',
       'index.ts',
       'mcpOAuthRefresh.ts',

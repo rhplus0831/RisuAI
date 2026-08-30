@@ -12,6 +12,7 @@
     "./durable-command-operation": "./src/durableCommandOperation.ts",
     "./embedding-operation": "./src/embeddingOperation.ts",
     "./generation-sse": "./src/generationSse.ts",
+    "./hypa-context-truncation": "./src/hypaContextTruncation.ts",
     "./image-generation-operation": "./src/imageGenerationOperation.ts",
     "./mcp-oauth-refresh": "./src/mcpOAuthRefresh.ts",
     "./provider-operation": "./src/providerOperation.ts",
