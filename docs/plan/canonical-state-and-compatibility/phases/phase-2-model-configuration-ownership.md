@@ -40,4 +40,7 @@ Migration fixtures, resolver/provider request parity, profile/preset/loadout/
 credential tests, generation and auxiliary owning lanes, browser authoring and
 reload proof, both typechecks, formatting, and diff checks.
 
-Active slice: [Legacy flat model configuration migration](slices/phase-2-model-configuration-ownership/legacy-flat-model-configuration-migration.md).
+Completed slice: [Legacy flat model configuration migration](slices/phase-2-model-configuration-ownership/legacy-flat-model-configuration-migration.md)
+at `47146eb75`.
+
+Active slice: [Normal model consumer cutover](slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).

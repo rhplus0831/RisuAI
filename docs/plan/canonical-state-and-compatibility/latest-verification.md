@@ -1,53 +1,49 @@
 # Canonical State And Compatibility Retirement Latest Verification
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 ## Candidate
 
-- Implementation commit: `1e758cd22`
-- Phase 0 predecessor: `cd04b0e11f2c8629e988af1ef6c99a2646a746f1`
+- Implementation commit: `47146eb759a8369ad407e872ce5897604a2ae7f4`
+- Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
 - Workstream 1 convention release: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 1 migration/recovery foundation. Existing-database startup now
-  validates migration identity/current table completeness and refuses damaged
-  state outside the automatic envelope. No model, prompt, translator, smaller
-  mirror, revision, receipt, event, import/export, or canonical owner changed.
+- Scope: first Phase 2 slice, legacy flat model configuration migration.
 
-## Foundation Proof
+## Migration Proof
 
-- All 33 production migration steps have contiguous versions, unique stable
-  names, and a closed current-version relation checked on every run.
-- A test-only SQLite trigger fails after a named step's writes and before its
-  schema-version update. The step writes and version both roll back; revision
-  41 remains unchanged; removal of the trigger permits retry; a second reopen
-  is a no-op.
-- Existing databases missing the schema table/singleton or required current
-  tables receive an actionable `DamagedDatabaseRefusalError`; fresh database
-  creation remains supported.
-- All 19 Phase 0 surfaces map into the common historical-fixture adapter with a
-  server, frontend, or current-compatibility verification command.
-- Existing WAL checkpoint, safety snapshot, restore rollback, database-lineage,
-  receipt, writer, and command-event history behavior passed without changes.
+- Named schema step v34 `durable-model-profile-ownership` creates stable
+  `mp_legacy_<role>` profiles and role bindings without changing command
+  revision or emitting command events/receipts.
+- The same pure transform runs at fresh initialization, legacy `db.json`,
+  portable import, and restore-import boundaries. A SQLite-trigger fault after
+  settings writes proves atomic rollback; retry and second reopen are stable.
+- Existing profiles, bindings, ordering dividers, runtime defaults, and matching
+  credential references remain authoritative. Profile JSON never receives an
+  inline secret.
+- Inline-only Vertex state stays on the legacy resolver and is recorded as the
+  Phase 5 repair hold because converting it without an existing credential
+  reference would change provider choice or persist secret material.
+- Explicit legacy conversion remains revisioned and supported. Normal resolver,
+  request-routing, preset, loadout, current import, and historical `db.json`
+  evidence passed with the compatibility reader still present for rollout.
 
 ## Commands And Results
 
-- Focused migration/database/missing-database suites passed: 3 files and 40
-  tests.
-- Focused legacy db.json import passed 4 tests; focused backup/WAL/restore/
-  lineage coverage passed 7 tests.
-- `pnpm check:server` passed protocol, architecture inventory, client
-  declarations, Fastify, and browser-smoke typechecks.
-- Historical `pnpm test:affected` (now retired) passed 2 frontend files/30 tests, 113 server files/2,494
-  tests plus one skip, and the current 16-cell compatibility harness.
-- Historical `pnpm test:server` (now retired) passed the complete 179-file server lane with 3,655 tests
-  plus one skip.
-- `pnpm test:watch:status`, focused Prettier, and `git diff --check` passed.
-- `git diff --check` — passed.
+- Fifteen focused files passed 503 tests across migration/defaults, interruption
+  and reopen, commands, legacy/current imports, initialization/bootstrap,
+  resolver and role routing, presets/loadouts, architecture, and compatibility
+  governance.
+- `pnpm check`, client declarations, Fastify typecheck, and browser-smoke
+  typecheck passed.
+- The cross-runtime inventory remains at 327 edges; the reviewed existing
+  `databaseDefaults.ts` model-helper edges only gained required symbols.
+- Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-Phase 1 passes. Named migrations are fail-closed, atomic, restart-safe, and
-fixture-backed, while backup/restore and lineage behavior remains authoritative.
-No canonical resource owner is released yet. Phase 2 may begin with the flat
-model configuration migration.
+The legacy flat model migration slice passes at `47146eb75`. Stable durable
+profiles/bindings now exist before normal runtime for usable state, with
+deterministic rollback/retry and no secret copying. Phase 2 continues with the
+normal model consumer cutover; the model-owner cursor is not released yet.

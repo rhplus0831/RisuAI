@@ -1,21 +1,20 @@
 # Canonical State And Compatibility Retirement Next Steps
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 ## Current Task
 
-Execute the [legacy flat model configuration
-migration](phases/slices/phase-2-model-configuration-ownership/legacy-flat-model-configuration-migration.md).
+Execute the [normal model consumer
+cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Audit flat model/provider fields, role selections, durable profiles/bindings,
-   and every normal resolver consumer.
-2. Add one named transactional migration that creates stable canonical records
-   only from usable non-secret legacy state.
-3. Prove provider/model/options/fallback parity across migration, interruption,
-   retry, reopen, authoring, import, and export.
-4. Keep explicit legacy conversion/import supported while preventing flat
-   fields from remaining normal runtime owners.
-5. Leave inline-secret repair for Phase 5 and preserve credential masking.
+1. Inventory every normal authoring, reload, generation, memory, translation,
+   scripting, tool, agent, and auxiliary resolver consumer.
+2. Route normal consumers through durable role bindings and profile records.
+3. Prevent normal authoring from restoring flat model/runtime ownership.
+4. Prove provider/model/options/fallback parity in browser reload and request
+   lanes while retaining explicit legacy conversion/import/export.
+5. Isolate the remaining legacy-reader removal and prepare the Phase 2
+   model-owner release cursor for Workstream 3.
 
 ## Phase 0 Release
 
@@ -33,6 +32,6 @@ Phase 0 dispositions.
 
 ## Handoff
 
-After the flat migration passes, update [`status.md`](status.md), refresh
-[`latest-verification.md`](latest-verification.md), and continue Phase 2 by
-moving remaining normal model consumers to the durable owner.
+After normal consumers pass, isolate and remove the ordinary legacy resolver
+fallback, refresh the Phase 2 release evidence, and hand the model-owner cursor
+to Workstream 3 while retaining the Phase 5 inline-secret repair hold.

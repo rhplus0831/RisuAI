@@ -1,6 +1,6 @@
 # Legacy Flat Model Configuration Migration
 
-Status: ready.
+Status: complete at `47146eb75`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -52,3 +52,19 @@ formatting, and `git diff --check`.
 
 Stop if migration would persist an inline credential, change fallback order, or
 remove the explicit legacy conversion/export boundary.
+
+## Completion Record
+
+- Schema v34 `durable-model-profile-ownership` converts usable flat role
+  selections into deterministic profiles/bindings inside the migration
+  transaction without changing command revision or emitting an event.
+- Fresh initialization, legacy `db.json`, current portable imports, and restore
+  imports run the same write-boundary transform. Reopen and injected-failure
+  retry fixtures prove idempotence and rollback.
+- Existing profiles, bindings, order dividers, runtime defaults, and reusable
+  credential references win. Inline secrets remain only in their classified
+  legacy fields; inline-only Vertex selection is held for Phase 5 instead of
+  changing provider choice or copying a secret.
+- The explicit conversion command and old resolver remain available for
+  external compatibility and rollback evidence while the next slice moves
+  normal consumers off flat fields.
