@@ -852,15 +852,24 @@ async function applyModuleOnce() {
 
   const nextLorebooks =
     hasModuleLorebooks && module.lorebook && lorePrevious
-      ? ensureClientLorebookEntryIds([...(currentChar.globalLore ?? []), ...safeStructuredClone(module.lorebook)])
+      ? ensureClientLorebookEntryIds([
+          ...safeStructuredClone(currentChar.globalLore ?? []),
+          ...safeStructuredClone(module.lorebook),
+        ])
       : undefined
   const nextScripts =
     hasModuleScripts && module.regex
-      ? ensureClientScriptDefinitionIds([...(currentChar.customscript ?? []), ...safeStructuredClone(module.regex)])
+      ? ensureClientScriptDefinitionIds([
+          ...safeStructuredClone(currentChar.customscript ?? []),
+          ...safeStructuredClone(module.regex),
+        ])
       : undefined
   const nextTriggers =
     hasModuleTriggers && module.trigger
-      ? ensureClientTriggerDefinitionIds([...(currentChar.triggerscript ?? []), ...safeStructuredClone(module.trigger)])
+      ? ensureClientTriggerDefinitionIds([
+          ...safeStructuredClone(currentChar.triggerscript ?? []),
+          ...safeStructuredClone(module.trigger),
+        ])
       : undefined
 
   const scriptsRollback =

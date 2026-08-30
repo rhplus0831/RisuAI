@@ -815,6 +815,63 @@ describe('module imports', () => {
     expect(alertError).not.toHaveBeenCalled()
   })
 
+  it('repairs only cloned module-application rows before projecting the canonical character', async () => {
+    const currentCharacter = installCompleteModuleApplyFixture()
+    const before = {
+      globalLore: snapshotJson(currentCharacter.globalLore),
+      customscript: snapshotJson(currentCharacter.customscript),
+      triggerscript: snapshotJson(currentCharacter.triggerscript),
+    }
+    const assignMissingIds = (prefix: string) => (entries: unknown) => {
+      for (const [index, entry] of (entries as Array<Record<string, unknown>>).entries()) {
+        if (!entry.id) entry.id = `${prefix}-${index}`
+      }
+      return entries
+    }
+    ensureClientLorebookEntryIds.mockImplementation(assignMissingIds('lore'))
+    ensureClientScriptDefinitionIds.mockImplementation(assignMissingIds('script'))
+    ensureClientTriggerDefinitionIds.mockImplementation(assignMissingIds('trigger'))
+
+    let canonicalBeforeProjection: typeof before | undefined
+    dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
+      async (_characterId: string, steps: TestModuleApplyStep[]) => {
+        canonicalBeforeProjection = {
+          globalLore: snapshotJson(currentCharacter.globalLore),
+          customscript: snapshotJson(currentCharacter.customscript),
+          triggerscript: snapshotJson(currentCharacter.triggerscript),
+        }
+        expect(steps.map((step) => step.body)).toEqual([
+          {
+            entries: [
+              { id: 'lore-0', comment: 'Existing lore', content: 'old' },
+              { id: 'lore-1', comment: 'Module lore', content: 'lore' },
+            ],
+          },
+          {
+            scripts: [
+              { id: 'script-0', comment: 'Existing regex', in: 'old', out: 'old' },
+              { id: 'script-1', comment: 'Module regex', in: 'in', out: 'out' },
+            ],
+          },
+          {
+            triggers: [
+              { id: 'trigger-0', comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+              { id: 'trigger-1', comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
+            ],
+          },
+        ])
+        expect(steps[0].body.entries[0]).not.toBe(currentCharacter.globalLore?.[0])
+        expect(steps[1].body.scripts[0]).not.toBe(currentCharacter.customscript?.[0])
+        expect(steps[2].body.triggers[0]).not.toBe(currentCharacter.triggerscript?.[0])
+        return { status: 'ok', acceptedCount: steps.length }
+      },
+    )
+
+    await applyModule()
+
+    expect(canonicalBeforeProjection).toEqual(before)
+  })
+
   it('projects only after staging and does not announce success before durable settlement', async () => {
     const currentCharacter = installCompleteModuleApplyFixture()
     const settlement = createDeferred<{ status: 'ok'; acceptedCount: number }>()
