@@ -2326,8 +2326,9 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   if (isOlderRevision(payload.revision, charactersResourceState.rowRevisions[characterId] ?? null)) return false
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
 
-  const index = charactersResourceState.characters.findIndex((candidate) => candidate?.chaId === characterId)
-  const previousCharacter = index >= 0 ? charactersResourceState.characters[index] : undefined
+  const index = uniqueCharacterOwnerIndex(characterId)
+  if (index < 0) return false
+  const previousCharacter = charactersResourceState.characters[index]
   const incomingCharacter = cloneJsonValue(payload.character)
   const appliesLorebookBody =
     incomingCharacter.globalLore !== undefined &&
@@ -2356,6 +2357,22 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   reapplyRetainedCharacterProjections(characterId)
   markResourceDatabaseChanged()
   return true
+}
+
+/** Return a character row only when its stable id identifies exactly one owner. */
+export function getCharacterResourceOwner(characterId: string): character | undefined {
+  const index = uniqueCharacterOwnerIndex(characterId)
+  return index >= 0 ? charactersResourceState.characters[index] : undefined
+}
+
+function uniqueCharacterOwnerIndex(characterId: string): number {
+  let ownerIndex = -1
+  for (const [index, candidate] of charactersResourceState.characters.entries()) {
+    if (candidate?.chaId !== characterId) continue
+    if (ownerIndex >= 0) return -1
+    ownerIndex = index
+  }
+  return ownerIndex
 }
 
 export function applyCharacterOrderResource(payload: ServerCharacterOrderResourcePayload): boolean {

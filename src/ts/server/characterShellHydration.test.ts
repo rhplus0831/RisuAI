@@ -33,6 +33,7 @@ import {
 import {
   characterShellHydrationState,
   hydrateCharacterShell,
+  hydrateSelectedCharacterShell,
   resetCharacterShellHydrationStateForTests,
   retryCharacterShellHydration,
   startSelectedCharacterShellHydration,
@@ -80,6 +81,7 @@ beforeEach(() => {
   testDatabaseState.db = {
     characters: [characterShell()],
     characterOrder: ['char-1'],
+    currentChar: 0,
   } as any
   projectionState.canUse = true
   projectionState.fetchResource.mockReset()
@@ -217,6 +219,25 @@ describe('character shell hydration', () => {
 
     await expect(pending).resolves.toBe(false)
     expect(testDatabaseState.db.characters).toEqual([])
+  })
+
+  it('rejects selected detail after the selection owner changes', async () => {
+    const secondShell = { ...characterShell(), chaId: 'char-2', name: 'Second shell' }
+    testDatabaseState.db = {
+      characters: [characterShell(), secondShell],
+      characterOrder: ['char-1', 'char-2'],
+      currentChar: 0,
+    } as any
+    const response = deferred<{ status: 'ok'; revision: number; character: Record<string, unknown> }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = hydrateSelectedCharacterShell()
+    selectedCharID.set(1)
+    response.resolve({ status: 'ok', revision: 2, character: hydratedCharacter('Stale selected detail') })
+
+    await expect(pending).resolves.toBe(false)
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(true)
+    expect(testDatabaseState.db.characters[0].name).toBe('Shell')
   })
 
   it('supersedes an older request when a refreshed shell becomes authoritative', async () => {

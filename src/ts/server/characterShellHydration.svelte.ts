@@ -1,10 +1,10 @@
 import { get } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
-import { getDatabase, isServerCharacterShell } from '../storage/database.svelte'
+import { isServerCharacterShell } from '../storage/database.svelte'
 import { hydrateActiveCharacterLorebook, hydrateActiveChat } from './chatMessageHydration.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerCharacter } from './resourceReads'
-import { applyCharacterResource } from './resourceState.svelte'
+import { charactersResourceState, applyCharacterResource, getCharacterResourceOwner } from './resourceState.svelte'
 
 export const CHARACTER_SHELL_HYDRATION_TIMEOUT_MS = 15_000
 
@@ -25,6 +25,11 @@ export interface CharacterShellHydrationOptions {
 interface InFlightCharacterHydration {
   controller: AbortController
   promise: Promise<boolean>
+}
+
+interface SelectedCharacterHydrationFence {
+  selectedIndex: number
+  selectionRevision: number | null
 }
 
 export const characterShellHydrationState = $state<{
@@ -58,19 +63,24 @@ export function stopSelectedCharacterShellHydration(): void {
 export async function hydrateSelectedCharacterShell(options: CharacterShellHydrationOptions = {}): Promise<boolean> {
   const index = get(selectedCharID)
   if (index < 0) return false
-  const character = getDatabase().characters?.[index]
+  const character = charactersResourceState.characters[index]
   if (!character) return false
   if (!isServerCharacterShell(character)) return true
   const characterId = character?.chaId
   if (typeof characterId !== 'string' || characterId.trim() === '') return false
-  return hydrateCharacterShell(characterId, options)
+  if (getCharacterResourceOwner(characterId) !== character) return false
+  return hydrateCharacterShell(characterId, options, {
+    selectedIndex: index,
+    selectionRevision: charactersResourceState.selectionRevision,
+  })
 }
 
 export async function hydrateCharacterShell(
   characterId: string,
   options: CharacterShellHydrationOptions = {},
+  selectionFence?: SelectedCharacterHydrationFence,
 ): Promise<boolean> {
-  const existing = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
+  const existing = getCharacterResourceOwner(characterId)
   if (!isServerCharacterShell(existing)) return false
 
   const current = inFlight.get(characterId)
@@ -100,7 +110,7 @@ export async function hydrateCharacterShell(
       result = await fetchServerCharacter(characterId, controller.signal)
     } catch (error) {
       if (generation === shellHydrationGeneration && !controller.signal.aborted) {
-        if (targetStillMatches(characterId, targetShell)) {
+        if (targetStillMatches(characterId, targetShell, selectionFence)) {
           setCharacterShellHydrationState(characterId, 'error', 'unavailable')
         }
         shellHydrationWarning(characterId, error instanceof Error ? error.message : String(error))
@@ -108,7 +118,7 @@ export async function hydrateCharacterShell(
       return false
     }
     if (generation !== shellHydrationGeneration || controller.signal.aborted) {
-      if (timedOut && targetStillMatches(characterId, targetShell)) {
+      if (timedOut && targetStillMatches(characterId, targetShell, selectionFence)) {
         setCharacterShellHydrationState(characterId, 'error', 'timeout')
         shellHydrationWarning(characterId, 'request timed out')
       }
@@ -116,7 +126,7 @@ export async function hydrateCharacterShell(
     }
     if (result.status !== 'ok') {
       const error = result.status === 'unavailable' ? 'unavailable' : 'invalid-response'
-      if (targetStillMatches(characterId, targetShell)) {
+      if (targetStillMatches(characterId, targetShell, selectionFence)) {
         setCharacterShellHydrationState(characterId, 'error', error)
       }
       shellHydrationWarning(characterId, result.status === 'error' ? result.error : 'server resource read unavailable')
@@ -128,13 +138,13 @@ export async function hydrateCharacterShell(
       }
       return false
     }
-    if (!targetStillMatches(characterId, targetShell)) {
+    if (!targetStillMatches(characterId, targetShell, selectionFence)) {
       return false
     }
 
     const applied = applyCharacterResource(result)
     if (!applied) {
-      if (targetStillMatches(characterId, targetShell)) {
+      if (targetStillMatches(characterId, targetShell, selectionFence)) {
         setCharacterShellHydrationState(characterId, 'error', 'invalid-response')
       }
       return false
@@ -173,12 +183,23 @@ function isOlderThanRevision(revision: number, comparisonRevision: number | null
   return comparisonRevision !== null && revision < comparisonRevision
 }
 
-function targetStillMatches(characterId: string, targetShell: unknown): boolean {
-  const currentTarget = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
+function targetStillMatches(
+  characterId: string,
+  targetShell: unknown,
+  selectionFence?: SelectedCharacterHydrationFence,
+): boolean {
+  const currentTarget = getCharacterResourceOwner(characterId)
   // Chat-message and lorebook hydration intentionally mutate nested body fields
   // on the same shell while this row request is in flight. Preserve those
   // independently fenced writes, but reject any actual row replacement.
-  return isServerCharacterShell(currentTarget) && currentTarget === targetShell
+  if (!isServerCharacterShell(currentTarget) || currentTarget !== targetShell) return false
+  if (!selectionFence) return true
+  return (
+    get(selectedCharID) === selectionFence.selectedIndex &&
+    charactersResourceState.currentChar === selectionFence.selectedIndex &&
+    charactersResourceState.selectionRevision === selectionFence.selectionRevision &&
+    charactersResourceState.characters[selectionFence.selectedIndex] === currentTarget
+  )
 }
 
 function normalizedTimeoutMs(value: number | undefined): number {

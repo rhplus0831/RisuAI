@@ -2312,6 +2312,24 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().characters[0]?.name).toBe('New')
   })
 
+  it('fails closed when a targeted character owner is missing or ambiguous', () => {
+    applyCharactersResource({
+      version: 1,
+      revision: 3,
+      characters: [metadataCharacter('char-a', 'Existing')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(applyCharacterResource({ revision: 4, character: metadataCharacter('char-missing', 'Missing') })).toBe(false)
+
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characters.push(metadataCharacter('char-a', 'Duplicate'))
+    })
+    expect(applyCharacterResource({ revision: 5, character: metadataCharacter('char-a', 'Ambiguous') })).toBe(false)
+    expect(getResourceDatabase().characters.map((candidate) => candidate.name)).toEqual(['Existing', 'Duplicate'])
+  })
+
   it('never carries resident detail bodies into a newer summary shell', () => {
     const detail = metadataCharacter('char-a', 'Hydrated')
     detail.desc = 'Resident detail'
