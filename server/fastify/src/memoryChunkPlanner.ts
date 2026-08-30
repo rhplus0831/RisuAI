@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { HypaV3MemoryPlan, HypaV3PlannedWindow } from './memoryPlanner.js'
+import type { MemorySummaryMessage } from './memorySummaryMessage.js'
 import {
   createMemoryChunk,
   enqueueMemoryJob,
@@ -30,7 +30,7 @@ export interface HypaV3SummarizeJobPayload {
 export interface PlanHypaV3ChunkJobsInput {
   db: DatabaseSync
   chatId: string
-  chats: readonly OpenAIChat[]
+  chats: readonly MemorySummaryMessage[]
   plan: HypaV3MemoryPlan
   model?: string
   maxAttempts?: number
@@ -141,7 +141,7 @@ export function buildSummarizeJobPayload(input: {
   }
 }
 
-export function buildChunkText(chats: readonly OpenAIChat[], window: HypaV3PlannedWindow): string {
+export function buildChunkText(chats: readonly MemorySummaryMessage[], window: HypaV3PlannedWindow): string {
   return window.messageIndexes
     .map((index) => {
       const chat = chats[index]

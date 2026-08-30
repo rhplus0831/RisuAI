@@ -1,10 +1,10 @@
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import {
   type OpenAICompatibleOptions,
   type OpenAICompatibleProvider,
   resolveOpenAICompatibleVariant,
 } from './generation/openaiCompatible.js'
 import { resolveOpenAIRequest, runOpenAI } from './generation/openai.js'
+import type { MemorySummaryMessage } from './memorySummaryMessage.js'
 import { scrubThinkSummaryOutput, scrubThoughtsSummaryOutput } from './memorySummaryPrompt.js'
 
 export interface SummarizeOnceOptions {
@@ -19,7 +19,7 @@ export interface SummarizeOnceOptions {
 export type SummaryAdapterResult = { text: string; tokens: number } | { error: string }
 
 export async function summarizeOnce(
-  messages: readonly OpenAIChat[],
+  messages: readonly MemorySummaryMessage[],
   opts: SummarizeOnceOptions,
 ): Promise<SummaryAdapterResult> {
   const variantResult = resolveOpenAICompatibleVariant(opts.provider, opts.options ?? {})

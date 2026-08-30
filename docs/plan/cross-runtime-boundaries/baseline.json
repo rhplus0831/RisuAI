@@ -797,32 +797,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/memoryChunkPlanner.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memoryPlanner.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/memorySummarizeJobHandler.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -856,19 +830,6 @@
       "usage": "type-only",
       "symbols": [
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memorySummaryAdapter.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -921,19 +882,6 @@
       "usage": "type-only",
       "symbols": [
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memorySummaryPrompt.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -3316,45 +3264,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/memoryChunkPlanner.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memoryPlanner.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memorySummaryAdapter.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/memorySummaryModel.test.ts",
       "specifier": "../../../src/ts/model/types",
       "target": "src/ts/model/types.ts",
@@ -3376,19 +3285,6 @@
       "usage": "type-only",
       "symbols": [
         "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memorySummaryPrompt.test.ts",
-      "specifier": "../../../src/ts/process/index.svelte",
-      "target": "src/ts/process/index.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "OpenAIChat"
       ],
       "count": 1,
       "policy": "browser-application-model"

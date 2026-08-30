@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import { summarizeOnce } from '../src/memorySummaryAdapter.js'
+import type { MemorySummaryMessage } from '../src/memorySummaryMessage.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function chat(role: OpenAIChat['role'], content: string): OpenAIChat {
+function chat(role: MemorySummaryMessage['role'], content: string): MemorySummaryMessage {
   return { role, content }
 }
 
