@@ -12,113 +12,207 @@ function db(overrides: Partial<Database> = {}): Database {
   return { aiModel: 'echo_model', ...overrides } as unknown as Database
 }
 
+interface DurableRouteFixture {
+  profile: {
+    providerId?: string
+    modelId: string
+    providerOptions?: Record<string, unknown>
+  }
+  credential?: {
+    id: string
+    name: string
+    type: 'apiKey'
+    apiKey: string
+  }
+}
+
+function durableDatabase({ profile, credential }: DurableRouteFixture): Database {
+  return db({
+    providerCredentials: credential ? [credential] : [],
+    modelProfiles: [{ id: 'profile-chat', name: 'Chat', ...profile }],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-chat' } },
+  })
+}
+
+function resolveDurableRoute(fixture: DurableRouteFixture) {
+  const database = durableDatabase(fixture)
+  return resolveChatProviderRoute(database, resolveModelProfile({ database }))
+}
+
+function resolveStaticCompatibilityRoute(aiModel: string, overrides: Partial<Database> = {}) {
+  const database = db({ aiModel, ...overrides })
+  return resolveChatProviderRoute(database, resolveModelProfile({ database, staticModel: aiModel }))
+}
+
 describe('resolveChatProviderRoute — routable', () => {
   it('routes echo and anthropic', () => {
-    expect(resolveChatProviderRoute(db({ aiModel: 'echo_model' }))).toEqual({
+    expect(
+      resolveDurableRoute({
+        profile: { providerId: 'debug-echo', modelId: 'debug-echo' },
+      }),
+    ).toEqual({
       routable: true,
       provider: 'echo',
     })
-    expect(resolveChatProviderRoute(db({ aiModel: 'claude-3-5-sonnet-20241022' }))).toEqual({
+    expect(
+      resolveDurableRoute({
+        profile: {
+          providerId: 'anthropic',
+          modelId: 'claude-3-5-sonnet-20241022',
+          providerOptions: { credentialId: 'credential-anthropic' },
+        },
+        credential: {
+          id: 'credential-anthropic',
+          name: 'Anthropic',
+          type: 'apiKey',
+          apiKey: 'sk-anthropic',
+        },
+      }),
+    ).toEqual({
       routable: true,
       provider: 'anthropic',
     })
   })
 
   it.each(['gpt-5.5', 'gpt-5.5-2026-04-23'])('routes the registered OpenAI model %s', (aiModel) => {
-    const database = db({ aiModel, openAIKey: 'sk-openai' })
-    expect(resolveChatProviderRoute(database)).toEqual({ routable: true, provider: 'openai' })
-    expect(resolveChatProviderRoute(database, resolveModelProfile({ database }))).toEqual({
-      routable: true,
-      provider: 'openai',
-    })
+    expect(
+      resolveDurableRoute({
+        profile: {
+          providerId: 'openai',
+          modelId: aiModel,
+          providerOptions: { credentialId: 'credential-openai' },
+        },
+        credential: {
+          id: 'credential-openai',
+          name: 'OpenAI',
+          type: 'apiKey',
+          apiKey: 'sk-openai',
+        },
+      }),
+    ).toEqual({ routable: true, provider: 'openai' })
   })
 
   it('routes Claude Opus 4.8 through the Anthropic adapter', () => {
-    const database = db({ aiModel: 'claude-opus-4-8', claudeAPIKey: 'sk-anthropic' })
-    expect(resolveChatProviderRoute(database, resolveModelProfile({ database }))).toEqual({
-      routable: true,
-      provider: 'anthropic',
-    })
+    expect(
+      resolveDurableRoute({
+        profile: {
+          providerId: 'anthropic',
+          modelId: 'claude-opus-4-8',
+          providerOptions: { credentialId: 'credential-anthropic' },
+        },
+        credential: {
+          id: 'credential-anthropic',
+          name: 'Anthropic',
+          type: 'apiKey',
+          apiKey: 'sk-anthropic',
+        },
+      }),
+    ).toEqual({ routable: true, provider: 'anthropic' })
   })
 
   it.each(['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite'])(
     'routes the registered Google model %s through the Gemini adapter',
     (aiModel) => {
-      const database = db({ aiModel, google: { accessToken: 'studio-key', projectId: 'project' } })
+      const database = durableDatabase({
+        profile: {
+          providerId: 'google',
+          modelId: aiModel,
+          providerOptions: { credentialId: 'credential-google' },
+        },
+        credential: {
+          id: 'credential-google',
+          name: 'Google AI Studio',
+          type: 'apiKey',
+          apiKey: 'studio-key',
+        },
+      })
       const profile = resolveModelProfile({ database })
       expect(profile.modelInfo.parameters).toContain('reasoning_effort')
       expect(resolveChatProviderRoute(database, profile)).toEqual({ routable: true, provider: 'gemini' })
     },
   )
 
-  it('routes a configured reverse_proxy under OpenAICompatible', () => {
+  it('routes a configured durable Custom API profile under OpenAICompatible', () => {
     expect(
-      resolveChatProviderRoute(
-        db({
-          aiModel: 'reverse_proxy',
-          customAPIFormat: LLMFormat.OpenAICompatible,
-          forceReplaceUrl: 'https://proxy.example.com/v1',
-          proxyKey: 'sk-proxy',
-        } as Partial<Database>),
-      ),
+      resolveDurableRoute({
+        profile: {
+          providerId: 'custom-api',
+          modelId: 'custom-api',
+          providerOptions: {
+            credentialId: 'credential-proxy',
+            requestModel: 'proxy-model',
+            baseUrl: 'https://proxy.example.com/v1',
+          },
+        },
+        credential: {
+          id: 'credential-proxy',
+          name: 'Custom API',
+          type: 'apiKey',
+          apiKey: 'sk-proxy',
+        },
+      }),
     ).toEqual({ routable: true, provider: 'openai' })
   })
 
-  it('routes reverse_proxy + reverseProxyOobaMode to openai (decision #5 — the flip)', () => {
+  it('routes the static reverse_proxy + reverseProxyOobaMode compatibility seam to openai', () => {
     // Previously this hard-failed with "Ooba OpenAI-compatible reverse proxy must
     // use local dispatch". The shared table no longer gates on the ooba flag and
     // the openai adapter applies oobaSystemHoist itself, so it now dispatches —
     // matching the browser completion path.
     expect(
-      resolveChatProviderRoute(
-        db({
-          aiModel: 'reverse_proxy',
-          customProxyRequestModel: 'ooba-model',
-          customAPIFormat: LLMFormat.OpenAICompatible,
-          reverseProxyOobaMode: true,
-          forceReplaceUrl: 'https://proxy.example.com/v1',
-          proxyKey: 'sk-proxy',
-        } as Partial<Database>),
-      ),
+      resolveStaticCompatibilityRoute('reverse_proxy', {
+        customProxyRequestModel: 'ooba-model',
+        customAPIFormat: LLMFormat.OpenAICompatible,
+        reverseProxyOobaMode: true,
+        forceReplaceUrl: 'https://proxy.example.com/v1',
+        proxyKey: 'sk-proxy',
+      } as Partial<Database>),
     ).toEqual({ routable: true, provider: 'openai' })
   })
 
   it('routes ollama-cloud by ollamaRequestFormat (with an API key)', () => {
-    expect(
-      resolveChatProviderRoute(
-        db({
-          aiModel: 'ollama-cloud',
-          ollamaApiKey: 'k',
-          ollamaRequestFormat: LLMFormat.Ollama,
-        } as Partial<Database>),
-      ),
-    ).toEqual({ routable: true, provider: 'ollama' })
-    expect(
-      resolveChatProviderRoute(
-        db({
-          aiModel: 'ollama-cloud',
-          ollamaApiKey: 'k',
-          ollamaRequestFormat: LLMFormat.OpenAICompatible,
-        } as Partial<Database>),
-      ),
-    ).toEqual({ routable: true, provider: 'openai' })
-    expect(
-      resolveChatProviderRoute(
-        db({
-          aiModel: 'ollama-cloud',
-          ollamaApiKey: 'k',
-          ollamaRequestFormat: LLMFormat.Anthropic,
-        } as Partial<Database>),
-      ),
-    ).toEqual({ routable: true, provider: 'anthropic' })
+    const route = (requestFormat: LLMFormat) =>
+      resolveDurableRoute({
+        profile: {
+          providerId: 'ollama',
+          modelId: 'ollama-cloud',
+          providerOptions: {
+            credentialId: 'credential-ollama',
+            requestModel: 'cloud-model',
+            ollama: { requestFormat },
+          },
+        },
+        credential: {
+          id: 'credential-ollama',
+          name: 'Ollama Cloud',
+          type: 'apiKey',
+          apiKey: 'k',
+        },
+      })
+
+    expect(route(LLMFormat.Ollama)).toEqual({ routable: true, provider: 'ollama' })
+    expect(route(LLMFormat.OpenAICompatible)).toEqual({ routable: true, provider: 'openai' })
+    expect(route(LLMFormat.Anthropic)).toEqual({ routable: true, provider: 'anthropic' })
   })
 
   it('can route directly from a resolved profile capability verdict', () => {
-    const database = db({
-      aiModel: 'ollama-cloud',
-      ollamaApiKey: 'k',
-      ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
-    } as Partial<Database>)
+    const database = durableDatabase({
+      profile: {
+        providerId: 'ollama',
+        modelId: 'ollama-cloud',
+        providerOptions: {
+          credentialId: 'credential-ollama',
+          requestModel: 'cloud-model',
+          ollama: { requestFormat: LLMFormat.OpenAIResponseAPI },
+        },
+      },
+      credential: {
+        id: 'credential-ollama',
+        name: 'Ollama Cloud',
+        type: 'apiKey',
+        apiKey: 'k',
+      },
+    })
     const profile = resolveModelProfile({ database })
     expect(profile.providerCapability).toEqual({ routable: true, provider: 'openai-responses' })
     expect(resolveChatProviderRoute(database, profile)).toEqual({
@@ -136,11 +230,11 @@ describe('resolveChatProviderRoute — unsupported (specific messages preserved)
     ['pluginmodel:::provider-a', 'unsupported /chat provider: plugin providers must use local dispatch'],
     ['hf:::Xenova/opt-350m', 'unsupported /chat provider: local WebLLM models must use local dispatch'],
   ])('classifies %s as unsupported with its specific reason', (aiModel, reason) => {
-    expect(resolveChatProviderRoute(db({ aiModel }))).toEqual({ routable: false, reason })
+    expect(resolveStaticCompatibilityRoute(aiModel)).toEqual({ routable: false, reason })
   })
 
   it('keeps the server-only unknown-OpenAI-compatible-id guard', () => {
-    const route = resolveChatProviderRoute(db({ aiModel: 'unregistered-local-model' }))
+    const route = resolveStaticCompatibilityRoute('unregistered-local-model')
     expect(route.routable).toBe(false)
     expect(route).toEqual({
       routable: false,
@@ -150,8 +244,11 @@ describe('resolveChatProviderRoute — unsupported (specific messages preserved)
   })
 
   it('keeps the unknown-id guard when the route helper receives a resolved profile', () => {
-    const database = db({ aiModel: 'unregistered-local-model', openAIKey: 'sk-server-owned' })
-    const route = resolveChatProviderRoute(database, resolveModelProfile({ database }))
+    const database = db({ openAIKey: 'sk-server-owned' })
+    const route = resolveChatProviderRoute(
+      database,
+      resolveModelProfile({ database, staticModel: 'unregistered-local-model' }),
+    )
     expect(route).toEqual({
       routable: false,
       reason:
@@ -161,12 +258,16 @@ describe('resolveChatProviderRoute — unsupported (specific messages preserved)
 
   it('classifies ollama-cloud without an API key as unsupported (matches the browser gate)', () => {
     expect(
-      resolveChatProviderRoute(
-        db({
-          aiModel: 'ollama-cloud',
-          ollamaRequestFormat: LLMFormat.OpenAICompatible,
-        } as Partial<Database>),
-      ).routable,
+      resolveDurableRoute({
+        profile: {
+          providerId: 'ollama',
+          modelId: 'ollama-cloud',
+          providerOptions: {
+            requestModel: 'cloud-model',
+            ollama: { requestFormat: LLMFormat.OpenAICompatible },
+          },
+        },
+      }).routable,
     ).toBe(false)
   })
 })

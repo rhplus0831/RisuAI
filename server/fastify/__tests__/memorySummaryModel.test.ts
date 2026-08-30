@@ -1,29 +1,39 @@
 import { describe, expect, it } from 'vitest'
-import { LLMFormat, LLMTokenizer } from '@risuai/shared-core/model-types'
 import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { resolveMemorySummaryModel } from '../src/memorySummaryModel.js'
 
-function database(overrides: Partial<Database> = {}): Database {
+interface MemoryProfileFixture {
+  providerId?: string
+  modelId: string
+  providerOptions?: Record<string, unknown>
+}
+
+function database(
+  profile: MemoryProfileFixture = {
+    providerId: 'openai',
+    modelId: 'gpt41-mini',
+    providerOptions: { credentialId: 'credential-memory', requestModel: 'gpt41-mini' },
+  },
+  overrides: Partial<Database> = {},
+): Database {
   return {
-    aiModel: 'gpt4o',
-    subModel: 'gpt4om',
-    openAIKey: 'sk-test',
-    modelRoles: {},
-    seperateModelsForAxModels: false,
-    seperateModels: {},
+    providerCredentials: [
+      {
+        id: 'credential-memory',
+        name: 'Memory',
+        type: 'apiKey',
+        apiKey: 'sk-test',
+      },
+    ],
+    modelProfiles: [{ id: 'profile-memory', name: 'Memory', ...profile }],
+    modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-memory' } },
     ...overrides,
   } as unknown as Database
 }
 
 describe('resolveMemorySummaryModel', () => {
-  it('uses the memory role resolver while accepting legacy subModel requests', () => {
-    const result = resolveMemorySummaryModel(
-      database({
-        subModel: 'should-not-be-selected',
-        modelRoles: { memory: 'gpt41-mini' } as Database['modelRoles'],
-      }),
-      'subModel',
-    )
+  it('uses the durable memory role resolver while accepting the legacy subModel request alias', () => {
+    const result = resolveMemorySummaryModel(database(), 'subModel')
 
     expect(result).toEqual({
       ok: true,
@@ -42,8 +52,9 @@ describe('resolveMemorySummaryModel', () => {
   it('accepts the canonical memory request role', () => {
     const result = resolveMemorySummaryModel(
       database({
-        seperateModelsForAxModels: true,
-        seperateModels: { memory: 'gpt41-nano' } as Database['seperateModels'],
+        providerId: 'openai',
+        modelId: 'gpt41-nano',
+        providerOptions: { credentialId: 'credential-memory', requestModel: 'gpt41-nano' },
       }),
       'memory',
     )
@@ -68,11 +79,25 @@ describe('resolveMemorySummaryModel', () => {
 
   it('builds OpenRouter memory requests from resolved profile provider options', () => {
     const result = resolveMemorySummaryModel(
-      database({
-        modelRoles: { memory: 'openrouter' } as Database['modelRoles'],
-        openrouterKey: 'openrouter-secret',
-        openrouterRequestModel: 'anthropic/claude-3.5-sonnet',
-      }),
+      database(
+        {
+          modelId: 'openrouter',
+          providerOptions: {
+            credentialId: 'credential-memory',
+            requestModel: 'anthropic/claude-3.5-sonnet',
+          },
+        },
+        {
+          providerCredentials: [
+            {
+              id: 'credential-memory',
+              name: 'OpenRouter',
+              type: 'apiKey',
+              apiKey: 'openrouter-secret',
+            },
+          ],
+        },
+      ),
       'memory',
     )
 
@@ -92,16 +117,30 @@ describe('resolveMemorySummaryModel', () => {
 
   it('applies opted-in flat additional parameters to an ordinary memory provider', () => {
     const result = resolveMemorySummaryModel(
-      database({
-        modelRoles: { memory: 'openrouter' } as Database['modelRoles'],
-        openrouterKey: 'openrouter-secret',
-        openrouterRequestModel: 'openai/gpt-4o-mini',
-        additionalParams: [
-          ['temperature', '0.2'],
-          ['header::X-Global-Trace', 'memory'],
-        ],
-        applyAdditionalParamsToAll: true,
-      }),
+      database(
+        {
+          modelId: 'openrouter',
+          providerOptions: {
+            credentialId: 'credential-memory',
+            requestModel: 'openai/gpt-4o-mini',
+          },
+        },
+        {
+          providerCredentials: [
+            {
+              id: 'credential-memory',
+              name: 'OpenRouter',
+              type: 'apiKey',
+              apiKey: 'openrouter-secret',
+            },
+          ],
+          additionalParams: [
+            ['temperature', '0.2'],
+            ['header::X-Global-Trace', 'memory'],
+          ],
+          applyAdditionalParamsToAll: true,
+        },
+      ),
       'memory',
     )
 
@@ -122,13 +161,29 @@ describe('resolveMemorySummaryModel', () => {
 
   it('builds NanoGPT memory requests from resolved profile provider options', () => {
     const result = resolveMemorySummaryModel(
-      database({
-        modelRoles: { memory: 'nanogpt' } as Database['modelRoles'],
-        nanogptKey: 'nanogpt-secret',
-        nanogptProvider: 'provider-a',
-        nanogptRequestModel: 'nano/summary-model',
-        nanogptUseSubscriptionEndpoint: true,
-      }),
+      database(
+        {
+          modelId: 'nanogpt',
+          providerOptions: {
+            credentialId: 'credential-memory',
+            requestModel: 'nano/summary-model',
+            nanogpt: {
+              providerHint: 'provider-a',
+              useSubscriptionEndpoint: true,
+            },
+          },
+        },
+        {
+          providerCredentials: [
+            {
+              id: 'credential-memory',
+              name: 'NanoGPT',
+              type: 'apiKey',
+              apiKey: 'nanogpt-secret',
+            },
+          ],
+        },
+      ),
       'memory',
     )
 
@@ -150,10 +205,23 @@ describe('resolveMemorySummaryModel', () => {
 
   it('rejects resolved non-OpenAI-compatible memory providers', () => {
     const result = resolveMemorySummaryModel(
-      database({
-        modelRoles: { memory: 'claude-3-5-sonnet-latest' } as Database['modelRoles'],
-        claudeAPIKey: 'claude-secret',
-      }),
+      database(
+        {
+          providerId: 'anthropic',
+          modelId: 'claude-3-5-sonnet-latest',
+          providerOptions: { credentialId: 'credential-memory' },
+        },
+        {
+          providerCredentials: [
+            {
+              id: 'credential-memory',
+              name: 'Anthropic',
+              type: 'apiKey',
+              apiKey: 'claude-secret',
+            },
+          ],
+        },
+      ),
       'memory',
     )
 
@@ -163,17 +231,30 @@ describe('resolveMemorySummaryModel', () => {
     })
   })
 
-  it('resolves reverse_proxy summary requests with current global proxy options', () => {
+  it('resolves reverse_proxy summary requests from durable profile options', () => {
     const result = resolveMemorySummaryModel(
-      database({
-        modelRoles: { memory: 'reverse_proxy' } as Database['modelRoles'],
-        customAPIFormat: LLMFormat.OpenAICompatible,
-        customProxyRequestModel: 'proxy-summary-model',
-        forceReplaceUrl: 'risu::https://proxy.example/v1',
-        proxyKey: 'proxy-secret',
-        additionalParams: [['trace', 'enabled']],
-        reverseProxyOobaMode: true,
-      }),
+      database(
+        {
+          modelId: 'reverse_proxy',
+          providerOptions: {
+            credentialId: 'credential-memory',
+            requestModel: 'proxy-summary-model',
+            baseUrl: 'risu::https://proxy.example/v1',
+            additionalParams: [['trace', 'enabled']],
+            reverseProxy: { oobaSystemHoist: true },
+          },
+        },
+        {
+          providerCredentials: [
+            {
+              id: 'credential-memory',
+              name: 'Reverse Proxy',
+              type: 'apiKey',
+              apiKey: 'proxy-secret',
+            },
+          ],
+        },
+      ),
       'memory',
     )
 
@@ -195,24 +276,33 @@ describe('resolveMemorySummaryModel', () => {
     })
   })
 
-  it('resolves xcustom summary requests from the custom model catalog', () => {
+  it('resolves first-class custom API summary requests from durable profile options', () => {
     const result = resolveMemorySummaryModel(
-      database({
-        modelRoles: { memory: 'xcustom:::summary' } as Database['modelRoles'],
-        customModels: [
-          {
-            id: 'xcustom:::summary',
-            name: 'Custom Summary',
-            internalId: 'custom-summary-model',
-            url: 'https://custom.example/v1/chat/completions',
-            key: 'custom-secret',
-            format: LLMFormat.OpenAICompatible,
-            tokenizer: LLMTokenizer.Unknown,
-            params: 'alpha=1\nbeta=two=2\nignored',
-            flags: [],
+      database(
+        {
+          providerId: 'custom-api',
+          modelId: 'custom-api',
+          providerOptions: {
+            credentialId: 'credential-memory',
+            requestModel: 'custom-summary-model',
+            baseUrl: 'https://custom.example/v1',
+            additionalParams: [
+              ['alpha', '1'],
+              ['beta', 'two=2'],
+            ],
           },
-        ],
-      }),
+        },
+        {
+          providerCredentials: [
+            {
+              id: 'credential-memory',
+              name: 'Custom API',
+              type: 'apiKey',
+              apiKey: 'custom-secret',
+            },
+          ],
+        },
+      ),
       'memory',
     )
 
