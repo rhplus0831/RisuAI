@@ -26,6 +26,7 @@ const loadPageMocks = vi.hoisted(() => ({
   createActiveGenerationAbortController: vi.fn(() => ({ signal: new AbortController().signal })),
   downloadFile: vi.fn(async () => undefined),
   getCharImage: vi.fn(() => ''),
+  getChatMessageOwnerState: vi.fn((_chatId: string) => undefined as Record<string, unknown> | undefined),
   getInlayAsset: vi.fn(async () => null),
   postChatFile: vi.fn(async () => []),
   preflightChatSendBeforeMutation: vi.fn(() => ({ type: 'server' as const })),
@@ -327,7 +328,7 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(),
-  getChatMessageOwnerState: () => undefined,
+  getChatMessageOwnerState: loadPageMocks.getChatMessageOwnerState,
   hasChatMessageHydrationFailed: () => false,
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateActiveChatFully: loadPageMocks.hydrateActiveChatFully,
@@ -553,6 +554,13 @@ function seedDatabase(messageCounts: number[]) {
     useSayNothing: false,
     username: 'User',
   } as unknown as Database)
+  loadPageMocks.getChatMessageOwnerState.mockImplementation((chatId: string) => {
+    const matches = charactersResourceState.characters.flatMap((character) =>
+      (character.chats ?? []).filter((chat) => chat.id === chatId),
+    )
+    if (matches.length !== 1) return undefined
+    return { chatId, messages: matches[0].message, projectionEpoch: 0 }
+  })
 }
 
 function mountScreen(props: { customStyle?: string } = {}) {

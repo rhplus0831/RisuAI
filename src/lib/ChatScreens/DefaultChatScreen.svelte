@@ -7,6 +7,37 @@
   ): ChatMessageOwnerState['messages'] {
     return ownerState?.messages ?? aggregateMessages
   }
+
+  export function resolveReadyOwnerValue<T>(status: string, ownerValue: T, preReadyFallback: T): T {
+    return status === 'ready' ? ownerValue : preReadyFallback
+  }
+
+  export function resolveUniqueChatOwner<
+    TChat extends { id?: string },
+    TCharacter extends { chaId?: string; chats?: TChat[] },
+  >(
+    characters: readonly TCharacter[],
+    characterId: string,
+    chatId: string,
+  ): { character: TCharacter; chat: TChat } | undefined {
+    let characterOwner: TCharacter | undefined
+    for (const character of characters) {
+      if (character.chaId !== characterId) continue
+      if (characterOwner) return undefined
+      characterOwner = character
+    }
+    if (!characterOwner) return undefined
+
+    let chatOwner: { character: TCharacter; chat: TChat } | undefined
+    for (const character of characters) {
+      for (const chat of character.chats ?? []) {
+        if (chat.id !== chatId) continue
+        if (chatOwner) return undefined
+        chatOwner = { character, chat }
+      }
+    }
+    return chatOwner?.character === characterOwner ? chatOwner : undefined
+  }
 </script>
 
 <script lang="ts">
@@ -58,17 +89,25 @@
   import { onDestroy, tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'
   import {
-    getDatabase,
     getCharacterByIndex,
     isServerCharacterShell,
     isServerChatMessagePlaceholder,
     setCharacterByIndex,
+    type Chat as ChatRecord,
+    type Database,
     type InputHook,
     type Message,
+    type character,
   } from '../../ts/storage/database.svelte'
   import { getCharImage } from '../../ts/characterImage'
-  import { getSelectedCharacterOwner } from '../../ts/characterState'
-  import { charactersResourceState } from '../../ts/server/resourceState.svelte'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from '../../ts/characterState'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    getChatMetadataOwnerSnapshot,
+    settingsResourceState,
+  } from '../../ts/server/resourceState.svelte'
   import {
     abortActiveGeneration,
     clearActiveGenerationAbortController,
@@ -192,8 +231,69 @@
 
   import { loadPlaygroundMenu } from 'src/ts/routeComponentPreload'
   import { cleanAutoSuggestionInput } from 'src/ts/model/autoSuggestionCleanup'
+  import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
   const composerFileOperationGuard = createLatestOperationGuard<string>()
   const composerOperationGuard = createLatestOperationGuard<string>()
+
+  function groupedSetting<K extends keyof Database>(group: SettingsGroup, key: K): Database[K] | undefined {
+    const ownerValue = (settingsResourceState.value as unknown as Partial<Database>)[key] as Database[K] | undefined
+    return resolveReadyOwnerValue(settingsResourceState.groupStatuses[group] ?? 'idle', ownerValue, undefined)
+  }
+
+  function standaloneSetting<K extends 'selectedPersona' | 'userIcon'>(key: K): Database[K] | undefined {
+    const ownerValue = (settingsResourceState.value as unknown as Partial<Database>)[key] as Database[K] | undefined
+    return resolveReadyOwnerValue(settingsResourceState.standaloneStatuses[key] ?? 'idle', ownerValue, undefined)
+  }
+
+  function fullSettingsOwner<K extends keyof Database>(key: K): Database[K] | undefined {
+    if (settingsResourceState.fullRevision === null) return undefined
+    return (settingsResourceState.value as unknown as Partial<Database>)[key] as Database[K] | undefined
+  }
+
+  function shellBootstrapUsername(): string | undefined {
+    return settingsResourceState.value.username
+  }
+
+  function personaOwners(): Database['personas'] {
+    return collectionsResourceState.statuses.personas === 'ready'
+      ? (collectionsResourceState.values.personas ?? [])
+      : []
+  }
+
+  function selectedCharacterForScreen(): character | undefined {
+    const owner = getSelectedCharacterOwner()
+    if (owner || charactersResourceState.status === 'ready') return owner
+    return selectCharacterOwner(charactersResourceState.characters, $selectedCharID)
+  }
+
+  function targetCharacterOwner(target: ActiveChatTarget): character | undefined {
+    if (target.characterId) return getCharacterResourceOwner(target.characterId)
+    return selectCharacterOwner(charactersResourceState.characters, target.selectedCharID)
+  }
+
+  function targetChatOwner(target: ActiveChatTarget): { character: character; chat: ChatRecord } | undefined {
+    const character = targetCharacterOwner(target)
+    if (!character?.chaId) return undefined
+    const chatId = target.chatId ?? character.chats?.[target.chatPage]?.id
+    return chatId
+      ? resolveUniqueChatOwner<ChatRecord, character>(charactersResourceState.characters, character.chaId, chatId)
+      : undefined
+  }
+
+  function targetChatWithTranscript(target: ActiveChatTarget): { character: character; chat: ChatRecord } | undefined {
+    const owner = targetChatOwner(target)
+    if (!owner?.chat.id) return undefined
+    const transcript = getChatMessageOwnerState(owner.chat.id)
+    if (!transcript) return undefined
+    return { character: owner.character, chat: { ...owner.chat, message: transcript.messages } }
+  }
+
+  function chatLoadPageSettings(): { chatLoadInitialPages?: number; chatLoadAdditionalPages?: number } {
+    return {
+      chatLoadInitialPages: groupedSetting('display', 'chatLoadInitialPages'),
+      chatLoadAdditionalPages: groupedSetting('display', 'chatLoadAdditionalPages'),
+    }
+  }
 
   type PostChatFileResults = NonNullable<Awaited<ReturnType<typeof postChatFile>>>
   type ComposerFileOperation = {
@@ -237,6 +337,36 @@
     customStyle?: string
   }
 
+  let inputHooks = $derived(groupedSetting('advanced', 'inputHooks') ?? [])
+  let floatingChatInput = $derived(groupedSetting('sidebar', 'floatingChatInput') !== false)
+  let fixedChatTextarea = $derived(groupedSetting('sidebar', 'fixedChatTextarea') === true)
+  let sendWithEnter = $derived(groupedSetting('sidebar', 'sendWithEnter') === true)
+  let newMessageButtonStyle = $derived(groupedSetting('sidebar', 'newMessageButtonStyle'))
+  let chatScreenWidth = $derived(groupedSetting('display', 'chatScreenWidth') ?? 900)
+  let useChatSticker = $derived(groupedSetting('display', 'useChatSticker') === true)
+  let useAutoTranslateInput = $derived(groupedSetting('language', 'useAutoTranslateInput') === true)
+  let useAutoSuggestions = $derived(groupedSetting('runtime', 'useAutoSuggestions') === true)
+  let showMenuChatList = $derived(groupedSetting('sidebar', 'showMenuChatList') === true)
+  let enableRisuaiProTools = $derived(groupedSetting('sidebar', 'enableRisuaiProTools') === true)
+  let showMenuHypaMemoryModal = $derived(groupedSetting('memory', 'showMenuHypaMemoryModal') === true)
+  let hypaV3 = $derived(groupedSetting('memory', 'hypaV3') === true)
+  let translator = $derived(groupedSetting('language', 'translator') ?? '')
+  let sideMenuRerollButton = $derived(groupedSetting('sidebar', 'sideMenuRerollButton') === true)
+  let chatTheme = $derived(groupedSetting('display', 'theme'))
+  let useSayNothing = $derived(groupedSetting('advanced', 'useSayNothing') === true)
+  let translatorHistoryMaxTokens = $derived(groupedSetting('language', 'translatorHistoryMaxTokens') ?? 2048)
+  let autoSuggestionCleanupDatabase = $derived({
+    autoSuggestClean: fullSettingsOwner('autoSuggestClean') ?? true,
+    modelProfiles: groupedSetting('providers', 'modelProfiles'),
+    modelRoleProfiles: groupedSetting('providers', 'modelRoleProfiles'),
+    modelRuntimeDefaults: groupedSetting('providers', 'modelRuntimeDefaults'),
+    providerCredentials: groupedSetting('providers', 'providerCredentials'),
+    modelRoles: groupedSetting('providers', 'modelRoles'),
+    subModel: groupedSetting('providers', 'subModel'),
+    seperateModelsForAxModels: groupedSetting('runtime', 'seperateModelsForAxModels'),
+    seperateModels: groupedSetting('runtime', 'seperateModels'),
+  } as Database)
+
   let messageInput: string = $state('')
   let messageInputTranslate: string = $state('')
   let draftText: string = $state('')
@@ -244,7 +374,7 @@
   let openMenu = $state(false)
   let chatMenuButton: HTMLButtonElement | null = $state(null)
   let chatMenuElement: HTMLDivElement | null = $state(null)
-  let loadPages = $state(getInitialChatLoadPages(getDatabase()))
+  let loadPages = $state(getInitialChatLoadPages(chatLoadPageSettings()))
   let showBtwHookDialog = $state(false)
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
@@ -322,17 +452,37 @@
     unregisterAcceptedDraftGeneration()
   })
 
-  // The owner projection is authoritative once character resources are ready;
-  // retain the aggregate only for the pre-readiness bootstrap gap.
-  let currentCharacter = $derived(
-    getSelectedCharacterOwner() ??
-      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters[$selectedCharID]),
-  )
+  // Ready character rows are authoritative. The selected index is consulted
+  // only while the bootstrap collection is still settling, and stable ids
+  // remain duplicate-safe in either phase.
+  let currentCharacter = $derived(selectedCharacterForScreen())
   let selectedCharacterOwner = $derived(currentCharacter)
+  let currentChatCandidateId = $derived(currentCharacter?.chats?.[currentCharacter.chatPage]?.id)
+  let currentChatStructureOwner = $derived(
+    currentCharacter?.chaId && currentChatCandidateId
+      ? resolveUniqueChatOwner<ChatRecord, character>(
+          charactersResourceState.characters,
+          currentCharacter.chaId,
+          currentChatCandidateId,
+        )
+      : undefined,
+  )
+  let currentChatId = $derived(currentChatStructureOwner?.chat.id)
+  let currentChatMetadataOwner = $derived(
+    currentCharacter?.chaId && currentChatId
+      ? getChatMetadataOwnerSnapshot(currentCharacter.chaId, currentChatId)
+      : undefined,
+  )
+  let currentChatMetadata = $derived((currentChatMetadataOwner?.metadata ?? {}) as Partial<ChatRecord>)
+  let currentChatOwnerState = $derived(currentChatId ? getChatMessageOwnerState(currentChatId) : undefined)
+  let currentChat = $derived(
+    resolveTranscriptRenderMessages(currentChatOwnerState, currentChatStructureOwner?.chat.message ?? []),
+  )
+  let renderChat = $derived(currentChat)
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: currentCharacter?.chaId,
-      chatId: currentCharacter?.chats?.[currentCharacter.chatPage]?.id,
+      chatId: currentChatId,
     }),
   )
   let currentAcceptedSendRecoveries = $derived.by(() => {
@@ -351,8 +501,7 @@
     if ($selectedCharID < 0) return false
     const character = currentCharacter
     if (character?.chaId === '§playground') {
-      const activePlaygroundChat = character.chats?.[character.chatPage]
-      return $PlaygroundStore === 2 && Array.isArray(activePlaygroundChat?.message)
+      return $PlaygroundStore === 2 && Boolean(currentChatId) && Array.isArray(currentChat)
     }
     return (
       visibleRoute.kind === 'character' &&
@@ -360,40 +509,33 @@
       typeof visibleRoute.chatId === 'string'
     )
   })
-  let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
-  let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
-  let currentChatOwnerState = $derived(currentChatId ? getChatMessageOwnerState(currentChatId) : undefined)
-  let renderChat = $derived(resolveTranscriptRenderMessages(currentChatOwnerState, currentChat))
-  let currentChatRecord = $derived(currentCharacter?.chats[currentCharacter.chatPage])
   let currentRerollTarget = $derived(
-    currentCharacter && currentChatRecord
+    currentCharacter && currentChatId
       ? {
           selectedCharID: $selectedCharID,
           chatPage: currentCharacter.chatPage,
           characterId: currentCharacter.chaId,
-          chatId: currentChatRecord.id,
+          chatId: currentChatId,
         }
       : null,
   )
   let greetingTranslatorSettingsSignature = $derived(currentGreetingTranslatorSettingsSignature())
   let greetingTranslationTarget = $derived.by(() => {
-    if (!currentCharacter || isServerCharacterShell(currentCharacter) || !currentChatRecord) return null
-    const candidateIndex = currentChatRecord.fmIndex
+    if (!currentCharacter || isServerCharacterShell(currentCharacter) || !currentChatId) return null
+    const candidateIndex = currentChatMetadata.fmIndex
     const greetingIndex = Number.isInteger(candidateIndex) && (candidateIndex as number) >= -1 ? candidateIndex : -1
     const source =
       greetingIndex === -1 ? currentCharacter.firstMessage : currentCharacter.alternateGreetings?.[greetingIndex]
     if (
       typeof currentCharacter.chaId !== 'string' ||
       currentCharacter.chaId.length === 0 ||
-      typeof currentChatRecord.id !== 'string' ||
-      currentChatRecord.id.length === 0 ||
       typeof source !== 'string'
     ) {
       return null
     }
     return {
       characterId: currentCharacter.chaId,
-      chatId: currentChatRecord.id,
+      chatId: currentChatId,
       greetingIndex,
       source,
       clientSettingsSignature: greetingTranslatorSettingsSignature,
@@ -404,10 +546,10 @@
     const target = greetingTranslationTarget
     return target ? findGreetingTranslation(target) : null
   })
-  let draftHooks = $derived((getDatabase().inputHooks ?? []).filter((hook) => hook.type === 'draft'))
-  let btwHooks = $derived((getDatabase().inputHooks ?? []).filter((hook) => hook.type === 'btw'))
+  let draftHooks = $derived(inputHooks.filter((hook) => hook.type === 'draft'))
+  let btwHooks = $derived(inputHooks.filter((hook) => hook.type === 'btw'))
   let selectedDraftHook = $derived.by(() => {
-    const selectedId = currentChatRecord?.selectedDraftHookId
+    const selectedId = currentChatMetadata.selectedDraftHookId
     if (!selectedId) return undefined
     return draftHooks.find((hook) => hook.id === selectedId)
   })
@@ -510,7 +652,7 @@
   })
   let currentChatGenerationStage = $derived(currentChatGenerationActivity?.stage ?? 0)
   let currentChatPreparationTargetKey = $derived(
-    currentCharacter && currentChatRecord
+    currentCharacter && currentChatId
       ? chatGenerationTargetKey({
           selectedCharID: $selectedCharID,
           chatPage: currentCharacter.chatPage,
@@ -531,7 +673,7 @@
     currentChatPreparationTargetKey !== null && preparingSendTargetKeys.has(currentChatPreparationTargetKey),
   )
   let visibleChatProcessStage = $derived(currentChatInputHookActivity?.stage ?? currentChatGenerationStage)
-  let configuredChatLoadPages = $derived(getInitialChatLoadPages(getDatabase()))
+  let configuredChatLoadPages = $derived(getInitialChatLoadPages(chatLoadPageSettings()))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
@@ -651,7 +793,7 @@
   }
 
   function floatingInputEnabled(): boolean {
-    return getDatabase().floatingChatInput !== false && !getDatabase().fixedChatTextarea
+    return floatingChatInput && !fixedChatTextarea
   }
 
   function toggleFloatingDraftConversion(): void {
@@ -778,13 +920,12 @@
     const selectedCharacterIndex = $selectedCharID
     const character = currentCharacter
     const chatPage = character?.chatPage ?? null
-    const chat = chatPage === null ? null : character?.chats?.[chatPage]
 
     return buildTranscriptWindowIdentity({
       selectedCharacterIndex,
       characterId: character?.chaId,
       chatPage,
-      chatId: chat?.id,
+      chatId: currentChatId,
     })
   }
 
@@ -1024,15 +1165,7 @@
   }
 
   function chatForTarget(target: ActiveChatTarget) {
-    const characters = getDatabase().characters
-    const character =
-      target.characterId !== undefined
-        ? characters.find((candidate) => candidate.chaId === target.characterId)
-        : characters[target.selectedCharID]
-    if (!character) return undefined
-    return target.chatId !== undefined
-      ? character.chats.find((candidate) => candidate.id === target.chatId)
-      : character.chats[target.chatPage]
+    return targetChatWithTranscript(target)?.chat
   }
 
   function handoffAcceptedSend(input: {
@@ -1202,9 +1335,9 @@
   }
 
   async function toggleCurrentChatPin(): Promise<void> {
-    if (pinMutationPending || !currentChatRecord?.id) return
+    if (pinMutationPending || !currentChatId) return
     pinMutationPending = true
-    const outcomePromise = setCurrentChatPinnedWithOutcome(currentChatRecord.pinned !== true)
+    const outcomePromise = setCurrentChatPinnedWithOutcome(currentChatMetadata.pinned !== true)
     closeChatMenu()
     try {
       const outcome = await outcomePromise
@@ -1233,12 +1366,18 @@
 
   let mostRecentChat = $derived.by(() => {
     const character = currentCharacter
-    return character?.chats?.[character.chatPage] ?? character?.chats?.[0] ?? null
+    if (!character?.chaId) return null
+    const candidate = character.chats?.[character.chatPage] ?? character.chats?.[0]
+    if (!candidate?.id) return null
+    return (
+      resolveUniqueChatOwner<ChatRecord, character>(charactersResourceState.characters, character.chaId, candidate.id)
+        ?.chat ?? null
+    )
   })
 
   function openMostRecentChat() {
     const character = currentCharacter
-    const chat = character?.chats?.[character.chatPage] ?? character?.chats?.[0]
+    const chat = mostRecentChat
     if (!character?.chaId || !chat?.id) return
 
     navigate(characterRoutePath(character.chaId, chat.id))
@@ -1448,7 +1587,7 @@
 
   function shouldSendFromComposerKeydown(event: KeyboardEvent): boolean {
     if (event.key.toLocaleLowerCase() !== 'enter' || event.isComposing) return false
-    return getDatabase().sendWithEnter ? !event.shiftKey : event.shiftKey
+    return sendWithEnter ? !event.shiftKey : event.shiftKey
   }
 
   function appendInlayMarkers(files: string[]): string {
@@ -1470,9 +1609,9 @@
 
   function snapshotInputHookHistoryContext(target: ActiveChatTarget): InputHookHistoryContext | null {
     if (!isActiveChatTargetFresh(target)) return null
-    const database = getDatabase()
-    const character = database.characters[target.selectedCharID]
-    const chat = character?.chats[target.chatPage]
+    const owner = targetChatWithTranscript(target)
+    const character = owner?.character
+    const chat = owner?.chat
     if (!character || !chat || character.chaId !== target.characterId || chat.id !== target.chatId) return null
 
     const targetGreeting = greetingTranslationTarget
@@ -1495,7 +1634,7 @@
             ...(persistedGreetingTranslation ? { translated: persistedGreetingTranslation.text } : {}),
           }
         : { source: '' },
-      maxTokens: database.translatorHistoryMaxTokens ?? 2048,
+      maxTokens: translatorHistoryMaxTokens,
     }
   }
 
@@ -1509,8 +1648,7 @@
     let requestedTail = Math.max(loadPages, requiredRows)
     while (true) {
       if (!isActiveChatTargetFresh(target)) return null
-      const character = getDatabase().characters[target.selectedCharID]
-      const chat = character?.chats[target.chatPage]
+      const chat = targetChatWithTranscript(target)?.chat
       if (!chat || chat.id !== target.chatId) return null
 
       const hydrationPending = isChatMessageHydrationPending(chat.id, chat.message.length)
@@ -1522,8 +1660,7 @@
       if (!isActiveChatTargetFresh(target)) return null
       if (!hydrated) throw new Error(language.chatDataLoadFailed)
 
-      const hydratedCharacter = getDatabase().characters[target.selectedCharID]
-      const hydratedChat = hydratedCharacter?.chats[target.chatPage]
+      const hydratedChat = targetChatWithTranscript(target)?.chat
       if (!hydratedChat || hydratedChat.id !== target.chatId) return null
       if (inputHookHistoryWindowIsResident(hydratedChat.message, requiredRows)) {
         return snapshotInputHookHistoryContext(target)
@@ -1649,7 +1786,6 @@
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) {
       return
     }
-    const selectedChar = activeTarget.selectedCharID
     const composerOperation = beginComposerOperation(continueResponse ? 'continue' : 'send')
     if (!composerOperation) return
     const preparingTargetKey = claimPreparingSendTarget(activeTarget)
@@ -1675,8 +1811,10 @@
         return
       }
 
-      const currentChatRecord =
-        getDatabase().characters[selectedChar].chats[getDatabase().characters[selectedChar].chatPage]
+      const activeOwner = targetChatWithTranscript(activeTarget)
+      if (!activeOwner) return
+      const currentChatRecord = activeOwner.chat
+      const currentChatMetadata = getChatMetadataOwnerSnapshot(activeOwner.character.chaId, currentChatRecord.id ?? '')
       let userMessage: Message | null = null
       let syntheticSayNothing = false
       const composerBeforeSend = composerOperation.messageInput
@@ -1693,10 +1831,8 @@
         }
       }
 
-      const selectedHookId = currentChatRecord.selectedDraftHookId
-      const liveDraftHook = getDatabase().inputHooks?.find(
-        (hook) => hook.id === selectedHookId && hook.type === 'draft',
-      )
+      const selectedHookId = currentChatMetadata?.metadata.selectedDraftHookId
+      const liveDraftHook = inputHooks.find((hook) => hook.id === selectedHookId && hook.type === 'draft')
       if (!continueResponse && composerBeforeSend.trim().length > 0 && liveDraftHook) {
         await runDraftHookForSend({
           hook: liveDraftHook,
@@ -1713,7 +1849,7 @@
         if (!continueResponse) {
           const messages = currentChatRecord.message ?? []
           if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-            if (getDatabase().useSayNothing) {
+            if (useSayNothing) {
               syntheticSayNothing = true
               userMessage = {
                 role: 'user',
@@ -1735,7 +1871,7 @@
       }
 
       const preflight = preflightChatSendBeforeMutation({
-        currentChar: getDatabase().characters[selectedChar],
+        currentChar: activeOwner.character,
         currentChat: currentChatRecord,
         continue: continueResponse,
         pendingUserMessage: userMessage,
@@ -1823,12 +1959,14 @@
       await hydrateActiveChatFully()
       if (!isActiveChatTargetFresh(activeTarget) || !isCurrentComposerOperation(composerOperation)) return
 
-      const selectedCharacter = getDatabase().characters[activeTarget.selectedCharID]
-      const liveChat = selectedCharacter?.chats[activeTarget.chatPage]
-      if (!liveChat) return
+      const activeOwner = targetChatWithTranscript(activeTarget)
+      const selectedCharacter = activeOwner?.character
+      const liveChat = activeOwner?.chat
+      if (!selectedCharacter || !liveChat) return
       const messageData = `${composerOperation.draftText}${appendInlayMarkers(composerOperation.fileInput)}`
-      const liveDraftHook = getDatabase().inputHooks?.find(
-        (hook) => hook.id === liveChat.selectedDraftHookId && hook.type === 'draft',
+      const liveMetadata = getChatMetadataOwnerSnapshot(selectedCharacter.chaId, liveChat.id ?? '')
+      const liveDraftHook = inputHooks.find(
+        (hook) => hook.id === liveMetadata?.metadata.selectedDraftHookId && hook.type === 'draft',
       )
       const translation =
         liveDraftHook?.translation === true
@@ -1951,12 +2089,11 @@
     if (!generationTarget || !isActiveChatTargetFresh(generationTarget)) {
       return false
     }
-    const currentCharacter = getDatabase().characters[generationTarget.selectedCharID]
-    const currentChatRecord = currentCharacter?.chats[generationTarget.chatPage]
-    if (!currentChatRecord) {
+    const generationOwner = targetChatWithTranscript(generationTarget)
+    if (!generationOwner) {
       return false
     }
-    let previousLength = currentChatRecord.message.length
+    let previousLength = generationOwner.chat.message.length
     if (!continued && composerOperation?.kind !== 'draft-send') {
       clearMessageInputForCurrentOperation(composerOperation)
     }
@@ -2007,7 +2144,20 @@
   }
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
-    return resolveUserPersonaPresentation(getDatabase(), currentChatRecord)
+    const personaDatabase = {
+      personas: personaOwners(),
+      selectedPersona: standaloneSetting('selectedPersona') ?? -1,
+      username: shellBootstrapUsername() ?? 'User',
+      userIcon: standaloneSetting('userIcon') ?? '',
+    } as unknown as Database
+    const chat = currentChatId
+      ? ({
+          id: currentChatId,
+          ...currentChatMetadata,
+          generationSettings: currentChatStructureOwner?.chat.generationSettings,
+        } as ChatRecord)
+      : undefined
+    return resolveUserPersonaPresentation(personaDatabase, chat)
   })
 
   // Empty textareas can transiently report no scroll height during mobile layout changes.
@@ -2119,7 +2269,7 @@
   }
 
   async function updateInputTransateMessage(reverse: boolean) {
-    if (!getDatabase().useAutoTranslateInput) {
+    if (!useAutoTranslateInput) {
       return
     }
     if (isExpTranslator()) {
@@ -2261,7 +2411,7 @@
     closeChatMenu()
   }}>
   {#if showNewMessageButton}
-    {#if getDatabase().newMessageButtonStyle === 'bottom-center' || !getDatabase().newMessageButtonStyle}
+    {#if newMessageButtonStyle === 'bottom-center' || !newMessageButtonStyle}
       <button
         class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -2270,7 +2420,7 @@
       </button>
     {/if}
 
-    {#if getDatabase().newMessageButtonStyle === 'bottom-right'}
+    {#if newMessageButtonStyle === 'bottom-right'}
       <button
         class="absolute bottom-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -2279,7 +2429,7 @@
       </button>
     {/if}
 
-    {#if getDatabase().newMessageButtonStyle === 'bottom-left'}
+    {#if newMessageButtonStyle === 'bottom-left'}
       <button
         class="absolute bottom-20 left-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -2288,7 +2438,7 @@
       </button>
     {/if}
 
-    {#if getDatabase().newMessageButtonStyle === 'floating-circle'}
+    {#if newMessageButtonStyle === 'floating-circle'}
       <button
         type="button"
         aria-label={language.newMessage}
@@ -2299,7 +2449,7 @@
       </button>
     {/if}
 
-    {#if getDatabase().newMessageButtonStyle === 'right-center'}
+    {#if newMessageButtonStyle === 'right-center'}
       <button
         class="absolute top-1/2 right-2 -translate-y-1/2 bg-blue-500 text-white px-2 py-3 rounded-l-lg shadow-lg z-50 flex flex-col items-center gap-1 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -2308,7 +2458,7 @@
       </button>
     {/if}
 
-    {#if getDatabase().newMessageButtonStyle === 'top-bar'}
+    {#if newMessageButtonStyle === 'top-bar'}
       <button
         class="absolute top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-6 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors text-sm"
         onclick={scrollToBottom}>
@@ -2378,9 +2528,9 @@
     </div>
   {:else}
     <div
-      use:trackChatContentGeometry={getDatabase().chatScreenWidth ?? 900}
+      use:trackChatContentGeometry={chatScreenWidth}
       class="relative flex h-full min-h-0 w-full flex-col-reverse"
-      style={`--chat-screen-width: ${getDatabase().chatScreenWidth ?? 900}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px; --chat-content-fixed-inline-end: ${chatContentFixedInlineEnd ?? 16}px`}
+      style={`--chat-screen-width: ${chatScreenWidth}px; --chat-content-rendered-width: ${chatContentRenderedWidth === null ? 'min(var(--chat-screen-width), 100%)' : `${chatContentRenderedWidth}px`}; --chat-content-inline-end: ${chatContentInlineEnd ?? 8}px; --chat-content-fixed-inline-end: ${chatContentFixedInlineEnd ?? 16}px`}
       data-default-chat-screen-width>
       {#snippet chatMessageSkeleton(mode: 'display' | 'hydration')}
         <div
@@ -2561,7 +2711,7 @@
             class="chat-screen-content-width mt-2 mb-2 flex w-full items-stretch"
             style:z-index={floatingInputOpen ? 29 : undefined}
             data-default-chat-composer-row>
-            {#if getDatabase().useChatSticker}
+            {#if useChatSticker}
               <button
                 type="button"
                 aria-label={language.stickers}
@@ -2579,7 +2729,7 @@
               data-testid="default-chat-composer"
               aria-label={language.messageInput}
               class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
-              class:ml-4={getDatabase().useChatSticker}
+              class:ml-4={useChatSticker}
               value={floatingComposerValue}
               readonly={floatingDraftPreviewVisible}
               bind:this={inputEle}
@@ -2764,7 +2914,7 @@
               </div>
             </div>
           {/if}
-          {#if getDatabase().useAutoTranslateInput && currentCharacter?.chaId !== '§playground'}
+          {#if useAutoTranslateInput && currentCharacter?.chaId !== '§playground'}
             <div class="chat-screen-content-width flex items-center mt-2 mb-2">
               <label for="messageInputTranslate" class="text-textcolor ml-4">
                 <LanguagesIcon />
@@ -2857,10 +3007,10 @@
             </div>
           {/if}
 
-          {#if getDatabase().useAutoSuggestions}
+          {#if useAutoSuggestions}
             <Suggestion
               messageInput={(msg) => {
-                messageInput = cleanAutoSuggestionInput(msg, getDatabase())
+                messageInput = cleanAutoSuggestionInput(msg, autoSuggestionCleanupDatabase)
                 markComposerDraftChanged('message')
               }}
               {send}
@@ -2869,14 +3019,14 @@
         </section>
       {/snippet}
 
-      {#if getDatabase().fixedChatTextarea}
+      {#if fixedChatTextarea}
         {@render composerSurface(true)}
       {/if}
 
       <div
         bind:this={chatScrollContainer}
         class="default-chat-screen relative flex min-h-0 w-full flex-1 flex-col-reverse overflow-y-auto"
-        class:fastify-chat-theme={getDatabase().theme === 'fastify'}
+        class:fastify-chat-theme={chatTheme === 'fastify'}
         data-default-chat-transcript
         data-chat-initial-display-pending={activeChatDisplayLoading ? '' : undefined}
         onwheel={() => chatsInstance?.handleTranscriptUserInteraction()}
@@ -2894,7 +3044,7 @@
           //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
           const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
           if (scrolled < 100 && currentChat.length > loadPages) {
-            void expandTranscriptWindow(loadPages + getAdditionalChatLoadPages(getDatabase()))
+            void expandTranscriptWindow(loadPages + getAdditionalChatLoadPages(chatLoadPageSettings()))
           }
           const chatTarget = e.target as HTMLElement
           const chatsContainer = chatTarget.querySelector<HTMLElement>('[data-default-chat-chats-container]')
@@ -2907,7 +3057,7 @@
           }
           updateFloatingInputForScroll(chatTarget)
         }}>
-        {#if !getDatabase().fixedChatTextarea}
+        {#if !fixedChatTextarea}
           {@render composerSurface(false)}
         {/if}
 
@@ -2928,7 +3078,7 @@
         {/if}
         {#if activeChatMessagesLoading}
           {@render chatMessageSkeleton('hydration')}
-        {:else if currentChatRecord?.message?.[0]?.data?.startsWith(coldStorageHeader)}
+        {:else if currentChat[0]?.data?.startsWith(coldStorageHeader)}
           {#await preLoadChat($selectedCharID, currentCharacter?.chatPage ?? 0)}
             <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">
               {language.loadingChatData}
@@ -2937,7 +3087,7 @@
             {#if !recovered}
               <div class="chat-screen-content-width w-full flex justify-center text-red-400 italic mb-12" role="alert">
                 {language.errors.coldStorageRecoveryFailed}
-                ({currentChatRecord?.message?.[0]?.data?.slice(coldStorageHeader.length)})
+                ({currentChat[0]?.data?.slice(coldStorageHeader.length)})
               </div>
             {/if}
           {/await}
@@ -3013,9 +3163,9 @@
               greetingTarget={greetingTranslationTarget}
               translation={greetingTranslation}
               name={getCharacterDisplayName(currentCharacter)}
-              message={currentChatRecord?.fmIndex === -1
+              message={currentChatMetadata.fmIndex === -1
                 ? currentCharacter.firstMessage
-                : currentCharacter.alternateGreetings[currentChatRecord?.fmIndex ?? 0]}
+                : currentCharacter.alternateGreetings[currentChatMetadata.fmIndex ?? 0]}
               role="char"
               img={getCharImage(currentCharacter.image, 'css')}
               idx={-1}
@@ -3023,27 +3173,27 @@
               largePortrait={currentCharacter.largePortrait}
               firstMessage={true}
               onReroll={() => {
-                const cha = getDatabase().characters[$selectedCharID]
-                const chat = cha?.chats?.[cha.chatPage]
-                if (!cha || !chat) return
-                if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
+                const cha = currentCharacter
+                const fmIndex = currentChatMetadata.fmIndex ?? -1
+                if (!cha || !currentChatId) return
+                if (fmIndex >= cha.alternateGreetings.length - 1) {
                   updateGreetingIndex(-1)
                 } else {
-                  updateGreetingIndex(chat.fmIndex + 1)
+                  updateGreetingIndex(fmIndex + 1)
                 }
               }}
               unReroll={() => {
-                const cha = getDatabase().characters[$selectedCharID]
-                const chat = cha?.chats?.[cha.chatPage]
-                if (!cha || !chat) return
-                if (chat.fmIndex === -1) {
+                const cha = currentCharacter
+                const fmIndex = currentChatMetadata.fmIndex ?? -1
+                if (!cha || !currentChatId) return
+                if (fmIndex === -1) {
                   updateGreetingIndex(cha.alternateGreetings.length - 1)
                 } else {
-                  updateGreetingIndex(chat.fmIndex - 1)
+                  updateGreetingIndex(fmIndex - 1)
                 }
               }}
               isLastMemory={false}
-              currentPage={(currentChatRecord?.fmIndex ?? -1) + 2}
+              currentPage={(currentChatMetadata.fmIndex ?? -1) + 2}
               totalPages={currentCharacter.alternateGreetings.length + 1} />
             {#if aiLawApplies() && renderChat.length === 0}
               <div
@@ -3063,7 +3213,7 @@
           {/if}
         {/if}
 
-        {#if openMenu && !getDatabase().fixedChatTextarea}
+        {#if openMenu && !fixedChatTextarea}
           {@render chatOverflowMenu()}
         {/if}
       </div>
@@ -3137,17 +3287,17 @@
           <button
             type="button"
             role="menuitemcheckbox"
-            aria-checked={currentChatRecord?.pinned === true}
+            aria-checked={currentChatMetadata.pinned === true}
             data-default-chat-menu-item
             data-testid={floatingInputOpen ? 'floating-chat-pin-button' : 'default-chat-pin-button'}
             disabled={pinMutationPending}
             class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
             onclick={() => void toggleCurrentChatPin()}>
             <PinIcon />
-            <span class="ml-2">{currentChatRecord?.pinned ? language.unpinChat : language.pinChat}</span>
+            <span class="ml-2">{currentChatMetadata.pinned ? language.unpinChat : language.pinChat}</span>
           </button>
 
-          {#if getDatabase().showMenuChatList}
+          {#if showMenuChatList}
             <button
               type="button"
               role="menuitem"
@@ -3178,7 +3328,7 @@
             <span class="ml-2">{language.bardWiki.workspaceTitle}</span>
           </button>
 
-          {#if getDatabase().enableRisuaiProTools}
+          {#if enableRisuaiProTools}
             <button
               type="button"
               role="menuitem"
@@ -3209,7 +3359,7 @@
             {/each}
           {/if}
 
-          {#if getDatabase().showMenuHypaMemoryModal && getDatabase().hypaV3}
+          {#if showMenuHypaMemoryModal && hypaV3}
             <button
               type="button"
               role="menuitem"
@@ -3224,16 +3374,16 @@
             </button>
           {/if}
 
-          {#if getDatabase().translator !== ''}
+          {#if translator !== ''}
             <button
               type="button"
               role="menuitemcheckbox"
-              aria-checked={getDatabase().useAutoTranslateInput}
+              aria-checked={useAutoTranslateInput}
               data-default-chat-menu-item
               class={'flex w-full items-center cursor-pointer text-left ' +
-                (getDatabase().useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
+                (useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
               onclick={() => {
-                applyServerBackedSetting('useAutoTranslateInput', !getDatabase().useAutoTranslateInput)
+                applyServerBackedSetting('useAutoTranslateInput', !useAutoTranslateInput)
               }}>
               <GlobeIcon />
               <span class="ml-2">{language.autoTranslateInput}</span>
@@ -3266,12 +3416,12 @@
           <button
             type="button"
             role="menuitemcheckbox"
-            aria-checked={getDatabase().useAutoSuggestions}
+            aria-checked={useAutoSuggestions}
             data-default-chat-menu-item
             class={'flex w-full items-center cursor-pointer text-left ' +
-              (getDatabase().useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
+              (useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
             onclick={async () => {
-              applyServerBackedSetting('useAutoSuggestions', !getDatabase().useAutoSuggestions)
+              applyServerBackedSetting('useAutoSuggestions', !useAutoSuggestions)
             }}>
             <ReplyIcon />
             <span class="ml-2">{language.autoSuggest}</span>
@@ -3291,7 +3441,7 @@
             <span class="ml-2">{language.modules}</span>
           </button>
 
-          {#if getDatabase().sideMenuRerollButton}
+          {#if sideMenuRerollButton}
             <button
               type="button"
               role="menuitem"
@@ -3305,7 +3455,7 @@
         </div>
       {/snippet}
 
-      {#if openMenu && getDatabase().fixedChatTextarea}
+      {#if openMenu && fixedChatTextarea}
         {@render chatOverflowMenu()}
       {/if}
     </div>
