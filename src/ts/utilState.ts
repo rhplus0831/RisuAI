@@ -3,7 +3,7 @@ import { getPersonaDisplayName } from './personaDisplayName'
 import {
   resolveEffectivePromptTemplate,
   type EffectivePromptTemplateOptions,
-} from './process/promptAssembly/effectivePromptTemplate'
+} from '@risuai/shared-core/effective-prompt-template'
 import { getDatabase, type Chat, type Database } from './storage/database.svelte'
 import { selectedCharID } from './stores/coreStores.svelte'
 import { resolveChatBoundPersonaId } from './personaModuleLinks'

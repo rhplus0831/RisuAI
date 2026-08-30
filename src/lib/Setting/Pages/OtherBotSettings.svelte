@@ -19,6 +19,7 @@
   import { untrack } from 'svelte'
   import { tokenizePreset } from 'src/ts/process/prompt'
   import { getCharToken } from 'src/ts/tokenizer'
+  import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
   import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset, type HypaV3Preset } from 'src/ts/process/memory/hypav3'
@@ -241,7 +242,7 @@
     await ensurePromptTemplateHydrated()
     const database = getDatabase()
     const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
-    const promptTemplateToken = await tokenizePreset(database.promptTemplate)
+    const promptTemplateToken = await tokenizePreset(resolveEffectivePromptTemplate(database).promptTemplate)
     const char = database.characters[$selectedCharID]
     const charToken = await getCharToken(char)
     const maxLoreToken = char.loreSettings?.tokenBudget ?? database.loreBookToken

@@ -5,7 +5,7 @@ import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import {
   resolveEffectivePromptTemplate,
   type EffectivePromptTemplateOptions,
-} from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
+} from '@risuai/shared-core/effective-prompt-template'
 import { expandVariables, type ExpandContext } from './variables.js'
 import type { PromptMessage } from './promptMessage.js'
 
@@ -84,7 +84,7 @@ export function normalizeTemplate(
   currentChar: character,
   options: EffectivePromptTemplateOptions = {},
 ): NormalizedTemplate {
-  const resolved = resolveEffectivePromptTemplate(db, options)
+  const resolved = resolveEffectivePromptTemplate<PromptItem>(db, options)
   let promptTemplate = resolved.promptTemplate ? structuredClone(resolved.promptTemplate) : null
   const usingPromptTemplate = !!promptTemplate
 

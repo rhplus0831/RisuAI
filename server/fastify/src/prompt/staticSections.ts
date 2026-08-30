@@ -1,6 +1,6 @@
 import type { FastifyChat as Chat, FastifyCharacter as character, FastifyDatabase as Database } from './serverTypes.js'
 import type { PromptMessage } from './promptMessage.js'
-import { resolveEffectivePromptTemplate } from '../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js'
+import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 import { expandVariables, type ExpandContext } from './variables.js'
 
 /**

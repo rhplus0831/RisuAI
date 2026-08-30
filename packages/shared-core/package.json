@@ -34,6 +34,7 @@
     "./prompt-block-role": "./src/promptBlockRole.ts",
     "./prompt-info-snapshot": "./src/promptInfoSnapshot.ts",
     "./prompt-settings": "./src/promptSettings.ts",
+    "./effective-prompt-template": "./src/effectivePromptTemplate.ts",
     "./prompt-template-normalization": "./src/promptTemplateNormalization.ts",
     "./provider-credential-records": "./src/providerCredentialRecords.ts",
     "./provider-secret-mask": "./src/providerSecretMask.ts",

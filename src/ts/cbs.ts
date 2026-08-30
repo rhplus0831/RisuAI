@@ -2,6 +2,7 @@ import type { Database, character, loreBook } from './storage/database.svelte'
 import type { CbsConditions } from './parser/risuChatParserHelpers'
 import type { RisuModule } from './process/modules'
 import type { LLMModel } from './model/modellist'
+import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
 export const defaultCBSRegisterArg: CBSRegisterArg = {
   registerFunction: () => {
@@ -692,7 +693,9 @@ export function registerCBS(arg: CBSRegisterArg) {
       if (chat?.note) {
         return risuChatParser(chat.note, matcherArg)
       }
-      const template = db.promptTemplate
+      const template = resolveEffectivePromptTemplate(db, {
+        chatPromptPresetId: chat?.generationSettings?.promptPresetId,
+      }).promptTemplate
       if (template) {
         for (const v of template) {
           if (v.type === 'authornote' && v.defaultText) {

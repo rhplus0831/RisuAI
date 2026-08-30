@@ -1,6 +1,9 @@
 import { getDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { PromptItem } from '../prompt'
-import { resolveEffectivePromptTemplate, type EffectivePromptTemplateOptions } from './effectivePromptTemplate'
+import {
+  resolveEffectivePromptTemplate,
+  type EffectivePromptTemplateOptions,
+} from '@risuai/shared-core/effective-prompt-template'
 
 export interface NormalizedTemplate {
   promptTemplate: PromptItem[] | null
