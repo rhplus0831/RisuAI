@@ -1,0 +1,5402 @@
+{
+  "schemaVersion": 1,
+  "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
+  "conventions": {
+    "protocol": "Serialized requests, responses, events, versions, and taxonomies live in browser-safe @risuai/protocol subpaths.",
+    "sharedRuntime": "Only framework-neutral leaf behavior may enter an audited shared runtime package; it cannot depend on Svelte, DOM, Fastify, Node hosts, persistence, or aggregate Database state.",
+    "server": "Security, active-writer policy, persistence, credentials, filesystem, process, and host behavior remain under server/fastify.",
+    "fixtures": "Historical compatibility fixtures remain test-owned; shared fixture data may move without moving browser application modules into a server dependency."
+  },
+  "policies": {
+    "protocol-wire-contract": {
+      "category": "wire-contract",
+      "targetOwner": "@risuai/protocol explicit subpath",
+      "migrationPhase": "Workstream 1 Phase 1, then consuming Phase 4/5 slice",
+      "exceptionOwner": "Cross-runtime boundaries maintainers",
+      "reviewTrigger": "Protocol parity is proven and all consumers use the explicit package subpath."
+    },
+    "shared-pure-runtime": {
+      "category": "pure-runtime-behavior",
+      "targetOwner": "audited framework-neutral shared runtime package",
+      "migrationPhase": "Workstream 1 Phase 3, then consuming Phase 4/5 slice",
+      "exceptionOwner": "Cross-runtime boundaries maintainers",
+      "reviewTrigger": "A neutral leaf extraction passes browser/server parity and the shared import audit."
+    },
+    "browser-application-model": {
+      "category": "browser-application-model",
+      "targetOwner": "narrow protocol/shared domain input plus runtime-owned adapter",
+      "migrationPhase": "Workstream 1 Phase 4",
+      "exceptionOwner": "Fastify domain owner",
+      "reviewTrigger": "The server consumer no longer needs a browser aggregate or application model declaration."
+    },
+    "test-fixture": {
+      "category": "test-fixture",
+      "targetOwner": "runtime-neutral test fixture adjacent to its owning lane",
+      "migrationPhase": "Workstream 1 Phase 4",
+      "exceptionOwner": "Owning test lane maintainer",
+      "reviewTrigger": "The fixture is moved or the retained test-only exception receives an explicit closeout decision."
+    },
+    "server-only-extraction": {
+      "category": "server-only-behavior",
+      "targetOwner": "server/fastify narrow server-owned implementation",
+      "migrationPhase": "Workstream 1 Phase 4",
+      "exceptionOwner": "Fastify domain owner",
+      "reviewTrigger": "The server-owned behavior no longer imports its browser implementation."
+    },
+    "accidental-browser-support": {
+      "category": "accidental-dependency",
+      "targetOwner": "owning browser-smoke/server-test support boundary",
+      "migrationPhase": "Workstream 1 Phase 4 or 5",
+      "exceptionOwner": "Owning smoke or server-test maintainer",
+      "reviewTrigger": "Equivalent neutral support exists or the exception is explicitly retained at closeout."
+    }
+  },
+  "edges": [
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/globals.d.ts",
+      "specifier": "../../../src/ts/server/browserSmoke.js",
+      "target": "src/ts/server/browserSmoke.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "FastifyBrowserSmokeHook"
+      ],
+      "count": 1,
+      "policy": "accidental-browser-support"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/lazyFirstOpen.spec.ts",
+      "specifier": "../../../src/lang/en.js",
+      "target": "src/lang/en.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "languageEnglish"
+      ],
+      "count": 1,
+      "policy": "accidental-browser-support"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts",
+      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
+      "target": "src/ts/__tests__/largeCorpusFixture.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "buildLargeCorpusFixture"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts",
+      "specifier": "../../../src/ts/startupReadiness.js",
+      "target": "src/ts/startupReadiness.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "StartupReadinessSnapshot"
+      ],
+      "count": 1,
+      "policy": "accidental-browser-support"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
+      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
+      "target": "src/ts/__tests__/largeCorpusFixture.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "buildLargeCorpusFixture"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
+      "specifier": "../../../src/ts/routerRoute.js",
+      "target": "src/ts/routerRoute.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "AppRoute",
+        "parseRoute",
+        "routeKey",
+        "routePathFromState"
+      ],
+      "count": 1,
+      "policy": "accidental-browser-support"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
+      "specifier": "../../../src/ts/server/resourceManifest.js",
+      "target": "src/ts/server/resourceManifest.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "PLAYGROUND_RESOURCE_SURFACE_BY_INDEX",
+        "ResourceRequirement",
+        "SETTINGS_RESOURCE_SURFACE_BY_INDEX",
+        "resolveResourceRequirements",
+        "resourceSurfacesForRoute"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "browser-smoke",
+      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
+      "specifier": "../../../src/ts/startupReadiness.js",
+      "target": "src/ts/startupReadiness.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "StartupCoordinatorSnapshot",
+        "StartupReadinessSnapshot"
+      ],
+      "count": 1,
+      "policy": "accidental-browser-support"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiApplyTurnHandler.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiCanonicalModel.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiCanonicalModel.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiCanonicalModel.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiEventModel.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiEventModel.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiEventModel.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/bardWikiRebuildHandler.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/chatGenerationSettingsStorage.ts",
+      "specifier": "../../../src/ts/chatGenerationSettings.js",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "CHAT_GENERATION_SETTINGS_FIELD",
+        "ChatGenerationSettings"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/agentPresets.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "AGENT_PRESET_MAX_CONCURRENCY_MAX",
+        "AGENT_PRESET_MAX_CONCURRENCY_MIN",
+        "AGENT_PRESET_SCHEMA_VERSION",
+        "AGENT_PRESET_STEP_DESTINATIONS",
+        "AGENT_PRESET_STEP_INPUT_SCOPES",
+        "AGENT_PRESET_STEP_OUTPUT_FORMATS",
+        "AGENT_PRESET_STEP_PHASES",
+        "AGENT_SCHEMA_VERSION",
+        "AgentPresetRecord",
+        "AgentPresetStepDestination",
+        "AgentPresetStepFailurePolicy",
+        "AgentPresetStepInputScope",
+        "AgentPresetStepModelSelection",
+        "AgentPresetStepOutputFormat",
+        "AgentPresetStepPhase",
+        "AgentPresetStepRecord",
+        "AgentPresetUseRecord",
+        "AgentRecord",
+        "isValidAgentPresetOutputKey",
+        "normalizeAgentConfiguration",
+        "normalizeAgentPresetDefaultId",
+        "normalizeAgentPresets",
+        "normalizeAgents",
+        "resolveAgentPresetSteps",
+        "validateAgentPresetRecord",
+        "validateAgentPresetRecords",
+        "validateAgentRecord",
+        "validateAgentRecords"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/characters.ts",
+      "specifier": "../../../../src/ts/model/scriptModelOverrides.js",
+      "target": "src/ts/model/scriptModelOverrides.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeScriptModelOverrides",
+        "readScriptModelOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/chats.ts",
+      "specifier": "../../../../src/ts/chatGenerationSettings.js",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "CHAT_GENERATION_SETTINGS_FIELD",
+        "CHAT_GENERATION_SETTINGS_KEYS",
+        "ChatGenerationAgentPresetReference",
+        "ChatGenerationAgentReference",
+        "ChatGenerationModelPresetReference",
+        "ChatGenerationModuleReference",
+        "ChatGenerationPersonaReference",
+        "ChatGenerationPromptPresetReference",
+        "ChatGenerationSettings",
+        "SparseChatGenerationSettingsUpdate",
+        "applySparseChatGenerationSettingsUpdate",
+        "resolveChatGenerationSettingsReadiness",
+        "serializeChatGenerationSettingsDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/memoryModelCapability.js",
+      "target": "src/ts/model/memoryModelCapability.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveMemoryModelCapability"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ModelProfileOrderEntry",
+        "ModelProfileRecord",
+        "ModelProfileRecordFallbackRef",
+        "ModelProfileRecordProviderOptions",
+        "ModelProfileRecordRuntimeOptions",
+        "ModelProfileRecordValidationError",
+        "ModelRoleProfileBinding",
+        "ModelRoleProfileMap",
+        "ModelRuntimeDefaults",
+        "normalizeModelProfileOrder",
+        "normalizeModelProfileRuntimeOptions",
+        "normalizeModelProfiles",
+        "normalizeModelRoleProfiles",
+        "readModelProfileOrder",
+        "readModelProfiles",
+        "readModelRoleProfiles",
+        "readModelRuntimeDefaults"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "FirstClassModelProfileProviderId",
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "MODEL_ROLES",
+        "ModelRole",
+        "modelRoleProfileInheritSource",
+        "resolveModelForRole"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
+      "target": "src/ts/model/providerCredentialRecords.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ProviderCredentialRecord",
+        "ProviderCredentialRecordValidationError",
+        "readProviderCredentials"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/providers/anthropic.js",
+      "target": "src/ts/model/providers/anthropic.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "AnthropicModels"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/providers/google.js",
+      "target": "src/ts/model/providers/google.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "GoogleModels"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/providers/openai.js",
+      "target": "src/ts/model/providers/openai.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "OpenAIModels"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modelProfiles.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte.js",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modules.ts",
+      "specifier": "../../../../src/ts/model/scriptModelOverrides.js",
+      "target": "src/ts/model/scriptModelOverrides.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeScriptModelOverrides",
+        "readScriptModelOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/modules.ts",
+      "specifier": "../../../../src/ts/process/mcp/mcpIdentifier.js",
+      "target": "src/ts/process/mcp/mcpIdentifier.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isImportableMCPIdentifier"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/personas.ts",
+      "specifier": "../../../../src/ts/personaMutationCertificate.js",
+      "target": "src/ts/personaMutationCertificate.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "PersonaProfileDigestValue",
+        "serializePersonaCollectionDigestInput",
+        "serializePersonaIdsDigestInput",
+        "serializePersonaProfileDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/presets.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeAgentConfiguration",
+        "normalizeAgentPresetDefaultId",
+        "normalizeAgentPresets",
+        "normalizeAgents"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/presets.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeModelProfileOrder",
+        "normalizeModelProfiles",
+        "normalizeModelRoleProfiles",
+        "normalizeModelRuntimeDefaults"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/presets.ts",
+      "specifier": "../../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeLegacyFallbackModels",
+        "normalizeLegacySeperateModels",
+        "normalizeModelRoleOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/prompts.ts",
+      "specifier": "../../../../src/ts/process/promptTemplateNormalization.js",
+      "target": "src/ts/process/promptTemplateNormalization.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizePromptTemplate"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/prompts.ts",
+      "specifier": "../../../../src/ts/promptSettings.js",
+      "target": "src/ts/promptSettings.ts",
+      "kind": "re-export",
+      "usage": "runtime",
+      "symbols": [
+        "PROMPT_SETTINGS_KEYS"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/prompts.ts",
+      "specifier": "../../../../src/ts/promptSettings.js",
+      "target": "src/ts/promptSettings.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "PROMPT_SETTINGS_KEYS"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/providerCredentials.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeModelProfiles"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/providerCredentials.ts",
+      "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
+      "target": "src/ts/model/providerCredentialRecords.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ProviderCredentialRecord",
+        "ProviderCredentialRecordValidationError",
+        "readProviderCredentials"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/providerCredentials.ts",
+      "specifier": "../../../../src/ts/providerSecretMask.js",
+      "target": "src/ts/providerSecretMask.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isMaskedProviderSecret"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/scriptDefinitions.ts",
+      "specifier": "../../../../src/ts/server/scriptDefinitionMutations.js",
+      "target": "src/ts/server/scriptDefinitionMutations.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "serializeScriptDefinitionCollectionDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/splitPresets.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeModelProfileOrder",
+        "normalizeModelProfiles",
+        "normalizeModelRoleProfiles",
+        "normalizeModelRuntimeDefaults"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/splitPresets.ts",
+      "specifier": "../../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeLegacyFallbackModels",
+        "normalizeLegacySeperateModels",
+        "normalizeModelRoleOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/splitPresets.ts",
+      "specifier": "../../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "MODEL_PRESET_FIELDS",
+        "ModelPresetRecord",
+        "PROMPT_PRESET_FIELDS",
+        "PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS",
+        "PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS",
+        "PromptPresetRecord",
+        "createExtractedModelPreset",
+        "createExtractedPromptPreset",
+        "databaseKeyForModelPresetField",
+        "findEquivalentModelPreset",
+        "promptPresetOverridesModelParameters",
+        "promptPresetRecommendedModelPresetId",
+        "resolvePromptPresetRegexField"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/commands/translatorPresets.ts",
+      "specifier": "../../../../src/ts/translator/presets.js",
+      "target": "src/ts/translator/presets.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "TRANSLATOR_PRESET_MAX_STEPS",
+        "TranslatorPresetStep",
+        "normalizeTranslatorPreset"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeAgentConfiguration",
+        "normalizeAgentPresetDefaultId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/chatDisplayTailCount.js",
+      "target": "src/ts/chatDisplayTailCount.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "DEFAULT_CHAT_DISPLAY_TAIL_COUNT"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/chatLoadPages.js",
+      "target": "src/ts/chatLoadPages.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES",
+        "DEFAULT_CHAT_LOAD_INITIAL_PAGES",
+        "normalizeChatLoadPages"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/defaulthotkeys.js",
+      "target": "src/ts/defaulthotkeys.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "RETIRED_HOTKEY_ACTIONS",
+        "defaultHotkeys"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "createDefaultModelRoleProfiles",
+        "normalizeModelProfileOrder",
+        "normalizeModelProfiles",
+        "normalizeModelRoleProfiles",
+        "normalizeModelRuntimeDefaults"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "createDefaultLegacyFallbackModels",
+        "createDefaultModelRoleOverrides",
+        "normalizeLegacyFallbackModels",
+        "normalizeLegacySeperateModels",
+        "normalizeModelRoleOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/model/providerCredentialRecords.js",
+      "target": "src/ts/model/providerCredentialRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeProviderCredentials"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/model/scriptModelOverrides.js",
+      "target": "src/ts/model/scriptModelOverrides.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeScriptModelOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "createExtractedModelPreset",
+        "createExtractedPromptPreset",
+        "repairPromptPresetRecommendedModelPresetReferences"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/process/templates/templates.js",
+      "target": "src/ts/process/templates/templates.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "prebuiltNAIpresets",
+        "prebuiltPresets"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/regexOutputSizeLimit.js",
+      "target": "src/ts/regexOutputSizeLimit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB",
+        "normalizeRegexOutputSizeLimitMiB"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/storage/defaultPrompts.js",
+      "target": "src/ts/storage/defaultPrompts.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "createDefaultInputHooks",
+        "defaultAutoSuggestPrompt"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/databaseDefaults.ts",
+      "specifier": "../../../src/ts/translator/presets.js",
+      "target": "src/ts/translator/presets.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "TranslatorPresetStateLike",
+        "normalizeTranslatorPresetState"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/displaySourceService.ts",
+      "specifier": "../../../src/ts/parser/risuChatParserHelpers",
+      "target": "src/ts/parser/risuChatParserHelpers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CbsConditions"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/displaySourceService.ts",
+      "specifier": "../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolvePromptPresetRegexField"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/displaySourceService.ts",
+      "specifier": "../../../src/ts/process/displaySourceProtocol.js",
+      "target": "src/ts/process/displaySourceProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "DISPLAY_SOURCE_PROTOCOL_VERSION",
+        "DISPLAY_SOURCE_TRANSFORM_VERSION",
+        "DisplaySourceRequest",
+        "DisplaySourceResponse",
+        "DisplaySourceResponseEntry",
+        "DisplaySourceTarget",
+        "displaySourceNamespaceJson",
+        "stableDisplayDependencyJson"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/displaySourceService.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character",
+        "customscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/embeddingOperations.ts",
+      "specifier": "../../../src/ts/server/embeddingOperationsProtocol.js",
+      "target": "src/ts/server/embeddingOperationsProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isContextualRemoteEmbeddingModel",
+        "isRemoteEmbeddingModel"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/embeddingOperations.ts",
+      "specifier": "../../../src/ts/server/embeddingOperationsProtocol.js",
+      "target": "src/ts/server/embeddingOperationsProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CustomEmbeddingConfiguration",
+        "EmbeddingInputType",
+        "EmbeddingOperationCredential",
+        "EmbeddingOperationRequest",
+        "EmbeddingOperationSuccess"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/embeddingOperations.ts",
+      "specifier": "../../../src/ts/storage/database.svelte.js",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/anthropic.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ServerToolDefinition",
+        "ServerToolRound"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/frames.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ServerToolCall"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/gemini.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ServerToolDefinition",
+        "ServerToolRound"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/openai.ts",
+      "specifier": "../../../../src/ts/model/legacyOpenAIModelAliases.js",
+      "target": "src/ts/model/legacyOpenAIModelAliases.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeLegacyOpenAIModelId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/openai.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ServerToolDefinition"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/openaiLegacyInstruct.ts",
+      "specifier": "../../../../src/ts/model/legacyOpenAIModelAliases.js",
+      "target": "src/ts/model/legacyOpenAIModelAliases.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeLegacyOpenAIModelId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/openaiResponses.ts",
+      "specifier": "../../../../src/ts/model/legacyOpenAIModelAliases.js",
+      "target": "src/ts/model/legacyOpenAIModelAliases.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeLegacyOpenAIModelId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/openaiResponses.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ServerToolRound"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/providerMessages.ts",
+      "specifier": "../../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/providerMessages.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal",
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/serverTools.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ServerToolCall",
+        "ServerToolDefinition",
+        "ServerToolRound",
+        "ServerToolValidation",
+        "validateServerToolCalls"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generation/stripCoT.ts",
+      "specifier": "../../../../src/ts/process/internalReasoning.js",
+      "target": "src/ts/process/internalReasoning.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "stripInternalReasoning"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/generationFinalizationRetry.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Message"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/imageGeneration.ts",
+      "specifier": "../../../src/ts/server/imageGenerationProtocol.js",
+      "target": "src/ts/server/imageGenerationProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "DallEImageGenerationRequest",
+        "FalImageGenerationRequest",
+        "ImageGenerationCredential",
+        "ImageGenerationRequest",
+        "ImagenImageGenerationRequest",
+        "KeiImageGenerationRequest",
+        "NovelAiImageGenerationRequest",
+        "OpenAiCompatibleImageGenerationRequest",
+        "StabilityImageGenerationRequest",
+        "WaveSpeedImageGenerationRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/mcpOAuthRefresh.ts",
+      "specifier": "../../../src/ts/server/mcpOAuthRefreshProtocol.js",
+      "target": "src/ts/server/mcpOAuthRefreshProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "McpOAuthRefreshRequest",
+        "McpOAuthRefreshSuccess"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memoryChunkPlanner.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memoryEmbeddingModel.ts",
+      "specifier": "../../../src/ts/process/memory/hypamemory",
+      "target": "src/ts/process/memory/hypamemory.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "HypaModel"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memoryEmbeddingModel.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memoryEmbedJobHandler.ts",
+      "specifier": "../../../src/ts/process/memory/hypamemory",
+      "target": "src/ts/process/memory/hypamemory.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "HypaModel"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memoryEmbedJobHandler.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memoryPlanner.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummarizeJobHandler.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummarizeJobHandler.ts",
+      "specifier": "../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "applyEffectivePresetComposition"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummarizeJobHandler.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryAdapter.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryModel.ts",
+      "specifier": "../../../src/ts/model/memoryModelCapability.js",
+      "target": "src/ts/model/memoryModelCapability.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveMemoryModelCapability"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryModel.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryModel.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ModelProfileProviderOptions"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryModel.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryPrompt.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/memorySummaryPrompt.ts",
+      "specifier": "../../../src/ts/util/inlayTokens.js",
+      "target": "src/ts/util/inlayTokens.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "inlayTokenRegex"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "assertModelProfileGenerationReady",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
+      "specifier": "../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "LegacyModelMode"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
+      "specifier": "../../../src/ts/storage/database.svelte.js",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetErrors.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "AgentPresetStepPhase"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/agentLorebookInputs.js",
+      "target": "src/ts/agentLorebookInputs.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveAgentLorebookInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "AGENT_PRESET_STEP_INPUT_SCOPES",
+        "agentToggleStorageKey"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "AgentLorebookInput",
+        "AgentPresetStepInputScope",
+        "AgentPresetStepPhase",
+        "AgentPresetStepRecord"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/agentPresetReferences.js",
+      "target": "src/ts/agentPresetReferences.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "expandAgentPresetOutputCbs"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/agentPresetResolver.js",
+      "target": "src/ts/agentPresetResolver.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "AgentPresetPhasePlan"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "assertModelProfileGenerationReady",
+        "modelProfileGenerationBlockReason",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/parser/chatMLCore.js",
+      "target": "src/ts/parser/chatMLCore.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "parseChatMLRows"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/process/internalReasoning.js",
+      "target": "src/ts/process/internalReasoning.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "stripInternalReasoning"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "AgentPresetRecord"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/agentPresetResolver.js",
+      "target": "src/ts/agentPresetResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "AgentPresetExecutionPlan",
+        "AgentPresetResolution",
+        "resolveAgentPresetForChat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/cbs",
+      "target": "src/ts/cbs.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CbsCallbackMemo"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/process/request/clientContext.js",
+      "target": "src/ts/process/request/clientContext.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ReportedClientContext"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "MessagePresetInfo",
+        "character",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assemble.ts",
+      "specifier": "../../../../src/ts/util/punctuation.js",
+      "target": "src/ts/util/punctuation.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "trimUntilPunctuation"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assetLookup.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/assetLookup.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/bardWiki.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/bardWiki.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/boundedRegex.ts",
+      "specifier": "../../../../src/ts/regexOutputSizeLimit.js",
+      "target": "src/ts/regexOutputSizeLimit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB",
+        "regexOutputSizeLimitCodeUnits"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/boundedRegex.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/budgetFinalize.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/budgetFinalize.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
+      "specifier": "../../../../src/ts/cbs",
+      "target": "src/ts/cbs.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CBSRegisterArg",
+        "matcherArg"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
+      "specifier": "../../../../src/ts/parser/chatVarBackend",
+      "target": "src/ts/parser/chatVarBackend.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "getChatVar",
+        "getGlobalChatVar",
+        "setChatVar"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParserHelpers",
+      "target": "src/ts/parser/risuChatParserHelpers.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "dateTimeFormat",
+        "makeArray",
+        "parseArray",
+        "parseDict"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParser",
+      "target": "src/ts/parser/risuChatParser.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "risuChatParser"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
+      "specifier": "../../../../src/ts/process/infunctions",
+      "target": "src/ts/process/infunctions.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "calcString"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/cbsCallbackMemo.ts",
+      "specifier": "../../../../src/ts/cbs",
+      "target": "src/ts/cbs.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CbsCallbackMemo",
+        "CbsCallbackMemoName"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "assertModelProfileGenerationReady",
+        "resolveModelProfile",
+        "resolveProfileRequestModel"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/model/providers/openai",
+      "target": "src/ts/model/providers/openai.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "OpenAIModels"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "LLMFlags",
+        "LLMFormat",
+        "LLMProvider"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/process/request/providerCapability",
+      "target": "src/ts/process/request/providerCapability.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "CustomModelEntryLike",
+        "ProviderCapabilityInput",
+        "ProviderUnsupportedReason",
+        "resolveProviderCapability"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ServerToolDefinition",
+        "ServerToolRound"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatDispatch.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatVarDefaults.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/chatVarDefaults.ts",
+      "specifier": "../../../../src/ts/util/parseKeyValue",
+      "target": "src/ts/util/parseKeyValue.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "parseKeyValue"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/agentPresetResolver.js",
+      "target": "src/ts/agentPresetResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveEffectiveAgentPresetId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/chatGenerationSettings",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ChatGenerationSettingsIncompleteErrorBody",
+        "ChatGenerationSettingsReadiness",
+        "createChatGenerationSettingsIncompleteError",
+        "resolveChatGenerationSettingsReadiness"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ModelProfileRecord"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "modelProfileGenerationBlockReason",
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/moduleIntegration.js",
+      "target": "src/ts/moduleIntegration.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "combineModuleIntegrations",
+        "resolveAgentPresetModuleIntegration"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "applyEffectivePresetComposition",
+        "applyPromptPresetModelOverrides",
+        "resolvePromptPresetRegexField"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/promptInfo.js",
+      "target": "src/ts/promptInfo.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "createPromptInfoSnapshot"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "MessagePresetInfo",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/history.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal",
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/history.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Message",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/lorebook.ts",
+      "specifier": "../../../../src/ts/agentLorebookInputs.js",
+      "target": "src/ts/agentLorebookInputs.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isAgentOnlyLorebookEntry"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/lorebook.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/lorebook.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/lorebook.ts",
+      "specifier": "../../../../src/ts/util/loreHash",
+      "target": "src/ts/util/loreHash.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "pickHashRand"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaPostGenerationTrace.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Message"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ModelRole"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/model/scriptModelOverrides.js",
+      "target": "src/ts/model/scriptModelOverrides.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "scriptModelOverrideProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/parser/parser.svelte",
+      "target": "src/ts/parser/parser.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "simpleCharacterArgument"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/process/triggers",
+      "target": "src/ts/process/triggers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "triggerscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/server/imageGenerationProtocol.js",
+      "target": "src/ts/server/imageGenerationProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ImageGenerationRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/luaRuntime.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/memory.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/memory.ts",
+      "specifier": "../../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/memory.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/memoryAdapter.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/modules.ts",
+      "specifier": "../../../../src/ts/moduleActivation.js",
+      "target": "src/ts/moduleActivation.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "hasModuleActivationIdentifiers",
+        "moduleActivationIdentifiersKey",
+        "resolveActiveModuleIdentifiers",
+        "resolveModuleActivationStates"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/modules.ts",
+      "specifier": "../../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/modules.ts",
+      "specifier": "../../../../src/ts/process/triggers",
+      "target": "src/ts/process/triggers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "triggerscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/modules.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character",
+        "customscript",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/plainSections.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/plainSections.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/prefixTokenMemo.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/preflight.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/preflight.ts",
+      "specifier": "../../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/preflight.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptAssets.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptScope.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptScope.ts",
+      "specifier": "../../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "LLMModel"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptScope.ts",
+      "specifier": "../../../../src/ts/parser/chatVarBackend",
+      "target": "src/ts/parser/chatVarBackend.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ChatVarBackend"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptScope.ts",
+      "specifier": "../../../../src/ts/process/request/clientContext.js",
+      "target": "src/ts/process/request/clientContext.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ReportedClientContext"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptScope.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptSummary.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal",
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptVariablesBoot.ts",
+      "specifier": "../../../../src/ts/cbs",
+      "target": "src/ts/cbs.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "registerCBS"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptVariablesBoot.ts",
+      "specifier": "../../../../src/ts/parser/chatVarBackend",
+      "target": "src/ts/parser/chatVarBackend.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "setChatVarBackend"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/promptVariablesBoot.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParser",
+      "target": "src/ts/parser/risuChatParser.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "registerRisuChatParserMatcher"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/scripts.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParserHelpers",
+      "target": "src/ts/parser/risuChatParserHelpers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CbsConditions"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/scripts.ts",
+      "specifier": "../../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/scripts.ts",
+      "specifier": "../../../../src/ts/process/triggerServerSupport.js",
+      "target": "src/ts/process/triggerServerSupport.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "serverUnsupportedRegexEffectType"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/scripts.ts",
+      "specifier": "../../../../src/ts/regexOutputSizeLimit.js",
+      "target": "src/ts/regexOutputSizeLimit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "regexOutputSizeLimitCodeUnits"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/scripts.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character",
+        "customscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/staticSections.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/staticSections.ts",
+      "specifier": "../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js",
+      "target": "src/ts/process/promptAssembly/effectivePromptTemplate.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveEffectivePromptTemplate"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/staticSections.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/templates.ts",
+      "specifier": "../../../../src/ts/parser/chatMLCore.js",
+      "target": "src/ts/parser/chatMLCore.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "parseChatMLRows"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/templates.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/templates.ts",
+      "specifier": "../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js",
+      "target": "src/ts/process/promptAssembly/effectivePromptTemplate.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "EffectivePromptTemplateOptions",
+        "resolveEffectivePromptTemplate"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/templates.ts",
+      "specifier": "../../../../src/ts/process/promptBlockRole.js",
+      "target": "src/ts/process/promptBlockRole.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "applyDescriptionPromptRole",
+        "applyPromptBlockRole"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/templates.ts",
+      "specifier": "../../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/templates.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/tokenizerConfig.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile",
+        "resolveServerSafeTokenizerFamily"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/tokenizerConfig.ts",
+      "specifier": "../../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags",
+        "LLMTokenizer"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/tokenizerConfig.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/tokens.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal",
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
+      "specifier": "../../../../src/ts/process/infunctions",
+      "target": "src/ts/process/infunctions.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "calcString"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
+      "specifier": "../../../../src/ts/process/triggers",
+      "target": "src/ts/process/triggers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "triggerEffect"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerRunCache.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggers.ts",
+      "specifier": "../../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggers.ts",
+      "specifier": "../../../../src/ts/process/triggerServerSupport.js",
+      "target": "src/ts/process/triggerServerSupport.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isServerUnsupportedTriggerEffectType"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggers.ts",
+      "specifier": "../../../../src/ts/process/triggers",
+      "target": "src/ts/process/triggers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "additonalSysPrompt",
+        "triggerCondition",
+        "triggerscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggers.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerSource.ts",
+      "specifier": "../../../../src/ts/process/triggers",
+      "target": "src/ts/process/triggers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "triggerscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/triggerVars.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/agentPresetReferences",
+      "target": "src/ts/agentPresetReferences.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "expandAgentPresetOutputCbs"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/cbs",
+      "target": "src/ts/cbs.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CbsCallbackMemo"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "LLMModel"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParserHelpers",
+      "target": "src/ts/parser/risuChatParserHelpers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "CbsConditions"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParser",
+      "target": "src/ts/parser/risuChatParser.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "risuChatParser"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/process/request/clientContext.js",
+      "target": "src/ts/process/request/clientContext.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ReportedClientContext"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/variables.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/promptMemoryQuery.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "Message"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/providerOperations.ts",
+      "specifier": "../../../src/ts/server/providerOperationsProtocol.js",
+      "target": "src/ts/server/providerOperationsProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ProviderOperation",
+        "ProviderOperationCredential",
+        "ProviderOperationRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/providerSecrets.ts",
+      "specifier": "../../../src/ts/providerSecretMask.js",
+      "target": "src/ts/providerSecretMask.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "MASKED_PROVIDER_SECRET",
+        "PROVIDER_SECRET_PATHS",
+        "PROVIDER_SECRET_PATH_WILDCARD",
+        "ProviderSecretPathSegment",
+        "maskRegisteredProviderSecretsInPlace"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/repository.ts",
+      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
+      "target": "src/ts/server/characterSummaryProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "SERVER_CHARACTER_SHELL_MARKER",
+        "ServerCharacterSummary"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/requestHistory.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ResolvedModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/risuSave/importSnapshot.ts",
+      "specifier": "../../../../src/ts/chatGenerationSettings.js",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "CHAT_GENERATION_SETTINGS_FIELD"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/risuSave/importSnapshot.ts",
+      "specifier": "../../../../src/ts/server/settingsGroups.js",
+      "target": "src/ts/server/settingsGroups.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_SETTINGS_KEYS_BY_GROUP"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/bootstrap.ts",
+      "specifier": "../../../../src/ts/process/displaySourceProtocol.js",
+      "target": "src/ts/process/displaySourceProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "DISPLAY_SOURCE_PROTOCOL_VERSION"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/agentPresetRecords.js",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeAgentPresetDefaultId",
+        "normalizeAgentPresets",
+        "normalizeAgents"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/chatGenerationSettings.js",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ChatGenerationSettings"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/chatGenerationTogglePresetRecords.js",
+      "target": "src/ts/chatGenerationTogglePresetRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeChatGenerationTogglePresets"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "ModelProfileRecordValidationError",
+        "normalizeModelProfileOrder",
+        "normalizeModelProfiles",
+        "normalizeModelRoleProfiles",
+        "normalizeModelRuntimeDefaults",
+        "readModelProfileOrder",
+        "readModelProfiles",
+        "readModelRoleProfiles",
+        "readModelRuntimeDefaults"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeLegacyFallbackModels",
+        "normalizeLegacySeperateModels",
+        "normalizeModelRoleOverrides"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
+      "target": "src/ts/model/providerCredentialRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "ProviderCredentialRecordValidationError",
+        "normalizeProviderCredentials",
+        "readProviderCredentials"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MODEL_PRESET_FIELDS",
+        "PROMPT_PRESET_FIELDS",
+        "PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS",
+        "PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY",
+        "PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS",
+        "clearPromptPresetRecommendedModelPresetReferences",
+        "databaseKeyForModelPresetField"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/commands.ts",
+      "specifier": "../../../../src/ts/regexOutputSizeLimit.js",
+      "target": "src/ts/regexOutputSizeLimit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB",
+        "MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/displaySources.ts",
+      "specifier": "../../../../src/ts/process/displaySourceProtocol.js",
+      "target": "src/ts/process/displaySourceProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "DISPLAY_SOURCE_LIMITS",
+        "DISPLAY_SOURCE_PROTOCOL_VERSION",
+        "DisplaySourceLayer",
+        "DisplaySourceRequest",
+        "DisplaySourceTarget",
+        "normalizeDisplayRequestContext"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generation.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "assertModelProfileGenerationReady",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generation.ts",
+      "specifier": "../../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "LegacyModelMode"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generation.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generation.ts",
+      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
+      "target": "src/ts/process/request/serverToolProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ServerToolCall",
+        "ServerToolDefinition",
+        "ServerToolRound",
+        "validateServerToolDefinitions",
+        "validateServerToolRounds"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generation.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ModelProfileFallbackRef",
+        "ResolvedModelProfile",
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/parser/risuChatParserHelpers.js",
+      "target": "src/ts/parser/risuChatParserHelpers.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "risuEscape",
+        "risuUnescape"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal",
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/process/request/clientContext.js",
+      "target": "src/ts/process/request/clientContext.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeReportedClientContext"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/process/request/hypaContextTruncation.js",
+      "target": "src/ts/process/request/hypaContextTruncation.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "Message"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/generationChat.ts",
+      "specifier": "../../../../src/ts/util/punctuation.js",
+      "target": "src/ts/util/punctuation.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "trimUntilPunctuation"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/resourceReads.ts",
+      "specifier": "../../../../src/ts/server/characterSummaryProtocol.js",
+      "target": "src/ts/server/characterSummaryProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_CHARACTER_SUMMARY_VERSION"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/resourceReads.ts",
+      "specifier": "../../../../src/ts/server/shellProtocol.js",
+      "target": "src/ts/server/shellProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "SERVER_SHELL_PROTOCOL_VERSION",
+        "SERVER_SHELL_SETTINGS_KEYS",
+        "ServerShellSettings",
+        "isServerShellSettings"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/routes/resourceReads.ts",
+      "specifier": "../../../../src/ts/server/standaloneSettingsProtocol.js",
+      "target": "src/ts/server/standaloneSettingsProtocol.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ServerStandaloneSettingName",
+        "isServerStandaloneSettingName"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
+      "specifier": "../../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "assertModelProfileGenerationReady",
+        "resolveModelProfile",
+        "resolveModelProfileByProfileId"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
+      "specifier": "../../../../src/ts/process/internalReasoning.js",
+      "target": "src/ts/process/internalReasoning.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "stripInternalReasoning"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
+      "specifier": "../../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
+      "specifier": "../../../../src/ts/translator/historySlots.js",
+      "target": "src/ts/translator/historySlots.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "HistorySlotContext",
+        "createHistorySlotResolver"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
+      "specifier": "../../../../src/ts/translator/pipeline.js",
+      "target": "src/ts/translator/pipeline.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "TranslatorHistoryResolver",
+        "resolveTranslatorPipeline",
+        "runTranslatorPipeline",
+        "translatorPipelineSignature"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/tts.ts",
+      "specifier": "../../../src/ts/server/ttsProtocol.js",
+      "target": "src/ts/server/ttsProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isTtsSynthesisOperation"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/tts.ts",
+      "specifier": "../../../src/ts/server/ttsProtocol.js",
+      "target": "src/ts/server/ttsProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "FishSynthesisInput",
+        "HuggingFaceSynthesisInput",
+        "NovelAiSynthesisInput",
+        "OpenAiSynthesisInput",
+        "OpenAiTtsFormat",
+        "ProvidedOpenAiSynthesisConfig",
+        "TtsSynthesisCredential",
+        "TtsSynthesisOperation",
+        "TtsSynthesisRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
+      "specifier": "../../../src/ts/agentPresetRecords",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "AgentPresetRecord",
+        "AgentPresetStepRecord"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
+      "specifier": "../../../src/ts/agentPresetResolver",
+      "target": "src/ts/agentPresetResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "planAgentPreset"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/assemble.test.ts",
+      "specifier": "../../../src/ts/agentPresetRecords",
+      "target": "src/ts/agentPresetRecords.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "AgentPresetStepRecord"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/assemble.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags",
+        "LLMFormat",
+        "LLMProvider",
+        "LLMTokenizer"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/assemble.test.ts",
+      "specifier": "../../../src/ts/parser/risuChatParser",
+      "target": "src/ts/parser/risuChatParser.ts",
+      "kind": "dynamic",
+      "usage": "runtime",
+      "symbols": [
+        "*"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/assemble.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/assemble.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/bardWikiPrompt.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/boundedRegex.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/budgetFinalize.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/budgetFinalize.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchLogitBias.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchLogitBias.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ResolvedModelProfile",
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "LLMFlags",
+        "LLMFormat",
+        "LLMModel",
+        "LLMProvider",
+        "LLMTokenizer",
+        "OpenAIParameters"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+      "specifier": "../../../src/ts/providerSecretMask",
+      "target": "src/ts/providerSecretMask.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MASKED_PROVIDER_SECRET"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commandMutationReadNarrowing.test.ts",
+      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
+      "target": "src/ts/__tests__/largeCorpusFixture.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "buildLargeCorpusFixture"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commands.test.ts",
+      "specifier": "../../../src/ts/chatGenerationSettings.js",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "ChatGenerationSettings",
+        "serializeChatGenerationSettingsDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commands.test.ts",
+      "specifier": "../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MODEL_ROLES"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commands.test.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags",
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commands.test.ts",
+      "specifier": "../../../src/ts/personaMutationCertificate.js",
+      "target": "src/ts/personaMutationCertificate.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "PersonaProfileDigestValue",
+        "serializePersonaCollectionDigestInput",
+        "serializePersonaIdsDigestInput",
+        "serializePersonaProfileDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commands.test.ts",
+      "specifier": "../../../src/ts/server/scriptDefinitionMutations.js",
+      "target": "src/ts/server/scriptDefinitionMutations.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "serializeScriptDefinitionCollectionDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commands.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte.js",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/commandSingleRowPaths.test.ts",
+      "specifier": "../../../src/ts/chatGenerationSettings.js",
+      "target": "src/ts/chatGenerationSettings.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "serializeChatGenerationSettingsDigestInput"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/databaseDefaults.test.ts",
+      "specifier": "../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MODEL_ROLES"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/databaseDefaults.test.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/embeddingOperations.test.ts",
+      "specifier": "../../../src/ts/server/embeddingOperationsProtocol.js",
+      "target": "src/ts/server/embeddingOperationsProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "EmbeddingGroupsOperationRequest",
+        "EmbeddingTextsOperationRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/generation.chat.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags",
+        "LLMFormat",
+        "LLMTokenizer"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/generation.completion.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/history.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "MultiModal",
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/history.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/imageGeneration.test.ts",
+      "specifier": "../../../src/ts/server/imageGenerationProtocol.js",
+      "target": "src/ts/server/imageGenerationProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ImageGenerationRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/lorebook.test.ts",
+      "specifier": "../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/lorebook.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "Message",
+        "character",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/luaRuntime.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/luaRuntime.test.ts",
+      "specifier": "../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/luaRuntime.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memory.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memory.test.ts",
+      "specifier": "../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memory.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memoryChunkPlanner.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memoryEmbeddingModel.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memoryPlanner.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memorySummaryAdapter.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memorySummaryModel.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat",
+        "LLMTokenizer"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memorySummaryModel.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/memorySummaryPrompt.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modelProfileResolver.server.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modelProfileResolver.server.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modelProfileResolver.server.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modules.test.ts",
+      "specifier": "../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modules.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character",
+        "customscript",
+        "loreBook"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modulesMemo.test.ts",
+      "specifier": "../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/modulesMemo.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/payloadBudgets.test.ts",
+      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
+      "target": "src/ts/__tests__/largeCorpusFixture.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "buildLargeCorpusFixture"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/payloadBudgets.test.ts",
+      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
+      "target": "src/ts/server/characterSummaryProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isServerCharactersSummaryPayload"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/payloadBudgets.test.ts",
+      "specifier": "../../../src/ts/server/shellProtocol.js",
+      "target": "src/ts/server/shellProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isServerShellPayload"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase10CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/moduleActivation.js",
+      "target": "src/ts/moduleActivation.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MODULE_ACTIVATION_SOURCES"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/server/settingsGroups.js",
+      "target": "src/ts/server/settingsGroups.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_SETTINGS_GROUP_BY_KEY"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase5CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/presetSplit.js",
+      "target": "src/ts/presetSplit.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MODEL_PRESET_FIELDS",
+        "PROMPT_PRESET_FIELDS",
+        "PROMPT_PRESET_MODEL_OVERRIDE_FIELDS",
+        "databaseKeyForModelPresetField"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase5CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/server/settingsGroups.js",
+      "target": "src/ts/server/settingsGroups.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_SETTINGS_GROUP_BY_KEY",
+        "SERVER_SETTINGS_KEYS_BY_GROUP"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "FIRST_CLASS_MODEL_PROFILE_PROVIDER_IDS"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/process/request/providerCapability.js",
+      "target": "src/ts/process/request/providerCapability.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "formatToServerProvider"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/server/imageGenerationProtocol.js",
+      "target": "src/ts/server/imageGenerationProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_IMAGE_GENERATION_PROVIDERS"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/server/providerOperationsProtocol.js",
+      "target": "src/ts/server/providerOperationsProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "PROVIDER_OPERATIONS"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/server/ttsProtocol.js",
+      "target": "src/ts/server/ttsProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "TTS_SYNTHESIS_OPERATIONS"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
+      "specifier": "../../../src/ts/process/triggerServerSupport.js",
+      "target": "src/ts/process/triggerServerSupport.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "serverUnsupportedTriggerEffectTypes"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/plainSections.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/preflight.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/preflight.test.ts",
+      "specifier": "../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem",
+        "PromptItemAuthorNote",
+        "PromptItemCache",
+        "PromptItemChat",
+        "PromptItemChatML",
+        "PromptItemPlain",
+        "PromptItemTyped"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/preflight.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/promptVariables.test.ts",
+      "specifier": "../../../src/ts/parser/risuChatParser.js",
+      "target": "src/ts/parser/risuChatParser.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "RisuParserBudgetError"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/promptVariables.test.ts",
+      "specifier": "../../../src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.js",
+      "target": "src/ts/parser/tests/cbs/phase9BaselineDriftFixtures.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "PHASE9_BASELINE_DRIFT_FIXTURES",
+        "PHASE9_OVER_BUDGET_EACH_COUNT",
+        "phase9DriftCharacter",
+        "phase9DriftChat",
+        "phase9DriftDatabase",
+        "phase9DriftGroup",
+        "phase9OverBudgetEachInput"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/promptVariables.test.ts",
+      "specifier": "../../../src/ts/parser/tests/cbs/phase9CompatibilityCorpus.js",
+      "target": "src/ts/parser/tests/cbs/phase9CompatibilityCorpus.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "PHASE9_CBS_COMPATIBILITY_CORPUS"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/promptVariables.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/providerCapabilityRoute.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "resolveModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/providerCapabilityRoute.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFormat"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/providerCapabilityRoute.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/providerMessages.test.ts",
+      "specifier": "../../../src/ts/model/types",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/providerOperations.test.ts",
+      "specifier": "../../../src/ts/server/providerOperationsProtocol.js",
+      "target": "src/ts/server/providerOperationsProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ProviderOperationRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/requestHistory.test.ts",
+      "specifier": "../../../src/ts/model/modelProfileResolver.js",
+      "target": "src/ts/model/modelProfileResolver.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "ResolvedModelProfile"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/resourceReads.test.ts",
+      "specifier": "../../../src/ts/promptSettings.js",
+      "target": "src/ts/promptSettings.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "PROMPT_SETTINGS_KEYS"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/resourceReads.test.ts",
+      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
+      "target": "src/ts/server/characterSummaryProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_CHARACTER_SUMMARY_KEYS",
+        "SERVER_CHARACTER_SUMMARY_VERSION",
+        "isServerCharactersSummaryPayload"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/resourceReads.test.ts",
+      "specifier": "../../../src/ts/server/shellProtocol.js",
+      "target": "src/ts/server/shellProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_SHELL_PAYLOAD_KEYS",
+        "SERVER_SHELL_PROTOCOL_VERSION",
+        "SERVER_SHELL_SETTINGS_KEYS",
+        "isServerShellPayload"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/scripts.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character",
+        "customscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/serverLoadCostHarness.test.ts",
+      "specifier": "../../../src/ts/__tests__/largeCorpusFixture.js",
+      "target": "src/ts/__tests__/largeCorpusFixture.ts",
+      "kind": "static",
+      "usage": "mixed",
+      "symbols": [
+        "LargeCorpusFixture",
+        "buildLargeCorpusFixture"
+      ],
+      "count": 1,
+      "policy": "test-fixture"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/serverLoadCostHarness.test.ts",
+      "specifier": "../../../src/ts/server/characterSummaryProtocol.js",
+      "target": "src/ts/server/characterSummaryProtocol.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "isServerCharacterSummary"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/settingsGroupParity.test.ts",
+      "specifier": "../../../src/ts/server/settingsGroups.js",
+      "target": "src/ts/server/settingsGroups.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "SERVER_SETTINGS_KEYS_BY_GROUP"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/splitPresets.test.ts",
+      "specifier": "../../../src/ts/model/modelRoles.js",
+      "target": "src/ts/model/modelRoles.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "MODEL_ROLES"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/splitPresets.test.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMFlags"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/staticSections.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/templates.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/templates.test.ts",
+      "specifier": "../../../src/ts/process/prompt",
+      "target": "src/ts/process/prompt.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "PromptItem"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/templates.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/tokenizerConfig.test.ts",
+      "specifier": "../../../src/ts/model/types.js",
+      "target": "src/ts/model/types.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "LLMTokenizer"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/tokenizerConfig.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Database"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/tokens.test.ts",
+      "specifier": "../../../src/ts/process/index.svelte",
+      "target": "src/ts/process/index.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "OpenAIChat"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/triggers.test.ts",
+      "specifier": "../../../src/ts/process/modules",
+      "target": "src/ts/process/modules.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "RisuModule"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/triggers.test.ts",
+      "specifier": "../../../src/ts/process/triggerServerSupport.js",
+      "target": "src/ts/process/triggerServerSupport.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "serverUnsupportedTriggerEffectTypes"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/triggers.test.ts",
+      "specifier": "../../../src/ts/process/triggers",
+      "target": "src/ts/process/triggers.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "triggerCondition",
+        "triggerscript"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/triggers.test.ts",
+      "specifier": "../../../src/ts/storage/database.svelte",
+      "target": "src/ts/storage/database.svelte.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "Chat",
+        "Database",
+        "character"
+      ],
+      "count": 1,
+      "policy": "browser-application-model"
+    },
+    {
+      "lane": "server-test",
+      "importer": "server/fastify/__tests__/tts.test.ts",
+      "specifier": "../../../src/ts/server/ttsProtocol.js",
+      "target": "src/ts/server/ttsProtocol.ts",
+      "kind": "static",
+      "usage": "type-only",
+      "symbols": [
+        "TtsSynthesisRequest"
+      ],
+      "count": 1,
+      "policy": "protocol-wire-contract"
+    }
+  ],
+  "nonLiteralModuleReferences": [],
+  "projectReferences": [
+    {
+      "consumer": "server/fastify/tsconfig.json",
+      "target": "tsconfig.client-lib.json",
+      "owner": "check:server declaration prerequisite",
+      "purpose": "Makes current browser-tree types available to Fastify/browser-smoke strict typechecks.",
+      "removalPhase": "Workstream 1 Phase 6 after every requiring edge is migrated.",
+      "reviewTrigger": "The cross-runtime edge inventory reaches zero for consumers requiring emitted client declarations."
+    },
+    {
+      "consumer": "tsconfig.browser-smoke.json",
+      "target": "tsconfig.client-lib.json",
+      "owner": "check:server declaration prerequisite",
+      "purpose": "Makes current browser-tree types available to Fastify/browser-smoke strict typechecks.",
+      "removalPhase": "Workstream 1 Phase 6 after every requiring edge is migrated.",
+      "reviewTrigger": "The cross-runtime edge inventory reaches zero for consumers requiring emitted client declarations."
+    }
+  ],
+  "metadata": [
+    {
+      "id": "browser-durable-operation-allowlist",
+      "owner": "Browser retained-intent safety filter; never a security authority",
+      "path": "src/ts/server/pendingMutationOutbox.ts#ALLOWED_DURABLE_COMMANDS",
+      "count": 129,
+      "authority": "Browser retained-intent safety filter; never a security authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "browser-resource-surfaces",
+      "owner": "Browser hydration and cache resource metadata",
+      "path": "src/ts/server/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST",
+      "count": 59,
+      "authority": "Browser hydration and cache resource metadata",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "literal-route-registrations",
+      "owner": "Fastify route modules (observation only; prefixes and generated registrations need separate parity)",
+      "path": "server/fastify/src/routes/**/*.ts#app.<method>(literal)",
+      "count": 257,
+      "authority": "Fastify route modules (observation only; prefixes and generated registrations need separate parity)",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "server-command-event-catalog",
+      "owner": "Fastify persisted command event vocabulary",
+      "path": "server/fastify/src/commands/events.ts#COMMAND_EVENT_CATALOG",
+      "count": 146,
+      "authority": "Fastify persisted command event vocabulary",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "server-route-policy",
+      "owner": "Fastify authentication, active-writer, and streaming authority",
+      "path": "server/fastify/src/routeManifest.ts#PROTOCOL_ROUTE_MANIFEST",
+      "count": 103,
+      "authority": "Fastify authentication, active-writer, and streaming authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    }
+  ]
+}
+

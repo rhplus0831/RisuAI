@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  architectureInventoryCheck,
   clientDeclarationCheck,
   downstreamServerChecks,
   protocolCheck,
@@ -30,8 +31,11 @@ describe('check:server orchestration', () => {
 
     await Promise.resolve()
     await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
     expect(started).toEqual([
       protocolCheck.id,
+      architectureInventoryCheck.id,
       clientDeclarationCheck.id,
       ...downstreamServerChecks.map((check) => check.id),
     ])
@@ -51,7 +55,8 @@ describe('check:server orchestration', () => {
 
   it.each([
     ['protocol', ['protocol']],
-    ['client-declarations', ['protocol', 'client-declarations']],
+    ['architecture-inventory', ['protocol', 'architecture-inventory']],
+    ['client-declarations', ['protocol', 'architecture-inventory', 'client-declarations']],
   ] as const)('stops after a failing %s prerequisite', async (failingId, expectedStarted) => {
     const started: ServerCheck['id'][] = []
     const result = await runServerChecks(async (check) => {
