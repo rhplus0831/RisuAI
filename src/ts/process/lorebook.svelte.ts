@@ -11,6 +11,7 @@ import { language } from '../../lang'
 import { downloadFile } from '../globalApi.svelte'
 import { getModuleLorebooks } from './modules'
 import { CCardLib } from '@risuai/ccardlib'
+import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
 import { v4 } from 'uuid'
 import {
   currentLorebookCollectionScopedSnapshot,
@@ -24,7 +25,7 @@ import {
   type LorebookStateSnapshot,
   type ScopedLorebookMutationOperation,
 } from '../server/lorebookBridge.svelte'
-import { isAgentOnlyLorebookEntry, lorebookEntriesForOriginalRisuExport } from '../agentLorebookInputs'
+import { lorebookEntriesForOriginalRisuExport } from '../agentLorebookInputs'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 import { risuChatParser } from '../parser/parser.svelte'

@@ -1,6 +1,6 @@
 import { CCardLib } from '@risuai/ccardlib'
+import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
 import type { Chat, Database, Message, character, loreBook } from '../../../../src/ts/storage/database.svelte'
-import { isAgentOnlyLorebookEntry } from '../../../../src/ts/agentLorebookInputs.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import { pickHashRand } from '@risuai/shared-core/lore-hash'
 import { getActiveModules } from './modules.js'

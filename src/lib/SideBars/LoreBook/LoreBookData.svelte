@@ -45,7 +45,7 @@
     type ScopedLorebookMutationUiContext,
   } from 'src/ts/server/scopedLorebookMutationUiState'
   import { onDestroy, onMount } from 'svelte'
-  import { isAgentOnlyLorebookEntry } from 'src/ts/agentLorebookInputs'
+  import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
 
   const tokenCountCache = new Map<string, number>()
   const MAX_TOKEN_COUNT_CACHE = 500

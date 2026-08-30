@@ -1,3 +1,4 @@
+export * from './agentOnlyLorebook.js'
 export * from './agentPresetOutputReferences.js'
 export * from './chatPage.js'
 export * from './chatMLRows.js'

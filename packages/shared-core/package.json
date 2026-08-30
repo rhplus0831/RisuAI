@@ -6,6 +6,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./agent-only-lorebook": "./src/agentOnlyLorebook.ts",
     "./agent-preset-output-references": "./src/agentPresetOutputReferences.ts",
     "./chat-display-tail-count": "./src/chatDisplayTailCount.ts",
     "./chat-load-pages": "./src/chatLoadPages.ts",
