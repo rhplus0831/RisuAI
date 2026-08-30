@@ -862,9 +862,12 @@ function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
 
 function selectedPersonaProfileField(database: Database, field: 'name' | 'personaPrompt'): string | undefined {
   if (!Number.isInteger(database.selectedPersona)) return undefined
-  const persona = database.personas?.[database.selectedPersona]
+  const personas = Array.isArray(database.personas)
+    ? (database.personas as Array<{ id?: unknown; name?: unknown; personaPrompt?: unknown }>)
+    : []
+  const persona = personas[database.selectedPersona]
   if (!persona || typeof persona.id !== 'string') return undefined
-  if (database.personas.filter((candidate) => candidate?.id === persona.id).length !== 1) return undefined
+  if (personas.filter((candidate) => candidate.id === persona.id).length !== 1) return undefined
   const value = persona[field]
   return typeof value === 'string' ? value : ''
 }

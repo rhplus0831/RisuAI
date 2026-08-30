@@ -527,6 +527,24 @@ function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+/** Read the one character row supplied by a targeted chat loader without
+ * repairing or widening the mutation to the aggregate character collection. */
+function readScopedCharacterRecords(database: unknown): CharacterRecord[] {
+  const target = ensureCharacterDatabaseObject(database)
+  if (!Array.isArray(target.characters)) return []
+  const candidate = target.characters[0]
+  if (
+    !candidate ||
+    typeof candidate !== 'object' ||
+    Array.isArray(candidate) ||
+    typeof (candidate as Record<string, unknown>).chaId !== 'string' ||
+    !(candidate as Record<string, unknown>).chaId
+  ) {
+    return []
+  }
+  return [candidate as CharacterRecord]
+}
+
 function findJsonRecordById(
   values: unknown,
   id: string,
@@ -6186,9 +6204,7 @@ export function registerCommandRoutes(
           const target = hasModulePatch
             ? ensureModuleCommandDatabase(database)
             : ensureCharacterDatabaseObject(database)
-          const characters = hasModulePatch
-            ? normalizeAllCharacterChats(target)
-            : ([ensureCharacterDatabaseObject(target).characters?.[0]].filter(Boolean) as CharacterRecord[])
+          const characters = hasModulePatch ? normalizeAllCharacterChats(target) : readScopedCharacterRecords(target)
           const { character, chatIndex } = (hasModulePatch ? requireChatLocation : requireChatLocationExact)(
             characters,
             chatId,
@@ -6832,9 +6848,7 @@ export function registerCommandRoutes(
         // This callback only locates + rewrites the one chat row.
         chatScopedRead: { chatId },
         mutate(database, innerDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           const { character, chat } = requireChatLocationExact(characters, chatId)
           // This path updates only the chat row's `scriptstate`; sibling chat
           // normalization is validate-only.
@@ -6885,9 +6899,7 @@ export function registerCommandRoutes(
         // Chat is located for validation only; writes go to the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           requireChatLocationExact(characters, chatId)
           if (activeMessageIdExists(targetDb, message.chatId)) {
             throw new ValidationError(`Duplicate message id: ${message.chatId}`)
@@ -6935,9 +6947,7 @@ export function registerCommandRoutes(
         // a missing message falls back broad and the callback throws as before.
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
           if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
@@ -7036,9 +7046,7 @@ export function registerCommandRoutes(
         // Same message-id-resolved scoped read as the PATCH route.
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
           if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
@@ -7101,9 +7109,7 @@ export function registerCommandRoutes(
         // Chat is located for validation only; truncate hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           const { chat } = requireChatLocationExact(characters, chatId)
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
@@ -7152,9 +7158,7 @@ export function registerCommandRoutes(
         // Chat is located for validation only; replacement hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           const { chat } = requireChatLocationExact(characters, chatId)
           const base = getChatMessages(targetDb, chatId)
           let keepCount = 0
@@ -7259,9 +7263,7 @@ export function registerCommandRoutes(
         // Chat is located for validation only; persistence hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
-            Boolean,
-          ) as CharacterRecord[]
+          const characters = readScopedCharacterRecords(database)
           requireChatLocationExact(characters, chatId)
           const write = writeGenerationChatMessage(
             targetDb,

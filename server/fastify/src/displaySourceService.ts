@@ -87,9 +87,12 @@ function activePromptPresetRegex(database: Database, chat: Chat): customscript[]
 
 function selectedPersonaProfile(database: Database): { id: string; name: string; personaPrompt: string } | null {
   if (!Number.isInteger(database.selectedPersona)) return null
-  const persona = database.personas?.[database.selectedPersona]
+  const personas = Array.isArray(database.personas)
+    ? (database.personas as Array<{ id?: unknown; name?: unknown; personaPrompt?: unknown }>)
+    : []
+  const persona = personas[database.selectedPersona]
   if (!persona || typeof persona.id !== 'string') return null
-  if (database.personas.filter((candidate) => candidate?.id === persona.id).length !== 1) return null
+  if (personas.filter((candidate) => candidate.id === persona.id).length !== 1) return null
   return {
     id: persona.id,
     name: typeof persona.name === 'string' ? persona.name : '',
