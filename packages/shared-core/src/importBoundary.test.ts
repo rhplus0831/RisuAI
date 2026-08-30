@@ -80,6 +80,7 @@ describe('@risuai/shared-core import boundary', () => {
         'modelRoles.ts',
         'moduleIntegration.ts',
         'mutationCertificates.ts',
+        'parseKeyValue.ts',
         'promptSettings.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',

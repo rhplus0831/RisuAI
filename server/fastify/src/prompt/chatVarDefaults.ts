@@ -1,4 +1,4 @@
-import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
+import { parseKeyValue } from '@risuai/shared-core/parse-key-value'
 
 export type ChatDefaultVariable = [key: string, value: string]
 

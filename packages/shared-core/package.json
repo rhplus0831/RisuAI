@@ -21,6 +21,7 @@
     "./module-integration": "./src/moduleIntegration.ts",
     "./mcp-identifier": "./src/mcpIdentifier.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
+    "./parse-key-value": "./src/parseKeyValue.ts",
     "./prompt-settings": "./src/promptSettings.ts",
     "./punctuation": "./src/punctuation.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts",
