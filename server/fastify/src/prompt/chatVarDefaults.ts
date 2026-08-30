@@ -1,15 +1,22 @@
-import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import { parseKeyValue } from '../../../../src/ts/util/parseKeyValue'
 
 export type ChatDefaultVariable = [key: string, value: string]
+
+export interface ChatDefaultCharacterInput {
+  defaultVariables?: string | null
+}
+
+export interface ChatDefaultDatabaseInput {
+  templateDefaultVariables?: string | null
+}
 
 /**
  * Parse persistent chat-variable defaults with the browser's exact precedence:
  * character rows first, then template rows, with the first matching key winning.
  */
 export function getChatDefaultVariables(
-  currentChar: Pick<character, 'defaultVariables'> | undefined,
-  database: Pick<Database, 'templateDefaultVariables'>,
+  currentChar: ChatDefaultCharacterInput | undefined,
+  database: ChatDefaultDatabaseInput,
 ): ChatDefaultVariable[] {
   return parseKeyValue(currentChar?.defaultVariables ?? '').concat(
     parseKeyValue(database.templateDefaultVariables ?? ''),

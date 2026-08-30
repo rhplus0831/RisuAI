@@ -1370,20 +1370,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/chatVarDefaults.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/chatVarDefaults.ts",
       "specifier": "../../../../src/ts/util/parseKeyValue",
       "target": "src/ts/util/parseKeyValue.ts",
       "kind": "static",
