@@ -1,6 +1,6 @@
 # Embedding Operation Contract
 
-Status: ready.
+Status: complete at `58a847a11759ad7bd2764b0bdd46421690c2a505`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -52,3 +52,20 @@ formatting, and `git diff --check`.
 Stop if schema extraction changes an accepted payload, weakens contextual model
 pairing, exposes stored credentials, or requires provider/security behavior to
 move into the protocol package.
+
+## Result
+
+- `@risuai/protocol/embedding-operation` now owns TypeBox schemas and derived
+  types for all six remote model identifiers, contextual/non-contextual model
+  sets, input types, credential/custom configuration variants, discriminated
+  requests, and success envelopes.
+- Semantic validators reject empty inputs, invalid model/operation pairings,
+  misplaced custom configuration, unknown fields, malformed credentials, and
+  incoherent result dimensions.
+- Browser and Fastify consumers use the explicit package subpath and the old
+  application-tree contract module is removed.
+- Fastify still owns credential and custom-endpoint resolution, authentication,
+  payload/batch/response limits, deadlines, provider requests, and vector
+  validation.
+- The boundary cursor fell by exactly three edges, from 364 to 361: two
+  production and one server-test edge.
