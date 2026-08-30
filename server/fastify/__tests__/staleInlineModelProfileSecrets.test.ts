@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { Buffer } from 'node:buffer'
 import { webcrypto } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { resolveMemorySummaryModel } from '../src/memorySummaryModel.js'
+import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import { canonicalModelProfileFixture } from '../../../test/fixtures/canonicalModelProfile'
 
 const subtle = webcrypto.subtle
 const STALE_KEY = 'sk-stale-inline-secret-e2e'
@@ -42,6 +45,7 @@ async function startApp(dataDir: string): Promise<FastifyInstance> {
       importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
+      requestTrace: { mode: 'agent' },
     },
     memoryWorker: false,
     assetGc: false,
@@ -292,5 +296,72 @@ describe('stale inline profile secrets in a pre-credential-store DB', () => {
     for (const secret of ALL_STALE_SECRETS) {
       expect(JSON.stringify(extractedPreset)).not.toContain(secret)
     }
+  })
+
+  it('keeps a durable role binding ahead of stale flat model state through dispatch and projections', async () => {
+    const { staleFlat, credential, profile, bindings } = canonicalModelProfileFixture
+    const database = {
+      ...staleFlat,
+      providerCredentials: [credential],
+      modelProfiles: [profile],
+      modelRoleProfiles: bindings,
+    }
+
+    const initialized = await app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': await signAssertion(keypair.privateKey, publicJwk) },
+      payload: { database: { version: 1 } },
+    })
+    expect(initialized.statusCode).toBe(200)
+
+    const resolved = resolveModelProfile({ database: database as never, role: 'memory' })
+    expect(resolved.source.kind).toBe('durable-profile')
+    expect(resolved.modelId).toBe(profile.modelId)
+    expect(resolved.requestModel).toBe(profile.providerOptions.requestModel)
+    expect(resolved.providerOptions.apiKey).toBe(credential.apiKey)
+
+    const dispatch = resolveMemorySummaryModel(database as never, 'memory')
+    expect(dispatch).toEqual({
+      ok: true,
+      request: {
+        provider: 'openai',
+        model: profile.providerOptions.requestModel,
+        options: { openai: { apiKey: credential.apiKey } },
+      },
+    })
+
+    const sqlite = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+    const persisted = JSON.parse(row.data_json)
+    Object.assign(persisted, database)
+    sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(persisted))
+    sqlite.close()
+
+    await app.close()
+    app = await startApp(dataDir)
+
+    const projected = await app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/models',
+      headers: { 'risu-auth': await signAssertion(keypair.privateKey, publicJwk) },
+    })
+    expect(projected.statusCode).toBe(200)
+    expect(projected.json().settings).toMatchObject({
+      providerCredentials: [{ id: credential.id, apiKey: '__RISU_SECRET_MASKED__' }],
+      modelProfiles: [profile],
+      modelRoleProfiles: bindings,
+    })
+    expect(projected.body).not.toContain(credential.apiKey)
+    expect(projected.body).not.toContain(staleFlat.openAIKey)
+
+    const tracePath = path.join(dataDir, 'trace', 'agent.jsonl')
+    for (let attempt = 0; attempt < 20 && !existsSync(tracePath); attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(existsSync(tracePath)).toBe(true)
+    const trace = readFileSync(tracePath, 'utf8')
+    expect(trace).not.toContain(credential.apiKey)
+    expect(trace).not.toContain(staleFlat.openAIKey)
   })
 })

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
+import { resolveModelProfile } from './modelProfileResolver'
+import { canonicalModelProfileFixture } from '../../../test/fixtures/canonicalModelProfile'
 
 const mutationMocks = vi.hoisted(() => ({
   commandCalls: [] as Array<{ name: string; input: Record<string, unknown> }>,
@@ -101,6 +104,39 @@ beforeEach(() => {
 })
 
 describe('durable model-profile mutations', () => {
+  it('creates a canonical credential, profile, and role binding that survives a masked reload projection', async () => {
+    const { credential, profile, bindings, staleFlat } = canonicalModelProfileFixture
+
+    await createProviderCredentialDurably(credential)
+    await createModelProfileDurably(profile)
+    await updateModelRoleProfilesDurably(bindings)
+
+    expect(mutationMocks.commandCalls.map(({ name }) => name)).toEqual(['credential-create', 'create', 'roles'])
+    expect(mutationMocks.commandCalls[0]?.input.credential).toEqual(credential)
+    expect(mutationMocks.commandCalls[1]?.input.profile).toEqual(profile)
+    expect(mutationMocks.commandCalls[2]?.input.bindings).toEqual(bindings)
+
+    const maskedProjection = {
+      modelProfiles: [profile],
+      providerCredentials: [{ ...credential, apiKey: MASKED_PROVIDER_SECRET }],
+      modelRoleProfiles: bindings,
+    }
+    const resolved = resolveModelProfile({
+      database: {
+        ...staleFlat,
+        ...maskedProjection,
+      } as never,
+      role: 'memory',
+    })
+
+    expect(resolved.source.kind).toBe('durable-profile')
+    expect(resolved.modelId).toBe(profile.modelId)
+    expect(resolved.requestModel).toBe(profile.providerOptions.requestModel)
+    const serializedClientProjection = JSON.stringify(maskedProjection)
+    expect(serializedClientProjection).not.toContain(credential.apiKey)
+    expect(serializedClientProjection).not.toContain(staleFlat.openAIKey)
+  })
+
   it('freezes and dispatches a durable profile reorder', async () => {
     const order = [
       { kind: 'profile' as const, profileId: 'profile-b' },
