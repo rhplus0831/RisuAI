@@ -251,6 +251,7 @@ export interface SplitPresetPatchLocalEffect {
   attemptedSettings: Record<string, unknown>
   settings: Record<string, unknown>
   selectedProjectionApplied: boolean
+  /** The canonical prompt-preset owner row was applied; this is not an aggregate mirror receipt. */
   ownerProjectionApplied: boolean
   collectionProjectionEpoch: number
   settingsProjectionEpoch: number

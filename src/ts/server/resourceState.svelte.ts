@@ -1311,7 +1311,9 @@ export function applyPromptItemMutationLocalEffect(payload: ServerPromptItemMuta
  * Apply a response-confirmed split-preset field PATCH without re-reading the
  * complete collection and, when selected fields were projected, settings.
  * Canonical values only replace this attempt while its exact optimistic value
- * is still live, preserving a later coalesced edit to the same field.
+ * is still live, preserving a later coalesced edit to the same field. A prompt
+ * owner receipt applies only to the prompt-preset row; the aggregate
+ * `promptTemplate` resource remains a compatibility projection.
  */
 export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatchLocalEffectPayload): boolean {
   if (!nonEmptyString(payload.presetId) || (payload.presetKind !== 'model' && payload.presetKind !== 'prompt')) {
@@ -1345,18 +1347,10 @@ export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatch
     if (
       payload.presetKind !== 'prompt' ||
       !Object.prototype.hasOwnProperty.call(payload.attemptedPatch, 'promptTemplate') ||
-      !Object.prototype.hasOwnProperty.call(payload.preset, 'promptTemplate') ||
-      collectionsResourceState.statuses.promptTemplate !== 'ready' ||
-      collectionsResourceState.revisions.promptTemplate === undefined
+      !Object.prototype.hasOwnProperty.call(payload.preset, 'promptTemplate')
     ) {
       return false
     }
-    if (isJsonValueEqual(collectionsResourceState.values.promptTemplate, payload.attemptedPatch.promptTemplate)) {
-      collectionsResourceState.values.promptTemplate = cloneJsonValue(payload.preset.promptTemplate) as never
-    }
-    collectionsResourceState.revisions.promptTemplate = payload.revision
-    collectionsResourceState.statuses.promptTemplate = 'ready'
-    delete collectionsResourceState.errors.promptTemplate
   }
 
   const preset = matches[0]

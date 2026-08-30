@@ -989,7 +989,9 @@ function splitPresetProjectionFieldNames(kind: SplitPresetKind, patch: Record<st
   for (const fieldName of Object.keys(patch)) {
     if (fieldName === 'regex' || fieldName === 'presetRegex') {
       fieldNames.add('presetRegex')
-    } else if (promptPresetFieldNames.has(fieldName)) {
+    } else if (fieldName !== 'promptTemplate' && promptPresetFieldNames.has(fieldName)) {
+      // A modern prompt template is owned by the preset row. It is tracked by
+      // owner acknowledgement metadata, not as a selected aggregate mirror.
       fieldNames.add(fieldName)
     }
     if (promptPresetModelParameterFieldNames.has(fieldName) || promptPresetModelOthersFieldNames.has(fieldName)) {

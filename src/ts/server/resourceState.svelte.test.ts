@@ -38,6 +38,7 @@ import {
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
+  applySplitPresetPatchLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
@@ -1826,6 +1827,34 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
     expect(collectionsResourceState.revisions.promptTemplate).toBe(6)
     expect(hasCollectionProjectionEpochChanged('promptTemplate', rootEpoch)).toBe(false)
+  })
+
+  it('applies a prompt-preset owner receipt without requiring or rewriting the aggregate prompt template', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        promptPresets: [{ id: 'preset-a', promptTemplate: [{ id: 'new', type: 'plain' }] }] as never,
+      },
+    })
+
+    expect(
+      applySplitPresetPatchLocalEffect({
+        revision: 4,
+        presetKind: 'prompt',
+        presetId: 'preset-a',
+        attemptedPatch: { promptTemplate: [{ id: 'new', type: 'plain' }] },
+        preset: { promptTemplate: [{ id: 'canonical', type: 'plain' }] },
+        attemptedSettings: {},
+        settings: {},
+        selectedProjectionApplied: false,
+        ownerProjectionApplied: true,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().promptPresets[0].promptTemplate).toEqual([{ id: 'canonical', type: 'plain' }])
+    expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
+    expect(collectionsResourceState.revisions.promptPresets).toBe(4)
+    expect(collectionsResourceState.statuses.promptTemplate).toBeUndefined()
   })
 
   it('allows later prompt row fields while keeping operation outcomes and projections canonical', () => {
