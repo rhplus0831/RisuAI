@@ -2130,19 +2130,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerRunCache.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/triggers.ts",
       "specifier": "../../../../src/ts/process/modules",
       "target": "src/ts/process/modules.ts",
