@@ -385,22 +385,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/personas.ts",
-      "specifier": "../../../../src/ts/personaMutationCertificate.js",
-      "target": "src/ts/personaMutationCertificate.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "PersonaProfileDigestValue",
-        "serializePersonaCollectionDigestInput",
-        "serializePersonaIdsDigestInput",
-        "serializePersonaProfileDigestInput"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/presets.ts",
       "specifier": "../../../../src/ts/agentPresetRecords.js",
       "target": "src/ts/agentPresetRecords.ts",
@@ -481,19 +465,6 @@
       "usage": "runtime",
       "symbols": [
         "isMaskedProviderSecret"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/scriptDefinitions.ts",
-      "specifier": "../../../../src/ts/server/scriptDefinitionMutations.js",
-      "target": "src/ts/server/scriptDefinitionMutations.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "serializeScriptDefinitionCollectionDigestInput"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -2399,35 +2370,6 @@
       "symbols": [
         "LLMFlags",
         "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/commands.test.ts",
-      "specifier": "../../../src/ts/personaMutationCertificate.js",
-      "target": "src/ts/personaMutationCertificate.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "PersonaProfileDigestValue",
-        "serializePersonaCollectionDigestInput",
-        "serializePersonaIdsDigestInput",
-        "serializePersonaProfileDigestInput"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/commands.test.ts",
-      "specifier": "../../../src/ts/server/scriptDefinitionMutations.js",
-      "target": "src/ts/server/scriptDefinitionMutations.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "serializeScriptDefinitionCollectionDigestInput"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

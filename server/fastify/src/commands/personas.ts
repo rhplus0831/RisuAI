@@ -7,7 +7,7 @@ import {
   serializePersonaIdsDigestInput,
   serializePersonaProfileDigestInput,
   type PersonaProfileDigestValue,
-} from '../../../../src/ts/personaMutationCertificate.js'
+} from '@risuai/shared-core/mutation-certificates'
 
 type JsonRecord = Record<string, unknown>
 

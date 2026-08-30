@@ -20,6 +20,7 @@
     "./model-roles": "./src/modelRoles.ts",
     "./module-integration": "./src/moduleIntegration.ts",
     "./mcp-identifier": "./src/mcpIdentifier.ts",
+    "./mutation-certificates": "./src/mutationCertificates.ts",
     "./prompt-settings": "./src/promptSettings.ts",
     "./punctuation": "./src/punctuation.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts",

@@ -79,6 +79,7 @@ describe('@risuai/shared-core import boundary', () => {
         'mcpIdentifier.ts',
         'modelRoles.ts',
         'moduleIntegration.ts',
+        'mutationCertificates.ts',
         'promptSettings.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',

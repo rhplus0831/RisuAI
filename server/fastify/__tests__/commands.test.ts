@@ -36,8 +36,8 @@ import {
   serializePersonaIdsDigestInput,
   serializePersonaProfileDigestInput,
   type PersonaProfileDigestValue,
-} from '../../../src/ts/personaMutationCertificate.js'
-import { serializeScriptDefinitionCollectionDigestInput } from '../../../src/ts/server/scriptDefinitionMutations.js'
+  serializeScriptDefinitionCollectionDigestInput,
+} from '@risuai/shared-core/mutation-certificates'
 import { injectComposedResourceDatabase } from './helpers/resourceDatabase.js'
 import {
   getGreetingTranslation,
