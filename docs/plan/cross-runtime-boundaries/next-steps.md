@@ -4,20 +4,19 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [memory-summary message seam
-slice](phases/slices/phase-4-server-consumer-migration/memory-summary-message-seam.md).
+Execute the [prompt-row rendering and budget seam
+slice](phases/slices/phase-4-server-consumer-migration/prompt-row-rendering-budget-seam.md).
 
-1. Define one Fastify-owned message record with exactly the role, content, memo,
-   name, thoughts, and multimodal metadata used by memory summarization.
-2. Replace the four direct type-only browser `OpenAIChat` imports in the memory
-   planner, chunk planner, summary prompt, and summary adapter.
-3. Preserve example/NewChat/empty-row skip rules, summarized-prefix detection,
-   token accounting, ChatML parsing, thought scrubbing, chunk hashes, and job
-   payload identity.
-4. Keep provider dispatch, model-profile resolution, SQLite job state, batching,
-   deadlines, retries, and persistence unchanged.
-5. Refresh the baseline after focused planner/prompt/adapter/job and ownership
-   proof.
+1. Define one general Fastify-owned prompt message/multimodal record, reusing it
+   for the already-migrated memory-summary domain.
+2. Replace the five direct production and five focused-test `OpenAIChat` imports
+   in history, memory, budget finalization, preflight, and templates.
+3. Preserve role mapping, row order, memo/name metadata, disabled/all-before
+   filtering, thoughts, inlays, multimodal-only rows, and asset dimensions.
+4. Preserve independent re-tokenization, overflow removal eligibility, template
+   slot/coalescing behavior, and input immutability.
+5. Refresh the baseline after the five focused owners and a closed ownership
+   assertion pass.
 
 ## Foundations Released
 
@@ -72,14 +71,17 @@ slice](phases/slices/phase-4-server-consumer-migration/memory-summary-message-se
   browser-model edges.
 - Provider conversion inputs are released at `e0be7d72e`; provider-wire builders
   no longer depend on the browser prompt-row declaration.
+- Memory-summary messages are released at `856834205`; four production and four
+  test consumers use a Fastify-owned record.
 
 ## Not In This Slice
 
-- Do not change model-profile resolution, provider requests, job persistence,
-  retries, or memory-summary scheduling.
-- Do not broaden the record into an aggregate browser prompt or database type.
-- Do not migrate the separate memory-summary configuration/database seam in this
-  slice.
+- Do not change model-profile resolution, tokenizer selection, provider
+  requests, prompt database inputs, or persistence.
+- Do not include aggregate `Database`, `Chat`, character, `PromptItem`, trigger,
+  or module contracts in the prompt-row record.
+- Do not combine general history, lorebook, Agent preset, CBS, trigger, or Lua
+  orchestration into this slice.
 
 ## Handoff
 

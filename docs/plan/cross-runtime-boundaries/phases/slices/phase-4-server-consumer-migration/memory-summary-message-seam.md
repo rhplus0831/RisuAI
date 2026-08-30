@@ -1,6 +1,6 @@
 # Memory-Summary Message Seam
 
-Status: ready.
+Status: complete at `856834205`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -19,7 +19,8 @@ record.
   `memorySummaryPrompt.ts`, and `memorySummaryAdapter.ts`.
 - Destination: a Fastify-owned role/content/memo/name/thoughts/multimodal input
   contract shared only by server memory-summary consumers.
-- Expected delta: four production type-only browser-application-model edges.
+- Delivered delta: four production and four server-test type-only
+  browser-application-model edges.
 
 ## Behavior Contract
 

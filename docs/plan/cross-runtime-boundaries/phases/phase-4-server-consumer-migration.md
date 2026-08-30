@@ -46,5 +46,6 @@ Completed slices:
 - [BardWiki server type seam](slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md)
 - [Memory-embedding configuration seam](slices/phase-4-server-consumer-migration/memory-embedding-configuration-seam.md)
 - [Provider-message input seam](slices/phase-4-server-consumer-migration/provider-message-input-seam.md)
+- [Memory-summary message seam](slices/phase-4-server-consumer-migration/memory-summary-message-seam.md)
 
-Active slice: [Memory-summary message seam](slices/phase-4-server-consumer-migration/memory-summary-message-seam.md).
+Active slice: [Prompt-row rendering and budget seam](slices/phase-4-server-consumer-migration/prompt-row-rendering-budget-seam.md).

@@ -9,7 +9,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 memory-summary message seam](cross-runtime-boundaries/status.md) | Phase 3 closed with seventeen neutral leaves; BardWiki, memory embedding, and provider-message inputs migrated through `e0be7d72e`, leaving 279 direct root-`src` edges. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 prompt-row rendering/budget seam](cross-runtime-boundaries/status.md) | Phase 3 closed with seventeen neutral leaves; four server-input domains migrated through `856834205`, leaving 271 direct root-`src` edges. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Migration is durable; prompt shape, tokenizer, output budget, image capability, sidebar authoring, completion projection, and request samplers resolve durable owners through `d8275c5e9`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat dependency gate](client-resource-ownership/status.md) | Phase 2 closed the standalone page pointer at `aaf66b75d`; the next runtime slice waits for matching Workstream 1/2 releases. |
 
