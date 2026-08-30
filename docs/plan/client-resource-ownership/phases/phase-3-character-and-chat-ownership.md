@@ -1,6 +1,6 @@
 # Phase 3: Character And Chat Ownership
 
-Status: dependency-blocked.
+Status: active for character summaries; remaining families dependency-blocked.
 
 Depends on: Phase 1 owner APIs and matching Workstream 1/2 contract/owner
 releases.
@@ -10,6 +10,16 @@ releases.
 Move character summaries/details, selection/order, chat metadata, messages, and
 transcript consumers to explicit owners without weakening lazy hydration or
 generation fencing.
+
+## Delivered Slice
+
+- `3b74261c1` moves the mobile character renderer to explicit summary/settings
+  resource state, `chatCount`, and `activeChatId`.
+- Stable-id routing, search/sort/trash behavior, relative time, and legacy shell
+  fallback remain covered.
+- The aggregate facade and every character/chat bridge remain for consumers
+  whose detail, chat metadata, transcript, draft, or command contracts are not
+  yet released.
 
 ## Required Work
 

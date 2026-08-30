@@ -4,15 +4,21 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-No Workstream 3 runtime slice is currently runnable. Advance the matching
-Workstream 1 and 2 character/chat dependency cursors, then open the smallest
-released Phase 3 owner family.
+Advance the next Workstream 1 character/chat contract family. Prefer selected
+character detail plus order/selection metadata before chat transcripts or
+mutation bodies, then open exactly one matching owner-consumer slice.
 
-## Required Scope Before Editing
+## Released Character-Summary Scope
 
-Before opening Phase 3, record exact read/command contracts, persisted canonical
-owners, draft and lazy-body boundaries, optimistic outcomes, rollback, reload,
-and browser proof for the chosen character/chat resource.
+- Workstream 1 released the summary payload at `159b6eccf`.
+- Workstream 2 released singular character/chat/message/Hypa row ownership at
+  `7cb62afa8`; embedded copies are pre-extraction recovery only.
+- The mobile renderer needs summary fields only. Preserve stable-id navigation,
+  search/sort/trash filtering, relative time, shell rows, and selection revision
+  fencing.
+- Keep character/chat bridges, the aggregate facade, detail/transcript
+  hydration, commands, drafts, and generation paths unchanged.
+- The mobile renderer completed this bounded migration at `3b74261c1`.
 
 ## Released Dependency
 
@@ -35,5 +41,6 @@ and browser proof for the chosen character/chat resource.
 
 ## Handoff
 
-Open exactly one Phase 3 slice after both dependency workstreams release it.
-Until then, leave character/chat consumers and bridges unchanged.
+Release the next character/chat contract family in Workstream 1 before
+migrating another production consumer. Leave all bridges unchanged until
+end-to-end continuity and rollback proof exists.

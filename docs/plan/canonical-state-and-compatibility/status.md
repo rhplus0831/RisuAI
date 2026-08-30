@@ -11,7 +11,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 - Plan state: Active; Phases 0 and 1 complete.
 - Current phase: [Phase 2 model configuration ownership](phases/phase-2-model-configuration-ownership.md).
-- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), in progress through auxiliary consumers at `1853a3fd3`.
+- Active slice: [Normal model consumer cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md), in progress through auxiliary consumers at `841d0b65e`.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through the current Phase 2 checkpoint: schema v34 transactionally
   creates deterministic profiles/bindings for usable flat selections at
@@ -26,8 +26,12 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
   identity and the NovelList source-language heuristic use the resolved
   translate role while preserving legacy auxiliary fallback. Seed visibility,
   HypaV3 response reservation, and display-source Lua/trigger identity now use
-  resolved model context, and the unused lorebook model mirror is removed.
-- Latest verification: normal-consumer checkpoint passed through `1853a3fd3`.
+  resolved model context, the unused lorebook model mirror is removed, and the
+  Hypa settings capacity ratio uses the selected runtime profile.
+- Latest verification: normal-consumer checkpoint passed through `841d0b65e`.
+- Character/chat dependency release: singular SQLite row owners and the bounded
+  pre-extraction fallback are released at `7cb62afa8`; orphan/integrity repair
+  remains held for Phases 5-6.
 
 ## Dependency Cursors
 
@@ -36,7 +40,8 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | Workstream 1 package/boundary conventions | `b01e88b03` | Released; Phase 0 may execute. |
 | Workstream 1 shared contracts | Per contract family | Required only before a slice introduces or consumes that shared contract. |
 | Migration/recovery foundation | `1e758cd22` | Released with named-step validation, rollback/retry/reopen injection proof, damaged-database refusal, and all 19 historical fixture adapters. |
-| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; selected-preset compatibility is isolated, prompt shape/tokenizer/output budgets/image capability, Fastify completion, request samplers/thinking, CBS/generation/translation/display identity, settings metadata, and HypaV3 budgets resolve durable profiles through `1853a3fd3`; not yet released to Workstream 3. |
+| Model configuration canonical owner | Phase 2 consumer cutover | Migration landed at `47146eb75`; selected-preset compatibility is isolated, prompt shape/tokenizer/output budgets/image capability, Fastify completion, request samplers/thinking, CBS/generation/translation/display identity, settings metadata, and HypaV3 budgets resolve durable profiles through `841d0b65e`; not yet released to Workstream 3. |
+| Character/chat canonical owners | `7cb62afa8` | Character, chat, message, and Hypa rows are singular normal owners; legacy import repairs ids before extraction. Summary-only Workstream 3 consumers are released; broader contracts remain per-family dependencies. |
 | Prompt-template canonical owner | Phase 3 | Not released to Workstream 3. |
 | Translator/smaller canonical owners | Phase 4 per family | Not released to Workstream 3. |
 | Repair/interchange cleanup | Phases 5-6 | Not started; may add per-family holds to earlier releases. |

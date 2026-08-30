@@ -6,7 +6,7 @@
     "inventoryCursor": "0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f",
     "policyCount": 56,
     "consumerGroupCount": 326,
-    "referenceCount": 9895
+    "referenceCount": 9888
   },
   "capabilityKeys": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
   "owners": {
@@ -28,7 +28,7 @@
     "character-chat": {
       "dependencies": {
         "workstream1": "Character-summary reads released at 159b6eccf; remaining character/chat contracts pending after the 6a6d0ac1f route catalog.",
-        "workstream2": "Canonical character/chat ownership remains pending after the 1e758cd22 migration foundation."
+        "workstream2": "Character, chat, message, and Hypa SQLite row owners are released at 7cb62afa8; embedded copies are pre-extraction import/recovery only, with orphan cleanup held for Phases 5-6."
       },
       "capabilities": {
         "selectors": "partial",

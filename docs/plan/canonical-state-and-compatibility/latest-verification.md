@@ -8,7 +8,8 @@ Date: 2026-08-31
   `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`,
   `07576969c`, `d8275c5e9`, `3cff93cd6`, `fd0764744`, `c24cdd16d`,
   `e663269de`, `f610c11a1`, `6006b08cb`, `c389535d3`, `cc3a469cf`, and
-  `1853a3fd3`
+  `1853a3fd3`, and `841d0b65e`; character/chat dependency release
+  `7cb62afa8`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
@@ -74,6 +75,8 @@ Date: 2026-08-31
   aggregate selection.
 - Both HypaV3 implementations reserve the resolved `chatMain` response budget;
   explicit legacy selections retain the flat fallback.
+- The Hypa settings capacity ratio and its reactive dependency key use the
+  resolved `chatMain` context/response budgets even when flat fields conflict.
 - Lorebook activation no longer accepts or threads an unused model mirror.
 - Display-source Lua and trigger stages receive one resolved `chatMain` model
   through an existing Fastify prompt-model boundary.
@@ -102,25 +105,36 @@ Date: 2026-08-31
   ownership tests.
 - Seed metadata passed 4 behavior and 5 closed ownership tests. HypaV3 budget
   ownership passed 2 behavior and 6 closed ownership tests.
+- Hypa settings capacity passed all 19 focused UI tests and 6 closed
+  model-runtime ownership tests.
 - Lorebook mirror removal passed 1 ownership, 79 lorebook, 25 Agent execution,
   135 assembly, and 52 Lua runtime tests.
 - Display-source identity passed 1 ownership and 3 route/service tests.
+- Character/chat import ownership passed all 5 legacy import tests, including
+  missing/duplicate chat-id transcript and Hypa preservation across a second
+  boot. The message store passed all 28 split/rejoin, row-owner, empty
+  transcript, import fallback, and cleanup tests.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at the current 160 cross-runtime edges after
+- Architecture inventory passed at the current 158 cross-runtime edges after
   interleaved Workstream 1 server-input migrations, 20 compatibility
-  surfaces/42 probes, 9,899 client references/326 groups, and 56 owner-gap rows.
+  surfaces/42 probes, 9,888 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `1853a3fd3`. Selected legacy
+The normal-consumer checkpoint passes through `841d0b65e`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
 canonical presets; server-intent completion projects durable runtime fields;
 ordinary provider request samplers and provider-specific thinking overrides use
 resolved runtime options; prompt-visible identity, plugin recursion protection,
 default generation labels, translation cache/locale identity, settings
-metadata, HypaV3 response reservation, and display-source identity use the
-effective profile. The unused lorebook model mirror is gone. The broader normal
-consumer cutover remains active; the model-owner cursor is not released yet.
+metadata, HypaV3 response reservation/capacity display, and display-source
+identity use the effective profile. The unused lorebook model mirror is gone.
+The broader normal consumer cutover remains active; the model-owner cursor is
+not released yet.
+Character, chat, transcript, and Hypa SQLite rows are released as the singular
+normal persisted owners at `7cb62afa8`. Embedded copies are retained only for
+pre-extraction import/recovery, while orphan and damaged-state cleanup remains a
+Phase 5/6 hold.

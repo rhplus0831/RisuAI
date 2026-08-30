@@ -749,10 +749,6 @@
           "count": 15
         },
         {
-          "file": "src/lib/Mobile/MobileCharacters.svelte",
-          "count": 4
-        },
-        {
           "file": "src/lib/Others/ChatList.svelte",
           "count": 7
         },
@@ -3629,10 +3625,6 @@
       "policy": "character-chat:render",
       "files": [
         {
-          "file": "src/lib/Mobile/MobileCharacters.svelte",
-          "count": 1
-        },
-        {
           "file": "src/lib/Others/ChatList.svelte",
           "count": 1
         },
@@ -4546,7 +4538,7 @@
         },
         {
           "file": "src/lib/Others/GridCatalog.svelte.test.ts",
-          "count": 11
+          "count": 10
         },
         {
           "file": "src/lib/Others/HypaV3Modal.resetRace.test.ts",
@@ -6895,10 +6887,6 @@
         {
           "file": "src/lib/ChatScreens/Suggestion.svelte.test.ts",
           "count": 41
-        },
-        {
-          "file": "src/lib/Mobile/MobileCharacters.svelte.test.ts",
-          "count": 1
         },
         {
           "file": "src/lib/Others/ChatList.svelte.test.ts",
