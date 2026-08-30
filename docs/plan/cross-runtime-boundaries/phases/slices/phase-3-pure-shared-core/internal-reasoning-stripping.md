@@ -1,6 +1,6 @@
 # Internal-Reasoning Stripping
 
-Status: ready.
+Status: complete at `251c9d043`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -46,3 +46,16 @@ tests, both typechecks, architecture inventory, formatting, and
 
 Stop if the helper needs model state, prompt assembly, persistence, streaming,
 browser reactivity, or another runtime-specific dependency.
+
+## Completion Record
+
+- `stripInternalReasoning` now has one dependency-free owner at
+  `@risuai/shared-core/internal-reasoning`.
+- All five production consumers use the explicit subpath and the browser-tree
+  implementation is removed.
+- Differential fixtures preserve case/spacing/attributes, nested depth,
+  unmatched and unterminated tags, trimming, and the unchanged-string fast
+  path. Translator, pipeline, generation-frame, raw-translation, and
+  agent-output owning suites passed unchanged.
+- Three production root-`src` edges and one target were removed. The reviewed
+  inventory now contains 324 edges, including 161 runtime/mixed edges.

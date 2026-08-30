@@ -48,4 +48,6 @@ Completed slice: [Regex output-size normalization](slices/phase-3-pure-shared-co
 
 Completed slice: [Legacy OpenAI model-alias normalization](slices/phase-3-pure-shared-core/legacy-openai-model-alias-normalization.md).
 
-Active slice: [Internal-reasoning stripping](slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
+Completed slice: [Internal-reasoning stripping](slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
+
+Active slice: [Agent-preset output references](slices/phase-3-pure-shared-core/agent-preset-output-references.md).

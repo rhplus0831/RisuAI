@@ -1,52 +1,48 @@
 # Cross-Runtime Boundaries Latest Verification
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 ## Candidate
 
-- Implementation commit: `23e5a4b30`
-- Shared-core predecessor: regex output-size normalization at `83e8aabfa`
+- Implementation commit: `251c9d043`
+- Shared-core predecessor: legacy OpenAI model aliases at `23e5a4b30`
 - Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 3 legacy OpenAI model-alias normalization leaf;
-  no route, payload, persistence, revision, event, authentication,
-  active-writer, credential, host, generation, or UI behavior changed.
+- Scope: Phase 3 internal-reasoning stripping leaf; no generation frame,
+  translation pipeline, prompt, agent bound, persistence, revision, event,
+  credential, host, or UI behavior changed.
 
 ## Shared-Core And Consumer Proof
 
-- `@risuai/shared-core` is private, side-effect-free, independently typechecked,
-  and guarded against bare, dynamic, require, and package-escape runtime
-  imports.
-- The exact 30-entry legacy alias table and `normalizeLegacyOpenAIModelId` have
-  one owner at `@risuai/shared-core/legacy-openai-model-aliases`.
-- The shared implementation has no imports, side effects, runtime-specific
-  inputs, or host behavior. Differential fixtures preserve all known mappings
-  and exact pass-through for blank, whitespace, case-varied, current, and custom
-  unknown identifiers.
-- Browser request construction plus Fastify chat-completions, legacy-instruct,
-  and Responses API adapters use the explicit subpath. A closed-world ownership
-  test prevents the old browser-tree owner from returning.
-- The architecture inventory now records 327 direct root-`src` edges: 224
-  production, 95 server-test, and 8 browser-smoke; 164 are runtime/mixed.
+- `stripInternalReasoning` has one dependency-free owner at
+  `@risuai/shared-core/internal-reasoning` with an explicit package export and
+  closed shared-core import audit.
+- Differential fixtures preserve case-insensitive `Thoughts`/`think` tags,
+  optional spaces/attributes, nested depth, unmatched closes, unterminated
+  opens, visible joining, final trimming, and `preserveUnchanged` identity.
+- Browser translator/pipeline and Fastify generation-frame, raw-translation,
+  and agent-preset consumers all use the shared subpath; the old browser owner
+  no longer exists.
+- The architecture inventory records 324 root-`src` edges: 221 production, 95
+  server-test, and 8 browser-smoke. Of these, 161 are runtime/mixed.
 
 ## Commands And Results
 
-- Shared legacy-alias differential and ownership tests passed 35 and 1
-  tests, respectively.
-- Focused Fastify chat-completions, legacy-instruct, and Responses API suites
-  passed 55, 13, and 20 tests, respectively.
-- The focused browser OpenAI profile-options suite passed 15 tests.
-- `pnpm test -- util/architecture-inventory.test.ts` passed 10 inventory tests.
-- `pnpm exec tsx util/architecture-inventory.ts` passed the 327-edge boundary,
-  19-surface/38-probe compatibility, 9,917-reference/325-group client
-  ownership, and 56-row owner-gap inventories.
-- Shared-core TypeScript, root `pnpm check`, the client declaration prerequisite,
-  Fastify TypeScript, and browser-smoke TypeScript passed.
-- Focused Prettier and `git diff --check` passed.
+- Shared differential, ownership, and import-boundary files passed 13, 1, and 2
+  tests.
+- Browser pipeline and translator-cache owners passed 16 and 24 tests.
+- Fastify generation-frame, raw-message translation, and agent-preset execution
+  owners passed 2, 32, and 25 tests.
+- Architecture inventory passed 10 tests and its direct gate passed 324 edges,
+  19 compatibility surfaces/38 probes, 9,917 client references/325 groups, and
+  56 owner-gap rows.
+- Shared-core, client declarations, Fastify, browser-smoke, and root Svelte
+  typechecks passed. Focused Prettier and `git diff --check` passed.
 
 ## Dependency Release And Verdict
 
-Legacy OpenAI model-alias normalization is released without changing stored
-selections, provider dispatch, credentials, endpoints, request options, or wire
-payloads. Phase 3 continues with internal-reasoning stripping; declaration
-decoupling and the remaining 327 root-`src` edges remain explicitly open.
+Internal-reasoning stripping is released at `251c9d043`; three production
+root-`src` edges and one source target are gone. Independent remaining-edge
+reviews selected the zero-import agent-preset output reference helper as the
+next narrow leaf. Phase 3 continues there; declaration decoupling and the
+remaining 324 edges stay open.

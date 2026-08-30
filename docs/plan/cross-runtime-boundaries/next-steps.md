@@ -1,23 +1,22 @@
 # Cross-Runtime Boundaries Next Steps
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [internal-reasoning stripping
-slice](phases/slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
+Execute the [agent-preset output references
+slice](phases/slices/phase-3-pure-shared-core/agent-preset-output-references.md).
 
-1. Move the reasoning-tag matcher and `stripInternalReasoning` into an explicit
-   shared-core subpath.
-2. Preserve case-insensitive `Thoughts`/`think` matching, attributes and spacing,
-   nested depth, unmatched close/open behavior, final trimming, and the
-   `preserveUnchanged` identity fast path exactly.
-3. Migrate browser translator/pipeline and Fastify generation, translation, and
-   agent-preset consumers together.
-4. Delete `src/ts/process/internalReasoning.ts` only after differential fixtures
-   and closed-world consumer ownership pass.
-5. Keep generation, translation, agent-output bounds, prompts, persistence,
-   streaming, and UI behavior unchanged.
+1. Move `AgentPresetOutputReference`, the exact token matcher, discovery, and
+   expansion into an explicit shared-core subpath.
+2. Preserve identifier boundaries, optional whitespace, exact token/index
+   metadata, repeated callback order, and unresolved-token identity.
+3. Migrate browser agent dependency resolution plus Fastify prompt-variable and
+   agent-execution consumers together.
+4. Delete `src/ts/agentPresetReferences.ts` only after differential fixtures and
+   closed-world consumer ownership pass.
+5. Keep agent validation, prompt assembly, execution, output bounds,
+   persistence, and UI behavior unchanged.
 
 ## Foundations Released
 
@@ -41,13 +40,15 @@ slice](phases/slices/phase-3-pure-shared-core/internal-reasoning-stripping.md).
   released at `83e8aabfa`.
 - Legacy OpenAI model-alias normalization and all four production consumers are
   released at `23e5a4b30`.
+- Internal-reasoning stripping and all five production consumers are released
+  at `251c9d043`.
 
 ## Not In This Slice
 
-- Do not move generation, translation, prompt, agent-preset, streaming,
+- Do not move agent records, dependency graphs, prompt assembly/execution,
   persistence, or UI orchestration into shared core.
-- Do not broaden the recognized reasoning-tag vocabulary or change whitespace
-  policy in this boundary move.
+- Do not broaden the output-token grammar or normalize token/key text in this
+  boundary move.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 
