@@ -109,7 +109,7 @@ describe('durable model-profile mutations', () => {
 
     await createProviderCredentialDurably(credential)
     await createModelProfileDurably(profile)
-    await updateModelRoleProfilesDurably(bindings)
+    await updateModelRoleProfilesDurably(bindings, null)
 
     expect(mutationMocks.commandCalls.map(({ name }) => name)).toEqual(['credential-create', 'create', 'roles'])
     expect(mutationMocks.commandCalls[0]?.input.credential).toEqual(credential)

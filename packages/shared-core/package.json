@@ -37,6 +37,7 @@
     "./prompt-settings": "./src/promptSettings.ts",
     "./effective-prompt-template": "./src/effectivePromptTemplate.ts",
     "./prompt-template-normalization": "./src/promptTemplateNormalization.ts",
+    "./provider-capability": "./src/providerCapability.ts",
     "./provider-credential-records": "./src/providerCredentialRecords.ts",
     "./provider-secret-mask": "./src/providerSecretMask.ts",
     "./punctuation": "./src/punctuation.ts",

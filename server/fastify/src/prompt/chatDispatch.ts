@@ -32,7 +32,7 @@ import {
   type CustomModelEntryLike,
   type ProviderCapabilityInput,
   type ProviderUnsupportedReason,
-} from '../../../../src/ts/process/request/providerCapability'
+} from '@risuai/shared-core/provider-capability'
 import {
   assertModelProfileGenerationReady,
   resolveModelProfile,
