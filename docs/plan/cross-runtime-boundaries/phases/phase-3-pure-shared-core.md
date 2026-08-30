@@ -1,0 +1,39 @@
+# Phase 3: Pure Shared Core
+
+Status: queued.
+
+Depends on: Phase 0 classification; Phase 1 for any serialized types used by a
+candidate.
+
+## Objective
+
+Extract only browser/Node-neutral algorithms, normalizers, and types that have
+real consumers in both runtimes, starting with low-fanout leaves.
+
+## Required Work
+
+- Choose leaf helpers before prompt, parser, provider, translator, or generation
+  orchestrators.
+- Remove Svelte/store, DOM, Fastify, filesystem, process-global, credential,
+  database, and host dependencies before moving a module.
+- Provide narrow value inputs instead of an aggregate `Database` type.
+- Add a shared-core import audit comparable to the protocol package audit.
+- Prove browser/server parity with focused fixtures.
+
+## Ownership Rule
+
+Serialized schemas remain in `packages/protocol`. Pure behavior belongs in a
+separate audited owner. Server-only policy/persistence stays in Fastify;
+browser-only state/reactivity stays under `src/`.
+
+## Exit Criteria
+
+- Every moved module has no framework-specific or host-specific dependency.
+- No shared API accepts the aggregate browser database merely for convenience.
+- Both runtime consumers pass parity tests and old duplicate implementations are
+  removed only after proof.
+
+## Validation
+
+Shared import audit, focused differential tests, protocol checks where relevant,
+affected client/server tests, both typechecks, formatting, and diff checks.
