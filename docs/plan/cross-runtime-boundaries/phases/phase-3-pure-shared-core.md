@@ -62,4 +62,6 @@ Completed slice: [History-slot rendering](slices/phase-3-pure-shared-core/histor
 
 Completed slice: [Lore hash randomization](slices/phase-3-pure-shared-core/lore-hash-randomization.md).
 
-Active slice: [Model-role resolution](slices/phase-3-pure-shared-core/model-role-resolution.md).
+Completed slice: [Model-role resolution](slices/phase-3-pure-shared-core/model-role-resolution.md).
+
+Active slice: [Agent-only lorebook predicate](slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).

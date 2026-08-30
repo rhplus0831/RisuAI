@@ -4,22 +4,21 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [model-role resolution
-slice](phases/slices/phase-3-pure-shared-core/model-role-resolution.md).
+Execute the [agent-only lorebook predicate
+slice](phases/slices/phase-3-pure-shared-core/agent-only-lorebook-predicate.md).
 
-1. Move the zero-import model-role constants, types, map normalizers, aliases,
-   inheritance metadata, and legacy model resolver into an explicit shared-core
-   subpath.
-2. Preserve exact `MODEL_ROLES` and legacy-key ordering, `model`/`submodel`
-   aliases, whitespace trimming, invalid-input defaults, and nonblank-array
-   filtering.
-3. Preserve the rule that `chatMain`/`chatAux` ignore role overrides, auxiliary
-   overrides win, separate models require the misspelled legacy gate, and
-   `scriptAux` falls through `scriptAux -> otherAx -> subModel`.
-4. Migrate all browser and eight Fastify production consumers, then delete the
-   browser-tree owner only after differential and closed-world ownership proof.
-5. Keep durable profile resolution, provider/credential policy, settings UI,
-   persistence, import/export, and command orchestration unchanged.
+1. Move only the portable marker constant and predicate into an explicit
+   shared-core subpath with a narrow structural input.
+2. Preserve nullish handling and strict `=== true` checks for both `agentOnly`
+   and `extentions.risu_agent_only`.
+3. Preserve the extension fallback when the direct field is false; do not
+   coerce truthy values or mutate entries.
+4. Migrate the browser Agent-input/export module, browser lorebook settings and
+   processing, and Fastify lorebook filtering, then add a closed-world ownership
+   proof.
+5. Keep Agent input resolution, scope precedence, activation validation,
+   cloning, Original Risu export projection, persistence, and UI orchestration
+   unchanged.
 
 ## Foundations Released
 
@@ -57,13 +56,16 @@ slice](phases/slices/phase-3-pure-shared-core/model-role-resolution.md).
   `7e03538ea`.
 - Lore hash randomization is released at `1b1152814`; the browser facade and
   both Fastify owners share one implementation.
+- Model-role resolution is released at `22d6799dd`; twenty browser and eight
+  Fastify production consumers share one implementation.
 
 ## Not In This Slice
 
-- Do not move profile resolution, provider/credential policy, database state,
-  request routing, settings UI, or command orchestration into shared core.
-- Do not correct the persisted `seperate*` spelling, reorder roles or legacy
-  keys, or broaden this slice into profile records/resolvers.
+- Do not move Agent input resolution, Original Risu export projection, cloning,
+  database types, activation validation, prompt filtering, or UI orchestration
+  into shared core.
+- Do not correct the persisted `extentions` spelling or broaden the input shape
+  beyond the two fields inspected by the predicate.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

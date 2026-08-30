@@ -1,6 +1,6 @@
 # Model-Role Resolution
 
-Status: ready.
+Status: complete at `22d6799dd`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -17,7 +17,7 @@ or command behavior.
 
 - Source: `src/ts/model/modelRoles.ts`.
 - Destination: an explicit `@risuai/shared-core` subpath.
-- Consumers: nineteen browser production modules and eight Fastify production
+- Consumers: twenty browser production modules and eight Fastify production
   modules spanning model-profile records/resolution/UI, database defaults,
   settings surfaces, request/command types, and preset/profile commands.
 
@@ -38,14 +38,14 @@ or command behavior.
 ## Validation
 
 Shared-core import audit/typecheck; ported and expanded pre-extraction role/map
-differential fixtures; closed-world ownership proof for all 27 production
+differential fixtures; closed-world ownership proof for all 28 production
 consumers; affected model-profile resolver/record/UI, database-default,
 split-preset, command, storage, request-role, and settings tests; both
 typechecks; architecture inventory; formatting; and `git diff --check`.
 
 ## Done When
 
-- All 27 production consumers use the shared subpath.
+- All 28 production consumers use the shared subpath.
 - `src/ts/model/modelRoles.ts` is deleted and all eight matching Fastify
   root-`src` edges disappear without a new exception.
 - Role resolution and normalization remain byte-for-byte stable across browser
@@ -54,3 +54,15 @@ typechecks; architecture inventory; formatting; and `git diff --check`.
 Stop if the leaf needs provider/credential policy, browser stores, DOM/Svelte,
 Fastify, filesystem, process-global state, persistence, or an aggregate
 database.
+
+## Release Evidence
+
+- `@risuai/shared-core/model-roles` owns the constants, aliases, normalization,
+  inheritance metadata, and legacy resolution behavior; twenty browser and
+  eight Fastify production consumers import it directly.
+- Differential, ownership, and import-boundary files passed 13, 1, and 2 tests;
+  affected model-profile, settings, storage, preset, request, database-default,
+  and Fastify command owners passed focused coverage, including 230 command
+  tests.
+- Eight production and three server-test root-`src` edges, plus one source
+  target, left the checked inventory.
