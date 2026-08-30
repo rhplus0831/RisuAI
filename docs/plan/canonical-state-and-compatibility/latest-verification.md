@@ -6,8 +6,8 @@ Date: 2026-08-31
 
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
   `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`,
-  `07576969c`, `d8275c5e9`, `3cff93cd6`, `fd0764744`, `c24cdd16d`, and
-  `e663269de`
+  `07576969c`, `d8275c5e9`, `3cff93cd6`, `fd0764744`, `c24cdd16d`,
+  `e663269de`, and `f610c11a1`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
@@ -18,7 +18,7 @@ Date: 2026-08-31
   and image capability, canonical custom-sidebar model authoring, Fastify
   server-intent completion projection, browser request sampling,
   provider-specific thinking overrides, and effective prompt/generation model
-  identity.
+  identity, plus translation cache and source-language identity.
 
 ## Consumer-Cutover Proof
 
@@ -64,6 +64,10 @@ Date: 2026-08-31
 - V3 plugin chat-send loop protection checks the resolved `chatMain` model, and
   default generation labels use resolved selected/wire/provider options while
   explicit provider-reported and legacy formatting stays compatible.
+- LLM translation cache identity no longer includes stale flat `aiModel`; the
+  resolved translate profile remains authoritative. Non-LLM cache identity and
+  NovelList source-language selection share one effective translate-role
+  provider check, with legacy `subModel` fallback retained.
 
 ## Commands And Results
 
@@ -85,20 +89,23 @@ Date: 2026-08-31
   parameter-ownership, and 19 role-routing tests.
 - Effective model identity passed 1 direct CBS, 19 CBS string, 135 assembly, 68
   V3 plugin, 3 generation-label, and 3 closed ownership tests.
+- Translation cache/locale identity passed 26 cache and 4 closed model-runtime
+  ownership tests.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at 232 cross-runtime edges after interleaved
-  Workstream 1 server-input migrations, 20 compatibility
-  surfaces/42 probes, 9,898 client references/326 groups, and 56 owner-gap rows.
+- Architecture inventory passed at the current 165 cross-runtime edges after
+  interleaved Workstream 1 server-input migrations, 20 compatibility
+  surfaces/42 probes, 9,899 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `e663269de`. Selected legacy
+The normal-consumer checkpoint passes through `f610c11a1`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
 canonical presets; server-intent completion projects durable runtime fields;
 ordinary provider request samplers and provider-specific thinking overrides use
 resolved runtime options; prompt-visible identity, plugin recursion protection,
-and default generation labels use the effective profile. The broader normal
+default generation labels, and translation cache/locale identity use the
+effective profile. The broader normal
 consumer cutover remains active; the model-owner cursor is not released yet.

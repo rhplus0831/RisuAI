@@ -1,6 +1,6 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; effective model-identity checkpoint through `e663269de`.
+Status: in progress; translation cache/locale checkpoint through `f610c11a1`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -95,6 +95,10 @@ classified static/legacy boundary removed to complete the cutover.
 - Default generation labels derive from the effective selected/wire/provider
   profile at `e663269de`; explicit provider-returned overrides and legacy-only
   selection formatting retain their compatibility behavior.
+- Translation cache identity drops the redundant flat main-model dimension,
+  and the NovelList source-language heuristic resolves the effective translate
+  role at `f610c11a1`. Conflicting chat-main/translate/flat fixtures preserve
+  legacy `subModel` fallback while proving durable translate ownership.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar

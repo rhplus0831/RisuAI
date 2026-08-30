@@ -4,17 +4,17 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Reconcile the remaining Phase 4 inventory with Workstream 2's active model
-consumer cutover before opening another ownership slice.
+Execute the [prompt-info snapshot ownership
+slice](phases/slices/phase-4-server-consumer-migration/prompt-info-snapshot-ownership.md).
 
-1. Complete the bounded translation cache/locale identity cutover named by
-   Workstream 2.
-2. Re-run the cross-runtime inventory and classify the remaining model,
-   prompt-template, translator, parser, and aggregate-database edges.
-3. Open only a review-sized slice whose behavior and policy owner are explicit;
-   do not move application state into shared core.
-4. Keep both consuming TypeScript project references until every unapproved
-   edge is gone and Phase 6 can prove declaration decoupling.
+1. Replace aggregate database/message types with narrow structural input and
+   output records in a dependency-free shared leaf.
+2. Retain the browser facade; point Fastify effective generation directly at
+   the shared owner.
+3. Preserve disabled output, preset-name coercion, select/text/boolean
+   formatting, row ordering, and missing-value behavior.
+4. Do not move prompt-template selection, chat state, persistence, or generation
+   policy.
 
 ## Foundations Released
 
@@ -111,6 +111,14 @@ consumer cutover before opening another ownership slice.
   variable resolvers injected by each host.
 - Settings group/projection vocabulary is released through
   `@risuai/shared-core/settings-groups` at `a0f8931c5`.
+- Provider-secret masking, Agent/Agent Preset records, memory-model capability,
+  and toggle-preset records are released through four audited shared-core
+  subpaths.
+- RisuChat conditionals accept a host variable resolver at `5e7233e2a`, so
+  Fastify parsing uses request-local state without mutating browser backend
+  registration.
+- Workstream 2 translation cache and NovelList locale identity resolve the
+  effective translate profile at `f610c11a1`.
 
 ## Holds
 
@@ -123,5 +131,6 @@ consumer cutover before opening another ownership slice.
 
 ## Handoff
 
-After the Workstream 2 translation slice closes, refresh the target/consumer
-ranking and select the smallest non-overlapping Phase 4 owner migration.
+After this slice closes, take the narrow parser character-argument type seam or
+the independently owned browser-smoke fixtures, then refresh the remaining
+model/prompt/parser/aggregate-domain ranking.

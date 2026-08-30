@@ -7,20 +7,18 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Remove the redundant flat `aiModel` dimension from the LLM translation cache
-   signature; the resolved translate-profile signature remains authoritative.
-2. Make the Novellist locale heuristic inspect the effective translate role,
-   with explicit legacy/static behavior retained where required.
-3. Add conflicting chat-main/translate/flat fixtures for cache invalidation and
-   locale selection.
-4. Continue replacing ordinary runtime reads of flat agent and auxiliary
-   settings; CBS, generation labels, plugin loop protection, and
-   provider-specific thinking overrides are now canonical.
-5. Preserve the named clone-only selected-preset seam for legacy inline
+1. Classify the remaining direct auxiliary model reads in Agent prepared input,
+   trigger/display-source contexts, settings metadata, and tokenizer helpers as
+   effective projections, context-free fallbacks, or ordinary owner bypasses.
+2. Replace each ordinary bypass with an already-resolved role/profile input and
+   add conflicting flat/profile fixtures before removing it.
+3. Add a closed-world allowlist for the remaining static, import/export,
+   conversion, rollback, and explicit legacy-reader surfaces.
+4. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
-6. Prove provider/model/options/fallback parity in browser reload and request
+5. Prove provider/model/options/fallback parity in browser reload and request
    lanes while retaining explicit legacy conversion/import/export.
-7. Isolate the remaining legacy-reader removal and prepare the Phase 2
+6. Isolate the remaining legacy-reader removal and prepare the Phase 2
    model-owner release cursor for Workstream 3.
 
 ## Phase 0 Release
