@@ -95,6 +95,52 @@ export interface ClientResourceBaseline {
   >
 }
 
+export type ClientResourceOwnerCapability = 'complete' | 'partial' | 'missing' | 'blocked' | 'not-applicable'
+
+export interface ClientResourceOwnerGapMatrix {
+  schemaVersion: 1
+  source: {
+    baseline: string
+    openingAnchor: string
+    inventoryCursor: string
+    policyCount: number
+    consumerGroupCount: number
+    referenceCount: number
+  }
+  capabilityKeys: string[]
+  owners: Record<
+    string,
+    {
+      dependencies: { workstream1: string; workstream2: string }
+      capabilities: Record<string, ClientResourceOwnerCapability>
+      gap: string
+      evidence: string[]
+    }
+  >
+  policies: Record<string, { owner: string }>
+  foundations: Record<
+    string,
+    {
+      status: string
+      resource: string
+      ownerApi: string
+      workstream1Cursor: string
+      workstream2Cursor: string
+      capabilities: string[]
+      remaining: string
+    }
+  >
+}
+
+const OWNER_CAPABILITY_KEYS = ['selectors', 'resourceState', 'commands', 'draftRecovery', 'contractTests']
+const OWNER_CAPABILITY_STATES = new Set<ClientResourceOwnerCapability>([
+  'complete',
+  'partial',
+  'missing',
+  'blocked',
+  'not-applicable',
+])
+
 const EXACT_IDENTIFIER_DETECTORS = new Map<string, string>([
   ['getDatabase', 'aggregate-read'],
   ['setDatabase', 'aggregate-replacement'],
@@ -562,6 +608,119 @@ export function validateClientResourceBaseline(baseline: ClientResourceBaseline)
   for (const seam of baseline.temporarySeams) {
     if (!seam.owner || !seam.disposition || !seam.migrationPhase || !seam.removalTrigger) {
       errors.push(`temporary seam ${seam.id} in ${seam.file} has incomplete ownership metadata`)
+    }
+  }
+  return errors
+}
+
+export function validateClientResourceOwnerGapMatrix(
+  repoRoot: string,
+  baseline: ClientResourceBaseline,
+  matrix: ClientResourceOwnerGapMatrix,
+): string[] {
+  const errors: string[] = []
+  const expectedTopLevelKeys = ['capabilityKeys', 'foundations', 'owners', 'policies', 'schemaVersion', 'source']
+  if (JSON.stringify(Object.keys(matrix).sort()) !== JSON.stringify(expectedTopLevelKeys)) {
+    errors.push('client resource owner gap matrix has unexpected top-level fields')
+  }
+  if (matrix.schemaVersion !== 1) errors.push('client resource owner gap matrix schemaVersion must be 1')
+  if (matrix.source?.baseline !== 'docs/plan/client-resource-ownership/client-resource-baseline.json') {
+    errors.push('client resource owner gap matrix must reference the frozen Phase 0 baseline')
+  }
+  if (matrix.source?.openingAnchor !== baseline.openingAnchor) {
+    errors.push('client resource owner gap matrix opening anchor does not match the frozen baseline')
+  }
+  if (!matrix.source?.inventoryCursor?.trim()) {
+    errors.push('client resource owner gap matrix is missing its Phase 0 inventory cursor')
+  }
+
+  const policyKeys = Object.keys(baseline.policies).sort()
+  const matrixPolicyKeys = Object.keys(matrix.policies ?? {}).sort()
+  const consumerGroupCount = baseline.consumers.length
+  const referenceCount = baseline.consumers.reduce(
+    (total, consumer) => total + consumer.files.reduce((fileTotal, file) => fileTotal + file.count, 0),
+    0,
+  )
+  if (matrix.source?.policyCount !== policyKeys.length) {
+    errors.push(`client resource owner gap matrix policy count must be ${policyKeys.length}`)
+  }
+  if (matrix.source?.consumerGroupCount !== consumerGroupCount) {
+    errors.push(`client resource owner gap matrix consumer group count must be ${consumerGroupCount}`)
+  }
+  if (matrix.source?.referenceCount !== referenceCount) {
+    errors.push(`client resource owner gap matrix reference count must be ${referenceCount}`)
+  }
+  if (JSON.stringify(matrixPolicyKeys) !== JSON.stringify(policyKeys)) {
+    errors.push('client resource owner gap matrix policy rows do not exactly match the frozen baseline')
+  }
+  if (JSON.stringify(matrix.capabilityKeys) !== JSON.stringify(OWNER_CAPABILITY_KEYS)) {
+    errors.push('client resource owner gap matrix capability keys have drifted')
+  }
+
+  const expectedOwners = [...new Set(Object.values(baseline.policies).map((policy) => policy.resourceFamily))].sort()
+  if (JSON.stringify(Object.keys(matrix.owners ?? {}).sort()) !== JSON.stringify(expectedOwners)) {
+    errors.push('client resource owner gap matrix owners do not exactly match the frozen resource families')
+  }
+  for (const [ownerId, owner] of Object.entries(matrix.owners ?? {})) {
+    if (!owner.dependencies?.workstream1?.trim() || !owner.dependencies?.workstream2?.trim()) {
+      errors.push(`client resource owner ${ownerId} is missing an exact Workstream 1 or Workstream 2 dependency`)
+    }
+    if (
+      JSON.stringify(Object.keys(owner.capabilities ?? {}).sort()) !== JSON.stringify([...OWNER_CAPABILITY_KEYS].sort())
+    ) {
+      errors.push(`client resource owner ${ownerId} must classify every owner capability exactly once`)
+    }
+    for (const [capability, state] of Object.entries(owner.capabilities ?? {})) {
+      if (!OWNER_CAPABILITY_STATES.has(state)) {
+        errors.push(`client resource owner ${ownerId} has invalid ${capability} state ${JSON.stringify(state)}`)
+      }
+    }
+    if (!owner.gap?.trim()) errors.push(`client resource owner ${ownerId} has no bounded gap`)
+    if (!owner.evidence?.length) errors.push(`client resource owner ${ownerId} has no evidence`)
+    for (const evidence of owner.evidence ?? []) {
+      const [evidencePath] = evidence.split('#', 1)
+      if (!evidencePath || !fs.existsSync(path.join(repoRoot, evidencePath))) {
+        errors.push(`client resource owner ${ownerId} evidence does not exist: ${evidence}`)
+      }
+    }
+  }
+
+  for (const [policyId, row] of Object.entries(matrix.policies ?? {})) {
+    if (JSON.stringify(Object.keys(row).sort()) !== JSON.stringify(['owner'])) {
+      errors.push(`client resource owner policy ${policyId} must contain only its owner mapping`)
+    }
+    if (!matrix.owners?.[row.owner])
+      errors.push(`client resource owner policy ${policyId} uses unknown owner ${row.owner}`)
+    if (baseline.policies[policyId]?.resourceFamily !== row.owner) {
+      errors.push(`client resource owner policy ${policyId} does not map to its frozen resource family`)
+    }
+  }
+
+  const foundations = Object.entries(matrix.foundations ?? {}).filter(
+    ([, foundation]) => foundation.status === 'implemented',
+  )
+  if (foundations.length === 0) errors.push('client resource owner gap matrix has no implemented foundation')
+  for (const [foundationId, foundation] of foundations) {
+    const [ownerPath, anchor] = foundation.ownerApi.split('#')
+    if (!ownerPath || !anchor || !fs.existsSync(path.join(repoRoot, ownerPath))) {
+      errors.push(`client resource owner foundation ${foundationId} has an invalid owner API: ${foundation.ownerApi}`)
+    } else if (!fs.readFileSync(path.join(repoRoot, ownerPath), 'utf8').includes(anchor)) {
+      errors.push(`client resource owner foundation ${foundationId} owner API anchor is missing: ${anchor}`)
+    }
+    if (
+      !foundation.resource?.trim() ||
+      !foundation.workstream1Cursor?.trim() ||
+      !foundation.workstream2Cursor?.trim()
+    ) {
+      errors.push(`client resource owner foundation ${foundationId} has incomplete dependency metadata`)
+    }
+    for (const capability of foundation.capabilities ?? []) {
+      if (!OWNER_CAPABILITY_KEYS.includes(capability)) {
+        errors.push(`client resource owner foundation ${foundationId} has unknown capability ${capability}`)
+      }
+    }
+    if (!foundation.remaining?.trim()) {
+      errors.push(`client resource owner foundation ${foundationId} has no bounded remaining work`)
     }
   }
   return errors

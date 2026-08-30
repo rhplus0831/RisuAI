@@ -18,6 +18,8 @@ import {
   compareClientResourceBaseline,
   createClientResourceBaseline,
   type ClientResourceBaseline,
+  type ClientResourceOwnerGapMatrix,
+  validateClientResourceOwnerGapMatrix,
 } from './client-resource-inventory.js'
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -209,6 +211,50 @@ describe('compatibility disposition gate', () => {
 })
 
 describe('client resource ownership gate', () => {
+  it('requires one owner capability row for every frozen policy without copying consumer observations', () => {
+    const baseline = JSON.parse(
+      fs.readFileSync(
+        path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/client-resource-baseline.json'),
+        'utf8',
+      ),
+    ) as ClientResourceBaseline
+    const matrix = JSON.parse(
+      fs.readFileSync(path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/owner-api-gap-matrix.json'), 'utf8'),
+    ) as ClientResourceOwnerGapMatrix
+
+    expect(validateClientResourceOwnerGapMatrix(REPO_ROOT, baseline, matrix)).toEqual([])
+    expect(Object.keys(matrix.policies)).toHaveLength(56)
+    expect(matrix).not.toHaveProperty('consumers')
+    expect(matrix.foundations['lorebook-page-standalone']).toMatchObject({
+      status: 'implemented',
+      resource: 'loreBookPage',
+      capabilities: ['selectors', 'resourceState', 'contractTests'],
+    })
+  })
+
+  it('fails closed on a missing policy, widened capability shape, or missing owner API anchor', () => {
+    const baseline = JSON.parse(
+      fs.readFileSync(
+        path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/client-resource-baseline.json'),
+        'utf8',
+      ),
+    ) as ClientResourceBaseline
+    const matrix = JSON.parse(
+      fs.readFileSync(path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/owner-api-gap-matrix.json'), 'utf8'),
+    ) as ClientResourceOwnerGapMatrix
+    delete matrix.policies['lorebook:read']
+    matrix.owners.lorebook.capabilities.aggregateSnapshot = 'complete'
+    matrix.foundations['lorebook-page-standalone'].ownerApi = 'src/ts/server/lorebookPageOwner.svelte.ts#missingOwner'
+
+    expect(validateClientResourceOwnerGapMatrix(REPO_ROOT, baseline, matrix)).toEqual(
+      expect.arrayContaining([
+        'client resource owner gap matrix policy rows do not exactly match the frozen baseline',
+        'client resource owner lorebook must classify every owner capability exactly once',
+        'client resource owner foundation lorebook-page-standalone owner API anchor is missing: missingOwner',
+      ]),
+    )
+  })
+
   it('matches every reviewed consumer, bridge family, and temporary seam', () => {
     const observation = collectClientResourceObservation(REPO_ROOT)
     const baseline = JSON.parse(
