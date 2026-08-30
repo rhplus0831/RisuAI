@@ -37,9 +37,9 @@ import {
   readProviderCredentials,
   type ProviderCredentialRecord,
 } from '@risuai/shared-core/provider-credential-records'
-import { AnthropicModels } from '../../../../src/ts/model/providers/anthropic.js'
-import { GoogleModels } from '../../../../src/ts/model/providers/google.js'
-import { OpenAIModels } from '../../../../src/ts/model/providers/openai.js'
+import { AnthropicModels } from '@risuai/shared-core/anthropic-models'
+import { GoogleModels } from '@risuai/shared-core/google-models'
+import { OpenAIModels } from '@risuai/shared-core/openai-models'
 import { LLMFormat } from '@risuai/shared-core/model-types'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
