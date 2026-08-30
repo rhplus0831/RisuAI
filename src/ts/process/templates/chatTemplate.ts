@@ -3,7 +3,7 @@ import { get } from 'svelte/store'
 import type { OpenAIChat } from '../index.svelte'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
 import { getUserName } from 'src/ts/utilState'
 
 export const chatTemplates = {
@@ -35,7 +35,14 @@ export const applyChatTemplate = (
   } = {},
 ) => {
   const db = getDatabase()
-  const currentChar = charactersResourceState.characters[get(selectedCharID)]
+  const selectedIndex = get(selectedCharID)
+  const selectedCandidate = charactersResourceState.characters[selectedIndex]
+  const currentChar =
+    charactersResourceState.status === 'ready'
+      ? selectedCandidate?.chaId
+        ? getCharacterResourceOwner(selectedCandidate.chaId)
+        : undefined
+      : db.characters?.[selectedIndex]
   const type = arg.type ?? db.instructChatTemplate
   if (!type) {
     throw new Error('Template type is not set')
