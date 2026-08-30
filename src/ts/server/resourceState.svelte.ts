@@ -38,6 +38,7 @@ import {
   type ServerStandaloneSettingName,
   type ServerStandaloneSettingPayload,
 } from '@risuai/protocol/standalone-settings'
+import { projectChatMetadata, type ChatMetadataOwnerState } from './chatMetadataOwner'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -704,6 +705,25 @@ export const charactersResourceState = $state<CharactersResourceState>({
   error: null,
   rowErrors: {},
 })
+
+/**
+ * Read-only owner boundary for chat metadata consumers. This deliberately
+ * projects scalar display metadata instead of exposing the chat record, whose
+ * message and other body fields remain owned by their dedicated projections.
+ */
+export function getChatMetadataOwnerState(chatId: string): ChatMetadataOwnerState | undefined {
+  if (!nonEmptyString(chatId)) return undefined
+
+  let match: ChatMetadataOwnerState | undefined
+  for (const character of charactersResourceState.characters) {
+    for (const chat of character.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      if (match) return undefined
+      match = projectChatMetadata(chatId, chat)
+    }
+  }
+  return match
+}
 
 const collectionNameSet = new Set<string>(SERVER_COLLECTION_NAMES)
 const guardedResourceValueMemo = new WeakMap<object, object>()
