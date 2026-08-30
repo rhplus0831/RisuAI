@@ -83,6 +83,7 @@ describe('@risuai/protocol import boundary', () => {
       'generationSse.ts',
       'imageGenerationOperation.ts',
       'index.ts',
+      'mcpOAuthRefresh.ts',
       'providerOperation.ts',
       'serverTool.ts',
       'shellResource.ts',

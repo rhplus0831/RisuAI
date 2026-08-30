@@ -1,5 +1,5 @@
 import { isIP } from 'node:net'
-import type { McpOAuthRefreshRequest, McpOAuthRefreshSuccess } from '../../../src/ts/server/mcpOAuthRefreshProtocol.js'
+import type { McpOAuthRefreshRequest, McpOAuthRefreshSuccess } from '@risuai/protocol/mcp-oauth-refresh'
 import { readBoundedBodyJson } from './generation/body.js'
 import { fetchMcpOAuthRefreshToken, isLocalMcpOAuthRefreshAddress } from './mcpOAuthRefreshEgress.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'

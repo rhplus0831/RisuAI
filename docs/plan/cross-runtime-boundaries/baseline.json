@@ -1121,20 +1121,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/mcpOAuthRefresh.ts",
-      "specifier": "../../../src/ts/server/mcpOAuthRefreshProtocol.js",
-      "target": "src/ts/server/mcpOAuthRefreshProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "McpOAuthRefreshRequest",
-        "McpOAuthRefreshSuccess"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/memoryChunkPlanner.ts",
       "specifier": "../../../src/ts/process/index.svelte",
       "target": "src/ts/process/index.svelte.ts",

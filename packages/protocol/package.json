@@ -12,6 +12,7 @@
     "./embedding-operation": "./src/embeddingOperation.ts",
     "./generation-sse": "./src/generationSse.ts",
     "./image-generation-operation": "./src/imageGenerationOperation.ts",
+    "./mcp-oauth-refresh": "./src/mcpOAuthRefresh.ts",
     "./provider-operation": "./src/providerOperation.ts",
     "./server-tool": "./src/serverTool.ts",
     "./shell-resource": "./src/shellResource.ts",
