@@ -22,6 +22,12 @@ describe('frontend Vitest filename routing', () => {
   })
 
   it('leaves baseline-only compatibility suites to their pinned custom project', () => {
-    expect(frontendVitestProjectForFile(isolatedCompatibilityTestFiles[0])).toBeUndefined()
+    expect(isolatedCompatibilityTestFiles).toEqual([
+      'test/compat-harness/phase9CbsBaseline.test.ts',
+      'test/compat-harness/phase9LuaFailureSemantics.test.ts',
+    ])
+    for (const file of isolatedCompatibilityTestFiles) {
+      expect(frontendVitestProjectForFile(file), file).toBeUndefined()
+    }
   })
 })

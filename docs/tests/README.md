@@ -89,7 +89,9 @@ compatibility harness or baseline infrastructure changes. A production
 compatibility change selects the current harness; compatibility register JSON
 or validator changes select register validation. Treat `test:affected` as a
 fast selector and `test:all` as the current aggregate owner, not as substitutes
-for the full pinned run when baseline comparison is required.
+for the full pinned run when baseline comparison is required. Baseline-source
+comparison tests are routed only through that full pinned lane, so ordinary
+frontend runs do not require an external worktree.
 `pnpm prepare:compat-baseline` uses the repository sibling
 `../risu-baseline-71c476e9c` by default; `RISU_COMPAT_BASELINE_ROOT` accepts an
 absolute override for CI or another checkout layout.

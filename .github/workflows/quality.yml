@@ -69,6 +69,10 @@ jobs:
       RISU_TEST_EXCLUDE_UI_MAP: 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The frontend lane owns the compatibility-register validator tests,
+          # which inspect the pinned first-parent commit range.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 11.23.0
@@ -173,6 +177,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Register validation compares the complete pinned first-parent range.
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 11.23.0

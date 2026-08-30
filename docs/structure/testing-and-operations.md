@@ -107,8 +107,10 @@ quality owners. The current harness validates current-stack and cluster goldens
 without external prerequisites. The full compatibility harness additionally
 requires the pinned baseline worktree and its dependencies prepared by
 `pnpm prepare:compat-baseline`; it remains outside `pnpm test:all` because that
-external worktree is not a normal checkout prerequisite. The preparer defaults
-to the sibling `../risu-baseline-71c476e9c` path; set
+external worktree is not a normal checkout prerequisite. Tests that read the
+pinned worktree are excluded from the ordinary frontend projects and run only
+through the full compatibility harness. The preparer defaults to the sibling
+`../risu-baseline-71c476e9c` path; set
 `RISU_COMPAT_BASELINE_ROOT` to an absolute path when a runner needs another
 location. Preparation and harness execution resolve the same override.
 

@@ -194,6 +194,27 @@ describe('test:all orchestration', () => {
     expect(uiUpload).toContain('if-no-files-found: error')
   })
 
+  it('keeps compatibility history and baseline setup in their owning CI lanes', () => {
+    const qualityWorkflow = readFileSync('.github/workflows/quality.yml', 'utf8')
+    const frontendJob = qualityWorkflow.slice(
+      qualityWorkflow.indexOf('\n  frontend:'),
+      qualityWorkflow.indexOf('\n  initial-preload:'),
+    )
+    const registersJob = qualityWorkflow.slice(
+      qualityWorkflow.indexOf('\n  compat-registers:'),
+      qualityWorkflow.indexOf('\n  compat-current:'),
+    )
+
+    expect(frontendJob).toContain('fetch-depth: 0')
+    expect(registersJob).toContain('fetch-depth: 0')
+
+    const differentialWorkflow = readFileSync('.github/workflows/compatibility-differential.yml', 'utf8')
+    expect(differentialWorkflow).toContain(
+      'RISU_COMPAT_BASELINE_ROOT: ${{ github.workspace }}/../risu-baseline-71c476e9c',
+    )
+    expect(differentialWorkflow).not.toContain('${{ runner.temp }}')
+  })
+
   it('keeps configured UI coverage support exclusions unique and present', () => {
     expect(new Set(uiCoverageSupportFiles).size).toBe(uiCoverageSupportFiles.length)
     for (const file of uiCoverageSupportFiles) expect(existsSync(file), file).toBe(true)

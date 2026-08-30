@@ -3,7 +3,10 @@ export type FrontendVitestProject = 'frontend-node' | 'frontend-svelte-node' | '
 export const frontendTestFileGlob = '**/*.test.ts'
 export const svelteNodeTestFileGlob = '**/*.svelte-node.test.ts'
 export const explicitDomTestFileGlobs = ['**/*.svelte.test.ts', '**/*.dom.test.ts'] as const
-export const isolatedCompatibilityTestFiles = ['test/compat-harness/phase9CbsBaseline.test.ts'] as const
+export const isolatedCompatibilityTestFiles = [
+  'test/compat-harness/phase9CbsBaseline.test.ts',
+  'test/compat-harness/phase9LuaFailureSemantics.test.ts',
+] as const
 
 // These pre-suffix suites are all probe-backed DOM owners recorded by Phases
 // 3-5. Registering them explicitly avoids a rename-only 187-file diff while
