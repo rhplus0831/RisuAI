@@ -2132,16 +2132,14 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
   }
 
   const targetMatches = presets.filter((preset) => preset.id === payload.presetId)
-  const selectedIndex = settings.translatorPresetId
+  const selectedPresetId = settings.translatorPresetId
+  const selectedMatches =
+    typeof selectedPresetId === 'string' ? presets.filter((preset) => preset.id === selectedPresetId) : []
   if (
-    !Number.isInteger(selectedIndex) ||
-    (selectedIndex as number) < 0 ||
-    (selectedIndex as number) >= presets.length
+    targetMatches.length !== 1 ||
+    selectedMatches.length !== 1 ||
+    selectedMatches[0].id !== payload.selectedPresetId
   ) {
-    return false
-  }
-  const selectedPreset = presets[selectedIndex as number]
-  if (targetMatches.length !== 1 || selectedPreset.id !== payload.selectedPresetId) {
     return false
   }
 

@@ -27,7 +27,7 @@ describe('shared translator preset records', () => {
         steps: [{ name: 'Step 1', prompt: defaultTranslatorPrompt, maxResponse: 1000 }],
       },
     ])
-    expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPresetId).toBe(state.translatorPresets?.[0]?.id)
     expect(state.translatorPrompt).toBe('legacy prompt')
     expect(state.translatorMaxResponse).toBe(321)
   })
@@ -75,9 +75,20 @@ describe('shared translator preset records', () => {
       createTranslatorPreset('Global', { id: 'global', prompt: 'Global prompt', maxResponse: 128 }),
       createTranslatorPreset('Bound', { id: 'bound', prompt: 'Bound prompt', maxResponse: 256 }),
     ]
-    const state: TranslatorPresetStateLike = { translatorPresets: presets, translatorPresetId: 0 }
+    const state: TranslatorPresetStateLike = { translatorPresets: presets, translatorPresetId: 'global' }
 
     expect(getTranslatorPresetFromState(state, 'bound')).toBe(presets[1])
     expect(getTranslatorPresetFromState(state, 'missing')).toBe(presets[0])
+  })
+
+  it('fails closed for legacy selection, missing ids, and duplicate owners', () => {
+    const valid = createTranslatorPreset('Valid', { id: 'valid' })
+    expect(getTranslatorPresetFromState({ translatorPresets: [valid], translatorPresetId: 0 })).toBeNull()
+    expect(
+      getTranslatorPresetFromState({ translatorPresets: [{ ...valid, id: '' }], translatorPresetId: 'valid' }),
+    ).toBeNull()
+    expect(
+      getTranslatorPresetFromState({ translatorPresets: [valid, { ...valid }], translatorPresetId: 'valid' }),
+    ).toBeNull()
   })
 })

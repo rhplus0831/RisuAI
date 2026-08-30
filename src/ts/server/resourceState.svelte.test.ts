@@ -1031,7 +1031,7 @@ describe('resource-scoped database state', () => {
           { id: 'translator-a', name: 'A', prompt: 'newer local prompt', maxResponse: 321 },
           { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
         ],
-        translatorPresetId: 0,
+        translatorPresetId: 'translator-a',
         translatorPrompt: 'newer local prompt',
         translatorMaxResponse: 321,
       } as never,
@@ -1058,7 +1058,7 @@ describe('resource-scoped database state', () => {
     ).toBe(true)
 
     expect(getResourceDatabase()).toMatchObject({
-      translatorPresetId: 0,
+      translatorPresetId: 'translator-a',
       translatorPrompt: 'newer local prompt',
       translatorMaxResponse: 321,
     })
@@ -1104,7 +1104,7 @@ describe('resource-scoped database state', () => {
             steps,
           },
         ],
-        translatorPresetId: 0,
+        translatorPresetId: 'translator-a',
         translatorPrompt: steps[0].prompt,
         translatorMaxResponse: steps[0].maxResponse,
       } as never,
@@ -1150,7 +1150,7 @@ describe('resource-scoped database state', () => {
             steps: residentSteps,
           },
         ],
-        translatorPresetId: 0,
+        translatorPresetId: 'translator-a',
         translatorPrompt: residentSteps[0].prompt,
         translatorMaxResponse: residentSteps[0].maxResponse,
       } as never,
@@ -1185,7 +1185,7 @@ describe('resource-scoped database state', () => {
           { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
           { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
         ],
-        translatorPresetId: 0,
+        translatorPresetId: 'translator-a',
         translatorPrompt: 'a prompt',
         translatorMaxResponse: 100,
       } as never,

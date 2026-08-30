@@ -493,7 +493,7 @@ test('translator preset bindings persist independently across chats', async ({ p
     translator: 'ko',
     translatorInputLanguage: 'en',
     translatorType: 'llm',
-    translatorPresetId: 0,
+    translatorPresetId: 'translator-smoke-a',
     translatorPrompt: 'Global translator',
     translatorMaxResponse: 128,
     translatorPresets: [

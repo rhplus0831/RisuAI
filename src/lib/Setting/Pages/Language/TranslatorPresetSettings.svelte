@@ -72,7 +72,6 @@
     getTranslatorPresetDownloadName,
     isValidTranslatorPresetOutputKey,
     normalizeTranslatorPreset,
-    normalizeTranslatorPresetState,
     TRANSLATOR_PRESET_MAX_STEPS,
     translatorPresetImportExtensions,
     type TranslatorPreset,
@@ -87,7 +86,7 @@
 
   interface TranslatorPresetStateSnapshot {
     translatorPresets: TranslatorPreset[]
-    translatorPresetId: number
+    translatorPresetId: string | number
   }
 
   interface PendingTranslatorPresetUpdate {
@@ -309,7 +308,16 @@
   }
 
   function currentSelectedTranslatorPresetId(): string | null {
-    return getDatabase().translatorPresets?.[getDatabase().translatorPresetId]?.id ?? null
+    const selectedId = getDatabase().translatorPresetId
+    if (typeof selectedId !== 'string' || !selectedId.trim()) return null
+    const matches = getDatabase().translatorPresets?.filter((preset) => preset.id === selectedId) ?? []
+    return matches.length === 1 ? (matches[0].id ?? null) : null
+  }
+
+  function currentSelectedTranslatorPreset(): TranslatorPreset | null {
+    const selectedId = currentSelectedTranslatorPresetId()
+    if (!selectedId) return null
+    return getDatabase().translatorPresets.find((preset) => preset.id === selectedId) ?? null
   }
 
   function translatorPresetOwnerDependencyKeys(...presetIds: Array<string | null | undefined>): string[] {
@@ -321,9 +329,9 @@
   }
 
   function projectedSelectedTranslatorPresetId(): string | null {
-    const selectedIndex = getDatabase().translatorPresetId
-    if (Number.isInteger(selectedIndex) && selectedIndex >= 0) {
-      const projectedPresetId = confirmedTranslatorPresetCollection?.[selectedIndex]?.id
+    const selectedId = getDatabase().translatorPresetId
+    if (typeof selectedId === 'string' && selectedId.trim()) {
+      const projectedPresetId = confirmedTranslatorPresetCollection?.find((preset) => preset.id === selectedId)?.id
       if (projectedPresetId) return projectedPresetId
     }
     return currentSelectedTranslatorPresetId()
@@ -469,6 +477,13 @@
           continue
         }
 
+        if (
+          mutation.kind === 'delete' &&
+          translatorPresetCreateOutcomesById.get(mutation.attempt.deletedPreset.id) === 'failed'
+        ) {
+          continue
+        }
+
         const deletedIndex = presets.findIndex((preset) => preset.id === mutation.attempt.deletedPreset.id)
         if (deletedIndex !== -1) presets.splice(deletedIndex, 1)
         if (presets.some((preset) => preset.id === mutation.attempt.attemptedSelectedPreset.id)) {
@@ -479,8 +494,7 @@
       }
 
       getDatabase().translatorPresets = presets
-      const selectedIndex = selectedPresetId ? presets.findIndex((preset) => preset.id === selectedPresetId) : -1
-      getDatabase().translatorPresetId = selectedIndex === -1 ? 0 : selectedIndex
+      getDatabase().translatorPresetId = selectedPresetId ?? presets[0]?.id ?? ''
     })
   }
 
@@ -599,13 +613,10 @@
 
   function projectionMatchesTranslatorPresetDirtyValue(
     preset: TranslatorPreset,
-    presetIndex: number,
     field: TranslatorPresetDirtyField,
     value: unknown,
   ): boolean {
-    if (snapshotJson(preset[field]) !== snapshotJson(value)) return false
-    if (getDatabase().translatorPresetId !== presetIndex) return true
-    return true
+    return snapshotJson(preset[field]) === snapshotJson(value)
   }
 
   function clearTranslatorPresetDirtyFieldsMatchingProjection(
@@ -616,7 +627,7 @@
   ): void {
     let rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
     for (const [field, value] of Array.from(dirtyFields.entries())) {
-      if (projectionMatchesTranslatorPresetDirtyValue(preset, presetIndex, field, value)) {
+      if (projectionMatchesTranslatorPresetDirtyValue(preset, field, value)) {
         dirtyFields.delete(field)
         rollbackBaselines?.delete(field)
         continue
@@ -743,10 +754,6 @@
     return createNonSecurityUuid()
   }
 
-  function normalizeTranslatorPresets() {
-    normalizeTranslatorPresetState(getDatabase())
-  }
-
   function applyTranslatorPresetPatchToDatabase(presetId: string, patch: TranslatorPresetSnapshot): void {
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
@@ -767,10 +774,7 @@
   }
 
   function selectedTranslatorPresetId(): string | null {
-    if (!canUseServerCommands()) {
-      normalizeTranslatorPresets()
-    }
-    return getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id ?? null
+    return currentSelectedTranslatorPresetId()
   }
 
   function translatorPresetPatchOptimisticAcknowledgement(
@@ -849,7 +853,7 @@
 
       const nextPresets = [...presets, cloneJsonValue(attemptedPresetWithId)]
       getDatabase().translatorPresets = nextPresets
-      getDatabase().translatorPresetId = nextPresets.length - 1
+      getDatabase().translatorPresetId = attemptedPresetWithId.id
       applied = true
     })
 
@@ -869,7 +873,7 @@
 
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
-      const selectedPresetId = presets[getDatabase().translatorPresetId]?.id ?? null
+      const selectedPresetId = currentSelectedTranslatorPresetId()
       const selectedAttemptedPreset = selectedPresetId === attempt.attemptedPreset.id
       const preserveAuthoritativePreset =
         hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch) &&
@@ -879,12 +883,21 @@
         : presets.filter((preset) => preset.id !== attempt.attemptedPreset.id)
       getDatabase().translatorPresets = nextPresets
 
+      if (nextPresets.some((translatorPreset) => translatorPreset.id === attempt.attemptedPreset.id)) {
+        getDatabase().translatorPresetId = attempt.attemptedPreset.id
+        return
+      }
+
       if (selectedAttemptedPreset) {
         const confirmedPresetId = confirmedSelectedTranslatorPresetId()
-        const confirmedIndex = confirmedPresetId
-          ? nextPresets.findIndex((translatorPreset) => translatorPreset.id === confirmedPresetId)
-          : -1
-        getDatabase().translatorPresetId = confirmedIndex === -1 ? 0 : confirmedIndex
+        const restoredSelection = nextPresets.some(
+          (translatorPreset) => translatorPreset.id === attempt.attemptedPreset.id,
+        )
+          ? attempt.attemptedPreset.id
+          : confirmedPresetId && nextPresets.some((translatorPreset) => translatorPreset.id === confirmedPresetId)
+            ? confirmedPresetId
+            : (nextPresets[0]?.id ?? '')
+        getDatabase().translatorPresetId = restoredSelection
         return
       }
 
@@ -893,7 +906,7 @@
           (translatorPreset) => translatorPreset.id === selectedPresetId,
         )
         if (preservedSelectedPresetIndex !== -1) {
-          getDatabase().translatorPresetId = preservedSelectedPresetIndex
+          getDatabase().translatorPresetId = selectedPresetId
         }
       }
     })
@@ -1031,7 +1044,7 @@
       const livePresetIndex = getDatabase().translatorPresets?.findIndex((preset) => preset.id === presetId) ?? -1
       if (livePresetIndex === -1) return
 
-      getDatabase().translatorPresetId = livePresetIndex
+      getDatabase().translatorPresetId = presetId
       applied = true
     })
 
@@ -1046,7 +1059,7 @@
 
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
-      const selectedPresetId = presets[getDatabase().translatorPresetId]?.id ?? null
+      const selectedPresetId = currentSelectedTranslatorPresetId()
       if (selectedPresetId !== attempt.attemptedPresetId) return
 
       const confirmedPresetId = confirmedSelectedTranslatorPresetId()
@@ -1056,7 +1069,7 @@
         : -1
       if (confirmedSelectedPresetIndex === -1) return
 
-      getDatabase().translatorPresetId = confirmedSelectedPresetIndex
+      getDatabase().translatorPresetId = confirmedPresetId
     })
     reassertPendingTranslatorPresetStructuralMutations()
   }
@@ -1169,7 +1182,7 @@
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const previousIndex = presets.findIndex((preset) => preset.id === presetId)
-      const selectedPresetId = presets[getDatabase().translatorPresetId]?.id
+      const selectedPresetId = currentSelectedTranslatorPresetId() ?? undefined
       if (previousIndex === -1 || presets.length <= 1 || selectedPresetId !== presetId) return
 
       const currentPreset = presets[previousIndex]
@@ -1185,7 +1198,7 @@
       if (!attemptedSelectedPreset?.id) return
 
       getDatabase().translatorPresets = nextPresets
-      getDatabase().translatorPresetId = 0
+      getDatabase().translatorPresetId = attemptedSelectedPreset.id
       attempt = {
         operationId: nextTranslatorPresetStructuralOperationId++,
         deletedPreset: deletedPreset as TranslatorPreset & { id: string },
@@ -1232,8 +1245,7 @@
 
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
-      const selectedPreset = presets[getDatabase().translatorPresetId]
-      const selectedPresetId = selectedPreset?.id ?? null
+      const selectedPresetId = currentSelectedTranslatorPresetId()
       const selectedProjectionMatchesAttempt = selectedPresetId === attempt.attemptedSelectedPreset.id
 
       const nextPresets = [...presets]
@@ -1246,18 +1258,26 @@
       }
 
       getDatabase().translatorPresets = nextPresets
+      if (
+        !selectedPresetId &&
+        authoritativePreset?.id &&
+        nextPresets.some((preset) => preset.id === authoritativePreset.id)
+      ) {
+        getDatabase().translatorPresetId = authoritativePreset.id
+        return
+      }
       if (selectedProjectionMatchesAttempt) {
         const confirmedPresetId = confirmedSelectedTranslatorPresetId()
         const confirmedSelectedPresetIndex = confirmedPresetId
           ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
           : -1
-        getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
+        getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? '' : confirmedPresetId
         return
       }
 
       const preservedSelectedPresetIndex = nextPresets.findIndex((preset) => preset.id === selectedPresetId)
       if (preservedSelectedPresetIndex !== -1) {
-        getDatabase().translatorPresetId = preservedSelectedPresetIndex
+        getDatabase().translatorPresetId = selectedPresetId
         return
       }
 
@@ -1265,7 +1285,7 @@
       const confirmedSelectedPresetIndex = confirmedPresetId
         ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
         : -1
-      getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
+      getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? '' : confirmedPresetId
     })
     if (!authoritativePreset) {
       const confirmedPreset = confirmedTranslatorPresetCollection?.find((preset) => preset.id === restoredPreset.id)
@@ -1280,6 +1300,16 @@
       }
     }
     reassertPendingTranslatorPresetStructuralMutations()
+    if (!currentSelectedTranslatorPresetId()) {
+      withTrustedResourceWrite(() => {
+        const presets = getDatabase().translatorPresets ?? []
+        if (presets.some((preset) => preset.id === attempt.deletedPreset.id)) {
+          getDatabase().translatorPresetId = attempt.deletedPreset.id
+        } else if (presets[0]?.id) {
+          getDatabase().translatorPresetId = presets[0].id
+        }
+      })
+    }
   }
 
   function dispatchDeleteTranslatorPreset(
@@ -1846,10 +1876,8 @@
   bind:value={
     () => getDatabase().translatorPresetId,
     (value) => {
-      const presetIndex = Number(value)
-      const presetId = getDatabase().translatorPresets[presetIndex]?.id ?? null
+      const presetId = typeof value === 'string' && value.trim() ? value : null
       if (!canUseServerCommands()) {
-        getDatabase().translatorPresetId = presetIndex
         if (presetId) dispatchSelectTranslatorPreset(presetId, null)
       } else if (presetId) {
         const attempt = applyOptimisticTranslatorPresetSelection(presetId)
@@ -1864,8 +1892,8 @@
       }
     }
   }>
-  {#each getDatabase().translatorPresets as preset, i}
-    <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
+  {#each getDatabase().translatorPresets as preset}
+    <option class="bg-darkbg appearance-none" value={preset.id}>{preset.name}</option>
   {/each}
 </select>
 
@@ -1883,9 +1911,8 @@
         const presets = getDatabase().translatorPresets
         presets.push(newPreset)
         getDatabase().translatorPresets = presets
-        getDatabase().translatorPresetId = getDatabase().translatorPresets.length - 1
-        normalizeTranslatorPresets()
-        dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId], null)
+        getDatabase().translatorPresetId = newPreset.id!
+        dispatchCreateTranslatorPreset(newPreset, null)
       } else {
         await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
           await flushPendingTranslatorPresetUpdates()
@@ -1898,7 +1925,7 @@
 
   <button
     type="button"
-    aria-label={`${language.edit}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
+    aria-label={`${language.edit}: ${currentSelectedTranslatorPreset()?.name ?? language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       const presets = getDatabase().translatorPresets
@@ -1908,8 +1935,8 @@
         return
       }
 
-      const id = getDatabase().translatorPresetId
-      const preset = presets[id]
+      const preset = currentSelectedTranslatorPreset()
+      if (!preset) return
       const presetId = preset?.id
       if (!presetId) return
       const newName = await alertInput(`Enter new name for ${preset.name}`, [], preset.name)
@@ -1933,7 +1960,7 @@
 
   <button
     type="button"
-    aria-label={`${language.remove}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
+    aria-label={`${language.remove}: ${currentSelectedTranslatorPreset()?.name ?? language.presets}`}
     aria-busy={translatorPresetPersistenceState === 'saving'}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
@@ -1944,8 +1971,9 @@
         return
       }
 
-      const id = getDatabase().translatorPresetId
-      const preset = presets[id]
+      const preset = currentSelectedTranslatorPreset()
+      if (!preset) return
+      const id = presets.findIndex((candidate) => candidate.id === preset.id)
       const confirmed = await alertConfirm(`${language.removeConfirm}${preset.name}`)
 
       if (!confirmed) return
@@ -1954,12 +1982,10 @@
       const latestOptimisticPreset = presetId ? cloneJsonValue(currentTranslatorPresetById(presetId) ?? preset) : null
       if (!canUseServerCommands()) {
         await flushPendingTranslatorPresetUpdates()
-        normalizeTranslatorPresets()
-        getDatabase().translatorPresetId = 0
+        getDatabase().translatorPresetId = presets.find((candidate) => candidate.id !== presetId)?.id ?? ''
         presets.splice(id, 1)
         getDatabase().translatorPresets = presets
-        normalizeTranslatorPresets()
-        const selectPresetId = getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id
+        const selectPresetId = currentSelectedTranslatorPresetId()
         if (presetId) {
           dispatchDeleteTranslatorPreset(presetId, selectPresetId)
         }
@@ -1983,7 +2009,7 @@
 
   <button
     type="button"
-    aria-label={`${language.export}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
+    aria-label={`${language.export}: ${currentSelectedTranslatorPreset()?.name ?? language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       try {
@@ -1994,7 +2020,8 @@
           return
         }
 
-        const preset = presets[getDatabase().translatorPresetId]
+        const preset = currentSelectedTranslatorPreset()
+        if (!preset) return
         await downloadFile(getTranslatorPresetDownloadName(preset.name), await encodeTranslatorPresetFile(preset))
         alertNormal(language.successExport)
       } catch (error) {
@@ -2023,9 +2050,8 @@
 
           presets.push(newPreset)
           getDatabase().translatorPresets = presets
-          getDatabase().translatorPresetId = getDatabase().translatorPresets.length - 1
-          normalizeTranslatorPresets()
-          dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId], null)
+          getDatabase().translatorPresetId = newPreset.id!
+          dispatchCreateTranslatorPreset(newPreset, null)
         } else {
           const status = await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
             await flushPendingTranslatorPresetUpdates()
@@ -2049,8 +2075,8 @@
   </p>
 {/if}
 
-{#if getDatabase().translatorPresets?.[getDatabase().translatorPresetId]}
-  {@const preset = getDatabase().translatorPresets[getDatabase().translatorPresetId]}
+{#if currentSelectedTranslatorPreset()}
+  {@const preset = currentSelectedTranslatorPreset()!}
   {@const steps = translatorPresetStepsForDisplay(preset)}
   <div class="mb-2 flex items-center justify-between gap-3">
     <div>

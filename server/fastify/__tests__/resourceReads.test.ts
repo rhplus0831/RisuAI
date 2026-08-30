@@ -446,7 +446,7 @@ describe('authenticated resource read routes', () => {
     expect(language.json()).toMatchObject({
       revision,
       group: 'language',
-      settings: { translatorPresetId: 0 },
+      settings: { translatorPresetId: 'translator-a' },
     })
 
     const prompt = await harness.app.inject({

@@ -831,13 +831,20 @@ describe('API-backed resource invalidation', () => {
 
   it('reads only language settings alongside translator preset mutations', async () => {
     seedResources(1)
-    const translatorPresets = [{ name: 'Authoritative translator', prompt: 'Translate this' }]
+    const translatorPresets = [
+      {
+        id: 'preset-a',
+        name: 'Authoritative translator',
+        prompt: 'Translate this',
+        maxResponse: 2048,
+      },
+    ]
     api.settingsGroup.mockResolvedValue({
       status: 'ok',
       revision: 2,
       group: 'language',
       settings: {
-        translatorPresetId: 0,
+        translatorPresetId: 'preset-a',
         translatorPrompt: 'Translate this',
         translatorMaxResponse: 2048,
       },
@@ -863,7 +870,7 @@ describe('API-backed resource invalidation', () => {
     expect(api.collections).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({
       translatorPresets,
-      translatorPresetId: 0,
+      translatorPresetId: 'preset-a',
       translatorPrompt: 'Translate this',
       translatorMaxResponse: 2048,
     })

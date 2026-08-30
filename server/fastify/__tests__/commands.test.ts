@@ -7317,7 +7317,7 @@ describe('translator preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.resourceDatabase).toMatchObject({
-      translatorPresetId: 0,
+      translatorPresetId: 'translator-a',
       translatorPrompt: 'translate to A',
       translatorMaxResponse: 100,
     })
@@ -7424,7 +7424,7 @@ describe('translator preset commands', () => {
     })
   })
 
-  it('withholds the PATCH acknowledgement when legacy baseline normalization changes sibling state', async () => {
+  it('keeps PATCH acknowledgement scoped when sibling state is already canonical', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       translatorPresets: [
@@ -7470,7 +7470,7 @@ describe('translator preset commands', () => {
         id: 'translator-a',
       },
       presetId: 'translator-a',
-      acknowledgedKeys: [],
+      acknowledgedKeys: ['prompt'],
       selectedPresetId: 'translator-a',
     })
     const bootstrap = await injectComposedResourceDatabase(harness.app, {
@@ -7480,7 +7480,7 @@ describe('translator preset commands', () => {
     })
     expect(bootstrap.resourceDatabase.translatorPresets[1]).toMatchObject({
       id: 'translator-b',
-      name: 'Preset 2',
+      name: '',
       prompt: 'b prompt',
       maxResponse: 200,
     })

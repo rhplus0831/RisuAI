@@ -654,6 +654,7 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
   const currentChar = db.characters?.[get(selectedCharID)]
   const scope = captureTranslatorPresetScope(db)
   const preset = getCurrentTranslatorPreset(scope.translatorPresetId)
+  if (!preset) return null
   const translatorNote = resolveTranslatorNote(undefined, currentChar)
   const translateProfile = getTranslateProfileCacheSignature(db)
   return getLLMTranslationCacheKey(
@@ -671,7 +672,7 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
 
 let waitTrans = 0
 
-export function getCurrentTranslatorPreset(boundPresetId = activeChatTranslatorPresetId()): TranslatorPreset {
+export function getCurrentTranslatorPreset(boundPresetId = activeChatTranslatorPresetId()): TranslatorPreset | null {
   return getTranslatorPresetFromState(getDatabase({ snapshot: true }), boundPresetId)
 }
 
@@ -1185,6 +1186,7 @@ async function translateLLM(
       ? (arg.translatorPresetId ?? null)
       : activeChatTranslatorPresetId(db),
   )
+  if (!preset) return originalText
   const translateProfile = getTranslateProfileCacheSignature(db)
   const cacheKey = getLLMTranslationCacheKey(originalText, arg, preset, translatorNote, currentChar, translateProfile)
   if (!arg.regenerate) {

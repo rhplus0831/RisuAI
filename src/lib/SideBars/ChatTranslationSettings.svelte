@@ -38,11 +38,16 @@
 
   function globalTranslatorPresetName(): string {
     const database = getDatabase()
-    return database.translatorPresets?.[database.translatorPresetId]?.name ?? language.presets
+    const selectedId = database.translatorPresetId
+    const matches =
+      typeof selectedId === 'string'
+        ? (database.translatorPresets?.filter((preset) => preset.id === selectedId) ?? [])
+        : []
+    return matches.length === 1 ? matches[0].name : language.presets
   }
 
   function translatorPresetExists(presetId: string | undefined): boolean {
-    return !!presetId && (getDatabase().translatorPresets ?? []).some((preset) => preset.id === presetId)
+    return !!presetId && (getDatabase().translatorPresets ?? []).filter((preset) => preset.id === presetId).length === 1
   }
 
   async function saveSetting<Field extends ChatTranslationSettingField>(

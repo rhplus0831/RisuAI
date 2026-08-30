@@ -14,6 +14,7 @@ import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { updateGuisize } from './gui/guisize'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
 import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
@@ -717,14 +718,14 @@ function currentStartupPromptTemplateOwnerId(): string | null {
   return currentGlobalPromptTemplateOwnerId()
 }
 
-function currentGlobalPromptTemplateOwnerId(): string | null {
+export function currentGlobalPromptTemplateOwnerId(): string | null {
   const database = getDatabase()
   const selectedPromptPresetIndex = database.promptPresetsId
   if (!Number.isInteger(selectedPromptPresetIndex) || selectedPromptPresetIndex < 0) return null
   const selectedPromptPreset = database.promptPresets?.[selectedPromptPresetIndex]
-  return typeof selectedPromptPreset?.id === 'string' && selectedPromptPreset.id.trim() !== ''
-    ? selectedPromptPreset.id
-    : null
+  const selectedPromptPresetId = selectedPromptPreset?.id
+  if (typeof selectedPromptPresetId !== 'string' || selectedPromptPresetId.trim() === '') return null
+  return resolveUniquePromptPreset(database.promptPresets, selectedPromptPresetId)?.id ?? null
 }
 
 export async function loadWebInitialDatabase(options: { coordinated?: boolean } = {}) {
@@ -1446,8 +1447,9 @@ function applyTranslatorPresetPatchAcknowledgement(
   localEffect: TranslatorPresetPatchLocalEffect,
 ): boolean {
   const database = getDatabase()
-  const selectedIndex = database.translatorPresetId
-  const selectedPreset = Number.isInteger(selectedIndex) ? database.translatorPresets?.[selectedIndex] : undefined
+  const selectedId = database.translatorPresetId
+  const selectedPreset =
+    typeof selectedId === 'string' ? database.translatorPresets?.find((preset) => preset.id === selectedId) : undefined
   if (
     event.type !== 'translatorPreset.updated' ||
     event.resource !== 'translatorPreset' ||
@@ -2225,6 +2227,9 @@ function currentSplitPresetId(kind: 'model' | 'prompt'): string | null {
   const presets = kind === 'model' ? database.modelPresets : database.promptPresets
   const selectedIndex = kind === 'model' ? database.modelPresetsId : database.promptPresetsId
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(presets)) return null
+  if (kind === 'prompt') {
+    return resolveUniquePromptPreset(database.promptPresets, presets[selectedIndex]?.id)?.id ?? null
+  }
   const id = presets[selectedIndex]?.id
   return typeof id === 'string' && id.trim() !== '' ? id : null
 }
@@ -2241,8 +2246,11 @@ function currentPresetReorderSelection(kind: PresetReorderLocalEffect['presetKin
 function selectedPromptPresetOwnsTemplate(promptPresetId: string): boolean {
   const database = getDatabase()
   const selectedIndex = database.promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return false
-  const preset = database.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(database.promptPresets)) return false
+  const preset = resolveUniquePromptPreset(database.promptPresets, promptPresetId) as
+    | Record<string, unknown>
+    | undefined
+  if (!preset || preset !== database.promptPresets[selectedIndex]) return false
   return preset?.id === promptPresetId && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 

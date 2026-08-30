@@ -25,44 +25,29 @@ export function ensureDatabaseObject(database: unknown): JsonRecord {
 }
 
 export function ensureTranslatorPresetCollection(database: JsonRecord): TranslatorPresetRecord[] {
-  if (!Array.isArray(database.translatorPresets)) {
-    database.translatorPresets = [
-      repairTranslatorPresetRecord({
-        name: 'Default',
-        prompt: defaultTranslatorPrompt,
-        maxResponse: 1000,
-      }),
-    ]
+  if (!Array.isArray(database.translatorPresets) || database.translatorPresets.length === 0) {
+    throw new ValidationError('translator preset collection is unavailable')
   }
-
   const seen = new Set<string>()
-  const presets = (database.translatorPresets as unknown[]).map((raw, index) => {
-    const preset = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
-    const record = repairTranslatorPresetRecord({
-      id: preset.id,
-      name: typeof preset.name === 'string' && preset.name.trim().length > 0 ? preset.name : `Preset ${index + 1}`,
-      prompt: preset.prompt,
-      maxResponse: preset.maxResponse,
-      steps: preset.steps,
-    })
-    if (seen.has(record.id)) {
-      record.id = randomUUID()
+  const presets = database.translatorPresets.map((raw, index) => {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      throw new ValidationError(`translatorPresets[${index}] must be an object`)
     }
-    seen.add(record.id)
-    return record
+    const preset = raw as TranslatorPresetRecord
+    if (typeof preset.id !== 'string' || preset.id.trim() === '') {
+      throw new ValidationError(`translatorPresets[${index}].id must be a non-empty string`)
+    }
+    if (seen.has(preset.id)) throw new ValidationError(`Duplicate translator preset id: ${preset.id}`)
+    seen.add(preset.id)
+    validateTranslatorPresetRecord(preset, `translatorPresets[${index}]`)
+    return preset
   })
-  database.translatorPresets = presets
-
-  if (!Number.isInteger(database.translatorPresetId as number)) {
-    database.translatorPresetId = 0
+  if (typeof database.translatorPresetId !== 'string' || database.translatorPresetId.trim() === '') {
+    throw new ValidationError('translatorPresetId must be a non-empty stable preset id')
   }
-  if ((database.translatorPresetId as number) >= presets.length) {
-    database.translatorPresetId = Math.max(presets.length - 1, 0)
+  if (!seen.has(database.translatorPresetId)) {
+    throw new EntityNotFoundError(`Translator preset not found: ${database.translatorPresetId}`)
   }
-  if ((database.translatorPresetId as number) < 0) {
-    database.translatorPresetId = 0
-  }
-
   return presets
 }
 
@@ -80,8 +65,39 @@ export function normalizeTranslatorPresetCollectionWithLegacyCompatibility(datab
       }),
     ]
   }
-  const presets = ensureTranslatorPresetCollection(target)
+  const presets = repairTranslatorPresetCollection(target)
+  const rawSelection = target.translatorPresetId
+  const selectedIndex =
+    typeof rawSelection === 'number' && Number.isInteger(rawSelection) ? rawSelection : Number.NaN
+  target.translatorPresetId =
+    typeof rawSelection === 'string' && rawSelection.trim() && presets.some((preset) => preset.id === rawSelection)
+      ? rawSelection
+      : presets[Math.min(Math.max(Number.isFinite(selectedIndex) ? selectedIndex : 0, 0), presets.length - 1)]?.id
   if (missingCanonicalCollection) syncSelectedTranslatorPresetToLegacyFields(target, presets)
+}
+
+function repairTranslatorPresetCollection(database: JsonRecord): TranslatorPresetRecord[] {
+  if (!Array.isArray(database.translatorPresets) || database.translatorPresets.length === 0) {
+    database.translatorPresets = [
+      repairTranslatorPresetRecord({ name: 'Default', prompt: defaultTranslatorPrompt, maxResponse: 1000 }),
+    ]
+  }
+  const seen = new Set<string>()
+  const presets = (database.translatorPresets as unknown[]).map((raw, index) => {
+    const preset = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
+    const record = repairTranslatorPresetRecord({
+      id: preset.id,
+      name: typeof preset.name === 'string' && preset.name.trim().length > 0 ? preset.name : `Preset ${index + 1}`,
+      prompt: preset.prompt,
+      maxResponse: preset.maxResponse,
+      steps: preset.steps,
+    })
+    if (seen.has(record.id)) record.id = randomUUID()
+    seen.add(record.id)
+    return record
+  })
+  database.translatorPresets = presets
+  return presets
 }
 
 export function createTranslatorPresetRecord(input: unknown): TranslatorPresetRecord {
@@ -185,16 +201,16 @@ export function selectedTranslatorPresetId(
   database: JsonRecord,
   presets: readonly TranslatorPresetRecord[],
 ): string | null {
-  const index = Number.isInteger(database.translatorPresetId as number) ? (database.translatorPresetId as number) : 0
-  return presets[index]?.id ?? null
+  return typeof database.translatorPresetId === 'string' && presets.some((preset) => preset.id === database.translatorPresetId)
+    ? database.translatorPresetId
+    : null
 }
 
 export function syncSelectedTranslatorPresetToLegacyFields(
   database: JsonRecord,
   presets: readonly TranslatorPresetRecord[],
 ): void {
-  const index = Number.isInteger(database.translatorPresetId as number) ? (database.translatorPresetId as number) : 0
-  const preset = presets[index]
+  const preset = presets.find((candidate) => candidate.id === database.translatorPresetId)
   if (!preset) return
   database.translatorPrompt = preset.prompt
   database.translatorMaxResponse = preset.maxResponse

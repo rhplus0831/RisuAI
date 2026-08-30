@@ -7,6 +7,7 @@ describe('translator preset browser compatibility', () => {
     for (const key of [
       'createTranslatorPreset',
       'defaultTranslatorPrompt',
+      'getCanonicalTranslatorPresets',
       'getCurrentTranslatorPresetFromState',
       'getTranslatorPresetFromState',
       'isValidTranslatorPresetOutputKey',

@@ -25,7 +25,8 @@ export interface TranslatorPresetStateLike {
   translatorPrompt?: string
   translatorMaxResponse?: number
   translatorPresets?: unknown[]
-  translatorPresetId?: number
+  /** Stable canonical preset owner. Numbers are accepted only by migration helpers. */
+  translatorPresetId?: string | number | null
 }
 
 export const defaultTranslatorPrompt =
@@ -205,12 +206,20 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
     return normalized
   })
 
-  const requestedId =
+  const requestedIndex =
     typeof state.translatorPresetId === 'number' && Number.isInteger(state.translatorPresetId)
       ? state.translatorPresetId
-      : 0
-
-  state.translatorPresetId = Math.min(Math.max(requestedId, 0), Math.max(state.translatorPresets.length - 1, 0))
+      : -1
+  const normalizedPresets = state.translatorPresets as TranslatorPreset[]
+  if (requestedIndex >= 0 && requestedIndex < normalizedPresets.length) {
+    state.translatorPresetId = normalizedPresets[requestedIndex].id ?? normalizedPresets[0].id
+  } else if (
+    typeof state.translatorPresetId !== 'string' ||
+    !state.translatorPresetId.trim() ||
+    !normalizedPresets.some((preset) => preset.id === state.translatorPresetId)
+  ) {
+    state.translatorPresetId = normalizedPresets[0].id
+  }
 
   return state
 }
@@ -218,7 +227,7 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
 /**
  * Import/migration-only compatibility for databases that have not acquired a
  * canonical translator preset collection yet. Ordinary runtime reads and
- * preset commands must use normalizeTranslatorPresetState instead.
+ * preset commands must use getTranslatorPresetFromState/getCanonicalTranslatorPresets.
  */
 export function normalizeTranslatorPresetStateWithLegacyCompatibility<T extends TranslatorPresetStateLike>(
   state: T,
@@ -238,7 +247,7 @@ export function normalizeTranslatorPresetStateWithLegacyCompatibility<T extends 
 
 /** Explicit export/migration compatibility projection for legacy scalar fields. */
 export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPresetStateLike>(state: T): T {
-  const preset = state.translatorPresets?.[state.translatorPresetId ?? 0]
+  const preset = resolveTranslatorPresetForMigration(state)
 
   if (!isTranslatorPresetValue(preset)) return normalizeTranslatorPresetState(state)
 
@@ -251,44 +260,57 @@ export function syncCurrentTranslatorPresetToLegacyFields<T extends TranslatorPr
   return state
 }
 
-export function getCurrentTranslatorPresetFromState<T extends TranslatorPresetStateLike>(state: T): TranslatorPreset {
+export function getCurrentTranslatorPresetFromState<T extends TranslatorPresetStateLike>(
+  state: T,
+): TranslatorPreset | null {
   return getTranslatorPresetFromState(state)
 }
 
 export function getTranslatorPresetFromState<T extends TranslatorPresetStateLike>(
   state: T,
   boundPresetId?: string | null,
-): TranslatorPreset {
+): TranslatorPreset | null {
+  const presets = getCanonicalTranslatorPresets(state)
+  if (!presets) return null
+
   if (typeof boundPresetId === 'string' && boundPresetId.trim()) {
-    const preset = Array.isArray(state.translatorPresets)
-      ? state.translatorPresets.find(
-          (candidate) => isTranslatorPresetValue(candidate) && candidate.id === boundPresetId,
-        )
-      : undefined
-    if (isTranslatorPresetValue(preset)) {
-      const firstStep = preset.steps[0]
-      preset.prompt = firstStep.prompt
-      preset.maxResponse = firstStep.maxResponse
-      return preset
+    const preset = presets.find((candidate) => candidate.id === boundPresetId)
+    if (preset) return preset
+  }
+
+  if (typeof state.translatorPresetId !== 'string' || !state.translatorPresetId.trim()) return null
+  return presets.find((candidate) => candidate.id === state.translatorPresetId) ?? null
+}
+
+/** Strict ordinary-runtime validation. Malformed ownership is unavailable, never repaired implicitly. */
+export function getCanonicalTranslatorPresets(state: TranslatorPresetStateLike): TranslatorPreset[] | null {
+  if (!Array.isArray(state.translatorPresets) || state.translatorPresets.length === 0) return null
+  const seen = new Set<string>()
+  const presets: TranslatorPreset[] = []
+  for (const value of state.translatorPresets) {
+    if (!isTranslatorPresetValue(value) || typeof value.id !== 'string' || !value.id.trim() || seen.has(value.id)) {
+      return null
     }
+    seen.add(value.id)
+    presets.push(value)
   }
+  return presets
+}
 
-  const presetId =
-    typeof state.translatorPresetId === 'number' && Number.isInteger(state.translatorPresetId)
-      ? state.translatorPresetId
-      : -1
-  const preset = Array.isArray(state.translatorPresets) ? state.translatorPresets[presetId] : undefined
-
-  if (!isTranslatorPresetValue(preset)) {
-    const normalizedState = normalizeTranslatorPresetState(state)
-    const normalizedPreset = normalizedState.translatorPresets?.[normalizedState.translatorPresetId ?? 0]
-    return isTranslatorPresetValue(normalizedPreset) ? normalizedPreset : getDefaultTranslatorPreset()
+function resolveTranslatorPresetForMigration(state: TranslatorPresetStateLike): TranslatorPreset | null {
+  if (!Array.isArray(state.translatorPresets)) return null
+  if (typeof state.translatorPresetId === 'string' && state.translatorPresetId.trim()) {
+    for (const value of state.translatorPresets) {
+      if (isTranslatorPresetValue(value) && value.id === state.translatorPresetId) return value
+    }
+    return null
   }
-
-  const firstStep = preset.steps[0]
-  preset.prompt = firstStep.prompt
-  preset.maxResponse = firstStep.maxResponse
-  return preset
+  if (typeof state.translatorPresetId === 'number' && Number.isInteger(state.translatorPresetId)) {
+    const value = state.translatorPresets[state.translatorPresetId]
+    return isTranslatorPresetValue(value) ? value : null
+  }
+  const value = state.translatorPresets[0]
+  return isTranslatorPresetValue(value) ? value : null
 }
 
 function isTranslatorPresetFileValue(value: unknown): value is TranslatorPreset {

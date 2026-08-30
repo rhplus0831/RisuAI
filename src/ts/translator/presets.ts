@@ -3,6 +3,7 @@ import * as fflate from 'fflate'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js.js'
 import {
   defaultTranslatorPrompt,
+  getCanonicalTranslatorPresets,
   normalizeTranslatorPreset,
   type TranslatorPreset,
 } from '@risuai/shared-core/translator-presets'
@@ -10,6 +11,7 @@ import {
 export {
   createTranslatorPreset,
   defaultTranslatorPrompt,
+  getCanonicalTranslatorPresets,
   getCurrentTranslatorPresetFromState,
   getTranslatorPresetFromState,
   isValidTranslatorPresetOutputKey,

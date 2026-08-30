@@ -28,7 +28,7 @@ describe('shared translator pipeline', () => {
         createTranslatorPreset('Global', { id: 'global', prompt: 'Global {{slot::content}}' }),
         createTranslatorPreset('Bound', { id: 'bound', prompt: 'Bound {{slot::content}}' }),
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'global',
     }
     const before = structuredClone(state)
 

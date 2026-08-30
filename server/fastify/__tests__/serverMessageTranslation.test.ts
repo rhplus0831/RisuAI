@@ -76,7 +76,7 @@ describe('runServerMessageTranslation', () => {
         modelRoleProfiles: {
           translate: { mode: 'profile', profileId: 'persisted-translate-profile' },
         },
-        translatorPresetId: 0,
+        translatorPresetId: 'pipeline',
         // Deliberately stale compatibility fields; the canonical pipeline owns
         // prompt and response budget after reopen.
         translatorPrompt: 'stale scalar prompt',
@@ -210,7 +210,7 @@ describe('runServerMessageTranslation', () => {
         translatorPrompt:
           'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
         translatorMaxResponse: 111,
-        translatorPresetId: 0,
+        translatorPresetId: 'history-pipeline',
         translatorPresets: [
           {
             id: 'history-pipeline',
@@ -218,6 +218,17 @@ describe('runServerMessageTranslation', () => {
             prompt:
               'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
             maxResponse: 111,
+            steps: [
+              {
+                id: 'history-step',
+                name: 'History',
+                enabled: true,
+                prompt:
+                  'History:\n{{slot::history::2}}\nTranslations:\n{{slot::historytrans::2}}\nSource={{slot::content}}',
+                maxResponse: 111,
+                model: { mode: 'inheritTranslate' },
+              },
+            ],
           },
         ],
         characters: [

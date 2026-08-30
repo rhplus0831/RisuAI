@@ -53,7 +53,7 @@ describe('normalizeTranslatorPresetState', () => {
         ],
       },
     ])
-    expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPresetId).toBe((state.translatorPresets?.[0] as { id?: string } | undefined)?.id)
     expect(state.translatorPrompt).toBe('Translate to {{slot}}.')
     expect(state.translatorMaxResponse).toBe(321)
   })
@@ -74,7 +74,7 @@ describe('normalizeTranslatorPresetState', () => {
     expect(state.translatorMaxResponse).toBe(321)
   })
 
-  it('clamps invalid preset ids without synchronizing legacy fields', () => {
+  it('repairs invalid legacy selections without synchronizing legacy fields', () => {
     const state: TranslatorPresetStateLike = {
       translatorPrompt: 'legacy',
       translatorMaxResponse: 1000,
@@ -89,7 +89,7 @@ describe('normalizeTranslatorPresetState', () => {
 
     normalizeTranslatorPresetState(state)
 
-    expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPresetId).toBe((state.translatorPresets?.[0] as { id?: string } | undefined)?.id)
     expect(state.translatorPresets?.[0]).toMatchObject({ id: expect.any(String) })
     expect(state.translatorPrompt).toBe('legacy')
     expect(state.translatorMaxResponse).toBe(1000)
@@ -142,7 +142,7 @@ describe('normalizeTranslatorPresetState', () => {
           })),
         },
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'global',
     }
 
     normalizeTranslatorPresetState(state)
@@ -167,10 +167,12 @@ describe('getCurrentTranslatorPresetFromState', () => {
   it('reuses a valid selected preset without renormalizing the preset array', () => {
     const presets = [
       createTranslatorPreset('Default', {
+        id: 'default',
         prompt: 'Default prompt',
         maxResponse: 128,
       }),
       createTranslatorPreset('Detailed', {
+        id: 'detailed',
         prompt: 'Detailed prompt',
         maxResponse: 256,
       }),
@@ -179,7 +181,7 @@ describe('getCurrentTranslatorPresetFromState', () => {
       translatorPrompt: 'legacy prompt',
       translatorMaxResponse: 1000,
       translatorPresets: presets,
-      translatorPresetId: 1,
+      translatorPresetId: 'detailed',
     }
 
     const preset = getCurrentTranslatorPresetFromState(state)
@@ -199,11 +201,11 @@ describe('getCurrentTranslatorPresetFromState', () => {
       translatorPrompt: 'Global prompt',
       translatorMaxResponse: 128,
       translatorPresets: presets,
-      translatorPresetId: 0,
+      translatorPresetId: 'global',
     }
 
     expect(getTranslatorPresetFromState(state, 'bound')).toBe(presets[1])
-    expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPresetId).toBe('global')
     expect(state.translatorPrompt).toBe('Global prompt')
     expect(state.translatorMaxResponse).toBe(128)
   })
@@ -217,7 +219,7 @@ describe('getCurrentTranslatorPresetFromState', () => {
       translatorPrompt: 'legacy',
       translatorMaxResponse: 1000,
       translatorPresets: presets,
-      translatorPresetId: 0,
+      translatorPresetId: 'global',
     }
 
     expect(getTranslatorPresetFromState(state, 'missing')).toBe(presets[0])
@@ -229,14 +231,16 @@ describe('getCurrentTranslatorPresetFromState', () => {
     const state: TranslatorPresetStateLike = {
       translatorPrompt: 'stale scalar prompt',
       translatorMaxResponse: 7,
-      translatorPresets: [createTranslatorPreset('Canonical', { prompt: 'canonical prompt', maxResponse: 321 })],
-      translatorPresetId: 0,
+      translatorPresets: [
+        createTranslatorPreset('Canonical', { id: 'canonical', prompt: 'canonical prompt', maxResponse: 321 }),
+      ],
+      translatorPresetId: 'canonical',
     }
 
     const preset = getTranslatorPresetFromState(state)
 
-    expect(preset.prompt).toBe('canonical prompt')
-    expect(preset.maxResponse).toBe(321)
+    expect(preset?.prompt).toBe('canonical prompt')
+    expect(preset?.maxResponse).toBe(321)
     expect(state.translatorPrompt).toBe('stale scalar prompt')
     expect(state.translatorMaxResponse).toBe(7)
   })

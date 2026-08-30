@@ -4076,7 +4076,8 @@ export interface Database {
   translatorMaxResponse: number
   translatorHistoryMaxTokens: number
   translatorPresets: TranslatorPreset[]
-  translatorPresetId: number
+  /** Stable preset owner; numeric values are accepted only while loading legacy snapshots. */
+  translatorPresetId: string | number
   top_p: number
   google: {
     accessToken: string

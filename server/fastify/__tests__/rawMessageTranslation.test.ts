@@ -70,6 +70,25 @@ function llmSettings(translatorSendTextAsIs: boolean, translatorExcludeThoughts 
     aiModel: 'echo_model',
     translatorSendTextAsIs,
     translatorExcludeThoughts,
+    translatorPresetId: 'default',
+    translatorPresets: [
+      {
+        id: 'default',
+        name: 'Default',
+        prompt: 'Translate',
+        maxResponse: 1000,
+        steps: [
+          {
+            id: 'default-step',
+            name: 'Default',
+            enabled: true,
+            prompt: 'Translate',
+            maxResponse: 1000,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+    ],
   }
 }
 
@@ -96,7 +115,7 @@ function historyLlmSettings(count: number, translatorSendTextAsIs = true): Recor
         ],
       },
     ],
-    translatorPresetId: 0,
+    translatorPresetId: 'history-preset',
   }
 }
 
@@ -198,7 +217,7 @@ describe('translateRawMessageData', () => {
           providerOptions: { credentialId: 'credential-a' },
         },
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'preset-a',
       translatorPresets: [
         {
           id: 'preset-a',
@@ -474,15 +493,21 @@ describe('translateRawMessageData', () => {
           name: 'Global',
           prompt: 'Global {{slot::content}}',
           maxResponse: 100,
+          steps: [
+            { id: 'global-step', name: 'Global', enabled: true, prompt: 'Global {{slot::content}}', maxResponse: 100, model: { mode: 'inheritTranslate' } },
+          ],
         },
         {
           id: 'chat-preset',
           name: 'Chat',
           prompt: 'Chat {{slot::content}}',
           maxResponse: 200,
+          steps: [
+            { id: 'chat-step', name: 'Chat', enabled: true, prompt: 'Chat {{slot::content}}', maxResponse: 200, model: { mode: 'inheritTranslate' } },
+          ],
         },
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'global-preset',
     }
 
     const globalIdentity = resolveRawMessageTranslatorIdentity({ settings })
@@ -580,7 +605,7 @@ describe('translateRawMessageData', () => {
           ],
         },
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'pipeline',
     }
 
     await translateRawMessageData({
@@ -699,7 +724,7 @@ describe('translateRawMessageData', () => {
           ],
         },
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'pipeline',
     }
     rawTranslationMocks.dispatchChatProvider
       .mockImplementationOnce(async () => textFrames('draft output'))

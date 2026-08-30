@@ -32,14 +32,7 @@ describe('translator pipeline resolution', () => {
     const steps = resolveTranslatorPipeline(state)
 
     expect(state).toEqual(before)
-    expect(steps).toMatchObject([
-      {
-        enabled: true,
-        prompt: expect.stringContaining('You are a translator.'),
-        maxResponse: 1000,
-        model: { mode: 'inheritTranslate' },
-      },
-    ])
+    expect(steps).toEqual([])
   })
 
   it('uses selected canonical prompt and maxResponse when legacy scalars are stale', () => {
@@ -50,9 +43,10 @@ describe('translator pipeline resolution', () => {
         createTranslatorPreset('Canonical', {
           prompt: 'canonical prompt {{slot::content}}',
           maxResponse: 321,
+          id: 'canonical',
         }),
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'canonical',
     }
 
     const steps = resolveTranslatorPipeline(state)
@@ -66,12 +60,12 @@ describe('translator pipeline resolution', () => {
         createTranslatorPreset('Global', { id: 'global', prompt: 'Global {{slot::content}}' }),
         createTranslatorPreset('Chat', { id: 'chat', prompt: 'Chat {{slot::content}}' }),
       ],
-      translatorPresetId: 0,
+      translatorPresetId: 'global',
     }
 
     expect(resolveTranslatorPipeline(state, 'chat')[0].prompt).toBe('Chat {{slot::content}}')
     expect(resolveTranslatorPipeline(state, 'missing')[0].prompt).toBe('Global {{slot::content}}')
-    expect(state.translatorPresetId).toBe(0)
+    expect(state.translatorPresetId).toBe('global')
   })
 })
 

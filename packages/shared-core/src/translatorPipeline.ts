@@ -2,7 +2,6 @@ import { stripInternalReasoning } from './internalReasoning.js'
 import {
   defaultTranslatorPrompt,
   getTranslatorPresetFromState,
-  normalizeTranslatorPresetState,
   type TranslatorPresetStateLike,
   type TranslatorPresetStep,
   type TranslatorPresetStepModel,
@@ -106,8 +105,7 @@ export function resolveTranslatorPipeline(
   stateLike: TranslatorPresetStateLike,
   boundPresetId?: string | null,
 ): TranslatorPresetStep[] {
-  const normalized = normalizeTranslatorPresetState(cloneStateLike(stateLike))
-  const preset = getTranslatorPresetFromState(normalized, boundPresetId)
+  const preset = getTranslatorPresetFromState(cloneStateLike(stateLike), boundPresetId)
   if (!preset || typeof preset !== 'object' || !Array.isArray((preset as { steps?: unknown }).steps)) return []
   return (preset as { steps: TranslatorPresetStep[] }).steps.map((step) => ({
     ...step,

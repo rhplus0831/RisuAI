@@ -317,7 +317,7 @@ function seedTranslatorPresets(): void {
       { id: 'preset-a', name: 'Preset A', prompt: 'old prompt A', maxResponse: 100 },
       { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
     ],
-    translatorPresetId: 0,
+    translatorPresetId: 'preset-a',
     translatorPrompt: 'old prompt A',
     translatorMaxResponse: 100,
   } as any)
@@ -336,7 +336,8 @@ function maxResponseInput(): HTMLInputElement {
 }
 
 function currentSelectedPresetId(): string | undefined {
-  return getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id
+  const id = getDatabase().translatorPresetId
+  return typeof id === 'string' ? id : undefined
 }
 
 async function editPrompt(value: string): Promise<void> {
@@ -412,7 +413,7 @@ async function selectTranslatorPreset(index: number): Promise<void> {
   const option = selectElement.options.item(index)
   expect(option).toBeTruthy()
 
-  selectElement.value = String(index)
+  selectElement.value = option!.value
   selectElement.selectedIndex = index
   option!.selected = true
 
@@ -434,7 +435,7 @@ async function selectTranslatorPreset(index: number): Promise<void> {
 
 async function switchProjectedPreset(index: number): Promise<void> {
   withTrustedResourceWrite(() => {
-    getDatabase().translatorPresetId = index
+    getDatabase().translatorPresetId = getDatabase().translatorPresets[index].id
   })
   await tick()
 }
@@ -444,7 +445,9 @@ async function applyTranslatorPresetProjection(input: {
   selectedIndex?: number
 }): Promise<void> {
   const revision = nextProjectionRevision++
-  const selectedIndex = input.selectedIndex ?? getDatabase().translatorPresetId
+  const selectedIndex = input.selectedIndex
+  const selectedId =
+    selectedIndex === undefined ? getDatabase().translatorPresetId : getDatabase().translatorPresets[selectedIndex]?.id
   withServerResourceApply(() => {
     applyCollectionsResource(
       {
@@ -457,7 +460,7 @@ async function applyTranslatorPresetProjection(input: {
       {
         revision,
         group: 'language',
-        settings: { translatorPresetId: selectedIndex },
+        settings: { translatorPresetId: selectedId },
       },
       ['translatorPresetId'],
     )
@@ -614,6 +617,20 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       `${language.import}: ${language.presets}`,
     ])
     expect(buttons.every((button) => button.type === 'button')).toBe(true)
+  })
+
+  it('fails closed when the selected stable preset owner is duplicated', async () => {
+    withTrustedResourceWrite(() => {
+      getDatabase().translatorPresets = [
+        { ...getDatabase().translatorPresets[0] },
+        { ...getDatabase().translatorPresets[0], name: 'Duplicate Preset A' },
+      ]
+    })
+    await tick()
+
+    const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).slice(0, 5)
+    expect(buttons[1].getAttribute('aria-label')).toBe(`${language.edit}: ${language.presets}`)
+    expect(target.querySelector(`[aria-label="${language.translationResponseSize}"]`)).toBeNull()
   })
 
   it('adds, duplicates, reorders, removes, and caps translator steps', async () => {
@@ -1198,7 +1215,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       prompt: '',
       maxResponse: 1000,
     })
-    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPresetId).toBe(commandSpies.createInputs[0].preset.id)
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
     expect(toolbarButton(0).getAttribute('aria-busy')).toBe('true')
@@ -1206,7 +1223,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(3)
-    expect(presetSelect?.value).toBe('2')
+    expect(presetSelect?.value).toBe(commandSpies.createInputs[0].preset.id)
     expect(presetSelect?.options.item(2)?.textContent).toBe('New Preset')
     expect(promptTextarea().value).toBe('')
     expect(maxResponseInput().value).toBe('1000')
@@ -1217,7 +1234,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         { ...getDatabase().translatorPresets[1] },
         { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 } as any,
       ]
-      getDatabase().translatorPresetId = 2
+      getDatabase().translatorPresetId = 'preset-c'
       getDatabase().translatorPrompt = 'new prompt C'
       getDatabase().translatorMaxResponse = 300
     })
@@ -1229,7 +1246,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       name: 'Preset A Edited',
       prompt: 'newer prompt A',
     })
-    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPresetId).toBe('preset-c')
     expect(getDatabase().translatorPrompt).toBe('new prompt C')
     expect(getDatabase().translatorMaxResponse).toBe(300)
   })
@@ -1244,12 +1261,12 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       'preset-b',
       commandSpies.createInputs[0].preset.id,
     ])
-    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPresetId).toBe(commandSpies.createInputs[0].preset.id)
 
     await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
     expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
@@ -1257,7 +1274,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(2)
-    expect(presetSelect?.value).toBe('0')
+    expect(presetSelect?.value).toBe('preset-a')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
     await vi.waitFor(() =>
@@ -1276,7 +1293,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
 
     await vi.advanceTimersByTimeAsync(250)
@@ -1736,14 +1753,14 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       },
     ])
     expect(commandSpies.selectInputs).toHaveLength(0)
-    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresetId).toBe('preset-b')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
     expect(target.querySelector('select')?.getAttribute('aria-busy')).toBe('true')
     expect(translatorPresetPersistenceStatus()).toBeNull()
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
-    expect(presetSelect?.value).toBe('1')
+    expect(presetSelect?.value).toBe('preset-b')
     expect(promptTextarea().value).toBe('old prompt B')
     expect(maxResponseInput().value).toBe('200')
 
@@ -1765,12 +1782,12 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     expect(commandSpies.selectInputs).toEqual([{ baseRevision: 100, presetId: 'preset-b' }])
     expect(commandSpies.runInputs.at(-1)?.rollback).toEqual(expect.any(Function))
-    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresetId).toBe('preset-b')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
-    expect(presetSelect?.value).toBe('1')
+    expect(presetSelect?.value).toBe('preset-b')
     expect(promptTextarea().value).toBe('old prompt B')
     expect(maxResponseInput().value).toBe('200')
 
@@ -1784,14 +1801,14 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           maxResponse: 222,
         },
       ]
-      getDatabase().translatorPresetId = 1
+      getDatabase().translatorPresetId = 'preset-b'
       getDatabase().translatorPrompt = 'newer prompt B'
       getDatabase().translatorMaxResponse = 222
     })
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
 
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPresets[1]).toMatchObject({
       name: 'Preset B Edited',
       prompt: 'newer prompt B',
@@ -1806,19 +1823,19 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     await selectTranslatorPreset(1)
 
-    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresetId).toBe('preset-b')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
 
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
     expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
-    expect(presetSelect?.value).toBe('0')
+    expect(presetSelect?.value).toBe('preset-a')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
     await vi.waitFor(() =>
@@ -1848,14 +1865,14 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     commandSpies.deferNextSelect = true
     await selectTranslatorPreset(0)
 
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(commandSpies.deferredSelectResults).toHaveLength(1)
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced first select failure')
     await vi.waitFor(() => expect(commandSpies.deferredSelectResults).toHaveLength(1))
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced second select failure')
 
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
   })
@@ -1912,7 +1929,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           revision: 101,
           group: 'language',
           settings: {
-            translatorPresetId: 1,
+            translatorPresetId: 'preset-b',
             translatorPrompt: 'old prompt B',
             translatorMaxResponse: 200,
           },
@@ -1923,7 +1940,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
 
-    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresetId).toBe('preset-b')
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
   })
@@ -2218,7 +2235,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.deleteInputs).toEqual([{ baseRevision: 100, presetId: 'preset-a', selectPresetId: 'preset-b' }])
     expect(commandSpies.runInputs.at(-1)?.rollback).toEqual(expect.any(Function))
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-b')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
     expect(toolbarButton(2).getAttribute('aria-busy')).toBe('true')
@@ -2226,7 +2243,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(1)
-    expect(presetSelect?.value).toBe('0')
+    expect(presetSelect?.value).toBe('preset-b')
     expect(presetSelect?.options.item(0)?.textContent).toBe('Preset B')
     expect(promptTextarea().value).toBe('old prompt B')
     expect(maxResponseInput().value).toBe('200')
@@ -2241,7 +2258,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         },
         { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 } as any,
       ]
-      getDatabase().translatorPresetId = 1
+      getDatabase().translatorPresetId = 'preset-c'
       getDatabase().translatorPrompt = 'new prompt C'
       getDatabase().translatorMaxResponse = 300
     })
@@ -2254,7 +2271,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       prompt: 'newer prompt B',
       maxResponse: 222,
     })
-    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPresetId).toBe('preset-c')
     expect(getDatabase().translatorPrompt).toBe('new prompt C')
     expect(getDatabase().translatorMaxResponse).toBe(300)
   })
@@ -2265,12 +2282,12 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await clickDeletePreset()
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-b')
 
     await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
     expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
@@ -2278,7 +2295,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     const presetSelect = target.querySelector<HTMLSelectElement>('select')
     expect(presetSelect?.options).toHaveLength(2)
-    expect(presetSelect?.value).toBe('0')
+    expect(presetSelect?.value).toBe('preset-a')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
     await vi.waitFor(() =>
@@ -2305,7 +2322,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
     expect(getDatabase().translatorPresets[1].name).toBe('Preset B Edited')
-    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(getDatabase().translatorMaxResponse).toBe(100)
   })
@@ -2381,7 +2398,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
             revision: 101,
             group: 'language',
             settings: {
-              translatorPresetId: 1,
+              translatorPresetId: 'preset-b',
               translatorPrompt: 'old prompt B',
               translatorMaxResponse: 200,
             },

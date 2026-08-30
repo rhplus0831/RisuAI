@@ -5105,7 +5105,7 @@ export function registerCommandRoutes(
           }
           presets.push(preset)
           if (select) {
-            target.translatorPresetId = presets.length - 1
+            target.translatorPresetId = preset.id
           }
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
@@ -5151,12 +5151,12 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const rawPresets = target.translatorPresets
-          const rawSelectedIndex = target.translatorPresetId
+          const rawSelectedId = target.translatorPresetId
           const presets = ensureTranslatorPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) &&
             isDeepStrictEqual(rawPresets, presets) &&
-            rawSelectedIndex === target.translatorPresetId
+            rawSelectedId === target.translatorPresetId
           const index = requireTranslatorPresetIndex(presets, presetId)
           presets[index] = applyTranslatorPresetRecordPatch(presets[index], patch)
           writeTranslatorPresetMutation(innerDb, target, presets)
@@ -5233,8 +5233,7 @@ export function registerCommandRoutes(
             nextSelectedId = currentSelectedId ?? presets[0]?.id
           }
 
-          const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : 0
-          target.translatorPresetId = selectedIndex
+          target.translatorPresetId = nextSelectedId ?? presets[0]?.id
           const cascadedChatIds = clearChatTranslatorPresetBindings(innerDb, presetId)
           writeTranslatorPresetMutation(innerDb, target, presets)
 
@@ -5276,8 +5275,8 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
           const presets = ensureTranslatorPresetCollection(target)
-          const index = requireTranslatorPresetIndex(presets, presetId)
-          target.translatorPresetId = index
+          requireTranslatorPresetIndex(presets, presetId)
+          target.translatorPresetId = presetId
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetSelected, id: presetId },

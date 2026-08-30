@@ -230,6 +230,7 @@ vi.mock('./server/pendingMutationOutbox', () => ({
   countBlockingPendingMutationRecords: pendingMutationApi.count,
   preparePendingMutationOutbox: pendingMutationApi.prepare,
   readSinglePendingMutationOwner: pendingMutationApi.readOwner,
+  stagePendingMutation: vi.fn(),
 }))
 vi.mock('./server/pendingBridgeFlushRegistry', async (importActual) => {
   const actual = await importActual<typeof import('./server/pendingBridgeFlushRegistry')>()
@@ -328,6 +329,7 @@ vi.mock('./server/pushNotificationSetting', () => ({
 import {
   calculateServerResourceReconnectDelayMs,
   createGlobalErrorHandlers,
+  currentGlobalPromptTemplateOwnerId,
   loadData,
   loadWebInitialDatabase,
   retryObserverWriterPromotion,
@@ -556,6 +558,16 @@ afterEach(() => {
 })
 
 describe('API-backed client bootstrap', () => {
+  it('fails closed when the globally selected prompt owner is duplicated', () => {
+    getDatabase().promptPresets = [
+      { id: 'prompt-a', name: 'Prompt A' },
+      { id: 'prompt-a', name: 'Duplicate Prompt A' },
+    ] as never
+    getDatabase().promptPresetsId = 0
+
+    expect(currentGlobalPromptTemplateOwnerId()).toBeNull()
+  })
+
   it('keeps the conservative writer-first boundary when the observer flag is disabled', async () => {
     await loadData()
 
@@ -3355,7 +3367,7 @@ describe('API-backed client bootstrap', () => {
       'translatorPresets',
     )
     withTrustedResourceWrite(() => {
-      getDatabase().translatorPresetId = 0
+      getDatabase().translatorPresetId = 'translator-a'
       getDatabase().translatorPrompt = 'a prompt'
       getDatabase().translatorMaxResponse = 100
     })
@@ -3423,7 +3435,7 @@ describe('API-backed client bootstrap', () => {
     ]
     applyCollectionsResource({ revision: 5, collections: { translatorPresets: presets as never } }, 'translatorPresets')
     withTrustedResourceWrite(() => {
-      getDatabase().translatorPresetId = 0
+      getDatabase().translatorPresetId = 'translator-a'
       getDatabase().translatorPrompt = 'a prompt'
       getDatabase().translatorMaxResponse = 100
     })
@@ -3439,7 +3451,11 @@ describe('API-backed client bootstrap', () => {
         {
           revision: 5,
           group: 'language',
-          settings: { translatorPresetId: 0, translatorPrompt: 'a prompt', translatorMaxResponse: 100 },
+          settings: {
+            translatorPresetId: 'translator-a',
+            translatorPrompt: 'a prompt',
+            translatorMaxResponse: 100,
+          },
         },
         ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
       )
@@ -3451,7 +3467,7 @@ describe('API-backed client bootstrap', () => {
       markSettingsAcknowledgementTainted()
     } else if (failure === 'selection mismatch') {
       withTrustedResourceWrite(() => {
-        getDatabase().translatorPresetId = 1
+        getDatabase().translatorPresetId = 'translator-b'
         getDatabase().translatorPrompt = 'attempted prompt'
         getDatabase().translatorMaxResponse = 200
       })
@@ -3542,7 +3558,7 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
-  it('canonicalizes both prompt owner and compatibility projections for a template-only PATCH', async () => {
+  it('canonicalizes the prompt owner without rewriting its compatibility projection', async () => {
     await loadWebInitialDatabase()
     const attemptedTemplate = [{ type: 'plain', text: 'Optimistic' }]
     const canonicalTemplate = [{ id: 'item-a', type: 'plain', text: 'Optimistic' }]
@@ -3598,7 +3614,7 @@ describe('API-backed client bootstrap', () => {
 
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(getDatabase().promptPresets[0].promptTemplate).toEqual(canonicalTemplate)
-    expect(getDatabase().promptTemplate).toEqual(canonicalTemplate)
+    expect(getDatabase().promptTemplate).toEqual(attemptedTemplate)
     expect(promptTemplateApi.markProjectionApplied).toHaveBeenCalledWith('prompt-a', 6, {
       advanceProjectionEpoch: false,
     })

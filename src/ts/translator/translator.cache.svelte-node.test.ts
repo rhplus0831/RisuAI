@@ -174,8 +174,8 @@ function resetDatabase() {
     playMessageOnTranslateEnd: false,
     translatorPrompt: '',
     translatorMaxResponse: 1000,
-    translatorPresets: undefined,
-    translatorPresetId: 0,
+    translatorPresets: [createTranslatorPreset('Default', { id: 'default', prompt: 'Default {{slot}}' })],
+    translatorPresetId: 'default',
     deeplOptions: { freeApi: true, key: '' },
     deeplXOptions: { url: '', token: '' },
     characters: [
@@ -306,7 +306,7 @@ describe('auto-translate cache', () => {
     testState.db.translatorPresets = [
       createTranslatorPreset('Active', { id: 'preset-a', prompt: 'Prompt A {{slot}}', maxResponse: 100 }),
     ]
-    testState.db.translatorPresetId = 0
+    testState.db.translatorPresetId = 'preset-a'
     testState.db.characters[0].translatorNote = 'Note A'
     let callCount = 0
     testState.requestChatData.mockImplementation(async () => ({
@@ -337,7 +337,7 @@ describe('auto-translate cache', () => {
         maxResponse: 100,
       }),
     ]
-    testState.db.translatorPresetId = 0
+    testState.db.translatorPresetId = 'global-preset'
     testState.db.characters[0].chats[0].translatorPresetId = 'chat-preset'
     testState.requestChatData.mockImplementation(async () => ({
       type: 'success',
@@ -361,7 +361,7 @@ describe('auto-translate cache', () => {
     testState.db.translatorPresets = [
       createTranslatorPreset('Active', { id: 'preset-a', prompt: 'Prompt A {{slot}}', maxResponse: 100 }),
     ]
-    testState.db.translatorPresetId = 0
+    testState.db.translatorPresetId = 'preset-a'
     const resolvers: Array<(value: { type: 'success'; result: string }) => void> = []
     testState.requestChatData.mockImplementation(
       () =>
@@ -400,7 +400,7 @@ describe('auto-translate cache', () => {
         ],
       }),
     ]
-    testState.db.translatorPresetId = 0
+    testState.db.translatorPresetId = 'preset-a'
     let callCount = 0
     testState.requestChatData.mockImplementation(async () => ({
       type: 'success',
@@ -589,7 +589,7 @@ describe('auto-translate cache', () => {
         ],
       }),
     ]
-    testState.db.translatorPresetId = 0
+    testState.db.translatorPresetId = 'pipeline'
     testState.requestChatData
       .mockResolvedValueOnce({ type: 'success', result: 'draft <style-data style-index="0"></style-data>' })
       .mockResolvedValueOnce({ type: 'success', result: '<style-data style-index="0"></style-data> translated' })
@@ -847,14 +847,14 @@ describe('auto-translate cache', () => {
 
   it('current translator preset sync reads from a snapshot without mutating live legacy fields', () => {
     const presets = [
-      createTranslatorPreset('Default', { prompt: 'default prompt', maxResponse: 128 }),
-      createTranslatorPreset('Detailed', { prompt: 'detailed prompt', maxResponse: 256 }),
+      createTranslatorPreset('Default', { id: 'default', prompt: 'default prompt', maxResponse: 128 }),
+      createTranslatorPreset('Detailed', { id: 'detailed', prompt: 'detailed prompt', maxResponse: 256 }),
     ]
     Object.assign(testState.db, {
       translatorPrompt: 'legacy prompt',
       translatorMaxResponse: 1000,
       translatorPresets: presets,
-      translatorPresetId: 1,
+      translatorPresetId: 'detailed',
     })
 
     const preset = getCurrentTranslatorPreset()
@@ -875,11 +875,7 @@ describe('auto-translate cache', () => {
 
     const preset = getCurrentTranslatorPreset()
 
-    expect(preset).toMatchObject({
-      name: 'Default',
-      prompt: expect.stringContaining('You are a translator.'),
-      maxResponse: 1000,
-    })
+    expect(preset).toBeNull()
     expect(testState.db.translatorPresets).toBeUndefined()
     expect(testState.db.translatorPresetId).toBe(99)
     expect(testState.db.translatorPrompt).toBe('legacy only prompt')
