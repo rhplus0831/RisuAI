@@ -6,7 +6,7 @@ import { StatementSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { openDatabase } from '../src/db.js'
-import { loadPersisted, loadPersistedForChatMutation } from '../src/repository.js'
+import { loadChatHydration, loadPersisted, loadPersistedForChatMutation } from '../src/repository.js'
 import { applyTargetedCommandMutation } from '../src/commands/mutations.js'
 import { normalizeAllCharacterChats } from '../src/commands/chats.js'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -1119,6 +1119,71 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
       assertSiblingStable()
     } finally {
       db.close()
+    }
+  })
+
+  it('prefers canonical character/chat/message rows over embedded payloads across reopen', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+    const staleMessage = { role: 'char', data: 'stale embedded', chatId: 'stale-message' }
+    const staleHypa = { mainChunks: [{ text: 'stale embedded hypa' }] }
+    const canonicalChat = fixture.characters
+      .flatMap((character) => character.chats)
+      .find((chat) => chat.id === fixture.hot.chatId)!
+    const db = openDatabase(harness.dataDir)
+    const staleDatabase = {
+      characters: [
+        {
+          chaId: fixture.hot.characterId,
+          chats: [
+            {
+              id: fixture.hot.chatId,
+              message: [staleMessage],
+              hypaV3Data: staleHypa,
+            },
+          ],
+        },
+      ],
+    }
+    const settings = JSON.parse(
+      (db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+    ) as Record<string, unknown>
+    settings.characters = staleDatabase.characters
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+    const assertCanonicalWins = () => {
+      const persisted = loadPersisted(db, harness.dataDir).database as {
+        characters: Array<{ chats: Array<{ id: string; message?: unknown[] }> }>
+      }
+      const character = persisted.characters.find((candidate) =>
+        candidate.chats.some((chat) => chat.id === fixture.hot.chatId),
+      )!
+      const chat = character.chats.find((candidate) => candidate.id === fixture.hot.chatId)!
+      expect(chat.message).toBeUndefined()
+      const hydration = loadChatHydration(db, harness.dataDir, fixture.hot.chatId)
+      expect(hydration.message).toEqual(canonicalChat.message)
+      expect(hydration.hypaV3Data).toEqual(canonicalChat.hypaV3Data)
+    }
+
+    try {
+      assertCanonicalWins()
+    } finally {
+      db.close()
+    }
+
+    const reopened = openDatabase(harness.dataDir)
+    try {
+      const persisted = loadPersisted(reopened, harness.dataDir).database as {
+        characters: Array<{ chats: Array<{ id: string }> }>
+      }
+      expect(persisted.characters.flatMap((character) => character.chats).map((chat) => chat.id)).toContain(
+        fixture.hot.chatId,
+      )
+      const hydration = loadChatHydration(reopened, harness.dataDir, fixture.hot.chatId)
+      expect(hydration.message).toEqual(canonicalChat.message)
+      expect(hydration.hypaV3Data).toEqual(canonicalChat.hypaV3Data)
+    } finally {
+      reopened.close()
     }
   })
 
