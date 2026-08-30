@@ -16,6 +16,7 @@ import {
   type ResolvedModelProfile,
 } from '../../model/modelProfileResolver'
 import { normalizeModelRoleProfiles } from '../../model/modelProfileRecords'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
 /**
  * Route shape shared with `ServerCompletionRoute` in `serverCompletion.ts`.
@@ -221,7 +222,7 @@ function effectiveModelDatabaseForChat(currentChat: Chat): Database {
   const db = getDatabase()
   const settings = currentChat.generationSettings
   const modelPreset = findPresetById(db.modelPresets, settings?.modelPresetId)
-  const promptPreset = findPresetById(db.promptPresets, settings?.promptPresetId)
+  const promptPreset = findUniquePromptPresetById(db.promptPresets, settings?.promptPresetId)
   const effective = pickModelRuntimeDatabaseBase(db)
   applyEffectivePresetComposition(effective, {
     modelPreset,
@@ -236,6 +237,14 @@ function findPresetById(collection: unknown, id: string | undefined): Record<str
   return collection.find((item): item is Record<string, unknown> => {
     return !!item && typeof item === 'object' && !Array.isArray(item) && (item as { id?: unknown }).id === id
   })
+}
+
+function findUniquePromptPresetById(collection: unknown, id: string | undefined): Record<string, unknown> | undefined {
+  if (!Array.isArray(collection)) return undefined
+  const records = collection.filter((item): item is Record<string, unknown> => {
+    return !!item && typeof item === 'object' && !Array.isArray(item)
+  })
+  return resolveUniquePromptPreset(records, id)
 }
 
 function resolveProfileForChat(currentChat: Chat): ResolvedModelProfile {

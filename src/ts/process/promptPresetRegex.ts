@@ -1,4 +1,5 @@
 import { resolvePromptPresetRegexField } from '../presetSplit'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { getCurrentChat, getDatabase, type Chat, type Database, type customscript } from '../storage/database.svelte'
 
 type PromptPresetRegexRecord = {
@@ -26,7 +27,7 @@ export function getActivePromptPresetRegexScripts(
 ): customscript[] {
   const promptPresetId = selectedPromptPresetId(currentChat)
   if (promptPresetId) {
-    const preset = promptPresetRecords(db).find((candidate) => candidate?.id === promptPresetId)
+    const preset = resolveUniquePromptPreset(promptPresetRecords(db), promptPresetId)
     const regexField = resolvePromptPresetRegexField(preset)
     return regexField.present ? customScriptArray(regexField.value) : []
   }

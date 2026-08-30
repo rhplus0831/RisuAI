@@ -4,6 +4,7 @@ import { normalizePromptTemplate } from '../process/promptTemplateNormalization'
 import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerPromptPresetTemplate } from './hydrationReads'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
 export interface PromptTemplateHydrationState {
   hydratedOwnerIds: ReadonlySet<string | null>
@@ -28,10 +29,16 @@ let promptTemplateOwnerRevisions = new Map<string | null, number>()
 let promptTemplateOwnerAcknowledgementTaints = new Set<string | null>()
 
 export function currentPromptTemplateOwnerId(): string | null {
-  const selectedIndex = getDatabase().promptPresetsId
+  const database = getDatabase()
+  const selectedIndex = database.promptPresetsId
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return null
-  const preset = getDatabase().promptPresets?.[selectedIndex]
-  return typeof preset?.id === 'string' && preset.id.trim() !== '' ? preset.id : null
+  const preset = database.promptPresets?.[selectedIndex]
+  const selectedPromptPresetId = preset?.id
+  if (typeof selectedPromptPresetId !== 'string' || selectedPromptPresetId.trim() === '') return null
+  // Preserve an ambiguous stable ID as a modern owner key so callers cannot
+  // reinterpret a malformed selected row as the legacy aggregate owner. Every
+  // owner operation resolves it again with the exact-one helper and fails closed.
+  return resolveUniquePromptPreset(database.promptPresets, selectedPromptPresetId)?.id ?? selectedPromptPresetId
 }
 
 export function isPromptTemplateHydrated(promptPresetId: string | null = currentPromptTemplateOwnerId()): boolean {
@@ -383,9 +390,7 @@ function localPromptTemplateOwnerIsResolved(promptPresetId: string | null): bool
 
 function uniquePromptPresetOwner(promptPresetId: string): PromptPreset | undefined {
   const presets = getDatabase().promptPresets
-  if (!Array.isArray(presets)) return undefined
-  const matches = presets.filter((candidate): candidate is PromptPreset => candidate?.id === promptPresetId)
-  return matches.length === 1 ? matches[0] : undefined
+  return resolveUniquePromptPreset(presets, promptPresetId) as PromptPreset | undefined
 }
 
 function promptTemplateHydrationWarning(message: string): void {

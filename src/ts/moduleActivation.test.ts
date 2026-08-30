@@ -121,4 +121,20 @@ describe('resolveActiveModuleStates', () => {
       resolveActiveModuleStates(db, undefined, chat({ generationSettings: { promptPresetId: 'plain-preset' } })),
     ).toEqual([])
   })
+
+  it.each(['missing', 'duplicate'])('fails closed for a %s selected Prompt Preset owner', (kind) => {
+    const linkedModule = { id: 'linked-module', namespace: 'prompt-space' } as never
+    const promptPresets =
+      kind === 'missing'
+        ? [{ id: 'other', moduleIntergration: 'prompt-space' }]
+        : [
+            { id: 'prompt-a', moduleIntergration: 'prompt-space' },
+            { id: 'prompt-a', moduleIntergration: 'prompt-space' },
+          ]
+    const db = database({ modules: [linkedModule], promptPresets })
+
+    expect(
+      resolveActiveModuleStates(db, undefined, chat({ generationSettings: { promptPresetId: 'prompt-a' } })),
+    ).toEqual([])
+  })
 })

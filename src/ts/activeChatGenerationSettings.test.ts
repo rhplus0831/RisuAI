@@ -402,6 +402,25 @@ describe('active chat generation settings helper', () => {
     expect(testDatabaseState.db.promptPresetsId).toBe(0)
   })
 
+  it('fails closed when the active chat prompt owner is duplicated', () => {
+    testDatabaseState.db.promptPresets = [
+      { id: 'preset-a', name: 'Preset A' },
+      { id: 'preset-a', name: 'Duplicate Preset A' },
+    ] as any
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    const state = resolveActiveChatGenerationSettings()
+
+    expect(state.promptPreset).toBeUndefined()
+  })
+
   it('ignores global moduleIntergration when the selected preset does not link integrated modules', () => {
     testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,

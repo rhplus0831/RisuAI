@@ -1,6 +1,7 @@
 import { resolveEffectiveAgentPresetId } from './agentPresetResolver'
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { resolvePersonaModuleIds } from './personaModuleLinks'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import type { Chat, Database, character } from './storage/database.svelte'
 import {
   MODULE_ACTIVATION_SOURCES,
@@ -29,7 +30,7 @@ function selectedPromptPresetModuleIntegration(
 ): { source: 'promptPresetIntegration' | 'legacyIntegration'; value: unknown } {
   const promptPresetId = chat?.generationSettings?.promptPresetId
   if (typeof promptPresetId === 'string' && promptPresetId.trim().length > 0) {
-    const preset = database.promptPresets?.find((candidate) => candidate?.id === promptPresetId)
+    const preset = resolveUniquePromptPreset(database.promptPresets, promptPresetId)
     return {
       source: 'promptPresetIntegration',
       value: preset?.moduleIntergration,

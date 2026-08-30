@@ -29,6 +29,7 @@ import { getResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Chat, Database, character } from './storage/database.svelte'
 import { resolvePersonaModuleIdsById } from './personaModuleLinks'
+import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
 type ActiveChatGenerationPromptPresetReference = ChatGenerationPromptPresetReference & {
   moduleIntergration?: unknown
@@ -130,7 +131,7 @@ export function resolveActiveChatGenerationSettings(
     settings,
     persona: findById(personas, settings?.personaId),
     modelPreset: findById(modelPresets, settings?.modelPresetId),
-    promptPreset: findById(promptPresets, settings?.promptPresetId),
+    promptPreset: resolveUniquePromptPreset(promptPresets, settings?.promptPresetId),
     effectiveAgentPresetId,
     agentPreset: findById(agentPresets, effectiveAgentPresetId),
     readiness,
@@ -515,7 +516,7 @@ function resolveReadiness(
   const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
     db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
   )
-  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
+  const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, settings?.promptPresetId)
 
   return resolveChatGenerationSettingsReadiness({
     settings,
@@ -553,7 +554,7 @@ function resolveDisplayedToggles(
   const promptPresets = safeArray<ActiveChatGenerationPromptPresetReference>(
     db.promptPresets as unknown as ActiveChatGenerationPromptPresetReference[] | undefined,
   )
-  const selectedPromptPreset = findById(promptPresets, settings?.promptPresetId)
+  const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, settings?.promptPresetId)
 
   return resolveDisplayedSidebarToggles({
     modelPresetId: settings?.modelPresetId,

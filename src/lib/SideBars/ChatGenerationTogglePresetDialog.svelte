@@ -28,6 +28,7 @@
   } from 'src/ts/chatGenerationTogglePresetPlanning'
   import type { ChatGenerationRequiredSidebarToggle } from 'src/ts/chatGenerationSettings'
   import type { ActiveChatTarget, ChatGenerationSettingsSaveOperation } from 'src/ts/chatCommands'
+  import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { chatGenerationTogglePresetListModalStore, selectedCharID } from 'src/ts/stores.svelte'
@@ -253,7 +254,7 @@
     return [...grouped.entries()].map(([id, toggles]) => {
       const first = toggles[0]
       if (first.source === 'preset') {
-        const preset = state.db.promptPresets?.find((candidate) => candidate.id === first.presetId)
+        const preset = resolveUniquePromptPreset(state.db.promptPresets, first.presetId)
         const name = preset?.name?.trim() || first.presetId || ''
         return { id, name: language.chatGenerationTogglePresetPickPromptSource(name), toggles }
       }
