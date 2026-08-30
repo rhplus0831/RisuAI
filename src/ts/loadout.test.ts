@@ -875,12 +875,12 @@ describe('loadout projection command helpers', () => {
     const application = applyLoadout(loadout)
 
     expect(testDatabaseState.db.selectedPersona).toBe(1)
-    expect(testDatabaseState.db.username).toBe('Persona B')
+    expect(testDatabaseState.db.username).toBe('Live User')
     expect(testDatabaseState.db.personas[0]).toMatchObject({
-      name: 'Live User',
-      icon: 'live-icon',
-      personaPrompt: 'live persona prompt',
-      note: 'live user note',
+      name: 'Persona A',
+      icon: 'icon-a',
+      personaPrompt: 'persona-a prompt',
+      note: 'persona-a note',
     })
     expect(testDatabaseState.db.botPresetsId).toBe(1)
     expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
@@ -909,8 +909,8 @@ describe('loadout projection command helpers', () => {
         body: {
           baseRevision: 10,
           personaId: 'persona-b',
-          mirrorLegacyProfile: true,
-          saveCurrent: true,
+          mirrorLegacyProfile: false,
+          saveCurrent: false,
         },
       },
       {
@@ -1888,15 +1888,15 @@ describe('loadout projection command helpers', () => {
     })
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
     expect(testDatabaseState.db.selectedPersona).toBe(1)
-    expect(testDatabaseState.db.username).toBe('Persona B')
-    expect(testDatabaseState.db.userIcon).toBe('icon-b')
-    expect(testDatabaseState.db.personaPrompt).toBe('persona-b prompt')
-    expect(testDatabaseState.db.userNote).toBe('persona-b note')
+    expect(testDatabaseState.db.username).toBe('Live User')
+    expect(testDatabaseState.db.userIcon).toBe('live-icon')
+    expect(testDatabaseState.db.personaPrompt).toBe('live persona prompt')
+    expect(testDatabaseState.db.userNote).toBe('live user note')
     expect(testDatabaseState.db.personas[0]).toMatchObject({
-      name: 'Live User',
-      icon: 'live-icon',
-      personaPrompt: 'live persona prompt',
-      note: 'live user note',
+      name: 'Persona A',
+      icon: 'icon-a',
+      personaPrompt: 'persona-a prompt',
+      note: 'persona-a note',
     })
     expect(testDatabaseState.db.botPresets[0]).toMatchObject({
       id: 'preset-a',
@@ -2226,7 +2226,7 @@ describe('loadout projection command helpers', () => {
     expect(calls[2].body).toMatchObject({
       baseRevision: 11,
       personaId: 'persona-b',
-      saveCurrent: true,
+      saveCurrent: false,
     })
     await flushCommandEffects()
   })

@@ -43,6 +43,16 @@ function getScopedModules() {
   return getActiveModules(database, currentChar, currentChat)
 }
 
+function selectedPersonaProfileField(field: 'name' | 'personaPrompt'): string | undefined {
+  const database = getActiveDatabase()
+  if (!database || !Number.isInteger(database.selectedPersona)) return undefined
+  const persona = database.personas?.[database.selectedPersona]
+  if (!persona || typeof persona.id !== 'string') return undefined
+  if (database.personas.filter((candidate) => candidate?.id === persona.id).length !== 1) return undefined
+  const value = persona[field]
+  return typeof value === 'string' ? value : ''
+}
+
 function reportedScreenWidth(): string {
   const value = getActiveClientContext()?.screenWidth
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value).toString()
@@ -75,11 +85,11 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     },
     getUserName: () => {
       const db = getActiveDatabase()
-      return db?.username ?? 'User'
+      return selectedPersonaProfileField('name') ?? db?.username ?? 'User'
     },
     getPersonaPrompt: () => {
       const db = getActiveDatabase()
-      return db?.personaPrompt ?? ''
+      return selectedPersonaProfileField('personaPrompt') ?? db?.personaPrompt ?? ''
     },
     risuChatParser: (text: string, arg: matcherArg) =>
       risuChatParser(text, {

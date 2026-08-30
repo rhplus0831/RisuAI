@@ -151,12 +151,12 @@ describe('buildPersona', () => {
   })
 
   it('returns the persona prompt when db.personaPrompt is set', () => {
-    seedDb({ personaPrompt: 'Curious user persona.' })
+    seedDb({ personaPrompt: 'Curious user persona.', personas: [] })
     expect(buildPersona(makeChar())).toEqual([{ role: 'system', content: 'Curious user persona.' }])
   })
 
   it('returns empty when db.personaPrompt is empty', () => {
-    seedDb({ personaPrompt: '' })
+    seedDb({ personaPrompt: '', personas: [] })
     expect(buildPersona(makeChar())).toEqual([])
   })
 })

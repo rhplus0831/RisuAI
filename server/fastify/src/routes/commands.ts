@@ -4730,13 +4730,17 @@ export function registerCommandRoutes(
           if (findPersonaIndex(personas, persona.id) !== -1) {
             throw new ValidationError(`Duplicate persona id: ${persona.id}`)
           }
+          const beforeSelected = target.selectedPersona
           personas.push(persona)
           writeSingleCollectionTable(innerDb, 'personas', personas)
-          // Mirroring moves the selected pointer + the 4 legacy profile scalars,
-          // all settings; co-write settings only when the request mirrors.
+          // A newly created row becomes selected in the normal row-owner flow;
+          // mirroring the legacy scalar aliases remains opt-in compatibility.
+          target.selectedPersona = personas.length - 1
           if (mirror) {
-            target.selectedPersona = personas.length - 1
             mirrorLegacyProfile(target, persona)
+          }
+          const settingsWritten = mirror || target.selectedPersona !== beforeSelected
+          if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
@@ -4748,7 +4752,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: true,
-                settingsWritten: mirror,
+                settingsWritten,
                 legacyProfileProjectionApplied: mirror,
               }),
             },
@@ -4839,7 +4843,9 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const selectPersonaId =
         body.selectPersonaId === undefined ? undefined : readPersonaId(body.selectPersonaId, 'selectPersonaId')
-      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
+      // Persona rows own normal profile state. Legacy scalar projection remains
+      // available only to explicitly named migration/compatibility callers.
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
       const result = applyTargetedCommandMutation<
         { personaId: string; cascadedChatCount: number; cascadedLoadoutCount: number } & PersonaMutationCertificate
@@ -4956,8 +4962,10 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PersonaCommandBody
       const baseRevision = readBaseRevision(body)
       const personaId = readPersonaId(body.personaId, 'personaId')
-      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
-      const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
+      // Do not snapshot or mirror legacy profile scalars during ordinary row
+      // deletion/selection. Older import/export callers can opt in explicitly.
+      const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
+      const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
       const result = applyTargetedCommandMutation<{ personaId: string } & PersonaMutationCertificate>({
         db,
         dataDir,

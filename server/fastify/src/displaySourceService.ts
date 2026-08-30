@@ -85,6 +85,18 @@ function activePromptPresetRegex(database: Database, chat: Chat): customscript[]
   return resolved.present && Array.isArray(resolved.value) ? (resolved.value as customscript[]) : []
 }
 
+function selectedPersonaProfile(database: Database): { id: string; name: string; personaPrompt: string } | null {
+  if (!Number.isInteger(database.selectedPersona)) return null
+  const persona = database.personas?.[database.selectedPersona]
+  if (!persona || typeof persona.id !== 'string') return null
+  if (database.personas.filter((candidate) => candidate?.id === persona.id).length !== 1) return null
+  return {
+    id: persona.id,
+    name: typeof persona.name === 'string' ? persona.name : '',
+    personaPrompt: typeof persona.personaPrompt === 'string' ? persona.personaPrompt : '',
+  }
+}
+
 function displayScope(database: Database, characterId: string, chatId: string): DisplayScope | null {
   const characters = database.characters as character[]
   const selectedCharID = characters.findIndex((candidate) => candidate?.chaId === characterId)
@@ -115,6 +127,7 @@ function sharedDependencyValue(
   scope: DisplayScope,
   modules: ReturnType<typeof getActiveModules>,
 ): Record<string, unknown> {
+  const selectedPersona = selectedPersonaProfile(scope.database)
   return {
     character: {
       additionalAssets: scope.character.additionalAssets,
@@ -153,9 +166,11 @@ function sharedDependencyValue(
       globalscript: scope.database.globalscript,
       moduleIntergration: scope.database.moduleIntergration,
       presetRegex: scope.database.presetRegex,
-      personaPrompt: scope.database.personaPrompt,
+      personaPrompt: selectedPersona?.personaPrompt ?? scope.database.personaPrompt,
+      selectedPersona: scope.database.selectedPersona,
+      selectedPersonaId: selectedPersona?.id ?? null,
       templateDefaultVariables: scope.database.templateDefaultVariables,
-      username: scope.database.username,
+      username: selectedPersona?.name ?? scope.database.username,
     },
     modules: modules.map((module) => ({
       assets: module.assets,

@@ -860,6 +860,15 @@ function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
   return undefined
 }
 
+function selectedPersonaProfileField(database: Database, field: 'name' | 'personaPrompt'): string | undefined {
+  if (!Number.isInteger(database.selectedPersona)) return undefined
+  const persona = database.personas?.[database.selectedPersona]
+  if (!persona || typeof persona.id !== 'string') return undefined
+  if (database.personas.filter((candidate) => candidate?.id === persona.id).length !== 1) return undefined
+  const value = persona[field]
+  return typeof value === 'string' ? value : ''
+}
+
 /** Sleep that wakes early when `signal` fires, so an aborted request never
  *  waits out the remaining `sleep()` budget (the very next host-fn call then
  *  throws {@link LuaAbortError}). */
@@ -1880,9 +1889,14 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
     char.firstMessage = data
     return true
   })
-  declare('getPersonaName', (_id: string) => state.ctx.database.username ?? '')
+  declare(
+    'getPersonaName',
+    (_id: string) => selectedPersonaProfileField(state.ctx.database, 'name') ?? state.ctx.database.username ?? '',
+  )
   declare('getPersonaDescription', (_id: string) => {
-    return expandVariables(String(state.ctx.database.personaPrompt ?? ''), {
+    const personaPrompt =
+      selectedPersonaProfileField(state.ctx.database, 'personaPrompt') ?? state.ctx.database.personaPrompt ?? ''
+    return expandVariables(String(personaPrompt), {
       database: state.ctx.database,
       selectedCharID: state.ctx.selectedCharID,
       chatPage: state.ctx.chatPage,

@@ -828,15 +828,6 @@ function reapplyPersonaSelection(
         attempted: row.attempted,
       })
     }
-    for (const key of ['username', 'userIcon', 'personaPrompt', 'userNote'] as const) {
-      if (!isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key))) continue
-      applyRetainedAttemptedFields({
-        target: getDatabase() as unknown as Record<string, unknown>,
-        previous: rollback.previousMirror as Record<string, unknown>,
-        attempted: rollback.attemptedMirror as Record<string, unknown>,
-        keys: [key],
-      })
-    }
     if (
       attemptedIndex >= 0 &&
       isTargetCurrent(pendingMutationSelectionProjectionTarget('persona')) &&
@@ -862,12 +853,12 @@ function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): vo
       })
     }
 
-    applyAttemptedFieldRollback({
-      target: getDatabase() as unknown as Record<string, unknown>,
-      previous: rollback.previousMirror as Record<string, unknown>,
-      attempted: rollback.attemptedMirror as Record<string, unknown>,
-      keys: Object.keys(rollback.attemptedMirror),
-    })
+    if (rollback.previousSelectedPersonaId) {
+      const previousIndex = (getDatabase().personas ?? []).findIndex(
+        (persona) => persona?.id === rollback.previousSelectedPersonaId,
+      )
+      if (previousIndex >= 0) getDatabase().selectedPersona = previousIndex
+    }
   })
 }
 
@@ -1933,8 +1924,8 @@ async function applyLoadoutNowExclusive(
             path: '/personas/select',
             body: {
               personaId: personaSelection.personaId,
-              mirrorLegacyProfile: true,
-              saveCurrent: true,
+              mirrorLegacyProfile: false,
+              saveCurrent: false,
             },
           },
         ],
@@ -2077,8 +2068,8 @@ async function applyLoadoutNowExclusive(
       operation: 'select',
       previous: previousPersona,
       attempted: attemptedPersona,
-      mirrorLegacyProfile: true,
-      saveCurrent: true,
+      mirrorLegacyProfile: false,
+      saveCurrent: false,
     })
   }
 
@@ -2234,8 +2225,8 @@ async function applyLoadoutNowExclusive(
           selectPersonaCommand({
             baseRevision,
             personaId: personaSelection.personaId,
-            mirrorLegacyProfile: true,
-            saveCurrent: true,
+            mirrorLegacyProfile: false,
+            saveCurrent: false,
             optimisticAcknowledgement: personaOptimisticAcknowledgement,
           }),
         () => rollbackPersonaSelection(personaRollback),

@@ -56,6 +56,11 @@
     return getDatabase().personas[getDatabase().selectedPersona]?.modules ?? []
   }
 
+  function selectedPersonaProfile(field: 'name' | 'icon' | 'personaPrompt' | 'note'): string {
+    const persona = getDatabase().personas[getDatabase().selectedPersona]
+    return persona?.[field] ?? ''
+  }
+
   function linkablePersonaModules() {
     const query = moduleSearch.trim().toLocaleLowerCase()
     return (getDatabase().modules ?? [])
@@ -243,10 +248,10 @@
       onclick={() => {
         selectUserImg()
       }}>
-      {#if getDatabase().userIcon === ''}
+      {#if selectedPersonaProfile('icon') === ''}
         <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
       {:else}
-        {#await getCharImage(getDatabase().userIcon, getDatabase().personas[getDatabase().selectedPersona]?.largePortrait ? 'lgcss' : 'css')}
+        {#await getCharImage(selectedPersonaProfile('icon'), getDatabase().personas[getDatabase().selectedPersona]?.largePortrait ? 'lgcss' : 'css')}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
         {:then im}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}>
@@ -261,7 +266,7 @@
       marginBottom
       size="lg"
       placeholder="User"
-      bind:value={() => getDatabase().username, (value) => updateSelectedPersonaField('username', value)} />
+      bind:value={() => selectedPersonaProfile('name'), (value) => updateSelectedPersonaField('username', value)} />
     <span class="text-sm text-textcolor2">{language.displayName}</span>
     <TextInput
       marginBottom
@@ -274,12 +279,14 @@
     <TextAreaInput
       height="20"
       margin="bottom"
-      bind:value={() => getDatabase().userNote, (value) => updateSelectedPersonaField('userNote', value)}
+      bind:value={() => selectedPersonaProfile('note'), (value) => updateSelectedPersonaField('userNote', value)}
       placeholder={`Put unique notes for this persona here.\nExample: [Alternate Hunters persona]`} />
     <span class="text-sm text-textcolor2">{language.description}</span>
     <TextAreaInput
       autocomplete="off"
-      bind:value={() => getDatabase().personaPrompt, (value) => updateSelectedPersonaField('personaPrompt', value)}
+      bind:value={
+        () => selectedPersonaProfile('personaPrompt'), (value) => updateSelectedPersonaField('personaPrompt', value)
+      }
       placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
     <div class="mt-4 flex flex-col gap-2">
       <span class="text-sm font-medium text-textcolor">{language.personaModuleLink}</span>

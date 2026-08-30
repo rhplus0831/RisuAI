@@ -124,6 +124,17 @@ describe('expandVariables — basic substitution', () => {
     expect(expandVariables('persona={{persona}}', ctx()).text).toBe('persona=Alex is curious.')
   })
 
+  it('uses the selected persona row when legacy profile scalars conflict', () => {
+    const database = makeDatabase({
+      selectedPersona: 0,
+      username: 'STALE SCALAR',
+      personaPrompt: 'STALE PROMPT',
+      personas: [{ id: 'persona-row', name: 'Canonical Row', icon: '', personaPrompt: 'CANONICAL PROMPT', note: '' }],
+    })
+
+    expect(expandVariables('{{user}}|{{persona}}', { database }).text).toBe('Canonical Row|CANONICAL PROMPT')
+  })
+
   it('substitutes the <user> / <char> / <bot> shorthand', () => {
     expect(expandVariables('<user> meets <char>', ctx()).text).toBe('Alex meets Tess')
   })

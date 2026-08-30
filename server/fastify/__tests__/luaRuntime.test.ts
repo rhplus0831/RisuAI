@@ -671,6 +671,30 @@ describe('server Lua runtime — low-level LLM bindings', () => {
 })
 
 describe('server Lua runtime — persona description', () => {
+  it('uses the selected persona row over stale legacy profile scalars', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        selectedPersona: 0,
+        username: 'STALE NAME',
+        personaPrompt: 'STALE PROMPT',
+        personas: [
+          { id: 'persona-row', name: 'Canonical Name', icon: '', personaPrompt: 'CANONICAL PROMPT', note: '' },
+        ],
+      },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = getPersonaName(id) .. '|' .. getPersonaDescription(id)
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('Canonical Name|CANONICAL PROMPT')
+  })
+
   it('returns the effective persona prompt expanded in the current character CBS scope', async () => {
     const { ctx } = makeRuntime({
       database: { personaPrompt: 'Persona {{user}} accompanies {{char}}.' },

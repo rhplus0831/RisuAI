@@ -53,6 +53,11 @@
   let activeApiKeyAttempt: ApiKeyPersistenceAttempt | null = null
   const queuedSettlementSubscriptions = new Set<QueuedSettlementSubscription>()
 
+  function activeUsername(): string {
+    const database = getDatabase()
+    return database.personas?.[database.selectedPersona]?.name ?? database.username ?? 'User'
+  }
+
   const SETUP_COMPLETION_PENDING_STEP = 9
   const SETUP_COMPLETE_STEP = 10
 
@@ -428,11 +433,11 @@
         {:else}
           <Chat name="Airisu" img={airisuStyle} message={language.setup.welcome} isLastMemory={false} />
           {#if step >= 2}
-            <Chat name={getDatabase().username} message={getDatabase().username} isLastMemory={false} />
+            <Chat name={activeUsername()} message={activeUsername()} isLastMemory={false} />
             <Chat
               name="Airisu"
               img={airisuStyle}
-              message={language.setup.setupLaterMessage.replace('{username}', getDatabase().username)}
+              message={language.setup.setupLaterMessage.replace('{username}', activeUsername())}
               isLastMemory={false} />
           {/if}
           {#if step === 2}
@@ -458,11 +463,11 @@
             </div>
           {/if}
           {#if step >= 3}
-            <Chat name={getDatabase().username} message={language.setup.setupMessageOption1} isLastMemory={false} />
+            <Chat name={activeUsername()} message={language.setup.setupMessageOption1} isLastMemory={false} />
             <Chat
               name="Airisu"
               img={airisuStyle}
-              message={language.setup.welcome2.replace('{username}', getDatabase().username)}
+              message={language.setup.welcome2.replace('{username}', activeUsername())}
               isLastMemory={false} />
           {/if}
           {#if step === 3}
@@ -508,7 +513,7 @@
             </div>
           {/if}
           {#if step >= 4}
-            <Chat name={getDatabase().username} message={provider} isLastMemory={false} />
+            <Chat name={activeUsername()} message={provider} isLastMemory={false} />
             {#if provider === 'openai'}
               <Chat name="Airisu" img={airisuStyle} message={language.setup.setupOpenAI} isLastMemory={false} />
             {/if}
@@ -527,7 +532,7 @@
             {/if}
           {/if}
           {#if step >= 5}
-            <Chat name={getDatabase().username} message="<HIDDEN>" isLastMemory={false} />
+            <Chat name={activeUsername()} message="<HIDDEN>" isLastMemory={false} />
             <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseChatType} isLastMemory={false} />
           {/if}
           {#if step === 5}
@@ -569,7 +574,7 @@
           {/if}
           {#if step >= 6}
             <Chat
-              name={getDatabase().username}
+              name={activeUsername()}
               message={language.setup[`chooseChatTypeOption${chatLang + 1}`]}
               isLastMemory={false} />
             <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseCheapOrMemory} isLastMemory={false} />

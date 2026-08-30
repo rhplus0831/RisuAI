@@ -76,6 +76,34 @@ afterEach(() => {
 })
 
 describe('active chat persona display helpers', () => {
+  it('uses the selected persona row over stale legacy profile scalars', () => {
+    const db = testDatabaseState.db
+    db.username = 'STALE NAME'
+    db.userIcon = 'stale.png'
+    db.personaPrompt = 'STALE PROMPT'
+    db.personas[1] = {
+      ...db.personas[1],
+      name: 'Canonical Name',
+      icon: 'canonical.png',
+      personaPrompt: 'CANONICAL PROMPT',
+    }
+
+    expect(getUserName()).toBe('Canonical Name')
+    expect(getUserIcon()).toBe('canonical.png')
+    expect(getPersonaPrompt()).toBe('CANONICAL PROMPT')
+  })
+
+  it('fails closed to legacy compatibility when the selected row ID is ambiguous', () => {
+    const db = testDatabaseState.db
+    db.username = 'Compatibility Name'
+    db.personaPrompt = 'Compatibility Prompt'
+    db.personas[1] = { ...db.personas[1], id: 'duplicate-persona', name: 'Ambiguous Name' }
+    db.personas[2] = { ...db.personas[2], id: 'duplicate-persona', personaPrompt: 'Ambiguous Prompt' }
+
+    expect(getUserName()).toBe('Compatibility Name')
+    expect(getPersonaPrompt()).toBe('Compatibility Prompt')
+  })
+
   it('uses the chat generation-settings persona before the global selected persona', () => {
     seedPersonaDisplayState({
       generationSettings: {

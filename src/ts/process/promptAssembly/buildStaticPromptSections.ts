@@ -36,11 +36,12 @@ export function buildCotInstruction(usingPromptTemplate: boolean): OpenAIChat[] 
 }
 
 export function buildPersona(currentChar: character): OpenAIChat[] {
-  if (!getDatabase().personaPrompt) return []
+  const personaPrompt = getPersonaPrompt()
+  if (!personaPrompt) return []
   return [
     {
       role: 'system',
-      content: risuChatParser(getPersonaPrompt(), { chara: currentChar }),
+      content: risuChatParser(personaPrompt, { chara: currentChar }),
     },
   ]
 }

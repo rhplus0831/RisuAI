@@ -14,6 +14,15 @@ export interface UserPersonaPresentation {
   userIconPortrait: boolean
 }
 
+function selectedPersonaRecord(database: Database): Database['personas'][number] | undefined {
+  const index = database.selectedPersona
+  const persona = database.personas?.[index]
+  const id = persona?.id
+  if (!persona || typeof id !== 'string' || id.trim() === '') return undefined
+  if (database.personas.filter((candidate) => candidate?.id === id).length !== 1) return undefined
+  return persona
+}
+
 export function resolveUserPersonaPresentation(database: Database, chat: Chat | undefined): UserPersonaPresentation {
   const personaId = resolveChatBoundPersonaId(chat)
   const persona = personaId ? database.personas?.find((candidate) => candidate.id === personaId) : undefined
@@ -25,16 +34,16 @@ export function resolveUserPersonaPresentation(database: Database, chat: Chat | 
     }
   }
 
-  const selectedPersona = database.personas?.[database.selectedPersona]
+  const selectedPersona = selectedPersonaRecord(database)
   return {
     currentUsername: getPersonaDisplayName(
       {
-        name: database.username ?? selectedPersona?.name,
+        name: selectedPersona?.name ?? database.username,
         displayName: selectedPersona?.displayName,
       },
       'User',
     ),
-    userIcon: database.userIcon ?? '',
+    userIcon: selectedPersona?.icon ?? database.userIcon ?? '',
     userIconPortrait: selectedPersona?.largePortrait ?? false,
   }
 }
@@ -72,7 +81,7 @@ export function getUserName() {
     return bindedPersona.name
   }
   const db = getDatabase()
-  return db.username ?? 'User'
+  return selectedPersonaRecord(db)?.name ?? db.username ?? 'User'
 }
 
 export function getUserDisplayName() {
@@ -95,7 +104,7 @@ export function getPersonaPrompt() {
     return bindedPersona.personaPrompt
   }
   const db = getDatabase()
-  return db.personaPrompt ?? ''
+  return selectedPersonaRecord(db)?.personaPrompt ?? db.personaPrompt ?? ''
 }
 
 export function getUserIconProtrait() {
