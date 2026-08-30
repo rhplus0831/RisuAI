@@ -7,6 +7,8 @@
     type ChatTranslationSettingValueByField,
   } from 'src/ts/chatCommands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
@@ -23,6 +25,9 @@
     Partial<Record<ChatTranslationSettingField, { operation: number; status: PersistenceStatus }>>
   >({})
   let currentChat = $derived.by(() => {
+    const owner = getSelectedCharacterOwner()
+    if (charactersResourceState.status === 'ready') return owner?.chats?.[owner.chatPage]
+    if (owner) return owner.chats?.[owner.chatPage]
     const character = getDatabase().characters?.[$selectedCharID]
     return character?.chats?.[character.chatPage]
   })

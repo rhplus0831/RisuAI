@@ -1,5 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import { setCurrentChatSelectedDraftHookId } from 'src/ts/chatCommands'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { getDatabase, type InputHook } from 'src/ts/storage/database.svelte'
@@ -8,6 +10,9 @@
 
   let pickerOpen = $state(false)
   let currentChat = $derived.by(() => {
+    const owner = getSelectedCharacterOwner()
+    if (charactersResourceState.status === 'ready') return owner?.chats?.[owner.chatPage]
+    if (owner) return owner.chats?.[owner.chatPage]
     const character = getDatabase().characters?.[$selectedCharID]
     return character?.chats?.[character.chatPage]
   })
