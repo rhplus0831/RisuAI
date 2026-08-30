@@ -59,6 +59,9 @@ importers:
       '@risuai/protocol':
         specifier: workspace:*
         version: link:packages/protocol
+      '@risuai/shared-core':
+        specifier: workspace:*
+        version: link:packages/shared-core
       '@smithy/protocol-http':
         specifier: ^3.3.0
         version: 3.3.0
@@ -324,6 +327,8 @@ importers:
       '@sinclair/typebox':
         specifier: 0.34.52
         version: 0.34.52
+
+  packages/shared-core: {}
 
 packages:
 

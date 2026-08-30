@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { normalizeChatPageIndex } from '@risuai/shared-core/chat-page'
 import {
   canUseServerCommands,
   createChatGenerationSettingsCommandDurableBody,
@@ -735,7 +736,7 @@ export function applyOptimisticDeletedChat(
         ? chats.findIndex((candidate) => candidate.id === previouslySelectedChatId)
         : -1
     if (preservedSelectionIndex >= 0) character.chatPage = preservedSelectionIndex
-    else normalizeChatPage(character)
+    else character.chatPage = normalizeChatPageIndex(character.chatPage, character.chats?.length ?? 0)
     result.applied = true
     result.selectedChatId = chats[character.chatPage]?.id
   })
@@ -1234,19 +1235,6 @@ function locateChatIndex(character: character, chatId: string | undefined): numb
   return page >= 0 && page < (character.chats?.length ?? 0) ? page : -1
 }
 
-function normalizeChatPage(character: character): void {
-  const chatsLength = character.chats?.length ?? 0
-  if (!Number.isInteger(character.chatPage)) {
-    character.chatPage = chatsLength > 0 ? 0 : -1
-  }
-  if (character.chatPage >= chatsLength) {
-    character.chatPage = chatsLength > 0 ? chatsLength - 1 : -1
-  }
-  if (character.chatPage < -1) {
-    character.chatPage = chatsLength > 0 ? 0 : -1
-  }
-}
-
 function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefined {
   const owner = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
   if (snapshot.chatId) {
@@ -1473,7 +1461,7 @@ function preserveOrRestoreChatSelection(
 ): void {
   if (selectChatById(character, preferredSelectedChatId)) return
   if (selectChatById(character, fallbackSelectedChatId)) return
-  normalizeChatPage(character)
+  character.chatPage = normalizeChatPageIndex(character.chatPage, character.chats?.length ?? 0)
 }
 
 function locateChatInState(snapshot: ChatStateSnapshot, chatId: string): ChatLocation | null {
@@ -2229,7 +2217,7 @@ function applyOptimisticChatOrderAttempt(
     } else {
       // The server keeps the numeric chatPage when no explicit selection is
       // supplied, so mirror that behavior after changing the row order.
-      normalizeChatPage(character)
+      character.chatPage = normalizeChatPageIndex(character.chatPage, character.chats?.length ?? 0)
     }
     applied = true
   })

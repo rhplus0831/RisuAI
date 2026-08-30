@@ -110,6 +110,17 @@ describe('affected test planning', () => {
     ).toBe(true)
   })
 
+  it('routes shared-core sources through their typecheck and both consumer lanes', () => {
+    const result = plan([{ path: 'packages/shared-core/src/chatPage.ts', status: 'M' }])
+
+    expect(result.commands.map((command) => command.label)).toEqual([
+      'shared-core typecheck',
+      'affected frontend tests',
+      'affected server tests',
+      'current compatibility harness',
+    ])
+  })
+
   it('keeps additive protocol exports targeted and widens every unclassified protocol configuration change', () => {
     const additive = plan([
       { path: 'packages/protocol/package.json', status: 'M', impact: 'protocol-additive-exports' },
@@ -118,6 +129,11 @@ describe('affected test planning', () => {
     expect(additive.commands).toEqual([{ label: 'protocol typecheck', args: ['check:protocol'] }])
     expect(additive.notes).toContain(ADDITIVE_PROTOCOL_EXPORT_NOTE)
     for (const file of ['packages/protocol/package.json', 'packages/protocol/tsconfig.json']) {
+      expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
+        { label: 'full quality suite', args: ['test:all'] },
+      ])
+    }
+    for (const file of ['packages/shared-core/package.json', 'packages/shared-core/tsconfig.json']) {
       expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
         { label: 'full quality suite', args: ['test:all'] },
       ])

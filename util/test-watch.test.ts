@@ -280,6 +280,7 @@ describe('warm Svelte checker', () => {
   it('invalidates only paths covered by the frontend Svelte project', () => {
     expect(isFrontendCheckWatchPath('src/App.svelte')).toBe(true)
     expect(isFrontendCheckWatchPath('packages/protocol/src/index.ts')).toBe(true)
+    expect(isFrontendCheckWatchPath('packages/shared-core/src/chatPage.ts')).toBe(true)
     expect(isFrontendCheckWatchPath('public/service-worker.js')).toBe(true)
     expect(isFrontendCheckWatchPath('version.json')).toBe(true)
     expect(isFrontendCheckWatchPath('src/etc/o200k_base.json')).toBe(true)

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
+import { normalizeChatPageIndex } from '@risuai/shared-core/chat-page'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
   CHAT_GENERATION_SETTINGS_KEYS,
@@ -133,7 +134,7 @@ export function ensureCharacterChats(character: CharacterRecord): ChatRecord[] {
     }
   }
 
-  normalizeChatPage(character, chats)
+  character.chatPage = normalizeChatPageIndex(character.chatPage, chats.length)
   return chats
 }
 
@@ -766,18 +767,6 @@ function normalizeGlobalChatFolderIds(characters: readonly CharacterRecord[]): v
         chat.folderId = renamed.get(chat.folderId)!
       }
     }
-  }
-}
-
-function normalizeChatPage(character: CharacterRecord, chats: readonly ChatRecord[]): void {
-  if (!Number.isInteger(character.chatPage as number)) {
-    character.chatPage = chats.length > 0 ? 0 : -1
-  }
-  if ((character.chatPage as number) >= chats.length) {
-    character.chatPage = chats.length > 0 ? chats.length - 1 : -1
-  }
-  if ((character.chatPage as number) < -1) {
-    character.chatPage = chats.length > 0 ? 0 : -1
   }
 }
 

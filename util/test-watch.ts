@@ -300,7 +300,7 @@ function isAddedVitestTest(file: string): boolean {
 }
 
 function isPotentialSourceAddition(file: string): boolean {
-  return /^(?:packages\/protocol\/src|server\/fastify\/(?:__fixtures__|src)|src|util)\//.test(file)
+  return /^(?:packages\/(?:protocol|shared-core)\/src|server\/fastify\/(?:__fixtures__|src)|src|util)\//.test(file)
 }
 
 export function requiresFrontendCheckTopologyRestart(changes: readonly ChangedPath[]): boolean {
@@ -889,7 +889,7 @@ export function isFrontendCheckWatchPath(filename: string | null): boolean {
   }
   if (normalized === 'version.json' || (/^src\//.test(normalized) && normalized.endsWith('.json'))) return true
   if (normalized === 'public/service-worker.js') return true
-  if (/^packages\/protocol\/src\/.+\.ts$/.test(normalized)) return true
+  if (/^packages\/(?:protocol|shared-core)\/src\/.+\.ts$/.test(normalized)) return true
   if (!/^src\//.test(normalized) || !/\.(?:svelte|d\.ts|[cm]?[jt]sx?)$/.test(normalized)) return false
   return !/^src\/(?:.*\/)?web\/.*\.ts$/.test(normalized)
 }

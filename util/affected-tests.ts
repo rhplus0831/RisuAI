@@ -137,6 +137,10 @@ function isProtocolSource(file: string): boolean {
   return /^packages\/protocol\/src\/.+\.ts$/.test(file) && !isFrontendTest(file)
 }
 
+function isSharedCoreSource(file: string): boolean {
+  return /^packages\/shared-core\/src\/.+\.ts$/.test(file) && !isFrontendTest(file)
+}
+
 function isServerTestSupport(file: string): boolean {
   return /^server\/fastify\/(?:__tests__|__fixtures__)\/.+\.[cm]?[jt]sx?$/.test(file) && !isServerTest(file)
 }
@@ -157,7 +161,7 @@ function isCompatibilityRegisterFile(file: string): boolean {
 }
 
 function isCompatibilityRelevantProductionFile(file: string): boolean {
-  if (!/^(?:src|server\/fastify\/src|packages\/protocol\/src)\//.test(file)) return false
+  if (!/^(?:src|server\/fastify\/src|packages\/(?:protocol|shared-core)\/src)\//.test(file)) return false
   if (file.endsWith('.md') || file.endsWith('.snap')) return false
   if (/(?:^|\/)(?:__tests__|tests|__fixtures__)(?:\/|$)/.test(file)) return false
   return !isFrontendTest(file) && !isServerTest(file)
@@ -186,6 +190,8 @@ function requiresFullQuality(change: ChangedPath): boolean {
     file === 'vite.config.ts' ||
     (file === protocolManifestPath && change.impact !== 'protocol-additive-exports') ||
     file === 'packages/protocol/tsconfig.json' ||
+    file === 'packages/shared-core/package.json' ||
+    file === 'packages/shared-core/tsconfig.json' ||
     fullQualityRunnerFiles.has(file) ||
     file.startsWith('.github/')
   )
@@ -243,9 +249,11 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   )
   const protocolSourceChanged = existing.some(({ path: file }) => isProtocolSource(file))
   const deletedProtocolSource = deleted.some(({ path: file }) => isProtocolSource(file))
+  const sharedCoreSourceChanged = existing.some(({ path: file }) => isSharedCoreSource(file))
+  const deletedSharedCoreSource = deleted.some(({ path: file }) => isSharedCoreSource(file))
   const frontendSourceChanged = existing.some(
     ({ path: file }) =>
-      (/^(?:src|util|server\/fastify\/src)\//.test(file) || isProtocolSource(file)) &&
+      (/^(?:src|util|server\/fastify\/src)\//.test(file) || isProtocolSource(file) || isSharedCoreSource(file)) &&
       !isCompatibilityBaselineFile(file) &&
       !compatibilityRegisterValidatorFiles.has(file) &&
       !isFrontendTest(file) &&
@@ -253,28 +261,44 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   )
   const serverSourceChanged = existing.some(
     ({ path: file }) =>
-      (/^(?:server\/fastify\/src|src)\//.test(file) || isProtocolSource(file) || isServerTestSupport(file)) &&
+      (/^(?:server\/fastify\/src|src)\//.test(file) ||
+        isProtocolSource(file) ||
+        isSharedCoreSource(file) ||
+        isServerTestSupport(file)) &&
       !isFrontendTest(file) &&
       !isServerTest(file),
   )
-  const deletedFrontendSource = deleted.some(({ path: file }) => /^(?:src|util|server\/fastify\/src)\//.test(file))
-  const deletedServerSource = deleted.some(({ path: file }) => /^(?:server\/fastify\/src|src)\//.test(file))
+  const deletedFrontendSource = deleted.some(
+    ({ path: file }) => /^(?:src|util|server\/fastify\/src)\//.test(file) || isSharedCoreSource(file),
+  )
+  const deletedServerSource = deleted.some(
+    ({ path: file }) => /^(?:server\/fastify\/src|src)\//.test(file) || isSharedCoreSource(file),
+  )
   const deletedServerTestSupport = deleted.some(({ path: file }) => isServerTestSupport(file))
   const deletedFrontendTest = deleted.some(({ path: file }) => isFrontendTest(file))
   const deletedServerTest = deleted.some(({ path: file }) => isServerTest(file))
 
-  const runFullFrontend = rootRunnerChanged || deletedFrontendSource || deletedProtocolSource || deletedFrontendTest
+  const runFullFrontend =
+    rootRunnerChanged ||
+    deletedFrontendSource ||
+    deletedProtocolSource ||
+    deletedSharedCoreSource ||
+    deletedFrontendTest
   const runFullServer =
     rootRunnerChanged ||
     serverRunnerChanged ||
     deletedServerSource ||
     deletedProtocolSource ||
+    deletedSharedCoreSource ||
     deletedServerTestSupport ||
     deletedServerTest
   const runFullGates = rootRunnerChanged
   if (additiveProtocolExports) notes.push(ADDITIVE_PROTOCOL_EXPORT_NOTE)
   if (additiveProtocolExports || protocolSourceChanged || deletedProtocolSource) {
     commands.push({ label: 'protocol typecheck', args: ['check:protocol'] })
+  }
+  if (sharedCoreSourceChanged || deletedSharedCoreSource) {
+    commands.push({ label: 'shared-core typecheck', args: ['check:shared-core'] })
   }
 
   if (runFullFrontend) {

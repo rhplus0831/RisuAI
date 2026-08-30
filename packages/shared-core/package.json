@@ -1,0 +1,11 @@
+{
+  "name": "@risuai/shared-core",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./chat-page": "./src/chatPage.ts"
+  }
+}
