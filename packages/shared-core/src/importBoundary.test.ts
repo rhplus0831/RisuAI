@@ -92,6 +92,7 @@ describe('@risuai/shared-core import boundary', () => {
         'modelProfileResolver.ts',
         'modelRoles.ts',
         'modelTypes.ts',
+        'moduleActivation.ts',
         'moduleIntegration.ts',
         'mutationCertificates.ts',
         'openaiModels.ts',

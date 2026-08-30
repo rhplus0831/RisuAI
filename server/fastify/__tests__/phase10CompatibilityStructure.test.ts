@@ -3,7 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { MODULE_ACTIVATION_SOURCES } from '../../../src/ts/moduleActivation.js'
+import { MODULE_ACTIVATION_SOURCES } from '@risuai/shared-core/module-activation'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 

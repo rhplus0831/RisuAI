@@ -8,9 +8,10 @@ import type {
 import {
   hasModuleActivationIdentifiers,
   moduleActivationIdentifiersKey,
-  resolveActiveModuleIdentifiers,
   resolveModuleActivationStates,
-} from '../../../../src/ts/moduleActivation.js'
+  type ModuleActivationIdentifiers,
+} from '@risuai/shared-core/module-activation'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { attachTriggerSource } from './triggerSource.js'
 
 /**
@@ -54,12 +55,72 @@ const activeModulesMemo = new WeakMap<Database, ActiveModulesMemoEntry>()
  *  contract — every consumer only iterates it. */
 const NO_ACTIVE_MODULES: RisuModule[] = []
 
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function resolveServerEffectiveAgentPresetId(database: Database, settings: any): string | undefined {
+  if (settings && Object.prototype.hasOwnProperty.call(settings, 'agentPresetId')) {
+    return nonEmptyString(settings.agentPresetId) ? settings.agentPresetId.trim() : undefined
+  }
+  return nonEmptyString(database.agentPresetDefaultId) ? database.agentPresetDefaultId.trim() : undefined
+}
+
+function resolveServerPersonaModuleIds(database: Database, currentChat: Chat | undefined): string[] {
+  let personaId: string | null = null
+  if (currentChat?.generationSettings !== undefined) {
+    const chatPersonaId = currentChat.generationSettings.personaId
+    personaId = nonEmptyString(chatPersonaId) ? chatPersonaId : null
+  } else if (nonEmptyString(currentChat?.bindedPersona)) {
+    personaId = currentChat.bindedPersona
+  } else {
+    const selectedIndex = Number.isInteger(database.selectedPersona) ? database.selectedPersona : -1
+    const selectedPersonaId = selectedIndex >= 0 ? database.personas?.[selectedIndex]?.id : undefined
+    personaId = nonEmptyString(selectedPersonaId) ? selectedPersonaId : null
+  }
+  if (!personaId) return []
+
+  const persona = database.personas?.find((candidate: any) => candidate.id === personaId)
+  if (!persona || !Array.isArray(persona.modules)) return []
+  return Array.from(
+    new Set(persona.modules.filter((moduleId: unknown): moduleId is string => nonEmptyString(moduleId))),
+  )
+}
+
+function resolveServerActiveModuleIdentifiers(
+  database: Database,
+  currentCharacter: character | undefined,
+  currentChat: Chat | undefined,
+): ModuleActivationIdentifiers {
+  const promptPresetId = currentChat?.generationSettings?.promptPresetId
+  const promptPresetIntegration =
+    typeof promptPresetId === 'string' && promptPresetId.trim().length > 0
+      ? {
+          source: 'promptPresetIntegration' as const,
+          value: database.promptPresets?.find((candidate: any) => candidate?.id === promptPresetId)?.moduleIntergration,
+        }
+      : { source: 'legacyIntegration' as const, value: database.moduleIntergration }
+  const agentPresetIntegration = resolveAgentPresetModuleIntegration(
+    database.agentPresets,
+    resolveServerEffectiveAgentPresetId(database, currentChat?.generationSettings),
+  )
+
+  return {
+    global: database.enabledModules,
+    chat: currentChat?.modules,
+    character: currentCharacter?.modules,
+    persona: resolveServerPersonaModuleIds(database, currentChat),
+    [promptPresetIntegration.source]: parseModuleIntegration(promptPresetIntegration.value),
+    agentPresetIntegration: parseModuleIntegration(agentPresetIntegration),
+  }
+}
+
 export function getActiveModules(
   database: Database,
   currentChar: character | undefined,
   currentChat: Chat | undefined,
 ): RisuModule[] {
-  const activationIdentifiers = resolveActiveModuleIdentifiers(database, currentChar, currentChat)
+  const activationIdentifiers = resolveServerActiveModuleIdentifiers(database, currentChar, currentChat)
   if (!hasModuleActivationIdentifiers(activationIdentifiers)) return NO_ACTIVE_MODULES
 
   const key = moduleActivationIdentifiersKey(activationIdentifiers)

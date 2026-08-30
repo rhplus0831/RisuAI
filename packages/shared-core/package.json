@@ -33,6 +33,7 @@
     "./model-types": "./src/modelTypes.ts",
     "./model-profile-records": "./src/modelProfileRecords.ts",
     "./model-profile-resolver": "./src/modelProfileResolver.ts",
+    "./module-activation": "./src/moduleActivation.ts",
     "./openai-models": "./src/openaiModels.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
