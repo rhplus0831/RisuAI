@@ -106,7 +106,13 @@ describe('cross-runtime baseline gate', () => {
   it('matches the reviewed repository baseline and records every current lane', () => {
     const observation = collectCrossRuntimeObservation(REPO_ROOT)
     const baseline = JSON.parse(
-      fs.readFileSync(path.join(REPO_ROOT, 'docs/plan/cross-runtime-boundaries/baseline.json'), 'utf8'),
+      fs.readFileSync(
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/cross-runtime-boundaries/baseline.json',
+        ),
+        'utf8',
+      ),
     ) as CrossRuntimeBaseline
 
     expect(compareCrossRuntimeBaseline(observation, baseline)).toEqual([])

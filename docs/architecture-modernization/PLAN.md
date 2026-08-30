@@ -145,7 +145,7 @@ verdict. A completed workstream moves intact to the appropriate
 
 ## Workstream 1: Cross-Runtime Boundaries
 
-Suggested path: `docs/plan/cross-runtime-boundaries/`
+Archived at: `.archived-docs/architecture-and-migration/cross-runtime-boundaries/`
 
 ### Goal
 

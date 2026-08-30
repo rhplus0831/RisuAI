@@ -812,7 +812,10 @@ function loadClientResourceOwnerGapMatrix(file: string): ClientResourceOwnerGapM
 
 async function run(): Promise<void> {
   const repoRoot = process.cwd()
-  const baselinePath = path.join(repoRoot, 'docs/plan/cross-runtime-boundaries/baseline.json')
+  const baselinePath = path.join(
+    repoRoot,
+    '.archived-docs/architecture-and-migration/cross-runtime-boundaries/baseline.json',
+  )
   const compatibilityBaselinePath = path.join(
     repoRoot,
     'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json',
