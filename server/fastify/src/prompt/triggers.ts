@@ -18,6 +18,7 @@ import { applyV2DataEffectAsync } from './triggerDataEffects.js'
 import { isServerUnsupportedTriggerEffectType } from './triggerCompatibility.js'
 import { expandVariables, type ExpandContext } from './variables.js'
 import { runServerLua, throwServerLuaFailure } from './luaRuntime.js'
+import { resolvePromptModelId } from './promptScope.js'
 import {
   attachTriggerSource,
   getTriggerSource,
@@ -1551,9 +1552,10 @@ export async function runStartTrigger(
   const selectedCharID = ctx.selectedCharID ?? (typeof currentCharIndex === 'number' ? currentCharIndex : 0)
   const chatPage = ctx.chatPage ?? char.chatPage ?? 0
   const modules = getActiveModules(db, char, chat)
+  const model = resolvePromptModelId(db, 'chatMain')
   const runCtx: TriggerRunContext = {
     modules,
-    model: db.aiModel,
+    model,
     database: db,
     selectedCharID,
     chatPage,
@@ -1571,7 +1573,7 @@ export async function runStartTrigger(
           chatPage,
           varEngine,
           char,
-          model: db.aiModel,
+          model,
           signal: ctx.signal,
           execBudget: ctx.luaExecBudget,
           ...(ctx.requestHistoryDb ? { requestHistoryDb: ctx.requestHistoryDb } : {}),

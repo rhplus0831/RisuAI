@@ -86,4 +86,12 @@ describe('browser model-runtime consumer ownership', () => {
     expect(otherBotSettings).toContain('mainProfile.runtimeOptions.maxResponse')
     expect(otherBotSettings).toContain('mainProfile.runtimeOptions.maxContext')
   })
+
+  it('routes Fastify trigger model context through the resolved chat profile', () => {
+    const triggers = source('server/fastify/src/prompt/triggers.ts')
+
+    expect(triggers).not.toContain('model: db.aiModel')
+    expect(triggers).toContain("resolvePromptModelId(db, 'chatMain')")
+    expect(triggers).toContain('model,')
+  })
 })

@@ -618,13 +618,6 @@ const inventory: readonly InventoryEntry[] = [
   // These are intentionally enumerated rather than silently allowed: they are
   // the remaining ordinary consumers to migrate in the next Phase 2 slice.
   {
-    path: 'server/fastify/src/prompt/triggers.ts',
-    marker: 'db.aiModel',
-    classification: 'ordinary-pending',
-    expectedCount: 2,
-    reason: 'trigger/Lua model context still reads the flat main model',
-  },
-  {
     path: 'src/ts/process/index.svelte.ts',
     marker: 'getDatabase().maxResponse',
     classification: 'context-free-fallback',
@@ -715,7 +708,6 @@ describe('flat model/runtime access closed world', () => {
     expect(ordinaryPending).toEqual([
       'src/lib/Setting/Pages/BotSettings.svelte:getDatabase().aiModel (legacy provider/settings authoring surface still reads flat models)',
       'src/lib/Setting/Pages/BotSettings.svelte:getDatabase().subModel (legacy provider/settings authoring surface still reads flat models)',
-      'server/fastify/src/prompt/triggers.ts:db.aiModel (trigger/Lua model context still reads the flat main model)',
     ])
   })
 })
