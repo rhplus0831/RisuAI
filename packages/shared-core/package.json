@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./agent-only-lorebook": "./src/agentOnlyLorebook.ts",
+    "./agent-lorebook-inputs": "./src/agentLorebookInputs.ts",
     "./agent-preset-output-references": "./src/agentPresetOutputReferences.ts",
     "./agent-preset-records": "./src/agentPresetRecords.ts",
     "./calculation": "./src/calculation.ts",
