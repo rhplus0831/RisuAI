@@ -1,6 +1,10 @@
 <script lang="ts">
   import { XIcon, StarIcon, ClockIcon, UserIcon, ListIcon, SaveIcon, TrashIcon } from '@lucide/svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getResourceDatabase as getDatabase,
+  } from 'src/ts/server/resourceState.svelte'
   import { loadoutModalStore } from 'src/ts/stores.svelte'
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
@@ -50,8 +54,48 @@
 
   const RECENT_LIMIT = 3
 
+  function uniqueLoadoutOwners(value: unknown): readonly Loadout[] | undefined {
+    if (!Array.isArray(value)) return undefined
+
+    const ids = new Set<string>()
+    for (const loadout of value) {
+      if (!loadout || typeof loadout !== 'object' || typeof loadout.id !== 'string' || !loadout.id.trim()) {
+        return undefined
+      }
+      if (ids.has(loadout.id)) return undefined
+      ids.add(loadout.id)
+    }
+    return value as Loadout[]
+  }
+
+  function readLoadoutOwners(): readonly Loadout[] | undefined {
+    const ownerValue = collectionsResourceState.values.loadouts
+    const ownerRows = uniqueLoadoutOwners(ownerValue)
+    if (collectionsResourceState.statuses.loadouts === 'ready') return ownerRows ?? []
+    if (ownerRows && ownerRows.length > 0) return ownerRows
+    if (ownerValue !== undefined && !ownerRows) return undefined
+
+    return uniqueLoadoutOwners(getDatabase().loadouts)
+  }
+
+  function readSelectedCharacterId(): string | undefined {
+    const characters = charactersResourceState.characters
+    if (charactersResourceState.status === 'ready' || characters.length > 0) {
+      const selected = characters[charactersResourceState.currentChar]
+      if (!selected?.chaId) return undefined
+      let matches = 0
+      for (const character of characters) {
+        if (character?.chaId === selected.chaId) matches += 1
+      }
+      return matches === 1 ? selected.chaId : undefined
+    }
+    return getCurrentCharacter()?.chaId
+  }
+
   function getSortedLoadouts(): Loadout[] {
-    const loadouts = [...(getDatabase().loadouts ?? [])]
+    const owners = readLoadoutOwners()
+    if (!owners) return []
+    const loadouts = [...owners]
     if (deletingLoadout && !loadouts.some((loadout) => loadout.id === deletingLoadout?.id)) {
       loadouts.push(deletingLoadout)
     }
@@ -63,7 +107,7 @@
   }
 
   function getCharacterLoadouts(): Loadout[] {
-    const chaId = getCurrentCharacter()?.chaId
+    const chaId = readSelectedCharacterId()
     if (!chaId) return []
     return getSortedLoadouts()
       .filter((l) => l.characterIds?.includes(chaId))

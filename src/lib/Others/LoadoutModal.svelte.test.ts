@@ -3,6 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const loadoutStore = vi.hoisted(() => ({ open: true }))
 const loadoutDatabase = vi.hoisted(() => ({ loadouts: [] as Array<Record<string, unknown>> }))
+const loadoutCollectionState = vi.hoisted(() => ({
+  values: {} as Record<string, unknown>,
+  statuses: {} as Record<string, string>,
+}))
+const characterOwnerState = vi.hoisted(() => ({
+  characters: [] as Array<{ chaId: string }>,
+  currentChar: -1,
+  status: 'idle' as string,
+}))
 const loadoutMocks = vi.hoisted(() => ({
   applyLoadout: vi.fn(),
   deleteLoadout: vi.fn(),
@@ -16,6 +25,8 @@ vi.mock('src/ts/stores.svelte', () => ({
 }))
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   getResourceDatabase: vi.fn(() => loadoutDatabase),
+  collectionsResourceState: loadoutCollectionState,
+  charactersResourceState: characterOwnerState,
 }))
 vi.mock('src/ts/loadout', () => loadoutMocks)
 vi.mock('src/ts/storage/database.svelte', () => ({
@@ -48,6 +59,11 @@ async function settle(): Promise<void> {
 beforeEach(() => {
   loadoutStore.open = true
   loadoutDatabase.loadouts = []
+  loadoutCollectionState.values = {}
+  loadoutCollectionState.statuses = {}
+  characterOwnerState.characters = []
+  characterOwnerState.currentChar = -1
+  characterOwnerState.status = 'idle'
   loadoutMocks.applyLoadout.mockReset().mockResolvedValue('applied')
   loadoutMocks.deleteLoadout.mockReset().mockResolvedValue('accepted')
   loadoutMocks.saveCurrentLoadout
@@ -397,5 +413,44 @@ describe('LoadoutModal operations', () => {
 
     expect(alertMocks.normal).toHaveBeenCalledWith('Removal of “Loadout A” is saved locally and queued.')
     expect(target.querySelector('[data-risu-loadout-id="loadout-a"]')).toBeNull()
+  })
+
+  it('renders the ready loadout collection owner instead of the compatibility facade', async () => {
+    const facadeLoadout = { ...savedLoadout, id: 'facade-loadout', name: 'Facade Loadout' }
+    const ownerLoadout = { ...savedLoadout, id: 'owner-loadout', name: 'Owner Loadout' }
+    loadoutDatabase.loadouts = [facadeLoadout]
+    loadoutCollectionState.values = { loadouts: [ownerLoadout] }
+    loadoutCollectionState.statuses = { loadouts: 'ready' }
+
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    expect(target.querySelector('[data-risu-loadout-id="owner-loadout"]')).not.toBeNull()
+    expect(target.querySelector('[data-risu-loadout-id="facade-loadout"]')).toBeNull()
+  })
+
+  it('uses the selected character owner for the character-scoped loadout section', async () => {
+    const ownerLoadout = { ...savedLoadout, characterIds: ['owner-character'] }
+    loadoutCollectionState.values = { loadouts: [ownerLoadout] }
+    loadoutCollectionState.statuses = { loadouts: 'ready' }
+    characterOwnerState.characters = [{ chaId: 'owner-character' }]
+    characterOwnerState.currentChar = 0
+    characterOwnerState.status = 'ready'
+
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    expect(target.textContent).toContain('Recently Used with This Character')
+  })
+
+  it('fails closed when the ready loadout owner has duplicate stable ids', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    loadoutCollectionState.values = { loadouts: [savedLoadout, { ...savedLoadout }] }
+    loadoutCollectionState.statuses = { loadouts: 'ready' }
+
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    expect(target.querySelector('[data-risu-loadout-id]')).toBeNull()
   })
 })
