@@ -10,10 +10,13 @@ import {
   reencodeImage,
   removeInlayAsset,
   setInlayAsset,
+  supportsInlayImage,
   writeInlayImage,
 } from '../inlays'
 import { getImageType } from 'src/ts/media'
+import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
 import { uploadServerAssetBytes } from 'src/ts/server/assets'
+import { getDatabase } from 'src/ts/storage/database.svelte'
 
 //#region module mocks
 
@@ -171,6 +174,7 @@ vi.mock(import('src/ts/media'), () => ({
 
 vi.mock(import('src/ts/model/modellist'), () => ({
   getModelInfo: vi.fn(),
+  LLMFlags: { hasImageInput: 0 } as never,
 }))
 
 vi.mock(import('src/ts/storage/database.svelte'), () => ({
@@ -241,6 +245,23 @@ beforeEach(() => {
   serverAssetStore.clear()
   catalogStore.clear()
   catalogRevision = 0
+})
+
+describe('supportsInlayImage', () => {
+  test('uses request-scoped model flags when provided', () => {
+    expect(supportsInlayImage({ flags: [LLMFlags.hasImageInput] })).toBe(true)
+    expect(supportsInlayImage({ flags: [] })).toBe(false)
+    expect(getDatabase).not.toHaveBeenCalled()
+    expect(getModelInfo).not.toHaveBeenCalled()
+  })
+
+  test('retains the legacy database fallback without a model context', () => {
+    vi.mocked(getDatabase).mockReturnValue({ aiModel: 'legacy-vision' } as never)
+    vi.mocked(getModelInfo).mockReturnValue({ flags: [LLMFlags.hasImageInput] } as never)
+
+    expect(supportsInlayImage()).toBe(true)
+    expect(getModelInfo).toHaveBeenCalledWith('legacy-vision')
+  })
 })
 
 describe('setInlayAsset', () => {

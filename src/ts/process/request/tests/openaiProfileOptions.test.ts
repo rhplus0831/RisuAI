@@ -128,6 +128,47 @@ afterEach(() => {
 })
 
 describe('requestOpenAI profile provider options', () => {
+  it('uses durable profile image capability instead of a conflicting flat model', async () => {
+    const modelId = 'xcustom:::vision-profile'
+    const profileDatabase = db({
+      aiModel: 'echo_model',
+      customModels: [
+        customModel({
+          id: modelId,
+          internalId: 'vision-wire-model',
+          flags: [LLMFlags.hasFullSystemPrompt, LLMFlags.hasImageInput],
+        }),
+      ] as Database['customModels'],
+      modelProfiles: [
+        {
+          id: 'vision-profile',
+          name: 'Vision Profile',
+          providerId: 'custom-api',
+          modelId,
+          providerOptions: { requestModel: 'vision-wire-model' },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vision-profile' } },
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database: profileDatabase })
+    const imageProfile: ResolvedModelProfile = {
+      ...profile,
+      modelInfo: {
+        ...profile.modelInfo,
+        flags: [...profile.modelInfo.flags, LLMFlags.hasImageInput],
+      },
+    }
+    setDatabase(db({ aiModel: 'echo_model' } as Partial<Database>))
+
+    const result = await preview(
+      makeArg(imageProfile, {
+        bias: { 42: -1 },
+      }),
+    )
+
+    expect(result.body.logit_bias).toBeUndefined()
+  })
+
   it('adds Flex processing to official OpenAI Chat Completions requests only when enabled', async () => {
     const profileDatabase = db({ aiModel: 'gpt-5', openAIKey: 'sk-openai' } as Partial<Database>)
     const profile = resolveModelProfile({ database: profileDatabase })

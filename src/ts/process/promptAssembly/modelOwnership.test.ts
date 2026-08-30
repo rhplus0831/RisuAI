@@ -28,4 +28,11 @@ describe('browser prompt-assembly model ownership', () => {
     expect(assembly.match(/maxResponseTokens/g)).toHaveLength(3)
     expect(assembly).not.toContain('getDatabase().maxResponse + 50')
   })
+
+  it('threads profile model capability into inlay request and token accounting', () => {
+    expect(source('src/ts/process/request/openAI/requests.ts')).toContain(
+      'supportsInlayImage(resolvedProfile?.modelInfo ?? arg.modelInfo)',
+    )
+    expect(source('src/ts/tokenizer.ts')).toContain('supportsInlayImage(this.profile?.modelInfo)')
+  })
 })

@@ -1,7 +1,7 @@
 import localforage from 'localforage'
 import { getImageType } from 'src/ts/media'
 import { getDatabase } from '../../storage/database.svelte'
-import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
+import { getModelInfo, LLMFlags, type LLMFormat, type LLMModel } from 'src/ts/model/modellist'
 import { asBuffer } from '../../util'
 import {
   readServerAsset,
@@ -577,9 +577,9 @@ export async function removeInlayAsset(id: string) {
   await Promise.all(aliases.map((key) => inlayStorage.removeItem(key)))
 }
 
-export function supportsInlayImage() {
-  const db = getDatabase()
-  return getModelInfo(db.aiModel).flags.includes(LLMFlags.hasImageInput)
+export function supportsInlayImage(modelInfo?: Pick<LLMModel, 'flags'>) {
+  const flags = modelInfo?.flags ?? getModelInfo(getDatabase().aiModel).flags
+  return flags.includes(LLMFlags.hasImageInput)
 }
 
 export async function getServerInlayAssetId(id: string): Promise<string | null> {

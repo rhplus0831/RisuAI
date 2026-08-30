@@ -623,7 +623,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
   }
 
-  if (supportsInlayImage()) {
+  if (supportsInlayImage(resolvedProfile?.modelInfo ?? arg.modelInfo)) {
     // inlay models doesn't support logit_bias
     // OpenAI's gpt based llm model supports both logit_bias and inlay image
     if (

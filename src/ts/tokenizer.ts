@@ -516,7 +516,7 @@ export class ChatTokenizer {
 
   tokenizeMultiModal(data: MultiModal) {
     const db = getDatabase()
-    if (!supportsInlayImage()) {
+    if (!supportsInlayImage(this.profile?.modelInfo)) {
       return this.chatAdditionalTokens
     }
     if (db.gptVisionQuality === 'low') {
