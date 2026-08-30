@@ -1,43 +1,51 @@
 # Client Resource Ownership Latest Verification
 
-Date: 2026-08-30
+Date: 2026-08-31
 
-Commit under verification: `e751edc69`.
+Commit under verification: `aaf66b75d`.
 
 Environment: Node.js `v24.19.0`, pnpm `11.23.0`.
 
-## Owner Contract Proof
+## Consumer Migration Proof
 
-- `lorebookPageOwner` owns focused read state plus optimistic page selection,
-  accepted/queued/failed outcomes, current-attempt rollback, stale/retry state,
-  replay settlement, and authoritative reload.
-- Selection stages the exact `lorebook-select` request under the deterministic
-  global-selection and stable lorebook-id dependency keys. Retained writer loss
-  stays queued; terminal/current failures roll back only the live projection.
-- Drafts are explicitly not applicable to the numeric page pointer. Lorebook
-  collection bodies and editor drafts do not move.
-- No production consumer uses the owner yet. Compatibility remains exactly
-  9,917 references across 325 groups, six bridges, and 20 temporary-seam rows.
+- Route and invalidation reads hydrate `lorebookPageOwner` without a duplicate
+  request. Normal page consumers read the shared owner view, and observer
+  projection teardown resets it.
+- Explicit UI selection resolves a unique stable lorebook id and uses the
+  owner's accepted/queued/failed contract. Pending and queued states are
+  visible; replay settlement retries an authoritative read; current failures
+  retain owner rollback semantics.
+- Structural collection repair projects into the owner, but collection and body
+  ownership stays on the existing lorebook bridge. The obsolete
+  `selectGlobalLorebook` and `dispatchSelectGlobalLorebook` path is gone.
+- The legacy plugin key, database replica, and cold process fallback are the
+  closed-world `client-lorebook-page-compatibility` surface.
+- Compatibility is exactly 9,900 references across 326 groups, six bridges, and
+  20 temporary-seam rows.
 
 ## Commands
 
-- `pnpm exec vitest run packages/protocol/src/durableCommandOperation.test.ts src/ts/server/lorebookPageOwner.test.ts src/ts/server/lorebookPageSelectionPersistence.test.ts`
-  — passed, 3 files and 28 tests.
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commandSettingsAndPluginStorageRange.test.ts`
-  — passed, 1 file and 15 tests, including settings-row-only lorebook
-  selection.
-- `pnpm exec tsx util/architecture-inventory.ts` — passed 336 cross-runtime
-  edges, 19 compatibility surfaces/38 probes, the unchanged client inventory,
-  and all 56 owner gap rows.
+- Exact focused tests passed for the page owner (13), route loader (15), resource
+  invalidation (101), lorepreset (10), Svelte lorebook bridge (99), bridge
+  contract (22), lorebook list (21), lorebook setting (8), process guard (11),
+  frontend architecture (29), durable selection persistence (4), and Fastify
+  settings/plugin command range (15).
+- `pnpm test -- server/fastify/browser-smoke/fastifyBrowserSmoke.spec.ts` —
+  passed its production build and all 9 browser scenarios, including one
+  focused hydration request, stable-id selection, visible accepted state, and
+  reload persistence.
+- `pnpm exec tsx util/architecture-inventory.ts` — passed 324 cross-runtime
+  edges (161 runtime/mixed), 20 compatibility surfaces/41 probes, 9,900 client
+  references across 326 groups, six bridges, 20 seams, and all 56 owner gap
+  rows.
 - `pnpm check` — passed with zero errors and zero warnings.
 - `pnpm check:server` — passed protocol, architecture, declarations, Fastify,
   and browser-smoke typechecks.
-- `pnpm test:watch:status` — generation 36 passed for the current worktree; it
-  reused the prior full evidence and executed the changed owner test.
 - Focused Prettier and `git diff --check` — passed.
 
 ## Verdict
 
-Phase 1 is accepted at `e751edc69`. The owner is fully migratable without an
-aggregate facade and can be removed locally because no production consumer has
-moved. Phase 2 opens only for the standalone lorebook page pointer.
+Phase 2 is accepted at `aaf66b75d`. Normal lorebook-page consumers and explicit
+selection now use the owner without payload or request widening. Phase 3 remains
+blocked until the matching Workstream 1 contracts and Workstream 2 canonical
+owners are released.

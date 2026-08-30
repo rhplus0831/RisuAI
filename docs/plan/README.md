@@ -11,7 +11,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 | --- | --- | --- | --- |
 | [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 internal-reasoning stripping](cross-runtime-boundaries/status.md) | The shared-core foundation and five neutral leaves are released through `23e5a4b30`; 327 direct root-`src` edges remain. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 legacy flat model configuration migration](canonical-state-and-compatibility/status.md) | Phase 1 migration/recovery foundation closed at `1e758cd22`; each resource-family closeout releases the matching Workstream 3 phase. |
-| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 2 lorebook page consumer migration](client-resource-ownership/status.md) | The complete page owner released at `e751edc69`; migrate only that standalone pointer while retaining lorebook bodies/collections. |
+| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat dependency gate](client-resource-ownership/status.md) | Phase 2 closed the standalone page pointer at `aaf66b75d`; the next runtime slice waits for matching Workstream 1/2 releases. |
 
 The portfolio-level dependency model and the conditional fourth workstream are
 defined in the [Architecture Modernization Roadmap](../architecture-modernization/PLAN.md).

@@ -1,9 +1,9 @@
 # Client Resource Ownership Plan
 
-Date: 2026-08-30
+Date: 2026-08-31
 
-Status: active. Phase 0 closed at `0432b32ba`; Phase 1 owner-foundation work is
-active and runtime migration remains dependency-gated per resource family.
+Status: active. Phases 0 through 2 are complete through `aaf66b75d`; Phase 3
+runtime migration is dependency-gated per resource family.
 
 ## Goal
 

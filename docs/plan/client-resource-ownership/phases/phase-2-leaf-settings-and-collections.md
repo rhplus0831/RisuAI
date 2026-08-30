@@ -1,6 +1,7 @@
 # Phase 2: Leaf Settings And Collection Resources
 
-Status: active for the standalone `loreBookPage` pointer.
+Status: complete for the released standalone `loreBookPage` pointer at
+`aaf66b75d`.
 
 Depends on: Phase 1 owner APIs and per-family Workstream 1/2 releases.
 
@@ -38,4 +39,7 @@ Focused owner/command/resource tests, settings/collection UI tests, affected
 frontend/server lanes, browser smoke for visible reload, payload/reactivity
 measurements, typechecks, formatting, and diff checks.
 
-Active slice: [Lorebook page consumer migration](slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
+Completed slice: [Lorebook page consumer migration](slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
+
+The broader lorebook collection/body family remains assigned to Phase 4. No
+other leaf family had both dependency cursors released during this phase.

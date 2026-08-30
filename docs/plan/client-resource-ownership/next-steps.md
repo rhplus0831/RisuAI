@@ -1,27 +1,18 @@
 # Client Resource Ownership Next Steps
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [lorebook page consumer migration](phases/slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
-
-1. Feed the owner from the existing route hydration result without issuing a
-   duplicate standalone-setting request.
-2. Split page reads from lorebook collection/body reads in each in-scope UI and
-   prompt-processing consumer.
-3. Route explicit selection through the owner and preserve stable-id mapping,
-   queued/failure UI, current-attempt rollback, and authoritative reload.
-4. Preserve structural create/delete/reorder selection repair until it can use
-   the same owner contract safely.
-5. Classify plugin/legacy exposures explicitly if they cannot migrate without
-   changing external behavior.
+No Workstream 3 runtime slice is currently runnable. Advance the matching
+Workstream 1 and 2 character/chat dependency cursors, then open the smallest
+released Phase 3 owner family.
 
 ## Required Scope Before Editing
 
-The implementation must retain the existing lorebook collection/body owner and
-prove there is no duplicate fetch, payload widening, selection drift, or extra
-reactive fanout.
+Before opening Phase 3, record exact read/command contracts, persisted canonical
+owners, draft and lazy-body boundaries, optimistic outcomes, rollback, reload,
+and browser proof for the chosen character/chat resource.
 
 ## Released Dependency
 
@@ -30,6 +21,8 @@ reactive fanout.
   `3f275e9dc`, and route relation at `6a6d0ac1f`.
 - The page pointer is an already-singular settings row. Broader lorebook bodies,
   prompt/model/translator owners, and bridge removal remain held.
+- Page consumers migrated at `aaf66b75d`; the plugin/database replica and cold
+  prompt fallback are explicit compatibility holds, not normal owner reads.
 
 ## Not First
 
@@ -42,5 +35,5 @@ reactive fanout.
 
 ## Handoff
 
-After page consumers and page-selection persistence migrate with browser proof,
-record retained external holds and open the next dependency-released leaf only.
+Open exactly one Phase 3 slice after both dependency workstreams release it.
+Until then, leave character/chat consumers and bridges unchanged.

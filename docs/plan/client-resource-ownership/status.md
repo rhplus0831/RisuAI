@@ -1,6 +1,6 @@
 # Client Resource Ownership Status
 
-Date: 2026-08-30
+Date: 2026-08-31
 
 This is the mutable execution router. Stable scope lives in [`PLAN.md`](PLAN.md),
 phase detail in [`phases/`](phases/README.md), the next slice in
@@ -9,38 +9,41 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 and 1 are complete. Runtime consumer migration
-  has not started.
-- Current phase: [Phase 2 leaf settings and collections](phases/phase-2-leaf-settings-and-collections.md).
-- Active slice: [Lorebook page consumer migration](phases/slices/phase-2-leaf-settings-and-collections/lorebook-page-consumer-migration.md).
+- Plan state: Active; Phases 0 through 2 are complete. The first runtime
+  consumer family has migrated.
+- Current phase: [Phase 3 character and chat ownership](phases/phase-3-character-and-chat-ownership.md),
+  dependency-blocked.
+- Active slice: none until matching Workstream 1 contracts and Workstream 2
+  canonical-owner releases exist.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Phase 0 implementation: `0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f`.
-- Runtime changes through Phase 1: an unused, scoped `lorebookPageOwner` and its
-  durable selection persistence were added; no production consumer, bridge,
-  payload, or server persistence path changed.
-- Latest implementation: complete lorebook-page owner contract at
-  `e751edc69`; see [`latest-verification.md`](latest-verification.md).
+- Runtime changes through Phase 2: `lorebookPageOwner` now owns normal page
+  reads and explicit stable-id selection. Lorebook collections/bodies and their
+  bridge remain unchanged; named plugin and cold-flow compatibility holds are
+  closed-world probed.
+- Latest implementation: lorebook-page consumer migration at `aaf66b75d`; see
+  [`latest-verification.md`](latest-verification.md).
 
 ## Inventory Cursor
 
-- 9,917 exact compatibility references grouped into 325 consumer records and 56
+- 9,900 exact compatibility references grouped into 326 consumer records and 56
   resource-family/role policies.
-- Lanes: 3,346 production, 6 server, and 6,565 test references.
+- Lanes: 3,334 production, 6 server, and 6,560 test references.
 - Families: broad settings/shell 1,046; character/chat 1,775; compatibility
-  infrastructure 2,058; cross-cutting 1,422; leaf settings/collections 1,854;
-  lorebook 636; model/translator 469; prompt template 321; script definition
+  infrastructure 2,062; cross-cutting 1,422; leaf settings/collections 1,854;
+  lorebook 615; model/translator 469; prompt template 321; script definition
   336.
 - Six bridge families remain: settings, character, chat, lorebook, prompt
   template, and script definition.
-- Twenty temporary-seam rows contain 28 references to the character aggregate
-  endpoint or observer-shell rollout markers.
+- Twenty temporary-seam rows retain the character aggregate endpoint and
+  observer-shell rollout markers.
 
 ## Dependency Cursors
 
 | Resource family | Workstream 1 contract | Workstream 2 owner | Workstream 3 state |
 | --- | --- | --- | --- |
 | Inventory/gates | Phase 0 convention released at `b01e88b03` | Not required for read-only inventory | Complete at `0432b32ba`. |
-| Lorebook page standalone pointer | Standalone setting at `33d1643ae`; durable operation at `3f275e9dc`; route metadata at `6a6d0ac1f` | Already-singular settings row; lorebook bodies remain held | Complete owner contract at `e751edc69`; Phase 2 consumer migration active. |
+| Lorebook page standalone pointer | Standalone setting at `33d1643ae`; durable operation at `3f275e9dc`; route metadata at `6a6d0ac1f` | Already-singular settings row; lorebook bodies remain held | Consumer migration complete at `aaf66b75d`; explicit plugin/database and cold-flow compatibility probes retained. |
 | Leaf settings/collections | Per owner pending | Per family pending or already singular, to prove | Runtime blocked. |
 | Character/chat | Character-summary read contract released at `159b6eccf`; remaining resource/command contracts pending | Canonical state must be confirmed | Runtime blocked. |
 | Prompt templates | Prompt contract pending | Phase 3 not released | Runtime blocked. |
@@ -69,7 +72,7 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 | ---: | --- | --- |
 | [0. Consumer/facade/bridge inventory](phases/phase-0-consumer-facade-and-bridge-inventory.md) | Complete | Closed at `0432b32ba`. |
 | [1. Resource-owner foundation](phases/phase-1-resource-owner-foundation.md) | Complete | Closed at `e751edc69`. |
-| [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Active | Migrate only the released lorebook-page pointer. |
+| [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Complete | Closed the released lorebook-page pointer at `aaf66b75d`. |
 | [3. Character/chat](phases/phase-3-character-and-chat-ownership.md) | Blocked | Matching Workstream 1/2 cursors release. |
 | [4. Prompt/lorebook/scripts](phases/phase-4-prompt-lorebook-and-script-ownership.md) | Blocked | Workstream 2 canonical owner closes per family. |
 | [5. Broad settings/shell](phases/phase-5-broad-settings-and-shell-ownership.md) | Blocked | Narrow owner paths exist for all remaining consumers. |
@@ -90,5 +93,6 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Migrate only the standalone lorebook page
-pointer; keep lorebook collections and bodies on their existing owners.
+Use [`next-steps.md`](next-steps.md). Do not open Phase 3 until the matching
+character/chat Workstream 1 contracts and Workstream 2 canonical owners are
+released.
