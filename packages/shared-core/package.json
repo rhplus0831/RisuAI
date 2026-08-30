@@ -9,6 +9,7 @@
     "./chat-display-tail-count": "./src/chatDisplayTailCount.ts",
     "./chat-load-pages": "./src/chatLoadPages.ts",
     "./chat-page": "./src/chatPage.ts",
+    "./internal-reasoning": "./src/internalReasoning.ts",
     "./legacy-openai-model-aliases": "./src/legacyOpenAIModelAliases.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts"
   }

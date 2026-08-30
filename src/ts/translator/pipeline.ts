@@ -1,5 +1,5 @@
 import type { OpenAIChat } from '../process/index.svelte'
-import { stripInternalReasoning } from '../process/internalReasoning'
+import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import {
   defaultTranslatorPrompt,
   getTranslatorPresetFromState,

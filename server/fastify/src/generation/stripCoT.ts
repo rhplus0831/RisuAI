@@ -1,4 +1,4 @@
-import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
+import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import type { CompletionStreamFrame } from './frames.js'
 
 function stripText(text: string): string {

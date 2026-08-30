@@ -15,7 +15,7 @@ import { dispatchChatProvider, type ChatDispatchHistoryInput } from '../prompt/c
 import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
-import { stripInternalReasoning } from '../../../../src/ts/process/internalReasoning.js'
+import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import { createHistorySlotResolver, type HistorySlotContext } from '../../../../src/ts/translator/historySlots.js'
 import { applyProfileBoundGenerationFields } from '../prompt/effectiveGenerationConfig.js'
 

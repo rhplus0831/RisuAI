@@ -1023,19 +1023,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/generation/stripCoT.ts",
-      "specifier": "../../../../src/ts/process/internalReasoning.js",
-      "target": "src/ts/process/internalReasoning.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "stripInternalReasoning"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/generationFinalizationRetry.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
@@ -1434,19 +1421,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/process/internalReasoning.js",
-      "target": "src/ts/process/internalReasoning.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "stripInternalReasoning"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",
@@ -3278,19 +3252,6 @@
         "assertModelProfileGenerationReady",
         "resolveModelProfile",
         "resolveModelProfileByProfileId"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
-      "specifier": "../../../../src/ts/process/internalReasoning.js",
-      "target": "src/ts/process/internalReasoning.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "stripInternalReasoning"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

@@ -15,7 +15,7 @@ import { resolveModelProfile, resolveModelProfileByProfileId } from '../model/mo
 import localforage from 'localforage'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
-import { stripInternalReasoning } from '../process/internalReasoning'
+import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import { captureActiveChatTarget } from '../chatCommands'
 import { findChatGenerationActivity } from '../process/generationActivity.svelte'
 
