@@ -9,7 +9,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 punctuation trimming](cross-runtime-boundaries/status.md) | Seven neutral leaves are released through `12d2840b1`; 322 direct root-`src` edges remain. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 ChatML row parsing](cross-runtime-boundaries/status.md) | Nine neutral leaves are released through `92dde59e1`; 319 direct root-`src` edges remain. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 legacy flat model configuration migration](canonical-state-and-compatibility/status.md) | Phase 1 migration/recovery foundation closed at `1e758cd22`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat dependency gate](client-resource-ownership/status.md) | Phase 2 closed the standalone page pointer at `aaf66b75d`; the next runtime slice waits for matching Workstream 1/2 releases. |
 

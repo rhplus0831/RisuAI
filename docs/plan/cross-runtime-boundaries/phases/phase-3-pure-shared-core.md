@@ -52,4 +52,8 @@ Completed slice: [Internal-reasoning stripping](slices/phase-3-pure-shared-core/
 
 Completed slice: [Agent-preset output references](slices/phase-3-pure-shared-core/agent-preset-output-references.md).
 
-Active slice: [Punctuation trimming](slices/phase-3-pure-shared-core/punctuation-trimming.md).
+Completed slice: [Punctuation trimming](slices/phase-3-pure-shared-core/punctuation-trimming.md).
+
+Completed slice: [Inlay-token matching](slices/phase-3-pure-shared-core/inlay-token-matching.md).
+
+Active slice: [ChatML row parsing](slices/phase-3-pure-shared-core/chatml-row-parsing.md).

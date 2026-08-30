@@ -4,18 +4,18 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [punctuation trimming
-slice](phases/slices/phase-3-pure-shared-core/punctuation-trimming.md).
+Execute the [ChatML row parsing
+slice](phases/slices/phase-3-pure-shared-core/chatml-row-parsing.md).
 
-1. Move `isLastCharPunctuation` and `trimUntilPunctuation` into an explicit
+1. Move `ChatMLRole`, `ChatMLRow`, and `parseChatMLRows` into an explicit
    shared-core subpath.
-2. Preserve empty/whitespace behavior, the exact punctuation table and Unicode
-   ranges, code-unit slicing, and the untrimmed returned prefix.
-3. Keep the browser utility facade export stable while migrating both browser
-   post-generation owners and both Fastify consumers.
-4. Delete `src/ts/util/punctuation.ts` only after differential fixtures and
+2. Preserve exact start/separator/end markers, default-user fallback, role
+   prefix slicing, per-row trimming, greedy multiline thought extraction, and
+   callback timing.
+3. Migrate all three browser and both Fastify production consumers.
+4. Delete `src/ts/parser/chatMLCore.ts` only after differential fixtures and
    closed-world consumer ownership pass.
-5. Keep response streaming, prompt assembly, request routing, provider policy,
+5. Keep CBS expansion, agent validation/execution, prompt assembly, persistence,
    and UI behavior unchanged.
 
 ## Foundations Released
@@ -44,13 +44,17 @@ slice](phases/slices/phase-3-pure-shared-core/punctuation-trimming.md).
   at `251c9d043`.
 - Agent-preset output references and all three production consumers are released
   at `12d2840b1`.
+- Punctuation trimming and all four direct consumers are released at
+  `386bdd750`.
+- Inlay-token matching and both production consumers are released at
+  `92dde59e1`.
 
 ## Not In This Slice
 
-- Do not move response streaming, prompt assembly, request routing, provider
-  policy, or UI orchestration into shared core.
-- Do not alter the punctuation set, Unicode ranges, code-unit semantics, or
-  returned prefix in this boundary move.
+- Do not move CBS expansion, prompt assembly, agent execution, request routing,
+  provider policy, or UI orchestration into shared core.
+- Do not alter marker parsing, role fallback, trimming, thought extraction, or
+  transform-callback semantics in this boundary move.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

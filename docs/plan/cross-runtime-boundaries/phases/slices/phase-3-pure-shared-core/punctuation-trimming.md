@@ -1,6 +1,6 @@
 # Punctuation Trimming
 
-Status: ready.
+Status: complete at `386bdd750`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -50,3 +50,15 @@ formatting; and `git diff --check`.
 
 Stop if a consumer requires response-stream state, prompt assembly, provider
 policy, Svelte, Fastify, or host-specific behavior in the shared module.
+
+## Completion Record
+
+- Both functions now have one dependency-free owner at
+  `@risuai/shared-core/punctuation`; the browser utility facade re-exports that
+  owner and the old implementation file is removed.
+- All four direct browser/Fastify consumers use the shared leaf. The two
+  matching Fastify root-`src` edges and one source target are gone.
+- Twenty differential cases preserve the punctuation table, Unicode ranges,
+  whitespace, combining marks, UTF-16 slicing, and untrimmed prefix. Shared
+  ownership/import checks, browser stream/non-stream owners, Fastify assembly,
+  and all 181 generation-chat cases passed.

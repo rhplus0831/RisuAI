@@ -4,46 +4,45 @@ Date: 2026-08-31
 
 ## Candidate
 
-- Implementation commit: `12d2840b1`
-- Shared-core predecessor: internal-reasoning stripping at `251c9d043`
+- Implementation commit: `92dde59e1`
+- Shared-core predecessor: punctuation trimming at `386bdd750`
+- Final affected-owner verification: model-ownership repair through `bfa1b048e`
 - Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 3 agent-preset output-reference leaf; no agent record,
-  dependency-validation, prompt assembly, execution, output-bound,
-  persistence, revision, event, credential, host, or UI behavior changed.
+- Scope: Phase 3 punctuation and inlay-token leaves; no response streaming,
+  prompt assembly, memory policy, asset resolution, persistence, revision,
+  event, credential, host, or UI behavior changed.
 
 ## Shared-Core And Consumer Proof
 
-- Agent-preset output-reference discovery and expansion have one dependency-free
-  owner at `@risuai/shared-core/agent-preset-output-references` with an explicit
-  package export and closed shared-core import audit.
-- Differential fixtures preserve exact token grammar, optional whitespace,
-  ASCII identifier boundaries, the 64-character limit, tokens, UTF-16 indexes,
-  repeated/callback order, empty replacements, and unresolved identity.
-- Browser dependency resolution and Fastify prompt-variable/agent execution use
-  the shared subpath; the old browser owner no longer exists.
-- The maintained shared-core boundary command now includes both this ownership
-  proof and the previously released internal-reasoning ownership proof.
-- The architecture inventory records 322 root-`src` edges: 219 production, 95
-  server-test, and 8 browser-smoke. Of these, 159 are runtime/mixed.
+- Punctuation classification/trimming and inlay-token matching have explicit,
+  dependency-free shared-core subpaths and closed ownership/import audits.
+- Punctuation differential fixtures preserve the exact table, Unicode ranges,
+  whitespace, combining marks, code-unit slicing, and returned prefix. Inlay
+  fixtures preserve regex source/flags, token variants, multiline exclusion,
+  repeated replacement, and reusable global-regex state.
+- All six direct production consumers use the shared subpaths; both old
+  browser-tree owners are gone.
+- The architecture inventory records 319 root-`src` edges: 216 production, 95
+  server-test, and 8 browser-smoke. Of these, 156 are runtime/mixed.
 
 ## Commands And Results
 
-- Shared differential, ownership, and import-boundary files passed 13, 1, and 2
-  tests; the retained internal-reasoning ownership proof also passed.
-- Browser agent-preset resolution passed 11 tests.
-- Fastify prompt-variable and agent-preset execution owners passed 33 and 25
-  tests.
-- Architecture inventory passed its direct gate at 322 edges, 20 compatibility
-  surfaces/41 probes, 9,900 client references/326 groups, and 56 owner-gap rows.
+- Punctuation differential/ownership/import-boundary files passed 20, 1, and 2
+  tests; inlay differential/ownership/import-boundary files passed 11, 1, and 2.
+- Browser punctuation stream/non-stream owners passed 33 and 10 tests; Fastify
+  prompt assembly and generation chat passed 135 and 181. The affected memory
+  summary prompt owner passed 7 tests.
+- Architecture inventory passed at 319 edges, 20 compatibility surfaces/42
+  probes, 9,900 client references/326 groups, and 56 owner-gap rows.
 - Shared-core, client declarations, Fastify, browser-smoke, and root Svelte
   typechecks passed. Focused Prettier and `git diff --check` passed.
 
 ## Dependency Release And Verdict
 
-Agent-preset output references are released at `12d2840b1`; two production
-root-`src` edges and one source target are gone. Three independent remaining-edge
-reviews selected the zero-import punctuation classifier/trimmer as the next
-review-sized leaf by majority, while explicitly deferring larger parser,
-translator, prompt-policy, and already-isolated helpers. Phase 3 continues
-there; declaration decoupling and the remaining 322 edges stay open.
+Punctuation trimming is released at `386bdd750` and inlay-token matching at
+`92dde59e1`; together they removed three production root-`src` edges and two
+source targets. Independent remaining-edge reviews selected the zero-import
+ChatML row parser as the next review-sized leaf while deferring CBS expansion,
+prompt policy, and orchestration. Phase 3 continues there; declaration
+decoupling and the remaining 319 edges stay open.

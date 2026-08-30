@@ -9,19 +9,19 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; seven Phase 3 leaf slices are
+- Plan state: Active; Phases 0 through 2 complete; nine Phase 3 leaf slices are
   complete.
 - Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [Punctuation trimming](phases/slices/phase-3-pure-shared-core/punctuation-trimming.md), ready.
+- Active slice: [ChatML row parsing](phases/slices/phase-3-pure-shared-core/chatml-row-parsing.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: agent-preset output references at
-  `12d2840b1`; focused shared-core parity/ownership, browser resolver, Fastify
-  prompt/agent owners, architecture inventory, shared-core/root/downstream
+- Latest implementation candidate: inlay-token matching at `92dde59e1`, after
+  punctuation trimming at `386bdd750`; focused parity/ownership, affected
+  browser/Fastify owners, architecture inventory, shared-core/root/downstream
   typechecks, formatting, and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
 
@@ -52,6 +52,8 @@ in [`latest-verification.md`](latest-verification.md).
 | Legacy OpenAI model aliases | `23e5a4b30` | Released through `@risuai/shared-core/legacy-openai-model-aliases`; all four production consumers use the shared leaf and three production root-`src` edges were removed. |
 | Internal-reasoning stripping | `251c9d043` | Released through `@risuai/shared-core/internal-reasoning`; all five production consumers use the shared leaf and three production root-`src` edges were removed. |
 | Agent-preset output references | `12d2840b1` | Released through `@risuai/shared-core/agent-preset-output-references`; all three production consumers use the shared leaf and two production root-`src` edges were removed. |
+| Punctuation trimming | `386bdd750` | Released through `@risuai/shared-core/punctuation`; all four direct production consumers use the shared leaf and two production root-`src` edges were removed. |
+| Inlay-token matching | `92dde59e1` | Released through `@risuai/shared-core/inlay-tokens`; both production consumers use the shared leaf and one production root-`src` edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -76,11 +78,11 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 322 direct root-`src` edges remain: 219 production, 95 server-test, and 8
-  browser-smoke, spanning 128 importers and 62 targets.
-- Usage is 118 runtime, 41 mixed, and 163 type-only; 159 runtime/mixed edges
+- 319 direct root-`src` edges remain: 216 production, 95 server-test, and 8
+  browser-smoke, spanning 128 importers and 60 targets.
+- Usage is 115 runtime, 41 mixed, and 163 type-only; 156 runtime/mixed edges
   remain.
-- The completed Phase 1 and Phase 3 slices removed 53 edges and 17 source
+- The completed Phase 1 and Phase 3 slices removed 56 edges and 19 source
   targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -92,7 +94,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and seven neutral leaves complete; punctuation trimming is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and nine neutral leaves complete; ChatML row parsing is next. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
@@ -114,6 +116,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move only punctuation classification and
-incomplete-response suffix trimming into the audited shared-core owner while
-preserving exact code-unit and return-value behavior.
+Use [`next-steps.md`](next-steps.md). Move only dependency-free ChatML row
+parsing into the audited shared-core owner while preserving role-boundary,
+thought-extraction, trimming, and transform-callback behavior.
