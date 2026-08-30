@@ -121,7 +121,9 @@
   import { canUseServerCommands, subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
   import { assetListRenderKey } from 'src/ts/media/assetList'
   import { mutateAlternateGreetings, type AlternateGreetingMutation } from 'src/ts/alternateGreetingMutation'
   import { dispatchDurableAlternateGreetingMutation } from 'src/ts/alternateGreetingCommands'
@@ -220,7 +222,7 @@
   async function removeCurrentCharacter(): Promise<void> {
     if (characterRemovalPending) return
     const characterIndex = $selectedCharID
-    const character = getDatabase().characters[characterIndex]
+    const character = characterOwnerAt(characterIndex)
     if (!character) return
     const characterName = getCharacterDisplayName(character)
     characterRemovalName = characterName
@@ -340,7 +342,7 @@
     const resourceApplyEpoch = getServerResourceApplyEpoch()
     const resourceApplyChanged = resourceApplyEpoch !== previousScriptDraftResourceApplyEpoch
     previousScriptDraftResourceApplyEpoch = resourceApplyEpoch
-    const character = getDatabase().characters?.[$selectedCharID]
+    const character = selectedCharacterOwner()
     const characterId = character?.chaId ?? null
     const snapshot = snapshotJson({
       characterId,
@@ -464,9 +466,9 @@
   let licensed = $state(currentEditableCharacterTarget()?.character.license ?? '')
 
   $effect.pre(() => {
-    const chara = getDatabase().characters[$selectedCharID]
-    const desc = chara.desc
-    const firstMsg = chara.firstMessage
+    const chara = selectedCharacterOwner()
+    const desc = chara?.desc ?? null
+    const firstMsg = chara?.firstMessage ?? null
 
     untrack(() => {
       scheduleTokenize(desc, firstMsg)
@@ -579,12 +581,25 @@
 
   function currentEditableCharacterTarget(): { selectedIndex: number; character: character } | null {
     const selectedIndex = $selectedCharID
-    const selectedCharacter = getDatabase().characters?.[selectedIndex]
+    const selectedCharacter = selectedCharacterOwner()
     if (!selectedCharacter?.chaId) return null
     if (isServerCharacterShell(selectedCharacter)) return null
     if (selectedCharacter.type && selectedCharacter.type !== 'character') return null
 
     return { selectedIndex, character: selectedCharacter as character }
+  }
+
+  function characterOwnerAt(index: number): character | undefined {
+    if (index < 0) return undefined
+    if (charactersResourceState.status !== 'ready') return getDatabase().characters?.[index]
+    return selectCharacterOwner(charactersResourceState.characters, index)
+  }
+
+  function selectedCharacterOwner(): character | undefined {
+    const selectedIndex = $selectedCharID
+    if (charactersResourceState.status !== 'ready') return getDatabase().characters?.[selectedIndex]
+    if (charactersResourceState.currentChar === selectedIndex) return getSelectedCharacterOwner()
+    return selectCharacterOwner(charactersResourceState.characters, selectedIndex)
   }
 
   function currentRealCharacterDraftTarget(): { selectedIndex: number; character: character } | null {
@@ -837,9 +852,8 @@
   }
 
   function editorEmotionUploadFreshness(operation: CharacterEmotionUploadOperation) {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
-    const targetRow =
-      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
+    const selectedCharacter = selectedCharacterOwner()
+    const targetRow = operation.characterIndex === undefined ? undefined : characterOwnerAt(operation.characterIndex)
 
     return {
       currentCharacterId: selectedCharacter?.chaId,
@@ -920,9 +934,8 @@
   }
 
   function editorAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
-    const targetRow =
-      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
+    const selectedCharacter = selectedCharacterOwner()
+    const targetRow = operation.characterIndex === undefined ? undefined : characterOwnerAt(operation.characterIndex)
 
     return {
       currentCharacterId: selectedCharacter?.chaId,
@@ -1007,8 +1020,7 @@
 
   function editorNotificationImageUploadFreshness(operation: CharacterNotificationImageUploadOperation) {
     const editableTarget = currentEditableCharacterTarget()
-    const targetRow =
-      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
+    const targetRow = operation.characterIndex === undefined ? undefined : characterOwnerAt(operation.characterIndex)
 
     return {
       currentCharacterId: editableTarget?.character.chaId,
@@ -1087,9 +1099,8 @@
   }
 
   function editorTtsAssetUploadFreshness(operation: CharacterTtsAssetUploadOperation) {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
-    const targetRow =
-      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
+    const selectedCharacter = selectedCharacterOwner()
+    const targetRow = operation.characterIndex === undefined ? undefined : characterOwnerAt(operation.characterIndex)
     const draft = characterDraft.value as unknown as character
 
     return {
@@ -1818,7 +1829,7 @@
     <TriggerList
       bind:value={characterTriggersDraft}
       ownerKey={scriptDraftCharacterId ?? ''}
-      lowLevelAble={getDatabase().characters[$selectedCharID].lowLevelAccess} />
+      lowLevelAble={selectedCharacterOwner()?.lowLevelAccess ?? false} />
 
     {#if characterDraft.value.virtualscript || getDatabase().showUnrecommended}
       <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended /></span>
@@ -1830,7 +1841,7 @@
     {/if}
   {/if}
 {:else if $CharConfigSubMenu === 6}
-  {#if getDatabase().characters[$selectedCharID].license !== 'CC BY-NC-SA 4.0' && getDatabase().characters[$selectedCharID].license !== 'CC BY-SA 4.0' && getDatabase().characters[$selectedCharID].license !== 'CC BY-ND 4.0' && getDatabase().characters[$selectedCharID].license !== 'CC BY-NC-ND 4.0'}
+  {#if selectedCharacterOwner()?.license !== 'CC BY-NC-SA 4.0' && selectedCharacterOwner()?.license !== 'CC BY-SA 4.0' && selectedCharacterOwner()?.license !== 'CC BY-ND 4.0' && selectedCharacterOwner()?.license !== 'CC BY-NC-ND 4.0'}
     <Button
       size="sm"
       onclick={async () => {

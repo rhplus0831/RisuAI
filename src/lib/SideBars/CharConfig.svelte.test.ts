@@ -293,6 +293,7 @@ vi.mock('./Scripts/TriggerList.svelte', async () => {
 import CharConfig from './CharConfig.svelte'
 import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
+import { charactersResourceState, getResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { language } from 'src/lang'
 import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
@@ -539,6 +540,59 @@ describe('CharConfig initial draft rendering', () => {
 
     expect(target.textContent).toContain(language.noBias)
     expect(buttonByAccessibleName(`${language.add}: Bias`)).toBeTruthy()
+  })
+
+  it('seeds ordinary editor reads from the ready owner when the aggregate row is stale', async () => {
+    setDatabaseLite({
+      characters: [makeCharacter({ name: 'Aggregate stale' })],
+      currentChar: 0,
+      fishSpeechKey: '',
+      hypaV3: false,
+      newImageHandlingBeta: false,
+      showDeprecatedTriggerV1: false,
+      showUnrecommended: false,
+      useAdditionalAssetsPreview: false,
+    } as never)
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [makeCharacter({ name: 'Owner current' })]
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(0)
+    MobileGUI.set(true)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    expect(staleAggregate[0].name).toBe('Aggregate stale')
+    expect((target.querySelector('input[aria-label="Character Name"]') as HTMLInputElement)?.value).toBe(
+      'Owner current',
+    )
+  })
+
+  it('hides editable controls when the ready owner selection is ambiguous', async () => {
+    setDatabaseLite({
+      characters: [makeCharacter({ name: 'Aggregate fallback' })],
+      currentChar: 0,
+      fishSpeechKey: '',
+      hypaV3: false,
+      newImageHandlingBeta: false,
+      showDeprecatedTriggerV1: false,
+      showUnrecommended: false,
+      useAdditionalAssetsPreview: false,
+    } as never)
+    charactersResourceState.characters = [makeCharacter(), makeCharacter({ name: 'Duplicate' })]
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(0)
+    MobileGUI.set(false)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    expect(target.querySelector('[data-char-config-section="tts"]')).toBeNull()
+    expect(target.querySelector('[data-char-config-section="manage"]')).toBeNull()
   })
 })
 
