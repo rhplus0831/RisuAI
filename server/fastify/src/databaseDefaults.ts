@@ -14,18 +14,27 @@ import {
   repairPromptPresetRecommendedModelPresetReferences,
 } from '../../../src/ts/presetSplit.js'
 import {
+  MODEL_ROLES,
   createDefaultLegacyFallbackModels,
   createDefaultModelRoleOverrides,
+  modelRoleProfileInheritSource,
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
+  resolveModelForRole,
+  type ModelRole,
 } from '../../../src/ts/model/modelRoles.js'
 import {
   createDefaultModelRoleProfiles,
   normalizeModelProfileOrder,
+  normalizeModelProfileRuntimeOptions,
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
+  type ModelProfileRecord,
+  type ModelProfileRecordFallbackRef,
+  type ModelProfileRecordProviderOptions,
+  type ModelProfileRecordRuntimeOptions,
 } from '../../../src/ts/model/modelProfileRecords.js'
 import { normalizeProviderCredentials } from '../../../src/ts/model/providerCredentialRecords.js'
 import { normalizeScriptModelOverrides } from '../../../src/ts/model/scriptModelOverrides.js'
@@ -185,8 +194,437 @@ const DEFAULT_HYPA_V3_SETTINGS = {
   queryChatCount: 3,
 }
 
+const LEGACY_MODEL_PROFILE_NAMES: Record<ModelRole, string> = {
+  chatMain: 'Main Chat',
+  chatAux: 'Auxiliary',
+  memory: 'Memory',
+  emotion: 'Emotion',
+  translate: 'Translate',
+  otherAx: 'Other Auxiliary',
+  scriptMain: 'Script Main',
+  scriptAux: 'Script Auxiliary',
+}
+
+const LEGACY_RUNTIME_DEFAULT_KEY_MAP = {
+  maxContext: 'maxContext',
+  maxResponse: 'maxResponse',
+  temperature: 'temperature',
+  top_p: 'topP',
+  top_k: 'topK',
+  min_p: 'minP',
+  top_a: 'topA',
+  repetition_penalty: 'repetitionPenalty',
+  frequencyPenalty: 'frequencyPenalty',
+  PresensePenalty: 'presencePenalty',
+  reasoningEffort: 'reasoningEffort',
+  thinkingTokens: 'thinkingTokens',
+  verbosity: 'verbosity',
+  genTime: 'genTime',
+  thinkingType: 'thinkingType',
+  deepseekThinkingType: 'deepseekThinkingType',
+  adaptiveThinkingEffort: 'adaptiveThinkingEffort',
+  deepseekReasoningEffort: 'deepseekReasoningEffort',
+  extractJson: 'extractJson',
+  jsonSchema: 'jsonSchema',
+  customTokenizer: 'customTokenizer',
+  halfStreaming: 'halfStreaming',
+  useStreaming: 'useStreaming',
+  jsonSchemaEnabled: 'jsonSchemaEnabled',
+  strictJsonSchema: 'strictJsonSchema',
+  outputImageModal: 'outputImageModal',
+  enableCustomFlags: 'enableCustomFlags',
+  dynamicOutput: 'dynamicOutput',
+  modelTools: 'modelTools',
+  customFlags: 'customFlags',
+} as const satisfies Record<string, keyof ModelProfileRecordRuntimeOptions>
+
+const LEGACY_SEPARATE_PARAMETER_KEY_MAP = {
+  temperature: 'temperature',
+  top_p: 'topP',
+  top_k: 'topK',
+  min_p: 'minP',
+  top_a: 'topA',
+  repetition_penalty: 'repetitionPenalty',
+  frequency_penalty: 'frequencyPenalty',
+  presence_penalty: 'presencePenalty',
+  reasoning_effort: 'reasoningEffort',
+  thinking_tokens: 'thinkingTokens',
+  verbosity: 'verbosity',
+  thinking_type: 'thinkingType',
+  deepseek_thinking_type: 'deepseekThinkingType',
+  adaptive_thinking_effort: 'adaptiveThinkingEffort',
+  deepseek_reasoning_effort: 'deepseekReasoningEffort',
+  outputImageModal: 'outputImageModal',
+} as const satisfies Record<string, keyof ModelProfileRecordRuntimeOptions>
+
 export function createInitialDatabase(): JsonRecord {
-  return normalizeDatabaseDefaults({})
+  const database = normalizeDatabaseDefaults({})
+  migrateLegacyFlatModelConfiguration(database)
+  return database
+}
+
+/**
+ * Convert normal-runtime flat model selections into deterministic durable
+ * profiles. This is intentionally a write-boundary transform: ordinary reads
+ * keep their classified legacy fallback until all consumers have moved.
+ * Existing canonical owners always win, and inline secrets are never copied.
+ */
+export function migrateLegacyFlatModelConfiguration(database: JsonRecord): boolean {
+  const initialBindings = normalizeModelRoleProfiles(database.modelRoleProfiles)
+  if (
+    !MODEL_ROLES.some((role) => {
+      const modelId = resolveModelForRole(database, role).trim()
+      return initialBindings[role].mode === 'legacy' && modelId !== '' && canMigrateLegacyModel(database, modelId)
+    })
+  ) {
+    return false
+  }
+  const before = JSON.stringify({
+    modelProfiles: database.modelProfiles,
+    modelProfileOrder: database.modelProfileOrder,
+    modelRoleProfiles: database.modelRoleProfiles,
+    modelRuntimeDefaults: database.modelRuntimeDefaults,
+  })
+  const existingProfiles = normalizeModelProfiles(database.modelProfiles)
+  const nextProfiles = [...existingProfiles]
+  const usedIds = new Set(existingProfiles.map((profile) => profile.id))
+  const nextBindings = initialBindings
+  const legacyDefaults = readLegacyRuntimeDefaults(database)
+  const cleanLegacyOwner =
+    existingProfiles.length === 0 &&
+    Object.keys(normalizeModelRuntimeDefaults(database.modelRuntimeDefaults)).length === 0
+
+  if (cleanLegacyOwner) database.modelRuntimeDefaults = legacyDefaults
+
+  const effectiveRuntime = Object.fromEntries(
+    MODEL_ROLES.map((role) => [
+      role,
+      cleanLegacyOwner
+        ? readLegacyRoleRuntimeOverrides(database, role, resolveModelForRole(database, role), legacyDefaults)
+        : readLegacyRoleRuntimeOptions(database, role, resolveModelForRole(database, role)),
+    ]),
+  ) as Record<ModelRole, ModelProfileRecordRuntimeOptions | undefined>
+  const fallbacks = readLegacyRoleFallbacks(database)
+
+  const createProfile = (role: ModelRole, modelId: string): string => {
+    const profileId = mintStableLegacyProfileId(role, usedIds)
+    usedIds.add(profileId)
+    const providerOptions = readLegacyDurableProviderOptions(database, modelId)
+    const profile: ModelProfileRecord = {
+      id: profileId,
+      name: LEGACY_MODEL_PROFILE_NAMES[role],
+      modelId,
+      ...(providerOptions && Object.keys(providerOptions).length > 0 ? { providerOptions } : {}),
+      ...(effectiveRuntime[role] && Object.keys(effectiveRuntime[role]).length > 0
+        ? { runtimeOptions: effectiveRuntime[role] }
+        : {}),
+      ...(fallbacks[role].length > 0 ? { fallbacks: fallbacks[role] } : {}),
+    }
+    nextProfiles.push(profile)
+    nextBindings[role] = { mode: 'profile', profileId }
+    return profileId
+  }
+
+  for (const role of MODEL_ROLES) {
+    if (nextBindings[role].mode !== 'legacy') continue
+    const modelId = resolveModelForRole(database, role).trim()
+    if (!modelId || !canMigrateLegacyModel(database, modelId)) continue
+    const sourceRole = modelRoleProfileInheritSource(role)
+    const sourceBinding = sourceRole ? nextBindings[sourceRole] : undefined
+    if (sourceBinding?.mode === 'profile') {
+      const sourceProfile = nextProfiles.find((profile) => profile.id === sourceBinding.profileId)
+      if (
+        sourceProfile?.modelId === modelId &&
+        jsonEqual(sourceProfile.runtimeOptions ?? {}, effectiveRuntime[role] ?? {}) &&
+        jsonEqual(sourceProfile.fallbacks ?? [], fallbacks[role]) &&
+        jsonEqual(sourceProfile.providerOptions ?? {}, readLegacyDurableProviderOptions(database, modelId) ?? {})
+      ) {
+        nextBindings[role] = { mode: 'inherit' }
+        continue
+      }
+    }
+    createProfile(role, modelId)
+  }
+
+  database.modelProfiles = normalizeModelProfiles(nextProfiles)
+  database.modelProfileOrder = normalizeModelProfileOrder(database.modelProfileOrder, nextProfiles)
+  database.modelRoleProfiles = nextBindings
+  database.modelRuntimeDefaults = normalizeModelRuntimeDefaults(database.modelRuntimeDefaults)
+
+  return (
+    before !==
+    JSON.stringify({
+      modelProfiles: database.modelProfiles,
+      modelProfileOrder: database.modelProfileOrder,
+      modelRoleProfiles: database.modelRoleProfiles,
+      modelRuntimeDefaults: database.modelRuntimeDefaults,
+    })
+  )
+}
+
+function readLegacyRuntimeDefaults(database: JsonRecord): ModelProfileRecordRuntimeOptions {
+  const runtime: JsonRecord = {}
+  for (const [legacyKey, runtimeKey] of Object.entries(LEGACY_RUNTIME_DEFAULT_KEY_MAP)) {
+    if (Object.prototype.hasOwnProperty.call(database, legacyKey)) runtime[runtimeKey] = cloneJson(database[legacyKey])
+  }
+  return normalizeModelProfileRuntimeOptions(runtime) ?? {}
+}
+
+function readLegacyRoleRuntimeOptions(
+  database: JsonRecord,
+  role: ModelRole,
+  modelId: string,
+): ModelProfileRecordRuntimeOptions | undefined {
+  const defaults = readLegacyRuntimeDefaults(database)
+  const overrides = readLegacyRoleRuntimeOverrides(database, role, modelId, defaults)
+  return normalizeModelProfileRuntimeOptions({ ...defaults, ...overrides })
+}
+
+function readLegacyRoleRuntimeOverrides(
+  database: JsonRecord,
+  role: ModelRole,
+  modelId: string,
+  defaults: ModelProfileRecordRuntimeOptions,
+): ModelProfileRecordRuntimeOptions | undefined {
+  if (database.seperateParametersEnabled !== true) return undefined
+  const seperateParameters = isRecord(database.seperateParameters) ? database.seperateParameters : {}
+  const raw =
+    database.seperateParametersByModel === true
+      ? recordValue(recordValue(seperateParameters, 'overrides'), modelId)
+      : legacySeparateParametersForRole(seperateParameters, role)
+  const runtime: JsonRecord = {}
+  for (const [legacyKey, runtimeKey] of Object.entries(LEGACY_SEPARATE_PARAMETER_KEY_MAP)) {
+    if (Object.prototype.hasOwnProperty.call(raw, legacyKey)) runtime[runtimeKey] = cloneJson(raw[legacyKey])
+  }
+  const normalized = normalizeModelProfileRuntimeOptions(runtime)
+  if (!normalized) return undefined
+  const diff: JsonRecord = {}
+  for (const [key, value] of Object.entries(normalized)) {
+    if (!jsonEqual(value, defaults[key as keyof ModelProfileRecordRuntimeOptions])) diff[key] = value
+  }
+  return normalizeModelProfileRuntimeOptions(diff)
+}
+
+function legacySeparateParametersForRole(seperateParameters: JsonRecord, role: ModelRole): JsonRecord {
+  if (role === 'chatMain') return {}
+  if (role === 'chatAux') return recordValue(seperateParameters, 'otherAx')
+  if (role === 'scriptMain') return recordValue(seperateParameters, 'scriptMain')
+  if (role === 'scriptAux') {
+    const scriptAux = recordValue(seperateParameters, 'scriptAux')
+    return Object.keys(scriptAux).length > 0 ? scriptAux : recordValue(seperateParameters, 'otherAx')
+  }
+  return recordValue(seperateParameters, role)
+}
+
+function readLegacyRoleFallbacks(database: JsonRecord): Record<ModelRole, ModelProfileRecordFallbackRef[]> {
+  const fallbackModels = normalizeLegacyFallbackModels(database.fallbackModels)
+  const rows = (values: readonly string[]): ModelProfileRecordFallbackRef[] =>
+    [...new Set(values.map((value) => value.trim()).filter(Boolean))].map((modelId) => ({ mode: 'model', modelId }))
+  return {
+    chatMain: rows(fallbackModels.model),
+    chatAux: [],
+    memory: rows(fallbackModels.memory),
+    emotion: rows(fallbackModels.emotion),
+    translate: rows(fallbackModels.translate),
+    otherAx: rows(fallbackModels.otherAx),
+    scriptMain: rows(fallbackModels.scriptMain),
+    scriptAux: rows(fallbackModels.scriptAux),
+  }
+}
+
+function readLegacyDurableProviderOptions(
+  database: JsonRecord,
+  modelId: string,
+): ModelProfileRecordProviderOptions | undefined {
+  const options = readLegacyNonSecretProviderOptions(database, modelId) ?? {}
+  const credentialId = findReusableLegacyCredentialId(database, modelId)
+  if (credentialId) options.credentialId = credentialId
+
+  if (credentialId && isGoogleModelId(modelId) && isVertexLegacyModel(database, modelId)) {
+    options.vertex = {
+      ...(nonBlankString(recordValue(database, 'google').projectId)
+        ? { projectId: nonBlankString(recordValue(database, 'google').projectId) }
+        : {}),
+      ...(nonBlankString(database.vertexRegion) ? { region: nonBlankString(database.vertexRegion) } : {}),
+    }
+  }
+  return Object.keys(options).length > 0 ? options : undefined
+}
+
+function readLegacyNonSecretProviderOptions(
+  database: JsonRecord,
+  modelId: string,
+): ModelProfileRecordProviderOptions | undefined {
+  if (modelId === 'reverse_proxy') {
+    const reverseProxy: NonNullable<ModelProfileRecordProviderOptions['reverseProxy']> = {
+      autofillRequestUrl: database.autofillRequestUrl !== false,
+      oobaSystemHoist: database.reverseProxyOobaMode === true,
+    }
+    if (Object.prototype.hasOwnProperty.call(database, 'reverseProxyOobaArgs')) {
+      reverseProxy.oobaArgs = cloneJson(database.reverseProxyOobaArgs)
+    }
+    return removeEmptyModelProviderOptions({
+      baseUrl: nonBlankString(database.forceReplaceUrl),
+      requestModel: nonBlankString(database.customProxyRequestModel),
+      additionalParams: readLegacyAdditionalParams(database.additionalParams),
+      reverseProxy,
+    })
+  }
+  if (modelId === 'ollama' || modelId === 'ollama-cloud') {
+    return removeEmptyModelProviderOptions({
+      requestModel: nonBlankString(database.ollamaModel),
+      ollama: {
+        url: nonBlankString(database.ollamaURL),
+        requestFormat: readLegacyLlmFormat(database.ollamaRequestFormat),
+        modelSource: nonBlankString(database.ollamaModelSource),
+        thinkingMode: nonBlankString(database.ollamaThinkingMode),
+      },
+    })
+  }
+  if (modelId === 'openrouter') {
+    const provider = isRecord(database.openrouterProvider)
+      ? {
+          order: stringList(database.openrouterProvider.order),
+          only: stringList(database.openrouterProvider.only),
+          ignore: stringList(database.openrouterProvider.ignore),
+        }
+      : undefined
+    return removeEmptyModelProviderOptions({
+      openrouter: {
+        fallback: typeof database.openrouterFallback === 'boolean' ? database.openrouterFallback : undefined,
+        middleOut: typeof database.openrouterMiddleOut === 'boolean' ? database.openrouterMiddleOut : undefined,
+        provider,
+      },
+    })
+  }
+  if (modelId === 'nanogpt' || modelId.startsWith('nanogpt')) {
+    return removeEmptyModelProviderOptions({
+      nanogpt: {
+        providerHint: nonBlankString(database.nanogptProvider),
+        useSubscriptionEndpoint:
+          typeof database.nanogptUseSubscriptionEndpoint === 'boolean'
+            ? database.nanogptUseSubscriptionEndpoint
+            : undefined,
+        subscriptionState: nonBlankString(database.nanogptSubscriptionState),
+      },
+    })
+  }
+  return undefined
+}
+
+function findReusableLegacyCredentialId(database: JsonRecord, modelId: string): string | undefined {
+  const credentials = normalizeProviderCredentials(database.providerCredentials)
+  if (isVertexLegacyModel(database, modelId)) {
+    const clientEmail = nonBlankString(database.vertexClientEmail)
+    const privateKey = nonBlankString(database.vertexPrivateKey)
+    if (!clientEmail || !privateKey) return undefined
+    return credentials.find(
+      (credential) =>
+        credential.type === 'vertexServiceAccount' &&
+        credential.vertex?.clientEmail === clientEmail &&
+        credential.vertex.privateKey === privateKey,
+    )?.id
+  }
+  const secret = readLegacyApiKey(database, modelId)
+  if (!secret) return undefined
+  return credentials.find((credential) => credential.type === 'apiKey' && credential.apiKey === secret)?.id
+}
+
+function readLegacyApiKey(database: JsonRecord, modelId: string): string | undefined {
+  if (modelId === 'reverse_proxy') return nonBlankString(database.proxyKey)
+  if (modelId === 'openrouter') return nonBlankString(database.openrouterKey)
+  if (modelId === 'nanogpt' || modelId.startsWith('nanogpt')) return nonBlankString(database.nanogptKey)
+  if (modelId === 'ollama' || modelId === 'ollama-cloud') return nonBlankString(database.ollamaApiKey)
+  if (modelId.startsWith('claude-') || modelId.startsWith('anthropic.')) return nonBlankString(database.claudeAPIKey)
+  if (isGoogleModelId(modelId)) return nonBlankString(recordValue(database, 'google').accessToken)
+  if (modelId.startsWith('mistral') || modelId.startsWith('magistral')) return nonBlankString(database.mistralKey)
+  if (modelId.startsWith('cohere-')) return nonBlankString(database.cohereAPIKey)
+  return nonBlankString(database.openAIKey)
+}
+
+function isGoogleModelId(modelId: string): boolean {
+  return modelId.startsWith('gemini-')
+}
+
+function isVertexLegacyModel(database: JsonRecord, modelId: string): boolean {
+  return (
+    isGoogleModelId(modelId) &&
+    (modelId.endsWith('-vertex') || nonBlankString(database.vertexClientEmail) !== undefined)
+  )
+}
+
+function canMigrateLegacyModel(database: JsonRecord, modelId: string): boolean {
+  // A plain Gemini id selected Vertex through inline service-account fields.
+  // Binding it without an existing canonical credential would silently switch
+  // providers or persist the secret, so keep that classified Phase 5 hold on
+  // the legacy resolver.
+  return !isVertexLegacyModel(database, modelId) || findReusableLegacyCredentialId(database, modelId) !== undefined
+}
+
+function mintStableLegacyProfileId(role: ModelRole, usedIds: ReadonlySet<string>): string {
+  const base = `mp_legacy_${role}`
+  if (!usedIds.has(base)) return base
+  let suffix = 2
+  while (usedIds.has(`${base}_${suffix}`)) suffix += 1
+  return `${base}_${suffix}`
+}
+
+function readLegacyAdditionalParams(value: unknown): Array<[string, string]> | undefined {
+  if (!Array.isArray(value)) return undefined
+  const rows = value.flatMap((item) => {
+    if (!Array.isArray(item) || typeof item[0] !== 'string' || typeof item[1] !== 'string') return []
+    const key = item[0].trim()
+    return key ? ([[key, item[1].trim()]] as Array<[string, string]>) : []
+  })
+  return rows.length > 0 ? rows : undefined
+}
+
+function removeEmptyModelProviderOptions(
+  value: ModelProfileRecordProviderOptions,
+): ModelProfileRecordProviderOptions | undefined {
+  const cleaned = removeEmptyRecord(value as JsonRecord) as ModelProfileRecordProviderOptions
+  return Object.keys(cleaned).length > 0 ? cleaned : undefined
+}
+
+function removeEmptyRecord(value: JsonRecord): JsonRecord {
+  const cleaned: JsonRecord = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (item === undefined || item === null || item === '') continue
+    if (isRecord(item)) {
+      const nested = removeEmptyRecord(item)
+      if (Object.keys(nested).length > 0) cleaned[key] = nested
+      continue
+    }
+    if (Array.isArray(item) && item.length === 0) continue
+    cleaned[key] = item
+  }
+  return cleaned
+}
+
+function recordValue(value: JsonRecord, key: string): JsonRecord {
+  return isRecord(value[key]) ? value[key] : {}
+}
+
+function stringList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const list = value.flatMap((item) => (typeof item === 'string' && item.trim() ? [item.trim()] : []))
+  return list.length > 0 ? list : undefined
+}
+
+function nonBlankString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed || undefined
+}
+
+function readLegacyLlmFormat(value: unknown): LLMFormat | undefined {
+  return typeof value === 'number' && Object.values(LLMFormat).includes(value as LLMFormat)
+    ? (value as LLMFormat)
+    : undefined
+}
+
+function jsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 export function normalizeDatabaseDefaults(

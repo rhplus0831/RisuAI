@@ -3120,7 +3120,12 @@ describe('scalar settings groups', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json()).toMatchObject({ revision: 1 })
-    expect(bootstrap.resourceDatabase).toMatchObject({ modelProfiles: [] })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      modelProfiles: [
+        expect.objectContaining({ id: 'mp_legacy_chatMain', modelId: 'gpt-5' }),
+        expect.objectContaining({ id: 'mp_legacy_chatAux', modelId: 'claude-sonnet-4-5' }),
+      ],
+    })
   })
 
   it('converts legacy model settings into profiles, role bindings, and runtime defaults', async () => {

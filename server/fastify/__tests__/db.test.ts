@@ -117,6 +117,101 @@ describe('schema migrations', () => {
     }
   })
 
+  it('transactionally migrates flat model settings without changing command revision', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    initial.prepare('UPDATE schema_version SET version = 33, revision = 41 WHERE id = 1').run()
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(
+      JSON.stringify({
+        aiModel: 'gpt-5',
+        subModel: 'claude-sonnet-4-5',
+        openAIKey: 'must-stay-flat',
+        maxContext: 8192,
+        modelProfiles: [],
+        modelRoleProfiles: {},
+        modelRuntimeDefaults: {},
+      }),
+    )
+    initial.close()
+
+    const migrated = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(migrated)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 41 })
+      const row = migrated.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, any>
+      expect(settings.modelRoleProfiles.chatMain).toEqual({
+        mode: 'profile',
+        profileId: 'mp_legacy_chatMain',
+      })
+      expect(settings.modelProfiles).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'mp_legacy_chatMain', modelId: 'gpt-5' })]),
+      )
+      expect(JSON.stringify(settings.modelProfiles)).not.toContain('must-stay-flat')
+      expect(settings.openAIKey).toBe('must-stay-flat')
+    } finally {
+      migrated.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      const row = reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, any>
+      expect(
+        settings.modelProfiles.filter((profile: { id: string }) => profile.id === 'mp_legacy_chatMain'),
+      ).toHaveLength(1)
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 41 })
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('rolls back and deterministically retries the durable model migration after an interrupted version bump', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const legacySettings = {
+      aiModel: 'gpt-5',
+      subModel: 'claude-sonnet-4-5',
+      modelProfiles: [],
+      modelRoleProfiles: {},
+      modelRuntimeDefaults: {},
+    }
+    initial.prepare('UPDATE schema_version SET version = 33, revision = 9 WHERE id = 1').run()
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(legacySettings))
+    initial.exec(`
+      CREATE TRIGGER fail_model_migration_version_bump
+      BEFORE UPDATE OF version ON schema_version
+      BEGIN
+        SELECT RAISE(ABORT, 'injected version bump failure');
+      END;
+    `)
+    initial.close()
+
+    expect(() => openDatabase(dataDir)).toThrow(/durable-model-profile-ownership.*injected version bump failure/)
+
+    const afterFailure = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(afterFailure)).toEqual({ version: 33, revision: 9 })
+      const row = afterFailure.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      expect(JSON.parse(row.data_json)).toEqual(legacySettings)
+      afterFailure.exec('DROP TRIGGER fail_model_migration_version_bump')
+    } finally {
+      afterFailure.close()
+    }
+
+    const retried = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 9 })
+      const row = retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, any>
+      expect(settings.modelProfiles.map((profile: { id: string }) => profile.id)).toEqual([
+        'mp_legacy_chatMain',
+        'mp_legacy_chatAux',
+      ])
+    } finally {
+      retried.close()
+    }
+  })
+
   it('migrates finalization retries to retain multi-generation alternates', () => {
     const dataDir = makeDataDir()
     seedSchemaVersion(dataDir, 19, 4)

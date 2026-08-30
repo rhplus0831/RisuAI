@@ -20,10 +20,11 @@ import {
   createCharacterTables,
   createCollectionTables,
   createSettingsTable,
+  migrateLegacyFlatModelConfigurationInSqlite,
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 33
+export const CURRENT_SCHEMA_VERSION = 34
 
 export const CURRENT_SCHEMA_TABLES = [
   'assets',
@@ -448,6 +449,13 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'bardwiki-authoritative-storage',
     up: (db) => {
       createBardWikiTables(db)
+    },
+  },
+  {
+    version: 34,
+    name: 'durable-model-profile-ownership',
+    up: (db) => {
+      migrateLegacyFlatModelConfigurationInSqlite(db)
     },
   },
 ]

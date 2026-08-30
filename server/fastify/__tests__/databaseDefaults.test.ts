@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { createInitialDatabase, normalizeDatabaseDefaults } from '../src/databaseDefaults.js'
+import {
+  createInitialDatabase,
+  migrateLegacyFlatModelConfiguration,
+  normalizeDatabaseDefaults,
+} from '../src/databaseDefaults.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 import { LLMFlags } from '../../../src/ts/model/types.js'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
@@ -42,12 +46,28 @@ describe('database defaults', () => {
     const database = createInitialDatabase()
 
     expect(Object.keys(database.modelRoles as Record<string, unknown>)).toEqual([...MODEL_ROLES])
-    expect(database.modelProfiles).toEqual([])
+    expect(database.modelProfiles).toEqual([
+      expect.objectContaining({ id: 'mp_legacy_chatMain', modelId: 'gemini-3-flash-preview' }),
+      expect.objectContaining({ id: 'mp_legacy_chatAux', modelId: 'gemini-3-flash-preview' }),
+    ])
     expect(database.providerCredentials).toEqual([])
-    expect(database.modelRoleProfiles).toEqual(
-      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
-    )
-    expect(database.modelRuntimeDefaults).toEqual({})
+    expect(database.modelRoleProfiles).toEqual({
+      chatMain: { mode: 'profile', profileId: 'mp_legacy_chatMain' },
+      chatAux: { mode: 'profile', profileId: 'mp_legacy_chatAux' },
+      memory: { mode: 'inherit' },
+      emotion: { mode: 'inherit' },
+      translate: { mode: 'inherit' },
+      otherAx: { mode: 'inherit' },
+      scriptMain: { mode: 'inherit' },
+      scriptAux: { mode: 'inherit' },
+    })
+    expect(database.modelRuntimeDefaults).toMatchObject({
+      maxContext: 4000,
+      maxResponse: 500,
+      temperature: 80,
+      frequencyPenalty: 70,
+      presencePenalty: 70,
+    })
     expect(database.agentPresets).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
     expect(database.inputHooks).toEqual([
@@ -119,6 +139,112 @@ describe('database defaults', () => {
       scriptAux: {},
       overrides: {},
     })
+  })
+
+  it('deterministically migrates usable legacy model selections without copying inline secrets', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        aiModel: 'gpt-5',
+        subModel: 'claude-sonnet-4-5',
+        openAIKey: 'inline-openai-secret',
+        claudeAPIKey: 'inline-anthropic-secret',
+        maxContext: 12345,
+        temperature: 66,
+        modelRoles: { memory: 'gpt-5' },
+        seperateParametersEnabled: true,
+        seperateParameters: { memory: { temperature: 22 } },
+        fallbackModels: { model: ['fallback-main'], memory: ['fallback-memory'] },
+        providerCredentials: [{ id: 'cred-openai', name: 'OpenAI', type: 'apiKey', apiKey: 'inline-openai-secret' }],
+      },
+      { providerDefaults: false },
+    )
+
+    expect(migrateLegacyFlatModelConfiguration(database)).toBe(true)
+    expect(migrateLegacyFlatModelConfiguration(database)).toBe(false)
+    expect(database.modelRoleProfiles).toMatchObject({
+      chatMain: { mode: 'profile', profileId: 'mp_legacy_chatMain' },
+      chatAux: { mode: 'profile', profileId: 'mp_legacy_chatAux' },
+      memory: { mode: 'profile', profileId: 'mp_legacy_memory' },
+    })
+    expect(database.modelRuntimeDefaults).toMatchObject({ maxContext: 12345, temperature: 66 })
+    expect(database.modelProfiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mp_legacy_chatMain',
+          modelId: 'gpt-5',
+          providerOptions: { credentialId: 'cred-openai' },
+          fallbacks: [{ mode: 'model', modelId: 'fallback-main' }],
+        }),
+        expect.objectContaining({
+          id: 'mp_legacy_memory',
+          modelId: 'gpt-5',
+          runtimeOptions: { temperature: 22 },
+          fallbacks: [{ mode: 'model', modelId: 'fallback-memory' }],
+        }),
+      ]),
+    )
+    expect(JSON.stringify(database.modelProfiles)).not.toContain('inline-openai-secret')
+    expect(JSON.stringify(database.modelProfiles)).not.toContain('inline-anthropic-secret')
+    expect(database.openAIKey).toBe('inline-openai-secret')
+    expect(database.claudeAPIKey).toBe('inline-anthropic-secret')
+  })
+
+  it('retains inline-only Vertex selection for the classified repair boundary', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        aiModel: 'gemini-2.5-pro',
+        subModel: 'gemini-2.5-pro',
+        vertexClientEmail: 'vertex@example.com',
+        vertexPrivateKey: 'inline-private-key',
+        google: { projectId: 'project-a' },
+        modelProfiles: [],
+        modelRoleProfiles: {},
+        modelRuntimeDefaults: {},
+      },
+      { providerDefaults: false },
+    )
+
+    expect(migrateLegacyFlatModelConfiguration(database)).toBe(false)
+    expect(database.modelProfiles).toEqual([])
+    expect(database.modelRoleProfiles).toEqual(
+      Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    )
+    expect(JSON.stringify(database)).toContain('inline-private-key')
+  })
+
+  it('preserves existing durable owners while appending deterministic legacy profiles', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        aiModel: 'legacy-main',
+        subModel: 'legacy-aux',
+        modelProfiles: [
+          { id: 'profile-main', name: 'Owned Main', modelId: 'canonical-main' },
+          { id: 'mp_legacy_chatAux', name: 'Unrelated collision', modelId: 'existing-model' },
+        ],
+        modelProfileOrder: [
+          { kind: 'profile', profileId: 'profile-main' },
+          { kind: 'divider', id: 'divider-a' },
+          { kind: 'profile', profileId: 'mp_legacy_chatAux' },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-main' } },
+        modelRuntimeDefaults: { temperature: 31 },
+      },
+      { providerDefaults: false },
+    )
+
+    expect(migrateLegacyFlatModelConfiguration(database)).toBe(true)
+    expect(database.modelRoleProfiles).toMatchObject({
+      chatMain: { mode: 'profile', profileId: 'profile-main' },
+      chatAux: { mode: 'profile', profileId: 'mp_legacy_chatAux_2' },
+    })
+    expect(database.modelRuntimeDefaults).toEqual({ temperature: 31 })
+    expect(database.modelProfileOrder).toEqual([
+      { kind: 'profile', profileId: 'profile-main' },
+      { kind: 'divider', id: 'divider-a' },
+      { kind: 'profile', profileId: 'mp_legacy_chatAux' },
+      { kind: 'profile', profileId: 'mp_legacy_chatAux_2' },
+      { kind: 'profile', profileId: 'mp_legacy_scriptMain' },
+    ])
   })
 
   it('preserves valid BardWiki defaults and resets malformed imported settings', () => {

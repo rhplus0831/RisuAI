@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
 import { SERVER_CHARACTER_SHELL_MARKER, type ServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
-import { createInitialDatabase } from './databaseDefaults.js'
+import { createInitialDatabase, migrateLegacyFlatModelConfiguration } from './databaseDefaults.js'
 import { rebuildAllBardWikiDerivedState } from './bardWikiRepository.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
@@ -458,6 +458,20 @@ export function replaceAllSettingsInTable(db: DatabaseSync, database: unknown): 
   recordTableWrite('settings')
   db.exec('DELETE FROM settings')
   db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
+}
+
+/** Schema-migration adapter for the singleton settings owner. */
+export function migrateLegacyFlatModelConfigurationInSqlite(db: DatabaseSync): boolean {
+  const settingsTable = db
+    .prepare("SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'settings'")
+    .get()
+  if (!settingsTable) return false
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+  if (!row) return false
+  const settings = JSON.parse(row.data_json) as unknown
+  if (!isRecord(settings) || !migrateLegacyFlatModelConfiguration(settings)) return false
+  writeSettingsOnly(db, settings)
+  return true
 }
 
 export function stripSettings(next: Persisted): Persisted {
@@ -1360,6 +1374,7 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
   const parsed = readLegacyDatabaseSnapshot(filePath)
   const database = parsed.database as JsonRecord
 
+  migrateLegacyFlatModelConfiguration(database)
   repairPersistedGlobalLorebookIds(database)
   replaceAllSettingsInTable(db, database)
   replaceAllCharactersInTable(db, database)
@@ -2168,6 +2183,7 @@ export function splitChatMessagesIntoTable(db: DatabaseSync, next: Persisted): P
  * SQLite tables and sync all table families.
  */
 export function writePersistedWithMessages(db: DatabaseSync, _dataDir: string, next: Persisted): void {
+  if (isRecord(next.database)) migrateLegacyFlatModelConfiguration(next.database)
   const messageFree = splitChatMessagesIntoTable(db, next)
   replaceAllCharactersInTable(db, messageFree.database)
   replaceAllCollectionsInTable(db, messageFree.database)
@@ -2632,9 +2648,11 @@ export async function applyImport(
     if (!cloneBeforeMessageSplit) {
       options.beforeRevision?.(db)
     }
+    const importedDatabase = cloneBeforeMessageSplit ? structuredClone(database) : database
+    if (isRecord(importedDatabase)) migrateLegacyFlatModelConfiguration(importedDatabase)
     const messageFree = splitChatMessagesIntoTable(db, {
       ...current,
-      database: cloneBeforeMessageSplit ? structuredClone(database) : database,
+      database: importedDatabase,
     })
     replaceAllCharactersInTable(db, messageFree.database)
     replaceGreetingTranslationsForImport(db, options.greetingTranslations ?? [])

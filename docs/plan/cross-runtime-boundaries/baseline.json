@@ -805,10 +805,15 @@
       "specifier": "../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
       "kind": "static",
-      "usage": "runtime",
+      "usage": "mixed",
       "symbols": [
+        "ModelProfileRecord",
+        "ModelProfileRecordFallbackRef",
+        "ModelProfileRecordProviderOptions",
+        "ModelProfileRecordRuntimeOptions",
         "createDefaultModelRoleProfiles",
         "normalizeModelProfileOrder",
+        "normalizeModelProfileRuntimeOptions",
         "normalizeModelProfiles",
         "normalizeModelRoleProfiles",
         "normalizeModelRuntimeDefaults"
@@ -822,13 +827,17 @@
       "specifier": "../../../src/ts/model/modelRoles.js",
       "target": "src/ts/model/modelRoles.ts",
       "kind": "static",
-      "usage": "runtime",
+      "usage": "mixed",
       "symbols": [
+        "MODEL_ROLES",
+        "ModelRole",
         "createDefaultLegacyFallbackModels",
         "createDefaultModelRoleOverrides",
+        "modelRoleProfileInheritSource",
         "normalizeLegacyFallbackModels",
         "normalizeLegacySeperateModels",
-        "normalizeModelRoleOverrides"
+        "normalizeModelRoleOverrides",
+        "resolveModelForRole"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
