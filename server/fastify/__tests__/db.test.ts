@@ -314,15 +314,12 @@ describe('schema migrations', () => {
 
   it('persists stable ids for legacy global lorebooks and entries', () => {
     const dataDir = makeDataDir()
-    seedSchemaVersion(dataDir, 22, 8)
+    const initialized = openDatabase(dataDir)
+    initialized.close()
     const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
     try {
-      before.exec(`
-        CREATE TABLE lore_books (
-          position INTEGER PRIMARY KEY,
-          data_json TEXT NOT NULL CHECK (json_valid(data_json))
-        )
-      `)
+      before.prepare('UPDATE schema_version SET version = 22, revision = 8 WHERE id = 1').run()
+      before.exec('DELETE FROM lore_books')
       const insert = before.prepare('INSERT INTO lore_books (position, data_json) VALUES (?, ?)')
       const entry = {
         key: 'legacy',

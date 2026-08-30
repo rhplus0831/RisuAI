@@ -25,6 +25,55 @@ import {
 
 export const CURRENT_SCHEMA_VERSION = 33
 
+export const CURRENT_SCHEMA_TABLES = [
+  'assets',
+  'bardwiki_change_manifest',
+  'bardwiki_chat_settings',
+  'bardwiki_document_search',
+  'bardwiki_document_sources',
+  'bardwiki_document_versions',
+  'bardwiki_documents',
+  'bardwiki_jobs',
+  'bardwiki_links',
+  'bardwiki_rebuild_staging',
+  'bardwiki_turn_receipts',
+  'bot_presets',
+  'characters',
+  'chat_hypa_v3',
+  'chats',
+  'command_events',
+  'command_mutation_receipts',
+  'database_metadata',
+  'generation_effects',
+  'generation_finalization_retries',
+  'generation_operation_attempts',
+  'generation_operation_projection_state',
+  'generation_operations',
+  'greeting_translations',
+  'hypa_v3_presets',
+  'inlay_catalog',
+  'loadouts',
+  'lore_books',
+  'memory_chunks',
+  'memory_embeddings',
+  'memory_jobs',
+  'memory_legacy_summary_tombstones',
+  'memory_summaries',
+  'messages',
+  'model_presets',
+  'modules',
+  'personas',
+  'plugin_custom_storage',
+  'plugins',
+  'prompt_presets',
+  'prompt_templates',
+  'push_subscriptions',
+  'request_history',
+  'schema_version',
+  'settings',
+  'translator_presets',
+] as const
+
 export interface OpenDatabaseOptions {
   allowMissingDatabase?: boolean
 }
@@ -41,6 +90,21 @@ export class MissingDatabaseRefusalError extends Error {
         'RISU_API_ALLOW_MISSING_DATABASE=1.',
     )
     this.name = 'MissingDatabaseRefusalError'
+  }
+}
+
+export class DamagedDatabaseRefusalError extends Error {
+  constructor(
+    readonly databasePath: string,
+    readonly reason: string,
+    options: ErrorOptions = {},
+  ) {
+    super(
+      `Refusing automatic migration of the existing RisuAI database at "${databasePath}": ${reason}. ` +
+        'Restore a known-good database backup or use an explicit damaged-database recovery workflow.',
+      options,
+    )
+    this.name = 'DamagedDatabaseRefusalError'
   }
 }
 
@@ -388,6 +452,33 @@ export const MIGRATIONS: readonly MigrationStep[] = [
   },
 ]
 
+export function assertMigrationCatalog(
+  migrations: readonly MigrationStep[] = MIGRATIONS,
+  currentVersion = CURRENT_SCHEMA_VERSION,
+): void {
+  if (!Number.isInteger(currentVersion) || currentVersion < 0) {
+    throw new Error(`Invalid current schema version: ${currentVersion}`)
+  }
+  const names = new Set<string>()
+  for (let index = 0; index < migrations.length; index += 1) {
+    const migration = migrations[index]!
+    const expectedVersion = index + 1
+    if (migration.version !== expectedVersion) {
+      throw new Error(`Missing schema migration ${expectedVersion}; next registered migration is ${migration.version}`)
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(migration.name)) {
+      throw new Error(`Invalid schema migration name at version ${migration.version}: ${migration.name}`)
+    }
+    if (names.has(migration.name)) {
+      throw new Error(`Duplicate schema migration name: ${migration.name}`)
+    }
+    names.add(migration.name)
+  }
+  if (migrations.length !== currentVersion) {
+    throw new Error(`Missing schema migration ${migrations.length + 1}; current schema version is ${currentVersion}`)
+  }
+}
+
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
 function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
@@ -419,7 +510,8 @@ function priorInstallEvidence(dataDir: string): string[] {
 
 export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {}): DatabaseSync {
   const databasePath = path.join(dataDir, 'risu.db')
-  if (!fs.existsSync(databasePath) && !options.allowMissingDatabase) {
+  const databaseExisted = fs.existsSync(databasePath)
+  if (!databaseExisted && !options.allowMissingDatabase) {
     const evidence = priorInstallEvidence(dataDir)
     if (evidence.length > 0) throw new MissingDatabaseRefusalError(databasePath, evidence)
   }
@@ -432,39 +524,15 @@ export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {})
     // that the latest committed transactions may be lost on OS/power failure.
     db.exec('PRAGMA synchronous = NORMAL')
     db.exec('PRAGMA foreign_keys = ON')
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS schema_version (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        version INTEGER NOT NULL,
-        revision INTEGER NOT NULL DEFAULT 0
-      )
-    `)
-    db.exec(`INSERT OR IGNORE INTO schema_version (id, version, revision) VALUES (1, ${CURRENT_SCHEMA_VERSION}, 0)`)
-    const schemaState = getSchemaState(db)
+    if (!databaseExisted) initializeFreshDatabase(db)
+    const schemaState = existingSchemaState(db, databasePath)
     if (schemaState.version > CURRENT_SCHEMA_VERSION) {
       throw new Error(
         `Database schema version ${schemaState.version} is newer than supported version ${CURRENT_SCHEMA_VERSION}`,
       )
     }
     if (schemaState.version === CURRENT_SCHEMA_VERSION) {
-      createDatabaseMetadataTable(db)
-      createMemoryTables(db)
-      createMessageTable(db)
-      createChatBlobTable(db)
-      createCommandEventTable(db)
-      createCommandMutationReceiptTable(db)
-      createGenerationFinalizationRetryTable(db)
-      createGenerationOperationTables(db)
-      createGenerationEffectLedgerTable(db)
-      createAssetMetadataTable(db)
-      createInlayCatalogTable(db)
-      createCharacterTables(db)
-      createBardWikiTables(db)
-      createGreetingTranslationTable(db)
-      createRequestHistoryTable(db)
-      createCollectionTables(db)
-      createSettingsTable(db)
-      createPushSubscriptionsTable(db)
+      assertCurrentSchemaTables(db, databasePath)
     }
     applyMigrations(db, schemaState.version)
   } catch (error) {
@@ -474,6 +542,74 @@ export function openDatabase(dataDir: string, options: OpenDatabaseOptions = {})
   return db
 }
 
+function initializeFreshDatabase(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE schema_version (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      version INTEGER NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO schema_version (id, version, revision) VALUES (1, ${CURRENT_SCHEMA_VERSION}, 0);
+  `)
+  createDatabaseMetadataTable(db)
+  createMemoryTables(db)
+  createMessageTable(db)
+  createChatBlobTable(db)
+  createCommandEventTable(db)
+  createCommandMutationReceiptTable(db)
+  createGenerationFinalizationRetryTable(db)
+  createGenerationOperationTables(db)
+  createGenerationEffectLedgerTable(db)
+  createAssetMetadataTable(db)
+  createInlayCatalogTable(db)
+  createCharacterTables(db)
+  createBardWikiTables(db)
+  createGreetingTranslationTable(db)
+  createRequestHistoryTable(db)
+  createCollectionTables(db)
+  createSettingsTable(db)
+  createPushSubscriptionsTable(db)
+}
+
+function existingSchemaState(db: DatabaseSync, databasePath: string): { version: number; revision: number } {
+  try {
+    const table = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'").get()
+    if (!table) throw new Error('schema_version table is missing')
+    const rows = db.prepare('SELECT id, version, revision FROM schema_version').all() as Array<{
+      id: unknown
+      version: unknown
+      revision: unknown
+    }>
+    if (rows.length !== 1 || rows[0]?.id !== 1) throw new Error('schema_version singleton row is missing or invalid')
+    const { version, revision } = rows[0]
+    if (!Number.isInteger(version) || (version as number) < 0) throw new Error('schema version is invalid')
+    if (!Number.isInteger(revision) || (revision as number) < 0) throw new Error('schema revision is invalid')
+    return { version: version as number, revision: revision as number }
+  } catch (error) {
+    if (error instanceof DamagedDatabaseRefusalError) throw error
+    throw new DamagedDatabaseRefusalError(databasePath, error instanceof Error ? error.message : String(error), {
+      cause: error,
+    })
+  }
+}
+
+function assertCurrentSchemaTables(db: DatabaseSync, databasePath: string): void {
+  const actual = new Set(
+    (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+        name: string
+      }>
+    ).map(({ name }) => name),
+  )
+  const missing = CURRENT_SCHEMA_TABLES.filter((table) => !actual.has(table))
+  if (missing.length > 0) {
+    throw new DamagedDatabaseRefusalError(
+      databasePath,
+      `current schema is missing required tables: ${missing.join(', ')}`,
+    )
+  }
+}
+
 export function applyMigrations(db: DatabaseSync, fromVersion: number): void {
   if (!Number.isInteger(fromVersion) || fromVersion < 0) {
     throw new Error(`Invalid schema version: ${fromVersion}`)
@@ -481,6 +617,7 @@ export function applyMigrations(db: DatabaseSync, fromVersion: number): void {
   if (fromVersion > CURRENT_SCHEMA_VERSION) {
     throw new Error(`Database schema version ${fromVersion} is newer than supported version ${CURRENT_SCHEMA_VERSION}`)
   }
+  assertMigrationCatalog()
   if (fromVersion === CURRENT_SCHEMA_VERSION) {
     return
   }
@@ -527,7 +664,7 @@ export function getSchemaState(db: DatabaseSync): { version: number; revision: n
     | { version: number; revision: number }
     | undefined
   if (!row) {
-    return { version: CURRENT_SCHEMA_VERSION, revision: 0 }
+    throw new Error('schema_version row missing; database not initialized')
   }
   return row
 }
