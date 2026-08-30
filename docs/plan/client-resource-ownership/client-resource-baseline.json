@@ -606,7 +606,7 @@
         },
         {
           "file": "src/ts/process/sendChatContext.ts",
-          "count": 15
+          "count": 13
         },
         {
           "file": "src/ts/process/sendChatErrors.ts",

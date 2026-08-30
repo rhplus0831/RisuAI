@@ -27,6 +27,9 @@ const moduleState = vi.hoisted(() => {
       currentPluginProvider: '',
       googleClaudeTokenizing: true,
       google: { accessToken: 'test-google-key' },
+      modelProfiles: [] as Array<Record<string, unknown>>,
+      modelRoleProfiles: {} as Record<string, unknown>,
+      modelRuntimeDefaults: {} as Record<string, unknown>,
       useTokenizerCaching: false,
     },
     requestProviderOperationMock: vi.fn(),
@@ -49,7 +52,12 @@ vi.mock('./model/modellist', () => ({
   LLMTokenizer: moduleState.LLMTokenizer,
   getModelInfo: vi.fn((aiModel: string) => ({
     id: aiModel,
+    name: aiModel,
     internalID: moduleState.internalIDsByModel.get(aiModel) ?? aiModel,
+    provider: 2,
+    format: 5,
+    flags: [],
+    parameters: [],
     tokenizer: moduleState.LLMTokenizer.GoogleCloud,
   })),
 }))
@@ -96,6 +104,9 @@ describe('Google Cloud tokenizer cache', () => {
     moduleState.db.aiModel = 'google-default'
     moduleState.db.useTokenizerCaching = false
     moduleState.db.googleClaudeTokenizing = true
+    moduleState.db.modelProfiles = []
+    moduleState.db.modelRoleProfiles = {}
+    moduleState.db.modelRuntimeDefaults = {}
     moduleState.requestProviderOperationMock.mockReset()
     moduleState.providerOperationCredentialMock.mockClear()
     moduleState.requestProviderOperationMock.mockImplementation(async (_operation, options) => {
@@ -131,6 +142,28 @@ describe('Google Cloud tokenizer cache', () => {
     await expect(tokenize('a')).resolves.toBe(tokenCountFor('a', 'bc'))
 
     expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the selected durable profile model instead of the conflicting flat model', async () => {
+    const { tokenize } = await loadTokenizer()
+    moduleState.db.aiModel = 'google-default'
+    moduleState.db.useTokenizerCaching = true
+    moduleState.db.modelProfiles = [
+      { id: 'profile-a', name: 'Profile A', modelId: 'google-a' },
+      { id: 'profile-b', name: 'Profile B', modelId: 'google-b' },
+    ]
+    moduleState.db.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'profile-a' } }
+
+    await expect(tokenize('same prompt')).resolves.toBe(tokenCountFor('same prompt', 'c'))
+
+    moduleState.db.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'profile-b' } }
+    await expect(tokenize('same prompt')).resolves.toBe(tokenCountFor('same prompt', 'bc'))
+
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(2)
+    expect(moduleState.requestProviderOperationMock.mock.calls.map(([, options]) => options.input.modelId)).toEqual([
+      'c',
+      'bc',
+    ])
   })
 
   it('GoogleCloud token cache evicts oldest entries and refills with the same count', async () => {

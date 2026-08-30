@@ -7,6 +7,7 @@ import {
   resolveLegacyFallbackRefs,
   resolveModelProfile,
   resolveModelProfileByProfileId,
+  resolveModelProfileTokenizerSelection,
 } from './modelProfileResolver'
 
 function db(overrides: Partial<Database> = {}): Database {
@@ -1802,6 +1803,53 @@ describe('resolveModelProfile provider/runtime normalization', () => {
       stripCoT: false,
       modelTools: ['profile-tool'],
     })
+  })
+
+  it('resolves tokenizer selection from profile-local, provider-local, then global durable configuration', () => {
+    const database = db({
+      customTokenizer: 'flat-tokenizer',
+      modelRuntimeDefaults: { customTokenizer: ' default-tokenizer ' },
+      modelProfiles: [
+        {
+          id: 'runtime-tokenizer',
+          name: 'Runtime tokenizer',
+          modelId: 'openrouter',
+          runtimeOptions: { customTokenizer: ' profile-tokenizer ' },
+          providerOptions: { customApi: { tokenizer: LLMTokenizer.tiktokenO200Base } },
+        },
+        {
+          id: 'provider-tokenizer',
+          name: 'Provider tokenizer',
+          modelId: 'openrouter',
+          providerOptions: { customApi: { tokenizer: LLMTokenizer.tiktokenO200Base } },
+        },
+        {
+          id: 'default-tokenizer',
+          name: 'Default tokenizer',
+          modelId: 'openrouter',
+        },
+      ],
+    } as Partial<Database>)
+
+    const runtime = resolveModelProfileByProfileId({
+      database,
+      role: 'chatMain',
+      profileId: 'runtime-tokenizer',
+    })!
+    const provider = resolveModelProfileByProfileId({
+      database,
+      role: 'chatMain',
+      profileId: 'provider-tokenizer',
+    })!
+    const fallback = resolveModelProfileByProfileId({
+      database,
+      role: 'chatMain',
+      profileId: 'default-tokenizer',
+    })!
+
+    expect(resolveModelProfileTokenizerSelection(database, runtime)).toBe('profile-tokenizer')
+    expect(resolveModelProfileTokenizerSelection(database, provider)).toBe(String(LLMTokenizer.tiktokenO200Base))
+    expect(resolveModelProfileTokenizerSelection(database, fallback)).toBe('default-tokenizer')
   })
 
   it('inherits Strip CoT from runtime defaults unless a profile explicitly overrides it', () => {

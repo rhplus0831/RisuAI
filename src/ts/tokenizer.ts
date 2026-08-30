@@ -11,6 +11,11 @@ import { isPluginRuntimeReady, pluginV2 } from './plugins/plugins.svelte'
 import type { GemmaTokenizer } from '@huggingface/transformers'
 import { LRUMap } from 'mnemonist'
 import { providerOperationCredential, requestProviderOperation } from './server/providerOperations'
+import {
+  resolveModelProfile,
+  resolveModelProfileTokenizerSelection,
+  type ResolvedModelProfile,
+} from './model/modelProfileResolver'
 
 const MAX_CACHE_SIZE = 1500
 export const GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT = MAX_CACHE_SIZE
@@ -70,9 +75,23 @@ export async function encodeWithTokenizer(
   }
 }
 
-export async function encode(data: string): Promise<number[] | Uint32Array | Int32Array> {
+export function resolveMainTokenizerProfile(database = getDatabase()): ResolvedModelProfile {
+  return resolveModelProfile({
+    database,
+    role: 'chatMain',
+    lookupModelInfo: (_database, modelId) => getModelInfo(modelId),
+  })
+}
+
+export async function encode(
+  data: string,
+  profile: ResolvedModelProfile = resolveMainTokenizerProfile(),
+  tokenizerSelection?: string,
+): Promise<number[] | Uint32Array | Int32Array> {
   const db = getDatabase()
-  const modelInfo = getModelInfo(db.aiModel)
+  const aiModel = profile.modelId
+  const modelInfo = profile.modelInfo
+  const customTokenizer = tokenizerSelection ?? resolveModelProfileTokenizerSelection(db, profile)
   const pluginTokenizer = isPluginRuntimeReady()
     ? (pluginV2.providerOptions.get(db.currentPluginProvider)?.tokenizer ?? 'none')
     : 'none'
@@ -81,8 +100,8 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
   if (db.useTokenizerCaching) {
     cacheKey = getHash(
       data,
-      db.aiModel,
-      db.customTokenizer,
+      aiModel,
+      customTokenizer,
       db.currentPluginProvider,
       db.googleClaudeTokenizing,
       modelInfo,
@@ -96,8 +115,8 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
 
   let result: number[] | Uint32Array | Int32Array
 
-  if (db.aiModel === 'openrouter' || db.aiModel === 'reverse_proxy') {
-    switch (db.customTokenizer) {
+  if (aiModel === 'openrouter' || aiModel === 'reverse_proxy') {
+    switch (customTokenizer) {
       case 'cl100k_base':
         result = await tikJS(data, 'cl100k_base')
         break
@@ -144,7 +163,7 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
         result = await tikJS(data, 'o200k_base')
         break
     }
-  } else if (db.aiModel === 'custom' && pluginTokenizer) {
+  } else if (aiModel === 'custom' && pluginTokenizer) {
     switch (pluginTokenizer) {
       case 'mistral':
         result = await tokenizeWebTokenizers(data, 'mistral')
@@ -216,7 +235,7 @@ export async function encode(data: string): Promise<number[] | Uint32Array | Int
     } else if (modelInfo.tokenizer === LLMTokenizer.tiktokenO200Base) {
       result = await tikJS(data, 'o200k_base')
     } else if (modelInfo.tokenizer === LLMTokenizer.GoogleCloud && db.googleClaudeTokenizing) {
-      result = await tokenizeGoogleCloud(data)
+      result = await tokenizeGoogleCloud(data, profile)
     } else if (modelInfo.tokenizer === LLMTokenizer.Gemma || modelInfo.tokenizer === LLMTokenizer.GoogleCloud) {
       result = await gemmaTokenize(data)
     } else if (modelInfo.tokenizer === LLMTokenizer.DeepSeek) {
@@ -266,10 +285,9 @@ function getGoogleCloudTokenizedCacheKey(text: string, aiModel: string, internal
   return JSON.stringify(['googleCloud', aiModel, internalID, text])
 }
 
-async function tokenizeGoogleCloud(text: string) {
-  const db = getDatabase()
-  const model = getModelInfo(db.aiModel)
-  const cacheKey = getGoogleCloudTokenizedCacheKey(text, db.aiModel, model.internalID)
+async function tokenizeGoogleCloud(text: string, profile: ResolvedModelProfile) {
+  const model = profile.modelInfo
+  const cacheKey = getGoogleCloudTokenizedCacheKey(text, profile.modelId, model.internalID)
 
   const cachedCount = googleCloudTokenizedCache.get(cacheKey)
   if (cachedCount !== undefined) {
@@ -280,7 +298,7 @@ async function tokenizeGoogleCloud(text: string) {
   let count: number
   try {
     const result = await requestProviderOperation<{ totalTokens?: unknown }>('google.count-tokens', {
-      credential: providerOperationCredential(db.google?.accessToken),
+      credential: providerOperationCredential(profile.providerOptions.apiKey),
       input: { modelId: model.internalID, text },
     })
     if (
@@ -332,12 +350,13 @@ async function tikJS(text: string, model = 'cl100k_base') {
 
 async function geminiTokenizer(text: string) {
   const db = getDatabase()
+  const profile = resolveMainTokenizerProfile(db)
   const fetchResult = await globalFetch(
-    `https://generativelanguage.googleapis.com/v1beta/${db.aiModel}:countTextTokens`,
+    `https://generativelanguage.googleapis.com/v1beta/${profile.modelId}:countTextTokens`,
     {
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${db.google.accessToken}`,
+        authorization: `Bearer ${profile.providerOptions.apiKey ?? ''}`,
       },
       body: JSON.stringify({
         prompt: {
@@ -451,10 +470,19 @@ export async function tokenizeAccurate(data: string, consistantChar?: boolean) {
 export class ChatTokenizer {
   private chatAdditionalTokens: number
   private useName: 'name' | 'noName'
+  private profile?: ResolvedModelProfile
+  private tokenizerSelection?: string
 
-  constructor(chatAdditionalTokens: number, useName: 'name' | 'noName') {
+  constructor(
+    chatAdditionalTokens: number,
+    useName: 'name' | 'noName',
+    profile?: ResolvedModelProfile,
+    tokenizerSelection?: string,
+  ) {
     this.chatAdditionalTokens = chatAdditionalTokens
     this.useName = useName
+    this.profile = profile
+    this.tokenizerSelection = tokenizerSelection
   }
   async tokenizeChat(
     data: OpenAIChat,
@@ -462,9 +490,9 @@ export class ChatTokenizer {
       countThoughts?: boolean
     } = {},
   ) {
-    let encoded = (await encode(data.content)).length + this.chatAdditionalTokens
+    let encoded = (await encode(data.content, this.profile, this.tokenizerSelection)).length + this.chatAdditionalTokens
     if (data.name && this.useName === 'name') {
-      encoded += (await encode(data.name)).length + 1
+      encoded += (await encode(data.name, this.profile, this.tokenizerSelection)).length + 1
     }
     if (data.multimodals && data.multimodals.length > 0) {
       for (const multimodal of data.multimodals) {
@@ -473,7 +501,7 @@ export class ChatTokenizer {
     }
     if (data.thoughts && data.thoughts.length > 0 && args.countThoughts) {
       for (const thought of data.thoughts) {
-        encoded += (await encode(thought)).length + 1
+        encoded += (await encode(thought, this.profile, this.tokenizerSelection)).length + 1
       }
     }
     return encoded

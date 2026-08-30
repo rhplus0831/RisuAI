@@ -567,6 +567,28 @@ export function resolveModelProfileByProfileId({
   })
 }
 
+/**
+ * Resolve the tokenizer identity for one already-selected model profile.
+ * Profile runtime configuration is authoritative, followed by provider-local
+ * custom-API configuration and then global runtime defaults. Legacy profiles
+ * retain their existing flat/runtime fallback through `runtimeOptions`.
+ */
+export function resolveModelProfileTokenizerSelection(database: Database, profile: ResolvedModelProfile): string {
+  if (profile.source.kind === 'durable-profile') {
+    const profileRecord = findDurableModelProfile(database.modelProfiles, profile.source.profileId ?? '')
+    const profileRuntimeTokenizer = profileRecord?.runtimeOptions?.customTokenizer?.trim()
+    if (profileRuntimeTokenizer) return profileRuntimeTokenizer
+
+    const providerTokenizer = profileRecord?.providerOptions?.customApi?.tokenizer
+    if (providerTokenizer !== undefined) return String(providerTokenizer)
+
+    const defaultRuntimeTokenizer = normalizeModelRuntimeDefaults(database.modelRuntimeDefaults).customTokenizer?.trim()
+    if (defaultRuntimeTokenizer) return defaultRuntimeTokenizer
+  }
+
+  return profile.runtimeOptions.customTokenizer?.trim() || tokenizerName(profile.modelInfo.tokenizer) || 'tik'
+}
+
 export function modelProfileGenerationBlockReason(profile: ResolvedModelProfile): string | null {
   if (profile.source.kind !== 'durable-profile') return null
   if (profile.status.bucket !== 'incomplete' && profile.status.bucket !== 'unsupported') return null

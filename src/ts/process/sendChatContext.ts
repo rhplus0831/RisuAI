@@ -9,7 +9,7 @@ import {
   type character,
 } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
-import { ChatTokenizer } from '../tokenizer'
+import { ChatTokenizer, resolveMainTokenizerProfile } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
 import {
   dispatchCharacterOwnedDurableBatch,
@@ -24,6 +24,7 @@ import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholder
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { captureChatBodyProjectionEpoch } from '../server/resourceState.svelte'
 import { getModuleToggles } from './modules'
+import { resolveModelProfileTokenizerSelection } from '../model/modelProfileResolver'
 
 export interface SendChatContextResult {
   selectedChar: number
@@ -291,17 +292,25 @@ export function setupSendChatContext(args: {
   const selectedChat = resolveSendChatIndex(nowChatroom, target)
 
   const promptInfo = createInitialPromptInfo(serverBacked, target)
+  const database = getDatabase()
+  const mainProfile = resolveMainTokenizerProfile(database)
+  const mainModelId = mainProfile.modelId
 
   let caculatedChatTokens = 0
-  if (getDatabase().aiModel.startsWith('gpt')) {
+  if (mainModelId.startsWith('gpt')) {
     caculatedChatTokens += 5
   } else {
     caculatedChatTokens += 3
   }
 
   const chatAdditonalTokens = argChatAdditonalTokens ?? caculatedChatTokens
-  const tokenizer = new ChatTokenizer(chatAdditonalTokens, getDatabase().aiModel.startsWith('gpt') ? 'noName' : 'name')
-  const maxContextTokens = getDatabase().maxContext
+  const tokenizer = new ChatTokenizer(
+    chatAdditonalTokens,
+    mainModelId.startsWith('gpt') ? 'noName' : 'name',
+    mainProfile,
+    resolveModelProfileTokenizerSelection(database, mainProfile),
+  )
+  const maxContextTokens = mainProfile.runtimeOptions.maxContext ?? database.maxContext
 
   return {
     selectedChar,

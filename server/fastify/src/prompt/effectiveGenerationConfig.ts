@@ -15,9 +15,9 @@ import {
 import {
   modelProfileGenerationBlockReason,
   resolveModelProfile,
+  resolveModelProfileTokenizerSelection,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
-import type { ModelProfileRecord } from '../../../../src/ts/model/modelProfileRecords.js'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '../../../../src/ts/promptInfo.js'
 import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
@@ -177,7 +177,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   // reapply them after profile runtime defaults/profile-local options.
   applyPromptPresetModelOverrides(effectiveDatabase as unknown as JsonRecord, effectivePromptPreset)
   if (profile.source.kind === 'durable-profile') {
-    effectiveDatabase.customTokenizer = durableProfileTokenizerSelection(effectiveDatabase, profile)
+    effectiveDatabase.customTokenizer = resolveModelProfileTokenizerSelection(effectiveDatabase, profile)
   }
   const tokenizerBlockReason = serverTokenizerUnsupportedReason(effectiveDatabase)
   if (tokenizerBlockReason) {
@@ -196,19 +196,6 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     currentChat: structuredClone(effectiveStoredChat) as Chat,
     promptInfo,
   }
-}
-
-function durableProfileTokenizerSelection(database: Database, profile: ResolvedModelProfile): string {
-  const profileRecord = ((database.modelProfiles ?? []) as ModelProfileRecord[]).find(
-    (candidate) => candidate.id === profile.source.profileId,
-  )
-  const profileRuntimeTokenizer = profileRecord?.runtimeOptions?.customTokenizer?.trim()
-  if (profileRuntimeTokenizer) return profileRuntimeTokenizer
-
-  const providerTokenizer = profileRecord?.providerOptions?.customApi?.tokenizer
-  if (providerTokenizer !== undefined) return String(providerTokenizer)
-
-  return database.modelRuntimeDefaults?.customTokenizer?.trim() || 'tik'
 }
 
 export function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {

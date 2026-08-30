@@ -718,6 +718,31 @@ describe('setupSendChatContext - tokenizer + maxContextTokens', () => {
     })
     expect(ctx.tokenizer).toBeDefined()
   })
+
+  it('uses the selected durable model profile for tokenizer shape and context budget', () => {
+    seedDb({
+      aiModel: 'gpt-4o',
+      maxContext: 4000,
+      modelProfiles: [
+        {
+          id: 'durable-main',
+          name: 'Durable Main',
+          modelId: 'claude-sonnet-4-6',
+          runtimeOptions: { maxContext: 24000 },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'durable-main' } },
+    } as Partial<Database>)
+
+    const ctx = setupSendChatContext({ chatProcessIndex: -1 })
+
+    expect(ctx.maxContextTokens).toBe(24000)
+    expect(ctx.tokenizer).toMatchObject({
+      chatAdditionalTokens: 3,
+      useName: 'name',
+      profile: { modelId: 'claude-sonnet-4-6' },
+    })
+  })
 })
 
 describe('setupSendChatContext - selectedChar / selectedChat', () => {
