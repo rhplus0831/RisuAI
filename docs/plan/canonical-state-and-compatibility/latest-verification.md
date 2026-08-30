@@ -38,9 +38,9 @@ Date: 2026-08-30
   lineage coverage passed 7 tests.
 - `pnpm check:server` passed protocol, architecture inventory, client
   declarations, Fastify, and browser-smoke typechecks.
-- `pnpm test:affected` passed 2 frontend files/30 tests, 113 server files/2,494
+- Historical `pnpm test:affected` (now retired) passed 2 frontend files/30 tests, 113 server files/2,494
   tests plus one skip, and the current 16-cell compatibility harness.
-- `pnpm test:server` passed the complete 179-file server lane with 3,655 tests
+- Historical `pnpm test:server` (now retired) passed the complete 179-file server lane with 3,655 tests
   plus one skip.
 - `pnpm test:watch:status`, focused Prettier, and `git diff --check` passed.
 - `git diff --check` — passed.

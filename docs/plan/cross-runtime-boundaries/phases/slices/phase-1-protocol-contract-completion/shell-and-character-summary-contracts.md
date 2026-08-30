@@ -35,7 +35,7 @@ subpaths, then migrate both runtimes without changing wire behavior.
 - Focused protocol validator and browser/server parity tests.
 - `pnpm check:protocol`
 - `pnpm check:server`
-- `pnpm test:affected`
+- User/CI aggregate evidence for the tested candidate.
 - Owning resource-read/browser resource tests.
 - Prettier and `git diff --check`.
 

@@ -39,25 +39,13 @@ current commands and behavior stay authoritative here.
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:server`                | Check protocol types, emit client-library declarations, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting server code.        |
-| `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane, including UI audit probes but excluding explicit performance gates.                                |
-| `pnpm test:quick`, `pnpm test:affected` | Run safe changed test files directly or use Vitest dependency selection for changed source files; defaults to the uncommitted diff against `HEAD` and never launches `test:all`. |
-| `pnpm test:topology`               | Validate actual frontend default/gate/UI-excluded and server Vitest discovery against every tracked test and its owning project.                                             |
-| `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit performance gates.                                                                              |
-| `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit performance gates.                                                                                                       |
-| `pnpm test:gates`                  | Run the UI-audit and explicit performance gates together; UI-audit coverage is also present in `test:frontend`.                                                              |
-| `pnpm test:gates:audit`            | Run only the UI-audit tests for focused debugging; they are already part of `test:frontend`.                                                                                  |
-| `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                                                                                        |
-| `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                                                                                              |
-| `pnpm test:server:realm-scale`     | Run the isolated 7,000-asset Realm import capacity case with one worker.                                                                                                      |
+| `pnpm test -- <file>`              | Agent-facing focused runner. Requires exactly one repository test or source file, routes it to the owning runtime, and uses related-test discovery for source files.          |
 | `pnpm validate:compat-registers`   | Validate the compatibility inventory/findings schemas, cross-register references, and pinned upstream commit coverage.                                                       |
-| `pnpm test:compat-current`         | Check the 16 current-stack golden matrix cells and two cluster regressions without requiring the external baseline worktree.                                                  |
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
 | `pnpm prepare:compat-baseline`     | Create or verify the exact detached compatibility-baseline worktree and install its frozen dependencies.                                                                       |
-| `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                                                                                       |
-| `pnpm test:all`                    | Run format, Svelte, strict server/browser-smoke TypeScript, frontend tests, compatibility register/current checks, isolated performance gates, the UI coverage gate, server tests, and browser smoke with bounded concurrency; preserve every failing lane. |
+| `pnpm test:all`                    | User-owned full local aggregate for format, typechecks, topology, frontend/server tests, compatibility, coverage, scale, performance, and browser smoke.                       |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write text/JSON reports to `coverage/ui-map`; use `coverage:ui-map:html` for an on-demand HTML report.                                   |
-| `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                                                                                   |
-| `pnpm smoke:fastify-browser`       | Build the smoke client without production sourcemaps, then run Playwright Fastify browser smoke.                                                                             |
+| `pnpm smoke:fastify-browser`       | User/CI command that builds the smoke client without production sourcemaps, then runs the full Playwright Fastify browser smoke suite.                                       |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output.               |
 | `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames.                                                     |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                                                                                         |
@@ -71,49 +59,39 @@ There is no ESLint config or `lint` script.
 
 | Area                        | Command/config                                                                          | Environment | Locations                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest*.config.ts`                                | Node + Svelte/Node + `happy-dom` | Root suite outside `server/**`, including `src/**`, `util/**/*.test.ts`, and `src/lib/_audit`, minus performance gates. |
-| Test topology              | `pnpm test:topology`, `vitest*.config.ts`, `server/fastify/vitest.config.ts`             | Static Vitest discovery | Every tracked frontend/server test exactly once in its configured project, including gate and UI-map exclusion modes. |
-| Specialized frontend gates  | `pnpm test:gates`, `vitest.config.ts`                                                   | Node + `happy-dom` | Exact performance owners plus `src/lib/_audit/**/*.test.ts`.                                                        |
-| Focused UI audit tests      | `pnpm test:gates:audit`, `vitest.config.ts`                                             | Node + `happy-dom` | `src/lib/_audit/**/*.test.ts`; also included in the ordinary frontend lane.                                         |
-| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                                            | Node + Svelte/Node + `happy-dom` | Root suite outside `server/**`, including explicit performance gates.                                             |
+| Browser/client/domain tests | `pnpm test -- <file>`, `vitest*.config.ts`                                              | Node + Svelte/Node + `happy-dom` | One exact test, or tests related to one source file, outside the server tree.                                        |
+| Test topology              | `util/test-topology.ts`, `vitest*.config.ts`, `server/fastify/vitest.config.ts`           | Static Vitest discovery | User/CI full-suite owner; validates every tracked test exactly once in its configured project.                       |
+| Specialized frontend gates  | `vitest.performance-tests.ts`, `vitest.config.ts`                                       | Node + `happy-dom` | Exact performance owners; isolated in `test:all`/CI, or individually selectable through the focused runner.          |
+| Focused UI audit tests      | `pnpm test -- <audit-test-file>`, `vitest.config.ts`                                    | Node + `happy-dom` | One exact `src/lib/_audit/**/*.test.ts` file; the full set remains in the user/CI frontend lane.                      |
+| Full frontend tests         | `pnpm test:all`, CI, `vitest.config.ts`                                                 | Node + Svelte/Node + `happy-dom` | User/CI owner for the root suite and explicit performance gates.                                                     |
 | Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                                            | Node + Svelte/Node + `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                 |
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                                              | Node + `happy-dom` | Six focused tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`.     |
-| Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts`                | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
-| Realm import scale gate     | `pnpm test:server:realm-scale`, `server/fastify/vitest.config.ts`                       | Node        | The direct-only 7,000-display-asset Realm/CharX import case; isolated in local aggregate and CI.                           |
-| Compatibility harness      | `pnpm test:compat-current`, `pnpm test:compat-harness`, `test/compat-harness/*.vitest.config.ts` | Node | Current-stack/cluster goldens run in `test:all`; the full pinned baseline differential requires its prepared worktree and remains separate. |
+| Fastify/server tests        | `pnpm test -- <file>`, `server/fastify/vitest.config.ts`                                | Node        | One exact `server/fastify/__tests__/**/*.test.ts` file, or tests related to one server source file.                          |
+| Realm import scale gate     | `pnpm test:all`, CI, `server/fastify/vitest.config.ts`                                  | Node        | The direct-only 7,000-display-asset Realm/CharX import case; isolated in the user/CI aggregate.                              |
+| Compatibility harness      | `pnpm test:all`, `pnpm test:compat-harness`, `test/compat-harness/*.vitest.config.ts`   | Node        | User/CI current goldens plus the separately governed full pinned differential.                                               |
 | Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`                              | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
-| Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                    |
+| Browser smoke               | `pnpm test -- <spec-file>`; full suite via user/CI                                     | Chromium    | One exact spec through the focused runner, or all specs through the user/CI aggregate.                                      |
 
-Pick the smallest command that covers the changed area. `pnpm test:affected`
-uses exact paths when only tests changed and dependency-aware `--changed`
-selection when source changed. `--base <git-ref>` selects a branch diff,
-`--dry-run` prints the plan, and `--include-smoke` opts into relevant Playwright
-work. Deleted tests and source still widen to their complete owning lanes when
-dependency selection cannot safely recover removed edges. Test-runner changes
-run the fast topology contract plus any focused setup/manifest contract; shared
-TypeScript configuration runs only its owning typecheck, and smoke execution
-remains opt-in. Build, dependency, test-runner, shared typecheck,
-aggregate-runner, affected-runner, and CI configuration paths produce
-`TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED` with the explicit final
-command `pnpm test:all`. Build, dependency, aggregate-runner, affected-runner,
-and CI paths are excluded from targeted selection entirely; runner and shared
-typecheck paths retain the safe focused feedback above. The affected command
-exits successfully when that feedback passes, but that exit is not final
-verification. A newly introduced root runner/config file without an explicit
-owner fails closed to final verification. A
-protocol-package manifest change stays targeted only when it adds explicit
-subpath exports to existing local `src/*.ts` files without changing or removing
-an existing export or another package field; every other manifest edit requires
-the explicit final aggregate. Batch related additive exports and run the
-aggregate once at the integration boundary. On a fresh machine, run
+The agent-facing runner accepts exactly one existing repository file and rejects
+directories, globs, runner flags, external paths, and test-runner configuration.
+Exact frontend and server tests use their configured runtime. Frontend/server
+source uses Vitest related-test discovery; shared protocol/core source queries
+both projects. Exact performance tests retain one-worker isolation. Exact
+browser-smoke specs build the smoke client and run only the selected spec.
+Compatibility-isolated tests remain user-owned.
+
+Agents use this command only for a concrete diagnostic need. They do not run
+the full aggregate, broad component lanes, coverage, compatibility, smoke-suite,
+or equivalent direct Vitest/Playwright commands. The user and CI schedule and
+review full-suite results. On a fresh machine, the user/CI smoke owner runs
 `pnpm exec playwright install --with-deps chromium` before browser smoke.
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
 provider, job, asset/import, and platform/route coverage.
 
-`pnpm validate:compat-registers` and `pnpm test:compat-current` are ordinary
-quality owners. The current harness validates current-stack and cluster goldens
-without external prerequisites. The full compatibility harness additionally
+Register validation and the current compatibility harness are ordinary
+`test:all`/CI owners. The current harness validates current-stack and cluster
+goldens without external prerequisites. The full compatibility harness additionally
 requires the pinned baseline worktree and its dependencies prepared by
 `pnpm prepare:compat-baseline`; it remains outside `pnpm test:all` because that
 external worktree is not a normal checkout prerequisite. Tests that read the
@@ -159,14 +137,11 @@ fixture provenance for 14 days. If a review outlives that window, preserve the
 relevant diff and rationale in the tracked change rather than relying on an
 expiring workflow artifact.
 
-Affected selection and aggregate ownership are deliberately different.
-`pnpm test:affected` routes compatibility register JSON or validator changes to
-register validation, compatibility production changes to the current harness,
-and harness/baseline infrastructure changes to both current and full pinned
-harnesses. `pnpm test:all` owns register validation and current compatibility,
-but not the full pinned differential. A targeted or aggregate pass therefore
-does not replace a full differential when the harness/baseline itself changes
-or when compatibility risk calls for baseline comparison.
+`pnpm test:all` owns register validation and current compatibility, but not the
+full pinned differential. A focused or aggregate pass therefore does not replace
+a full differential when the harness/baseline itself changes or when
+compatibility risk calls for baseline comparison. The user owns that decision
+and reviews the scheduled/manual differential.
 
 `pnpm test:all` runs up to two ordinary lanes concurrently by default and
 preserves any failure in the final aggregate result. Set
@@ -176,7 +151,7 @@ before the ordinary frontend lane starts. Browser smoke runs outside that pool a
 waits for `check:server` because declaration checking and the smoke build both
 use `dist/`; its stateful tests remain serial within each spec while two locally
 isolated spec files may run concurrently. The focused UI coverage lane waits
-for `test:frontend` and owns its six sentinel files during `test:all`, so the
+for the ordinary frontend lane and owns its six sentinel files during `test:all`, so the
 ordinary frontend subprocess does not execute them twice. The render/clone
 performance gates run with one Vitest worker and no file parallelism. The
 Fastify/server lane also runs outside the concurrent pool because it contains
@@ -189,14 +164,11 @@ start/finish offsets, dependency metadata, isolation flag, and exit code. This
 is observational only and is intended to expose the real critical path before
 changing concurrency or isolation.
 
-Use focused owning tests during an edit batch, then run `test:affected` once at
-the coherent batch boundary unless the change requires one complete owning lane.
-Record any final-verification marker and invoke `test:all` directly only for the
-coherent final candidate. A commit alone is not a verification boundary. Do not
-stack `check:protocol`, `check:server`, `check`, component lanes, and `test:all`
-as independent handoff steps: `check:server` already owns the protocol check,
-while `test:all` owns both check families and every local aggregate lane. Repeat
-a component only when it is needed to diagnose a failure.
+Agents may run one focused target when it answers a concrete question; they do
+not run broader verification at a batch, commit, or handoff boundary. The user
+and CI own `test:all` execution and review. `check:server` already owns the
+protocol check, while `test:all` owns both check families and every local
+aggregate lane.
 
 Config details: `vitest.config.ts` composes three isolated thread-pool projects,
 and `vitest.frontend-routing.ts` owns their disjoint filename/registration
@@ -211,13 +183,13 @@ fallback. The Svelte+Node custom environment
 delegates to Vitest's Node setup while selecting Vite's client transform so
 `$effect` retains client semantics.
 
-`pnpm test:topology` asks Vitest for static file discovery in four modes:
+The user/CI topology utility (`pnpm exec tsx util/test-topology.ts`) asks Vitest
+for static file discovery in four modes:
 ordinary frontend, explicit performance gates, UI-map exclusion, and Fastify
 server. It compares those results with tracked `*.test.ts` files and the
 frontend routing function, rejecting missing, duplicate, unexpected, or
-misrouted tests without executing their bodies. Runner/config changes use this
-focused contract during `test:affected`; the aggregate and CI retain final
-behavioral certification.
+misrouted tests without executing their bodies. The aggregate and CI retain
+final behavioral certification for runner/config changes.
 
 All three projects retain browser resolve conditions, the `src` alias, and
 `vitest.setup.ts` to install the shared production `safeStructuredClone` helper
@@ -235,11 +207,9 @@ explicit performance gate tests unless
 `RISU_TEST_INCLUDE_GATES=true` is set. `test:all` also sets
 `RISU_TEST_EXCLUDE_UI_MAP=true` only for its ordinary frontend subprocess; the
 following coverage lane executes those same six files once with instrumentation
-and thresholds. Standalone `test:frontend` continues to include them.
-`pnpm test:gates`, `pnpm test:gates:perf`, `pnpm test:frontend:all`, and
-`pnpm coverage:frontend` set that variable for the lanes that intentionally
-include those performance files. The audit-focused command selects its files
-directly and needs no gate environment. Server Vitest uses Node, forks, a 15s
+and thresholds. The user/CI performance and broad-coverage lanes set
+`RISU_TEST_INCLUDE_GATES=true`; an exact focused performance test does the same
+while retaining one-worker isolation. Server Vitest uses Node, forks, a 15s
 test timeout, and
 sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
 selected. Playwright smoke keeps tests within each file serial; local runs use
@@ -247,8 +217,8 @@ two file workers, while CI stays at one worker. It retains Chromium traces on
 failure and rejects focused tests when CI is truthy.
 The frontend and server Vitest configs set `allowOnly: false`. Directly selecting
 `realmImport.test.ts` enables its otherwise skipped 7,000-asset stress case.
-`test:server:realm-scale`, `test:all`, and CI own that selection as an isolated
-single-worker gate.
+`test:all` and CI own that selection as an isolated single-worker gate. A user
+may also select the exact file through the focused runner.
 
 `pnpm coverage:frontend` and `pnpm coverage:backend` are broad coverage views for
 reporting and enforce no thresholds. `pnpm coverage:all` runs both sides and still executes backend
@@ -266,8 +236,8 @@ results.
 
 Browser smoke also owns tracked desktop/mobile screenshot baselines under
 `server/fastify/browser-smoke/*-snapshots/`. The core-chat and blocking-alert
-assertions are part of `pnpm test:smoke`, so update those PNGs only for an
-intentional visible change.
+assertions are part of the user/CI browser-smoke suite, so update those PNGs only
+for an intentional visible change.
 
 Smoke mode keeps the built SPA, resource/command protocol, Fastify, SQLite, and
 Chromium journeys real, but makes selected surroundings deterministic. It uses
@@ -324,9 +294,9 @@ watchers, router selection, array create/delete/reorder flows, `$derived`,
 
 The mounted audit probe `src/lib/_audit/optimisticTogglePaint.dom.test.ts`
 asserts optimistic and grouped toggle rendering before using stores as
-classification aids. It runs in the default
-`pnpm test:frontend` lane and `pnpm test:all`; `pnpm test:gates:audit` selects
-that file for focused debugging. Use the same DOM-first pattern in
+classification aids. It runs in the ordinary frontend lane and `pnpm test:all`;
+`pnpm test -- src/lib/_audit/optimisticTogglePaint.dom.test.ts` selects that file
+for focused debugging. Use the same DOM-first pattern in
 feature-owned component tests; reserve a new audit probe for a cross-cutting
 invariant that benefits from a dedicated audit location.
 

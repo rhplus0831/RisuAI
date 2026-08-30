@@ -72,7 +72,7 @@ import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } f
  *    generic `Error` whose message contains "timeout" (the `LuaTimeoutError` class is
  *    lost across the Lua→JS error boundary), so we detect it by message.
  * 2. **`json.lua` is read from disk at boot**, path resolved relative to this module
- *    (`import.meta.url`) so it is deterministic under `pnpm api:test` regardless of
+ *    (`import.meta.url`) so it is deterministic under focused server Vitest regardless of
  *    cwd. Mounted once into a module-singleton {@link LuaFactory}.
  * 3. **Per-call engine isolation, pre-warmed.** The factory (wasm +
  *    mounted json.lua) is a singleton; each {@link runServerLua} call still gets an
@@ -150,7 +150,7 @@ let luaFactoryPromise: Promise<LuaFactory> | null = null
 
 /**
  * Resolve `public/lua/json.lua` from this module's location so the path holds
- * under any cwd (`pnpm api:test` runs with `root: server/fastify`). This file is
+ * under any cwd (server Vitest runs with `root: server/fastify`). This file is
  * at `server/fastify/src/prompt/`, so the repo root is four levels up.
  */
 function resolveJsonLuaPath(): string {

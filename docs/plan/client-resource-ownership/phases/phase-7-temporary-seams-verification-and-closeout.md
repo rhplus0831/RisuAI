@@ -42,6 +42,6 @@ activation remains a separate measured decision.
 
 ## Validation
 
-The portfolio verification ladder, including complete frontend/server owning
+User/CI-owned portfolio closeout evidence, including complete frontend/server
 lanes, Fastify browser smoke, performance/payload reports, both typechecks,
 `pnpm test:all`, Prettier, and `git diff --check`.

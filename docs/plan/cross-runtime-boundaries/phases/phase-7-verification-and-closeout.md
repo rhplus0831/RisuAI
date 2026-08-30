@@ -30,6 +30,6 @@ exceptions, and prepare the intact workstream for archival.
 
 ## Validation
 
-The shared verification ladder from the portfolio roadmap, including
+User/CI-owned evidence from the shared verification ladder, including
 `pnpm test:all`, browser smoke, both typecheck families, Prettier, and
 `git diff --check`, with exact counts and caveats recorded.

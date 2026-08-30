@@ -38,7 +38,7 @@ Date: 2026-08-30
 - `pnpm exec tsx util/architecture-inventory.ts` passed the 335-edge boundary,
   19-surface/38-probe compatibility, and 9,917-reference/325-group client
   ownership inventories.
-- `pnpm test:affected` passed 567 frontend files with 7,064 tests, 179 server
+- Historical `pnpm test:affected` (now retired) passed 567 frontend files with 7,064 tests, 179 server
   files with 3,655 passing tests and one
   intentional skip, and 18 current compatibility tests covering 16 cells and
   the healthy cluster-10 regression gate.

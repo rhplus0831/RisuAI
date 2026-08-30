@@ -44,8 +44,8 @@ No production resource consumer or bridge moves belong in this slice.
 ## Validation
 
 Focused inventory/gate tests, existing bridge/write-guard/resource structural
-tests, `pnpm test:affected`, typechecks if orchestration changes, formatting, and
-`git diff --check`.
+tests, user/CI aggregate evidence, typechecks if orchestration changes,
+formatting, and `git diff --check`.
 
 ## Done When
 

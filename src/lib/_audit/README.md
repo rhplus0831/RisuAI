@@ -3,20 +3,13 @@
 This directory contains DOM-level audit acceptance probes. They run in the
 default frontend lane so they share its Vitest startup and transform work.
 
-Run them with:
+Agents may select one exact audit probe with:
 
 ```sh
-pnpm test:gates:audit
+pnpm test -- src/lib/_audit/<owner>.test.ts
 ```
 
-They are also included in:
-
-```sh
-pnpm test:gates
-pnpm test:frontend
-pnpm test:frontend:all
-pnpm test:all
-```
+The user/CI `pnpm test:all` aggregate includes the complete audit set.
 
 Keep ordinary component regressions next to their components. Use this directory
 only for cross-cutting audit acceptance probes that benefit from a dedicated

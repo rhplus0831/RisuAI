@@ -54,7 +54,7 @@ application model, test fixture, server-only behavior, or accidental dependency.
 - Focused utility and gate tests.
 - `pnpm check:protocol`
 - `pnpm check:server`
-- `pnpm test:affected`
+- User/CI aggregate evidence for the tested candidate.
 - `pnpm format:check`
 - `git diff --check`
 

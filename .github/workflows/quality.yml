@@ -43,7 +43,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:topology
+      - run: pnpm exec tsx util/test-topology.ts
       - run: pnpm check
 
   check-server:
@@ -82,7 +82,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:frontend:run
+      - run: pnpm exec vitest run
 
   initial-preload:
     runs-on: ubuntu-latest
@@ -110,6 +110,8 @@ jobs:
   gates-perf:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      RISU_TEST_INCLUDE_GATES: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -120,7 +122,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:gates:perf --no-file-parallelism --maxWorkers=1
+      - run: pnpm exec vitest run src/ts/__tests__/renderCostHarness.test.ts src/ts/__tests__/sendCloneCountProbe.test.ts --no-file-parallelism --maxWorkers=1
 
   ui-coverage:
     runs-on: ubuntu-latest
@@ -156,7 +158,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:server
+      - run: pnpm exec vitest run --config server/fastify/vitest.config.ts
 
   realm-scale:
     runs-on: ubuntu-latest
@@ -171,7 +173,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:server:realm-scale
+      - run: pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/realmImport.test.ts -t 'imports Realm charx packages with thousands of display assets' --no-file-parallelism --maxWorkers=1
 
   compat-registers:
     runs-on: ubuntu-latest
@@ -205,7 +207,7 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test:compat-current
+      - run: pnpm exec tsx test/compat-harness/run.ts --current-only
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -228,7 +230,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm test:smoke
+      - run: pnpm smoke:fastify-browser
       - uses: actions/upload-artifact@v4
         if: always()
         with:

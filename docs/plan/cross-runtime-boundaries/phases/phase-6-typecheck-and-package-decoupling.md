@@ -39,6 +39,6 @@ failure.
 
 ## Validation
 
-Focused check-server tests, clean-worktree protocol/Fastify/browser-smoke
-typechecks, affected tests, `pnpm test:all` because build/configuration changes,
-formatting, generated-path docs, and diff checks.
+Focused single-file feedback when needed; user/CI-owned clean-worktree
+protocol/Fastify/browser-smoke typechecks and `pnpm test:all` because this phase
+changes build/configuration; formatting, generated-path docs, and diff checks.

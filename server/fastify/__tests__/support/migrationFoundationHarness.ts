@@ -38,7 +38,7 @@ function fixtureCommand(fixturePath: string, lane: CompatibilityFixtureLane): st
     return `pnpm exec vitest run --config server/fastify/vitest.config.ts ${fixturePath}`
   }
   if (lane === 'frontend-vitest') return `pnpm exec vitest run ${fixturePath}`
-  return 'pnpm test:compat:current'
+  return 'pnpm exec tsx test/compat-harness/run.ts --current-only'
 }
 
 export function loadCompatibilityMigrationFixtureAdapters(

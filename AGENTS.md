@@ -44,27 +44,19 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Test Workflow
 
-- During implementation, run the owning test file when focused feedback is
-  useful. At a coherent integration boundary, run `pnpm test:affected` once for
-  the current uncommitted diff or pass `--base <git-ref>` for a branch diff. Use
-  `--dry-run` to inspect the selected lanes and `--include-smoke` when
-  browser-smoke files changed. A commit is a checkpoint, not automatically a
-  verification boundary. `test:affected` never launches `test:all`; when it
-  prints `TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED`, targeted feedback
-  may have passed but final certification remains outstanding. Record that
-  requirement instead of starting the aggregate during implementation.
-  Additive explicit `packages/protocol` exports stay on targeted protocol and
-  dependency-aware lanes; batch related exports and run the aggregate once at
-  the integration boundary.
-- Run the complete owning frontend or server lane before handoff when the change
-  is broader than one focused contract.
-- Invoke `pnpm test:all` directly only for final pre-merge, CI, or an explicit
-  build/configuration verification boundary; run it once per coherent final
-  candidate, not after every edit or small contract slice. It already owns
-  `check:server` (including `check:protocol`), `pnpm check`, formatting,
-  frontend/server tests, smoke, compatibility, coverage, scale, and performance
-  lanes, so do not run those commands separately immediately before the
-  aggregate unless diagnosing a failure.
+- Agents may run only `pnpm test -- <test-or-source-file>`, and only when that
+  focused run is necessary to answer a concrete implementation question,
+  reproduce a failure, or check changed behavior. The argument must be exactly
+  one repository file. Test files run directly in their owning runtime; source
+  files select only related tests.
+- Agents must not run `pnpm test:all`, compatibility harnesses, coverage, broad
+  frontend/server lanes, browser-smoke suites, any other package script that
+  executes tests, or equivalent direct Vitest/Playwright commands. Do not turn
+  testing into a routine edit, commit, integration-boundary, or handoff step.
+- The user and CI own periodic full-suite execution and result review. At
+  handoff, report the focused `pnpm test -- <file>` command that ran, or state
+  that no tests were run. Do not start broader verification on the user's
+  behalf.
 
 # Language File
 

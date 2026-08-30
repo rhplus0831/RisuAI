@@ -37,8 +37,9 @@ state is rewritten.
 
 - Focused migration rollback/retry/reopen and fixture-harness tests.
 - Existing DB, legacy import, RisuSave, backup/restore, and lineage owners.
-- Complete server lane because the migration boundary is cross-domain.
-- `pnpm check:server`, `pnpm test:affected`, Prettier, and `git diff --check`.
+- User/CI complete server and aggregate evidence because the migration boundary
+  is cross-domain.
+- `pnpm check:server`, Prettier, and `git diff --check`.
 
 ## Done When
 

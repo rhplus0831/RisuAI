@@ -429,16 +429,12 @@ precedence stays in the focused guides linked above.
 
 ## Verification Pointers
 
-Use the smallest command that covers the touched area. The lane semantics and
-full matrix are in
+Agents use the focused runner only when one exact test or one source file can
+answer a concrete implementation question. The user/CI-owned full matrix is in
 [Testing And Operations](../../docs/structure/testing-and-operations.md#tests-and-checks).
 
 ```sh
-pnpm check
-pnpm test
-pnpm test:gates
-pnpm coverage:ui-map
-pnpm smoke:fastify-browser
+pnpm test -- <test-or-source-file>
 ```
 
 For the client declaration, server, and browser-smoke TypeScript lane:

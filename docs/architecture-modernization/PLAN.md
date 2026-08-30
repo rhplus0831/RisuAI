@@ -680,29 +680,22 @@ Do not create Workstream 4 as active during this initial activation.
 
 ## Shared Verification Ladder
 
-Each slice runs the smallest focused tests that own its behavior. Phase closeout
-adds the complete owning lanes. Workstream closeout uses the repository's current
-test workflow and records exact commands in `latest-verification.md`.
+During implementation, an agent may run `pnpm test -- <one-test-or-source-file>`
+only when that focused result answers a concrete question. Phase and workstream
+closeout use user/CI-owned full-suite results and record the tested commit plus
+exact evidence in `latest-verification.md`.
 
 The expected ladder is:
 
-1. Architecture/import/contract gates relevant to the slice.
-2. Focused unit and integration tests for changed owners.
-3. `pnpm test:affected` once for the coherent slice; record
-   `TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED` without starting the
-   aggregate during implementation.
-4. `pnpm check` and `pnpm check:server` when their current proof is not already
-   owned by the affected or aggregate run.
-5. Complete frontend or server owning lanes for broad changes.
-6. Compatibility/current-format tests for migration and interchange changes.
-7. Fastify browser smoke for cross-layer ownership, startup, recovery, generation,
-   or handoff changes.
-8. Performance/payload/replay gates when a phase changes those contracts.
-9. Prettier, `git diff --check`, current architecture documentation, and final
-   verification record.
+1. Optional agent-focused unit or integration feedback for one exact owner.
+2. User/CI typecheck and architecture/import/contract results.
+3. User/CI complete frontend/server, compatibility, browser-smoke, and
+   performance/payload/replay results required by the phase risk.
+4. Prettier, `git diff --check`, current architecture documentation, and a final
+   verification record tied to the tested commit.
 
-`pnpm test:all` remains reserved for build/configuration changes and final
-pre-merge or workstream-closeout verification.
+Agents do not run `pnpm test:all` or the component lanes behind it. The user owns
+periodic aggregate execution, failure triage, and closeout acceptance.
 
 ## Portfolio Completion Criteria
 

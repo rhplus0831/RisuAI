@@ -4,17 +4,15 @@ This directory contains shared clone-cost helpers plus render-cost and send-path
 performance gates. They are useful regression protection, but they are heavier
 than ordinary feature tests, so the default frontend lane excludes them.
 
-Run them explicitly with:
+Agents may run one performance contract explicitly with:
 
 ```sh
-pnpm test:gates
+pnpm test -- src/ts/__tests__/renderCostHarness.test.ts
+pnpm test -- src/ts/__tests__/sendCloneCountProbe.test.ts
 ```
 
-Run the full root/browser Vitest lane, including these gates, with:
-
-```sh
-pnpm test:frontend:all
-```
+The focused runner preserves one-worker isolation. The user/CI `pnpm test:all`
+aggregate owns both contracts together.
 
 ## Ownership
 
@@ -25,6 +23,5 @@ pnpm test:frontend:all
 | `sendCloneCountProbe*.ts` | Send-path clone-count regression probe. |
 | `largeCorpusFixture.ts` | Shared large-corpus fixture used by client and server cost regressions. |
 
-Keep new performance gates here. UI audit probes belong in `src/lib/_audit`.
-Add a new path to `pnpm test:gates` only if it falls outside those directories
-or the existing util audit test.
+Keep new performance gates here and add their exact paths to
+`vitest.performance-tests.ts`. UI audit probes belong in `src/lib/_audit`.

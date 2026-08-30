@@ -54,53 +54,36 @@ effectiveness, and support manifests are frozen historical records.
 ## Running the suite
 
 The canonical command inventory and lane semantics are in
-[Testing And Operations](../structure/testing-and-operations.md#scripts). Common
-entrypoints are:
+[Testing And Operations](../structure/testing-and-operations.md#scripts).
 
 | Goal | Command |
 | ---- | ------- |
-| Current diff | `pnpm test:affected` |
-| Test discovery and ownership | `pnpm test:topology` |
-| Ordinary frontend lane | `pnpm test` |
-| Complete owning frontend/server lane | `pnpm test:frontend:all` / `pnpm test:server` |
-| Built-browser smoke | `pnpm test:smoke` |
-| Compatibility registers/current behavior | `pnpm validate:compat-registers` / `pnpm test:compat-current` |
+| Agent-focused test or related-source feedback | `pnpm test -- <one-test-or-source-file>` |
+| User-owned full local quality aggregate | `pnpm test:all` |
 | Full pinned compatibility differential | `pnpm prepare:compat-baseline && pnpm test:compat-harness` |
-| Full local quality aggregate | `pnpm test:all` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
-Use the owning test file during edits, then run `test:affected` once per coherent
-verification batch. If it prints
-`TEST_AFFECTED_STATUS=FINAL_VERIFICATION_REQUIRED`, its safe targeted feedback
-may be green but the final aggregate remains outstanding; `test:affected` never
-launches that aggregate. A commit alone is not a verification boundary. Run a
-complete owning lane when the changed scope requires it, and invoke `test:all`
-directly once for the coherent final candidate. Do not run all component checks
-and lanes immediately before `test:all`; the aggregate already owns them.
-Related additive protocol exports are intentionally batched on targeted feedback
-before the one integration-boundary aggregate.
+Agents may use only the focused command, only when it answers a concrete
+implementation question. It accepts exactly one repository file, rejects
+directories, globs, and arbitrary runner flags, runs exact tests in their owning
+runtime, and uses Vitest related-test discovery for source files. Shared
+protocol/core sources query both frontend and server projects. A selected
+browser-smoke spec performs its required build and runs only that spec.
 
-Runner/configuration changes use a fast topology contract instead of launching
-unrelated frontend, performance, and server bodies. The contract loads the
-actual frontend and server Vitest configurations, validates default/gate/UI-map
-exclusion modes, and rejects missing, duplicate, unexpected, or misrouted
-tracked tests. Shared TypeScript configuration selects only its owning
-typecheck; the final-verification marker keeps the full aggregate as the
-pre-merge authority, and unclassified root runner files fail closed to it.
+Agents do not run affected, broad lane, coverage, compatibility, smoke-suite, or
+aggregate commands at handoff. The user and CI own periodic full-suite execution
+and result review. Agent handoffs record the one focused command that ran, or
+state that no tests were run.
 
 ### Compatibility evidence ownership
 
 Compatibility register validation and the current-stack/cluster golden harness
 run in `pnpm test:all` and as required PR/`main` Quality jobs. The full pinned
 baseline differential is intentionally separate: GitHub Actions runs it every
-night at 06:00 UTC and on manual dispatch, while affected selection adds it when
-compatibility harness or baseline infrastructure changes. A production
-compatibility change selects the current harness; compatibility register JSON
-or validator changes select register validation. Treat `test:affected` as a
-fast selector and `test:all` as the current aggregate owner, not as substitutes
-for the full pinned run when baseline comparison is required. Baseline-source
-comparison tests are routed only through that full pinned lane, so ordinary
-frontend runs do not require an external worktree.
+night at 06:00 UTC and on manual dispatch. Baseline-source comparison tests are
+routed only through that full pinned lane, so focused tests do not require an
+external worktree. Agents do not launch either compatibility harness; the user
+reviews the scheduled/manual evidence.
 `pnpm prepare:compat-baseline` uses the repository sibling
 `../risu-baseline-71c476e9c` by default; `RISU_COMPAT_BASELINE_ROOT` accepts an
 absolute override for CI or another checkout layout.
@@ -165,7 +148,7 @@ retains traces on failure, and sets `forbidOnly` in CI. The normally skipped
 `realmImport.test.ts` directly. Broad frontend and backend coverage are
 report-only; only the focused UI map has thresholds.
 
-`test:all` defaults to two concurrent outer lanes; override it with
+The user-owned `test:all` command defaults to two concurrent outer lanes; override it with
 `RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
 `--dry-run`. Pass `--timings=json` to append a machine-readable lane schedule
 and timing record for critical-path analysis. It waits to build browser smoke
@@ -178,9 +161,9 @@ bounded file-level parallelism; the other isolated lanes contain load-sensitive
 checks.
 
 `server/fastify/vitest.config.ts` roots discovery at `server/fastify/` and
-includes `__tests__/**/*.test.ts`. The package aliases keep `pnpm test` on
-`test:frontend`, `pnpm api:test` on `test:server`, and `pnpm test:smoke` on
-`smoke:fastify-browser`.
+includes `__tests__/**/*.test.ts`. `pnpm test -- <file>` selects that config for
+server tests and source, while ordinary frontend files use the root three-project
+Vitest configuration.
 
 `startupCachePopulationMatrix.spec.ts` keeps small/large and cold/warm startup populations
 separate and writes `fast-bootstrap-results/startup-matrix.{json,txt}`.

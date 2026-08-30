@@ -10,7 +10,7 @@ import {
 import { excludeUiCoverageTests, uiCoverageTestFiles } from './vitest.ui-coverage-tests'
 
 export default defineProject({
-  // Affected-test discovery transforms transitive dynamic imports even when a
+  // Related-test discovery transforms transitive dynamic imports even when a
   // Node-owned test mocks them, so its dependency graph must understand Svelte.
   plugins: [svelte()],
   resolve: {

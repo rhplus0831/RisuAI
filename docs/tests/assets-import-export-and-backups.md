@@ -142,7 +142,7 @@ The files below are accounted for here; cross-indexed operation, memory, platfor
 
 ## Coverage gaps and recommendations
 
-- Keep the isolated `test:server:realm-scale` owner and its single-worker CI job aligned with Realm changes; the ordinary server lane intentionally records one skip.
+- Keep the isolated user/CI Realm-scale owner and its single-worker job aligned with Realm changes; the ordinary server lane intentionally records one skip.
 - Grow a curated corpus of historical and malformed `.risu`, `.bin`, bundle and SQLite artifacts from real bug reports. Current block/ZIP/SQLite fixtures are synthetic or current-code-derived; never substitute the missing pinned baseline or refresh goldens to manufacture independence.
 - Propagate request `AbortSignal` through post-upload archive decode, durable import application, and CharX extraction, with observable staging barriers instead of timing sleeps.
 - Define streaming/materialization policy for large ordinary and bundle exports and for the legacy browser ZIP/Realm fallbacks. Current metrics and caps protect important boundaries but do not bound every hydrated corpus or expanded browser archive.

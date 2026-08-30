@@ -2,6 +2,7 @@ import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { performanceTestFiles } from '../vitest.performance-tests.js'
 
 export interface QualityLane {
   id: string
@@ -48,13 +49,13 @@ export const qualityLanes: readonly QualityLane[] = [
   {
     id: 'test-topology',
     label: 'test topology validation',
-    args: ['test:topology'],
+    args: ['exec', 'tsx', 'util/test-topology.ts'],
     priority: 0,
   },
   {
     id: 'frontend-tests',
     label: 'frontend tests',
-    args: ['test:frontend:run'],
+    args: ['exec', 'vitest', 'run'],
     after: ['test-topology'],
     // The coverage lane below executes these six files with its thresholds.
     env: { RISU_TEST_EXCLUDE_UI_MAP: 'true' },
@@ -69,27 +70,38 @@ export const qualityLanes: readonly QualityLane[] = [
   {
     id: 'compat-current',
     label: 'current compatibility harness',
-    args: ['test:compat-current'],
+    args: ['exec', 'tsx', 'test/compat-harness/run.ts', '--current-only'],
     after: ['compat-registers'],
     isolated: true,
   },
   {
     id: 'server-tests',
     label: 'server tests',
-    args: ['test:server'],
+    args: ['exec', 'vitest', 'run', '--config', 'server/fastify/vitest.config.ts'],
     isolated: true,
   },
   {
     id: 'realm-scale',
     label: 'Realm import scale gate',
-    args: ['test:server:realm-scale'],
+    args: [
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'server/fastify/vitest.config.ts',
+      'server/fastify/__tests__/realmImport.test.ts',
+      '-t',
+      'imports Realm charx packages with thousands of display assets',
+      '--no-file-parallelism',
+      '--maxWorkers=1',
+    ],
     after: ['server-tests'],
     isolated: true,
   },
   {
     id: 'browser-smoke',
     label: 'browser smoke tests',
-    args: ['test:smoke'],
+    args: ['smoke:fastify-browser'],
     // check:server emits declarations under dist/, which the smoke build replaces.
     after: ['server-check'],
     isolated: true,
@@ -117,7 +129,8 @@ export const qualityLanes: readonly QualityLane[] = [
   {
     id: 'performance-gates',
     label: 'frontend performance gates',
-    args: ['test:gates:perf', '--no-file-parallelism', '--maxWorkers=1'],
+    args: ['exec', 'vitest', 'run', ...performanceTestFiles, '--no-file-parallelism', '--maxWorkers=1'],
+    env: { RISU_TEST_INCLUDE_GATES: 'true' },
     isolated: true,
   },
 ]

@@ -33,6 +33,6 @@ documentation, and archival readiness at one exact candidate.
 
 ## Validation
 
-The portfolio verification ladder, including compatibility differentials where
-required, complete owning lanes, browser smoke, both typechecks,
+User/CI-owned portfolio closeout evidence, including compatibility differentials
+where required, complete owning lanes, browser smoke, both typechecks,
 `pnpm test:all`, Prettier, and `git diff --check`.

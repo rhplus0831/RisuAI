@@ -1,12 +1,14 @@
 # Fastify Test Map
 
-This directory is the Node/Vitest lane for the Fastify backend. Run it with:
+This directory is the Node/Vitest lane for the Fastify backend. Agents may run
+one exact test or the tests related to one server source file:
 
 ```sh
-pnpm test:server
+pnpm test -- server/fastify/__tests__/<owner>.test.ts
+pnpm test -- server/fastify/src/<owner>.ts
 ```
 
-`pnpm api:test` is kept as a compatibility alias.
+The user and CI own the complete server lane through `pnpm test:all`.
 
 ## Current Buckets
 
