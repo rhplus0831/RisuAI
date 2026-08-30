@@ -407,7 +407,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
 
     assertNotStopped(result)
     expect(testDatabaseState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
-    expect(result.currentChat).toBe(testDatabaseState.db.characters[0].chats[0])
+    expect(result.currentChat).toEqual(testDatabaseState.db.characters[0].chats[0])
     expect(result.currentChat.lastMemory).toBe('leadingMemo')
 
     const command = await waitForCommand(

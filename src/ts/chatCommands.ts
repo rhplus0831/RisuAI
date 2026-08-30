@@ -40,6 +40,8 @@ import {
   applyCharacterResource,
   captureChatBodyProjectionEpoch,
   captureCharacterRowProjectionEpoch,
+  charactersResourceState,
+  getCharacterResourceOwner,
   getResourceDatabase as getDatabase,
   hasCharacterRowProjectionEpochChanged,
 } from './server/resourceState.svelte'
@@ -1006,13 +1008,39 @@ export interface SetCurrentChatSelectedDraftHookIdOptions extends MutateChatScop
   dispatch?: boolean
 }
 
-export function currentChatScopedSnapshot(): ChatScopedSnapshot {
-  const selectedChar = get(selectedCharID)
-  const character = getDatabase().characters?.[selectedChar]
-  const chat = character?.chats?.[character.chatPage]
+export function currentChatScopedSnapshot(options: MutateChatScopedOptions = {}): ChatScopedSnapshot {
+  const selectedChar = options.selectedChar ?? get(selectedCharID)
+  if (charactersResourceState.status === 'ready') {
+    const candidate = charactersResourceState.characters?.[selectedChar]
+    const selectedChat = options.selectedChat ?? candidate?.chatPage
+    const candidateChat = selectedChat === undefined ? undefined : candidate?.chats?.[selectedChat]
+    const characterId = candidate?.chaId
+    const chatId = candidateChat?.id
+    if (!characterId || !chatId) {
+      return { selectedCharID: selectedChar, characterId, chatId, chat: undefined }
+    }
+    const character = getCharacterResourceOwner(characterId)
+    const ownerChats = character?.chats?.filter((candidate) => candidate.id === chatId) ?? []
+    if (ownerChats.length === 1) {
+      return {
+        selectedCharID: selectedChar,
+        characterId,
+        chatId,
+        chat: cloneJsonValue(ownerChats[0]),
+      }
+    }
+    return { selectedCharID: selectedChar, characterId, chatId, chat: undefined }
+  }
+
+  const aggregateCharacter = getDatabase().characters?.[selectedChar]
+  const selectedChat = options.selectedChat ?? aggregateCharacter?.chatPage
+  const aggregateChat = selectedChat === undefined ? undefined : aggregateCharacter?.chats?.[selectedChat]
+  const characterId = aggregateCharacter?.chaId
+  const chatId = aggregateChat?.id
+  const chat = aggregateChat
   return {
     selectedCharID: selectedChar,
-    characterId: character?.chaId,
+    characterId,
     chatId: chat?.id,
     chat: chat ? cloneJsonValue(chat) : undefined,
   }

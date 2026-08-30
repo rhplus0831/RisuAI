@@ -4500,6 +4500,19 @@ describe('chat-scoped snapshot kit', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
   })
 
+  it('fails closed when a ready character id is ambiguous', () => {
+    const database = seedCloneCostDb() as any
+    database.characters.push({ ...database.characters[0] })
+    setDatabaseLite(database)
+    selectedCharID.set(0)
+
+    const snapshot = currentChatScopedSnapshot()
+
+    expect(snapshot.characterId).toBe('char-0')
+    expect(snapshot.chatId).toBe('chat-0')
+    expect(snapshot.chat).toBeUndefined()
+  })
+
   it('restores only the active chat, preserving concurrent edits to other chats', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)

@@ -1,7 +1,13 @@
 import { language } from '../../../lang'
 import { canUseServerCommands } from '../../server/commands'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
-import { currentChatStateSnapshot, dispatchUpdateChat } from '../../chatCommands'
+import {
+  applyChatMetadataOwnerPatch,
+  charactersResourceState,
+  getChatMetadataOwnerSnapshot,
+  getCharacterResourceOwner,
+  restoreChatMetadataOwnerSnapshot,
+} from '../../server/resourceState.svelte'
+import { currentChatScopedSnapshot, dispatchUpdateChatScoped } from '../../chatCommands'
 import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
@@ -124,12 +130,34 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
     }
     const lastMemory = chats[0].memo
     if (canUseServerCommands() && currentChat.id) {
-      const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
-      })
-      dispatchUpdateChat(currentChat.id, { lastMemory }, previous)
-      currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
+      const previous = currentChatScopedSnapshot({ selectedChar, selectedChat })
+      if (charactersResourceState.status === 'ready' && previous.characterId && previous.chatId === currentChat.id) {
+        const ownerSnapshot = getChatMetadataOwnerSnapshot(previous.characterId, currentChat.id)
+        if (ownerSnapshot && applyChatMetadataOwnerPatch(previous.characterId, currentChat.id, { lastMemory })) {
+          dispatchUpdateChatScoped(currentChat.id, { lastMemory }, previous, (snapshot) => {
+            if (!snapshot.characterId) return
+            restoreChatMetadataOwnerSnapshot({
+              characterId: snapshot.characterId,
+              chatId: snapshot.chatId,
+              metadata: snapshot.metadata,
+              attempted: snapshot.attempted,
+            })
+          })
+          const owner = getCharacterResourceOwner(previous.characterId)
+          const ownerChats = owner?.chats?.filter((candidate) => candidate.id === currentChat.id) ?? []
+          currentChat = ownerChats.length === 1 ? ownerChats[0] : { ...currentChat, lastMemory }
+        } else {
+          currentChat = { ...currentChat, lastMemory }
+        }
+      } else if (previous.chatId === currentChat.id && previous.chat) {
+        // Pre-extraction compatibility path: aggregate state is authoritative
+        // until the resource owner projection is ready.
+        currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
+        currentChat.lastMemory = lastMemory
+        dispatchUpdateChatScoped(currentChat.id, { lastMemory }, previous)
+      } else {
+        currentChat = { ...currentChat, lastMemory }
+      }
     } else if (canUseServerCommands()) {
       currentChat = { ...currentChat, lastMemory }
     } else {
