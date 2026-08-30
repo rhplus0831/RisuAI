@@ -66,7 +66,7 @@ import {
   normalizeAgentPresetDefaultId,
   normalizeAgentPresets,
   normalizeAgents,
-} from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/agent-preset-records'
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,

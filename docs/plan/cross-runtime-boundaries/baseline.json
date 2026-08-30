@@ -184,46 +184,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/agentPresets.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "AGENT_PRESET_MAX_CONCURRENCY_MAX",
-        "AGENT_PRESET_MAX_CONCURRENCY_MIN",
-        "AGENT_PRESET_SCHEMA_VERSION",
-        "AGENT_PRESET_STEP_DESTINATIONS",
-        "AGENT_PRESET_STEP_INPUT_SCOPES",
-        "AGENT_PRESET_STEP_OUTPUT_FORMATS",
-        "AGENT_PRESET_STEP_PHASES",
-        "AGENT_SCHEMA_VERSION",
-        "AgentPresetRecord",
-        "AgentPresetStepDestination",
-        "AgentPresetStepFailurePolicy",
-        "AgentPresetStepInputScope",
-        "AgentPresetStepModelSelection",
-        "AgentPresetStepOutputFormat",
-        "AgentPresetStepPhase",
-        "AgentPresetStepRecord",
-        "AgentPresetUseRecord",
-        "AgentRecord",
-        "isValidAgentPresetOutputKey",
-        "normalizeAgentConfiguration",
-        "normalizeAgentPresetDefaultId",
-        "normalizeAgentPresets",
-        "normalizeAgents",
-        "resolveAgentPresetSteps",
-        "validateAgentPresetRecord",
-        "validateAgentPresetRecords",
-        "validateAgentRecord",
-        "validateAgentRecords"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/chats.ts",
       "specifier": "../../../../src/ts/chatGenerationSettings.js",
       "target": "src/ts/chatGenerationSettings.ts",
@@ -386,22 +346,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/commands/presets.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeAgentConfiguration",
-        "normalizeAgentPresetDefaultId",
-        "normalizeAgentPresets",
-        "normalizeAgents"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/presets.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
       "kind": "static",
@@ -508,20 +452,6 @@
         "TRANSLATOR_PRESET_MAX_STEPS",
         "TranslatorPresetStep",
         "normalizeTranslatorPreset"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeAgentConfiguration",
-        "normalizeAgentPresetDefaultId"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -795,19 +725,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetErrors.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "AgentPresetStepPhase"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
       "specifier": "../../../../src/ts/agentLorebookInputs.js",
       "target": "src/ts/agentLorebookInputs.ts",
@@ -815,36 +732,6 @@
       "usage": "runtime",
       "symbols": [
         "resolveAgentLorebookInput"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "AGENT_PRESET_STEP_INPUT_SCOPES",
-        "agentToggleStorageKey"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "AgentLorebookInput",
-        "AgentPresetStepInputScope",
-        "AgentPresetStepPhase",
-        "AgentPresetStepRecord"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -894,19 +781,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/assemble.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "AgentPresetRecord"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",
@@ -1693,21 +1567,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/routes/commands.ts",
-      "specifier": "../../../../src/ts/agentPresetRecords.js",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeAgentPresetDefaultId",
-        "normalizeAgentPresets",
-        "normalizeAgents"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/commands.ts",
       "specifier": "../../../../src/ts/chatGenerationSettings.js",
       "target": "src/ts/chatGenerationSettings.ts",
       "kind": "static",
@@ -1891,20 +1750,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
-      "specifier": "../../../src/ts/agentPresetRecords",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "AgentPresetRecord",
-        "AgentPresetStepRecord"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
       "specifier": "../../../src/ts/agentPresetResolver",
       "target": "src/ts/agentPresetResolver.ts",
       "kind": "static",
@@ -1943,19 +1788,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/assemble.test.ts",
-      "specifier": "../../../src/ts/agentPresetRecords",
-      "target": "src/ts/agentPresetRecords.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "AgentPresetStepRecord"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "server-test",

@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
-import type { AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
+import type { AgentPresetStepRecord } from '@risuai/shared-core/agent-preset-records'
 import { openDatabase } from '../src/db.js'
 import {
   createMemoryChunk,

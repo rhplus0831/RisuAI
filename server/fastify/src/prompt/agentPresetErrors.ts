@@ -1,4 +1,4 @@
-import type { AgentPresetStepPhase } from '../../../../src/ts/agentPresetRecords.js'
+import type { AgentPresetStepPhase } from '@risuai/shared-core/agent-preset-records'
 
 export type AgentPresetStepFailureKind =
   | 'dependency_skipped'

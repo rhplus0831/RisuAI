@@ -42,7 +42,7 @@ import {
   DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   normalizeRegexOutputSizeLimitMiB,
 } from '@risuai/shared-core/regex-output-size-limit'
-import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '../../../src/ts/agentPresetRecords.js'
+import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@risuai/shared-core/agent-preset-records'
 import { normalizeTranslatorPresetState, type TranslatorPresetStateLike } from '../../../src/ts/translator/presets.js'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'

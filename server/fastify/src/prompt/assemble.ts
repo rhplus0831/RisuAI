@@ -132,7 +132,7 @@ import {
   type AgentPresetResolution,
 } from '../../../../src/ts/agentPresetResolver.js'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
-import type { AgentPresetRecord } from '../../../../src/ts/agentPresetRecords.js'
+import type { AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 
 /**
  * Root prompt assembly entry point.

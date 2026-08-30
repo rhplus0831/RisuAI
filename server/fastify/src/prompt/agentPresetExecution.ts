@@ -3,8 +3,8 @@ import type {
   AgentPresetStepInputScope,
   AgentPresetStepPhase,
   AgentPresetStepRecord,
-} from '../../../../src/ts/agentPresetRecords.js'
-import { AGENT_PRESET_STEP_INPUT_SCOPES, agentToggleStorageKey } from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/agent-preset-records'
+import { AGENT_PRESET_STEP_INPUT_SCOPES, agentToggleStorageKey } from '@risuai/shared-core/agent-preset-records'
 import { resolveAgentLorebookInput } from '../../../../src/ts/agentLorebookInputs.js'
 import type { AgentPresetPhasePlan } from '../../../../src/ts/agentPresetResolver.js'
 import {

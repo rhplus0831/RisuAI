@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import type { AgentPresetRecord, AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
+import type { AgentPresetRecord, AgentPresetStepRecord } from '@risuai/shared-core/agent-preset-records'
 import { planAgentPreset } from '../../../src/ts/agentPresetResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'

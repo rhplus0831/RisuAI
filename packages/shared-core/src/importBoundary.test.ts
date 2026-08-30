@@ -66,6 +66,7 @@ describe('@risuai/shared-core import boundary', () => {
       runtimeFiles: [
         'agentOnlyLorebook.ts',
         'agentPresetOutputReferences.ts',
+        'agentPresetRecords.ts',
         'calculation.ts',
         'chatDisplayTailCount.ts',
         'chatLoadPages.ts',

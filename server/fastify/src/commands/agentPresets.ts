@@ -30,7 +30,7 @@ import {
   type AgentPresetStepOutputFormat,
   type AgentPresetStepPhase,
   type AgentPresetStepRecord,
-} from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/agent-preset-records'
 import { EntityNotFoundError, extractSettings, ValidationError, writeSettingsOnly } from '../repository.js'
 import {
   applyMessageFreeJsonCommandMutation,

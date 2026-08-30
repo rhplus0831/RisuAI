@@ -18,7 +18,7 @@ import {
   normalizeAgentPresetDefaultId,
   normalizeAgents,
   normalizeAgentPresets,
-} from '../../../../src/ts/agentPresetRecords.js'
+} from '@risuai/shared-core/agent-preset-records'
 
 type JsonRecord = Record<string, unknown>
 type AssetValidationOptions = { assetDb?: DatabaseSync }

@@ -13,13 +13,13 @@ describe('ChatML-row shared-core ownership', () => {
     const sharedImport = "from '@risuai/shared-core/chatml-rows'"
     for (const consumer of [
       'src/ts/parser/chatML.ts',
-      'src/ts/agentPresetRecords.ts',
       'src/lib/Setting/Pages/AgentEditorDrawer.svelte',
       'server/fastify/src/prompt/templates.ts',
       'server/fastify/src/prompt/agentPresetExecution.ts',
     ]) {
       expect(source(consumer), consumer).toContain(sharedImport)
     }
+    expect(source('packages/shared-core/src/agentPresetRecords.ts')).toContain("from './chatMLRows.js'")
     expect(fs.existsSync(new URL('src/ts/parser/chatMLCore.ts', `file://${repoRoot}/`))).toBe(false)
   })
 })
