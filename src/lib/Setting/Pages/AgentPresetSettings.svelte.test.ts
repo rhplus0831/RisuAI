@@ -53,9 +53,11 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import AgentPresetSettings from './AgentPresetSettings.svelte'
+import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
 import { language } from 'src/lang'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import type { AgentPresetRecord, AgentRecord } from 'src/ts/agentPresetRecords'
+import { resetServerResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
 let target: HTMLElement
 let component: Parameters<typeof unmount>[0] | undefined
@@ -493,5 +495,42 @@ describe('modular Agent Preset settings', () => {
 
     const deleteButton = target.querySelectorAll<HTMLButtonElement>('[data-risu-agent-row] button')[4]
     expect(deleteButton.disabled).toBe(true)
+  })
+
+  it('fails closed when settings owners contain duplicate stable IDs', async () => {
+    seed([agent, { ...agent, name: 'Ambiguous Researcher' }], [preset, { ...preset, name: 'Ambiguous Preset' }])
+    component = mount(AgentPresetSettings, { target })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-agent-row]')).toHaveLength(0)
+    expect(target.querySelectorAll('[data-risu-agent-preset-row]')).toHaveLength(0)
+    expect(target.querySelector('[data-risu-agent-preset-empty]')?.textContent).toContain(
+      language.agentPresets.emptyState,
+    )
+  })
+
+  it('uses the initial preset only while the Agent settings owner is pre-ready', async () => {
+    resetServerResourceState()
+    settingsResourceState.value.agents = [agent]
+    component = mount(AgentPresetEditorDrawer, {
+      target,
+      props: { mode: 'edit', preset, onSave: vi.fn(), onCancel: vi.fn() },
+    })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-agent-preset-step]')).toHaveLength(1)
+  })
+
+  it('fails closed when the ready Agent settings owner does not contain the preset', async () => {
+    resetServerResourceState()
+    settingsResourceState.value.agents = [agent]
+    settingsResourceState.groupStatuses.agents = 'ready'
+    component = mount(AgentPresetEditorDrawer, {
+      target,
+      props: { mode: 'edit', preset, onSave: vi.fn(), onCancel: vi.fn() },
+    })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-agent-preset-step]')).toHaveLength(0)
   })
 })

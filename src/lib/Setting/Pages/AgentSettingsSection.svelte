@@ -13,15 +13,37 @@
   } from 'src/ts/agents'
   import type { AgentRecord } from 'src/ts/agentPresetRecords'
   import type { AgentSnapshot } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import AgentEditorDrawer from './AgentEditorDrawer.svelte'
 
   let mode = $state<'create' | 'edit' | null>(null)
   let editingId = $state<string | null>(null)
   let busy = $state(false)
   let error = $state('')
-  let agents = $derived(Array.isArray(getDatabase().agents) ? getDatabase().agents : [])
-  let editingAgent = $derived(editingId ? agents.find((agent) => agent.id === editingId) : undefined)
+  let agents = $derived(readAgentOwners(settingsResourceState.value.agents))
+  let editingAgent = $derived(editingId ? uniqueAgentById(agents, editingId) : undefined)
+
+  function readAgentOwners(value: unknown): AgentRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as AgentRecord[]
+  }
+
+  function uniqueAgentById(rows: readonly AgentRecord[], id: string): AgentRecord | undefined {
+    let match: AgentRecord | undefined
+    for (const candidate of rows) {
+      if (candidate.id !== id) continue
+      if (match) return undefined
+      match = candidate
+    }
+    return match
+  }
 
   function openCreate(): void {
     mode = 'create'

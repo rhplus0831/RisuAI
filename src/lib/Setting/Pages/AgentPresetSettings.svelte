@@ -18,11 +18,17 @@
   import { createAgentPresetStatusSummary, planAgentPreset } from 'src/ts/agentPresetResolver'
   import {
     resolveAgentPresetSteps,
+    type AgentRecord,
     type AgentPresetRecord,
     type AgentPresetStepRecord,
   } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
+  import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
   import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
   import AgentSettingsSection from './AgentSettingsSection.svelte'
 
@@ -43,11 +49,26 @@
   let queuedProjectionLatch = $state<AgentPresetGeneratedProjectionLatch | null>(initialProjectionLatch)
   let resolveQueuedEditorProjection: (() => void) | null = null
 
-  let presets = $derived(Array.isArray(getDatabase().agentPresets) ? getDatabase().agentPresets : [])
+  let agents = $derived(readAgentOwners(settingsResourceState.value.agents))
+  let presets = $derived(readAgentPresetOwners(settingsResourceState.value.agentPresets))
+  let modelProfiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
   let defaultPresetId = $derived(
-    typeof getDatabase().agentPresetDefaultId === 'string' ? getDatabase().agentPresetDefaultId : '',
+    typeof settingsResourceState.value.agentPresetDefaultId === 'string'
+      ? settingsResourceState.value.agentPresetDefaultId
+      : '',
   )
-  let editingPreset = $derived(editingPresetId ? presets.find((preset) => preset.id === editingPresetId) : undefined)
+  let editingPreset = $derived(editingPresetId ? uniqueAgentPresetById(presets, editingPresetId) : undefined)
+  let resolverDatabase = $derived({
+    agentPresets: presets,
+    agents,
+    agentPresetDefaultId: defaultPresetId,
+    modelProfiles,
+    modelRoleProfiles: settingsResourceState.value.modelRoleProfiles,
+    modelRuntimeDefaults: settingsResourceState.value.modelRuntimeDefaults,
+    providerCredentials: settingsResourceState.value.providerCredentials,
+  })
+  let characterOwners = $derived(readCharacterOwners(charactersResourceState.characters))
+  let loadoutOwners = $derived(readLoadoutOwners(collectionsResourceState.values.loadouts))
   let mutationLocked = $derived(busy || queuedProjectionLatch !== null)
 
   $effect(() => {
@@ -182,18 +203,17 @@
   }
 
   function enabledSteps(preset: AgentPresetRecord): AgentPresetStepRecord[] {
-    return resolveAgentPresetSteps(preset, getDatabase().agents ?? []).filter((step) => step.enabled)
+    return resolveAgentPresetSteps(preset, agents).filter((step) => step.enabled)
   }
 
   function usageCount(presetId: string): number {
     let count = defaultPresetId === presetId ? 1 : 0
-    const database = getDatabase()
-    for (const character of database.characters ?? []) {
+    for (const character of characterOwners) {
       for (const chat of character?.chats ?? []) {
         if (chat?.generationSettings?.agentPresetId === presetId) count += 1
       }
     }
-    for (const loadout of database.loadouts ?? []) {
+    for (const loadout of loadoutOwners) {
       if (loadout?.agentPresetId === presetId) count += 1
     }
     return count
@@ -201,7 +221,7 @@
 
   function statusForPreset(preset: AgentPresetRecord): StatusPresentation {
     if (!preset.enabled) return { label: language.agentPresets.statusDisabled, tone: 'muted' }
-    const planning = planAgentPreset({ database: getDatabase(), preset })
+    const planning = planAgentPreset({ database: resolverDatabase, preset })
     if (!planning.plan) return { label: language.agentPresets.statusInvalid, tone: 'error' }
     if (planning.incompleteIssues.length > 0) return { label: language.agentPresets.statusIncomplete, tone: 'warning' }
     if (!planning.ready) return { label: language.agentPresets.statusModelNotReady, tone: 'warning' }
@@ -216,23 +236,105 @@
   }
 
   function phaseSummary(preset: AgentPresetRecord): string {
-    const planning = planAgentPreset({ database: getDatabase(), preset })
+    const planning = planAgentPreset({ database: resolverDatabase, preset })
     const summary = planning.plan
       ? createAgentPresetStatusSummary({
           status: planning.ready ? 'ready' : planning.incompleteIssues.length > 0 ? 'incomplete' : 'model_not_ready',
           preset,
           issues: [...planning.issues, ...planning.incompleteIssues],
           modelReadiness: planning.modelReadiness,
-          agents: getDatabase().agents,
+          agents,
         })
       : createAgentPresetStatusSummary({
           status: 'invalid',
           preset,
           issues: planning.issues,
           modelReadiness: planning.modelReadiness,
-          agents: getDatabase().agents,
+          agents,
         })
     return language.agentPresets.phaseSummary(summary.beforeMainStepCount, summary.afterMainStepCount)
+  }
+
+  function readAgentOwners(value: unknown): AgentRecord[] {
+    return readUniqueStableRows<AgentRecord>(value)
+  }
+
+  function readAgentPresetOwners(value: unknown): AgentPresetRecord[] {
+    const rows = readUniqueStableRows<AgentPresetRecord>(value)
+    return rows.every(hasUniqueAgentPresetStepIds) ? rows : []
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    return readUniqueStableRows<ModelProfileRecord>(value)
+  }
+
+  function readCharacterOwners(value: unknown): UsageCharacter[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const character = candidate as UsageCharacter
+      if (character.chaId !== undefined) {
+        if (typeof character.chaId !== 'string' || character.chaId.trim() !== character.chaId || !character.chaId)
+          return []
+        if (ids.has(character.chaId)) return []
+        ids.add(character.chaId)
+      }
+      if (character.chats !== undefined && !Array.isArray(character.chats)) return []
+    }
+    return value as UsageCharacter[]
+  }
+
+  function readLoadoutOwners(value: unknown): UsageLoadout[] {
+    return readUniqueStableRows<UsageLoadout>(value)
+  }
+
+  function readUniqueStableRows<T>(value: unknown): T[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as T[]
+  }
+
+  function uniqueAgentPresetById(rows: readonly AgentPresetRecord[], id: string): AgentPresetRecord | undefined {
+    let match: AgentPresetRecord | undefined
+    for (const candidate of rows) {
+      if (candidate.id !== id) continue
+      if (match) return undefined
+      match = candidate
+    }
+    return match
+  }
+
+  function hasUniqueAgentPresetStepIds(candidate: AgentPresetRecord): boolean {
+    const steps = Array.isArray(candidate.agentUses) ? candidate.agentUses : candidate.steps
+    if (!Array.isArray(steps)) return false
+    const ids = new Set<string>()
+    for (const step of steps) {
+      const id = step?.id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
+  }
+
+  interface UsageCharacter {
+    chaId?: string
+    chats?: readonly UsageChat[]
+  }
+
+  interface UsageChat {
+    generationSettings?: { agentPresetId?: unknown }
+  }
+
+  interface UsageLoadout {
+    id: string
+    agentPresetId?: unknown
   }
 </script>
 

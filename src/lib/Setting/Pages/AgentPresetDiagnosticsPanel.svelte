@@ -7,7 +7,7 @@
     type AgentPresetStepDiagnostic,
   } from 'src/ts/agentPresetDiagnostics'
   import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
   interface Props {
     presetId: string
@@ -22,7 +22,12 @@
   let selectedRunKey = $state('')
 
   let collection = $derived(
-    open || loaded ? collectAgentPresetDiagnosticRuns(getDatabase(), presetId) : { runs: [], total: 0 },
+    open || loaded
+      ? collectAgentPresetDiagnosticRuns(
+          { characters: readDiagnosticCharacterOwners(charactersResourceState.characters) },
+          presetId,
+        )
+      : { runs: [], total: 0 },
   )
   let selectedRun = $derived(
     collection.runs.find((candidate) => candidate.key === selectedRunKey) ?? collection.runs[0],
@@ -169,6 +174,46 @@
   function humanize(value?: string): string {
     if (!value) return ''
     return value.replaceAll('_', ' ').replace(/([a-z])([A-Z])/g, '$1 $2')
+  }
+
+  function readDiagnosticCharacterOwners(value: unknown): DiagnosticCharacter[] {
+    if (!Array.isArray(value)) return []
+    const characterIds = new Set<string>()
+    const chatIds = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const character = candidate as DiagnosticCharacter
+      if (character.chaId !== undefined) {
+        if (
+          typeof character.chaId !== 'string' ||
+          character.chaId.trim() !== character.chaId ||
+          character.chaId.length === 0
+        ) {
+          return []
+        }
+        if (characterIds.has(character.chaId)) return []
+        characterIds.add(character.chaId)
+      }
+      if (character.chats !== undefined && !Array.isArray(character.chats)) return []
+
+      for (const chat of character.chats ?? []) {
+        if (chat?.id !== undefined) {
+          if (typeof chat.id !== 'string' || chat.id.trim() !== chat.id || chat.id.length === 0) return []
+          if (chatIds.has(chat.id)) return []
+          chatIds.add(chat.id)
+        }
+      }
+    }
+    return value as DiagnosticCharacter[]
+  }
+
+  interface DiagnosticCharacter {
+    chaId?: string
+    chats?: readonly DiagnosticChat[]
+  }
+
+  interface DiagnosticChat {
+    id?: string
   }
 </script>
 

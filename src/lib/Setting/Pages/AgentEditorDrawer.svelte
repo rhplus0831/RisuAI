@@ -32,11 +32,12 @@
     type AgentToggleDefinition,
   } from 'src/ts/agentPresetRecords'
   import type { AgentSnapshot } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     isModelProfileDividerSelectValue,
     modelProfileDividerSelectValue,
     modelProfileListItems,
+    type ModelProfileRecord,
   } from 'src/ts/model/modelProfileRecords'
 
   interface Props {
@@ -77,8 +78,12 @@
     })),
   )
   let lorebookInputs = $state<AgentLorebookInput[]>((initial?.lorebookInputs ?? []).map((input) => ({ ...input })))
-  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
-  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
+  let modelProfiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let modelProfileItems = $derived(
+    hasUniqueModelProfileOrder(settingsResourceState.value.modelProfileOrder)
+      ? modelProfileListItems(modelProfiles, settingsResourceState.value.modelProfileOrder)
+      : [],
+  )
   const initialSnapshot = agentSnapshotFromRecord(initial)
   let snapshot = $derived(agentSnapshot())
   let dirty = $derived(JSON.stringify(snapshot) !== JSON.stringify(initialSnapshot))
@@ -90,6 +95,55 @@
       !busy &&
       (mode === 'create' || dirty),
   )
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOrder(value: unknown): boolean {
+    if (value === undefined) return true
+    if (!Array.isArray(value)) return false
+    const profileIds = new Set<string>()
+    const dividerIds = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+      const entry = candidate as { kind?: unknown; profileId?: unknown; id?: unknown }
+      if (entry.kind === 'profile') {
+        if (
+          typeof entry.profileId !== 'string' ||
+          entry.profileId.trim() !== entry.profileId ||
+          entry.profileId.length === 0 ||
+          profileIds.has(entry.profileId)
+        ) {
+          return false
+        }
+        profileIds.add(entry.profileId)
+        continue
+      }
+      if (entry.kind === 'divider') {
+        if (
+          typeof entry.id !== 'string' ||
+          entry.id.trim() !== entry.id ||
+          entry.id.length === 0 ||
+          dividerIds.has(entry.id)
+        ) {
+          return false
+        }
+        dividerIds.add(entry.id)
+        continue
+      }
+      return false
+    }
+    return true
+  }
 
   function agentSnapshot(): AgentSnapshot {
     const modelDefaults: AgentPresetStepModelSelection =

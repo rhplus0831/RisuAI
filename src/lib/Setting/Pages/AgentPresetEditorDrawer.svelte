@@ -27,6 +27,7 @@
     AGENT_PRESET_RUNTIME_TIMEOUT_MS_MIN,
     isValidAgentPresetOutputKey,
     resolveAgentPresetSteps,
+    type AgentRecord,
     type AgentPresetRecord,
     type AgentPresetStepDestination,
     type AgentPresetStepFailurePolicy,
@@ -36,11 +37,12 @@
     type AgentPresetUseRecord,
   } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot, AgentPresetUseSnapshot } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     isModelProfileDividerSelectValue,
     modelProfileDividerSelectValue,
     modelProfileListItems,
+    type ModelProfileRecord,
   } from 'src/ts/model/modelProfileRecords'
   import AgentPresetDiagnosticsPanel from './AgentPresetDiagnosticsPanel.svelte'
   import type { AgentPresetGeneratedProjectionLatch } from 'src/ts/agentPresets'
@@ -105,19 +107,29 @@
   let temperature = $state(1)
   let structuredOutputStrict = $state(false)
 
+  const ownerPresetValue = $derived(settingsResourceState.value.agentPresets)
+  let ownerPresets = $derived(readAgentPresetOwners(ownerPresetValue))
   let livePreset = $derived(
-    presetId ? (getDatabase().agentPresets.find((candidate) => candidate.id === presetId) ?? preset) : preset,
+    presetId
+      ? resolveLivePreset(ownerPresets, presetId, settingsResourceState.groupStatuses.agents === 'ready', initialPreset)
+      : safeAgentPreset(initialPreset),
   )
-  let agents = $derived(Array.isArray(getDatabase().agents) ? getDatabase().agents : [])
+  let agents = $derived(readAgentOwners(settingsResourceState.value.agents))
   let uses = $derived(livePreset?.agentUses ?? [])
-  let resolvedSteps = $derived(livePreset ? resolveAgentPresetSteps(livePreset, agents) : [])
+  let resolvedSteps = $derived(
+    livePreset && hasUniqueAgentPresetStepIds(livePreset) ? resolveAgentPresetSteps(livePreset, agents) : [],
+  )
   let beforeMainSteps = $derived(resolvedSteps.filter((step) => step.phase === 'beforeMain'))
   let afterMainSteps = $derived(resolvedSteps.filter((step) => step.phase === 'afterMain'))
   let finalOutputAgentKeys = $derived([
     ...new Set(resolvedSteps.filter((step) => step.enabled).map((step) => step.outputKey)),
   ])
-  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
-  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
+  let modelProfiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let modelProfileItems = $derived(
+    hasUniqueModelProfileOrder(settingsResourceState.value.modelProfileOrder)
+      ? modelProfileListItems(modelProfiles, settingsResourceState.value.modelProfileOrder)
+      : [],
+  )
   let editingStep = $derived(editingUseId ? resolvedSteps.find((step) => step.id === editingUseId) : undefined)
   let metadataPatch = $derived(sparseMetadata(initialMetadata, metadataForSave()))
   let metadataDirty = $derived(Object.keys(metadataPatch).length > 0)
@@ -130,6 +142,124 @@
       !locked,
   )
   let dependencyOptions = $derived(availableDependencies())
+
+  function readAgentOwners(value: unknown): AgentRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as AgentRecord[]
+  }
+
+  function readAgentPresetOwners(value: unknown): AgentPresetRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+      if (!hasUniqueAgentPresetStepIds(candidate as AgentPresetRecord)) return []
+    }
+    return value as AgentPresetRecord[]
+  }
+
+  function safeAgentPreset(candidate: AgentPresetRecord | undefined): AgentPresetRecord | undefined {
+    if (
+      !candidate ||
+      typeof candidate.id !== 'string' ||
+      candidate.id.trim() !== candidate.id ||
+      candidate.id.length === 0
+    ) {
+      return undefined
+    }
+    return hasUniqueAgentPresetStepIds(candidate) ? candidate : undefined
+  }
+
+  function resolveLivePreset(
+    ownerPresets: readonly AgentPresetRecord[],
+    presetId: string,
+    ownerReady: boolean,
+    fallback: AgentPresetRecord | undefined,
+  ): AgentPresetRecord | undefined {
+    const ownerPreset = uniqueAgentPresetById(ownerPresets, presetId)
+    return ownerReady ? ownerPreset : (ownerPreset ?? safeAgentPreset(fallback))
+  }
+
+  function uniqueAgentPresetById(rows: readonly AgentPresetRecord[], id: string): AgentPresetRecord | undefined {
+    let match: AgentPresetRecord | undefined
+    for (const candidate of rows) {
+      if (candidate.id !== id) continue
+      if (match) return undefined
+      match = candidate
+    }
+    return match
+  }
+
+  function hasUniqueAgentPresetStepIds(candidate: AgentPresetRecord): boolean {
+    const steps = Array.isArray(candidate.agentUses) ? candidate.agentUses : candidate.steps
+    if (!Array.isArray(steps)) return false
+    const ids = new Set<string>()
+    for (const step of steps) {
+      const id = step?.id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOrder(value: unknown): boolean {
+    if (value === undefined) return true
+    if (!Array.isArray(value)) return false
+    const profileIds = new Set<string>()
+    const dividerIds = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+      const entry = candidate as { kind?: unknown; profileId?: unknown; id?: unknown }
+      if (entry.kind === 'profile') {
+        if (
+          typeof entry.profileId !== 'string' ||
+          entry.profileId.trim() !== entry.profileId ||
+          entry.profileId.length === 0 ||
+          profileIds.has(entry.profileId)
+        ) {
+          return false
+        }
+        profileIds.add(entry.profileId)
+        continue
+      }
+      if (entry.kind === 'divider') {
+        if (
+          typeof entry.id !== 'string' ||
+          entry.id.trim() !== entry.id ||
+          entry.id.length === 0 ||
+          dividerIds.has(entry.id)
+        ) {
+          return false
+        }
+        dividerIds.add(entry.id)
+        continue
+      }
+      return false
+    }
+    return true
+  }
 
   $effect(() => {
     if (!selectedAgentId && agents[0]) selectedAgentId = agents[0].id
