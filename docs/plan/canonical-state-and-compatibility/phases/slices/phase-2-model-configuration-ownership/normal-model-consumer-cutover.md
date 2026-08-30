@@ -1,7 +1,7 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; output-budget and canonical sidebar checkpoint through
-`f986cf1ff`.
+Status: in progress; profile-owned image capability checkpoint through
+`c7ab6beaf`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -76,6 +76,9 @@ classified static/legacy boundary removed to complete the cutover.
 - The custom sidebar model control opens the canonical global model-preset
   picker and no longer creates an ordinary server-backed `aiModel` draft at
   `f986cf1ff`.
+- OpenAI request shaping and multimodal token accounting read image-input
+  capability from the resolved profile at `c7ab6beaf`; only explicitly
+  context-free callers retain the aggregate `aiModel` fallback.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar

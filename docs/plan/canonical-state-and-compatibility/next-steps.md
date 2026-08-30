@@ -7,11 +7,12 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Thread resolved profile model capability into browser inlay request and token
-   accounting so stale flat `aiModel` cannot control image handling.
+1. Reuse profile-bound generation projection in Fastify `/generate/completion`
+   so durable sampling, reasoning, tool, and response controls outrank stale flat
+   fields before explicit completion request overrides are applied.
 2. Continue replacing ordinary runtime reads of flat CBS, translation, agent,
    and auxiliary settings with resolved durable-profile inputs; the custom
-   sidebar authoring path is now canonical.
+   sidebar authoring path and browser inlay capability are now canonical.
 3. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
 4. Prove provider/model/options/fallback parity in browser reload and request
