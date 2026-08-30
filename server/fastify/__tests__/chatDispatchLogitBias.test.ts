@@ -95,7 +95,21 @@ describe('OpenAI logit-bias parity', () => {
       }),
     )
 
-    const database = db({ customTokenizer: 'o200k_base' } as Partial<Database>)
+    const database = db({
+      customTokenizer: 'o200k_base',
+      providerCredentials: [{ id: 'logit-openai', name: 'Logit OpenAI', type: 'apiKey', apiKey: 'sk-logit-profile' }],
+      modelProfiles: [
+        {
+          id: 'logit-bias-profile',
+          name: 'Logit Bias Profile',
+          providerId: 'openai',
+          modelId: 'gpt4',
+          providerOptions: { credentialId: 'logit-openai', requestModel: 'gpt4' },
+          runtimeOptions: { customTokenizer: 'o200k_base' },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'logit-bias-profile' } },
+    } as Partial<Database>)
     const frames = await dispatchChatProvider({
       database,
       profile: resolveModelProfile({ database }),

@@ -8,7 +8,11 @@ import {
   OpenAIParameters,
   type LLMModel,
 } from '@risuai/shared-core/model-types'
-import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
+import {
+  resolveModelProfile,
+  resolveModelProfileWithLegacyCompatibility,
+  type ResolvedModelProfile,
+} from '../../../src/ts/model/modelProfileResolver'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { MASKED_PROVIDER_SECRET } from '@risuai/shared-core/provider-secret-mask'
@@ -48,7 +52,7 @@ interface ProtocolMetric {
 }
 
 function db(overrides: Partial<Database> = {}): Database {
-  return {
+  const database = {
     aiModel: 'gpt-5',
     subModel: 'gpt-5-mini',
     modelRoles: {},
@@ -61,6 +65,163 @@ function db(overrides: Partial<Database> = {}): Database {
     useStreaming: false,
     ...overrides,
   } as unknown as Database
+
+  if (overrides.modelProfiles === undefined && overrides.modelRoleProfiles === undefined) {
+    const raw = database as unknown as Record<string, unknown>
+    const modelId = typeof raw.aiModel === 'string' ? raw.aiModel : 'gpt-5'
+    const bedrockPrefix = modelId.startsWith('anthropic.')
+      ? Number(modelId.match(/(\d{8})/)?.[1] ?? 0) >= 20250929
+        ? 'global'
+        : 'us'
+      : undefined
+    const key =
+      modelId === 'reverse_proxy'
+        ? raw.proxyKey
+        : modelId === 'openrouter'
+          ? raw.openrouterKey
+          : modelId === 'nanogpt'
+            ? raw.nanogptKey
+            : modelId.includes('ollama')
+              ? raw.ollamaApiKey
+              : modelId.startsWith('claude-') || modelId.startsWith('anthropic.')
+                ? raw.claudeAPIKey
+                : modelId.startsWith('gemini-')
+                  ? (raw.google as { accessToken?: unknown } | undefined)?.accessToken
+                  : modelId.startsWith('deepseek-')
+                    ? (raw.OaiCompAPIKeys as Record<string, unknown> | undefined)?.deepseek
+                    : modelId.startsWith('mistral')
+                      ? raw.mistralKey
+                      : modelId.startsWith('cohere-')
+                        ? raw.cohereAPIKey
+                        : modelId.startsWith('horde:::')
+                          ? (raw.hordeConfig as { apiKey?: unknown } | undefined)?.apiKey
+                          : modelId === 'mancer'
+                            ? raw.mancerHeader
+                            : raw.openAIKey
+    const profileProviderOptions: Record<string, unknown> = {
+      ...(modelId.startsWith('xcustom:::') || modelId.startsWith('horde:::')
+        ? {}
+        : {
+            requestModel:
+              modelId === 'reverse_proxy'
+                ? raw.customProxyRequestModel
+                : modelId === 'openrouter'
+                  ? raw.openrouterRequestModel
+                  : modelId === 'nanogpt'
+                    ? raw.nanogptRequestModel
+                    : modelId === 'ollama-cloud'
+                      ? raw.ollamaCloudModel
+                      : modelId.includes('ollama')
+                        ? raw.ollamaModel
+                        : modelId.startsWith('anthropic.')
+                          ? `${bedrockPrefix}.${modelId}`
+                          : modelId.startsWith('gemini-')
+                            ? undefined
+                            : modelId,
+          }),
+    }
+    if (modelId === 'reverse_proxy') {
+      profileProviderOptions.baseUrl = raw.forceReplaceUrl
+      profileProviderOptions.additionalParams = raw.additionalParams
+      profileProviderOptions.reverseProxy = {
+        autofillRequestUrl: raw.autofillRequestUrl,
+        oobaSystemHoist: raw.reverseProxyOobaMode,
+        oobaArgs: raw.reverseProxyOobaArgs,
+      }
+    } else if (modelId === 'openrouter') {
+      profileProviderOptions.openrouter = {
+        fallback: raw.openrouterFallback,
+        middleOut: raw.openrouterMiddleOut,
+        provider: raw.openrouterProvider,
+      }
+    } else if (modelId === 'nanogpt') {
+      profileProviderOptions.nanogpt = {
+        providerHint: raw.nanogptProvider,
+        useSubscriptionEndpoint: raw.nanogptUseSubscriptionEndpoint,
+        subscriptionState: raw.nanogptSubscriptionState,
+      }
+    } else if (modelId === 'ollama-cloud') {
+      profileProviderOptions.ollama = {
+        requestFormat: raw.ollamaRequestFormat,
+        modelSource: raw.ollamaModelSource,
+        thinkingMode: raw.ollamaThinkingMode,
+      }
+    } else if (modelId.includes('ollama')) {
+      profileProviderOptions.baseUrl = raw.ollamaURL
+      profileProviderOptions.ollama = {
+        url: raw.ollamaURL,
+        requestFormat: raw.ollamaRequestFormat,
+        modelSource: raw.ollamaModelSource,
+        thinkingMode: raw.ollamaThinkingMode,
+      }
+    } else if (modelId === 'kobold') {
+      profileProviderOptions.baseUrl = raw.koboldURL
+    } else if (modelId === 'mancer') {
+      profileProviderOptions.baseUrl = raw.textgenWebUIBlockingURL
+    }
+
+    const runtimeOptions: Record<string, unknown> = {}
+    const runtimeFields: Record<string, string> = {
+      maxContext: 'maxContext',
+      maxResponse: 'maxResponse',
+      temperature: 'temperature',
+      top_p: 'topP',
+      top_k: 'topK',
+      min_p: 'minP',
+      top_a: 'topA',
+      repetition_penalty: 'repetitionPenalty',
+      frequencyPenalty: 'frequencyPenalty',
+      PresensePenalty: 'presencePenalty',
+      reasoningEffort: 'reasoningEffort',
+      thinkingTokens: 'thinkingTokens',
+      thinkingType: 'thinkingType',
+      deepseekThinkingType: 'deepseekThinkingType',
+      adaptiveThinkingEffort: 'adaptiveThinkingEffort',
+      deepseekReasoningEffort: 'deepseekReasoningEffort',
+      verbosity: 'verbosity',
+      halfStreaming: 'halfStreaming',
+      useStreaming: 'useStreaming',
+      genTime: 'genTime',
+      extractJson: 'extractJson',
+      jsonSchemaEnabled: 'jsonSchemaEnabled',
+      jsonSchema: 'jsonSchema',
+      strictJsonSchema: 'strictJsonSchema',
+      outputImageModal: 'outputImageModal',
+      stripCoT: 'stripCoT',
+      dynamicOutput: 'dynamicOutput',
+      modelTools: 'modelTools',
+      enableCustomFlags: 'enableCustomFlags',
+      customFlags: 'customFlags',
+      customTokenizer: 'customTokenizer',
+    }
+    for (const [databaseField, profileField] of Object.entries(runtimeFields)) {
+      const value = raw[databaseField]
+      if (value !== undefined) runtimeOptions[profileField] = value
+    }
+    const profileId = 'fixture-default-profile'
+    const providerCredentials = Array.isArray(raw.providerCredentials) ? [...raw.providerCredentials] : []
+    if (typeof key === 'string' && key.length > 0) {
+      providerCredentials.push({
+        id: 'fixture-default-credential',
+        name: 'Fixture credential',
+        type: 'apiKey',
+        apiKey: key,
+      })
+      profileProviderOptions.credentialId = 'fixture-default-credential'
+    }
+    raw.providerCredentials = providerCredentials
+    raw.modelProfiles = [
+      {
+        id: profileId,
+        name: 'Fixture default profile',
+        modelId,
+        providerOptions: profileProviderOptions,
+        runtimeOptions,
+      },
+    ]
+    raw.modelRoleProfiles = { chatMain: { mode: 'profile', profileId } }
+  }
+  return database
 }
 
 function geminiModelInfo(overrides: Partial<LLMModel>): LLMModel {
@@ -732,10 +893,11 @@ describe('dispatchChatProvider profile providerOptions', () => {
   )
 
   it('emits metadata-only prompt reformat metrics when provider flags change rows', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-flash',
         google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+        modelRoleProfiles: {},
       } as Partial<Database>),
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -748,6 +910,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const database = db({
       aiModel: 'gemini-2.5-flash',
       google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+      modelRoleProfiles: {},
     } as Partial<Database>)
     const formated: PromptMessage[] = [
       { role: 'system', content: 'slice-2-secret-dispatch-system' },
@@ -978,6 +1141,13 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        geminiModelInfo({
+          id,
+          internalID: 'gemini-proxy-model',
+          provider: LLMProvider.GoogleCloud,
+          format: LLMFormat.GoogleCloud,
+        }),
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -1055,6 +1225,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-legacy-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAILegacyInstruct,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.Unknown,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -1098,6 +1279,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-responses-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAIResponseAPI,
+          flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.hasStreaming],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.tiktokenO200Base,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'ollama-cloud',
@@ -1129,7 +1321,20 @@ describe('dispatchChatProvider profile providerOptions', () => {
       proxyKey: 'sk-exact-responses',
       autofillRequestUrl: false,
     } as Partial<Database>)
-    const profile = resolveModelProfile({ database })
+    const profile = resolveModelProfile({
+      database,
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'exact-responses-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.OpenAIResponseAPI,
+          flags: [LLMFlags.hasFirstSystemPrompt, LLMFlags.hasStreaming],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.tiktokenO200Base,
+        }) as LLMModel,
+    })
     const captured = captureDispatchRequests(okOpenAIResponsesResponse())
 
     await dispatchWithProfile(profile, database)
@@ -1222,12 +1427,16 @@ describe('dispatchChatProvider profile providerOptions', () => {
       nanogptProvider: 'flat-provider-must-not-win',
       nanogptUseSubscriptionEndpoint: false,
       reasoningEffort: 3,
+      providerCredentials: [
+        { id: 'nanogpt-responses-credential', name: 'NanoGPT', type: 'apiKey', apiKey: 'sk-profile-nano' },
+      ],
       modelProfiles: [
         {
           id: 'nanogpt-responses-profile',
           name: 'NanoGPT Responses Profile',
           modelId: nanoResponsesInfo.id,
           providerOptions: {
+            credentialId: 'nanogpt-responses-credential',
             requestModel: 'provider/nano-model',
             nanogpt: {
               providerHint: 'must-not-be-sent-on-subscription',
@@ -1286,7 +1495,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
   })
 
   it('uses Anthropic xcustom profile options over conflicting flat database fields', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'xcustom:::profile-anthropic',
         customModels: [
@@ -1348,6 +1557,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-mistral-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.Mistral,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.Mistral,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -1390,6 +1610,17 @@ describe('dispatchChatProvider profile providerOptions', () => {
           ['profileFlag', 'true'],
         ],
       } as Partial<Database>),
+      lookupModelInfo: (_database, id) =>
+        ({
+          id,
+          name: id,
+          internalID: 'profile-cohere-model',
+          provider: LLMProvider.AsIs,
+          format: LLMFormat.Cohere,
+          flags: [LLMFlags.hasFirstSystemPrompt],
+          parameters: OpenAIParameters,
+          tokenizer: LLMTokenizer.Cohere,
+        }) as LLMModel,
     })
     const flatConflict = db({
       aiModel: 'reverse_proxy',
@@ -1617,7 +1848,26 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const profile = resolveModelProfile({
       database: db({
         aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
-        claudeAPIKey: 'PROFILEAKIA:profile-secret:ap-southeast-2',
+        providerCredentials: [
+          {
+            id: 'bedrock-profile-credential',
+            name: 'Bedrock profile',
+            type: 'apiKey',
+            apiKey: 'PROFILEAKIA:profile-secret:ap-southeast-2',
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'bedrock-profile',
+            name: 'Bedrock profile',
+            modelId: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+            providerOptions: {
+              credentialId: 'bedrock-profile-credential',
+              requestModel: 'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'bedrock-profile' } },
       } as Partial<Database>),
     })
     const flatConflict = db({
@@ -1705,6 +1955,18 @@ describe('dispatchChatProvider profile providerOptions', () => {
       database: db({
         aiModel: 'gemini-2.5-flash',
         google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+        providerCredentials: [
+          { id: 'google-profile-credential', name: 'Google profile', type: 'apiKey', apiKey: 'profile-google-key' },
+        ],
+        modelProfiles: [
+          {
+            id: 'google-profile',
+            name: 'Google profile',
+            modelId: 'gemini-2.5-flash',
+            providerOptions: { credentialId: 'google-profile-credential', requestModel: 'gemini-profile-wire-model' },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'google-profile' } },
       } as Partial<Database>),
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -1738,6 +2000,23 @@ describe('dispatchChatProvider profile providerOptions', () => {
       aiModel: 'gemini-2.5-flash',
       google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
       useStreaming: true,
+      providerCredentials: [
+        { id: 'gemini-media-credential', name: 'Gemini profile', type: 'apiKey', apiKey: 'profile-google-key' },
+      ],
+      modelProfiles: [
+        {
+          id: 'gemini-media-profile',
+          name: 'Gemini media profile',
+          modelId: 'gemini-2.5-flash',
+          providerOptions: {
+            credentialId: 'gemini-media-credential',
+            requestModel: 'gemini-media-output',
+            customApi: { flags: [flag] },
+          },
+          runtimeOptions: { useStreaming: false, enableCustomFlags: true, customFlags: [flag] },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'gemini-media-profile' } },
     } as Partial<Database>)
     const profile = resolveModelProfile({
       database,
@@ -1763,6 +2042,18 @@ describe('dispatchChatProvider profile providerOptions', () => {
       aiModel: 'gemini-2.5-flash',
       google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
       useStreaming: false,
+      providerCredentials: [
+        { id: 'gemini-text-credential', name: 'Gemini profile', type: 'apiKey', apiKey: 'profile-google-key' },
+      ],
+      modelProfiles: [
+        {
+          id: 'gemini-text-profile',
+          name: 'Gemini text profile',
+          modelId: 'gemini-2.5-flash',
+          providerOptions: { credentialId: 'gemini-text-credential', requestModel: 'gemini-text-only' },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'gemini-text-profile' } },
     } as Partial<Database>)
     const profile = resolveModelProfile({
       database,
@@ -1866,7 +2157,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     { label: 'missing', google: undefined },
     { label: 'blank', google: { accessToken: '   ', projectId: 'profile-project' } },
   ])('does not fall back to flat DB Google key when the profile key is $label', async (testCase) => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'gemini-2.5-flash',
         ...(testCase.google === undefined ? {} : { google: testCase.google }),
@@ -1880,7 +2171,9 @@ describe('dispatchChatProvider profile providerOptions', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
-      'options.gemini.apiKey or options.gemini.vertex is required',
+      testCase.google === undefined
+        ? 'options.gemini.apiKey or options.gemini.vertex is required'
+        : 'credential-missing',
     )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
@@ -1896,6 +2189,27 @@ describe('dispatchChatProvider profile providerOptions', () => {
         vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
         vertexPrivateKey: profilePrivateKey,
         vertexAccessToken: 'cached-profile-token',
+        providerCredentials: [
+          {
+            id: 'vertex-profile-credential',
+            name: 'Vertex profile',
+            type: 'vertexServiceAccount',
+            vertex: { clientEmail: 'svc@profile-project.iam.gserviceaccount.com', privateKey: profilePrivateKey },
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'vertex-profile',
+            name: 'Vertex profile',
+            modelId: 'gemini-2.5-pro-vertex',
+            providerOptions: {
+              credentialId: 'vertex-profile-credential',
+              requestModel: 'gemini-profile-vertex-wire-model',
+              vertex: { projectId: 'profile-project', region: 'us-central1' },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vertex-profile' } },
       } as Partial<Database>),
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -1952,7 +2266,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     },
   ])('does not fall back to flat DB Vertex auth when profile auth is $label', async (testCase) => {
     _resetVertexTokenCacheForTesting()
-    const profile = resolveModelProfile({ database: db(testCase.profileDatabase) })
+    const profile = resolveModelProfileWithLegacyCompatibility({ database: db(testCase.profileDatabase) })
     const flatConflict = db({
       aiModel: 'gemini-2.5-pro-vertex',
       google: { accessToken: 'flat-studio-key', projectId: 'flat-project' },
@@ -1964,12 +2278,14 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
-    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('configuration is incomplete')
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      /(?:configuration is incomplete|vertex-(?:project-id|region|client-email|private-key)-missing)/u,
+    )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   it('uses Horde profile API key and request model over conflicting flat database fields', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'horde:::profile-horde-model',
         hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
@@ -2015,7 +2331,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
       instructChatTemplate: template,
     } as Partial<Database>)
-    const profile = resolveModelProfile({ database })
+    const profile = resolveModelProfileWithLegacyCompatibility({ database })
     const captured = captureHordeRequests()
 
     await dispatchHordeWithProfile(profile, database, [
@@ -2036,7 +2352,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       currentChar: 0,
       characters: [{ name: 'Wrong First Character' }, { name: 'Active Character' }],
     } as unknown as Partial<Database>)
-    const profile = resolveModelProfile({ database })
+    const profile = resolveModelProfileWithLegacyCompatibility({ database })
     captureHordeRequests('clean result\nActive Character: trailing role text')
     const source = await dispatchChatProvider({
       database,
@@ -2066,7 +2382,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       hordeConfig: { apiKey: 'profile-horde-key', model: '', softPrompt: '' },
       instructChatTemplate: 'chatml',
     } as Partial<Database>)
-    const profile = resolveModelProfile({ database })
+    const profile = resolveModelProfileWithLegacyCompatibility({ database })
     vi.stubGlobal('fetch', async (url: string | URL | Request, init?: RequestInit) => {
       if (String(url).endsWith('/generate/text/async')) {
         return new Response(JSON.stringify({ id: 'impossible-job' }), {
@@ -2103,11 +2419,12 @@ describe('dispatchChatProvider profile providerOptions', () => {
   })
 
   it('uses the anonymous Horde key when the profile key is blank despite a flat DB key', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'horde:::profile-horde-model',
         hordeConfig: { apiKey: '   ', model: '', softPrompt: '' },
         instructChatTemplate: 'chatml',
+        modelRoleProfiles: {},
       } as Partial<Database>),
     })
     const flatConflict = db({
@@ -2131,11 +2448,12 @@ describe('dispatchChatProvider profile providerOptions', () => {
   })
 
   it('omits the OobaLegacy API key when the profile key is blank despite a flat DB key', async () => {
-    const profile = resolveModelProfile({
+    const profile = resolveModelProfileWithLegacyCompatibility({
       database: db({
         aiModel: 'mancer',
         textgenWebUIBlockingURL: 'http://profile-ooba.example.com/api/v1/blocking',
         mancerHeader: '   ',
+        modelRoleProfiles: {},
       } as Partial<Database>),
     })
     const flatConflict = db({
@@ -2170,7 +2488,9 @@ describe('dispatchChatProvider profile providerOptions', () => {
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
-    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow('configuration is incomplete')
+    await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
+      /(?:configuration is incomplete|credential-missing)/u,
+    )
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
@@ -2414,7 +2734,10 @@ describe('dispatchChatProvider profile providerOptions', () => {
       expectedModel: 'profile-ollama-cloud-model',
     },
   ])('uses $label profile options on the OpenAI branch', async (testCase) => {
-    const profile = resolveModelProfile({ database: testCase.profileDatabase })
+    const profile =
+      testCase.label === 'xcustom OpenAI-compatible'
+        ? resolveModelProfileWithLegacyCompatibility({ database: testCase.profileDatabase })
+        : resolveModelProfile({ database: testCase.profileDatabase })
     const captured = captureOpenAIRequests()
 
     await dispatchWithProfile(profile, testCase.flatConflict)
@@ -2776,7 +3099,13 @@ describe('getServerGenerationModelString', () => {
       expected: 'Ollama Cloud Cloud Label',
     },
   ])('ports the baseline provider label for $expected', ({ database, expected }) => {
-    expect(getServerGenerationModelString(database, resolveModelProfile({ database }))).toBe(expected)
+    const legacyDatabase = { ...database, modelProfiles: [], modelRoleProfiles: {} } as Database
+    expect(
+      getServerGenerationModelString(
+        legacyDatabase,
+        resolveModelProfileWithLegacyCompatibility({ database: legacyDatabase }),
+      ),
+    ).toBe(expected)
   })
 
   it('uses a durable selected profile request model without dropping the provider prefix', () => {
