@@ -1,6 +1,6 @@
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import type { TtsSynthesisCredential, TtsSynthesisRequest } from './ttsProtocol'
+import type { TtsSynthesisCredential, TtsSynthesisRequest } from '@risuai/protocol/tts-synthesis'
 
 const TTS_SYNTHESIS_ENDPOINT = '/api/v1/tts/synthesize'
 

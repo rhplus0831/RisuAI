@@ -8,8 +8,8 @@ import type {
   TtsSynthesisCredential,
   TtsSynthesisOperation,
   TtsSynthesisRequest,
-} from '../../../src/ts/server/ttsProtocol.js'
-import { isTtsSynthesisOperation } from '../../../src/ts/server/ttsProtocol.js'
+} from '@risuai/protocol/tts-synthesis'
+import { isTtsSynthesisOperation } from '@risuai/protocol/tts-synthesis'
 import { readBoundedBodyJson } from './generation/body.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { createTimeoutController } from './proxy.js'

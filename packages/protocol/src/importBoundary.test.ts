@@ -84,6 +84,7 @@ describe('@risuai/protocol import boundary', () => {
       'providerOperation.ts',
       'shellResource.ts',
       'startupTelemetry.ts',
+      'ttsSynthesis.ts',
     ])
     expect(violations).toEqual([])
   })

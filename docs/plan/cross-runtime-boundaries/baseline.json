@@ -3698,40 +3698,6 @@
       "policy": "shared-pure-runtime"
     },
     {
-      "lane": "production",
-      "importer": "server/fastify/src/tts.ts",
-      "specifier": "../../../src/ts/server/ttsProtocol.js",
-      "target": "src/ts/server/ttsProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isTtsSynthesisOperation"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/tts.ts",
-      "specifier": "../../../src/ts/server/ttsProtocol.js",
-      "target": "src/ts/server/ttsProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "FishSynthesisInput",
-        "HuggingFaceSynthesisInput",
-        "NovelAiSynthesisInput",
-        "OpenAiSynthesisInput",
-        "OpenAiTtsFormat",
-        "ProvidedOpenAiSynthesisConfig",
-        "TtsSynthesisCredential",
-        "TtsSynthesisOperation",
-        "TtsSynthesisRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
       "specifier": "../../../src/ts/agentPresetRecords",
@@ -4612,19 +4578,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/server/ttsProtocol.js",
-      "target": "src/ts/server/ttsProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "TTS_SYNTHESIS_OPERATIONS"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/phase9CompatibilityStructure.test.ts",
       "specifier": "../../../src/ts/process/triggerServerSupport.js",
       "target": "src/ts/process/triggerServerSupport.ts",
@@ -5052,19 +5005,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/tts.test.ts",
-      "specifier": "../../../src/ts/server/ttsProtocol.js",
-      "target": "src/ts/server/ttsProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "TtsSynthesisRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     }
   ],
   "nonLiteralModuleReferences": [],

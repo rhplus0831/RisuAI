@@ -12,7 +12,8 @@
     "./image-generation-operation": "./src/imageGenerationOperation.ts",
     "./provider-operation": "./src/providerOperation.ts",
     "./shell-resource": "./src/shellResource.ts",
-    "./startup-telemetry": "./src/startupTelemetry.ts"
+    "./startup-telemetry": "./src/startupTelemetry.ts",
+    "./tts-synthesis": "./src/ttsSynthesis.ts"
   },
   "dependencies": {
     "@sinclair/typebox": "0.34.52"

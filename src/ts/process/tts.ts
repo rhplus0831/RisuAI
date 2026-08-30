@@ -8,7 +8,7 @@ import { runVITS } from './transformers'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { requestTtsSynthesis, ttsGlobalCredential, TtsSynthesisRequestError } from '../server/tts'
-import type { OpenAiTtsFormat, TtsSynthesisRequest } from '../server/ttsProtocol'
+import type { OpenAiTtsFormat, TtsSynthesisRequest } from '@risuai/protocol/tts-synthesis'
 import {
   getTTSPreprocessors,
   getTTSPostprocessors,

@@ -8,7 +8,7 @@ import { LLMFormat, type LLMFormat as LLMFormatValue } from '../../../src/ts/mod
 import { formatToServerProvider } from '../../../src/ts/process/request/providerCapability.js'
 import { SERVER_IMAGE_GENERATION_PROVIDERS } from '@risuai/protocol/image-generation-operation'
 import { PROVIDER_OPERATIONS } from '@risuai/protocol/provider-operation'
-import { TTS_SYNTHESIS_OPERATIONS } from '../../../src/ts/server/ttsProtocol.js'
+import { TTS_SYNTHESIS_OPERATIONS } from '@risuai/protocol/tts-synthesis'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 
