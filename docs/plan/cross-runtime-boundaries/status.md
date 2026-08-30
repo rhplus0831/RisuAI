@@ -9,20 +9,20 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; three Phase 3 leaf slices are
+- Plan state: Active; Phases 0 through 2 complete; four Phase 3 leaf slices are
   complete.
 - Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [Regex output-size normalization](phases/slices/phase-3-pure-shared-core/regex-output-size-normalization.md), ready.
+- Active slice: [Legacy OpenAI model-alias normalization](phases/slices/phase-3-pure-shared-core/legacy-openai-model-alias-normalization.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: chat display-tail normalization at
-  `6fc15d7a1`; focused shared-core parity/ownership, browser-related, Fastify
-  defaulting, architecture inventory, shared-core/root/downstream typechecks,
-  formatting, and diff checks passed; see
+- Latest implementation candidate: regex output-size normalization at
+  `83e8aabfa`; focused shared-core parity/ownership, browser storage/settings,
+  Fastify defaulting/commands/regex/scripts, architecture inventory,
+  shared-core/root/downstream typechecks, formatting, and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -48,6 +48,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Shared-core foundation and first leaf | `d798740f7` (`d78c67a3a` parity proof) | Released with an independently checked package boundary and one shared chat-page normalizer used by three browser and one Fastify call sites. |
 | Chat load-page normalization | `c12e807a5` | Released through `@risuai/shared-core/chat-load-pages`; every production consumer uses the shared leaf and one production root-`src` edge was removed. |
 | Chat display-tail normalization | `6fc15d7a1` | Released through `@risuai/shared-core/chat-display-tail-count`; both production consumers use the shared leaf and one production root-`src` edge was removed. |
+| Regex output-size normalization | `83e8aabfa` | Released through `@risuai/shared-core/regex-output-size-limit`; all eight production consumers use the shared leaf and four production root-`src` edges were removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -72,11 +73,11 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 334 direct root-`src` edges remain: 231 production, 95 server-test, and 8
-  browser-smoke, spanning 132 importers and 66 targets.
-- Usage is 132 runtime, 39 mixed, and 163 type-only; 171 runtime/mixed edges
+- 330 direct root-`src` edges remain: 227 production, 95 server-test, and 8
+  browser-smoke, spanning 132 importers and 65 targets.
+- Usage is 128 runtime, 39 mixed, and 163 type-only; 167 runtime/mixed edges
   remain.
-- The completed Phase 1 and Phase 3 slices removed 41 edges and 13 source
+- The completed Phase 1 and Phase 3 slices removed 45 edges and 14 source
   targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -88,7 +89,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and three chat normalization leaves complete; regex output-size normalization is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation, three chat leaves, and regex output-size normalization complete; legacy OpenAI model aliases are next. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
@@ -110,6 +111,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move only regex output-size normalization,
-its bounds, and code-unit conversion into the audited shared-core owner while
-preserving numeric-only input, truncation, clamping, and output budgets exactly.
+Use [`next-steps.md`](next-steps.md). Move only legacy OpenAI model-ID alias
+normalization into the audited shared-core owner while preserving the exact
+alias table, unknown-ID pass-through, stored selection, and provider payloads.

@@ -4,20 +4,19 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [regex output-size normalization
-slice](phases/slices/phase-3-pure-shared-core/regex-output-size-normalization.md).
+Execute the [legacy OpenAI model-alias normalization
+slice](phases/slices/phase-3-pure-shared-core/legacy-openai-model-alias-normalization.md).
 
-1. Move the `16` MiB default, `1..64` MiB bounds,
-   `normalizeRegexOutputSizeLimitMiB`, and `regexOutputSizeLimitCodeUnits` into
-   an explicit shared-core subpath.
-2. Preserve numeric-only input, non-finite fallback, truncation toward zero,
-   clamping, and the `1024 * 1024` code-unit multiplier exactly.
-3. Migrate Fastify defaulting, command validation, bounded-regex/script
-   execution, and browser storage/settings/worker consumers together.
-4. Delete `src/ts/regexOutputSizeLimit.ts` only after parity and closed-world
-   ownership tests pass.
-5. Keep the setting key, command range validation, persistence, payloads,
-   worker budgets, and browser/server regex behavior unchanged.
+1. Move the exact legacy-to-wire alias table and
+   `normalizeLegacyOpenAIModelId` into an explicit shared-core subpath.
+2. Preserve every mapped value and return every unknown identifier unchanged;
+   do not trim, case-fold, validate, or rewrite stored selections.
+3. Migrate the browser OpenAI request path and the Fastify chat-completions,
+   legacy-instruct, and Responses API paths together.
+4. Delete `src/ts/model/legacyOpenAIModelAliases.ts` only after shared
+   differential fixtures and closed-world consumer ownership pass.
+5. Keep provider selection, routing, credentials, request parameters, error
+   handling, and wire payloads unchanged.
 
 ## Foundations Released
 
@@ -37,12 +36,14 @@ slice](phases/slices/phase-3-pure-shared-core/regex-output-size-normalization.md
   `c12e807a5`.
 - Chat display-tail normalization and both production consumers are released at
   `6fc15d7a1`.
+- Regex output-size normalization and all eight production consumers are
+  released at `83e8aabfa`.
 
 ## Not In This Slice
 
-- Do not move the settings row, command handler, worker orchestration, resource
-  owner, payload schema, or persistence behavior into shared core.
-- Do not change the regex engine, timeout policy, or output-size units.
+- Do not move provider dispatch, endpoint selection, request construction,
+  credentials, response parsing, or retry/error policy into shared core.
+- Do not expand or modernize the legacy alias table in this boundary move.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

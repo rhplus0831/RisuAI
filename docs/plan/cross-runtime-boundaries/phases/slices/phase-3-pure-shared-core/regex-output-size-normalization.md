@@ -1,6 +1,6 @@
 # Regex Output-Size Normalization
 
-Status: ready.
+Status: complete at `83e8aabfa`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -45,3 +45,11 @@ both typechecks, architecture inventory, formatting, and `git diff --check`.
 
 Stop if the helper needs a regex engine, worker, browser state, persistence,
 command, or host-specific dependency.
+
+## Result
+
+The constants, numeric normalizer, and code-unit conversion now live at
+`@risuai/shared-core/regex-output-size-limit`. All eight production consumers
+use the shared owner, the old browser-tree module is gone, focused execution and
+validation tests preserve existing budgets, and the reviewed boundary fell to
+330 direct root-`src` edges.
