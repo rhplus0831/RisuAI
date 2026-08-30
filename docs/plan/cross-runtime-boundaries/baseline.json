@@ -1098,19 +1098,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/parser/parser.svelte",
-      "target": "src/ts/parser/parser.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "simpleCharacterArgument"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",

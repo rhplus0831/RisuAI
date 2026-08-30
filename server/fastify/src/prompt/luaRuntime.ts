@@ -8,7 +8,6 @@ import { isIP } from 'node:net'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
 import type { PromptMessage } from './promptMessage.js'
 import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 import type { ModelRole } from '@risuai/shared-core/model-roles'
@@ -52,6 +51,17 @@ import {
   type ServerLuaRuntimeTraceSink,
 } from './luaPostGenerationTrace.js'
 import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } from './luaPostGenerationProgress.js'
+
+/**
+ * The Lua runtime only needs the narrow character shape used by edit-trigger
+ * ownership. Keep this structural type local so Fastify does not depend on the
+ * browser markdown parser module for a type-only declaration.
+ */
+type SimpleCharacterArgument = {
+  type: 'simple'
+  chaId: string
+  triggerscript?: triggerscript[]
+}
 
 /**
  * Server-side Lua runtime under the single-user self-host security model.
@@ -686,7 +696,7 @@ export interface ServerLuaRuntimeContext {
    */
   varEngine: TriggerVarEngine
   /** Working character (cbs `chara`, `getName`/`getDescription`, setters). */
-  char?: character | simpleCharacterArgument
+  char?: character | SimpleCharacterArgument
   /** Active model id, for `getTokens` encoding selection. */
   model?: string
   /** Egress dependency overrides (tests inject fake DNS/fetch/clock). */
@@ -2546,7 +2556,7 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
  * otherwise callers cannot distinguish a no-op hook from a broken hook.
  */
 export async function runLuaEditTrigger<T extends string | PromptMessage[]>(
-  char: character | simpleCharacterArgument,
+  char: character | SimpleCharacterArgument,
   mode: string,
   content: T,
   meta: object | undefined,
