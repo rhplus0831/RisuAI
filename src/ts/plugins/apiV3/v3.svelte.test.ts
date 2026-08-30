@@ -69,6 +69,8 @@ const mockModuleLorebooks = vi.hoisted(() => ({ entries: [] as any[] }))
 
 const mockInlays = vi.hoisted(() => ({ getInlayAsset: vi.fn() }))
 
+const mockResolvedModelState = vi.hoisted(() => ({ id: 'openai' }))
+
 const mockPermissionForage = vi.hoisted(() => {
   const values = new Map<string, unknown>()
   return {
@@ -326,6 +328,10 @@ vi.mock('src/ts/model/modellist', () => ({
   getModelInfo: () => ({ id: 'openai' }),
 }))
 
+vi.mock('src/ts/model/modelProfileResolver', () => ({
+  resolveModelProfile: () => ({ modelInfo: { id: mockResolvedModelState.id } }),
+}))
+
 vi.mock('src/ts/process/request/request', () => ({
   requestChatDataMain: vi.fn(),
 }))
@@ -482,6 +488,7 @@ beforeEach(async () => {
   mockPermissionForage.setItem.mockClear()
   mockPermissionForage.removeItem.mockClear()
   mockModuleLorebooks.entries = []
+  mockResolvedModelState.id = 'openai'
   vi.mocked(getInlayAsset).mockReset()
   await __v3PluginLifecycleTestHooks.reset()
 })
@@ -774,6 +781,20 @@ describe('V3 character command bridge', () => {
 })
 
 describe('V3 chat command bridge', () => {
+  it('blocks sendChat when the resolved durable model is plugin-provided', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    seedV3ChatBridge(plugin)
+    mockDbState.db.aiModel = 'stale-flat-model'
+    mockResolvedModelState.id = 'pluginmodel:::durable-provider'
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.sendChat('must not recurse')).rejects.toThrow(
+      'Sending chat with plugin-based model is currently blocked',
+    )
+    expect(appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(processSendChat).not.toHaveBeenCalled()
+  })
+
   it('sendChat rejects a stale target before append without starting generation', async () => {
     const plugin = seedV3Plugin('plugin-a')
     seedV3ChatBridge(plugin)
