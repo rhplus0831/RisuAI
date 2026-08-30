@@ -23,7 +23,7 @@ vi.mock('./server/resourceState.svelte', () => ({
 }))
 
 import { selectedCharID, selIdState } from './stores/coreStores.svelte'
-import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
+import { installStoreRuntimeEffects, resolveUniquePromptPreset } from './stores/runtimeEffects.svelte'
 
 let dispose: (() => void) | undefined
 
@@ -39,6 +39,18 @@ afterEach(() => {
 })
 
 describe('store runtime effects', () => {
+  it.each([
+    ['missing', []],
+    ['duplicate', [{ id: 'prompt-a' }, { id: 'prompt-a' }]],
+  ])('fails closed for a %s prompt preset owner', (_kind, promptPresets) => {
+    expect(resolveUniquePromptPreset(promptPresets, 'prompt-a')).toBeUndefined()
+  })
+
+  it('resolves the unique prompt preset owner for runtime effects', () => {
+    const preset = { id: 'prompt-a', moduleIntergration: 'runtime-module' }
+    expect(resolveUniquePromptPreset([preset], 'prompt-a')).toBe(preset)
+  })
+
   it('install once, synchronize selection, and dispose cleanly', () => {
     dispose = installStoreRuntimeEffects()
     expect(installStoreRuntimeEffects()).toBe(dispose)

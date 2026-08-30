@@ -11,6 +11,17 @@ export interface ModuleUpdateSignalSource {
   backgroundEmbedding?: string
 }
 
+export function resolveUniquePromptPreset(
+  promptPresets: readonly { id?: unknown }[] | undefined,
+  promptPresetId: unknown,
+): { id?: unknown; moduleIntergration?: unknown } | undefined {
+  if (!Array.isArray(promptPresets) || typeof promptPresetId !== 'string' || promptPresetId.trim() === '') {
+    return undefined
+  }
+  const matches = promptPresets.filter((preset) => preset?.id === promptPresetId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 export function readModuleUpdateSignals(modules: readonly ModuleUpdateSignalSource[] | undefined): void {
   if (!modules) return
   void modules.length
@@ -55,8 +66,9 @@ export function installStoreRuntimeEffects(): () => void {
       const database = getResourceDatabase()
       const character = database.characters?.[selIdState.selId]
       const chat = character?.chats?.[character.chatPage]
-      const selectedPromptPreset = database.promptPresets?.find(
-        (preset) => preset.id === chat?.generationSettings?.promptPresetId,
+      const selectedPromptPreset = resolveUniquePromptPreset(
+        database.promptPresets,
+        chat?.generationSettings?.promptPresetId,
       )
       const effectiveAgentPresetId = Object.prototype.hasOwnProperty.call(
         chat?.generationSettings ?? {},
