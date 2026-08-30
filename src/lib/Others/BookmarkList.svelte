@@ -15,8 +15,6 @@
   import { alertError, alertInput, alertNormal } from 'src/ts/alert'
   import {
     currentChatScopedSnapshot,
-    currentChatStateSnapshot,
-    dispatchUpdateChat,
     dispatchUpdateChatScopedWithOutcome,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
@@ -438,13 +436,6 @@
       delete nextBookmarkNames[chatId]
       chat.bookmarks = nextBookmarks
       chat.bookmarkNames = nextBookmarkNames
-      if (chat.id) {
-        dispatchUpdateChat(
-          chat.id,
-          { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
-          currentChatStateSnapshot(),
-        )
-      }
     }
   }
 
