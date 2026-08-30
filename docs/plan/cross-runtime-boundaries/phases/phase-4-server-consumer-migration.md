@@ -55,5 +55,7 @@ Completed slices:
 - [Prompt-memory query seam](slices/phase-4-server-consumer-migration/prompt-memory-query-seam.md)
 - [Trigger-compatibility policy seam](slices/phase-4-server-consumer-migration/trigger-compatibility-policy-seam.md)
 - [Generation-finalization retry message seam](slices/phase-4-server-consumer-migration/generation-finalization-retry-message-seam.md)
+- [Module/trigger descriptor ownership](slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md)
+- [Bounded-regex settings seam](slices/phase-4-server-consumer-migration/bounded-regex-settings-seam.md)
 
-Active slice: [Module/trigger descriptor ownership](slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md).
+Active slice: [MCP identifier ownership](slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md).

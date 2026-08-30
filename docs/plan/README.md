@@ -9,7 +9,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 chat-variable defaults seam](cross-runtime-boundaries/status.md) | Phase 3 closed with seventeen neutral leaves; prompt rendering/budget and prompt-summary inputs migrated through `701bc555f`, leaving 260 direct root-`src` edges. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 4 MCP identifier ownership](cross-runtime-boundaries/status.md) | Phase 3 closed with seventeen neutral leaves; server-owned descriptors and bounded-regex settings reduce the checked boundary to 211 direct root-`src` edges. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Migration is durable; profile-owned request parameters and provider-specific thinking overrides are canonical through `3cff93cd6`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat dependency gate](client-resource-ownership/status.md) | Phase 2 closed the standalone page pointer at `aaf66b75d`; the next runtime slice waits for matching Workstream 1/2 releases. |
 

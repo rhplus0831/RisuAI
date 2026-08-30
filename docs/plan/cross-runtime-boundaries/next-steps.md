@@ -4,18 +4,17 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [module/trigger descriptor ownership
-slice](phases/slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md).
+Execute the [MCP identifier ownership
+slice](phases/slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md).
 
-1. Define closed Fastify-owned module, trigger, condition, effect, and additional
-   system-prompt descriptors without weakening the existing discriminated unions.
-2. Move the seven bounded production and six focused-test imports to that owner;
-   keep aggregate database inputs and the Lua-runtime trigger import out of this
-   tranche.
-3. Preserve module activation/order/cache identity, trigger-source attribution,
-   recursion and abort budgets, effect handling, mutation semantics, and no-ops.
-4. Add a closed ownership assertion, refresh the architecture baseline, and run
-   module, memo, trigger, lorebook, Lua, and script suites plus both type gates.
+1. Move the dependency-free MCP importability predicate to a dedicated
+   `@risuai/shared-core` subpath.
+2. Point the browser import flow and Fastify module command validator at that
+   owner without widening accepted identifiers.
+3. Preserve HTTPS, loopback HTTP, and non-whitespace `internal:`, `stdio:`, and
+   `plugin:` syntax exactly; do not move DNS, OAuth, or runtime egress policy.
+4. Add behavior and closed ownership proof, refresh the architecture baseline,
+   and run the focused module and Phase 10 suites plus both type gates.
 
 ## Foundations Released
 
@@ -89,17 +88,22 @@ slice](phases/slices/phase-4-server-consumer-migration/module-trigger-descriptor
   warning parity at `75b0f6278`; four runtime/mixed edges were removed.
 - Generation-finalization retry messages are released at `79041383f`; retained
   JSON now uses a narrow Fastify-owned structural envelope.
+- Trigger descriptors are released at `5431a9921`; six Fastify production/test
+  consumers use a closed server-owned descriptor mirror with AST parity proof.
+- Module descriptors are released at `ba09370c0`; eight Fastify production/test
+  consumers use a closed server-owned module projection with AST parity proof.
+- Bounded-regex settings are released at `9bcffa62e`; Fastify accepts only the
+  five compatibility, timeout, and output-bound fields it reads.
 
 ## Not In This Slice
 
-- Do not change module activation data, aggregate database/chat/character
-  projections, trigger execution, scripts, model/profile selection, or
-  persistence.
-- Do not include `luaRuntime.ts`'s trigger descriptor edge; it belongs with its
-  larger Lua argument/type seam.
+- Do not change module activation, module persistence, MCP execution, OAuth,
+  credential handling, or egress validation.
+- Do not fold identifier importability into Fastify's network authorization
+  policy; the predicate is shared input syntax only.
 
 ## Handoff
 
-After this slice closes, update [`status.md`](status.md) and
-[`latest-verification.md`](latest-verification.md), then select the next
-domain-sized Phase 4 consumer migration from the refreshed inventory.
+After this slice closes, relocate the two neutral test-fixture families from the
+browser tree, then select the next production Phase 4 consumer migration from
+the refreshed inventory.

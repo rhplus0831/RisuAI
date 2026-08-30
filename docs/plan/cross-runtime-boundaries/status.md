@@ -12,19 +12,18 @@ in [`latest-verification.md`](latest-verification.md).
 - Plan state: Active; Phases 0 through 3 complete; seventeen neutral shared-core
   leaves are released.
 - Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
-- Active slice: [Module/trigger descriptor ownership](phases/slices/phase-4-server-consumer-migration/module-trigger-descriptor-ownership.md), ready.
+- Active slice: [MCP identifier ownership](phases/slices/phase-4-server-consumer-migration/mcp-identifier-ownership.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: generation-finalization retry messages at
-  `79041383f`, following Fastify trigger-compatibility ownership at `68d41f2cd`
-  with mirror-parity proof at `75b0f6278`; focused finalization, script,
-  trigger, compatibility, and ownership suites,
-  architecture inventory, shared-core/root/downstream typechecks, formatting,
-  and diff checks passed; see
+- Latest implementation candidate: bounded-regex settings at `9bcffa62e`,
+  following trigger descriptors at `5431a9921` and module descriptors at
+  `ba09370c0`; focused regex, module, memo, trigger, lorebook, Lua, script,
+  parity, and ownership suites, architecture inventory, shared-core/root/
+  downstream typechecks, formatting, and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -76,6 +75,9 @@ in [`latest-verification.md`](latest-verification.md).
 | Prompt-memory query seam | `e520f5bb7` | Released through Fastify-owned character/chat/message query projections and the existing embedding settings contract; one production aggregate browser-model edge was removed. |
 | Trigger-compatibility policy seam | `68d41f2cd` (`75b0f6278` parity proof) | Released through a Fastify-owned runtime policy and a source-level parity assertion against the browser warning mirror; two production and two server-test runtime edges were removed. |
 | Generation-finalization retry message seam | `79041383f` | Released through a narrow Fastify-owned retained-message envelope with optional legacy message IDs; one production type-only aggregate browser-model edge was removed. |
+| Trigger descriptor seam | `5431a9921` | Released through a closed Fastify-owned compile-time descriptor mirror with AST parity proof; five production and one server-test type-only edges were removed. |
+| Module descriptor seam | `ba09370c0` | Released through a closed Fastify-owned module projection with AST parity proof; three production and five server-test type-only edges were removed. |
+| Bounded-regex settings seam | `9bcffa62e` | Released through a five-field Fastify-owned settings input; one production and one server-test aggregate browser-model edge were removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -100,13 +102,13 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 227 direct root-`src` edges remain: 147 production, 72 server-test, and 8
-  browser-smoke, spanning 102 importers and 49 targets.
-- Usage is 93 runtime, 38 mixed, and 96 type-only; 131 runtime/mixed edges
+- 211 direct root-`src` edges remain: 138 production, 65 server-test, and 8
+  browser-smoke, spanning 99 importers and 47 targets.
+- Usage is 93 runtime, 38 mixed, and 80 type-only; 131 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse and completed Phase 4 server seams, removed 148 edges and
-  30 source targets.
+  shared-helper reuse and completed Phase 4 server seams, removed 164 edges and
+  32 source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 
@@ -118,7 +120,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb` after seventeen audited neutral leaves. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Trigger compatibility and finalization retry messages are server-owned; module/trigger descriptors are next. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Trigger compatibility, finalization retry messages, module/trigger descriptors, and bounded-regex settings are server-owned; MCP identifier ownership is next. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
@@ -139,6 +141,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move the bounded module/trigger descriptor
-family behind a Fastify-owned closed contract while preserving activation,
-source attribution, execution, and effect-union behavior.
+Use [`next-steps.md`](next-steps.md). Move the pure MCP importability predicate
+to the shared owner while preserving the exact accepted schemes and keeping
+runtime egress policy in Fastify.
