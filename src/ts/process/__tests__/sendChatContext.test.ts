@@ -858,6 +858,35 @@ describe('setupSendChatContext - field-scoped send rollback', () => {
     expect(testDatabaseState.db.characters[3].name).toBe('Concurrent sibling edit')
   })
 
+  it('does not roll back through an ambiguous character owner', async () => {
+    const patchResponse = deferredResponse()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 21 })
+        if (url === '/api/v1/commands/characters/duplicate-character') return patchResponse.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    seedDb({
+      characters: [
+        makeChar({ chaId: 'duplicate-character', lastInteraction: 123 }),
+        makeChar({ chaId: 'duplicate-character', name: 'Ambiguous duplicate' }),
+      ],
+    })
+    selectedCharID.set(0)
+    const ctx = setupSendChatContext({ chatProcessIndex: -1 })
+    const attempted = testDatabaseState.db.characters[0].lastInteraction
+    expect(attempted).not.toBe(123)
+
+    patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await expect(ctx.persistence).resolves.toMatchObject({ status: 'failure', acceptedCount: 0 })
+    // The stable-id owner is ambiguous, so rollback must not guess by index.
+    expect(testDatabaseState.db.characters[0].lastInteraction).toBe(attempted)
+  })
+
   it('a failed tail restores only backfilled IDs after the character timestamp was accepted', async () => {
     const replaceResponse = deferredResponse()
     const calls: CapturedFetch[] = []

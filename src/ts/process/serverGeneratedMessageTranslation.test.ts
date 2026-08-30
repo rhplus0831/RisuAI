@@ -24,7 +24,10 @@ import {
   resetAutomaticTranslationEligibilityForTests,
   serverOwnedGeneratedMessageIds,
 } from './generatedMessageTranslationEligibility'
-import { handleServerGeneratedMessageTranslation } from './serverGeneratedMessageTranslation'
+import {
+  applyEmbeddedGeneratedMessageTranslation,
+  handleServerGeneratedMessageTranslation,
+} from './serverGeneratedMessageTranslation'
 
 const translation = {
   source: 'raw' as const,
@@ -127,5 +130,26 @@ describe('server-generated message translation frames', () => {
     // Simulate Chats.svelte observing the append after the done handler.
     replaceAutomaticTranslationMessageIds(['message-1'])
     expect(isClientAutomaticTranslationEligible('message-1')).toBe(false)
+  })
+
+  it('fails closed when a chat has duplicate message owners', () => {
+    const duplicateMessage = { role: 'char', data: 'second reply', chatId: 'duplicate-message' }
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-duplicate',
+          chatPage: 0,
+          chats: [
+            {
+              id: 'chat-duplicate',
+              message: [{ role: 'char', data: 'first reply', chatId: 'duplicate-message' }, duplicateMessage],
+            },
+          ],
+        },
+      ],
+    } as never)
+
+    expect(applyEmbeddedGeneratedMessageTranslation('chat-duplicate', 'duplicate-message', translation)).toBe(false)
+    expect((duplicateMessage as { translation?: unknown }).translation).toBeUndefined()
   })
 })

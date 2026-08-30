@@ -30,6 +30,7 @@ import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } fro
 import { captureChatMessageMutationIntentEpoch } from '../server/chatMessageMutationIntent'
 import { finalizeServerBackedInlayMessage } from './inlayFinalization'
 import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
+import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
 import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
@@ -178,7 +179,7 @@ export function findGeneratedAssistantMessage(chat: Chat, generationId: string):
 }
 
 function activeChatId(): string | undefined {
-  const character = getDatabase().characters?.[get(selectedCharID)]
+  const character = charactersResourceState.characters?.[get(selectedCharID)]
   return character?.chats?.[character.chatPage]?.id
 }
 
@@ -301,11 +302,14 @@ function targetFromPayloadOrContext(
 }
 
 function resolveServerBackedLiveChat(target: ServerBackedLiveChatTarget): ServerBackedLiveChatResolution | undefined {
-  const characters = getDatabase().characters
+  const characters = charactersResourceState.characters
   if (!Array.isArray(characters)) return undefined
 
   if (hasStableChatTarget(target)) {
-    const character = characters.find((candidate) => candidate?.chaId === target.characterId)
+    // Stable ids are resolved through the character-row owner. The aggregate
+    // database remains a compatibility mirror, and its position can change
+    // while a detached generation is still delivering terminal effects.
+    const character = getCharacterResourceOwner(target.characterId!)
     const chat = character?.chats?.find((candidate) => candidate?.id === target.chatId)
     return character && chat ? { character, chat } : undefined
   }
@@ -1302,7 +1306,7 @@ export async function applyServerBackedTerminal(args: {
           // the active primary candidate so it remains swipe index zero.
           [...alternates.reverse(), assistant],
           {
-            selectedCharID: getDatabase().characters.indexOf(resolution.character),
+            selectedCharID: charactersResourceState.characters.indexOf(resolution.character),
             chatPage: resolution.character.chats.indexOf(liveChat),
             characterId: resolution.character.chaId,
             chatId: liveChat.id,
@@ -1328,7 +1332,7 @@ export async function applyServerBackedTerminal(args: {
   if (chatOutputListeners.size > 0) await yieldBeforeCompletionEffect()
   await runLedgeredGenerationEffect(effectLedger, 'plugin_output', 'live_terminal', async (effectContext) => {
     if (!finalResolution || chatOutputListeners.size === 0) return skippedGenerationEffect('not_configured')
-    const characters = getDatabase().characters
+    const characters = charactersResourceState.characters
     await runChatOutputListeners({
       char: finalResolution.character,
       chat: finalChat,

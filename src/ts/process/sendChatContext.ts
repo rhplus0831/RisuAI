@@ -22,7 +22,11 @@ import { createPromptInfoSnapshot } from '../promptInfo'
 import { canUseServerCommands, replaceTailMessagesCommand, updateCharacterCommand } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import { captureChatBodyProjectionEpoch } from '../server/resourceState.svelte'
+import {
+  captureChatBodyProjectionEpoch,
+  charactersResourceState,
+  getCharacterResourceOwner,
+} from '../server/resourceState.svelte'
 import { getModuleToggles } from './modules'
 import { resolveModelProfileTokenizerSelection } from '../model/modelProfileResolver'
 
@@ -104,10 +108,10 @@ function restoreBackfilledMessageIds(snapshot: SendRollbackSnapshot): void {
 }
 
 function locateSendSnapshotCharacter(snapshot: SendRollbackSnapshot): character | undefined {
-  const characters = getDatabase().characters
+  const characters = charactersResourceState.characters
   if (!characters) return undefined
   if (snapshot.characterId) {
-    return characters.find((candidate) => candidate.chaId === snapshot.characterId)
+    return getCharacterResourceOwner(snapshot.characterId)
   }
   return characters[snapshot.characterIndex]
 }
@@ -175,7 +179,7 @@ export function setupSendChatContext(args: {
   if (writeMaintenance && !serverBacked) {
     getDatabase().statics.messages += 1
   }
-  const selectedChar = resolveSendCharacterIndex(target)
+  const selectedChar = serverBacked ? resolveOwnedCharacterIndex(target) : resolveSendCharacterIndex(target)
   const lastInteraction = Date.now()
   let persistence: Promise<CharacterOwnedDurableBatchResult> = Promise.resolve({
     status: 'ok',
@@ -188,7 +192,8 @@ export function setupSendChatContext(args: {
     let characterId: string | undefined
 
     withTrustedResourceWrite(() => {
-      const nowChatroom = getDatabase().characters[selectedChar]
+      const nowChatroom = resolveOwnedCharacter(target)
+      if (!nowChatroom) return
       characterId = nowChatroom.chaId
       const selectedChat = resolveSendChatIndex(nowChatroom, target)
       const selectedChatRecord = nowChatroom.chats[selectedChat]
@@ -288,7 +293,10 @@ export function setupSendChatContext(args: {
       })
     }
   }
-  const nowChatroom = getDatabase().characters[selectedChar]
+  const nowChatroom = serverBacked ? resolveOwnedCharacter(target) : getDatabase().characters[selectedChar]
+  if (!nowChatroom) {
+    throw new Error('Missing character owner for send context')
+  }
   const selectedChat = resolveSendChatIndex(nowChatroom, target)
 
   const promptInfo = createInitialPromptInfo(serverBacked, target)
@@ -347,6 +355,18 @@ function resolveSendCharacterIndex(target: ActiveChatTarget | null | undefined):
     return getDatabase().characters.findIndex((character) => character.chaId === target.characterId)
   }
   return target.selectedCharID
+}
+
+function resolveOwnedCharacter(target: ActiveChatTarget | null | undefined): character | undefined {
+  if (target?.characterId !== undefined) return getCharacterResourceOwner(target.characterId)
+  const selectedIndex = target?.selectedCharID ?? get(selectedCharID)
+  const candidate = charactersResourceState.characters[selectedIndex]
+  return candidate
+}
+
+function resolveOwnedCharacterIndex(target: ActiveChatTarget | null | undefined): number {
+  const character = resolveOwnedCharacter(target)
+  return character ? charactersResourceState.characters.indexOf(character) : -1
 }
 
 function resolveSendChatIndex(character: character, target: ActiveChatTarget | null | undefined): number {

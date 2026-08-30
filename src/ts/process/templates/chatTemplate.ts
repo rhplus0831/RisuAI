@@ -1,6 +1,9 @@
 import { Template } from '@huggingface/jinja'
+import { get } from 'svelte/store'
 import type { OpenAIChat } from '../index.svelte'
-import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
+import { getDatabase } from 'src/ts/storage/database.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 import { getUserName } from 'src/ts/utilState'
 
 export const chatTemplates = {
@@ -32,7 +35,7 @@ export const applyChatTemplate = (
   } = {},
 ) => {
   const db = getDatabase()
-  const currentChar = getCurrentCharacter()
+  const currentChar = charactersResourceState.characters[get(selectedCharID)]
   const type = arg.type ?? db.instructChatTemplate
   if (!type) {
     throw new Error('Template type is not set')
@@ -93,7 +96,7 @@ export const applyChatTemplate = (
   return template.render({
     messages: formatedMessages,
     add_generation_prompt: true,
-    risu_char: currentChar.name,
+    risu_char: currentChar?.name ?? '',
     risu_user: getUserName(),
     eos_token: '',
     bos_token: '',
