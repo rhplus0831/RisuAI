@@ -1258,7 +1258,7 @@ export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat
       displayMode: true,
       displayData: JSON.stringify(rows),
     })
-    if (!result || typeof result.displayData !== 'string') return rows
+    if (!result || result.aborted || typeof result.displayData !== 'string') return rows
     const parsed = JSON.parse(result.displayData) as unknown
     return Array.isArray(parsed) ? (parsed as OpenAIChat[]) : rows
   } catch {

@@ -19,6 +19,7 @@ import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.
 import { EntityNotFoundError } from '../src/repository.js'
 import {
   assemblePrompt,
+  applyRequestTrigger,
   applyCurrentChatRunVars,
   beginAssembly,
   createEmptyUnformatedSlots,
@@ -4004,6 +4005,39 @@ describe('renderAndBudget + assemblePrompt', () => {
       source: 'user_message',
       message: { role: 'user', data: 'hi' },
     })
+  })
+
+  it('discards request-state output when a legacy whole-trigger guard aborts', async () => {
+    const db = fullDb({
+      characters: [
+        makeCharacter({
+          chaId: 'char-tess',
+          triggerscript: [
+            {
+              comment: '',
+              type: 'request',
+              conditions: [],
+              effect: [
+                {
+                  type: 'v2SetRequestState',
+                  indexType: 'value',
+                  index: '0',
+                  valueType: 'value',
+                  value: 'mutated request row',
+                  indent: 0,
+                },
+                { type: 'v2MakeArrayVar', var: '[]', indent: 0 },
+              ],
+            },
+          ] as never,
+          chats: [makeChat({ id: 'chat-1' })],
+        } as Partial<character>),
+      ],
+    } as Partial<Database>)
+    const state = beginAssembly(baseInput(), depsFor(db))
+    const rows: OpenAIChat[] = [{ role: 'user', content: 'original request row' }]
+
+    await expect(applyRequestTrigger(state, rows)).resolves.toEqual(rows)
   })
 
   it('renderAndBudget aborts with overflow when pinned rows exceed maxContext', async () => {

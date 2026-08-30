@@ -469,7 +469,7 @@ export class DisplaySourceService {
             },
           ),
         )
-        data = triggerResult?.displayData ?? data
+        if (!triggerResult?.aborted) data = triggerResult?.displayData ?? data
       } catch {
         throwIfAborted(signal)
         // The browser catches the display-trigger stage and continues.

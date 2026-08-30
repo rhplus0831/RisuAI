@@ -280,6 +280,82 @@ describe('POST /api/v1/chats/:chatId/display-sources', () => {
     expect(runtime.databaseLineage).toEqual(expect.any(String))
   })
 
+  it('discards display-state output when a legacy whole-trigger guard aborts', async () => {
+    const assertion = await setupAuthedClient(harness.app)
+    const db = openDatabase(harness.dataDir)
+    const seeded = await applyImport(
+      db,
+      harness.dataDir,
+      normalizeRisuSaveSnapshotDatabase({
+        currentChar: 0,
+        characters: [
+          {
+            type: 'character',
+            name: 'Tess',
+            chaId: 'char-1',
+            chatPage: 0,
+            triggerscript: [
+              {
+                comment: 'abort display output',
+                type: 'display',
+                conditions: [],
+                effect: [
+                  { type: 'v2SetDisplayState', valueType: 'value', value: 'mutated display text', indent: 0 },
+                  { type: 'v2MakeArrayVar', var: '[]', indent: 0 },
+                ],
+              },
+            ],
+            chats: [
+              {
+                id: 'chat-1',
+                name: 'Chat',
+                note: '',
+                localLore: [],
+                message: [{ role: 'char', data: 'original display text', chatId: 'message-1' }],
+              },
+            ],
+          },
+        ],
+      }),
+    )
+    db.close()
+    const source = 'original display text'
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/chats/chat-1/display-sources',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        protocolVersion: 1,
+        baseRevision: seeded.revision,
+        context: { pageSessionId: 'page-a' },
+        targets: [
+          {
+            requestKey: 'request-a',
+            characterId: 'char-1',
+            messageId: 'message-1',
+            index: 0,
+            role: 'char',
+            firstMessage: false,
+            layer: 'original',
+            source,
+            sourceHash: sourceHash(source),
+            projectionEpoch: 1,
+          },
+        ],
+      },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().entries).toEqual([
+      expect.objectContaining({
+        requestKey: 'request-a',
+        status: 'ok',
+        displaySource: source,
+      }),
+    ])
+  })
+
   it('validates strict source hashes', async () => {
     const assertion = await setupAuthedClient(harness.app)
     await harness.app.inject({
