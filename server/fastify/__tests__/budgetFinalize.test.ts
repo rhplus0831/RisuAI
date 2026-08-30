@@ -5,7 +5,20 @@ import { ensureTokenizerLoadedForDb } from '../src/prompt/tokenizerConfig.js'
 import type { PromptMessage } from '../src/prompt/promptMessage.js'
 
 function makeDb(aiModel = 'gpt4'): Database {
-  return { aiModel } as unknown as Database
+  return {
+    aiModel,
+    modelProfiles: [
+      {
+        id: 'budget-test-profile',
+        name: 'Budget Test Profile',
+        providerOptions: { credentialId: 'budget-test-credential' },
+        modelId: aiModel,
+      },
+    ],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'budget-test-profile' } },
+    providerCredentials: [{ id: 'budget-test-credential', name: 'Budget Test', type: 'apiKey', apiKey: 'test-key' }],
+    modelRuntimeDefaults: {},
+  } as unknown as Database
 }
 
 describe('finalizeRequestBudget — under budget', () => {

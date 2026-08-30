@@ -13,6 +13,19 @@ function database(overrides: Partial<Database> = {}): Database {
     aiModel: 'gpt-4o',
     customTokenizer: 'tik',
     googleClaudeTokenizing: false,
+    modelProfiles: [
+      {
+        id: 'tokenizer-test-profile',
+        name: 'Tokenizer Test Profile',
+        providerOptions: { credentialId: 'tokenizer-test-credential' },
+        modelId: overrides.aiModel ?? 'gpt-4o',
+      },
+    ],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'tokenizer-test-profile' } },
+    providerCredentials: [
+      { id: 'tokenizer-test-credential', name: 'Tokenizer Test', type: 'apiKey', apiKey: 'test-key' },
+    ],
+    modelRuntimeDefaults: {},
     ...overrides,
   } as Database
 }
