@@ -32,7 +32,9 @@
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
   import Help from './Help.svelte'
   import { getChatBranches } from 'src/ts/gui/branches'
-  import { getCurrentCharacter, getDatabase, type Message } from 'src/ts/storage/database.svelte'
+  import { getCurrentCharacter, getDatabase, type Database, type Message } from 'src/ts/storage/database.svelte'
+  import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
+  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
   import { translateStackTrace } from '../../ts/sourcemap'
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
@@ -74,30 +76,76 @@
   function resolveGenerationMessage(
     info: AlertGenerationInfoStoreData,
   ): { message: Message; index: number } | undefined {
-    const characters = getDatabase().characters ?? []
+    const ready = charactersResourceState.status === 'ready'
+    const characters = ready ? canonicalCharacterOwners() : getPreReadyCharacters()
+    if (!characters) return undefined
+
     const character = info.characterId
-      ? characters.find((candidate) => candidate.chaId === info.characterId)
+      ? ready
+        ? getCharacterResourceOwner(info.characterId)
+        : characters.find((candidate) => candidate.chaId === info.characterId)
       : characters[$selectedCharID]
+    if (!character) return undefined
+
     const chat = info.chatId
-      ? character?.chats?.find((candidate) => candidate.id === info.chatId)
-      : character?.chats?.[character.chatPage]
-    const messages = chat?.message ?? []
+      ? ready
+        ? uniqueChatOwner(character, info.chatId)
+        : character.chats?.find((candidate) => candidate.id === info.chatId)
+      : (() => {
+          const candidate = character.chats?.[character.chatPage]
+          return ready && candidate?.id ? uniqueChatOwner(character, candidate.id) : candidate
+        })()
+    if (!chat?.id) return undefined
+
+    const messages = ready ? getChatMessageOwnerState(chat.id)?.messages : chat.message
+    if (!messages) return undefined
     if (info.messageId) {
-      const index = messages.findIndex((message) => message.chatId === info.messageId)
-      if (index >= 0) return { message: messages[index], index }
+      const matches = messages
+        .map((message, index) => ({ message, index }))
+        .filter(({ message }) => message.chatId === info.messageId)
+      return matches.length === 1 ? matches[0] : undefined
     }
     const generationId = info.genInfo.generationId
     if (generationId) {
-      const index = messages.findIndex(
-        (message) => message.generationInfo?.generationId === generationId || message.chatId === generationId,
-      )
-      if (index >= 0) return { message: messages[index], index }
+      const matches = messages
+        .map((message, index) => ({ message, index }))
+        .filter(
+          ({ message }) => message.generationInfo?.generationId === generationId || message.chatId === generationId,
+        )
+      return matches.length === 1 ? matches[0] : undefined
     }
     if (!info.messageId && !generationId && messages[info.idx]) {
       return { message: messages[info.idx], index: info.idx }
     }
     return undefined
   }
+
+  function canonicalCharacterOwners(): Database['characters'] | null {
+    const owners = charactersResourceState.characters.map((candidate) => {
+      const characterId = candidate?.chaId
+      if (typeof characterId !== 'string' || characterId.trim().length === 0) return undefined
+      return getCharacterResourceOwner(characterId)
+    })
+    return owners.every((owner): owner is Database['characters'][number] => !!owner)
+      ? (owners as Database['characters'])
+      : null
+  }
+
+  function getPreReadyCharacters(): Database['characters'] {
+    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+      ? (getDatabase().characters ?? [])
+      : []
+  }
+
+  function uniqueChatOwner(character: Database['characters'][number], chatId: string) {
+    const matches = (character.chats ?? []).filter((candidate) => candidate.id === chatId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  const characterPickerRows = $derived.by(() => {
+    return charactersResourceState.status === 'ready' ? (canonicalCharacterOwners() ?? []) : getPreReadyCharacters()
+  })
+  const selectedCharacterDisplay = $derived(characterPickerRows[$selectedCharID])
   const generationMessageTarget = $derived.by(() => {
     const info = $alertGenerationInfoStore
     if (!info) return undefined
@@ -602,7 +650,7 @@
       {:else if $alertStore.type === 'selectChar'}
         {@const selectCharacterOwner = $alertStore.dialogOwner}
         <div class="flex w-full items-start flex-wrap gap-2 justify-start">
-          {#each getDatabase().characters as char}
+          {#each characterPickerRows as char}
             {#if char.image}
               {#await getCharImage(char.image, 'css')}
                 <BarIcon
@@ -964,7 +1012,7 @@
           {/if}
         {:else}
           <span class="text-textcolor2 text-sm">{language.ccv3Desc}</span>
-          {#if cardExportType2 !== 'charx' && cardExportType2 !== 'charxJpeg' && isCharacterHasAssets(getDatabase().characters[$selectedCharID])}
+          {#if cardExportType2 !== 'charx' && cardExportType2 !== 'charxJpeg' && selectedCharacterDisplay && isCharacterHasAssets(selectedCharacterDisplay)}
             <span class="text-red-500 text-sm">{language.notCharxWarn}</span>
           {/if}
         {/if}

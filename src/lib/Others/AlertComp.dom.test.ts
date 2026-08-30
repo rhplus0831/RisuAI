@@ -18,7 +18,9 @@ import {
   alertNormal,
   alertRequestData,
   alertRequiredSelect,
+  alertSelectChar,
   alertSelect,
+  resolveAlertWorkflow,
 } from 'src/ts/alert'
 import { language } from 'src/lang'
 import { getDatabase, setDatabaseLite, type MessageGenerationInfo } from 'src/ts/storage/database.svelte'
@@ -178,6 +180,21 @@ describe('AlertComp workflow dialogs', () => {
 
     await expect(result).resolves.toBe('createfromScratch')
     await vi.waitFor(() => expect(get(alertStore)).toMatchObject({ type: 'normal', msg: 'Background import notice' }))
+  })
+
+  it('fails closed when the ready character picker has duplicate stable owners', async () => {
+    setDatabaseLite({
+      characters: [
+        { chaId: 'duplicate-character', name: 'First' },
+        { chaId: 'duplicate-character', name: 'Second' },
+      ],
+    } as never)
+    const result = alertSelectChar()
+    await tick()
+
+    expect(target.querySelectorAll('[role="dialog"] button')).toHaveLength(0)
+    expect(resolveAlertWorkflow(get(alertStore).dialogOwner, 'cancel')).toBe(true)
+    await expect(result).resolves.toBe('cancel')
   })
 })
 
@@ -545,5 +562,51 @@ describe('AlertComp request-data message ownership', () => {
 
     expect(target.querySelector('[role="status"]')?.textContent).toContain(language.errors.requestDataMessageMissing)
     expect(metadataValue('ID')).toBeUndefined()
+  })
+
+  it('fails closed when a ready character or chat owner is missing or ambiguous', async () => {
+    alertRequestData({
+      genInfo: inspectedGeneration,
+      idx: 1,
+      characterId: 'missing-character',
+      chatId: 'chat-a',
+      messageId: 'message-target',
+    })
+    await tick()
+    const missingMetadataButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === language.metaData,
+    )
+    missingMetadataButton?.click()
+    await tick()
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.errors.requestDataMessageMissing)
+
+    alertStore.set({ type: 'none', msg: '' })
+    await tick()
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-a', message: [{ chatId: 'message-target', data: 'first' }] },
+            { id: 'chat-a', message: [{ chatId: 'message-target', data: 'second' }] },
+          ],
+        },
+      ],
+    } as never)
+    alertRequestData({
+      genInfo: inspectedGeneration,
+      idx: 0,
+      characterId: 'character-a',
+      chatId: 'chat-a',
+      messageId: 'message-target',
+    })
+    await tick()
+    const duplicateMetadataButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === language.metaData,
+    )
+    duplicateMetadataButton?.click()
+    await tick()
+    expect(target.querySelector('[role="status"]')?.textContent).toContain(language.errors.requestDataMessageMissing)
   })
 })
