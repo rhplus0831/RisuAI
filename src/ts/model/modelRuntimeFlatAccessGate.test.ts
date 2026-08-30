@@ -627,23 +627,23 @@ const inventory: readonly InventoryEntry[] = [
   {
     path: 'src/ts/process/index.svelte.ts',
     marker: 'getDatabase().maxResponse',
-    classification: 'ordinary-pending',
+    classification: 'context-free-fallback',
     expectedCount: 1,
-    reason: 'generation UI output-budget fallback',
+    reason: 'initial generation UI fallback replaced by assembled request metadata',
   },
   {
     path: 'src/ts/process/serverBackedSendChat.ts',
     marker: 'getDatabase().maxResponse',
-    classification: 'ordinary-pending',
+    classification: 'context-free-fallback',
     expectedCount: 2,
-    reason: 'server-backed generation output-budget fallback',
+    reason: 'older-server fallback when response-budget metadata is absent',
   },
   {
     path: 'src/ts/process/scriptings.ts',
     marker: 'db.maxContext',
-    classification: 'ordinary-pending',
+    classification: 'context-free-fallback',
     expectedCount: 1,
-    reason: 'script runtime still falls back to flat maxContext',
+    reason: 'legacy fallback after resolved scriptMain runtime context',
   },
 ]
 
@@ -716,9 +716,6 @@ describe('flat model/runtime access closed world', () => {
       'src/lib/Setting/Pages/BotSettings.svelte:getDatabase().aiModel (legacy provider/settings authoring surface still reads flat models)',
       'src/lib/Setting/Pages/BotSettings.svelte:getDatabase().subModel (legacy provider/settings authoring surface still reads flat models)',
       'server/fastify/src/prompt/triggers.ts:db.aiModel (trigger/Lua model context still reads the flat main model)',
-      'src/ts/process/index.svelte.ts:getDatabase().maxResponse (generation UI output-budget fallback)',
-      'src/ts/process/serverBackedSendChat.ts:getDatabase().maxResponse (server-backed generation output-budget fallback)',
-      'src/ts/process/scriptings.ts:db.maxContext (script runtime still falls back to flat maxContext)',
     ])
   })
 })
