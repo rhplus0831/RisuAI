@@ -28,15 +28,20 @@
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+  import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import { navigateToCharacterChatMessage } from 'src/ts/router'
   import type { Chat as ChatData, character } from 'src/ts/storage/database.svelte'
 
   const close = () => ($bookmarkListOpen = false)
-  let chara = $derived(getDatabase().characters[$selectedCharID])
+  let chara = $derived(resolveBookmarkCharacter())
+  let chatMessageOwner = $derived.by(() => {
+    const chat = chara?.chats?.[chara.chatPage]
+    return chat?.id ? getChatMessageOwnerState(chat.id) : undefined
+  })
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: chara?.chaId,
@@ -164,9 +169,34 @@
     return chara?.chats?.[chara.chatPage]
   }
 
+  function readCharacterOwners(): readonly character[] {
+    const owners = charactersResourceState.characters
+    if (owners.length > 0 || charactersResourceState.status === 'ready') return owners
+    return getDatabase().characters ?? []
+  }
+
+  function uniqueCharacterOwner(characterId: string): character | undefined {
+    let owner: character | undefined
+    for (const candidate of readCharacterOwners()) {
+      if (candidate?.chaId !== characterId) continue
+      if (owner) return undefined
+      owner = candidate
+    }
+    return owner
+  }
+
+  function resolveBookmarkCharacter(): character | undefined {
+    const selectedIndex = $selectedCharID
+    const owners = readCharacterOwners()
+    const candidate = owners[selectedIndex]
+    if (candidate?.chaId) return uniqueCharacterOwner(candidate.chaId)
+    if (charactersResourceState.status === 'ready' || owners.length > 0) return undefined
+    return getDatabase().characters?.[selectedIndex]
+  }
+
   function captureBookmarkHydrationOwner(): BookmarkHydrationOwner | null {
     const selectedCharacterIndex = $selectedCharID
-    const characterReference = getDatabase().characters?.[selectedCharacterIndex]
+    const characterReference = chara
     const chatPage = characterReference?.chatPage
     const chatReference = chatPage === undefined ? undefined : characterReference?.chats?.[chatPage]
     if (!characterReference || chatPage === undefined || !chatReference) return null
@@ -252,8 +282,7 @@
   const messageMap = $derived.by(() => {
     if (!chara) return new Map()
 
-    const chat = chara.chats[chara.chatPage]
-    const allMessages = chat.message
+    const allMessages = chatMessageOwner?.messages ?? []
     const map = new Map()
 
     allMessages.forEach((m, index) => {

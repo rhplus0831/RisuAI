@@ -456,4 +456,17 @@ describe('BookmarkList hydration and navigation', () => {
     await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-b-old"]')).not.toBeNull())
     expect(target.textContent).toContain('B older bookmark')
   })
+
+  it('fails closed when the selected character stable id is duplicated', async () => {
+    seedBookmarkDatabase(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push(JSON.parse(JSON.stringify(getDatabase().characters[0])))
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+  })
 })

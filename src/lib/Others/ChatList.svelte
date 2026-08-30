@@ -4,7 +4,11 @@
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getResourceDatabase as getDatabase,
+    getCharacterResourceOwner,
+  } from 'src/ts/server/resourceState.svelte'
   import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
@@ -41,23 +45,53 @@
   let nextMutationRun = 0
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
-  const ownerSelectedCharIndex = $selectedCharID
-  const ownerCharacterReference = getDatabase().characters?.[ownerSelectedCharIndex]
+  function readCharacterOwners() {
+    const owners = charactersResourceState.characters
+    if (owners.length > 0 || charactersResourceState.status === 'ready') return owners
+    return getDatabase().characters ?? []
+  }
+
+  function uniqueCharacterOwner(characterId) {
+    if (!characterId) return undefined
+    if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+    let owner
+    for (const candidate of readCharacterOwners()) {
+      if (candidate?.chaId !== characterId) continue
+      if (owner) return undefined
+      owner = candidate
+    }
+    return owner
+  }
+
+  function selectedCharacterOwner() {
+    const selectedIndex = selectedCharacterIndex()
+    const owners = readCharacterOwners()
+    const candidate = owners[selectedIndex]
+    if (candidate?.chaId) return uniqueCharacterOwner(candidate.chaId)
+    return candidate
+  }
+
+  function selectedCharacterIndex() {
+    return $selectedCharID
+  }
+
+  const ownerSelectedCharIndex = selectedCharacterIndex()
+  const ownerCharacterReference = selectedCharacterOwner()
   const ownerCharacterId = ownerCharacterReference?.chaId
   let invalidated = $state(false)
 
   function resolveOriginCharacter(originCharacterId, originSelectedCharIndex, originCharacterReference) {
     if (originCharacterId) {
-      return getDatabase().characters?.find((candidate) => candidate.chaId === originCharacterId)
+      return uniqueCharacterOwner(originCharacterId)
     }
 
-    const byIndex = getDatabase().characters?.[originSelectedCharIndex]
+    const byIndex = readCharacterOwners()[originSelectedCharIndex]
     if (originCharacterReference && byIndex !== originCharacterReference) return undefined
     return byIndex
   }
 
   function isOriginCharacterSelected(originCharacter, originCharacterId) {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    const selectedCharacter = selectedCharacterOwner()
     return (
       selectedCharacter === originCharacter || (originCharacterId && selectedCharacter?.chaId === originCharacterId)
     )
@@ -73,9 +107,7 @@
   // The owner detail is authoritative when hydrated; shell rows intentionally
   // fall back to the compatibility character for the existing lazy path.
   let renderedCharacter = $derived.by(() => {
-    const owner = ownerCharacterId
-      ? charactersResourceState.characters.find((candidate) => candidate?.chaId === ownerCharacterId)
-      : undefined
+    const owner = ownerCharacterId ? uniqueCharacterOwner(ownerCharacterId) : undefined
     return owner && !isServerCharacterShell(owner) ? owner : modalCharacter
   })
 
@@ -205,7 +237,7 @@
   function recoverRejectedProvisionalChatRoute(characterId, provisionalChatId) {
     const route = get(currentRoute)
     if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const character = uniqueCharacterOwner(characterId)
     if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
     const replacementChatId = character.chats?.[character.chatPage]?.id
     navigate(characterRoutePath(characterId, replacementChatId), { replace: true })

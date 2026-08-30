@@ -289,6 +289,7 @@ import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
+import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -341,6 +342,7 @@ function seedModalDatabase(): character {
   selectedCharID.set(0)
   setDatabaseLite({
     characters: [chara],
+    currentChar: 0,
     enabledModules: [],
     modules: [],
   } as never)
@@ -457,6 +459,19 @@ describe('ChatList DOM contract harness', () => {
 
     expect(rowByChatId('chat-a').textContent).toContain('Owner Chat 0')
     expect(rowByChatId('chat-a').textContent).not.toContain('Modal Chat A')
+  })
+
+  it('fails closed when the modal character stable id is duplicated', async () => {
+    const chara = seedModalDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push({ ...chara, chats: chara.chats.map((chat) => ({ ...chat })) })
+    })
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
   })
 
   it('uses a blocking focus contract and owns Escape and backdrop close interactions', async () => {
