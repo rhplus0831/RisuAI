@@ -419,7 +419,7 @@
   })
 
   let showDraftArea = $derived(Boolean(selectedDraftHook || draftText.length > 0 || btwText.length > 0))
-  let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
+  let canContinueFromMenu = $derived(renderChat.length >= 2 && renderChat[renderChat.length - 1]?.role === 'char')
   let currentChatGenerationActivity = $derived(
     currentChatId
       ? $activeChatGenerations.find((activity) => activity.kind === 'message' && activity.chatId === currentChatId)
@@ -528,10 +528,10 @@
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
   let activeChatMessagesLoading = $derived(
-    activeChatOpen && isChatMessageHydrationPending(currentChatId, currentChat.length),
+    activeChatOpen && isChatMessageHydrationPending(currentChatId, renderChat.length),
   )
   let activeChatMessagesFailed = $derived(
-    activeChatOpen && hasChatMessageHydrationFailed(currentChatId, currentChat.length),
+    activeChatOpen && hasChatMessageHydrationFailed(currentChatId, renderChat.length),
   )
   let activeChatDisplayLoading = $state(false)
 
@@ -1345,7 +1345,7 @@
     // Forces the loading of past messages not rendered on the screen
     isScrollingToMessage = true
     try {
-      const totalMessages = currentChat.length
+      const totalMessages = renderChat.length
       const neededLoadPages = getLoadPagesForMessageJump(loadPages, totalMessages, index)
 
       if (loadPages < neededLoadPages) {
@@ -2948,7 +2948,7 @@
                   const foldedTarget = chatFoldedState.data
                   const foldedMessageIndex = chatFoldedStateMessageIndex.index
                   if (!foldedTarget || foldedMessageIndex < 0) return
-                  const nextLoadPages = getLoadPagesForMessageJump(loadPages, currentChat.length, foldedMessageIndex)
+                  const nextLoadPages = getLoadPagesForMessageJump(loadPages, renderChat.length, foldedMessageIndex)
                   const expanded = await expandTranscriptWindow(nextLoadPages, false)
                   const liveFoldedTarget = chatFoldedState.data
                   if (
@@ -3004,7 +3004,7 @@
              BOOTSTRAP_CHARACTER_SHELL_FIELDS); skip the greeting render until the
              row hydrates so the unguarded `alternateGreetings.length` reads below
              cannot throw on the correct lazy-shell state. -->
-          {#if !isServerCharacterShell(currentCharacter) && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length <= loadPages}
+          {#if !isServerCharacterShell(currentCharacter) && renderChat.length <= loadPages}
             <Chat
               character={currentDisplayCharacter}
               greetingTarget={greetingTranslationTarget}
@@ -3049,7 +3049,7 @@
                 getDatabase().characters[$selectedCharID].chatPage
               ].fmIndex ?? -1) + 2}
               totalPages={getDatabase().characters[$selectedCharID].alternateGreetings.length + 1} />
-            {#if aiLawApplies() && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length === 0}
+            {#if aiLawApplies() && renderChat.length === 0}
               <div
                 class="chat-screen-content-width ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
                 {language.aiGenerationWarning}

@@ -19,4 +19,11 @@ describe('DefaultChatScreen transcript render owner', () => {
     owner.projectionEpoch = 2
     expect(resolveTranscriptRenderMessages(owner, [])).toBe(second)
   })
+
+  it('uses owner content for read decisions such as empty-history gates', () => {
+    const aggregate = [{ chatId: 'stale', data: 'aggregate-only' }] as any
+    const owner = [] as any
+
+    expect(resolveTranscriptRenderMessages({ messages: owner, projectionEpoch: 3 } as any, aggregate)).toHaveLength(0)
+  })
 })
