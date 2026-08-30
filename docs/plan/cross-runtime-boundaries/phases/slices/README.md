@@ -8,4 +8,4 @@ The initial slice is
 [Boundary baseline and no-new-debt gate](phase-0-boundary-inventory-and-gates/baseline-and-no-new-debt-gate.md).
 
 The active slice is
-[Lore hash randomization](phase-3-pure-shared-core/lore-hash-randomization.md).
+[Model-role resolution](phase-3-pure-shared-core/model-role-resolution.md).

@@ -60,4 +60,6 @@ Completed slice: [ChatML row parsing](slices/phase-3-pure-shared-core/chatml-row
 
 Completed slice: [History-slot rendering](slices/phase-3-pure-shared-core/history-slot-rendering.md).
 
-Active slice: [Lore hash randomization](slices/phase-3-pure-shared-core/lore-hash-randomization.md).
+Completed slice: [Lore hash randomization](slices/phase-3-pure-shared-core/lore-hash-randomization.md).
+
+Active slice: [Model-role resolution](slices/phase-3-pure-shared-core/model-role-resolution.md).

@@ -9,20 +9,20 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; eleven Phase 3 leaf slices are
+- Plan state: Active; Phases 0 through 2 complete; twelve Phase 3 leaf slices are
   complete.
 - Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [Lore hash randomization](phases/slices/phase-3-pure-shared-core/lore-hash-randomization.md), ready.
+- Active slice: [Model-role resolution](phases/slices/phase-3-pure-shared-core/model-role-resolution.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: history-slot rendering at `7e03538ea`, after
-  ChatML row parsing at `14f44ed87`; focused differential/ownership, all four
-  browser/Fastify owners, architecture inventory, shared-core/root/downstream
-  typechecks, formatting, and diff checks passed; see
+- Latest implementation candidate: lore hash randomization at `1b1152814`,
+  after history-slot rendering at `7e03538ea`; focused differential/ownership,
+  affected browser/Fastify CBS and lorebook owners, architecture inventory,
+  shared-core/root/downstream typechecks, formatting, and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -56,6 +56,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Inlay-token matching | `92dde59e1` | Released through `@risuai/shared-core/inlay-tokens`; both production consumers use the shared leaf and one production root-`src` edge was removed. |
 | ChatML row parsing | `14f44ed87` | Released through `@risuai/shared-core/chatml-rows`; all five production consumers use the shared leaf and two production root-`src` edges were removed. |
 | History-slot rendering | `7e03538ea` | Released through `@risuai/shared-core/history-slots`; all four production consumers use the shared leaf and one production runtime/mixed root-`src` edge was removed. |
+| Lore hash randomization | `1b1152814` | Released through `@risuai/shared-core/lore-hash`; browser/Fastify consumers use one implementation, the private Fastify copy is gone, and one production runtime edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -80,12 +81,12 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 315 direct root-`src` edges remain: 212 production, 95 server-test, and 8
-  browser-smoke, spanning 128 importers and 58 targets.
-- Usage is 113 runtime, 40 mixed, and 162 type-only; 153 runtime/mixed edges
+- 314 direct root-`src` edges remain: 211 production, 95 server-test, and 8
+  browser-smoke, spanning 128 importers and 57 targets.
+- Usage is 112 runtime, 40 mixed, and 162 type-only; 152 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse, removed 60 edges and 21 source
+  shared-helper reuse, removed 61 edges and 22 source
   targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -97,7 +98,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and eleven neutral leaves complete; lore hash randomization is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and twelve neutral leaves complete; model-role resolution is next. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
@@ -119,7 +120,7 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move only dependency-free lore hash
-randomization into the audited shared-core owner while preserving JavaScript
-integer coercion, seed hashing, advancement, and deterministic browser/Fastify
-outputs.
+Use [`next-steps.md`](next-steps.md). Move only dependency-free model-role
+normalization and legacy resolution into the audited shared-core owner while
+preserving role order, aliases, blank inheritance, separate-model gating, and
+script fallback chains.

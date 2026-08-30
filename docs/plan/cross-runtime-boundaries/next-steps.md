@@ -4,20 +4,22 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [lore hash randomization
-slice](phases/slices/phase-3-pure-shared-core/lore-hash-randomization.md).
+Execute the [model-role resolution
+slice](phases/slices/phase-3-pure-shared-core/model-role-resolution.md).
 
-1. Move `sfc32` and `pickHashRand` into an explicit shared-core subpath.
-2. Preserve the `5515` seed, four sequential word hashes, UTF-16 `charCodeAt`
-   behavior, signed 32-bit coercion/overflow, `cid % 1000` advancement, and the
-   exact unsigned division result.
-3. Point the browser utility facade and Fastify lorebook activation at the
-   shared subpath, and replace the private Fastify CBS copy only after
-   differential vectors prove exact parity.
-4. Cover empty/Unicode/long strings and negative, zero, boundary, and large
-   identifiers with deterministic and repeated-call fixtures.
-5. Keep CBS parsing, lorebook activation policy, chat variables, persistence,
-   and UI behavior unchanged.
+1. Move the zero-import model-role constants, types, map normalizers, aliases,
+   inheritance metadata, and legacy model resolver into an explicit shared-core
+   subpath.
+2. Preserve exact `MODEL_ROLES` and legacy-key ordering, `model`/`submodel`
+   aliases, whitespace trimming, invalid-input defaults, and nonblank-array
+   filtering.
+3. Preserve the rule that `chatMain`/`chatAux` ignore role overrides, auxiliary
+   overrides win, separate models require the misspelled legacy gate, and
+   `scriptAux` falls through `scriptAux -> otherAx -> subModel`.
+4. Migrate all browser and eight Fastify production consumers, then delete the
+   browser-tree owner only after differential and closed-world ownership proof.
+5. Keep durable profile resolution, provider/credential policy, settings UI,
+   persistence, import/export, and command orchestration unchanged.
 
 ## Foundations Released
 
@@ -53,13 +55,15 @@ slice](phases/slices/phase-3-pure-shared-core/lore-hash-randomization.md).
   `14f44ed87`.
 - History-slot rendering and all four production consumers are released at
   `7e03538ea`.
+- Lore hash randomization is released at `1b1152814`; the browser facade and
+  both Fastify owners share one implementation.
 
 ## Not In This Slice
 
-- Do not move CBS/lorebook orchestration, database state, chat-variable policy,
-  request routing, provider policy, or UI orchestration into shared core.
-- Do not change modulo behavior, normalize negative identifiers, replace the
-  PRNG, or broaden this slice into unrelated utility helpers.
+- Do not move profile resolution, provider/credential policy, database state,
+  request routing, settings UI, or command orchestration into shared core.
+- Do not correct the persisted `seperate*` spelling, reorder roles or legacy
+  keys, or broaden this slice into profile records/resolvers.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

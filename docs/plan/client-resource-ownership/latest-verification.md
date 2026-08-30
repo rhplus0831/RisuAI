@@ -4,7 +4,7 @@ Date: 2026-08-31
 
 Implementation commit under verification: `aaf66b75d`.
 
-Final portfolio gate: `7e03538ea`.
+Final portfolio gate: `1b1152814`.
 
 Environment: Node.js `v24.19.0`, pnpm `11.23.0`.
 
@@ -36,8 +36,8 @@ Environment: Node.js `v24.19.0`, pnpm `11.23.0`.
   passed its production build and all 9 browser scenarios, including one
   focused hydration request, stable-id selection, visible accepted state, and
   reload persistence.
-- `pnpm exec tsx util/architecture-inventory.ts` — passed 315 cross-runtime
-  edges (153 runtime/mixed), 20 compatibility surfaces/42 probes, 9,889 client
+- `pnpm exec tsx util/architecture-inventory.ts` — passed 314 cross-runtime
+  edges (152 runtime/mixed), 20 compatibility surfaces/42 probes, 9,889 client
   references across 326 groups, six bridges, 20 seams, and all 56 owner gap
   rows.
 - `pnpm check` — passed with zero errors and zero warnings.

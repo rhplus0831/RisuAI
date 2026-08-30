@@ -1,6 +1,6 @@
 # Lore Hash Randomization
 
-Status: ready.
+Status: complete at `1b1152814`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -50,3 +50,13 @@ both typechecks; architecture inventory; formatting; and `git diff --check`.
 
 Stop if the leaf needs browser stores, DOM/Svelte, Fastify, filesystem,
 process-global state, credentials, persistence, or an aggregate database.
+
+## Release Evidence
+
+- `@risuai/shared-core/lore-hash` owns `sfc32`/`pickHashRand`; the browser
+  utility facade and both Fastify owners import it, and the private CBS copy is
+  deleted.
+- Differential, ownership, and import-boundary files passed 12, 1, and 2 tests;
+  Fastify owners passed 79 and 33, and browser owners passed 19 and 11.
+- One production runtime root-`src` edge and one target left the checked
+  inventory.
