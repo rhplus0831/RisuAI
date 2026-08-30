@@ -10,7 +10,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
 | [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 shared-core foundation and first leaf](cross-runtime-boundaries/status.md) | Phase 2 closed at `6a6d0ac1f` with 103 route operations, 129 durable command operations, and 55 reviewed browser relations; 336 direct root-`src` edges remain. |
-| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 1 migration and recovery foundation](canonical-state-and-compatibility/status.md) | Phase 0 classified 19 surfaces at `cd04b0e11`; each resource-family closeout releases the matching Workstream 3 phase. |
+| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 legacy flat model configuration migration](canonical-state-and-compatibility/status.md) | Phase 1 migration/recovery foundation closed at `1e758cd22`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 1 resource-owner foundation](client-resource-ownership/status.md) | Phase 0 froze 9,917 compatibility references at `0432b32ba`; runtime migration waits for the relevant Workstream 1 contract and Workstream 2 canonical-owner cursor. |
 
 The portfolio-level dependency model and the conditional fourth workstream are

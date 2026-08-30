@@ -2,8 +2,8 @@
 
 Date: 2026-08-30
 
-Status: active. Phase 0 closed at `cd04b0e11`; Phase 1 migration and recovery
-foundation is the execution cursor.
+Status: active. Phases 0 and 1 are complete; Phase 2 model configuration
+ownership is the execution cursor.
 
 ## Goal
 

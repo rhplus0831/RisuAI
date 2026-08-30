@@ -4,40 +4,50 @@ Date: 2026-08-30
 
 ## Candidate
 
-- Implementation commit: `cd04b0e11f2c8629e988af1ef6c99a2646a746f1`
+- Implementation commit: `1e758cd22`
+- Phase 0 predecessor: `cd04b0e11f2c8629e988af1ef6c99a2646a746f1`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
 - Workstream 1 convention release: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: Phase 0 inventory/disposition gate only; no persistence, revision,
-  receipt, event, import/export, recovery, or runtime ownership changed.
+- Scope: Phase 1 migration/recovery foundation. Existing-database startup now
+  validates migration identity/current table completeness and refuses damaged
+  state outside the automatic envelope. No model, prompt, translator, smaller
+  mirror, revision, receipt, event, import/export, or canonical owner changed.
 
-## Inventory
+## Foundation Proof
 
-- 19 surfaces: 4 model configuration, 5 prompt template, 4 translator, 3
-  repair, and 3 interchange.
-- Dispositions: 4 canonical, 9 migrate, 3 import-only, 2 explicit
-  compatibility, and 1 remove.
-- 38 closed-world identifier, table, and route probes.
-- Every row records current and target owner, roles, precedence,
-  missing/malformed/damaged behavior, local fixture and provenance, old reader
-  or exporter, rollback proof, migration phase, and Workstream 3 cursor.
+- All 33 production migration steps have contiguous versions, unique stable
+  names, and a closed current-version relation checked on every run.
+- A test-only SQLite trigger fails after a named step's writes and before its
+  schema-version update. The step writes and version both roll back; revision
+  41 remains unchanged; removal of the trigger permits retry; a second reopen
+  is a no-op.
+- Existing databases missing the schema table/singleton or required current
+  tables receive an actionable `DamagedDatabaseRefusalError`; fresh database
+  creation remains supported.
+- All 19 Phase 0 surfaces map into the common historical-fixture adapter with a
+  server, frontend, or current-compatibility verification command.
+- Existing WAL checkpoint, safety snapshot, restore rollback, database-lineage,
+  receipt, writer, and command-event history behavior passed without changes.
 
 ## Commands And Results
 
-- `pnpm exec vitest run util/architecture-inventory.test.ts util/check-server.test.ts`
-  — passed, 2 files and 11 tests.
-- `pnpm exec tsx util/architecture-inventory.ts` — passed the 375-edge boundary
-  baseline and 19-surface/38-probe compatibility matrix.
-- `pnpm check:server` — passed protocol, both architecture inventories, client
+- Focused migration/database/missing-database suites passed: 3 files and 40
+  tests.
+- Focused legacy db.json import passed 4 tests; focused backup/WAL/restore/
+  lineage coverage passed 7 tests.
+- `pnpm check:server` passed protocol, architecture inventory, client
   declarations, Fastify, and browser-smoke typechecks.
-- `pnpm test:affected --dry-run` — selected affected frontend tests.
-- `pnpm test:affected` — passed, 1 file and 6 tests.
-- `pnpm format:check` — passed.
+- `pnpm test:affected` passed 2 frontend files/30 tests, 113 server files/2,494
+  tests plus one skip, and the current 16-cell compatibility harness.
+- `pnpm test:server` passed the complete 179-file server lane with 3,655 tests
+  plus one skip.
+- `pnpm test:watch:status`, focused Prettier, and `git diff --check` passed.
 - `git diff --check` — passed.
 
 ## Verdict
 
-Phase 0 passes. Every in-scope owner is unambiguous and every historical fixture
-is locally reproducible. Workstream 3 holds remain in force per resource row;
-no runtime owner is released yet. Phase 1 migration/recovery foundation is the
-next cursor.
+Phase 1 passes. Named migrations are fail-closed, atomic, restart-safe, and
+fixture-backed, while backup/restore and lineage behavior remains authoritative.
+No canonical resource owner is released yet. Phase 2 may begin with the flat
+model configuration migration.

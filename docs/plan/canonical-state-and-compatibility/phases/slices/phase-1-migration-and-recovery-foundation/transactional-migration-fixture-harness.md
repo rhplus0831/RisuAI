@@ -1,6 +1,6 @@
 # Transactional Migration And Historical-Fixture Harness
 
-Status: ready.
+Status: complete at `1e758cd22`.
 
 Parent: [Phase 1](../../phase-1-migration-and-recovery-foundation.md)
 
@@ -48,3 +48,18 @@ state is rewritten.
 - Backup/restore and lineage proofs pass.
 - Phase 2–4 resource rewrites may rely on the foundation without introducing
   command-time repair.
+
+## Result
+
+- The 33-step production catalog is checked for contiguous versions, stable
+  names, valid naming, and duplicate names on every migration run.
+- A test-only SQLite trigger injects failure after step writes and before the
+  version update; rollback, retry, revision preservation, and reopen are proven
+  without a production failure-injection option.
+- Existing databases with missing/malformed schema identity or incomplete
+  current tables now fail closed with an explicit damaged-database refusal
+  instead of being opportunistically treated as fresh/current.
+- All 19 Phase 0 surfaces enter a common fixture adapter with an owning server,
+  frontend, or compatibility lane.
+- Existing backup checkpoint, safety snapshot, restore rollback, database
+  lineage, receipt, and event-history proofs passed unchanged.

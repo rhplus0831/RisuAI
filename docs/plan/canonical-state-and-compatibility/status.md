@@ -9,12 +9,14 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Current Snapshot
 
-- Plan state: Active; Phase 0 complete.
-- Current phase: [Phase 1 migration and recovery foundation](phases/phase-1-migration-and-recovery-foundation.md).
-- Active slice: [Transactional migration and historical-fixture harness](phases/slices/phase-1-migration-and-recovery-foundation/transactional-migration-fixture-harness.md), ready.
+- Plan state: Active; Phases 0 and 1 complete.
+- Current phase: [Phase 2 model configuration ownership](phases/phase-2-model-configuration-ownership.md).
+- Active slice: [Legacy flat model configuration migration](phases/slices/phase-2-model-configuration-ownership/legacy-flat-model-configuration-migration.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes through Phase 0: none; only the read-only inventory gate changed.
-- Latest verification: Phase 0 passed at `cd04b0e11f2c8629e988af1ef6c99a2646a746f1`.
+- Runtime changes through Phase 1: migration startup now validates the named
+  catalog and fails closed on damaged existing schema identity/current tables;
+  normal persisted domain owners are unchanged.
+- Latest verification: Phase 1 passed at `1e758cd22`.
 
 ## Dependency Cursors
 
@@ -22,6 +24,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | --- | --- | --- |
 | Workstream 1 package/boundary conventions | `b01e88b03` | Released; Phase 0 may execute. |
 | Workstream 1 shared contracts | Per contract family | Required only before a slice introduces or consumes that shared contract. |
+| Migration/recovery foundation | `1e758cd22` | Released with named-step validation, rollback/retry/reopen injection proof, damaged-database refusal, and all 19 historical fixture adapters. |
 | Model configuration canonical owner | Phase 2 | Not released to Workstream 3. |
 | Prompt-template canonical owner | Phase 3 | Not released to Workstream 3. |
 | Translator/smaller canonical owners | Phase 4 per family | Not released to Workstream 3. |
@@ -47,8 +50,8 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 | Phase | Status | Opens when |
 | ---: | --- | --- |
 | [0. Inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md) | Complete | Closed at `cd04b0e11`. |
-| [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Ready | Current execution cursor. |
-| [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Queued | Foundation passes model historical fixtures. |
+| [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Complete | Closed at `1e758cd22`. |
+| [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Active | Current execution cursor; foundation passes model historical fixtures. |
 | [3. Prompt templates](phases/phase-3-prompt-template-ownership.md) | Queued | Foundation passes prompt historical fixtures. |
 | [4. Translator/smaller mirrors](phases/phase-4-translator-and-smaller-mirrors.md) | Queued | Foundation and per-family dispositions are complete. |
 | [5. Repair boundary](phases/phase-5-repair-boundary.md) | Queued | Canonical owners exist for affected commands. |
@@ -57,7 +60,7 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Blockers And Risks
 
-- No blocker prevents the Phase 1 migration foundation slice.
+- No blocker prevents the flat model configuration migration slice.
 - A field may be an explicit export projection, not a removable mirror; Phase 0
   must decide before implementation.
 - Command-time repair may currently make damaged historical data usable. Moving
@@ -69,5 +72,6 @@ phase detail in [`phases/`](phases/README.md), selection guidance in
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Establish transaction, retry, fixture,
-backup, restore, and lineage proof before a resource-family rewrite begins.
+Use [`next-steps.md`](next-steps.md). Migrate usable flat model configuration
+into durable profiles/bindings without copying inline secrets or removing the
+explicit legacy boundary.

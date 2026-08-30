@@ -1,6 +1,6 @@
 # Phase 1: Migration And Recovery Foundation
 
-Status: active.
+Status: complete at `1e758cd22`.
 
 Depends on: Phase 0 retention policies and historical fixtures.
 
@@ -38,3 +38,5 @@ tested.
 
 Focused DB migration/rollback/reopen tests, backup/restore tests, compatibility
 fixtures, server lane, typechecks, formatting, and diff checks.
+
+Completed slice: [Transactional migration and historical-fixture harness](slices/phase-1-migration-and-recovery-foundation/transactional-migration-fixture-harness.md).

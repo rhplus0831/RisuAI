@@ -4,30 +4,28 @@ Date: 2026-08-30
 
 ## Current Task
 
-Execute the [transactional migration and historical-fixture
-harness](phases/slices/phase-1-migration-and-recovery-foundation/transactional-migration-fixture-harness.md).
+Execute the [legacy flat model configuration
+migration](phases/slices/phase-2-model-configuration-ownership/legacy-flat-model-configuration-migration.md).
 
-1. Make the domain migration runner expose focused, contiguous named steps with
-   test-only failure injection at a transaction boundary.
-2. Prove immediate-transaction rollback, schema/domain-version advancement,
-   completed-step idempotency, interrupted retry, and reopen behavior.
-3. Reuse the Phase 0 historical fixtures for model, prompt, translator, stable
-   ids, legacy db.json, RisuSave, and backup/restore starting states.
-4. Prove the pre-migration backup/restore and database-lineage behavior needed
-   by Phases 2–4.
-5. Keep damaged-database recovery explicit; the automatic migration runner must
-   refuse corruption it cannot transactionally normalize.
+1. Audit flat model/provider fields, role selections, durable profiles/bindings,
+   and every normal resolver consumer.
+2. Add one named transactional migration that creates stable canonical records
+   only from usable non-secret legacy state.
+3. Prove provider/model/options/fallback parity across migration, interruption,
+   retry, reopen, authoring, import, and export.
+4. Keep explicit legacy conversion/import supported while preventing flat
+   fields from remaining normal runtime owners.
+5. Leave inline-secret repair for Phase 5 and preserve credential masking.
 
 ## Phase 0 Release
 
-`cd04b0e11` established 19 compatibility surfaces and 38 live probes. Runtime
-rewrites may implement only the recorded disposition, precedence, failure,
-fixture, rollback, and Workstream 3 hold/release for their row.
+`1e758cd22` adds the named transactional runner checks, test-only interruption
+proof, damaged-database refusal, and 19-surface fixture adapter required by the
+Phase 0 dispositions.
 
 ## Not In This Slice
 
-- Do not migrate flat model configuration, prompt mirrors, or translator
-  mirrors yet.
+- Do not migrate prompt or translator mirrors yet.
 - Do not remove a compatibility reader, exporter, table, field, or route.
 - Do not turn legacy conversion or damaged-state repair into an implicit normal
   command.
@@ -35,6 +33,6 @@ fixture, rollback, and Workstream 3 hold/release for their row.
 
 ## Handoff
 
-After the foundation passes, update [`status.md`](status.md), refresh
-[`latest-verification.md`](latest-verification.md), and open the model
-configuration migration as the first persisted-owner rewrite.
+After the flat migration passes, update [`status.md`](status.md), refresh
+[`latest-verification.md`](latest-verification.md), and continue Phase 2 by
+moving remaining normal model consumers to the durable owner.
