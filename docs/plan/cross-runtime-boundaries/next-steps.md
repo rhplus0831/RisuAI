@@ -4,47 +4,44 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [Phase 0 boundary baseline and no-new-debt gate](phases/slices/phase-0-boundary-inventory-and-gates/baseline-and-no-new-debt-gate.md).
+Execute the [shell and character-summary resource contract
+slice](phases/slices/phase-1-protocol-contract-completion/shell-and-character-summary-contracts.md).
 
-1. Build an AST-backed inventory of static imports, dynamic imports, re-exports,
-   and TypeScript project references from Fastify production, server tests, and
-   browser smoke into `src/`.
-2. Record type-only versus runtime use and classify every edge as wire contract,
-   pure behavior, application model, test fixture, or accidental/server-only
-   coupling.
-3. Give every baseline edge a destination, owner, and removal/review phase.
-4. Add a machine-readable baseline and a gate that rejects new or widened edges
-   without yet deleting existing consumers.
-5. Capture clean-worktree `pnpm check:server` inputs and the exact generated
-   declaration prerequisite.
+1. Introduce schema-first shell and character-summary contracts through
+   explicit `@risuai/protocol` subpaths.
+2. Prove the protocol validators and current browser validators accept and
+   reject the same fixtures, including exact-key/version behavior.
+3. Migrate Fastify resource reads, server tests, and browser adapters to the
+   package contracts without changing route, payload, cache, or masking
+   behavior.
+4. Remove only the superseded browser-tree contract modules after every live
+   consumer has moved.
+5. Refresh the architecture baseline for the exact removed edges and release
+   the shell/character-summary contract cursor to Workstream 3.
 
-## Required Scope Before Editing
+## Boundary Conventions Released
 
-The slice must name the inventory file, gate implementation, affected-selection
-integration, baseline update review rule, exact commands, and why it cannot
-change runtime behavior. Keep source moves out of this first batch.
+- Serialized contracts live in browser-safe `@risuai/protocol` subpaths.
+- Framework-neutral behavior belongs in a separately audited shared runtime
+  owner, not in the protocol package.
+- Security, active-writer policy, persistence, credentials, host behavior, and
+  database repair remain Fastify-owned.
+- Shared historical fixtures are test-owned and cannot make browser application
+  modules a server dependency.
 
-## Likely Gate Hosts
+These conventions were released by Phase 0 at `b01e88b03` and unblock
+Workstream 2's compatibility inventory.
 
-- `util/check-server.ts` and `util/check-server.test.ts`
-- a focused utility and checked-in machine-readable manifest under a path chosen
-  by the slice
-- structural tests under `server/fastify/__tests__/`
-- `util/affected-tests.ts` and `.github/workflows/quality.yml` only if the new
-  gate is not already reached by an existing required lane
+## Not In This Slice
 
-## Not First
-
-- Do not remove `tsconfig.client-lib.json` or its references.
-- Do not move the aggregate `Database` type into `packages/protocol`.
-- Do not extract prompt, parser, provider, or translator domains before their
-  leaf dependencies and behavior parity are named.
-- Do not merge route authentication policy into browser metadata.
-- Do not activate replay-safe event deltas.
+- Do not introduce the route operation catalog yet.
+- Do not move aggregate `Database` or Svelte state into a shared package.
+- Do not alter resource payloads, cache policy, authentication, active-writer
+  policy, or authoritative recovery.
+- Do not combine unrelated provider, generation, or prompt contract families.
 
 ## Handoff
 
-When the slice passes, update [`status.md`](status.md) with the exact baseline
-counts and gate commit, refresh [`latest-verification.md`](latest-verification.md),
-then select one Phase 1 contract family or Phase 3 neutral leaf from the
-classified inventory.
+After the slice passes, update [`status.md`](status.md) with exact edge counts
+and contract release cursors, refresh [`latest-verification.md`](latest-verification.md),
+then select the next wire-contract family from [`baseline.json`](baseline.json).

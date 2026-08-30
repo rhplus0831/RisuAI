@@ -1,6 +1,6 @@
 # Compatibility Surface Inventory And Disposition Matrix
 
-Status: prepared, dependency-gated.
+Status: ready; dependency released at `b01e88b03`.
 
 Parent: [Phase 0](../../phase-0-compatibility-inventory-and-retention-policy.md)
 

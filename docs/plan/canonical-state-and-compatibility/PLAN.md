@@ -2,9 +2,9 @@
 
 Date: 2026-08-30
 
-Status: active, dependency-gated. Phase 0 begins after Workstream 1 records the
-package, protocol, and pure-shared-boundary conventions it must follow; it does
-not wait for every Workstream 1 contract family to migrate.
+Status: active. Workstream 1 released the package, protocol, and
+pure-shared-boundary conventions at `b01e88b03`; Phase 0 is ready and does not
+wait for every Workstream 1 contract family to migrate.
 
 ## Goal
 
@@ -96,7 +96,7 @@ Phase 0 must classify each surface. Names such as `legacy`, `ensure`, or
 | Cursor | Initial value | Meaning |
 | --- | --- | --- |
 | Opening Fastify code anchor | `c0df82d5240a29a33efa5995e08cc970e0147573` | Code state inspected for plan activation. |
-| Workstream 1 boundary convention | Not released | Phase 0 package/dependency rules unblock this inventory; shared-contract choices still wait for the matching Phase 1 contract. |
+| Workstream 1 boundary convention | Released at `b01e88b03` | Phase 0 inventory is unblocked; shared-contract choices still wait for the matching Phase 1 contract. |
 | Compatibility baseline | `71c476e9c86263fe907105b011ca4dde0a619d66` | Immutable pre-Fastify behavioral source for historical fixtures, where applicable. |
 | Behavioral sync cursor | `f3f0242fba297d82e0efcc2c31ca1428569b70f2` | Latest upstream unit already dispositioned; not a source-equivalent ancestor. |
 | Workstream 3 model-owner release | Not released | Phase 2 closes before browser model compatibility access is retired. |

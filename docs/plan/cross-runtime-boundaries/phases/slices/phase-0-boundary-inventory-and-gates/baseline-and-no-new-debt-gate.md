@@ -1,6 +1,6 @@
 # Boundary Baseline And No-New-Debt Gate
 
-Status: ready.
+Status: complete at `b01e88b03461753afe8f573029ce2e5ab47892ef`.
 
 Parent: [Phase 0](../../phase-0-boundary-inventory-and-gates.md)
 
@@ -71,3 +71,13 @@ Use the repository watcher result when it is live and valid under `AGENTS.md`.
 
 Stop if the gate cannot distinguish test-only/type-only edges without parsing
 TypeScript, or if making it pass would require moving source in the same slice.
+
+## Result
+
+The AST-backed gate and reviewed [`baseline.json`](../../../baseline.json) are
+mandatory through `pnpm check:server`. The baseline has 375 edges: 39 wire
+contract, 190 pure-runtime, 134 browser-application-model, 7 test-fixture, and 5
+accidental browser-support classifications. It records 373 static imports, one
+re-export, one dynamic import, both declaration project references, and five
+duplicated policy/resource/event catalog counts. No runtime module moved and no
+route, persistence, event, cache, or payload behavior changed.

@@ -2,14 +2,12 @@
 
 Date: 2026-08-30
 
-## Current Gate
+## Current Task
 
-Wait for Workstream 1 to release its Phase 0 package/dependency conventions.
-That decision controls where migration schemas, compatibility normalizers, and
-shared fixtures may live. A later slice that introduces a shared contract must
-also wait for that contract family's Workstream 1 Phase 1 release.
-
-## First Task After Release
+Workstream 1 released the Phase 0 package/dependency conventions at
+`b01e88b03`. Migration schemas and persistence-specific normalization stay
+server-owned; serialized contracts use `@risuai/protocol`; neutral shared
+normalizers require an audited shared-runtime slice.
 
 Execute the [compatibility surface inventory and disposition matrix](phases/slices/phase-0-compatibility-inventory-and-retention-policy/compatibility-surface-inventory.md).
 

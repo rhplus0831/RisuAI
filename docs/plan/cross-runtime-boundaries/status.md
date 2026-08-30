@@ -9,32 +9,34 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; implementation not started.
-- Current phase: [Phase 0 boundary inventory and no-new-debt gates](phases/phase-0-boundary-inventory-and-gates.md).
-- Active slice: [Boundary baseline and no-new-debt gate](phases/slices/phase-0-boundary-inventory-and-gates/baseline-and-no-new-debt-gate.md), ready to start.
+- Plan state: Active; Phase 0 complete.
+- Current phase: [Phase 1 protocol contract completion](phases/phase-1-protocol-contract-completion.md).
+- Active slice: [Shell and character-summary resource contracts](phases/slices/phase-1-protocol-contract-completion/shell-and-character-summary-contracts.md), ready to start.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes in this activation: none.
-- Latest verification: no workstream implementation run yet; see
+- Runtime changes through Phase 0: none; only read-only architecture tooling and
+  mandatory quality orchestration changed.
+- Latest verification: Phase 0 passed at `b01e88b03461753afe8f573029ce2e5ab47892ef`; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
 
 | Consumer or prerequisite | Cursor | State |
 | --- | --- | --- |
-| Portfolio no-new-debt requirement | Workstream 1 Phase 0 | Current execution cursor. |
-| Workstream 2 inventory prerequisite | Package/dependency conventions | Blocked until Phase 0 records and releases them. |
+| Portfolio no-new-debt requirement | `b01e88b03` | Released; 375-edge baseline is mandatory in `check:server`. |
+| Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
 | Workstream 4 shared-event prerequisite | Stable event schemas | Not released; Workstream 4 is inactive. |
 
-## Opening Research Snapshot
+## Phase 0 Inventory Snapshot
 
-- An exploratory scan found root-`src` imports in production Fastify, server
-  tests, and four browser-smoke files. Phase 0 must regenerate and classify the
-  exact manifest using an AST-backed tool.
-- `util/check-server.ts` currently runs the protocol check, client declaration
-  emit, Fastify check, and browser-smoke check; both consuming TypeScript
-  projects reference `tsconfig.client-lib.json`.
+- The checked inventory records 375 direct root-`src` edges: 260 production,
+  107 server-test, and 8 browser-smoke, spanning 148 importers and 79 targets.
+- Usage is 147 runtime, 46 mixed, and 182 type-only; syntax is 373 static
+  imports, one re-export, and one dynamic import.
+- `util/check-server.ts` now runs protocol and architecture gates before the
+  client declaration emit, then the Fastify and browser-smoke checks; both
+  consuming TypeScript projects still reference `tsconfig.client-lib.json`.
 - `packages/protocol/src/importBoundary.test.ts`,
   `server/fastify/__tests__/routeProtection.test.ts`, and the repository's
   structural compatibility tests provide existing gate conventions.
@@ -47,8 +49,8 @@ in [`latest-verification.md`](latest-verification.md).
 
 | Phase | Status | Opens when |
 | ---: | --- | --- |
-| [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Ready | Now. |
-| [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Queued | Phase 0 inventory and gate are accepted. |
+| [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
+| [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Ready | Current execution cursor. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Queued | Phase 1 operation conventions are stable. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Queued | Phase 0 classifications name neutral leaf candidates. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
@@ -58,10 +60,10 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Blockers And Risks
 
-- No blocker prevents Phase 0 inventory work.
+- No blocker prevents the first Phase 1 contract-family slice.
 - Existing imports mix runtime and type-only edges, tests and fixtures, wire
-  contracts and application models. A textual search alone is not the final
-  gate.
+  contracts and application models; `baseline.json` keeps those distinctions
+  fail-closed.
 - Removing TypeScript references early could hide rather than remove coupling.
 - A shared operation catalog must not transfer authentication or active-writer
   authority to the browser.
@@ -70,6 +72,5 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Create no broad extraction slice until the
-Phase 0 manifest, classifications, grandfathered baseline, and CI gate are
-reviewable together.
+Use [`next-steps.md`](next-steps.md). Migrate one reviewed contract family at a
+time and update the baseline only for the exact consumer edges removed.

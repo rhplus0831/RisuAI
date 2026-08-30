@@ -9,9 +9,9 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 0 inventory and no-new-debt gate](cross-runtime-boundaries/status.md) | Establishes protocol and pure-shared-boundary conventions for the other workstreams. |
-| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active, gated | [Phase 0 compatibility inventory](canonical-state-and-compatibility/status.md) | Runtime migration waits for Workstream 1 boundary conventions; each resource-family closeout releases the matching Workstream 3 phase. |
-| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 0 facade and bridge inventory](client-resource-ownership/status.md) | Inventory may run now; runtime migration waits for the relevant Workstream 1 contract and Workstream 2 canonical-owner cursor. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 1 protocol contract completion](cross-runtime-boundaries/status.md) | Phase 0 conventions and no-new-debt gate released at `b01e88b03`; per-family protocol releases remain required. |
+| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 0 compatibility inventory](canonical-state-and-compatibility/status.md) | Workstream 1 conventions are released; each resource-family closeout releases the matching Workstream 3 phase. |
+| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 0 facade and bridge inventory](client-resource-ownership/status.md) | Inventory uses the released gate conventions; runtime migration waits for the relevant Workstream 1 contract and Workstream 2 canonical-owner cursor. |
 
 The portfolio-level dependency model and the conditional fourth workstream are
 defined in the [Architecture Modernization Roadmap](../architecture-modernization/PLAN.md).

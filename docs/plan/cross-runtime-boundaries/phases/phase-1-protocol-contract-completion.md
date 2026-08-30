@@ -1,6 +1,6 @@
 # Phase 1: Protocol Contract Completion
 
-Status: queued.
+Status: active.
 
 Depends on: Phase 0 accepted import/duplication inventory and package rules.
 

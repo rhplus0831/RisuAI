@@ -20,7 +20,7 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 | Resource family | Workstream 1 contract | Workstream 2 owner | Workstream 3 state |
 | --- | --- | --- | --- |
-| Inventory/gates | Phase 0 convention pending | Not required for read-only inventory | Ready. |
+| Inventory/gates | Phase 0 convention released at `b01e88b03` | Not required for read-only inventory | Ready. |
 | Leaf settings/collections | Per owner pending | Per family pending or already singular, to prove | Runtime blocked. |
 | Character/chat | Resource/command contracts pending | Canonical state must be confirmed | Runtime blocked. |
 | Prompt templates | Prompt contract pending | Phase 3 not released | Runtime blocked. |
@@ -47,7 +47,7 @@ phase detail in [`phases/`](phases/README.md), the next slice in
 
 | Phase | Status | Opens when |
 | ---: | --- | --- |
-| [0. Consumer/facade/bridge inventory](phases/phase-0-consumer-facade-and-bridge-inventory.md) | Ready | Now; coordinate gate format with Workstream 1 Phase 0. |
+| [0. Consumer/facade/bridge inventory](phases/phase-0-consumer-facade-and-bridge-inventory.md) | Ready | Now; use the gate conventions released at `b01e88b03`. |
 | [1. Resource-owner foundation](phases/phase-1-resource-owner-foundation.md) | Queued | Inventory gaps and per-family dependencies are known. |
 | [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Blocked | Matching Workstream 1/2 cursors release. |
 | [3. Character/chat](phases/phase-3-character-and-chat-ownership.md) | Blocked | Matching Workstream 1/2 cursors release. |

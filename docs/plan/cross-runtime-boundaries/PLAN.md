@@ -2,7 +2,7 @@
 
 Date: 2026-08-30
 
-Status: active. Phase 0 is the execution cursor; no runtime migration has begun.
+Status: active. Phase 0 closed at `b01e88b03`; Phase 1 is the execution cursor.
 
 ## Goal
 
@@ -91,8 +91,8 @@ These are planning observations, not the authoritative Phase 0 inventory.
 | --- | --- | --- |
 | Opening Fastify code anchor | `c0df82d5240a29a33efa5995e08cc970e0147573` | Code state inspected while activating the plan; not an implementation-completion claim. |
 | Portfolio authority | `docs/architecture-modernization/PLAN.md` dated 2026-08-30 | Stable cross-workstream dependency and invariant source. |
-| No-new-debt gate | Not established | Phase 0 produces the reproducible import manifest and accepted baseline. |
-| Boundary-convention release | Not established | Phase 0 records package/dependency rules that unblock Workstream 2 inventory; Phase 1 releases shared contracts per family. |
+| No-new-debt gate | Released at `b01e88b03` | The reproducible 375-edge manifest runs in `check:server`. |
+| Boundary-convention release | Released at `b01e88b03` | Workstream 2 inventory is unblocked; Phase 1 releases shared contracts per family. |
 | Canonical-owner consumers | Per resource, not established | Workstream 2 may consume stable shared contracts without waiting for whole-plan closeout. |
 | Client-owner consumers | Per resource, not established | Workstream 3 may migrate only after the relevant contracts are stable. |
 

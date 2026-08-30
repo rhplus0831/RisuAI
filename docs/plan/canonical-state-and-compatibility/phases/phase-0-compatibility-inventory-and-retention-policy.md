@@ -1,6 +1,6 @@
 # Phase 0: Compatibility Inventory And Retention Policy
 
-Status: gated.
+Status: ready; Workstream 1 convention dependency released at `b01e88b03`.
 
 Depends on: Workstream 1 Phase 0 package/dependency convention release.
 
