@@ -1,6 +1,6 @@
 # Browser Operation Metadata Reconciliation
 
-Status: ready.
+Status: complete at `6a6d0ac1f`.
 
 Parent: [Phase 2](../../phase-2-route-operation-and-policy-catalog.md)
 
@@ -46,3 +46,16 @@ formatting, and `git diff --check`.
 
 Stop if reconciliation would move browser persistence, server policy, or
 security authority into the protocol catalog.
+
+## Result
+
+- Added 55 reviewed browser-to-route relations covering 31 resource, 12
+  cache/transport, 10 generation, and 2 raw-generation entries.
+- Recorded seven explicit browser-only distinctions, including runtime UUIDs,
+  cache record keys, diagnostic caller labels, and the unused dedicated
+  preview-prompt adapter.
+- Corrected the shared cache classification for the two direct bulk `{ids}`
+  reads from `request-hash` to `unspecified`; request and server behavior did
+  not change.
+- Added fail-closed owner, duplicate, stale-ID, method/path, and transport
+  parity checks plus architecture inventory coverage.

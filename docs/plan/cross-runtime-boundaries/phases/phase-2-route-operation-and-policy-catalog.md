@@ -1,6 +1,6 @@
 # Phase 2: Route Operation And Policy Catalog
 
-Status: active.
+Status: complete at `6a6d0ac1f`.
 
 Depends on: Phase 1 operation identifier and schema conventions.
 
@@ -43,4 +43,8 @@ Route-protection and manifest tests, durable-outbox allowlist tests, protocol
 checks, server tests, browser adapter tests, browser smoke where routing changes,
 typechecks, formatting, and diff checks.
 
-Active slice: [Browser operation metadata reconciliation](slices/phase-2-route-operation-and-policy-catalog/browser-operation-metadata-reconciliation.md).
+Completed slices:
+
+- [Operation catalog foundation](slices/phase-2-route-operation-and-policy-catalog/operation-catalog-foundation.md)
+- [Durable command operation catalog](slices/phase-2-route-operation-and-policy-catalog/durable-command-operation-catalog.md)
+- [Browser operation metadata reconciliation](slices/phase-2-route-operation-and-policy-catalog/browser-operation-metadata-reconciliation.md)

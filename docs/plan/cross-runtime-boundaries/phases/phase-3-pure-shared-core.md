@@ -1,6 +1,6 @@
 # Phase 3: Pure Shared Core
 
-Status: queued.
+Status: active.
 
 Depends on: Phase 0 classification; Phase 1 for any serialized types used by a
 candidate.
@@ -37,3 +37,5 @@ browser-only state/reactivity stays under `src/`.
 
 Shared import audit, focused differential tests, protocol checks where relevant,
 affected client/server tests, both typechecks, formatting, and diff checks.
+
+Active slice: [Shared-core foundation and first leaf](slices/phase-3-pure-shared-core/shared-core-foundation-and-first-leaf.md).
