@@ -2,7 +2,7 @@
   import { language } from 'src/lang'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { getModelInfo } from 'src/ts/model/modellist'
-  import { normalizeModelRole, resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { normalizeModelRole, resolveModelForRole } from '@risuai/shared-core/model-roles'
   import { LLMFlags } from 'src/ts/model/types'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'

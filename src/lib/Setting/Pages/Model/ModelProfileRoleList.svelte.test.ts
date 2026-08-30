@@ -26,7 +26,7 @@ import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 import { language } from 'src/lang'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
-import { MODEL_ROLES } from 'src/ts/model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]

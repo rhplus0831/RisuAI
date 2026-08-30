@@ -1,5 +1,5 @@
 import { getDatabase } from 'src/ts/storage/database.svelte'
-import type { LegacyModelMode } from '../../model/modelRoles'
+import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { parseAdditionalParamJsonValue } from './additionalParams'
 
 export type LLMParameter =

@@ -79,7 +79,7 @@ import {
   resetPromptTemplateSelectionDirtyState,
 } from '../server/promptTemplateBridge.svelte'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
-import { MODEL_ROLES } from '../model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'

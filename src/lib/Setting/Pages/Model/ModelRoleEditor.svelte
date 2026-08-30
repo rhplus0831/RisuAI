@@ -13,7 +13,7 @@
     LegacyFallbackModelMap,
     ModelRole,
     NormalizedModelRoleOverrides,
-  } from 'src/ts/model/modelRoles'
+  } from '@risuai/shared-core/model-roles'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'

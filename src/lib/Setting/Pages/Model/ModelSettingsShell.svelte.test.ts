@@ -53,7 +53,7 @@ import {
   modelProfileProjectionFingerprint,
   retainPendingModelMutation,
 } from 'src/ts/model/modelProfileMutations'
-import { MODEL_ROLES } from 'src/ts/model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ModelSettingsShell from './ModelSettingsShell.svelte'
 

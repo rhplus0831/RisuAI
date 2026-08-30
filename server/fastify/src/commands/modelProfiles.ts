@@ -12,7 +12,7 @@ import {
   modelRoleProfileInheritSource,
   resolveModelForRole,
   type ModelRole,
-} from '../../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
   ModelProfileRecordValidationError,
   normalizeModelProfileOrder,

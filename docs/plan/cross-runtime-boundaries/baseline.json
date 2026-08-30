@@ -424,22 +424,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/commands/modelProfiles.ts",
-      "specifier": "../../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "MODEL_ROLES",
-        "ModelRole",
-        "modelRoleProfileInheritSource",
-        "resolveModelForRole"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/modelProfiles.ts",
       "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
       "target": "src/ts/model/providerCredentialRecords.ts",
       "kind": "static",
@@ -594,21 +578,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/presets.ts",
-      "specifier": "../../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeLegacyFallbackModels",
-        "normalizeLegacySeperateModels",
-        "normalizeModelRoleOverrides"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/prompts.ts",
       "specifier": "../../../../src/ts/process/promptTemplateNormalization.js",
       "target": "src/ts/process/promptTemplateNormalization.ts",
@@ -719,21 +688,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/commands/splitPresets.ts",
-      "specifier": "../../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeLegacyFallbackModels",
-        "normalizeLegacySeperateModels",
-        "normalizeModelRoleOverrides"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/splitPresets.ts",
       "specifier": "../../../../src/ts/presetSplit.js",
       "target": "src/ts/presetSplit.ts",
       "kind": "static",
@@ -817,27 +771,6 @@
         "normalizeModelProfiles",
         "normalizeModelRoleProfiles",
         "normalizeModelRuntimeDefaults"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "MODEL_ROLES",
-        "ModelRole",
-        "createDefaultLegacyFallbackModels",
-        "createDefaultModelRoleOverrides",
-        "modelRoleProfileInheritSource",
-        "normalizeLegacyFallbackModels",
-        "normalizeLegacySeperateModels",
-        "normalizeModelRoleOverrides",
-        "resolveModelForRole"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -1241,19 +1174,6 @@
         "assertModelProfileGenerationReady",
         "resolveModelProfile",
         "resolveModelProfileByProfileId"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
-      "specifier": "../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "LegacyModelMode"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -1989,19 +1909,6 @@
         "ResolvedModelProfile",
         "resolveModelProfile",
         "resolveModelProfileByProfileId"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ModelRole"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -2954,21 +2861,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/routes/commands.ts",
-      "specifier": "../../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeLegacyFallbackModels",
-        "normalizeLegacySeperateModels",
-        "normalizeModelRoleOverrides"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/commands.ts",
       "specifier": "../../../../src/ts/model/providerCredentialRecords.js",
       "target": "src/ts/model/providerCredentialRecords.ts",
       "kind": "static",
@@ -3012,19 +2904,6 @@
         "assertModelProfileGenerationReady",
         "resolveModelProfile",
         "resolveModelProfileByProfileId"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/generation.ts",
-      "specifier": "../../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "LegacyModelMode"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -3476,19 +3355,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/commands.test.ts",
-      "specifier": "../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "MODEL_ROLES"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/commands.test.ts",
       "specifier": "../../../src/ts/model/types.js",
       "target": "src/ts/model/types.ts",
       "kind": "static",
@@ -3551,19 +3417,6 @@
       "usage": "runtime",
       "symbols": [
         "serializeChatGenerationSettingsDigestInput"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/databaseDefaults.test.ts",
-      "specifier": "../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "MODEL_ROLES"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -4299,19 +4152,6 @@
       "usage": "runtime",
       "symbols": [
         "SERVER_SETTINGS_KEYS_BY_GROUP"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/splitPresets.test.ts",
-      "specifier": "../../../src/ts/model/modelRoles.js",
-      "target": "src/ts/model/modelRoles.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "MODEL_ROLES"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

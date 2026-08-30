@@ -23,7 +23,7 @@ import { selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
 import { setGlobalModuleEnabled } from './moduleCommands'
-import { MODEL_ROLES } from './model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,

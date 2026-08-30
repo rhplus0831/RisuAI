@@ -11,7 +11,7 @@ import {
   normalizeModelRole,
   normalizeModelRoleOverrides,
   resolveModelForRole,
-} from './modelRoles'
+} from '@risuai/shared-core/model-roles'
 import {
   ClaudeParameters,
   LLMFlags,

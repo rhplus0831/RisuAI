@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { LegacyModelMode } from '../../../../src/ts/model/modelRoles.js'
+import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import {
   assertModelProfileGenerationReady,
   resolveModelProfile,

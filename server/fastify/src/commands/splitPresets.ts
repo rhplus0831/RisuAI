@@ -20,7 +20,7 @@ import {
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
   normalizeModelRoleOverrides,
-} from '../../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
   normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,

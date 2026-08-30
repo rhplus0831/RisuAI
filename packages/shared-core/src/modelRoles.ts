@@ -103,7 +103,7 @@ export function createDefaultLegacySeperateModels(): LegacySeperateModelMap {
 }
 
 export function createDefaultLegacyFallbackModels(): LegacyFallbackModelMap {
-  return Object.fromEntries(LEGACY_FALLBACK_MODEL_KEYS.map((role) => [role, []])) as LegacyFallbackModelMap
+  return Object.fromEntries(LEGACY_FALLBACK_MODEL_KEYS.map((role) => [role, []])) as unknown as LegacyFallbackModelMap
 }
 
 export function normalizeModelRole(role: unknown): ModelRole | null {

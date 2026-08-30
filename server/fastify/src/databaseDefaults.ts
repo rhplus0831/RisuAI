@@ -23,7 +23,7 @@ import {
   normalizeModelRoleOverrides,
   resolveModelForRole,
   type ModelRole,
-} from '../../../src/ts/model/modelRoles.js'
+} from '@risuai/shared-core/model-roles'
 import {
   createDefaultModelRoleProfiles,
   normalizeModelProfileOrder,

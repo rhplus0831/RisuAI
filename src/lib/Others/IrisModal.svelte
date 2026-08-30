@@ -10,7 +10,7 @@
   import { RisuAccessClient } from 'src/ts/process/mcp/risuaccess'
   import localforage from 'localforage'
   import { getModelInfo, LLMFormat } from 'src/ts/model/modellist'
-  import { resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { resolveModelForRole } from '@risuai/shared-core/model-roles'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
   import {

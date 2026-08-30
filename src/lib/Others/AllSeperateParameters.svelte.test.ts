@@ -13,7 +13,7 @@ vi.mock('src/ts/model/modellist', () => ({
   getModelInfo: () => ({ flags: [], parameters: separateParameterMocks.parameters }),
 }))
 
-vi.mock('src/ts/model/modelRoles', () => ({
+vi.mock('@risuai/shared-core/model-roles', () => ({
   MODEL_ROLES: [],
   normalizeModelRole: () => null,
   resolveModelForRole: () => 'test-model',

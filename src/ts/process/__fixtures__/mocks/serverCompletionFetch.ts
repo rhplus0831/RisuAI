@@ -7,7 +7,7 @@
  */
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
-import { resolveModelForRole, type LegacyModelMode } from '../../../model/modelRoles'
+import { resolveModelForRole, type LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { getDatabase } from '../../../storage/database.svelte'
 
 interface ServerCompletionCallBase {

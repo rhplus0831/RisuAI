@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MODEL_ROLES } from './model/modelRoles'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import {
   applyEffectivePresetComposition,
   clearPromptPresetRecommendedModelPresetReferences,

@@ -25,7 +25,7 @@ import {
 } from '../agentPresetRecords'
 import type { MessageTranslation } from '../storage/database.svelte'
 import type { AlternateGreetingMutation, ChatGreetingIndex } from '../alternateGreetingMutation'
-import type { ModelRole } from '../model/modelRoles'
+import type { ModelRole } from '@risuai/shared-core/model-roles'
 import type {
   ModelProfileOrderEntry,
   ModelProfileRecord,

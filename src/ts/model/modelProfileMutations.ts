@@ -7,7 +7,7 @@ import {
   type ModelProfileRecordRuntimeOptions,
   type ModelRoleProfileBinding,
 } from './modelProfileRecords'
-import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { MODEL_ROLES, type ModelRole } from '@risuai/shared-core/model-roles'
 import {
   convertLegacyModelProfilesCommand,
   createModelProfileCommand,

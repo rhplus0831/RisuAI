@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from './types'
-import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { MODEL_ROLES, type ModelRole } from '@risuai/shared-core/model-roles'
 import {
   getModelProfileRoleStatus,
   getModelProfileRolesByStatus,

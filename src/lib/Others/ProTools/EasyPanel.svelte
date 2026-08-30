@@ -14,7 +14,7 @@
     type LegacySeperateModelMap,
     type ModelRole,
     type NormalizedModelRoleOverrides,
-  } from 'src/ts/model/modelRoles'
+  } from '@risuai/shared-core/model-roles'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import {

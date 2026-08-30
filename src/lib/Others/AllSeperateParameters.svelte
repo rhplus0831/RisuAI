@@ -10,7 +10,7 @@
   import { FileDownIcon, FileUpIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { getModelInfo } from 'src/ts/model/modellist'
-  import { normalizeModelRole, resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { normalizeModelRole, resolveModelForRole } from '@risuai/shared-core/model-roles'
   import {
     parseSeperateParametersImport,
     type SeperateParametersImportOperation,

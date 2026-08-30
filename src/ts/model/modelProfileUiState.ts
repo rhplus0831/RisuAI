@@ -6,7 +6,7 @@ import {
   type ModelProfileStatusBucket,
   type ResolvedModelProfile,
 } from './modelProfileResolver'
-import { MODEL_ROLES, type ModelRole } from './modelRoles'
+import { MODEL_ROLES, type ModelRole } from '@risuai/shared-core/model-roles'
 import { resolveMemoryModelCapability } from './memoryModelCapability'
 
 export interface ModelProfileUiApiKeyModel {

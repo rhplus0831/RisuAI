@@ -3,12 +3,16 @@ import {
   MODEL_ROLES,
   createDefaultLegacyFallbackModels,
   createDefaultLegacySeperateModels,
+  createDefaultModelRoleOverrides,
+  modelRoleProfileInheritSource,
+  modelRoleToLegacyModelMode,
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
+  normalizeModelRole,
   normalizeModelRoleOverrides,
   resolveModelForRole,
   resolveModelRoles,
-} from './modelRoles'
+} from './modelRoles.js'
 
 describe('model role resolver', () => {
   it('resolves every canonical role from legacy fields by default', () => {
@@ -172,5 +176,94 @@ describe('model role resolver', () => {
       model: ['main'],
       scriptMain: ['script'],
     })
+  })
+
+  it('preserves canonical roles, legacy aliases, and invalid-role rejection', () => {
+    expect(MODEL_ROLES).toEqual([
+      'chatMain',
+      'chatAux',
+      'memory',
+      'emotion',
+      'translate',
+      'otherAx',
+      'scriptMain',
+      'scriptAux',
+    ])
+    for (const role of MODEL_ROLES) expect(normalizeModelRole(role)).toBe(role)
+    expect(normalizeModelRole('model')).toBe('chatMain')
+    expect(normalizeModelRole('submodel')).toBe('chatAux')
+    expect(normalizeModelRole(' model ')).toBeNull()
+    expect(normalizeModelRole(null)).toBeNull()
+    expect(normalizeModelRole('unknown')).toBeNull()
+  })
+
+  it('preserves legacy-mode and profile-inheritance mappings', () => {
+    expect(MODEL_ROLES.map((role) => modelRoleToLegacyModelMode(role))).toEqual([
+      'model',
+      'submodel',
+      'memory',
+      'emotion',
+      'translate',
+      'otherAx',
+      'scriptMain',
+      'scriptAux',
+    ])
+    expect(MODEL_ROLES.map((role) => modelRoleProfileInheritSource(role))).toEqual([
+      null,
+      null,
+      'chatAux',
+      'chatAux',
+      'chatAux',
+      'chatAux',
+      'chatMain',
+      'chatAux',
+    ])
+  })
+
+  it('normalizes only supported values while preserving nonblank fallback spelling', () => {
+    expect(normalizeModelRoleOverrides({ memory: ' memory-model ', unknown: 'ignored' })).toEqual({
+      ...createDefaultModelRoleOverrides(),
+      memory: 'memory-model',
+    })
+    expect(normalizeLegacySeperateModels({ memory: ' memory-model ', scriptAux: 42 })).toEqual({
+      ...createDefaultLegacySeperateModels(),
+      memory: 'memory-model',
+    })
+    expect(normalizeLegacyFallbackModels({ model: [' main ', '', '   ', 42, 'fallback'] })).toEqual({
+      ...createDefaultLegacyFallbackModels(),
+      model: [' main ', 'fallback'],
+    })
+  })
+
+  it('allocates fresh role and fallback maps', () => {
+    const firstRoles = createDefaultModelRoleOverrides()
+    const secondRoles = createDefaultModelRoleOverrides()
+    firstRoles.memory = 'changed'
+    expect(secondRoles.memory).toBe('')
+
+    const firstFallbacks = createDefaultLegacyFallbackModels()
+    const secondFallbacks = createDefaultLegacyFallbackModels()
+    firstFallbacks.memory.push('changed')
+    expect(secondFallbacks.memory).toEqual([])
+  })
+
+  it('requires the exact legacy separate-model gate and preserves fallback chains', () => {
+    const source = {
+      aiModel: ' main ',
+      subModel: ' aux ',
+      seperateModelsForAxModels: 1,
+      seperateModels: {
+        memory: ' memory ',
+        scriptMain: ' script-main ',
+        scriptAux: '   ',
+        otherAx: ' other ',
+      },
+    }
+
+    expect(resolveModelForRole(source, 'memory')).toBe('aux')
+    expect(resolveModelForRole(source, 'scriptMain')).toBe('main')
+    expect(resolveModelForRole(source, 'scriptAux')).toBe('aux')
+    expect(resolveModelForRole({ ...source, seperateModelsForAxModels: true }, 'scriptAux')).toBe('other')
+    expect(resolveModelForRole({}, 'memory')).toBe('')
   })
 })

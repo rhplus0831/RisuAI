@@ -11,7 +11,7 @@ import type { Chat, Database, character } from '../../../../src/ts/storage/datab
 import type { triggerscript } from '../../../../src/ts/process/triggers'
 import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import type { ModelRole } from '../../../../src/ts/model/modelRoles.js'
+import type { ModelRole } from '@risuai/shared-core/model-roles'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,

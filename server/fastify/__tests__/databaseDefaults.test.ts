@@ -4,7 +4,7 @@ import {
   migrateLegacyFlatModelConfiguration,
   normalizeDatabaseDefaults,
 } from '../src/databaseDefaults.js'
-import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags } from '../../../src/ts/model/types.js'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 

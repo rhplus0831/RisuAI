@@ -31,8 +31,8 @@ vi.mock('src/ts/model/modellist', () => ({
   },
 }))
 
-vi.mock('src/ts/model/modelRoles', async (importActual) => {
-  const actual = await importActual<typeof import('src/ts/model/modelRoles')>()
+vi.mock('@risuai/shared-core/model-roles', async (importActual) => {
+  const actual = await importActual<typeof import('@risuai/shared-core/model-roles')>()
   return {
     ...actual,
     resolveModelForRole: () => 'test-model',

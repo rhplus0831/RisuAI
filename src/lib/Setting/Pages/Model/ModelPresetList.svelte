@@ -6,7 +6,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'
   import { normalizeModelRoleProfiles, type ModelRoleProfileBinding } from 'src/ts/model/modelProfileRecords'
-  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
+  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from '@risuai/shared-core/model-roles'
   import {
     createModelPreset,
     deleteModelPreset,

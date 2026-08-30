@@ -4,7 +4,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Database } from '../../../src/ts/storage/database.svelte.js'
-import type { LegacyModelMode } from '../../../src/ts/model/modelRoles.js'
+import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { LLMFormat } from '../../../src/ts/model/types.js'
 import {
   assertModelProfileGenerationReady,

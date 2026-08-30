@@ -1,4 +1,4 @@
-import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from './modelRoles'
+import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from '@risuai/shared-core/model-roles'
 import {
   LLMFlags,
   LLMFormat,

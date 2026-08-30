@@ -17,7 +17,7 @@
     type ModelProfileRecord,
     type ModelRoleProfileBinding,
   } from 'src/ts/model/modelProfileRecords'
-  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
+  import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from '@risuai/shared-core/model-roles'
   import { getModelInfo } from 'src/ts/model/modellist'
   import {
     beginPendingModelMutation,

@@ -110,7 +110,7 @@
     syncServerBackedChatMetadataBaselines,
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import { resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { resolveModelForRole } from '@risuai/shared-core/model-roles'
   import {
     consumeChatSuggestionCompletion,
     findPendingChatSuggestionCompletion,

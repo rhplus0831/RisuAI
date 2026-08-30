@@ -5,7 +5,11 @@
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import { getModelInfo } from 'src/ts/model/modellist'
-  import { normalizeLegacySeperateModels, normalizeModelRoleOverrides, MODEL_ROLES } from 'src/ts/model/modelRoles'
+  import {
+    normalizeLegacySeperateModels,
+    normalizeModelRoleOverrides,
+    MODEL_ROLES,
+  } from '@risuai/shared-core/model-roles'
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
   import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'

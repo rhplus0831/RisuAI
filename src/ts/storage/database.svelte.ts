@@ -28,7 +28,7 @@ import {
   type LegacyFallbackModelMap,
   type LegacySeperateModelMap,
   type NormalizedModelRoleOverrides,
-} from '../model/modelRoles'
+} from '@risuai/shared-core/model-roles'
 import {
   normalizeModelProfileOrder,
   normalizeModelRuntimeDefaults,

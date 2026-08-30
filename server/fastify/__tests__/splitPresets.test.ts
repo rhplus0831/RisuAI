@@ -15,7 +15,7 @@ import {
   resolveModelPresetMaskedSecrets,
 } from '../src/commands/splitPresets.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
-import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
+import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags } from '../../../src/ts/model/types.js'
 import { setupAuthedClient } from './helpers/auth.js'
 

@@ -6,7 +6,7 @@
   import Button from '../UI/GUI/Button.svelte'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
-  import { resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { resolveModelForRole } from '@risuai/shared-core/model-roles'
   import { requestChatData } from 'src/ts/process/request/request'
   import { asBuffer, sleep } from 'src/ts/util'
   import { selectFileByDom, selectSingleFile } from 'src/ts/filePicker'
