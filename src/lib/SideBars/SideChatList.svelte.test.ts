@@ -808,6 +808,13 @@ describe('SideChatList DOM contract harness', () => {
 
     expect(selectButtonForRow(rowByChatId('chat-root-a')).textContent).toContain('Owner Chat A')
     expect(selectButtonForRow(rowByChatId('chat-root-a')).textContent).not.toContain('Root Chat A')
+    const ownerRow = rowByChatId('chat-root-a')
+    expect(rowActionButton(ownerRow, 'options').getAttribute('aria-label')).toBe(
+      `${language.chatOptions}: Owner Chat A`,
+    )
+    expect(rowActionButton(ownerRow, 'edit').getAttribute('aria-label')).toBe(`${language.edit}: Owner Chat A`)
+    expect(rowActionButton(ownerRow, 'export').getAttribute('aria-label')).toBe(`${language.export}: Owner Chat A`)
+    expect(rowActionButton(ownerRow, 'delete').getAttribute('aria-label')).toBe(`${language.remove}: Owner Chat A`)
   })
 
   it('marks only the exact chat whose observer is exhausted with an accessible warning', async () => {

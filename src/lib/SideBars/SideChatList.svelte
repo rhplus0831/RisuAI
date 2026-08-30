@@ -1600,11 +1600,11 @@
                       {#if chat.id && reattachWarningChatIds.has(chat.id)}
                         <GenerationIndicator
                           state="warning"
-                          label={language.generationReattachFailure.sidebarWarning(chat.name)}
+                          label={language.generationReattachFailure.sidebarWarning(renderedChatName(chat))}
                           onActivate={() => activateChatRow(index)} />
                       {:else if chat.id && $unreadChatIds.has(chat.id)}
                         <UnreadIndicator
-                          label={`${language.newMessage}: ${chat.name}`}
+                          label={`${language.newMessage}: ${renderedChatName(chat)}`}
                           onActivate={() => activateChatRow(index)} />
                       {/if}
                       <div class="ml-auto flex shrink-0 justify-end">
@@ -1613,7 +1613,7 @@
                             type="button"
                             data-risu-chat-action="organize"
                             data-risu-chat-organizer-action={chat.id}
-                            aria-label={`${language.options}: ${chat.name}`}
+                            aria-label={`${language.options}: ${renderedChatName(chat)}`}
                             disabled={isChatStructuralActionPending(chat.id)}
                             class="sr-only"
                             onclick={(event) => {
@@ -1626,7 +1626,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="options"
-                          aria-label={`${language.chatOptions}: ${chat.name}`}
+                          aria-label={`${language.chatOptions}: ${renderedChatName(chat)}`}
                           aria-busy={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
                             isChatStructurePending(chat.id)}
                           aria-disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) ||
@@ -1655,7 +1655,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="edit"
-                          aria-label={`${language.edit}: ${chat.name}`}
+                          aria-label={`${language.edit}: ${renderedChatName(chat)}`}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={(e) => {
                             e.stopPropagation()
@@ -1666,7 +1666,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="export"
-                          aria-label={`${language.export}: ${chat.name}`}
+                          aria-label={`${language.export}: ${renderedChatName(chat)}`}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
@@ -1679,7 +1679,7 @@
                         <button
                           type="button"
                           data-risu-chat-action="delete"
-                          aria-label={`${language.remove}: ${chat.name}`}
+                          aria-label={`${language.remove}: ${renderedChatName(chat)}`}
                           disabled={isChatStructuralActionPending(chat.id)}
                           class="text-textcolor2 hover:text-green-500 cursor-pointer"
                           class:opacity-50={isChatStructuralActionPending(chat.id)}
@@ -1738,11 +1738,11 @@
               {#if chat.id && reattachWarningChatIds.has(chat.id)}
                 <GenerationIndicator
                   state="warning"
-                  label={language.generationReattachFailure.sidebarWarning(chat.name)}
+                  label={language.generationReattachFailure.sidebarWarning(renderedChatName(chat))}
                   onActivate={() => activateChatRow(index)} />
               {:else if chat.id && $unreadChatIds.has(chat.id)}
                 <UnreadIndicator
-                  label={`${language.newMessage}: ${chat.name}`}
+                  label={`${language.newMessage}: ${renderedChatName(chat)}`}
                   onActivate={() => activateChatRow(index)} />
               {/if}
               <div class="ml-auto flex shrink-0 justify-end">
@@ -1751,7 +1751,7 @@
                     type="button"
                     data-risu-chat-action="organize"
                     data-risu-chat-organizer-action={chat.id}
-                    aria-label={`${language.options}: ${chat.name}`}
+                    aria-label={`${language.options}: ${renderedChatName(chat)}`}
                     disabled={isChatStructuralActionPending(chat.id)}
                     class="sr-only"
                     onclick={(event) => {
@@ -1764,7 +1764,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="options"
-                  aria-label={`${language.chatOptions}: ${chat.name}`}
+                  aria-label={`${language.chatOptions}: ${renderedChatName(chat)}`}
                   aria-busy={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                   aria-disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
                   disabled={(pendingPersonaBindings[chat.id ?? ''] ?? false) || isChatStructurePending(chat.id)}
@@ -1790,7 +1790,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="edit"
-                  aria-label={`${language.edit}: ${chat.name}`}
+                  aria-label={`${language.edit}: ${renderedChatName(chat)}`}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                   onclick={(e) => {
                     e.stopPropagation()
@@ -1801,7 +1801,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="export"
-                  aria-label={`${language.export}: ${chat.name}`}
+                  aria-label={`${language.export}: ${renderedChatName(chat)}`}
                   class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                   onclick={async (e) => {
                     e.stopPropagation()
@@ -1814,7 +1814,7 @@
                 <button
                   type="button"
                   data-risu-chat-action="delete"
-                  aria-label={`${language.remove}: ${chat.name}`}
+                  aria-label={`${language.remove}: ${renderedChatName(chat)}`}
                   disabled={isChatStructuralActionPending(chat.id)}
                   class="text-textcolor2 hover:text-green-500 cursor-pointer"
                   class:opacity-50={isChatStructuralActionPending(chat.id)}

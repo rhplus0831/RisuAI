@@ -94,7 +94,7 @@
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
   import type { OpenAIChat } from '../../ts/process/index.svelte'
-  import { getDatabase, type character, type Message } from '../../ts/storage/database.svelte'
+  import { getDatabase, type Chat, type character, type Message } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { translate } from 'src/ts/translator/translator'
   import { CopyIcon, LanguagesIcon, RefreshCcwIcon } from '@lucide/svelte'
@@ -117,6 +117,8 @@
     pendingChatSuggestionCompletions,
   } from 'src/ts/process/chatSuggestionCompletion.svelte'
   import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
+  import { getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
+  import { preferChatMetadataOwner, projectChatMetadata } from 'src/ts/server/chatMetadataOwner'
 
   interface Props {
     send: () => any
@@ -137,6 +139,11 @@
   }
 
   let { send, messageInput, isGenerationActive }: Props = $props()
+  function chatMetadataFor(chat: Chat | undefined) {
+    if (!chat?.id) return undefined
+    return preferChatMetadataOwner(getChatMetadataOwnerState(chat.id), projectChatMetadata(chat.id, chat))
+  }
+
   let fallbackGenerationTargetKey = $derived.by(() => {
     const character = getDatabase().characters[$selectedCharID]
     const chat = character?.chats[character.chatPage]
@@ -155,9 +162,10 @@
   )
   const initialCharacter = getDatabase().characters[$selectedCharID]
   const initialChat = initialCharacter?.chats[initialCharacter.chatPage]
+  const initialChatMetadata = chatMetadataFor(initialChat)
   let suggestMessages: string[] | undefined = $state(initialChat?.suggestMessages)
   let suggestMessagesTranslated: string[] = $state()
-  let toggleTranslate: boolean = $state(initialChat?.autoTranslate === true)
+  let toggleTranslate: boolean = $state(initialChatMetadata?.autoTranslate === true)
   let progress: boolean = $state()
   let abortController: AbortController | undefined
   let chatPage: number | undefined = $state()
@@ -169,6 +177,7 @@
   let destroyed = false
   let observedTranscriptOwner: string | undefined
   let observedResidentMessageCount = 0
+  let observedMetadataOwner: string | undefined
 
   function copySuggestionMessages(messages: readonly string[] | undefined): string[] {
     return [...(messages ?? [])]
@@ -572,6 +581,14 @@
     const currentCharacter = getDatabase().characters[$selectedCharID]
     chatPage = currentCharacter?.chatPage
     const currentChat = currentCharacter?.chats[chatPage]
+    const currentChatMetadata = chatMetadataFor(currentChat)
+    const metadataOwner = currentChatMetadata
+      ? `${currentCharacter?.chaId ?? $selectedCharID}:${currentChatMetadata.chatId}`
+      : undefined
+    if (metadataOwner !== observedMetadataOwner) {
+      observedMetadataOwner = metadataOwner
+      toggleTranslate = currentChatMetadata?.autoTranslate === true
+    }
     const residentMessageCount = currentChat?.message?.length ?? 0
     const persistedSuggestionCount = currentChat?.suggestMessages?.length ?? 0
     const transcriptOwner = currentChat

@@ -10,6 +10,7 @@ const suggestionMocks = vi.hoisted(() => {
     rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
     withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
+    getChatMetadataOwnerState: vi.fn(() => undefined),
   }
 })
 
@@ -41,6 +42,14 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
   withTrustedResourceWrite: suggestionMocks.withTrustedResourceWrite,
 }))
+
+vi.mock('src/ts/server/resourceState.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/server/resourceState.svelte')>()
+  return {
+    ...actual,
+    getChatMetadataOwnerState: suggestionMocks.getChatMetadataOwnerState,
+  }
+})
 
 vi.mock('src/ts/process/modules', () => ({
   getModules: () => [],
@@ -184,6 +193,7 @@ afterEach(() => {
   selectedCharID.set(-1)
   replaceResourceDatabase({} as Database)
   vi.clearAllMocks()
+  suggestionMocks.getChatMetadataOwnerState.mockReset()
 })
 
 describe('Suggestion controls', () => {
@@ -210,6 +220,24 @@ describe('Suggestion controls', () => {
   it("defaults the translation toggle from the active chat's auto-translate setting", async () => {
     seedSuggestionDatabase(['Take the lead'], 'google')
     getResourceDatabase().characters[0].chats[0].autoTranslate = true
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector(`button[aria-label="${language.translate}"]`)?.getAttribute('aria-pressed')).toBe(
+        'true',
+      )
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('prefers owner chat metadata when the aggregate auto-translate flag is stale', async () => {
+    seedSuggestionDatabase(['Take the lead'], 'google')
+    suggestionMocks.getChatMetadataOwnerState.mockReturnValue({ chatId: 'chat-a', autoTranslate: true })
     const target = document.createElement('div')
     document.body.appendChild(target)
     const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
