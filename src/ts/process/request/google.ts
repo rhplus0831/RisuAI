@@ -359,6 +359,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
       {
         ignoreTopKIfZero: true,
         modelId: arg.modelInfo.id,
+        runtimeOptions: arg.resolvedProfile?.runtimeOptions,
       },
     ),
     safetySettings: uncensoredCatagory,

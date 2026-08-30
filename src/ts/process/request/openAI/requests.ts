@@ -432,6 +432,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       arg.mode,
       {
         modelId: arg.modelInfo.id,
+        runtimeOptions: arg.resolvedProfile?.runtimeOptions,
       },
     )
     const headers: Record<string, string> = {
@@ -580,6 +581,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
 
   body = applyParameters(body, arg.modelInfo.parameters, {}, arg.mode, {
     modelId: arg.modelInfo.id,
+    runtimeOptions: arg.resolvedProfile?.runtimeOptions,
   })
 
   if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle)) {
@@ -1445,6 +1447,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     arg.mode,
     {
       modelId: arg.modelInfo.id,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   )
 

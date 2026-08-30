@@ -1522,6 +1522,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
             arg.mode,
             {
               modelId: arg.aiModel,
+              runtimeOptions: arg.resolvedProfile?.runtimeOptions,
             },
           ) as any,
           arg.abortSignal,
@@ -1642,6 +1643,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
     arg.mode,
     {
       modelId: arg.aiModel,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   ) as KoboldGenerationInputSchema
   const headers: Record<string, string> = {
@@ -2052,6 +2054,7 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
     arg.mode,
     {
       modelId: arg.aiModel,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   )
 

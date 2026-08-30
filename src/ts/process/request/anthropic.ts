@@ -431,6 +431,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
     arg.mode,
     {
       modelId: arg.modelInfo.id,
+      runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
   )
 

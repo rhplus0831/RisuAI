@@ -611,6 +611,82 @@ describe('requestChatDataMain model-role routing', () => {
     })
   })
 
+  it('uses resolved profile samplers instead of conflicting flat parameters', () => {
+    seedDb({
+      temperature: 91,
+      top_k: 91,
+      top_p: 0.91,
+      frequencyPenalty: 91,
+      PresensePenalty: 91,
+      reasoningEffort: 0,
+      thinkingTokens: 91,
+      verbosity: 0,
+    })
+
+    expect(
+      applyParameters(
+        {},
+        [
+          'temperature',
+          'top_k',
+          'top_p',
+          'frequency_penalty',
+          'presence_penalty',
+          'reasoning_effort',
+          'reasoning_effort_xhigh',
+          'thinking_tokens',
+          'verbosity',
+        ],
+        {},
+        'model',
+        {
+          modelId: 'gpt-5.5',
+          runtimeOptions: {
+            temperature: 0.42,
+            topK: 17,
+            topP: 0.43,
+            frequencyPenalty: 0.25,
+            presencePenalty: -0.5,
+            reasoningEffort: 3,
+            thinkingTokens: 2048,
+            verbosity: 2,
+          },
+        },
+      ),
+    ).toEqual({
+      temperature: 0.42,
+      top_k: 17,
+      top_p: 0.43,
+      frequency_penalty: 0.25,
+      presence_penalty: -0.5,
+      reasoning_effort: 'xhigh',
+      thinking_tokens: 2048,
+      verbosity: 'high',
+    })
+  })
+
+  it('keeps configured separate parameters ahead of resolved profile samplers', () => {
+    seedDb({
+      seperateParametersEnabled: true,
+      seperateParameters: {
+        memory: { temperature: 65, top_p: 0.66 },
+        emotion: {},
+        translate: {},
+        otherAx: {},
+        scriptMain: {},
+        scriptAux: {},
+        overrides: {},
+      },
+    })
+
+    expect(
+      applyParameters({}, ['temperature', 'top_p'], {}, 'memory', {
+        modelId: 'profile-memory',
+        runtimeOptions: { temperature: 0.42, topP: 0.43 },
+      }),
+    ).toEqual({ temperature: 0.65, top_p: 0.66 })
+  })
+
   it('maps reasoning effort through none, min-medium, and xhigh capability tiers', () => {
     seedDb({ reasoningEffort: -1 })
     expect(
