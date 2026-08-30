@@ -774,6 +774,16 @@ export interface ChatFolderMetadataOwnerSnapshot {
   revision: number | null
 }
 
+export type ChatScriptstateOwnerValue = string | number | boolean
+
+export interface ChatScriptstateOwnerSnapshot {
+  characterId: string
+  chatId: string
+  scriptstate: Record<string, ChatScriptstateOwnerValue> | undefined
+  projectionEpoch: number
+  revision: number | null
+}
+
 /** Read one uniquely-owned chat metadata row without exposing transcript data. */
 export function getChatMetadataOwnerSnapshot(
   characterId: string,
@@ -806,6 +816,39 @@ export function getChatFolderMetadataOwnerSnapshot(
     projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
     revision: charactersResourceState.rowRevisions[characterId] ?? null,
   }
+}
+
+/** Read one uniquely-owned chat scriptstate map without exposing the chat row. */
+export function getChatScriptstateOwnerSnapshot(
+  characterId: string,
+  chatId: string,
+): ChatScriptstateOwnerSnapshot | undefined {
+  const chat = uniqueGlobalChatOwner(characterId, chatId)
+  if (!chat) return undefined
+  return {
+    characterId,
+    chatId,
+    scriptstate: chat.scriptstate ? { ...chat.scriptstate } : undefined,
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    revision: charactersResourceState.rowRevisions[characterId] ?? null,
+  }
+}
+
+/** Apply one optimistic scriptstate value to its exact stable-id chat owner. */
+export function applyChatScriptstateOwnerValue(
+  characterId: string,
+  chatId: string,
+  key: string,
+  value: ChatScriptstateOwnerValue,
+): boolean {
+  if (!nonEmptyString(key) || !isChatScriptstateOwnerValue(value)) return false
+  const chat = uniqueGlobalChatOwner(characterId, chatId)
+  if (!chat || chat.scriptstate?.[key] === value) return false
+  chat.scriptstate ??= {}
+  chat.scriptstate[key] = value
+  advanceCharacterRowProjectionEpoch(characterId)
+  markResourceDatabaseChanged()
+  return true
 }
 
 /** Apply a closed-set optimistic chat metadata patch to its unique owner. */
@@ -910,6 +953,27 @@ function uniqueChatOwner(character: character | undefined, chatId: string): char
   if (!character || !nonEmptyString(chatId)) return undefined
   const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
   return matches.length === 1 ? matches[0] : undefined
+}
+
+function uniqueGlobalChatOwner(characterId: string, chatId: string): character['chats'][number] | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  if (!character || !nonEmptyString(chatId)) return undefined
+
+  let match: character['chats'][number] | undefined
+  let owner: character | undefined
+  for (const candidate of charactersResourceState.characters) {
+    for (const chat of candidate.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      if (match) return undefined
+      match = chat
+      owner = candidate
+    }
+  }
+  return owner === character ? match : undefined
+}
+
+function isChatScriptstateOwnerValue(value: unknown): value is ChatScriptstateOwnerValue {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
 }
 
 function uniqueFolderOwner(

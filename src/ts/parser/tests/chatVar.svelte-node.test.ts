@@ -1,38 +1,32 @@
 import fc from 'fast-check'
 import { writable } from 'svelte/store'
 import { beforeEach, expect, test, vi } from 'vitest'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  resetServerResourceState,
+  settingsResourceState,
+} from '../../server/resourceState.svelte'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../chatVar.svelte'
 
 //#region module mocks
 
 const chatVarMocks = vi.hoisted(() => ({
-  database: {
-    characters: [
-      {
-        chatPage: 0,
-        chats: [
-          {
-            scriptstate: {},
-          },
-        ],
-        defaultVariables: '',
-      },
-    ],
-    globalChatVariables: {} as Record<string, string>,
-    templateDefaultVariables: '',
-  },
+  currentChatScriptstateSnapshot: vi.fn(() => ({
+    characterId: 'compat-character',
+    chatId: 'compat-chat',
+    selectedCharID: 0,
+    scriptstate: undefined,
+  })),
+  dispatchCurrentChatScriptstatePatch: vi.fn(),
+  dispatchPatchChatScriptstateScoped: vi.fn(),
 }))
 
-vi.mock(
-  import('../../storage/database.svelte'),
-  () =>
-    ({
-      appVer: '1234.5.67',
-      getCurrentCharacter: () => ({}),
-      getDatabase: () => chatVarMocks.database,
-      reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../storage/database.svelte'),
-)
+vi.mock(import('../../chatCommands'), () => ({
+  currentChatScriptstateSnapshot: chatVarMocks.currentChatScriptstateSnapshot,
+  dispatchCurrentChatScriptstatePatch: chatVarMocks.dispatchCurrentChatScriptstatePatch,
+  dispatchPatchChatScriptstateScoped: chatVarMocks.dispatchPatchChatScriptstateScoped,
+}))
 
 vi.mock(import('../../globalApi.svelte'), () => ({
   aiWatermarkingLawApplies: () => false,
@@ -56,18 +50,58 @@ const anyValidDefaultVarValue = fc
   .map(JSON.stringify)
   .filter((s) => s !== undefined && !/[=\n]/.test(s))
 
+function selectedCharacter() {
+  return charactersResourceState.characters[0]!
+}
+
+function selectedChat() {
+  return selectedCharacter().chats[0]!
+}
+
+function markCharacterOwnersReady(): void {
+  charactersResourceState.status = 'ready'
+  charactersResourceState.currentChar = 0
+}
+
+function markPromptOwnerReady(templateDefaultVariables: string): void {
+  collectionsResourceState.values.promptPresets = [
+    {
+      id: 'prompt-owner',
+      templateDefaultVariables,
+    },
+  ] as never
+  collectionsResourceState.statuses.promptPresets = 'ready'
+  ;(settingsResourceState.value as Record<string, unknown>).promptPresetsId = 0
+  settingsResourceState.standaloneStatuses.promptPresetsId = 'ready'
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
-  chatVarMocks.database.characters[0].chats[0].scriptstate = {}
-  chatVarMocks.database.characters[0].defaultVariables = ''
-  chatVarMocks.database.globalChatVariables = {}
-  chatVarMocks.database.templateDefaultVariables = ''
+  resetServerResourceState()
+  charactersResourceState.characters = [
+    {
+      chaId: 'compat-character',
+      chatPage: 0,
+      chats: [
+        {
+          id: 'compat-chat',
+          scriptstate: {},
+        },
+      ],
+      defaultVariables: '',
+    },
+  ] as never
+  charactersResourceState.currentChar = 0
+  settingsResourceState.value = {
+    globalChatVariables: {},
+    templateDefaultVariables: '',
+  }
 })
 
 test('can get a character default variable', () => {
   fc.assert(
     fc.property(anyValidDefaultVarKey, anyValidDefaultVarValue, (key, value) => {
-      chatVarMocks.database.characters[0].defaultVariables = `${key}=${value}`
+      selectedCharacter().defaultVariables = `${key}=${value}`
       expect(getChatVar(key)).toBe(value)
     }),
   )
@@ -76,7 +110,7 @@ test('can get a character default variable', () => {
 test('can get a template default variable', () => {
   fc.assert(
     fc.property(anyValidDefaultVarKey, anyValidDefaultVarValue, (key, value) => {
-      chatVarMocks.database.templateDefaultVariables = `${key}=${value}`
+      ;(settingsResourceState.value as Record<string, unknown>).templateDefaultVariables = `${key}=${value}`
       expect(getChatVar(key)).toBe(value)
     }),
   )
@@ -99,8 +133,8 @@ test('can set and get a chat variable', () => {
 })
 
 test('can set a chat variable over its default value', () => {
-  chatVarMocks.database.characters[0].defaultVariables = 'char=default'
-  chatVarMocks.database.templateDefaultVariables = 'template=default'
+  selectedCharacter().defaultVariables = 'char=default'
+  ;(settingsResourceState.value as Record<string, unknown>).templateDefaultVariables = 'template=default'
 
   setChatVar('char', 'overridden')
   setChatVar('template', 'overridden')
@@ -124,12 +158,89 @@ test('can get a global chat variable', () => {
         .filter((v) => v !== undefined)
         .map(JSON.stringify),
       (key, value) => {
-        chatVarMocks.database.globalChatVariables[`toggle_${key}`] = value
+        const variables = (settingsResourceState.value as Record<string, unknown>).globalChatVariables as Record<
+          string,
+          string
+        >
+        variables[`toggle_${key}`] = value
 
         expect(getGlobalChatVar(`toggle_${key}`)).toBe(value)
       },
     ),
   )
+})
+
+test('writes the ready active chat through its stable-id scriptstate owner and durable command path', () => {
+  selectedCharacter().chaId = 'owner-character'
+  selectedChat().id = 'owner-chat'
+  markCharacterOwnersReady()
+
+  expect(setChatVar('status', 'ready')).toBe(true)
+  expect(selectedChat().scriptstate).toEqual({ $status: 'ready' })
+  expect(chatVarMocks.dispatchPatchChatScriptstateScoped).toHaveBeenCalledWith('owner-chat', { $status: 'ready' }, [], {
+    characterId: 'owner-character',
+    chatId: 'owner-chat',
+    selectedCharID: 0,
+    scriptstate: {},
+  })
+  expect(chatVarMocks.dispatchCurrentChatScriptstatePatch).not.toHaveBeenCalled()
+})
+
+test('uses the selected prompt preset owner for ready template defaults', () => {
+  markCharacterOwnersReady()
+  ;(settingsResourceState.value as Record<string, unknown>).templateDefaultVariables = 'source=compatibility'
+  markPromptOwnerReady('source=owner')
+
+  expect(getChatVar('source')).toBe('owner')
+})
+
+test('fails closed for duplicate ready character or chat stable ids', () => {
+  markCharacterOwnersReady()
+  charactersResourceState.characters.push({
+    chaId: 'compat-character',
+    chatPage: 0,
+    defaultVariables: '',
+    chats: [{ id: 'other-chat', scriptstate: { $status: 'duplicate-character' } }],
+  } as never)
+
+  expect(getChatVar('status')).toBe('null')
+  expect(setChatVar('status', 'blocked')).toBe(false)
+
+  charactersResourceState.characters[1]!.chaId = 'other-character'
+  charactersResourceState.characters[1]!.chats = [
+    { id: 'compat-chat', scriptstate: { $status: 'duplicate-chat' } },
+  ] as never
+
+  expect(getChatVar('status')).toBe('null')
+  expect(setChatVar('status', 'blocked')).toBe(false)
+  expect(chatVarMocks.dispatchPatchChatScriptstateScoped).not.toHaveBeenCalled()
+})
+
+test('retains the index-based compatibility row only before character owners are ready', () => {
+  charactersResourceState.status = 'loading'
+  charactersResourceState.characters.push({
+    chaId: 'compat-character',
+    chatPage: 0,
+    defaultVariables: '',
+    chats: [{ id: 'other-chat', scriptstate: {} }],
+  } as never)
+
+  expect(setChatVar('compatibility', 'kept')).toBe(true)
+  expect(selectedChat().scriptstate?.$compatibility).toBe('kept')
+  expect(chatVarMocks.dispatchCurrentChatScriptstatePatch).toHaveBeenCalledWith(
+    { $compatibility: 'kept' },
+    [],
+    expect.objectContaining({ chatId: 'compat-chat' }),
+  )
+})
+
+test('does not reuse compatibility rows after the character owner fails', () => {
+  charactersResourceState.status = 'error'
+
+  expect(getChatVar('status')).toBe('null')
+  expect(setChatVar('status', 'blocked')).toBe(false)
+  expect(selectedChat().scriptstate).toEqual({})
+  expect(chatVarMocks.dispatchCurrentChatScriptstatePatch).not.toHaveBeenCalled()
 })
 
 test('returns "null" for undefined variables', () => {
