@@ -16,6 +16,12 @@ const mainMenuMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
+  charactersResourceState: {
+    characters: mainMenuMocks.database.characters,
+    characterOrder: mainMenuMocks.database.characterOrder,
+    status: 'ready',
+    orderRevision: null,
+  },
   getResourceDatabase: () => mainMenuMocks.database,
 }))
 
@@ -72,6 +78,7 @@ vi.mock('./Title.svelte', () => ({ default: () => {} }))
 import MainMenu from './MainMenu.svelte'
 import { changeLanguage, language } from 'src/lang'
 import { OpenRealmStore } from 'src/ts/stores.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -123,6 +130,10 @@ beforeEach(() => {
       chats: [],
     },
   ]
+  charactersResourceState.characters = mainMenuMocks.database.characters as any
+  charactersResourceState.characterOrder = mainMenuMocks.database.characterOrder as any
+  charactersResourceState.status = 'ready'
+  charactersResourceState.orderRevision = null
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -138,6 +149,39 @@ afterEach(() => {
 })
 
 describe('MainMenu home dashboard', () => {
+  it('uses ready owner rows for pinned and recent chat navigation when the aggregate is stale', async () => {
+    const staleRows = mainMenuMocks.database.characters
+    charactersResourceState.characters = staleRows.map((character, index) =>
+      index === 0 ? { ...character, name: 'Owner A', chats: [chat('pinned-1', 'Owner pinned', true)] } : character,
+    ) as any
+    staleRows[0].name = 'Aggregate stale'
+    staleRows[0].chats = []
+    charactersResourceState.characterOrder = mainMenuMocks.database.characterOrder as any
+    charactersResourceState.orderRevision = 1
+
+    component = mount(MainMenu, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-home-pinned-chat="pinned-1"]')?.textContent).toContain('Owner A')
+    expect(target.querySelector('[data-risu-home-recent-character="character-a"]')?.textContent).toContain('Owner A')
+  })
+
+  it('fails closed for duplicate ready owner IDs instead of rendering ambiguous chat rows', async () => {
+    const owner = mainMenuMocks.database.characters[0]
+    charactersResourceState.characters = [
+      { ...owner, chats: [chat('pinned-1', 'First', true)] },
+      { ...owner, chats: [chat('pinned-2', 'Second', true)] },
+    ] as any
+    charactersResourceState.characterOrder = ['character-a'] as any
+    charactersResourceState.orderRevision = 1
+
+    component = mount(MainMenu, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-home-pinned-chat]')).toBeNull()
+    expect(target.querySelector('[data-risu-home-recent-character]')).toBeNull()
+  })
+
   it('renders resumable pinned chats and recent characters in priority order', async () => {
     component = mount(MainMenu, { target })
     await tick()
@@ -192,6 +236,8 @@ describe('MainMenu home dashboard', () => {
   it('uses compact guidance when there is nothing to resume', async () => {
     mainMenuMocks.database.characters = []
     mainMenuMocks.database.characterOrder = []
+    charactersResourceState.characters = []
+    charactersResourceState.characterOrder = []
     component = mount(MainMenu, { target })
     await tick()
 

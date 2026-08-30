@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Hub from './Realm/RealmMain.svelte'
   import { OpenRealmStore } from 'src/ts/stores.svelte'
   import { ArrowLeft, ChevronRightIcon, Globe2Icon, PinIcon, UsersIcon } from '@lucide/svelte'
@@ -37,12 +37,30 @@
   let generatingChatIds = $derived(
     collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations, warningChatIds),
   )
-  let pinnedChats = $derived(collectPinnedChats(getDatabase().characters, getDatabase().characterOrder))
+  function characterRowsOwner() {
+    const rows =
+      charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
+    if (charactersResourceState.status !== 'ready') return rows
+
+    const counts = new Map<string, number>()
+    for (const row of rows) {
+      if (row?.chaId) counts.set(row.chaId, (counts.get(row.chaId) ?? 0) + 1)
+    }
+    return rows.filter((row) => row?.chaId && counts.get(row.chaId) === 1)
+  }
+
+  function characterOrderOwner() {
+    return charactersResourceState.status === 'ready' && charactersResourceState.orderRevision !== null
+      ? charactersResourceState.characterOrder
+      : (getDatabase().characterOrder ?? [])
+  }
+
+  let pinnedChats = $derived(collectPinnedChats(characterRowsOwner(), characterOrderOwner()))
   let visiblePinnedChats = $derived(
     showAllPinnedChats ? pinnedChats : pinnedChats.slice(0, HOME_PINNED_CHAT_COLLAPSED_LIMIT),
   )
   let recentCharacters = $derived(
-    collectHomeRecentCharacters(getDatabase().characters, {
+    collectHomeRecentCharacters(characterRowsOwner(), {
       agoFormatter,
       unknownText: language.unknownInteractionTime,
       now: relativeTimeNow,
