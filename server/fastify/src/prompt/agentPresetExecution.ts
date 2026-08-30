@@ -6,7 +6,7 @@ import type {
 } from '@risuai/shared-core/agent-preset-records'
 import { AGENT_PRESET_STEP_INPUT_SCOPES, agentToggleStorageKey } from '@risuai/shared-core/agent-preset-records'
 import { resolveAgentLorebookInput } from '@risuai/shared-core/agent-lorebook-inputs'
-import type { AgentPresetPhasePlan } from '../../../../src/ts/agentPresetResolver.js'
+import type { AgentPresetPhasePlan } from '@risuai/shared-core/agent-preset-resolver'
 import {
   assertModelProfileGenerationReady,
   modelProfileGenerationBlockReason,

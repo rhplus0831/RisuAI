@@ -68,6 +68,7 @@ describe('@risuai/shared-core import boundary', () => {
         'agentOnlyLorebook.ts',
         'agentPresetOutputReferences.ts',
         'agentPresetRecords.ts',
+        'agentPresetResolver.ts',
         'anthropicModels.ts',
         'browserSmoke.ts',
         'calculation.ts',

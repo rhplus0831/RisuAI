@@ -28,7 +28,7 @@ import {
 import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapshot'
-import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
+import { resolveEffectiveAgentPresetId } from '@risuai/shared-core/agent-preset-resolver'
 import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 
 type JsonRecord = Record<string, unknown>

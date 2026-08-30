@@ -130,7 +130,7 @@ import {
   resolveAgentPresetForChat,
   type AgentPresetExecutionPlan,
   type AgentPresetResolution,
-} from '../../../../src/ts/agentPresetResolver.js'
+} from '@risuai/shared-core/agent-preset-resolver'
 import type { ResolvedModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import type { AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 

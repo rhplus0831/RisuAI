@@ -10,11 +10,7 @@ function source(relativePath: string): string {
 
 describe('agent-preset output-reference shared-core ownership', () => {
   it('keeps every production consumer on the shared leaf', () => {
-    const consumers = [
-      'src/ts/agentPresetResolver.ts',
-      'server/fastify/src/prompt/variables.ts',
-      'server/fastify/src/prompt/agentPresetExecution.ts',
-    ]
+    const consumers = ['server/fastify/src/prompt/variables.ts', 'server/fastify/src/prompt/agentPresetExecution.ts']
 
     for (const consumer of consumers) {
       expect(source(consumer), consumer).toContain("from '@risuai/shared-core/agent-preset-output-references'")

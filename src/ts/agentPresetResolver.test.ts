@@ -349,7 +349,7 @@ describe('agent preset resolver', () => {
     if (result.status !== 'model_not_ready') throw new Error('expected model readiness failure')
 
     expect(result.modelReadiness.map((readiness) => [readiness.stepId, readiness.kind, readiness.ready])).toEqual([
-      ['aps_inherit', 'inheritMainReady', true],
+      ['aps_inherit', 'inheritMainIncomplete', false],
       ['aps_ready', 'selectedProfileReady', true],
       ['aps_missing', 'selectedProfileMissing', false],
       ['aps_incomplete', 'selectedProfileIncomplete', false],

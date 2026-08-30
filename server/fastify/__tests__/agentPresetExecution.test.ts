@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { AgentPresetRecord, AgentPresetStepRecord } from '@risuai/shared-core/agent-preset-records'
-import { planAgentPreset } from '../../../src/ts/agentPresetResolver'
+import { planAgentPreset } from '@risuai/shared-core/agent-preset-resolver'
 import { resolveModelProfile } from '@risuai/shared-core/model-profile-resolver'
 import type {
   FastifyChat as Chat,
