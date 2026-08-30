@@ -86,6 +86,7 @@ describe('@risuai/shared-core import boundary', () => {
         'promptSettings.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',
+        'risuChatParserHelpers.ts',
         'scriptModelOverrides.ts',
       ],
       violations: [],

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Chat, Database, Message, character, customscript } from '../../../src/ts/storage/database.svelte'
-import type { CbsConditions } from '../../../src/ts/parser/risuChatParserHelpers'
+import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
 import { resolvePromptPresetRegexField } from '../../../src/ts/presetSplit.js'
 import {
   DISPLAY_SOURCE_PROTOCOL_VERSION,

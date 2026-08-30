@@ -1,6 +1,6 @@
 import type { CBSRegisterArg, matcherArg } from '../../../../src/ts/cbs'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
-import { dateTimeFormat, makeArray, parseArray, parseDict } from '../../../../src/ts/parser/risuChatParserHelpers'
+import { dateTimeFormat, makeArray, parseArray, parseDict } from '@risuai/shared-core/risuchat-parser-helpers'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../../../../src/ts/parser/chatVarBackend'
 import {

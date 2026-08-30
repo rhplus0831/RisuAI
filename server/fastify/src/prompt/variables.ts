@@ -1,7 +1,7 @@
 import type { Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { LLMModel } from '../../../../src/ts/model/types'
-import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelpers'
+import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
 import type { LuaExecBudget } from './luaRuntime.js'
 import type { DatabaseSync } from 'node:sqlite'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
