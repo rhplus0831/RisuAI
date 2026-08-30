@@ -11,7 +11,11 @@ import { getActivePromptPresetRegexScripts } from '../process/promptPresetRegex'
 import { getNodetextToSentence, sleep } from '../util'
 import { processScriptFull } from '../process/scripts'
 import { playCompletionDing } from '../process/messageCompletionSound'
-import { resolveModelProfile, resolveModelProfileByProfileId } from '../model/modelProfileResolver'
+import {
+  isNovelListModelProfile,
+  resolveModelProfile,
+  resolveModelProfileByProfileId,
+} from '../model/modelProfileResolver'
 import localforage from 'localforage'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
@@ -200,6 +204,11 @@ function safeStringify(value: unknown) {
   }
 }
 
+function getTranslateSourceLanguage(db = getDatabase()): 'ja' | 'en' {
+  const profile = resolveModelProfile({ database: db, role: 'translate' })
+  return isNovelListModelProfile(profile) ? 'ja' : 'en'
+}
+
 export function getTranslatorSettingsSignature(
   db = getDatabase(),
   scope: TranslatorPresetScope | CapturedTranslatorPresetScope = captureTranslatorPresetScope(db),
@@ -211,7 +220,7 @@ export function getTranslatorSettingsSignature(
     translatorType: db.translatorType,
     translator: db.translator,
     translatorInputLanguage: db.translatorInputLanguage,
-    aiModel: db.aiModel,
+    translateSourceLanguage: getTranslateSourceLanguage(db),
     translateProfile: db.translatorType === 'llm' ? getTranslateProfileCacheSignature(db) : null,
     llmPrompt:
       db.translatorType === 'llm'
@@ -668,7 +677,7 @@ export async function translate(text: string, reverse: boolean, presetScope?: Tr
     return pending
   }
 
-  const promise = runTranslator(text, reverse, db.translator, db.aiModel.startsWith('novellist') ? 'ja' : 'en', {
+  const promise = runTranslator(text, reverse, db.translator, getTranslateSourceLanguage(db), {
     translatorPresetId: capturedPresetScope.translatorPresetId,
   })
   pendingTranslateCache.set(key, promise)

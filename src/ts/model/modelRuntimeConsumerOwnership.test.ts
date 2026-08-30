@@ -51,4 +51,13 @@ describe('browser model-runtime consumer ownership', () => {
     expect(modelString).toContain('resolveModelProfile({ database: db })')
     expect(modelString).toContain("profile.source.kind === 'durable-profile'")
   })
+
+  it('routes translation cache and locale identity through the resolved translate role', () => {
+    const translator = source('src/ts/translator/translator.ts')
+
+    expect(translator).not.toContain('db.aiModel')
+    expect(translator).toContain("resolveModelProfile({ database: db, role: 'translate' })")
+    expect(translator).toContain('isNovelListModelProfile(profile)')
+    expect(translator).toContain('translateSourceLanguage: getTranslateSourceLanguage(db)')
+  })
 })

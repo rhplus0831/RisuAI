@@ -234,6 +234,10 @@ export interface ResolvedModelProfile {
   fallbacks: ModelProfileFallbackRef[]
 }
 
+export function isNovelListModelProfile(profile: Pick<ResolvedModelProfile, 'modelInfo'>): boolean {
+  return profile.modelInfo.provider === LLMProvider.NovelList
+}
+
 export interface ResolveModelProfileArgs {
   database: Database
   role?: ModelRoleLike

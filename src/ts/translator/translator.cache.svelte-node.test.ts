@@ -650,6 +650,65 @@ describe('auto-translate cache', () => {
     expect(testState.requestChatData).toHaveBeenCalledTimes(3)
   })
 
+  it('ignores a stale flat main model when the resolved LLM translate profile is unchanged', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.modelProfiles = [{ id: 'translate-profile', name: 'Translate', modelId: 'echo_model' }]
+    testState.db.modelRoleProfiles = {
+      translate: { mode: 'profile', profileId: 'translate-profile' },
+    }
+    testState.requestChatData.mockResolvedValue({ type: 'success', result: '<p>translated</p>' })
+
+    const initialSignature = getTranslatorSettingsSignatureKey(testState.db)
+    const first = await translateHTML('<p>stable translate profile</p>', false, '', 0)
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.aiModel = 'novellist'
+    const staleFlatSignature = getTranslatorSettingsSignatureKey(testState.db)
+    const cached = await translateHTML('<p>stable translate profile</p>', false, '', 0)
+
+    expect(staleFlatSignature).toBe(initialSignature)
+    expect(cached).toBe(first)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(1)
+
+    __translatorTestHooks.clearTranslateHTMLMemo()
+    testState.db.modelProfiles[0].modelId = 'novellist_damsel'
+    expect(getTranslatorSettingsSignatureKey(testState.db)).not.toBe(initialSignature)
+    await translateHTML('<p>stable translate profile</p>', false, '', 0)
+    expect(testState.requestChatData).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the effective translate role for NovelList locale identity and legacy fallback', async () => {
+    stubGoogleFetch()
+    testState.db.modelProfiles = [
+      { id: 'main-novellist', name: 'Main NovelList', modelId: 'novellist' },
+      { id: 'main-openai', name: 'Main OpenAI', modelId: 'openai' },
+      { id: 'translate-openai', name: 'Translate OpenAI', modelId: 'openai' },
+      { id: 'translate-novellist', name: 'Translate NovelList', modelId: 'novellist_damsel' },
+    ]
+    testState.db.modelRoleProfiles = {
+      chatMain: { mode: 'profile', profileId: 'main-novellist' },
+      translate: { mode: 'profile', profileId: 'translate-openai' },
+    }
+    testState.db.aiModel = 'novellist'
+
+    await expect(translate('durable locale', true)).resolves.toBe('translated:en:durable locale:1')
+
+    testState.db.modelRoleProfiles = {
+      chatMain: { mode: 'profile', profileId: 'main-openai' },
+      translate: { mode: 'profile', profileId: 'translate-novellist' },
+    }
+    testState.db.aiModel = 'openai'
+    await expect(translate('durable locale', true)).resolves.toBe('translated:ja:durable locale:1')
+
+    testState.db.modelRoleProfiles = {}
+    testState.db.aiModel = 'openai'
+    testState.db.subModel = 'novellist_damsel'
+    await expect(translate('legacy translate locale', true)).resolves.toBe('translated:ja:legacy translate locale:1')
+
+    testState.db.aiModel = 'novellist'
+    testState.db.subModel = 'openai'
+    await expect(translate('legacy stale main', true)).resolves.toBe('translated:en:legacy stale main:1')
+  })
+
   it('invalidates LLM translation cache identity when profile runtime options change', () => {
     testState.db.translatorType = 'llm'
     testState.db.modelProfiles = [
