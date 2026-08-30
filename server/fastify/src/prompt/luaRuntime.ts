@@ -8,9 +8,9 @@ import { isIP } from 'node:net'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { request as httpsRequest } from 'node:https'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
-import type { triggerscript } from '../../../../src/ts/process/triggers'
 import type { simpleCharacterArgument } from '../../../../src/ts/parser/parser.svelte'
 import type { PromptMessage } from './promptMessage.js'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 import type { ModelRole } from '@risuai/shared-core/model-roles'
 import {
   resolveModelProfile,

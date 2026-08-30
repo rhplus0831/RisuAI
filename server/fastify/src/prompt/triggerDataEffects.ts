@@ -1,6 +1,6 @@
 import type { Chat, character } from '../../../../src/ts/storage/database.svelte'
-import type { triggerEffect } from '../../../../src/ts/process/triggers'
 import type { PromptMessage } from './promptMessage.js'
+import type { ServerTriggerEffect as triggerEffect } from './triggerDescriptors.js'
 import { calcString } from '../../../../src/ts/process/infunctions'
 import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import {

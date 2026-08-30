@@ -1,6 +1,6 @@
 import type { Chat, Database, character, customscript, loreBook } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
-import type { triggerscript } from '../../../../src/ts/process/triggers'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 import {
   hasModuleActivationIdentifiers,
   moduleActivationIdentifiersKey,

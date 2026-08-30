@@ -1,8 +1,11 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Chat, Database, character } from '../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../src/ts/process/modules'
-import type { triggerCondition, triggerscript } from '../../../src/ts/process/triggers'
 import { serverUnsupportedTriggerEffectTypes } from '../src/prompt/triggerCompatibility.js'
+import type {
+  ServerTriggerCondition as triggerCondition,
+  ServerTriggerScript as triggerscript,
+} from '../src/prompt/triggerDescriptors.js'
 import { getModuleTriggers } from '../src/prompt/modules.js'
 import {
   collectTriggers,

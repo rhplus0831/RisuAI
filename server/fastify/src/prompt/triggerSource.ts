@@ -1,4 +1,4 @@
-import type { triggerscript } from '../../../../src/ts/process/triggers'
+import type { ServerTriggerScript as triggerscript } from './triggerDescriptors.js'
 
 const TRIGGER_SOURCE = Symbol('risu.triggerSource')
 

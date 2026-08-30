@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { Chat, Database, character } from '../../../../src/ts/storage/database.svelte'
 import type { RisuModule } from '../../../../src/ts/process/modules'
-import type { additonalSysPrompt, triggerCondition, triggerscript } from '../../../../src/ts/process/triggers'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 import { getActiveModules, getModuleTriggers } from './modules.js'
 import {
@@ -35,6 +34,11 @@ import {
   invalidateTriggerTranscriptCache,
   type TriggerRunCache,
 } from './triggerRunCache.js'
+import type {
+  ServerAdditionalSystemPrompt as additonalSysPrompt,
+  ServerTriggerCondition as triggerCondition,
+  ServerTriggerScript as triggerscript,
+} from './triggerDescriptors.js'
 
 /**
  * Trigger model + runner shell, ported from the Svelte-bound `runTrigger` in

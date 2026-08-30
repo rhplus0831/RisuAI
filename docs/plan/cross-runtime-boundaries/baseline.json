@@ -1468,19 +1468,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/process/triggers",
-      "target": "src/ts/process/triggers.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "triggerscript"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1532,19 +1519,6 @@
       "usage": "type-only",
       "symbols": [
         "RisuModule"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/modules.ts",
-      "specifier": "../../../../src/ts/process/triggers",
-      "target": "src/ts/process/triggers.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "triggerscript"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -1869,19 +1843,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
-      "specifier": "../../../../src/ts/process/triggers",
-      "target": "src/ts/process/triggers.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "triggerEffect"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1909,21 +1870,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/triggers.ts",
-      "specifier": "../../../../src/ts/process/triggers",
-      "target": "src/ts/process/triggers.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "additonalSysPrompt",
-        "triggerCondition",
-        "triggerscript"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggers.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1932,19 +1878,6 @@
         "Chat",
         "Database",
         "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerSource.ts",
-      "specifier": "../../../../src/ts/process/triggers",
-      "target": "src/ts/process/triggers.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "triggerscript"
       ],
       "count": 1,
       "policy": "browser-application-model"
@@ -3280,20 +3213,6 @@
       "usage": "type-only",
       "symbols": [
         "RisuModule"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/triggers.test.ts",
-      "specifier": "../../../src/ts/process/triggers",
-      "target": "src/ts/process/triggers.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "triggerCondition",
-        "triggerscript"
       ],
       "count": 1,
       "policy": "browser-application-model"
