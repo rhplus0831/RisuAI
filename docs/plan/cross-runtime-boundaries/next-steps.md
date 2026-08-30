@@ -4,17 +4,15 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [prompt-info snapshot ownership
-slice](phases/slices/phase-4-server-consumer-migration/prompt-info-snapshot-ownership.md).
+Execute the [parser character-argument type
+seam](phases/slices/phase-4-server-consumer-migration/parser-character-argument-type-seam.md).
 
-1. Replace aggregate database/message types with narrow structural input and
-   output records in a dependency-free shared leaf.
-2. Retain the browser facade; point Fastify effective generation directly at
-   the shared owner.
-3. Preserve disabled output, preset-name coercion, select/text/boolean
-   formatting, row ordering, and missing-value behavior.
-4. Do not move prompt-template selection, chat state, persistence, or generation
-   policy.
+1. Replace Fastify Lua runtime's type-only parser import with the narrowest
+   structural owner.
+2. Preserve field shapes, optionality, Lua conversion, and browser parser
+   exports.
+3. Do not move parser state, CBS registration, matcher dispatch, or request-local
+   execution policy.
 
 ## Foundations Released
 
@@ -119,6 +117,8 @@ slice](phases/slices/phase-4-server-consumer-migration/prompt-info-snapshot-owne
   registration.
 - Workstream 2 translation cache and NovelList locale identity resolve the
   effective translate profile at `f610c11a1`.
+- Prompt-info snapshot formatting is released through
+  `@risuai/shared-core/prompt-info-snapshot` at `8d7bc6256`.
 
 ## Holds
 
@@ -131,6 +131,5 @@ slice](phases/slices/phase-4-server-consumer-migration/prompt-info-snapshot-owne
 
 ## Handoff
 
-After this slice closes, take the narrow parser character-argument type seam or
-the independently owned browser-smoke fixtures, then refresh the remaining
-model/prompt/parser/aggregate-domain ranking.
+After this slice closes, take the independently owned browser-smoke fixtures or
+refresh the remaining model/prompt/parser/aggregate-domain ranking.
