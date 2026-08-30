@@ -463,10 +463,18 @@ function collectMetadata(repoRoot: string): MetadataObservation[] {
   return [
     {
       id: 'server-route-policy',
-      owner: 'Fastify authentication, active-writer, and streaming authority',
-      path: 'server/fastify/src/routeManifest.ts#PROTOCOL_ROUTE_MANIFEST',
+      owner: 'Fastify authentication and active-writer authority',
+      path: 'server/fastify/src/routeManifest.ts#PROTOCOL_ROUTE_POLICIES',
       count: collectionSize(
-        namedInitializer(repoRoot, 'server/fastify/src/routeManifest.ts', 'PROTOCOL_ROUTE_MANIFEST'),
+        namedInitializer(repoRoot, 'server/fastify/src/routeManifest.ts', 'PROTOCOL_ROUTE_POLICIES'),
+      ),
+    },
+    {
+      id: 'shared-route-operation-catalog',
+      owner: 'Browser-safe non-authoritative route transport metadata',
+      path: 'packages/protocol/src/routeOperation.ts#PROTOCOL_ROUTE_OPERATION_CATALOG',
+      count: collectionSize(
+        namedInitializer(repoRoot, 'packages/protocol/src/routeOperation.ts', 'PROTOCOL_ROUTE_OPERATION_CATALOG'),
       ),
     },
     {

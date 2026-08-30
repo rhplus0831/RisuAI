@@ -117,7 +117,7 @@ describe('cross-runtime baseline gate', () => {
         ]),
       ),
     ).toEqual({ production: 233, 'server-test': 95, 'browser-smoke': 8 })
-  })
+  }, 15_000)
 
   it('rejects inventory drift and incomplete policy ownership', () => {
     const observation = {

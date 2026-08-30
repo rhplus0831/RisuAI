@@ -6,7 +6,14 @@ import { webcrypto } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { ACTIVE_WRITER_SESSION_HEADER } from '../src/activeWriter.js'
-import { findProtocolRouteDecision, isProtocolMutatingMethod, PROTOCOL_ROUTE_MANIFEST } from '../src/routeManifest.js'
+import {
+  findProtocolRouteDecision,
+  findProtocolRouteDecisions,
+  isProtocolMutatingMethod,
+  protocolRouteMatches,
+  PROTOCOL_ROUTE_MANIFEST,
+  PROTOCOL_ROUTE_POLICIES,
+} from '../src/routeManifest.js'
 import {
   assetBulkUploadRateLimit,
   assetExistsRateLimit,
@@ -209,6 +216,26 @@ describe('route protection (table-wide auth enforcement)', () => {
       .map((route) => `${route.method} ${route.path}`)
 
     expect(unclassified).toEqual([])
+  })
+
+  it('keeps live routes, shared operations, and server policy bidirectionally unique', () => {
+    const routes = parseRouteTree(harness.app.printRoutes({ commonPrefix: false })).filter((route) =>
+      route.path.startsWith('/api/v1/'),
+    )
+    const ambiguousOrMissing = routes
+      .map((route) => ({ route, decisions: findProtocolRouteDecisions(route.method, route.path) }))
+      .filter(({ decisions }) => decisions.length !== 1)
+      .map(({ route, decisions }) => `${route.method} ${route.path} -> ${decisions.map(({ id }) => id).join(',')}`)
+    const stale = PROTOCOL_ROUTE_MANIFEST.filter(
+      (entry) => !routes.some((route) => protocolRouteMatches(entry, route.method, route.path)),
+    ).map(({ id }) => id)
+    const manifestIds = PROTOCOL_ROUTE_MANIFEST.map(({ id }) => id)
+    const policyIds = PROTOCOL_ROUTE_POLICIES.map(({ id }) => id)
+
+    expect(ambiguousOrMissing).toEqual([])
+    expect(stale).toEqual([])
+    expect(new Set(manifestIds).size).toBe(manifestIds.length)
+    expect(policyIds).toEqual(manifestIds)
   })
 
   it('requires auth on every manifest-protected API route once a password is set', async () => {

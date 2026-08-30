@@ -263,6 +263,7 @@ function collectTemporarySeams(repoRoot: string, files: readonly string[]): Temp
 export function collectClientResourceObservation(repoRoot: string): ClientResourceObservation {
   const roots = ['src', 'server/fastify/src', 'server/fastify/__tests__', 'server/fastify/browser-smoke']
   const files = [...new Set(roots.flatMap((root) => walkFiles(path.join(repoRoot, root))))].sort()
+  const temporarySeamFiles = [...new Set([...files, ...walkFiles(path.join(repoRoot, 'packages/protocol/src'))])].sort()
   const consumers = files.flatMap((file) => collectFileConsumers(repoRoot, file))
   consumers.sort((left, right) =>
     `${left.lane}\0${left.file}\0${left.detector}\0${left.symbol}`.localeCompare(
@@ -283,7 +284,7 @@ export function collectClientResourceObservation(repoRoot: string): ClientResour
       }
     })
     .sort((left, right) => left.file.localeCompare(right.file))
-  return { consumers, bridgeFamilies, temporarySeams: collectTemporarySeams(repoRoot, files) }
+  return { consumers, bridgeFamilies, temporarySeams: collectTemporarySeams(repoRoot, temporarySeamFiles) }
 }
 
 function resourceFamily(file: string, detector: string): ClientResourceFamily {

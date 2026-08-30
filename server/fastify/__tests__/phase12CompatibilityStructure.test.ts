@@ -15,8 +15,6 @@ type Owner = {
 
 const CLOSED_STRING_VOCABULARIES = {
   'server/fastify/src/routeManifest.ts': {
-    ProtocolRouteMethod: ['DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT'],
-    ProtocolRoutePathMatch: ['exact', 'pattern', 'prefix'],
     ProtocolRouteAuthDecision: ['conditional', 'public', 'required'],
     ProtocolRouteActiveWriterDecision: [
       'active-writer',
@@ -28,7 +26,6 @@ const CLOSED_STRING_VOCABULARIES = {
       'stateless-helper',
       'writer-registration',
     ],
-    ProtocolRouteStreamingShape: ['binary', 'none', 'proxy', 'sse', 'sse-optional', 'websocket'],
   },
   'server/fastify/src/config.ts': {
     RequestTraceMode: ['agent', 'human'],
@@ -299,6 +296,48 @@ describe('Phase 12 runtime, platform, limit, and diagnostic structure', () => {
         expect(typeAliasStringUnion(source, typeName), `${relativePath}:${typeName}`).toEqual(expected)
       }
     }
+
+    const routeOperations = readRepoFile('packages/protocol/src/routeOperation.ts')
+    expect(constStringArray(routeOperations, 'PROTOCOL_ROUTE_METHODS')).toEqual([
+      'GET',
+      'HEAD',
+      'POST',
+      'PATCH',
+      'PUT',
+      'DELETE',
+      'OPTIONS',
+    ])
+    expect(constStringArray(routeOperations, 'PROTOCOL_ROUTE_PATH_MATCHES')).toEqual(['exact', 'prefix', 'pattern'])
+    expect(constStringArray(routeOperations, 'PROTOCOL_ROUTE_STREAM_CLASSES')).toEqual([
+      'none',
+      'binary',
+      'sse',
+      'sse-optional',
+      'websocket',
+      'proxy',
+    ])
+    expect(constStringArray(routeOperations, 'PROTOCOL_ROUTE_CACHE_BEHAVIORS')).toEqual([
+      'unspecified',
+      'request-hash',
+      'immutable',
+      'conditional',
+      'no-cache',
+      'no-store',
+    ])
+    expect(constStringArray(routeOperations, 'PROTOCOL_ROUTE_DURABILITY_TAGS')).toEqual([
+      'none',
+      'revisioned-command',
+      'durable-generation',
+      'server-job',
+    ])
+    expect(constStringArray(routeOperations, 'PROTOCOL_ROUTE_RESPONSE_CLASSES')).toEqual([
+      'structured',
+      'binary',
+      'sse',
+      'structured-or-sse',
+      'websocket',
+      'proxy',
+    ])
 
     for (const [relativePath, aliases] of Object.entries(PROPERTY_VOCABULARIES)) {
       const source = readRepoFile(relativePath)

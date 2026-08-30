@@ -85,6 +85,7 @@ describe('@risuai/protocol import boundary', () => {
       'index.ts',
       'mcpOAuthRefresh.ts',
       'providerOperation.ts',
+      'routeOperation.ts',
       'serverTool.ts',
       'shellResource.ts',
       'standaloneSettings.ts',

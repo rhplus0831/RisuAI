@@ -7872,6 +7872,26 @@
   "temporarySeams": [
     {
       "id": "character-aggregate-endpoint",
+      "file": "packages/protocol/src/routeOperation.ts",
+      "marker": "/api/v1/characters/aggregate",
+      "count": 2,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "temporary; remove or permanently classify with measurements and tests",
+      "migrationPhase": "Workstream 3 Phase 7",
+      "removalTrigger": "Character/chat owner reads and payload/startup measurements pass without the broad endpoint."
+    },
+    {
+      "id": "character-aggregate-endpoint",
+      "file": "packages/protocol/src/routeOperation.ts",
+      "marker": "/characters/aggregate",
+      "count": 2,
+      "owner": "Fastify compatibility character/chat resource read",
+      "disposition": "temporary; remove or permanently classify with measurements and tests",
+      "migrationPhase": "Workstream 3 Phase 7",
+      "removalTrigger": "Character/chat owner reads and payload/startup measurements pass without the broad endpoint."
+    },
+    {
+      "id": "character-aggregate-endpoint",
       "file": "server/fastify/__tests__/helpers/resourceDatabase.ts",
       "marker": "/api/v1/characters/aggregate",
       "count": 1,
@@ -7945,26 +7965,6 @@
       "file": "server/fastify/__tests__/routeProtection.test.ts",
       "marker": "/characters/aggregate",
       "count": 1,
-      "owner": "Fastify compatibility character/chat resource read",
-      "disposition": "temporary; remove or permanently classify with measurements and tests",
-      "migrationPhase": "Workstream 3 Phase 7",
-      "removalTrigger": "Character/chat owner reads and payload/startup measurements pass without the broad endpoint."
-    },
-    {
-      "id": "character-aggregate-endpoint",
-      "file": "server/fastify/src/routeManifest.ts",
-      "marker": "/api/v1/characters/aggregate",
-      "count": 2,
-      "owner": "Fastify compatibility character/chat resource read",
-      "disposition": "temporary; remove or permanently classify with measurements and tests",
-      "migrationPhase": "Workstream 3 Phase 7",
-      "removalTrigger": "Character/chat owner reads and payload/startup measurements pass without the broad endpoint."
-    },
-    {
-      "id": "character-aggregate-endpoint",
-      "file": "server/fastify/src/routeManifest.ts",
-      "marker": "/characters/aggregate",
-      "count": 2,
       "owner": "Fastify compatibility character/chat resource read",
       "disposition": "temporary; remove or permanently classify with measurements and tests",
       "migrationPhase": "Workstream 3 Phase 7",
@@ -8072,4 +8072,3 @@
     }
   ]
 }
-

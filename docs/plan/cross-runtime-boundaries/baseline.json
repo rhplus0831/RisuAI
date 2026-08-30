@@ -4823,10 +4823,20 @@
     },
     {
       "id": "server-route-policy",
-      "owner": "Fastify authentication, active-writer, and streaming authority",
-      "path": "server/fastify/src/routeManifest.ts#PROTOCOL_ROUTE_MANIFEST",
+      "owner": "Fastify authentication and active-writer authority",
+      "path": "server/fastify/src/routeManifest.ts#PROTOCOL_ROUTE_POLICIES",
       "count": 103,
-      "authority": "Fastify authentication, active-writer, and streaming authority",
+      "authority": "Fastify authentication and active-writer authority",
+      "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
+      "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
+      "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
+    },
+    {
+      "id": "shared-route-operation-catalog",
+      "owner": "Browser-safe non-authoritative route transport metadata",
+      "path": "packages/protocol/src/routeOperation.ts#PROTOCOL_ROUTE_OPERATION_CATALOG",
+      "count": 103,
+      "authority": "Browser-safe non-authoritative route transport metadata",
       "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
       "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
       "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."
