@@ -1026,21 +1026,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/cbsAdapter.ts",
-      "specifier": "../../../../src/ts/parser/chatVarBackend",
-      "target": "src/ts/parser/chatVarBackend.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "getChatVar",
-        "getGlobalChatVar",
-        "setChatVar"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
       "specifier": "../../../../src/ts/parser/risuChatParser",
       "target": "src/ts/parser/risuChatParser.ts",
       "kind": "static",
@@ -1445,19 +1430,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/promptScope.ts",
-      "specifier": "../../../../src/ts/parser/chatVarBackend",
-      "target": "src/ts/parser/chatVarBackend.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ChatVarBackend"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/promptScope.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -1477,19 +1449,6 @@
       "usage": "runtime",
       "symbols": [
         "registerCBS"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/promptVariablesBoot.ts",
-      "specifier": "../../../../src/ts/parser/chatVarBackend",
-      "target": "src/ts/parser/chatVarBackend.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "setChatVarBackend"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

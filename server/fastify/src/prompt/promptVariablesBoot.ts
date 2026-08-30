@@ -1,5 +1,5 @@
 import { registerCBS } from '../../../../src/ts/cbs'
-import { setChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
+import { setChatVarBackend } from './chatVarBackend.js'
 import { registerRisuChatParserMatcher } from '../../../../src/ts/parser/risuChatParser'
 import { buildServerCBSArg } from './cbsAdapter.js'
 import { chatVarBackend } from './promptScope.js'

@@ -1,5 +1,5 @@
 import type { Database } from '../../../../src/ts/storage/database.svelte'
-import type { ChatVarBackend } from '../../../../src/ts/parser/chatVarBackend'
+import type { ChatVarBackend } from './chatVarBackend.js'
 import type { LLMModel } from '../../../../src/ts/model/types'
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver'
 import { getChatDefaultVariables, readChatVariable } from './chatVarDefaults.js'
