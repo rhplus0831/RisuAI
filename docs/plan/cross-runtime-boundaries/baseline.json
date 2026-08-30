@@ -1716,20 +1716,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
-      "specifier": "../../../../src/ts/moduleIntegration.js",
-      "target": "src/ts/moduleIntegration.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "combineModuleIntegrations",
-        "resolveAgentPresetModuleIntegration"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
       "specifier": "../../../../src/ts/presetSplit.js",
       "target": "src/ts/presetSplit.ts",
       "kind": "static",

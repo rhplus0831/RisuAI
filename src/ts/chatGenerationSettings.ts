@@ -1,6 +1,6 @@
 import { agentToggleStorageKey, type AgentPresetUseRecord, type AgentToggleDefinition } from './agentPresetRecords'
 import { resolveModuleActivationStates } from './moduleActivation'
-import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from './moduleIntegration'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 
 export const CHAT_GENERATION_SETTINGS_FIELD = 'generationSettings' as const
 

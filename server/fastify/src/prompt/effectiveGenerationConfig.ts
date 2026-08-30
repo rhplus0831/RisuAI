@@ -21,7 +21,7 @@ import {
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '../../../../src/ts/promptInfo.js'
 import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
-import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '../../../../src/ts/moduleIntegration.js'
+import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }

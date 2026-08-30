@@ -1,5 +1,5 @@
 import { resolveEffectiveAgentPresetId } from './agentPresetResolver'
-import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from './moduleIntegration'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { resolvePersonaModuleIds } from './personaModuleLinks'
 import type { Chat, Database, character } from './storage/database.svelte'
 

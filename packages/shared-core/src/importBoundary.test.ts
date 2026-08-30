@@ -77,6 +77,7 @@ describe('@risuai/shared-core import boundary', () => {
         'legacyOpenAIModelAliases.ts',
         'loreHash.ts',
         'modelRoles.ts',
+        'moduleIntegration.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',
         'scriptModelOverrides.ts',
