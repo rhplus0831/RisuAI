@@ -17,7 +17,7 @@ import {
 import { openDatabase } from '../src/db.js'
 import { COLLECTION_FIELDS } from '../src/repository.js'
 import { SETTINGS_GROUP_KEYS, SETTINGS_GROUPS } from '../src/routes/commands.js'
-import { SERVER_SETTINGS_GROUP_BY_KEY } from '../../../src/ts/server/settingsGroups.js'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from '@risuai/shared-core/settings-groups'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const temporaryDirectories: string[] = []

@@ -1722,19 +1722,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/risuSave/importSnapshot.ts",
-      "specifier": "../../../../src/ts/server/settingsGroups.js",
-      "target": "src/ts/server/settingsGroups.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_SETTINGS_KEYS_BY_GROUP"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/routes/commands.ts",
       "specifier": "../../../../src/ts/agentPresetRecords.js",
       "target": "src/ts/agentPresetRecords.ts",
@@ -2427,19 +2414,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase3CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/server/settingsGroups.js",
-      "target": "src/ts/server/settingsGroups.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_SETTINGS_GROUP_BY_KEY"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/phase5CompatibilityStructure.test.ts",
       "specifier": "../../../src/ts/presetSplit.js",
       "target": "src/ts/presetSplit.ts",
@@ -2450,20 +2424,6 @@
         "PROMPT_PRESET_FIELDS",
         "PROMPT_PRESET_MODEL_OVERRIDE_FIELDS",
         "databaseKeyForModelPresetField"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase5CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/server/settingsGroups.js",
-      "target": "src/ts/server/settingsGroups.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_SETTINGS_GROUP_BY_KEY",
-        "SERVER_SETTINGS_KEYS_BY_GROUP"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -2644,19 +2604,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/settingsGroupParity.test.ts",
-      "specifier": "../../../src/ts/server/settingsGroups.js",
-      "target": "src/ts/server/settingsGroups.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "SERVER_SETTINGS_KEYS_BY_GROUP"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "server-test",

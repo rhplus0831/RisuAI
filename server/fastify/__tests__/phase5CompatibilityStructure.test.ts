@@ -9,7 +9,7 @@ import {
   PROMPT_PRESET_MODEL_OVERRIDE_FIELDS,
   databaseKeyForModelPresetField,
 } from '../../../src/ts/presetSplit.js'
-import { SERVER_SETTINGS_GROUP_BY_KEY, SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../src/ts/server/settingsGroups.js'
+import { SERVER_SETTINGS_GROUP_BY_KEY, SERVER_SETTINGS_KEYS_BY_GROUP } from '@risuai/shared-core/settings-groups'
 import { LEGACY_BOT_PRESET_APPLY_DATABASE_FIELDS } from '../src/commands/presets.js'
 import { createInitialDatabase, normalizeDatabaseDefaults } from '../src/databaseDefaults.js'
 import { COLLECTION_FIELDS } from '../src/repository.js'

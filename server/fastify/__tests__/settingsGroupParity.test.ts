@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../src/ts/server/settingsGroups.js'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from '@risuai/shared-core/settings-groups'
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, SETTINGS_GROUPS } from '../src/routes/commands.js'
 
 describe('settings group parity', () => {

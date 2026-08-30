@@ -29,6 +29,7 @@
     "./punctuation": "./src/punctuation.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts",
     "./risuchat-parser-helpers": "./src/risuChatParserHelpers.ts",
-    "./script-model-overrides": "./src/scriptModelOverrides.ts"
+    "./script-model-overrides": "./src/scriptModelOverrides.ts",
+    "./settings-groups": "./src/settingsGroups.ts"
   }
 }
