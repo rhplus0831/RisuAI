@@ -3018,7 +3018,15 @@ export function setCurrentChatGreetingIndex(
   const chatId = chat.id
 
   const shouldDispatch = options.dispatch !== false
-  const previous = shouldDispatch && chatId ? currentChatStateSnapshot() : null
+  const previous: ChatScopedSnapshot | null =
+    shouldDispatch && chatId
+      ? {
+          selectedCharID: selectedChar,
+          characterId: character.chaId,
+          chatId,
+          chat: cloneJsonValue(chat),
+        }
+      : null
   let applied = false
   withTrustedResourceWrite(() => {
     const liveCharacter = getDatabase().characters?.[selectedChar]
@@ -3030,7 +3038,7 @@ export function setCurrentChatGreetingIndex(
   if (!applied) return false
 
   if (chatId && previous) {
-    dispatchUpdateChat(chatId, { fmIndex }, previous)
+    dispatchUpdateChatScoped(chatId, { fmIndex }, previous)
   }
   return true
 }

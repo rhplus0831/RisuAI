@@ -122,6 +122,7 @@ import {
   setChatNoteValue,
   setChatScriptstateValue,
   setCurrentChatPinnedWithOutcome,
+  setCurrentChatGreetingIndex,
   setCurrentChatSelectedDraftHookId,
   setCurrentChatTranslationSettingWithOutcome,
   stageChatNoteMutation,
@@ -758,6 +759,36 @@ describe('chat command projection helpers', () => {
         select: false,
       },
     })
+  })
+
+  it('keeps an unrelated sibling chat byte-identical across greeting rollback', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].fmIndex = 4
+      getDatabase().characters[0].chats[1] = {
+        id: 'chat-b',
+        name: 'Sibling with legacy metadata',
+        folderId: 'folder-a',
+        opaqueField: { keep: 'exactly-as-written' },
+        generationSettings: { legacyShape: ['preserve', 7] },
+        message: [],
+      } as any
+    })
+    const sibling = getDatabase().characters[0].chats[1]
+    const siblingBytes = JSON.stringify(sibling)
+
+    expect(setCurrentChatGreetingIndex(7)).toBe(true)
+    expect(getDatabase().characters[0].chats[0].fmIndex).toBe(7)
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].fmIndex).toBe(4)
+    })
+
+    expect(getDatabase().characters[0].chats[1]).toBe(sibling)
+    expect(JSON.stringify(getDatabase().characters[0].chats[1])).toBe(siblingBytes)
   })
 
   it('clears the selected draft hook with a nullable chat patch', async () => {
