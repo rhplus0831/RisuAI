@@ -1,6 +1,6 @@
 # TTS Synthesis Contract
 
-Status: ready.
+Status: complete at `cc7cfc0fd6e5154beab6b0c19121e287a402d17e`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -52,3 +52,17 @@ check`, affected tests, formatting, and `git diff --check`.
 Stop if schema extraction changes an accepted payload, exposes stored
 credentials, weakens operation/input pairing, or requires provider/security
 behavior to move into the protocol package.
+
+## Result
+
+- `@risuai/protocol/tts-synthesis` now owns TypeBox schemas and derived types
+  for all five synthesis operations, four credential variants, provider inputs,
+  six OpenAI formats, and every operation-discriminated request envelope.
+- Contract fixtures prove every operation, credential, and format plus exact
+  request, nested-configuration, and operation/input rejection behavior.
+- Browser, Fastify, and structural consumers use the explicit package subpath
+  and the old application-tree contract module is removed.
+- Fastify still owns credential and character resolution, endpoints, request
+  and response limits, provider calls, audio validation, and error masking.
+- The boundary cursor fell by exactly four edges, from 357 to 353: two
+  production and two server-test edges.
