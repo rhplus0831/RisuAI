@@ -11,6 +11,9 @@
   import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
   import { getDatabase, type Chat } from 'src/ts/storage/database.svelte'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState, getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
+  import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
@@ -122,9 +125,34 @@
 
   let autopilot = $state([])
 
+  function currentDevToolCharacter() {
+    const owner = getSelectedCharacterOwner()
+    if (owner || charactersResourceState.status === 'ready') return owner
+    return selectCharacterOwner(charactersResourceState.characters, $selectedCharID)
+  }
+
   function currentDevToolChat(): Chat | undefined {
-    const character = getDatabase().characters?.[$selectedCharID]
-    return character?.chats?.[character.chatPage]
+    const character = currentDevToolCharacter()
+    const chat = character?.chats?.[character.chatPage]
+    if (!chat?.id) return undefined
+
+    return getChatMetadataOwnerState(chat.id)?.chatId === chat.id ? chat : undefined
+  }
+
+  function currentDevToolTranscriptChat(): Chat | undefined {
+    const chat = currentDevToolChat()
+    const transcript = chat?.id ? getChatMessageOwnerState(chat.id) : undefined
+    return chat && transcript ? { ...chat, message: transcript.messages } : undefined
+  }
+
+  async function currentDevToolCharacterTokens() {
+    const character = currentDevToolCharacter()
+    return character ? getCharToken(character) : { persistant: 0, dynamic: 0 }
+  }
+
+  async function currentDevToolChatTokens() {
+    const chat = currentDevToolTranscriptChat()
+    return chat ? getChatToken(chat) : 0
   }
 
   function currentScriptstateEntries(): Array<[string, unknown]> {
@@ -164,7 +192,7 @@
 <Accordion styled name={'Tokens'}>
   {@const promptTemplate = resolveEffectivePromptTemplate(getDatabase()).promptTemplate}
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
-    {#await getCharToken(getDatabase().characters[$selectedCharID])}
+    {#await currentDevToolCharacterTokens()}
       <span>Character Persistant</span>
       <div class="p-2 text-center">Loading...</div>
       <span>Character Dynamic</span>
@@ -175,7 +203,7 @@
       <span>Character Dynamic</span>
       <div class="p-2 text-center">{token.dynamic} Tokens</div>
     {/await}
-    {#await getChatToken(getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage])}
+    {#await currentDevToolChatTokens()}
       <span>Current Chat</span>
       <div class="p-2 text-center">Loading...</div>
     {:then token}

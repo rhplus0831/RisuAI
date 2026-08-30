@@ -13,6 +13,11 @@ const devToolMocks = vi.hoisted(() => ({
   alertNormal: vi.fn(),
   beginAlertWait: vi.fn(() => Symbol('preview-wait')),
   clearAlertWait: vi.fn(() => true),
+  getCharToken: vi.fn<(character: unknown) => Promise<{ persistant: number; dynamic: number }>>(async () => ({
+    persistant: 0,
+    dynamic: 0,
+  })),
+  getChatToken: vi.fn<(chat: unknown) => Promise<number>>(async () => 0),
   tokenizePreset: vi.fn(async () => 0),
   appendCurrentChatUserMessageForSend: vi.fn<(...args: any[]) => Promise<any>>(async () => ({
     status: 'ok',
@@ -51,8 +56,8 @@ vi.mock('src/ts/alert', async (importActual) => ({
 }))
 
 vi.mock('src/ts/tokenizer', () => ({
-  getCharToken: vi.fn(async () => ({ persistant: 0, dynamic: 0 })),
-  getChatToken: vi.fn(async () => 0),
+  getCharToken: devToolMocks.getCharToken,
+  getChatToken: devToolMocks.getChatToken,
 }))
 
 vi.mock('src/ts/process/prompt', () => ({
@@ -80,6 +85,7 @@ import DevTool from './DevTool.svelte'
 import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { applyServerChatMessagesResource, resetChatHydration } from 'src/ts/server/chatMessageHydration.svelte'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
@@ -157,6 +163,8 @@ beforeEach(() => {
     devToolMocks.alertError,
     devToolMocks.alertMd,
     devToolMocks.alertNormal,
+    devToolMocks.getCharToken,
+    devToolMocks.getChatToken,
     devToolMocks.setChatScriptstateValue,
     devToolMocks.tokenizePreset,
   ]) {
@@ -164,6 +172,8 @@ beforeEach(() => {
   }
   devToolMocks.beginAlertWait.mockReset().mockImplementation(() => Symbol('preview-wait'))
   devToolMocks.clearAlertWait.mockReset().mockReturnValue(true)
+  devToolMocks.getCharToken.mockResolvedValue({ persistant: 0, dynamic: 0 })
+  devToolMocks.getChatToken.mockResolvedValue(0)
   devToolMocks.appendCurrentChatUserMessageForSend.mockReset().mockResolvedValue({
     status: 'ok',
     messageId: 'message-b',
@@ -172,6 +182,7 @@ beforeEach(() => {
   devToolMocks.sendChat.mockReset().mockResolvedValue(true)
   selectedCharID.set(0)
   setDatabaseLite({
+    currentChar: 0,
     characters: [
       {
         chaId: 'character-a',
@@ -197,6 +208,7 @@ afterEach(() => {
   target.remove()
   selectedCharID.set(-1)
   setDatabaseLite({} as Database)
+  resetChatHydration()
   resetChatGenerationActivitiesForTests()
 })
 
@@ -358,6 +370,117 @@ describe('DevTool chat generation ownership', () => {
     await settle()
 
     expect(devToolMocks.tokenizePreset).toHaveBeenCalledWith(canonicalTemplate)
+  })
+
+  it('counts the canonical transcript owner instead of a divergent chat row', async () => {
+    const transcript = [{ role: 'user', data: 'owned message', chatId: 'message-owned' }]
+    expect(applyServerChatMessagesResource('chat-b', transcript, undefined, [])).toBe(true)
+    getDatabase().characters[0].chats[1].message = [
+      { role: 'user', data: 'aggregate-only', chatId: 'message-aggregate' },
+    ]
+    devToolMocks.getChatToken.mockClear().mockResolvedValue(5)
+
+    await openSection('Tokens')
+    await settle()
+
+    expect(devToolMocks.getChatToken).toHaveBeenCalledOnce()
+    expect(devToolMocks.getChatToken.mock.calls[0][0]).toMatchObject({
+      id: 'chat-b',
+      message: transcript,
+    })
+  })
+
+  it('uses the ready selected-character and stable-chat owners instead of a divergent UI index', async () => {
+    setDatabaseLite({
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'character-owner',
+          name: 'Character Owner',
+          chatPage: 0,
+          chats: [{ id: 'chat-owner', message: [], scriptstate: { score: 'owner' } }],
+        },
+        {
+          chaId: 'character-index',
+          name: 'Character Index',
+          chatPage: 0,
+          chats: [{ id: 'chat-index', message: [], scriptstate: { score: 'index' } }],
+        },
+      ],
+    } as unknown as Database)
+    selectedCharID.set(1)
+    await settle()
+
+    const variablesPanel = await openSection('Variables')
+    const scoreInput = variablesPanel.querySelector<HTMLInputElement>('input')
+    expect(scoreInput?.value).toBe('owner')
+    scoreInput!.value = 'updated owner'
+    scoreInput!.dispatchEvent(new Event('change', { bubbles: true }))
+    await openSection('Tokens')
+    await settle()
+
+    expect(devToolMocks.setChatScriptstateValue).toHaveBeenCalledWith('chat-owner', 'score', 'updated owner')
+    expect(devToolMocks.getCharToken).toHaveBeenCalledWith(expect.objectContaining({ chaId: 'character-owner' }))
+    expect(devToolMocks.getChatToken).toHaveBeenCalledWith(expect.objectContaining({ id: 'chat-owner' }))
+  })
+
+  it('fails closed for a duplicate selected-character owner', async () => {
+    setDatabaseLite({
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'character-a',
+          name: 'Character A',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', message: [], scriptstate: { score: 1 } }],
+        },
+        {
+          chaId: 'character-a',
+          name: 'Duplicate Character A',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', message: [], scriptstate: { score: 2 } }],
+        },
+      ],
+    } as unknown as Database)
+    await settle()
+
+    const variablesPanel = await openSection('Variables')
+    const tokensPanel = await openSection('Tokens')
+    await settle()
+
+    expect(variablesPanel.textContent).toContain('No variables')
+    expect(devToolMocks.getCharToken).not.toHaveBeenCalled()
+    expect(devToolMocks.getChatToken).not.toHaveBeenCalled()
+    expect(tokensPanel.textContent).toContain('0 Tokens')
+  })
+
+  it('fails closed when a stable chat id has multiple owners', async () => {
+    setDatabaseLite({
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'character-a',
+          name: 'Character A',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', message: [], scriptstate: { score: 1 } }],
+        },
+        {
+          chaId: 'character-b',
+          name: 'Character B',
+          chatPage: 0,
+          chats: [{ id: 'duplicate-chat', message: [], scriptstate: { score: 2 } }],
+        },
+      ],
+    } as unknown as Database)
+    await settle()
+
+    const variablesPanel = await openSection('Variables')
+    await openSection('Tokens')
+    await settle()
+
+    expect(variablesPanel.textContent).toContain('No variables')
+    expect(devToolMocks.getCharToken).toHaveBeenCalledWith(expect.objectContaining({ chaId: 'character-a' }))
+    expect(devToolMocks.getChatToken).not.toHaveBeenCalled()
   })
 })
 
