@@ -1,6 +1,8 @@
 import {
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
+  charactersResourceState,
+  getCharacterResourceOwner,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
 } from './server/resourceState.svelte'
@@ -55,7 +57,11 @@ export function optimisticallyRehomeGenerationReferences(input: {
   let promptRecommendationCount = 0
 
   withTrustedResourceWrite(() => {
-    for (const character of database.characters ?? []) {
+    // Character/chat generation settings are owned by the explicit character
+    // resource rows. Do not scan the aggregate mirror here: a row replacement
+    // or duplicate stable id must make the cascade fail closed rather than
+    // rehome a different character's chat.
+    for (const character of charactersResourceState.characters) {
       const characterId = nonBlankId(character?.chaId)
       if (!characterId) continue
       const projectionEpoch = captureCharacterRowProjectionEpoch(characterId)
@@ -67,7 +73,7 @@ export function optimisticallyRehomeGenerationReferences(input: {
           !chatId ||
           !generationSettings ||
           generationSettings[field] !== input.deletedId ||
-          resolveUniqueChatGenerationSettings(input.getDatabase(), characterId, chatId) !== generationSettings
+          resolveUniqueChatGenerationSettings(characterId, chatId) !== generationSettings
         ) {
           continue
         }
@@ -75,7 +81,7 @@ export function optimisticallyRehomeGenerationReferences(input: {
           captureFieldRollback({
             target: generationSettings,
             keys: [field],
-            resolveTarget: () => resolveUniqueChatGenerationSettings(input.getDatabase(), characterId, chatId),
+            resolveTarget: () => resolveUniqueChatGenerationSettings(characterId, chatId),
             hasProjectionChanged: () => hasCharacterRowProjectionEpochChanged(characterId, projectionEpoch),
             mutate: () => assignOptionalReference(generationSettings, field, input.replacement?.id),
           }),
@@ -237,14 +243,10 @@ function fieldMatches(target: JsonRecord, key: string, expected: JsonFieldState)
   return present && JSON.stringify(target[key]) === JSON.stringify(expected.value)
 }
 
-function resolveUniqueChatGenerationSettings(
-  database: Database,
-  characterId: string,
-  chatId: string,
-): JsonRecord | undefined {
-  const characters = (database.characters ?? []).filter((character) => character?.chaId === characterId)
-  if (characters.length !== 1) return undefined
-  const chats = (characters[0].chats ?? []).filter((chat) => chat?.id === chatId)
+function resolveUniqueChatGenerationSettings(characterId: string, chatId: string): JsonRecord | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  if (!character) return undefined
+  const chats = (character.chats ?? []).filter((chat) => chat?.id === chatId)
   return chats.length === 1 ? (asJsonRecord(chats[0].generationSettings) ?? undefined) : undefined
 }
 
