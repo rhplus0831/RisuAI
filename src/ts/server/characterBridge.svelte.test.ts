@@ -163,7 +163,7 @@ vi.mock('../characterCommands', () => {
 
 import { selectedCharID } from '../stores.svelte'
 import { mergeServerResourceCharacterRow, setDatabaseLite, type Database } from '../storage/database.svelte'
-import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import { charactersResourceState, getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   createServerBackedCharacterDraft,
   flushPendingServerBackedCharacterPatches,
@@ -269,6 +269,52 @@ afterEach(() => {
 })
 
 describe('createServerBackedCharacterDraft seed gating', () => {
+  it('fails closed for duplicate ready character owners', async () => {
+    setupCharacters([characterRow('char-1', 'First'), characterRow('char-1', 'Duplicate')])
+
+    const { draft, stop } = await createDraft(['name'])
+
+    expect(charactersResourceState.status).toBe('ready')
+    expect(draft.characterId).toBeNull()
+    expect(draft.value.name).toBe('')
+
+    draft.value.name = 'Must not target an ambiguous owner'
+    await flushAndSettle()
+    expect(getDatabase().characters.map((character) => character.name)).toEqual(['First', 'Duplicate'])
+    stop()
+  })
+
+  it('does not rollback an ambiguous character owner', () => {
+    setupCharacters([characterRow('char-1', 'First'), characterRow('char-1', 'Duplicate')])
+    getDatabase().characters[0].name = 'First local'
+    getDatabase().characters[1].name = 'Duplicate local'
+
+    rollbackServerBackedCharacterProfile({
+      characters: [],
+      characterOrder: [],
+      currentChar: 0,
+      selectedCharID: 0,
+      profileCharacterId: 'char-1',
+      profile: { name: 'Original' },
+      attemptedProfile: { name: 'First local' },
+    } as any)
+
+    expect(getDatabase().characters.map((character) => character.name)).toEqual(['First local', 'Duplicate local'])
+  })
+
+  it('retains the compatibility row while the character collection is pre-ready', async () => {
+    setupCharacter('Bootstrap')
+    charactersResourceState.status = 'loading'
+    try {
+      const { draft, stop } = await createDraft(['name'])
+      expect(draft.characterId).toBe('char-1')
+      expect(draft.value.name).toBe('Bootstrap')
+      stop()
+    } finally {
+      charactersResourceState.status = 'ready'
+    }
+  })
+
   it('normalizes the selected character synchronously before seed effects run', () => {
     setupCharacters([characterRow('char-1', 'Initial', { bias: undefined })])
 

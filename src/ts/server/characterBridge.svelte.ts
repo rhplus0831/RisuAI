@@ -19,8 +19,12 @@ import {
   getServerResourceApplyEpoch,
   withTrustedResourceWrite,
 } from './resourceWriteGuard.svelte'
-import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
-import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type character } from '../storage/database.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getResourceDatabase as getDatabase,
+} from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
@@ -57,6 +61,48 @@ let nextCharacterAttemptSequence = 0
 let suppressRollbackDispatch = false
 const activeCharacterProfileBaselineResetters = new Set<() => void>()
 
+/** Use stable character owners once the collection is ready; preserve the
+ * bootstrap compatibility view while startup is still assembling owners. */
+function characterRowsForBridge(): character[] {
+  return charactersResourceState.status === 'ready'
+    ? charactersResourceState.characters
+    : (getDatabase().characters ?? [])
+}
+
+function uniqueCharacterForBridge(characterId: string): character | undefined {
+  if (!characterId) return undefined
+  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+
+  let owner: character | undefined
+  for (const character of characterRowsForBridge()) {
+    if (character.chaId !== characterId) continue
+    if (owner) return undefined
+    owner = character
+  }
+  return owner
+}
+
+function selectedCharacterForBridge(index: number): character | undefined {
+  if (index < 0) return undefined
+  const candidate = characterRowsForBridge()[index]
+  return candidate?.chaId ? uniqueCharacterForBridge(candidate.chaId) : undefined
+}
+
+function currentCharForBridge(): number | undefined {
+  return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
+    ? charactersResourceState.currentChar
+    : (getDatabase() as unknown as { currentChar?: number }).currentChar
+}
+
+function applyCharacterProjectionPatchById(characterId: string, patch: CharacterSnapshot): void {
+  const owner = uniqueCharacterForBridge(characterId)
+  if (!owner) return
+  const characters = characterRowsForBridge()
+  const index = characters.indexOf(owner)
+  if (index < 0) return
+  applyCharacterProjectionPatch(characters, index, patch)
+}
+
 export interface WatchServerBackedCharacterProfileOptions {
   delayMs?: number
 }
@@ -70,7 +116,7 @@ export interface ServerBackedCharacterDraft {
 
 export function createServerBackedCharacterDraft(keys: readonly string[]): ServerBackedCharacterDraft {
   const initialSelected = get(selectedCharID)
-  const initialCharacter = getDatabase().characters?.[initialSelected]
+  const initialCharacter = selectedCharacterForBridge(initialSelected)
   const initialCharacterId =
     initialCharacter && !isServerCharacterShell(initialCharacter) ? (initialCharacter.chaId ?? null) : null
   const initialSeed = currentCharacterDraftSeed(initialSelected, initialCharacterId, keys)
@@ -130,7 +176,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   $effect(() => {
     const selected = selectedCharMirror.value
     const resourceApplyEpoch = getServerResourceApplyEpoch()
-    const selectedCharacter = getDatabase().characters?.[selected]
+    const selectedCharacter = selectedCharacterForBridge(selected)
     const characterId =
       selectedCharacter && !isServerCharacterShell(selectedCharacter) ? (selectedCharacter.chaId ?? null) : null
     const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
@@ -228,10 +274,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
       }
       const patch = sanitizeCharacterPatch(changedPatch)
       withTrustedResourceWrite(() => {
-        const characters = getDatabase().characters
-        const index = characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
-        if (!characters || index < 0) return
-        applyCharacterProjectionPatch(characters, index, patch)
+        applyCharacterProjectionPatchById(characterId, patch)
       })
       previousServerSnapshot = snapshotJson({ characterId, value: patch })
     })
@@ -275,10 +318,9 @@ function reassertDirtyDraftFields(
   if (Object.keys(sanitized).length === 0) return
 
   withTrustedResourceWrite(() => {
-    const characters = getDatabase().characters
-    const character = characters?.[selected]
-    if (!character || character.chaId !== characterId || isServerCharacterShell(character)) return
-    applyCharacterProjectionPatch(characters, selected, sanitized)
+    const character = uniqueCharacterForBridge(characterId)
+    if (!character || isServerCharacterShell(character)) return
+    applyCharacterProjectionPatchById(characterId, sanitized)
   })
 }
 
@@ -306,7 +348,7 @@ function currentCharacterDraftSeed(
   characterId: string | null,
   keys: readonly string[],
 ): { serverSnapshot: string; serverValue: CharacterDraftValue } {
-  const character = getDatabase().characters?.[selected]
+  const character = characterId ? uniqueCharacterForBridge(characterId) : selectedCharacterForBridge(selected)
   if (!character || isServerCharacterShell(character)) {
     const serverValue = normalizeCharacterDraft(pickCharacterFields({}, keys))
     return {
@@ -332,7 +374,7 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
   const resetProfileBaseline = () => {
     const index = get(selectedCharID)
-    const character = getDatabase().characters?.[index]
+    const character = selectedCharacterForBridge(index)
     const currentProfile =
       character && !isServerCharacterShell(character)
         ? scalarCharacterProfile(character as unknown as Record<string, unknown>)
@@ -348,7 +390,7 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
     $effect(() => {
       const resourceApplyEpoch = getServerResourceApplyEpoch()
       const index = get(selectedCharID)
-      const character = getDatabase().characters?.[index]
+      const character = selectedCharacterForBridge(index)
       const isShell = isServerCharacterShell(character)
       const currentProfile =
         character && !isShell ? scalarCharacterProfile(character as unknown as Record<string, unknown>) : {}
@@ -576,7 +618,7 @@ function selectedCharacterProfileSnapshot(
   return {
     characters: [],
     characterOrder: [],
-    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
+    currentChar: currentCharForBridge(),
     selectedCharID: selected,
     profileCharacterId: characterId,
     profile,
@@ -732,9 +774,7 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
   try {
     if (profileSnapshot.profileCharacterId && profileSnapshot.profile) {
       withTrustedResourceWrite(() => {
-        const character = getDatabase().characters?.find(
-          (candidate) => candidate.chaId === profileSnapshot.profileCharacterId,
-        )
+        const character = uniqueCharacterForBridge(profileSnapshot.profileCharacterId)
         if (!character) return
         if (profileSnapshot.attemptedProfile) {
           applyAttemptedCharacterFieldRollback({
