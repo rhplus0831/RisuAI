@@ -4,22 +4,19 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [BardWiki server type seam
-slice](phases/slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md).
+Execute the [memory-embedding configuration seam
+slice](phases/slices/phase-4-server-consumer-migration/memory-embedding-configuration-seam.md).
 
-1. Define narrow Fastify-owned BardWiki database and chat-row input records for
-   the fields consumed by canonical generation, event extraction, prompt
-   assembly, and job handlers.
-2. Replace the eight production type-only imports from the browser aggregate
-   database and chat modules without widening shared-core or protocol packages.
-3. Preserve model-profile resolution, exact prompt rows, provider dispatch,
-   source/document fences, transaction boundaries, receipts, revisions, and
-   event publication.
-4. Add an ownership assertion and run the focused BardWiki canonical-model,
-   event-model, apply-turn, rebuild, prompt, and contract fixtures needed by the
-   touched types.
-5. Refresh the reviewed cross-runtime baseline only after every removed edge is
-   accounted for.
+1. Define the complete memory-embedding model vocabulary and the narrow settings
+   fields used by Fastify resolution and job execution under the server owner.
+2. Replace direct type-only imports of browser `HypaModel` and aggregate
+   `Database` in the resolver and job handler; include embedding operations only
+   if its input can be narrowed without changing policy.
+3. Preserve custom URL normalization, credential selection, provider aliases,
+   dimension/input/batch limits, exact local-model rejection, and error strings.
+4. Keep SQLite transitions, dispatch, batching, deadlines, masking, and
+   persistence unchanged.
+5. Refresh the baseline after focused resolver/job/operation and ownership proof.
 
 ## Foundations Released
 
@@ -67,15 +64,16 @@ slice](phases/slices/phase-4-server-consumer-migration/bardwiki-server-type-seam
   consumers and the Fastify effective-generation consumer share one implementation.
 - Prompt-settings vocabulary is released at `96e0dedfb`; browser settings and
   Fastify prompt command consumers share one dependency-free key contract.
+- BardWiki's server type seam is released at `44e53527a`; its five production
+  consumers no longer import browser aggregate/chat declarations directly.
 
 ## Not In This Slice
 
-- Do not move BardWiki behavior or persistence into shared-core merely to
-  eliminate imports.
-- Do not alter model-profile ownership while Workstream 2 Phase 2 is still
-  active; its two BardWiki resolver edges are outside this slice.
-- Do not change prompt semantics, provider calls, job transitions, source hash
-  checks, rollback, or event/revision identity.
+- Do not move browser-local embedding implementations into Fastify or make them
+  remotely executable.
+- Do not change embedding provider dispatch, request limits, credentials,
+  masking, job state, or persistence.
+- Do not widen shared-core with aggregate memory/database application types.
 
 ## Handoff
 

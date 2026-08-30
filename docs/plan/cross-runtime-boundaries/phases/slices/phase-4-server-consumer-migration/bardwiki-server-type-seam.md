@@ -1,6 +1,6 @@
 # BardWiki Server Type Seam
 
-Status: ready.
+Status: complete at `44e53527a`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -17,8 +17,9 @@ already consumes.
 
 - Sources: `src/ts/storage/database.svelte.ts::Database` and
   `src/ts/process/index.svelte.ts::OpenAIChat` imports in BardWiki server files.
-- Destination: a Fastify-owned BardWiki input contract used by canonical model,
-  event model, prompt, apply-turn, and rebuild owners.
+- Destination: a Fastify-owned BardWiki row contract and named generation input
+  seam used by canonical model, event model, prompt, apply-turn, and rebuild
+  owners.
 - Expected delta: eight production type-only root-`src` edges. The two
   model-profile resolver edges remain until Workstream 2 releases that owner.
 
