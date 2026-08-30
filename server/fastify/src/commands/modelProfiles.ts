@@ -36,7 +36,7 @@ import {
   ProviderCredentialRecordValidationError,
   readProviderCredentials,
   type ProviderCredentialRecord,
-} from '../../../../src/ts/model/providerCredentialRecords.js'
+} from '@risuai/shared-core/provider-credential-records'
 import { AnthropicModels } from '../../../../src/ts/model/providers/anthropic.js'
 import { GoogleModels } from '../../../../src/ts/model/providers/google.js'
 import { OpenAIModels } from '../../../../src/ts/model/providers/openai.js'

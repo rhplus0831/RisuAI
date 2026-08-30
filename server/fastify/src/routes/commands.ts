@@ -56,7 +56,7 @@ import {
   normalizeProviderCredentials,
   ProviderCredentialRecordValidationError,
   readProviderCredentials,
-} from '../../../../src/ts/model/providerCredentialRecords.js'
+} from '@risuai/shared-core/provider-credential-records'
 import { normalizeChatGenerationTogglePresets } from '@risuai/shared-core/chat-generation-toggle-preset-records'
 import {
   MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,

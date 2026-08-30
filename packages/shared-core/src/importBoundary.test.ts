@@ -92,6 +92,7 @@ describe('@risuai/shared-core import boundary', () => {
         'promptInfoSnapshot.ts',
         'promptSettings.ts',
         'promptTemplateNormalization.ts',
+        'providerCredentialRecords.ts',
         'providerSecretMask.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',

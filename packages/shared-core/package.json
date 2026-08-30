@@ -33,6 +33,7 @@
     "./prompt-info-snapshot": "./src/promptInfoSnapshot.ts",
     "./prompt-settings": "./src/promptSettings.ts",
     "./prompt-template-normalization": "./src/promptTemplateNormalization.ts",
+    "./provider-credential-records": "./src/providerCredentialRecords.ts",
     "./provider-secret-mask": "./src/providerSecretMask.ts",
     "./punctuation": "./src/punctuation.ts",
     "./regex-output-size-limit": "./src/regexOutputSizeLimit.ts",

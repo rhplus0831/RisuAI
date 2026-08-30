@@ -6,7 +6,7 @@ import {
   ProviderCredentialRecordValidationError,
   readProviderCredentials,
   type ProviderCredentialRecord,
-} from '../../../../src/ts/model/providerCredentialRecords.js'
+} from '@risuai/shared-core/provider-credential-records'
 import { isMaskedProviderSecret } from '@risuai/shared-core/provider-secret-mask'
 import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
