@@ -82,6 +82,7 @@ describe('@risuai/protocol import boundary', () => {
       'imageGenerationOperation.ts',
       'index.ts',
       'providerOperation.ts',
+      'serverTool.ts',
       'shellResource.ts',
       'startupTelemetry.ts',
       'ttsSynthesis.ts',

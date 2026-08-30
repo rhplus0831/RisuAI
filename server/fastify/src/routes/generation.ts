@@ -46,7 +46,7 @@ import {
   type ServerToolCall,
   type ServerToolDefinition,
   type ServerToolRound,
-} from '../../../../src/ts/process/request/serverToolProtocol.js'
+} from '@risuai/protocol/server-tool'
 import {
   completeRequestHistory,
   createRequestHistoryResponseCapture,

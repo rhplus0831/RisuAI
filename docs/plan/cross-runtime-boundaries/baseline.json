@@ -1049,47 +1049,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/generation/anthropic.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ServerToolDefinition",
-        "ServerToolRound"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/generation/frames.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ServerToolCall"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/generation/gemini.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ServerToolDefinition",
-        "ServerToolRound"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/generation/openai.ts",
       "specifier": "../../../../src/ts/model/legacyOpenAIModelAliases.js",
       "target": "src/ts/model/legacyOpenAIModelAliases.ts",
@@ -1100,19 +1059,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/generation/openai.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ServerToolDefinition"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",
@@ -1142,19 +1088,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/generation/openaiResponses.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ServerToolRound"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/generation/providerMessages.ts",
       "specifier": "../../../../src/ts/model/types",
       "target": "src/ts/model/types.ts",
@@ -1179,23 +1112,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/generation/serverTools.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "ServerToolCall",
-        "ServerToolDefinition",
-        "ServerToolRound",
-        "ServerToolValidation",
-        "validateServerToolCalls"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",
@@ -2043,20 +1959,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/chatDispatch.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "ServerToolDefinition",
-        "ServerToolRound"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",
@@ -3485,23 +3387,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/routes/generation.ts",
-      "specifier": "../../../../src/ts/process/request/serverToolProtocol.js",
-      "target": "src/ts/process/request/serverToolProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "ServerToolCall",
-        "ServerToolDefinition",
-        "ServerToolRound",
-        "validateServerToolDefinitions",
-        "validateServerToolRounds"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "production",

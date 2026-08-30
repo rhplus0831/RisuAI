@@ -4,7 +4,7 @@ import {
   type ServerToolDefinition,
   type ServerToolRound,
   type ServerToolValidation,
-} from '../../../../src/ts/process/request/serverToolProtocol.js'
+} from '@risuai/protocol/server-tool'
 
 type JsonRecord = Record<string, unknown>
 

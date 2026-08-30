@@ -1,30 +1,4 @@
-export interface ServerToolDefinition {
-  name: string
-  description: string
-  inputSchema: Record<string, unknown>
-}
-
-export interface ServerToolCall {
-  id: string
-  name: string
-  arguments: Record<string, unknown>
-  /** Provider-authenticated opaque signature required when continuing some Gemini tool calls. */
-  thoughtSignature?: string
-}
-
-export interface ServerToolResult {
-  callId: string
-  name: string
-  content: string
-}
-
-export interface ServerToolRound {
-  assistantContent: string
-  calls: ServerToolCall[]
-  results: ServerToolResult[]
-}
-
-export type ServerToolValidation<T> = { ok: true; value: T } | { ok: false; error: string }
+import { Type, type Static } from '@sinclair/typebox'
 
 export const SERVER_TOOL_MAX_DEFINITIONS = 64
 export const SERVER_TOOL_MAX_CALLS_PER_ROUND = 8
@@ -38,6 +12,52 @@ const SERVER_TOOL_MAX_NAME_LENGTH = 128
 const SERVER_TOOL_MAX_DESCRIPTION_LENGTH = 8 * 1024
 const SERVER_TOOL_MAX_CALL_ID_LENGTH = 256
 const SERVER_TOOL_NAME_PATTERN = /^[A-Za-z0-9_.:-]+$/u
+
+export const ServerToolJsonRecordSchema = Type.Record(Type.String(), Type.Unknown())
+
+export const ServerToolDefinitionSchema = Type.Object(
+  {
+    name: Type.String(),
+    description: Type.String(),
+    inputSchema: ServerToolJsonRecordSchema,
+  },
+  { additionalProperties: false },
+)
+
+export const ServerToolCallSchema = Type.Object(
+  {
+    id: Type.String(),
+    name: Type.String(),
+    arguments: ServerToolJsonRecordSchema,
+    /** Provider-authenticated opaque signature required when continuing some Gemini tool calls. */
+    thoughtSignature: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+)
+
+export const ServerToolResultSchema = Type.Object(
+  {
+    callId: Type.String(),
+    name: Type.String(),
+    content: Type.String(),
+  },
+  { additionalProperties: false },
+)
+
+export const ServerToolRoundSchema = Type.Object(
+  {
+    assistantContent: Type.String(),
+    calls: Type.Array(ServerToolCallSchema),
+    results: Type.Array(ServerToolResultSchema),
+  },
+  { additionalProperties: false },
+)
+
+export type ServerToolDefinition = Static<typeof ServerToolDefinitionSchema>
+export type ServerToolCall = Static<typeof ServerToolCallSchema>
+export type ServerToolResult = Static<typeof ServerToolResultSchema>
+export type ServerToolRound = Static<typeof ServerToolRoundSchema>
+export type ServerToolValidation<T> = { ok: true; value: T } | { ok: false; error: string }
 
 function invalid<T>(error: string): ServerToolValidation<T> {
   return { ok: false, error }

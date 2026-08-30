@@ -352,10 +352,10 @@ Normal server-intent completion sends shaped messages plus role/static/fallback
 intent but no provider, endpoint, options, or secret. Fastify rejects those
 fields in the envelope and resolves them from persisted settings. The lower
 level protocol accepts bounded `tools` and completed `toolRounds`; tool-bearing
-requests are buffered. `src/ts/process/request/serverToolProtocol.ts` validates
-definition and call names, schemas/arguments, prior results, round counts, and
-total payload sizes, while `server/fastify/src/generation/serverTools.ts`
-translates supported OpenAI, OpenRouter, NanoGPT, Anthropic, or Gemini wires.
+requests are buffered. `@risuai/protocol/server-tool` validates definition and
+call names, schemas/arguments, prior results, round counts, and total payload
+sizes, while `server/fastify/src/generation/serverTools.ts` translates supported
+OpenAI, OpenRouter, NanoGPT, Anthropic, or Gemini wires.
 Provider-returned `toolCalls` are validated before the browser receives them.
 `server/fastify/src/prompt/effectiveGenerationConfig.ts` copies profile
 `modelTools` into the effective database, and OpenAI Responses adds

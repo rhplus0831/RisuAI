@@ -1,4 +1,4 @@
-import type { ServerToolCall } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolCall } from '@risuai/protocol/server-tool'
 
 export interface CompletionStreamFrame {
   kind: 'token' | 'done' | 'error'

@@ -19,7 +19,7 @@
     validateServerToolCalls,
     type ServerToolResult,
     type ServerToolRound,
-  } from 'src/ts/process/request/serverToolProtocol'
+  } from '@risuai/protocol/server-tool'
 
   interface DialogueLine {
     speaker: string

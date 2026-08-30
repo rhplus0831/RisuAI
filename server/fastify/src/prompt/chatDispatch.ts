@@ -45,7 +45,7 @@ import type { GenerationTraceContext } from '../generation/generationTraceSideca
 import { encodeTokens, encodingForModel } from './tokens.js'
 import { ensureTokenizerLoadedForDb, tokenizerEncodingFromDb } from './tokenizerConfig.js'
 import type { TokenEncoding } from './tokens.js'
-import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolDefinition, ServerToolRound } from '@risuai/protocol/server-tool'
 import { appendOpenAIToolRounds, openAIResponsesToolDefinitions } from '../generation/serverTools.js'
 import {
   buildAnthropicWireMessages,

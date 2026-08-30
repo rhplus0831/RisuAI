@@ -15,7 +15,7 @@ import {
   writeGenerationTraceSidecar,
   type GenerationTraceContext,
 } from './generationTraceSidecar.js'
-import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolDefinition, ServerToolRound } from '@risuai/protocol/server-tool'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 import { appendGeminiToolRounds, geminiToolDefinitions, parseGeminiToolCalls } from './serverTools.js'
 import { applyAdditionalParameters } from './additionalParams.js'

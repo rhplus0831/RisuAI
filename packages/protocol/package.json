@@ -11,6 +11,7 @@
     "./generation-sse": "./src/generationSse.ts",
     "./image-generation-operation": "./src/imageGenerationOperation.ts",
     "./provider-operation": "./src/providerOperation.ts",
+    "./server-tool": "./src/serverTool.ts",
     "./shell-resource": "./src/shellResource.ts",
     "./startup-telemetry": "./src/startupTelemetry.ts",
     "./tts-synthesis": "./src/ttsSynthesis.ts"

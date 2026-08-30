@@ -8,7 +8,7 @@ import {
 } from './sse.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
-import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import type { ServerToolDefinition, ServerToolRound } from '@risuai/protocol/server-tool'
 import { anthropicToolDefinitions, appendAnthropicToolRounds, parseAnthropicToolCalls } from './serverTools.js'
 import { extractApiResponseMetadata, mergeApiResponseMetadata } from './apiMetadata.js'
 

@@ -29,7 +29,7 @@ import { requestClaude } from './anthropic'
 import { requestGoogleCloudVertex } from './google'
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from './openAI/requests'
 import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
-import type { ServerToolCall, ServerToolRound } from './serverToolProtocol'
+import type { ServerToolCall, ServerToolRound } from '@risuai/protocol/server-tool'
 import {
   applyAdditionalParameters,
   applyParameters,
