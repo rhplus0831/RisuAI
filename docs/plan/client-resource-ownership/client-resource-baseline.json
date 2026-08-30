@@ -1126,7 +1126,7 @@
         },
         {
           "file": "src/lib/Setting/Pages/OtherBotSettings.svelte",
-          "count": 9
+          "count": 5
         },
         {
           "file": "src/lib/Setting/SettingRenderer.svelte",

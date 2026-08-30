@@ -54,6 +54,7 @@
   } from 'src/ts/server/naiVibeImport'
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
+  import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
   import LazyComponent from 'src/lib/UI/LazyComponent.svelte'
 
   const loadBardWikiSettings = () => import('./BardWikiSettings.svelte')
@@ -221,6 +222,7 @@
   function maxMemoryRatioDependencyKey(): string {
     const database = getDatabase()
     const char = database.characters[$selectedCharID]
+    const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
 
     // The await block can only subscribe to values read before the async
     // boundary. Capture every input used by token counting here so a later
@@ -230,21 +232,23 @@
       database.promptTemplate,
       char,
       database.loreBookToken,
-      database.maxResponse,
-      database.maxContext,
+      mainProfile.runtimeOptions.maxResponse,
+      mainProfile.runtimeOptions.maxContext,
     ])
   }
 
   async function getMaxMemoryRatio(_dependencyKey: string): Promise<number> {
     await ensurePromptTemplateHydrated()
-    const promptTemplateToken = await tokenizePreset(getDatabase().promptTemplate)
-    const char = getDatabase().characters[$selectedCharID]
+    const database = getDatabase()
+    const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
+    const promptTemplateToken = await tokenizePreset(database.promptTemplate)
+    const char = database.characters[$selectedCharID]
     const charToken = await getCharToken(char)
-    const maxLoreToken = char.loreSettings?.tokenBudget ?? getDatabase().loreBookToken
-    const maxResponse = getDatabase().maxResponse
+    const maxLoreToken = char.loreSettings?.tokenBudget ?? database.loreBookToken
+    const maxResponse = mainProfile.runtimeOptions.maxResponse ?? database.maxResponse
     const requiredToken =
       promptTemplateToken + charToken.persistant + Math.min(charToken.dynamic, maxLoreToken) + maxResponse * 3
-    const maxContext = getDatabase().maxContext
+    const maxContext = mainProfile.runtimeOptions.maxContext ?? database.maxContext
 
     if (maxContext === 0) {
       return 0

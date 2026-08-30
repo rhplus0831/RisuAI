@@ -70,9 +70,13 @@ describe('browser model-runtime consumer ownership', () => {
 
   it('routes HypaV3 response reservation through the resolved chat profile', () => {
     const hypaV3 = source('src/ts/process/memory/hypav3.ts')
+    const otherBotSettings = source('src/lib/Setting/Pages/OtherBotSettings.svelte')
 
     expect(hypaV3).not.toContain('currentTokens -= db.maxResponse')
     expect(hypaV3.match(/currentTokens -= resolveHypaV3ResponseTokenReservation\(db\)/g)).toHaveLength(2)
     expect(hypaV3).toContain("resolveModelProfile({ database, role: 'chatMain' })")
+    expect(otherBotSettings).toContain("resolveModelProfile({ database, role: 'chatMain' })")
+    expect(otherBotSettings).toContain('mainProfile.runtimeOptions.maxResponse')
+    expect(otherBotSettings).toContain('mainProfile.runtimeOptions.maxContext')
   })
 })

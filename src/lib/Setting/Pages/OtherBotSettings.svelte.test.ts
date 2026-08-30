@@ -758,7 +758,7 @@ describe('OtherBotSettings Hypa memory ratio', () => {
     otherBotMocks.getCharToken.mockResolvedValue({ dynamic: 0, persistant: 100 })
     selectedCharID.set(0)
 
-    const database = (maxContext: number) =>
+    const database = (profileMaxContext: number) =>
       ({
         useLegacyGUI: false,
         promptTemplate: [],
@@ -771,8 +771,17 @@ describe('OtherBotSettings Hypa memory ratio', () => {
           },
         ],
         loreBookToken: 0,
-        maxResponse: 100,
-        maxContext,
+        maxResponse: 20,
+        maxContext: 8000,
+        modelProfiles: [
+          {
+            id: 'hypa-main',
+            name: 'Hypa Main',
+            modelId: 'gpt-5',
+            runtimeOptions: { maxResponse: 100, maxContext: profileMaxContext },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'hypa-main' } },
       }) as any
 
     setDatabaseLite(database(1000))
