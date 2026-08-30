@@ -6,7 +6,8 @@ Date: 2026-08-31
 
 - Implementation commits: `c85b523c8`, `28d0bbd0a`, `bfa1b048e`,
   `29775b825`, `c0b8776b3`, `0b134b24d`, `f986cf1ff`, `c7ab6beaf`,
-  `07576969c`, `d8275c5e9`, and `3cff93cd6`
+  `07576969c`, `d8275c5e9`, `3cff93cd6`, `fd0764744`, `c24cdd16d`, and
+  `e663269de`
 - Migration predecessor: `47146eb759a8369ad407e872ce5897604a2ae7f4`
 - Phase 1 predecessor: `1e758cd22`
 - Opening anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`
@@ -15,8 +16,9 @@ Date: 2026-08-31
 - Scope: Phase 2 normal-consumer checkpoint for selected model-preset
   composition, browser prompt shape, durable-profile tokenizer/output budgeting
   and image capability, canonical custom-sidebar model authoring, Fastify
-  server-intent completion projection, browser request sampling, and
-  provider-specific thinking overrides.
+  server-intent completion projection, browser request sampling,
+  provider-specific thinking overrides, and effective prompt/generation model
+  identity.
 
 ## Consumer-Cutover Proof
 
@@ -56,6 +58,12 @@ Date: 2026-08-31
 - Anthropic adaptive thinking, DeepSeek thinking/tool-round reasoning, and the
   legacy plugin fallback source their post-parameter values from the resolved
   runtime profile. Flat behavior remains only for callers with no model context.
+- Browser and Fastify CBS hosts inject role-aware model contexts, so main/aux
+  model variables, request-model metadata, prefill support, and context limits
+  cannot observe stale flat selections.
+- V3 plugin chat-send loop protection checks the resolved `chatMain` model, and
+  default generation labels use resolved selected/wire/provider options while
+  explicit provider-reported and legacy formatting stays compatible.
 
 ## Commands And Results
 
@@ -75,19 +83,22 @@ Date: 2026-08-31
   Google provider files passed 19, 1, 16, 5, and 11 tests.
 - The provider-thinking checkpoint passed 7 Anthropic, 18 OpenAI, 2 closed
   parameter-ownership, and 19 role-routing tests.
+- Effective model identity passed 1 direct CBS, 19 CBS string, 135 assembly, 68
+  V3 plugin, 3 generation-label, and 3 closed ownership tests.
 - `pnpm check`, shared-core/client declarations, Fastify, browser-smoke, and
   root typechecks passed.
-- Architecture inventory passed at 258 cross-runtime edges after interleaved
+- Architecture inventory passed at 232 cross-runtime edges after interleaved
   Workstream 1 server-input migrations, 20 compatibility
-  surfaces/42 probes, 9,896 client references/326 groups, and 56 owner-gap rows.
+  surfaces/42 probes, 9,898 client references/326 groups, and 56 owner-gap rows.
 - Focused Prettier and `git diff --check` passed.
 
 ## Verdict
 
-The normal-consumer checkpoint passes through `3cff93cd6`. Selected legacy
+The normal-consumer checkpoint passes through `e663269de`. Selected legacy
 preset ownership is request-local; prompt shape, tokenizer, and output budgeting
 and image capability use the selected durable profile; sidebar authoring uses
 canonical presets; server-intent completion projects durable runtime fields;
 ordinary provider request samplers and provider-specific thinking overrides use
-resolved runtime options. The broader normal consumer cutover remains active;
-the model-owner cursor is not released yet.
+resolved runtime options; prompt-visible identity, plugin recursion protection,
+and default generation labels use the effective profile. The broader normal
+consumer cutover remains active; the model-owner cursor is not released yet.

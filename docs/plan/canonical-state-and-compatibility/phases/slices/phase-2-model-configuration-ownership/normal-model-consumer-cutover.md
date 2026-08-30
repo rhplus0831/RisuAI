@@ -1,7 +1,6 @@
 # Normal Model Consumer Cutover
 
-Status: in progress; provider-specific thinking checkpoint through
-`3cff93cd6`.
+Status: in progress; effective model-identity checkpoint through `e663269de`.
 
 Parent: [Phase 2](../../phase-2-model-configuration-ownership.md)
 
@@ -89,6 +88,13 @@ classified static/legacy boundary removed to complete the cutover.
 - Anthropic adaptive thinking, DeepSeek thinking and tool-round reasoning, and
   the legacy plugin fallback read resolved runtime options at `3cff93cd6`;
   context-free callers retain the classified flat fallback.
+- Prompt-visible `chatMain`/`chatAux` CBS values and metadata use role-aware
+  resolved contexts in browser and Fastify hosts at `fd0764744`.
+- V3 plugin send-loop protection inspects the effective main profile at
+  `c24cdd16d`, so stale flat selections cannot bypass the guard.
+- Default generation labels derive from the effective selected/wire/provider
+  profile at `e663269de`; explicit provider-returned overrides and legacy-only
+  selection formatting retain their compatibility behavior.
 - The seam is named in the compatibility baseline and closed-world probe. Chat
   generation, memory summarization, browser prompt assembly and send-context,
   split presets, tokenizer, static ownership, prompt-budget, and sidebar

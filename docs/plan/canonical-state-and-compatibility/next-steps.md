@@ -7,15 +7,15 @@ Date: 2026-08-31
 Execute the [normal model consumer
 cutover](phases/slices/phase-2-model-configuration-ownership/normal-model-consumer-cutover.md).
 
-1. Inject resolved `chatMain` and `chatAux` model contexts into CBS so
-   `{{model}}`, `{{axmodel}}`, prefill support, model metadata, and max context
-   cannot observe conflicting flat fields.
-2. Make generation display labels derive from the resolved main profile while
-   preserving explicit provider-returned model overrides and legacy formatting.
-3. Make plugin chat-send loop protection inspect the resolved main model rather
-   than aggregate `aiModel`.
-4. Continue replacing ordinary runtime reads of flat translation, agent, and
-   auxiliary settings; provider-specific thinking overrides are now canonical.
+1. Remove the redundant flat `aiModel` dimension from the LLM translation cache
+   signature; the resolved translate-profile signature remains authoritative.
+2. Make the Novellist locale heuristic inspect the effective translate role,
+   with explicit legacy/static behavior retained where required.
+3. Add conflicting chat-main/translate/flat fixtures for cache invalidation and
+   locale selection.
+4. Continue replacing ordinary runtime reads of flat agent and auxiliary
+   settings; CBS, generation labels, plugin loop protection, and
+   provider-specific thinking overrides are now canonical.
 5. Preserve the named clone-only selected-preset seam for legacy inline
    credentials; canonical preset owner fields must continue to win.
 6. Prove provider/model/options/fallback parity in browser reload and request
@@ -31,7 +31,8 @@ Phase 0 dispositions.
 
 ## Not In This Slice
 
-- Do not migrate prompt or translator mirrors yet.
+- Do not migrate prompt ownership or translator preset persistence in this
+  consumer slice.
 - Do not remove a compatibility reader, exporter, table, field, or route.
 - Do not turn legacy conversion or damaged-state repair into an implicit normal
   command.
