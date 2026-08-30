@@ -40,6 +40,7 @@ export const TEST_WATCH_HEARTBEAT_MS = 5_000
 export const TEST_WATCH_HEARTBEAT_STALE_MS = 20_000
 
 const FRONTEND_CHECK_COMMAND: TestCommand = { label: 'frontend check', args: ['check:watch'] }
+const TEST_WATCH_INTEGRATION_FILE = 'util/test-watch.test.ts'
 
 const SNAPSHOT_RETRIES = 5
 const DEFAULT_DEBOUNCE_MS = 400
@@ -747,6 +748,18 @@ export function displayTestCommand(command: TestCommand): string {
   return `${env}pnpm ${command.args.map((arg) => JSON.stringify(arg)).join(' ')}`
 }
 
+export function createTestCommandEnvironment(
+  environment: NodeJS.ProcessEnv,
+  overrides: Record<string, string> | undefined,
+): NodeJS.ProcessEnv {
+  const childEnvironment = { ...environment, ...overrides }
+  delete childEnvironment.RISU_TEST_WATCH_SUPERVISOR_ID
+  delete childEnvironment.RISU_TEST_WATCH_SUPERVISOR_PID
+  delete childEnvironment.RISU_TEST_WATCH_WORKER
+  delete childEnvironment.RISU_TEST_WATCH_WORKER_ID
+  return childEnvironment
+}
+
 export function extractVitestFileFilters(command: TestCommand): string[] {
   const runIndex = command.args.indexOf('run')
   if (runIndex < 0) return []
@@ -1066,9 +1079,14 @@ function requiresFrontendCheckRestart(filename: string): boolean {
 }
 
 interface VitestCommandResult {
+  deferredTests?: string[]
   failure?: string
   passed: boolean
   testFiles: number
+}
+
+export function isDeferredFrontendTest(moduleId: string, repoRoot: string): boolean {
+  return path.resolve(moduleId) === path.resolve(repoRoot, TEST_WATCH_INTEGRATION_FILE)
 }
 
 export function prepareVitestContext(context: Vitest, repoRoot: string, changes: readonly ChangedPath[]): void {
@@ -1179,28 +1197,35 @@ class WarmVitestLane {
     specifications: TestSpecification[],
     allTestsRun = false,
   ): Promise<VitestCommandResult> {
-    if (specifications.length === 0) {
+    const deferredTests = specifications
+      .filter((specification) => isDeferredFrontendTest(specification.moduleId, this.repoRoot))
+      .map((specification) => path.relative(this.repoRoot, specification.moduleId))
+    const runnable = specifications.filter(
+      (specification) => !isDeferredFrontendTest(specification.moduleId, this.repoRoot),
+    )
+    if (runnable.length === 0) {
       context.watcher.invalidates.clear()
       this.log.stdout.write('[test:watch] no related test files found\n')
-      return { passed: true, testFiles: 0 }
+      return { deferredTests, passed: true, testFiles: 0 }
     }
 
     let result: TestRunResult
     try {
-      result = await context.runTestSpecifications(specifications, allTestsRun)
+      result = await context.runTestSpecifications(runnable, allTestsRun)
     } finally {
       process.exitCode = undefined
     }
-    const incomplete = specifications.filter((specification) => !specification.testModule?.ok())
+    const incomplete = runnable.filter((specification) => !specification.testModule?.ok())
     const passed = incomplete.length === 0 && result.unhandledErrors.length === 0
     const failureParts = [
       ...incomplete.map((specification) => `${path.relative(this.repoRoot, specification.moduleId)} did not pass`),
       ...result.unhandledErrors.map((error) => (error instanceof Error ? error.message : String(error))),
     ]
     return {
+      deferredTests,
       failure: failureParts.length > 0 ? failureParts.join('; ') : undefined,
       passed,
-      testFiles: specifications.length,
+      testFiles: runnable.length,
     }
   }
 
@@ -1283,7 +1308,7 @@ class TestCommandRunner {
     const executable = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
     const child = spawn(executable, command.args, {
       cwd: this.repoRoot,
-      env: { ...process.env, ...command.env },
+      env: createTestCommandEnvironment(process.env, command.env),
       stdio: ['inherit', 'pipe', 'pipe'],
     })
     this.activeChild = child
@@ -1307,7 +1332,7 @@ class TestCommandRunner {
 
   async run(command: TestCommand, changes: readonly ChangedPath[]): Promise<TestWatchCommandResult> {
     const startedAt = Date.now()
-    let outcome: { failure?: string; passed: boolean; testFiles?: number }
+    let outcome: { deferredTests?: string[]; failure?: string; passed: boolean; testFiles?: number }
     const filters = extractVitestFileFilters(command)
 
     if (command.label === FRONTEND_CHECK_COMMAND.label) {
@@ -1332,6 +1357,21 @@ class TestCommandRunner {
     } else {
       if (command.label === 'full quality suite') await Promise.all([this.frontend.close(), this.server.close()])
       outcome = await this.runShell(command)
+    }
+
+    if (outcome.passed && outcome.deferredTests?.includes(TEST_WATCH_INTEGRATION_FILE)) {
+      await this.frontend.close()
+      const deferredCommand: TestCommand = {
+        label: 'test watcher integration',
+        args: ['exec', 'vitest', 'run', TEST_WATCH_INTEGRATION_FILE, '--no-file-parallelism', '--maxWorkers=1'],
+      }
+      this.log.stdout.write(`[test:watch] deferred ${displayTestCommand(deferredCommand)}\n`)
+      const deferred = await this.runShell(deferredCommand)
+      outcome = {
+        failure: deferred.failure,
+        passed: deferred.passed,
+        testFiles: (outcome.testFiles ?? 0) + 1,
+      }
     }
 
     return {

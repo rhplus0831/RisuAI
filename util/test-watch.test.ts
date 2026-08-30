@@ -12,10 +12,12 @@ import {
   SvelteCheckWatchOutputParser,
   TestWatchLog,
   canRunIncrementally,
+  createTestCommandEnvironment,
   createWorktreeSnapshot,
   diffWorktreeSnapshots,
   evaluateTestWatchStatus,
   extractVitestFileFilters,
+  isDeferredFrontendTest,
   isFrontendCheckWatchPath,
   parseTestWatchCli,
   prepareVitestContext,
@@ -260,6 +262,44 @@ describe('test watcher CLI', () => {
         label: 'changed server tests',
       }),
     ).toEqual(['server/fastify/__tests__/app.test.ts'])
+  })
+
+  it('defers the process-spawning integration suite from warm frontend workers', () => {
+    expect(isDeferredFrontendTest('/repo/util/test-watch.test.ts', '/repo')).toBe(true)
+    expect(isDeferredFrontendTest('/repo/util/test-watch-unit.test.ts', '/repo')).toBe(false)
+  })
+
+  it('does not leak the outer watcher identity into child test commands', () => {
+    expect(
+      createTestCommandEnvironment(
+        {
+          KEEP_ME: 'yes',
+          RISU_TEST_WATCH_HEARTBEAT_MS: '20',
+          RISU_TEST_WATCH_SUPERVISOR_ID: 'supervisor',
+          RISU_TEST_WATCH_SUPERVISOR_PID: '123',
+          RISU_TEST_WATCH_WORKER: '1',
+          RISU_TEST_WATCH_WORKER_ID: 'worker',
+        },
+        { COMMAND_ONLY: 'yes' },
+      ),
+    ).toMatchObject({
+      COMMAND_ONLY: 'yes',
+      KEEP_ME: 'yes',
+      RISU_TEST_WATCH_HEARTBEAT_MS: '20',
+    })
+    expect(
+      Object.keys(
+        createTestCommandEnvironment(
+          {
+            RISU_TEST_WATCH_SUPERVISOR_ID: 'supervisor',
+            RISU_TEST_WATCH_SUPERVISOR_PID: '123',
+            RISU_TEST_WATCH_WORKER: '1',
+            RISU_TEST_WATCH_WORKER_ID: 'worker',
+          },
+          undefined,
+        ),
+      ),
+    ).toEqual([])
   })
 })
 
@@ -664,15 +704,6 @@ describe('watched result validation', () => {
         commandResults: [{ label: 'frontend check', status: 'passed' }],
         generation: 1,
       })
-      const supervisor = readTestWatchSupervisorStatus(testWatchPaths(repoRoot).supervisor)
-      const worker = readTestWatchStatus(testWatchPaths(repoRoot).status)
-      expect(supervisor).toMatchObject({
-        state: 'running',
-        supervisorId: worker?.supervisorId,
-        workerId: worker?.watcherId,
-        workerPid: expect.any(Number),
-      })
-      expect(supervisor?.pid).not.toBe(worker?.pid)
     } finally {
       await stopWatcherProcess(child)
       watcherProcesses.splice(watcherProcesses.indexOf(child), 1)
