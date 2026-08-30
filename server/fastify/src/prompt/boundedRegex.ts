@@ -1,5 +1,4 @@
 import { Worker } from 'node:worker_threads'
-import type { Database } from '../../../../src/ts/storage/database.svelte'
 import {
   DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   regexOutputSizeLimitCodeUnits,
@@ -19,6 +18,14 @@ export const DEFAULT_COMPLEX_REGEX_TIMEOUT_MS = 15_000
 const MAX_COMPLEX_REGEX_TIMEOUT_MS = 10 * 60 * 1000
 
 export type BoundedRegexStage = 'input' | 'output' | 'display'
+
+export interface BoundedRegexSettings {
+  complexRegexCompatibilityMode: 'strict' | 'worker'
+  complexRegexInputTimeoutMs: number
+  complexRegexOutputTimeoutMs: number
+  complexRegexDisplayTimeoutMs: number
+  regexOutputSizeLimitMiB: number
+}
 
 export interface BoundedRegexCompatibilityOptions {
   enabled: boolean
@@ -389,7 +396,7 @@ export function isComplexBoundedRegex(regex: BoundedRegexLike): regex is Complex
 }
 
 export function complexRegexCompatibilityOptions(
-  database: Database,
+  database: BoundedRegexSettings,
   stage: BoundedRegexStage,
 ): BoundedRegexCompatibilityOptions {
   const timeoutKey =

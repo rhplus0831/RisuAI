@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Database } from '../../../src/ts/storage/database.svelte'
 import {
   BOUNDED_REGEX_LIMITS,
   DEFAULT_COMPLEX_REGEX_TIMEOUT_MS,
   type BoundedRegexCompatibilityOptions,
   type BoundedRegexLike,
+  type BoundedRegexSettings,
   type ComplexBoundedRegex,
   compileBoundedRegex,
   compileBoundedRegexWithCompatibility,
@@ -164,13 +164,13 @@ describe('bounded regex compatibility selection', () => {
   })
 
   it('normalizes the stage timeout and enables only positive worker-mode values', () => {
-    const database = {
+    const database: BoundedRegexSettings = {
       complexRegexCompatibilityMode: 'worker',
       complexRegexInputTimeoutMs: 12.9,
       complexRegexOutputTimeoutMs: -3,
       complexRegexDisplayTimeoutMs: 999_999,
       regexOutputSizeLimitMiB: 4,
-    } as unknown as Database
+    }
 
     expect(complexRegexCompatibilityOptions(database, 'input')).toEqual({
       enabled: true,

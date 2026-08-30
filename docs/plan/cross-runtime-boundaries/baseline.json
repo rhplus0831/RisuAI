@@ -1107,19 +1107,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/boundedRegex.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/budgetFinalize.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
@@ -2320,19 +2307,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/bardWikiPrompt.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/boundedRegex.test.ts",
       "specifier": "../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
