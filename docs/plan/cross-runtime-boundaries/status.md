@@ -11,24 +11,25 @@ in [`latest-verification.md`](latest-verification.md).
 
 - Plan state: Active; Phase 0 complete.
 - Current phase: [Phase 1 protocol contract completion](phases/phase-1-protocol-contract-completion.md).
-- Active slice: [Image-generation operation contract](phases/slices/phase-1-protocol-contract-completion/image-generation-operation-contract.md), ready to start.
+- Active slice: [TTS synthesis contract](phases/slices/phase-1-protocol-contract-completion/tts-synthesis-contract.md), ready to start.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through the current slice: shell, character-summary,
-  provider-operation, and embedding-operation contracts moved to explicit
-  protocol subpaths without wire changes.
-- Latest verification: embedding-operation contract passed at
-  `58a847a11759ad7bd2764b0bdd46421690c2a505`; see
+  provider-operation, embedding-operation, and image-generation contracts moved
+  to explicit protocol subpaths without wire changes.
+- Latest verification: image-generation contract passed at
+  `054116c5d27235b124b12a2f84b1c6d6c827ea5a`; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
 
 | Consumer or prerequisite | Cursor | State |
 | --- | --- | --- |
-| Portfolio no-new-debt requirement | `b01e88b03` | Released from the 375-edge opening cursor; the reviewed 361-edge baseline is mandatory in `check:server`. |
+| Portfolio no-new-debt requirement | `b01e88b03` | Released from the 375-edge opening cursor; the reviewed 357-edge baseline is mandatory in `check:server`. |
 | Shell resource contract | `159b6eccf` | Released through `@risuai/protocol/shell-resource`. |
 | Character-summary resource contract | `159b6eccf` | Released through `@risuai/protocol/character-summary-resource`. |
 | Provider-operation contract | `9c1d0f114` | Released through `@risuai/protocol/provider-operation`; credential resolution and dispatch remain Fastify-owned. |
 | Embedding-operation contract | `58a847a11` | Released through `@risuai/protocol/embedding-operation`; credential, endpoint, provider, and bounds policy remain Fastify-owned. |
+| Image-generation contract | `054116c5d` | Released through `@risuai/protocol/image-generation-operation`; credentials, provider execution, Lua policy, bounds, and assets remain Fastify-owned. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -53,11 +54,11 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 361 direct root-`src` edges remain: 254 production, 99 server-test, and 8
-  browser-smoke, spanning 144 importers and 75 targets.
-- Usage is 139 runtime, 44 mixed, and 178 type-only; 183 runtime/mixed edges
+- 357 direct root-`src` edges remain: 252 production, 97 server-test, and 8
+  browser-smoke, spanning 142 importers and 74 targets.
+- Usage is 138 runtime, 44 mixed, and 175 type-only; 182 runtime/mixed edges
   remain.
-- The completed Phase 1 slices have removed 14 edges and four source targets.
+- The completed Phase 1 slices have removed 18 edges and five source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
 

@@ -52,4 +52,4 @@ behavior mismatch becomes a separate remediation slice.
 Focused protocol tests, `pnpm check:protocol`, both typecheck families, affected
 frontend/server lanes, formatting, and diff checks.
 
-Active slice: [Image-generation operation contract](slices/phase-1-protocol-contract-completion/image-generation-operation-contract.md).
+Active slice: [TTS synthesis contract](slices/phase-1-protocol-contract-completion/tts-synthesis-contract.md).

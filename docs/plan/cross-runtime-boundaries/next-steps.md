@@ -4,17 +4,18 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [image-generation operation contract
-slice](phases/slices/phase-1-protocol-contract-completion/image-generation-operation-contract.md).
+Execute the [TTS synthesis contract
+slice](phases/slices/phase-1-protocol-contract-completion/tts-synthesis-contract.md).
 
-1. Define schema-first provider taxonomy, credential variants, and every
-   provider-discriminated request shape at an explicit protocol subpath.
-2. Preserve the opaque NovelAI payload and the exact DALL-E, Stability, Fal,
-   Imagen, OpenAI-compatible, WaveSpeed, and Kei fields; add fixtures for every
-   discriminator and rejected cross-pairing.
-3. Migrate browser image-generation/stable-diff consumers and Fastify image/Lua
-   handlers/tests without moving secret resolution, provider calls, URL/Lua
-   policy, size limits, error masking, or asset persistence.
+1. Define schema-first synthesis operation and OpenAI-format taxonomies,
+   credential variants, provider inputs, caller-owned OpenAI configuration, and
+   discriminated requests at an explicit protocol subpath.
+2. Preserve exact operation/input pairing and optional configuration placement;
+   add fixtures for all five operations, four credentials, six formats, and
+   rejected cross-pairings.
+3. Migrate browser TTS callers and Fastify handler/tests without moving stored
+   secret or character resolution, endpoints, input/response limits, provider
+   calls, audio validation, or error masking.
 4. Remove the superseded application-tree protocol module after every consumer
    moves.
 5. Refresh the boundary baseline for the exact four removed cross-runtime edges
@@ -36,15 +37,16 @@ Workstream 2's compatibility inventory.
 ## Not In This Slice
 
 - Do not introduce the route operation catalog yet.
-- Do not move aggregate `Database` or Svelte state into a shared package.
-- Do not alter provider payloads, asset persistence, authentication,
+- Do not move aggregate `Database`, character state, or Svelte state into a
+  shared package.
+- Do not alter audio payloads, endpoints, provider behavior, authentication,
   active-writer policy, or authoritative recovery.
-- Do not combine unrelated TTS, transcription, generation, or prompt contract
+- Do not combine unrelated transcription, generation, OAuth, or prompt contract
   families.
 
 ## Handoff
 
 After the slice passes, update [`status.md`](status.md) with exact edge counts
-and the image-generation-operation release cursor, refresh
+and the TTS-synthesis release cursor, refresh
 [`latest-verification.md`](latest-verification.md), then select the next
 wire-contract family from [`baseline.json`](baseline.json).

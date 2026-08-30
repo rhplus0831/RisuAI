@@ -1,6 +1,6 @@
 # Image-Generation Operation Contract
 
-Status: ready.
+Status: complete at `054116c5d27235b124b12a2f84b1c6d6c827ea5a`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -53,3 +53,17 @@ check:server`, `pnpm check`, affected tests, formatting, and `git diff --check`.
 Stop if schema extraction changes an accepted payload, narrows the opaque
 NovelAI request, exposes stored credentials, or requires provider/security
 behavior to move into the protocol package.
+
+## Result
+
+- `@risuai/protocol/image-generation-operation` now owns TypeBox schemas and
+  derived types for all eight providers, three credential variants, and every
+  provider-discriminated request envelope.
+- Contract fixtures prove all variants, exact request/credential/nested objects,
+  cross-provider rejection, and structurally opaque NovelAI payload handling.
+- Browser, Fastify, Lua, and structural consumers use the explicit package
+  subpath and the old application-tree contract module is removed.
+- Fastify still owns exact provider limits, credentials, endpoints, upstreams,
+  Lua policy, response validation, error masking, and asset persistence.
+- The boundary cursor fell by exactly four edges, from 361 to 357: two
+  production and two server-test edges.
