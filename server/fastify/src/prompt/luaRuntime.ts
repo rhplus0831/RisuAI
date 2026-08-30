@@ -1963,7 +1963,6 @@ function declareHostFunctions(engine: LuaEngine): (next: RuntimeState) => void {
       database: state.ctx.database,
       currentChar: structuredClone(char),
       currentChat: structuredClone(state.ctx.chat),
-      model: state.ctx.model,
       writeChatVar: (key, value) => state.ctx.varEngine.setVar(key, value),
     })
     const books = report.actives.flatMap((book) => {

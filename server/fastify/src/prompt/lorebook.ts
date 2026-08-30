@@ -128,12 +128,6 @@ export interface ActivateLorebookInput {
   /** Request-scoped CBS coordinates/memo reused by the live assembly path. */
   cbsContext?: ExpandContext
   /**
-   * Retained for activation callers that also track their selected model.
-   * Token counts use `database` as the authoritative tokenizer config,
-   * matching the client's global `encode()` routing.
-   */
-  model?: string
-  /**
    * Optional assembly-owned writer for chat vars that must survive beyond the
    * cloned working chat. The local working chat is still updated first so the
    * current activation pass observes its own sticky-state writes.

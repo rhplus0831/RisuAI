@@ -1274,7 +1274,6 @@ function lorebookContext(context: AgentPresetPreparedInputContext): string {
     database: context.database,
     currentChar: structuredClone(context.currentChar) as character,
     currentChat: structuredClone(context.currentChat) as Chat,
-    model: context.database.aiModel,
   })
   return report.actives.map((entry, index) => `${index + 1}. ${entry.source}: ${entry.prompt}`).join('\n')
 }
