@@ -46,6 +46,25 @@ describe('effective prompt-template owner policy', () => {
     })
   })
 
+  it('returns disabled for a duplicate chat owner without choosing a row', () => {
+    expect(
+      resolveEffectivePromptTemplate(
+        database({
+          promptPresets: [
+            { id: 'chat', name: 'Chat A', promptTemplate: [row('chat-a')] },
+            { id: 'chat', name: 'Chat B', promptTemplate: [row('chat-b')] },
+          ],
+          promptPresetsId: 0,
+        }),
+        { chatPromptPresetId: 'chat' },
+      ),
+    ).toEqual({
+      promptTemplate: null,
+      source: 'missing-chat-prompt-preset',
+      promptPresetId: 'chat',
+    })
+  })
+
   it('keeps explicit null/empty modern bodies authoritative', () => {
     expect(
       resolveEffectivePromptTemplate(
@@ -78,6 +97,31 @@ describe('effective prompt-template owner policy', () => {
         }),
       ),
     ).toMatchObject({ promptTemplate: null, source: 'global-prompt-preset', promptPresetId: 'custom' })
+  })
+
+  it('fails closed for a duplicate selected owner without using the top-level projection', () => {
+    expect(
+      resolveEffectivePromptTemplate(
+        database({
+          promptPresets: [
+            { id: 'modern', name: 'Modern A', promptTemplate: [row('stale-a')] },
+            { id: 'modern', name: 'Modern B', promptTemplate: [row('stale-b')] },
+          ],
+          promptPresetsId: 0,
+        }),
+      ),
+    ).toEqual({ promptTemplate: null, source: 'global-prompt-preset', promptPresetId: 'modern' })
+  })
+
+  it('fails closed for a selected row without a stable id', () => {
+    expect(
+      resolveEffectivePromptTemplate(
+        database({
+          promptPresets: [{ name: 'Malformed Modern', promptTemplate: [row('stale')] }],
+          promptPresetsId: 0,
+        }),
+      ),
+    ).toEqual({ promptTemplate: null, source: 'global-prompt-preset' })
   })
 
   it('does not repair or mutate the supplied state', () => {
