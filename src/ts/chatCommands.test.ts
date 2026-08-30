@@ -791,6 +791,16 @@ describe('chat command projection helpers', () => {
     expect(JSON.stringify(getDatabase().characters[0].chats[1])).toBe(siblingBytes)
   })
 
+  it('fails closed when a folder owner is not unique in the captured character rows', () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+    const previous = currentChatStateSnapshot()
+    previous.characters[0].chatFolders.push({ id: 'folder-a', name: 'Duplicate folder', folded: false } as any)
+
+    expect(dispatchUpdateChatFolderWithOutcome('folder-a', { name: 'Should not dispatch' }, previous)).toBeUndefined()
+    expect(calls).toHaveLength(0)
+  })
+
   it('clears the selected draft hook with a nullable chat patch', async () => {
     setCurrentChatSelectedDraftHookId('draft-hook-a', { dispatch: false })
     const calls = stubCommandFetch()

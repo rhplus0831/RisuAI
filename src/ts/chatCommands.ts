@@ -1479,17 +1479,17 @@ function locateChatInState(snapshot: ChatStateSnapshot, chatId: string): ChatLoc
 }
 
 function locateChatFolderInState(snapshot: ChatStateSnapshot, folderId: string): ChatFolderLocation | null {
+  let match: ChatFolderLocation | null = null
   for (const character of snapshot.characters ?? []) {
-    const folderIndex = character.chatFolders?.findIndex((candidate) => candidate.id === folderId) ?? -1
-    if (folderIndex >= 0) {
-      return {
-        character,
-        folder: character.chatFolders[folderIndex],
-        folderIndex,
-      }
-    }
+    const folderIndexes = (character.chatFolders ?? [])
+      .map((candidate, index) => (candidate.id === folderId ? index : -1))
+      .filter((index) => index >= 0)
+    if (folderIndexes.length === 0) continue
+    if (folderIndexes.length > 1 || match) return null
+    const folderIndex = folderIndexes[0]
+    match = { character, folder: character.chatFolders[folderIndex], folderIndex }
   }
-  return null
+  return match
 }
 
 function characterIdForChatInState(snapshot: ChatStateSnapshot, chatId: string): string | undefined {
@@ -4594,10 +4594,12 @@ export function dispatchUpdateChatFolderWithOutcome(
   rollbackFolderMetadata: ChatFolderRowMetadataRollback = restoreChatFolderRowMetadata,
 ): Promise<ChatMutationOutcome> | undefined {
   if (!canUseServerCommands()) return
+  const folderLocation = locateChatFolderInState(previous, folderId)
+  if (!folderLocation) return
   const rollback = chatFolderMetadataRollbackFromPatch(folderId, patch, previous)
   const attemptedPatch = freezeJsonValue(cloneJsonValue(patch))
   if (Object.keys(attemptedPatch).length === 0) return
-  const characterId = rollback?.characterId ?? locateChatFolderInState(previous, folderId)?.character.chaId
+  const characterId = rollback?.characterId ?? folderLocation.character.chaId
   const body = freezeDurableChatRequestBody({ patch: attemptedPatch })
   const intent = durableChatMutationIntent('PATCH', `/chat-folders/${encodeURIComponent(folderId)}`, body)
   const execute = (transport: ServerCommandTransportOptions, rollbackAttempt: () => void) =>
