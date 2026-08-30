@@ -1356,19 +1356,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/agentPresetReferences.js",
-      "target": "src/ts/agentPresetReferences.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "expandAgentPresetOutputCbs"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
       "specifier": "../../../../src/ts/agentPresetResolver.js",
       "target": "src/ts/agentPresetResolver.ts",
       "kind": "static",
@@ -2842,19 +2829,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/variables.ts",
-      "specifier": "../../../../src/ts/agentPresetReferences",
-      "target": "src/ts/agentPresetReferences.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "expandAgentPresetOutputCbs"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",

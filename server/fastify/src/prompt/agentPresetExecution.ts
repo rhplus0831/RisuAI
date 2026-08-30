@@ -19,7 +19,7 @@ import { parseChatMLRows } from '../../../../src/ts/parser/chatMLCore.js'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
-import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences.js'
+import { expandAgentPresetOutputCbs } from '@risuai/shared-core/agent-preset-output-references'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import {
   AgentPresetGenerationError,

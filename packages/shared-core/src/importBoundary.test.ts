@@ -64,6 +64,7 @@ describe('@risuai/shared-core import boundary', () => {
   it('keeps every runtime module dependency-free and inside shared core', () => {
     expect(auditImportBoundary(sourceRoot)).toEqual({
       runtimeFiles: [
+        'agentPresetOutputReferences.ts',
         'chatDisplayTailCount.ts',
         'chatLoadPages.ts',
         'chatPage.ts',

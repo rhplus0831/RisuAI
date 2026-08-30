@@ -7,7 +7,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
 import { AgentPresetGenerationError } from './agentPresetErrors.js'
-import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences'
+import { expandAgentPresetOutputCbs } from '@risuai/shared-core/agent-preset-output-references'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
 import type { ServerCbsCallbackDiagnosticReason } from './promptScope.js'
 

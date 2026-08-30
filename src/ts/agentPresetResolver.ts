@@ -13,7 +13,7 @@ import {
   resolveAgentPresetSteps,
   validateAgentPresetRecord,
 } from './agentPresetRecords'
-import { agentPresetOutputReferences } from './agentPresetReferences'
+import { agentPresetOutputReferences } from '@risuai/shared-core/agent-preset-output-references'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
   modelProfileGenerationBlockReason,
