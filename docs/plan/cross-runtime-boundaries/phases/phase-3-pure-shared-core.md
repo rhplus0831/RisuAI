@@ -1,6 +1,6 @@
 # Phase 3: Pure Shared Core
 
-Status: active.
+Status: complete at `96e0dedfb`.
 
 Depends on: Phase 0 classification; Phase 1 for any serialized types used by a
 candidate.
@@ -68,4 +68,6 @@ Completed slice: [Agent-only lorebook predicate](slices/phase-3-pure-shared-core
 
 Completed slice: [Script-model overrides](slices/phase-3-pure-shared-core/script-model-overrides.md).
 
-Active slice: [Module-integration normalization](slices/phase-3-pure-shared-core/module-integration-normalization.md).
+Completed slice: [Module-integration normalization](slices/phase-3-pure-shared-core/module-integration-normalization.md).
+
+Completed slice: [Prompt-settings vocabulary](slices/phase-3-pure-shared-core/prompt-settings-vocabulary.md).

@@ -1,6 +1,6 @@
 # Phase 4: Server Consumer Migration
 
-Status: queued.
+Status: active.
 
 Depends on: destination protocol/shared contracts passing their boundary and
 parity gates.
@@ -40,3 +40,5 @@ change provider/prompt behavior.
 Import gate, focused domain tests, complete server lane for broad slices,
 protocol/shared checks, `pnpm check:server`, compatibility fixtures when shared
 behavior moves, formatting, and diff checks.
+
+Active slice: [BardWiki server type seam](slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md).

@@ -1,6 +1,6 @@
 # Module-Integration Normalization
 
-Status: ready.
+Status: complete at `d314bbdcf`; canonical CBS fixture correction at `e3adc0216`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 

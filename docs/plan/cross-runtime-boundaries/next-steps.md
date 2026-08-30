@@ -4,20 +4,22 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [module-integration normalization
-slice](phases/slices/phase-3-pure-shared-core/module-integration-normalization.md).
+Execute the [BardWiki server type seam
+slice](phases/slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md).
 
-1. Move the zero-import parser, stable combiner, Agent-preset reference shape,
-   and selected-preset lookup into an explicit shared-core subpath.
-2. Preserve comma splitting, trimming, empty removal, parser duplicate order,
-   combiner first-occurrence deduplication, and `", "` joining.
-3. Preserve trimmed selected IDs, exact stored-ID matching, first-match
-   selection, explicit disabled-preset exclusion, and verbatim integration
-   output.
-4. Migrate the two browser and one Fastify production consumers, then delete
-   the browser-tree owner after differential and ownership proof.
-5. Keep module activation, generation composition, persistence, command policy,
-   and Agent execution unchanged.
+1. Define narrow Fastify-owned BardWiki database and chat-row input records for
+   the fields consumed by canonical generation, event extraction, prompt
+   assembly, and job handlers.
+2. Replace the eight production type-only imports from the browser aggregate
+   database and chat modules without widening shared-core or protocol packages.
+3. Preserve model-profile resolution, exact prompt rows, provider dispatch,
+   source/document fences, transaction boundaries, receipts, revisions, and
+   event publication.
+4. Add an ownership assertion and run the focused BardWiki canonical-model,
+   event-model, apply-turn, rebuild, prompt, and contract fixtures needed by the
+   touched types.
+5. Refresh the reviewed cross-runtime baseline only after every removed edge is
+   accounted for.
 
 ## Foundations Released
 
@@ -61,18 +63,22 @@ slice](phases/slices/phase-3-pure-shared-core/module-integration-normalization.m
   production consumers use the shared marker logic.
 - Script-model overrides are released at `2831411d1`; seven browser and four
   Fastify production consumers share one implementation.
+- Module-integration normalization is released at `d314bbdcf`; two browser
+  consumers and the Fastify effective-generation consumer share one implementation.
+- Prompt-settings vocabulary is released at `96e0dedfb`; browser settings and
+  Fastify prompt command consumers share one dependency-free key contract.
 
 ## Not In This Slice
 
-- Do not move module activation, effective generation composition, database
-  state, persistence, command policy, or Agent execution into shared core.
-- Do not correct the persisted `moduleIntergration` spelling or broaden this
-  slice into module records or Agent Preset normalization.
-- Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
-  credential, persistence, or aggregate database dependencies.
+- Do not move BardWiki behavior or persistence into shared-core merely to
+  eliminate imports.
+- Do not alter model-profile ownership while Workstream 2 Phase 2 is still
+  active; its two BardWiki resolver edges are outside this slice.
+- Do not change prompt semantics, provider calls, job transitions, source hash
+  checks, rollback, or event/revision identity.
 
 ## Handoff
 
-After this leaf closes, update [`status.md`](status.md) and
-[`latest-verification.md`](latest-verification.md), then continue Phase 3 only
-with another independently justified neutral leaf.
+After this slice closes, update [`status.md`](status.md) and
+[`latest-verification.md`](latest-verification.md), then select the next
+domain-sized Phase 4 consumer migration from the refreshed inventory.

@@ -9,20 +9,19 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; fifteen Phase 3 leaf slices are
-  complete.
-- Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [Module-integration normalization](phases/slices/phase-3-pure-shared-core/module-integration-normalization.md), ready.
+- Plan state: Active; Phases 0 through 3 complete; seventeen neutral shared-core
+  leaves are released.
+- Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
+- Active slice: [BardWiki server type seam](phases/slices/phase-4-server-consumer-migration/bardwiki-server-type-seam.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: script-model overrides at `2831411d1`,
-  after the Agent-only lorebook predicate at `4162150ec`; focused
-  differential/ownership, affected browser/Fastify script, module, database,
-  command, settings, and Lua owners,
+- Latest implementation candidate: prompt-settings vocabulary at `96e0dedfb`,
+  after module-integration normalization at `d314bbdcf`; focused
+  differential/ownership and affected browser/Fastify settings and prompt owners,
   architecture inventory, shared-core/root/downstream typechecks, formatting,
   and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
@@ -62,6 +61,8 @@ in [`latest-verification.md`](latest-verification.md).
 | Model-role resolution | `22d6799dd` | Released through `@risuai/shared-core/model-roles`; all 28 production consumers use the shared leaf and eleven production/server-test root-`src` edges were removed. |
 | Agent-only lorebook predicate | `4162150ec` | Released through `@risuai/shared-core/agent-only-lorebook`; all four production consumers use the shared predicate and one production runtime root-`src` edge was removed. |
 | Script-model overrides | `2831411d1` | Released through `@risuai/shared-core/script-model-overrides`; all eleven production consumers use the shared leaf and four production runtime root-`src` edges were removed. |
+| Module-integration normalization | `d314bbdcf` (`e3adc0216` fixture correction) | Released through `@risuai/shared-core/module-integration`; both browser consumers and the Fastify effective-generation consumer use the shared leaf, and one production runtime root-`src` edge was removed. |
+| Prompt-settings vocabulary | `96e0dedfb` | Released through `@risuai/shared-core/prompt-settings`; both browser consumers and the Fastify prompt command owner use the shared vocabulary, and three runtime root-`src` edges were removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -86,12 +87,12 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 298 direct root-`src` edges remain: 198 production, 92 server-test, and 8
-  browser-smoke, spanning 127 importers and 55 targets.
-- Usage is 101 runtime, 38 mixed, and 159 type-only; 139 runtime/mixed edges
+- 294 direct root-`src` edges remain: 195 production, 91 server-test, and 8
+  browser-smoke, spanning 126 importers and 53 targets.
+- Usage is 97 runtime, 38 mixed, and 159 type-only; 135 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse, removed 77 edges and 24 source
+  shared-helper reuse, removed 81 edges and 26 source
   targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -103,15 +104,15 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and fifteen neutral leaves complete; module-integration normalization is next. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb` after seventeen audited neutral leaves. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | BardWiki's server-owned type seam is the first domain slice. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
 
 ## Blockers And Risks
 
-- No implementation blocker prevents the next shared-core leaf.
+- No implementation blocker prevents the first server consumer slice.
 - Existing single-source helpers still need an explicit ownership benefit and
   narrow behavior proof before moving; cross-runtime use alone is not enough.
 - Existing imports mix runtime and type-only edges, tests and fixtures, wire
@@ -125,7 +126,7 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move only dependency-free module-integration
-parsing, combination, and selected-Agent-preset lookup into the audited
-shared-core owner while leaving module activation, generation composition,
-persistence, and Agent orchestration in their current owners.
+Use [`next-steps.md`](next-steps.md). Replace BardWiki's browser aggregate and
+chat-row type imports with narrow Fastify-owned input records while leaving
+model-profile resolution, provider dispatch, job fencing, persistence, and event
+publication unchanged.
