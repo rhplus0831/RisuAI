@@ -19,7 +19,7 @@ import {
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
-import { createPromptInfoSnapshot } from '../../../../src/ts/promptInfo.js'
+import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapshot'
 import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'
 import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 

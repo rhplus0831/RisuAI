@@ -87,6 +87,7 @@ describe('@risuai/shared-core import boundary', () => {
         'moduleIntegration.ts',
         'mutationCertificates.ts',
         'parseKeyValue.ts',
+        'promptInfoSnapshot.ts',
         'promptSettings.ts',
         'providerSecretMask.ts',
         'punctuation.ts',

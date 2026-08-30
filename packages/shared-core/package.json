@@ -28,6 +28,7 @@
     "./memory-model-capability": "./src/memoryModelCapability.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
+    "./prompt-info-snapshot": "./src/promptInfoSnapshot.ts",
     "./prompt-settings": "./src/promptSettings.ts",
     "./provider-secret-mask": "./src/providerSecretMask.ts",
     "./punctuation": "./src/punctuation.ts",

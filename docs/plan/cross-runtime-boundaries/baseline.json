@@ -1021,19 +1021,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
-      "specifier": "../../../../src/ts/promptInfo.js",
-      "target": "src/ts/promptInfo.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "createPromptInfoSnapshot"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
       "specifier": "../../../../src/ts/storage/database.svelte",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
