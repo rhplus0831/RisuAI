@@ -153,7 +153,7 @@
 
   import { createBranchComment, parseBranchComment } from './branchComment'
   import { characterRoutePath, navigate, parseRoute } from 'src/ts/router'
-  import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+  import { getChatMessageOwnerState, hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { rekeyClonedChat } from 'src/ts/chatFork'
   import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
   import type { GenerationPersistenceIndicatorState } from 'src/ts/process/generationPersistenceState'
@@ -1576,6 +1576,16 @@
     const owner = getSelectedCharacterOwner()
     return owner?.chats?.[owner.chatPage]?.id ?? ''
   })
+  let ownerMessage = $derived.by(() => {
+    const chatId = renderChatId || currentChatId
+    if (!chatId || idx < 0) return undefined
+    const messages = getChatMessageOwnerState(chatId)?.messages ?? []
+    const candidate = messages[idx]
+    if (!candidate?.chatId || messages.filter((message) => message.chatId === candidate.chatId).length !== 1) {
+      return undefined
+    }
+    return candidate
+  })
   let hasActiveAgentPresetProgress = $derived(
     $agentPresetProgress.some((progress) => progress.chatId === (renderChatId || currentChatId)),
   )
@@ -2090,8 +2100,10 @@
     getDatabase().characters[selIdState.selId]?.chats[
       getDatabase().characters[selIdState.selId].chatPage
     ]?.bookmarks?.includes(
-      getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[idx]
-        ?.chatId,
+      ownerMessage?.chatId ??
+        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
+          idx
+        ]?.chatId,
     ) ?? false,
   )
 
