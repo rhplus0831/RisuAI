@@ -76,6 +76,7 @@ describe('@risuai/shared-core import boundary', () => {
         'internalReasoning.ts',
         'legacyOpenAIModelAliases.ts',
         'loreHash.ts',
+        'mcpIdentifier.ts',
         'modelRoles.ts',
         'moduleIntegration.ts',
         'promptSettings.ts',

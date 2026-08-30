@@ -4,7 +4,7 @@ import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateAssetTriples } from './assets.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 import { ensureCharacterChats } from './chats.js'
-import { isImportableMCPIdentifier } from '../../../../src/ts/process/mcp/mcpIdentifier.js'
+import { isImportableMCPIdentifier } from '@risuai/shared-core/mcp-identifier'
 import { repairCreatedLorebookEntries } from './lorebooks.js'
 import { normalizeScriptModelOverrides, readScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 

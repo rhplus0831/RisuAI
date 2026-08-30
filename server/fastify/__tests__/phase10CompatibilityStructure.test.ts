@@ -294,7 +294,7 @@ describe('Phase 10 compatibility structure', () => {
     expect(mcpSource).toContain("const callOnlyMCPUrls = ['internal:risuai']")
     expect(mcpSource).toContain('if (!index.has(tool.name))')
 
-    const importPredicate = readRepoFile('src/ts/process/mcp/mcpIdentifier.ts')
+    const importPredicate = readRepoFile('packages/shared-core/src/mcpIdentifier.ts')
     expect(importPredicate).toContain('/^(internal|stdio|plugin):\\S+$/')
     expect(importPredicate).toContain("url.protocol === 'https:'")
     expect(importPredicate).toContain("url.hostname === 'localhost'")

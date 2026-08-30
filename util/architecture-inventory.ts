@@ -97,6 +97,7 @@ export type CompatibilityDisposition =
   | 'import-only'
   | 'export-only'
   | 'explicit-compatibility'
+  | 'temporary'
   | 'quarantine'
   | 'remove'
 

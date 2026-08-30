@@ -411,19 +411,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/modules.ts",
-      "specifier": "../../../../src/ts/process/mcp/mcpIdentifier.js",
-      "target": "src/ts/process/mcp/mcpIdentifier.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isImportableMCPIdentifier"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/personas.ts",
       "specifier": "../../../../src/ts/personaMutationCertificate.js",
       "target": "src/ts/personaMutationCertificate.ts",
