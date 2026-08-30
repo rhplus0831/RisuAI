@@ -46,7 +46,7 @@ import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@ris
 import {
   normalizeTranslatorPresetStateWithLegacyCompatibility,
   type TranslatorPresetStateLike,
-} from '../../../src/ts/translator/presets.js'
+} from '@risuai/shared-core/translator-presets'
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@risuai/protocol'

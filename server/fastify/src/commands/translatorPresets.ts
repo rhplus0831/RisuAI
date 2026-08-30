@@ -4,7 +4,7 @@ import {
   normalizeTranslatorPreset,
   TRANSLATOR_PRESET_MAX_STEPS,
   type TranslatorPresetStep,
-} from '../../../../src/ts/translator/presets.js'
+} from '@risuai/shared-core/translator-presets'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
