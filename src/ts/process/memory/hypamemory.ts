@@ -2,7 +2,7 @@ import localforage from 'localforage'
 import { runEmbedding } from '../transformers'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { embeddingOperationCredential, requestRemoteEmbeddingTexts } from 'src/ts/server/embeddingOperations'
-import type { CustomEmbeddingConfiguration } from 'src/ts/server/embeddingOperationsProtocol'
+import type { CustomEmbeddingConfiguration } from '@risuai/protocol/embedding-operation'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
 import { getEmbeddingCacheKey } from './embeddingCacheKey'
 

@@ -77,6 +77,7 @@ describe('@risuai/protocol import boundary', () => {
     expect(runtimeFiles).toEqual([
       'bardWiki.ts',
       'characterSummaryResource.ts',
+      'embeddingOperation.ts',
       'generationSse.ts',
       'index.ts',
       'providerOperation.ts',

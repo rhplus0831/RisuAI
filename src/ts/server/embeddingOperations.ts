@@ -9,7 +9,7 @@ import type {
   EmbeddingOperationRequest,
   EmbeddingTextsOperationSuccess,
   RemoteEmbeddingModel,
-} from './embeddingOperationsProtocol'
+} from '@risuai/protocol/embedding-operation'
 
 const EMBEDDING_OPERATIONS_ENDPOINT = '/api/v1/embedding-operations'
 

@@ -18,7 +18,7 @@ import { createEmbeddingOperationDisconnectAbort } from '../src/routes/embedding
 import type {
   EmbeddingGroupsOperationRequest,
   EmbeddingTextsOperationRequest,
-} from '../../../src/ts/server/embeddingOperationsProtocol.js'
+} from '@risuai/protocol/embedding-operation'
 
 const storedSettings = {
   hypaV3Key: 'stored-openai-key',

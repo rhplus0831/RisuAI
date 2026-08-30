@@ -1037,37 +1037,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/embeddingOperations.ts",
-      "specifier": "../../../src/ts/server/embeddingOperationsProtocol.js",
-      "target": "src/ts/server/embeddingOperationsProtocol.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "isContextualRemoteEmbeddingModel",
-        "isRemoteEmbeddingModel"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/embeddingOperations.ts",
-      "specifier": "../../../src/ts/server/embeddingOperationsProtocol.js",
-      "target": "src/ts/server/embeddingOperationsProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "CustomEmbeddingConfiguration",
-        "EmbeddingInputType",
-        "EmbeddingOperationCredential",
-        "EmbeddingOperationRequest",
-        "EmbeddingOperationSuccess"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/embeddingOperations.ts",
       "specifier": "../../../src/ts/storage/database.svelte.js",
       "target": "src/ts/storage/database.svelte.ts",
       "kind": "static",
@@ -4208,20 +4177,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/embeddingOperations.test.ts",
-      "specifier": "../../../src/ts/server/embeddingOperationsProtocol.js",
-      "target": "src/ts/server/embeddingOperationsProtocol.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "EmbeddingGroupsOperationRequest",
-        "EmbeddingTextsOperationRequest"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
     },
     {
       "lane": "server-test",

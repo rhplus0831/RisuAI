@@ -5,11 +5,8 @@ import type {
   EmbeddingOperationCredential,
   EmbeddingOperationRequest,
   EmbeddingOperationSuccess,
-} from '../../../src/ts/server/embeddingOperationsProtocol.js'
-import {
-  isContextualRemoteEmbeddingModel,
-  isRemoteEmbeddingModel,
-} from '../../../src/ts/server/embeddingOperationsProtocol.js'
+} from '@risuai/protocol/embedding-operation'
+import { isContextualRemoteEmbeddingModel, isRemoteEmbeddingModel } from '@risuai/protocol/embedding-operation'
 import {
   embedTextGroups,
   embedTexts,

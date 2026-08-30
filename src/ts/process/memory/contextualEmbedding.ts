@@ -1,6 +1,6 @@
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { embeddingOperationCredential, requestRemoteEmbeddingGroups } from 'src/ts/server/embeddingOperations'
-import type { ContextualRemoteEmbeddingModel } from 'src/ts/server/embeddingOperationsProtocol'
+import type { ContextualRemoteEmbeddingModel } from '@risuai/protocol/embedding-operation'
 import { contextHash, type VectorArray } from './hypamemory'
 
 export interface ContextualEmbeddingProvider {
