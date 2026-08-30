@@ -58,6 +58,7 @@ function initializedRepository(): string {
         scripts: {
           'check:watch': 'svelte-check --tsconfig ./tsconfig.json --watch --output machine',
           'test:compat-current': 'true',
+          'test:all': 'true',
         },
       },
       null,
@@ -84,12 +85,15 @@ async function waitForWatcherStatus(
   timeoutMs = 15_000,
 ): Promise<TestWatchStatus> {
   const deadline = Date.now() + timeoutMs
+  let latest: TestWatchStatus | undefined
   while (Date.now() < deadline) {
-    const watched = readTestWatchStatus(testWatchPaths(repoRoot).status)
-    if (watched && predicate(watched)) return watched
+    latest = readTestWatchStatus(testWatchPaths(repoRoot).status)
+    if (latest && predicate(latest)) return latest
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
-  throw new Error('test watcher did not reach the expected status')
+  const logPath = testWatchPaths(repoRoot).log
+  const log = existsSync(logPath) ? readFileSync(logPath, 'utf8') : '(no watcher log)'
+  throw new Error(`test watcher did not reach the expected status\n${JSON.stringify(latest, null, 2)}\n${log}`)
 }
 
 async function waitForWatcherState(
@@ -159,6 +163,8 @@ function status(overrides: Partial<TestWatchStatus> = {}): TestWatchStatus {
     notes: [],
     pid: 123,
     projectRoot: '/repo',
+    qualityCommands: [],
+    qualityRequired: false,
     rerunPending: false,
     schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     state: 'passed',
@@ -541,6 +547,25 @@ describe('watched result validation', () => {
     })
   })
 
+  it('reports current targeted feedback without treating it as the final quality gate', () => {
+    expect(
+      evaluateTestWatchStatus(
+        status({
+          feedbackFingerprint: 'current',
+          qualityCommands: [{ label: 'full quality suite', args: ['test:all'] }],
+          qualityRequired: true,
+          state: 'waiting-for-commit',
+          testedFingerprint: undefined,
+        }),
+        'current',
+        { nowMs: 10_001, processAlive: true },
+      ),
+    ).toMatchObject({
+      exitCode: 2,
+      verdict: 'full-required',
+    })
+  })
+
   it('rejects results from a different base, worktree, or required smoke scope', () => {
     expect(
       evaluateTestWatchStatus(status(), 'current', {
@@ -581,12 +606,27 @@ describe('watched result validation', () => {
     delete legacy.affectedCommands
     delete legacy.executionChangedPaths
     delete legacy.executionMode
+    delete legacy.qualityCommands
+    delete legacy.qualityRequired
     writeFileSync(statusPath, `${JSON.stringify(legacy)}\n`)
 
     expect(readTestWatchStatus(statusPath)).toMatchObject({
       affectedCommands: [],
       executionChangedPaths: [{ path: 'tracked.ts', status: 'M' }],
       executionMode: 'full',
+      qualityCommands: [],
+      qualityRequired: false,
+      schemaVersion: TEST_WATCH_SCHEMA_VERSION,
+    })
+
+    const versionTwoPath = path.join(directory, 'version-two.json')
+    const versionTwo: Record<string, unknown> = { ...status(), schemaVersion: 2 }
+    delete versionTwo.qualityCommands
+    delete versionTwo.qualityRequired
+    writeFileSync(versionTwoPath, `${JSON.stringify(versionTwo)}\n`)
+    expect(readTestWatchStatus(versionTwoPath)).toMatchObject({
+      qualityCommands: [],
+      qualityRequired: false,
       schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     })
   })
@@ -1143,7 +1183,7 @@ export default { test: { globals: true, include: ['src/**/*.test.ts'] } }
     expect(watched?.testedFingerprint).toMatch(/^[a-f0-9]{64}$/)
   })
 
-  it('waits for configuration changes to be committed instead of running test:all', async () => {
+  it('runs targeted feedback before a commit and the deferred full suite after it', async () => {
     const repoRoot = initializedRepository()
     const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as Record<string, unknown>
     writeFileSync(
@@ -1156,8 +1196,11 @@ export default { test: { globals: true, include: ['src/**/*.test.ts'] } }
 
     expect(waiting).toMatchObject({
       changedPaths: [{ path: 'package.json', status: 'M' }],
-      commandResults: [],
-      commands: [{ command: 'pnpm "test:all"', label: 'full quality suite' }],
+      commandResults: [{ label: 'frontend check', status: 'passed' }],
+      commands: [{ command: 'pnpm "check:watch"', label: 'frontend check' }],
+      executionMode: 'feedback',
+      qualityCommands: [{ args: ['test:all'], label: 'full quality suite' }],
+      qualityRequired: true,
       generation: 1,
       state: 'waiting-for-commit',
     })
@@ -1168,8 +1211,9 @@ export default { test: { globals: true, include: ['src/**/*.test.ts'] } }
     expect(await watcherPromise).toBe(0)
     expect(readTestWatchStatus(testWatchPaths(repoRoot).status)).toMatchObject({
       changedPaths: [],
-      commandResults: [{ label: 'frontend check', status: 'passed' }],
+      commandResults: [{ label: 'full quality suite', status: 'passed' }],
       generation: 2,
+      qualityRequired: false,
       state: 'stopped',
     })
   })

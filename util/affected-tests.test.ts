@@ -1,5 +1,16 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseNameStatus, planAffectedTests, type ChangedPath } from './affected-tests.js'
+import {
+  ADDITIVE_PROTOCOL_EXPORT_NOTE,
+  DEFERRED_FULL_QUALITY_FEEDBACK_NOTE,
+  isAdditiveProtocolExportChange,
+  parseNameStatus,
+  planAffectedTestFeedback,
+  planAffectedTests,
+  type ChangedPath,
+} from './affected-tests.js'
 
 const options = { base: 'HEAD~1', bail: true, includeSmoke: false }
 
@@ -99,12 +110,69 @@ describe('affected test planning', () => {
     ).toBe(true)
   })
 
-  it('widens protocol configuration changes to the full quality suite', () => {
+  it('keeps additive protocol exports targeted and widens every unclassified protocol configuration change', () => {
+    const additive = plan([
+      { path: 'packages/protocol/package.json', status: 'M', impact: 'protocol-additive-exports' },
+    ])
+
+    expect(additive.commands).toEqual([{ label: 'protocol typecheck', args: ['check:protocol'] }])
+    expect(additive.notes).toContain(ADDITIVE_PROTOCOL_EXPORT_NOTE)
     for (const file of ['packages/protocol/package.json', 'packages/protocol/tsconfig.json']) {
       expect(plan([{ path: file, status: 'M' }]).commands).toEqual([
         { label: 'full quality suite', args: ['test:all'] },
       ])
     }
+  })
+
+  it('accepts only additive explicit protocol exports to existing local TypeScript files', () => {
+    const packageRoot = mkdtempSync(path.join(tmpdir(), 'risu-protocol-exports-'))
+    mkdirSync(path.join(packageRoot, 'src'))
+    writeFileSync(path.join(packageRoot, 'src', 'newContract.ts'), 'export const value = true\n')
+    const before = {
+      name: '@risuai/protocol',
+      private: true,
+      exports: { '.': './src/index.ts', './existing': './src/existing.ts' },
+      dependencies: { '@sinclair/typebox': '0.34.52' },
+    }
+    const after = {
+      ...before,
+      exports: { ...before.exports, './new-contract': './src/newContract.ts' },
+    }
+
+    try {
+      expect(isAdditiveProtocolExportChange(JSON.stringify(before), JSON.stringify(after), packageRoot)).toBe(true)
+      for (const unsafe of [
+        { ...after, private: false },
+        { ...after, exports: { '.': './src/other.ts', './new-contract': './src/newContract.ts' } },
+        { ...before, exports: { '.': './src/index.ts' } },
+        { ...after, exports: { ...before.exports, './new-contract': { import: './src/newContract.ts' } } },
+        { ...after, exports: { ...before.exports, './new-contract': '../outside.ts' } },
+        { ...after, exports: { ...before.exports, './new-contract': './src/missing.ts' } },
+      ]) {
+        expect(isAdditiveProtocolExportChange(JSON.stringify(before), JSON.stringify(unsafe), packageRoot)).toBe(false)
+      }
+      expect(isAdditiveProtocolExportChange('{', JSON.stringify(after), packageRoot)).toBe(false)
+    } finally {
+      rmSync(packageRoot, { force: true, recursive: true })
+    }
+  })
+
+  it('builds safe targeted feedback while retaining the full-quality requirement', () => {
+    const result = planAffectedTestFeedback(
+      [
+        { path: 'package.json', status: 'M' },
+        { path: 'src/ts/model/modelProfileResolver.ts', status: 'M' },
+      ],
+      options,
+    )
+
+    expect(result.commands.map((command) => command.label)).toEqual([
+      'affected frontend tests',
+      'affected server tests',
+      'current compatibility harness',
+    ])
+    expect(result.notes).toContain(DEFERRED_FULL_QUALITY_FEEDBACK_NOTE)
+    expect(result.commands.some((command) => command.label === 'full quality suite')).toBe(false)
   })
 
   it('selects shared Fastify test support and widens its deletion', () => {

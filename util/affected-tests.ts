@@ -1,12 +1,14 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { performanceTestFiles } from '../vitest.performance-tests.js'
 
 export type ChangeStatus = 'A' | 'M' | 'D' | 'R'
 
 export interface ChangedPath {
+  impact?: 'protocol-additive-exports'
   path: string
   status: ChangeStatus
 }
@@ -30,6 +32,10 @@ export interface AffectedTestPlan {
 
 export const FULL_QUALITY_CHANGE_NOTE =
   'Build, dependency, or CI configuration changed; targeted test selection is unsafe.'
+export const ADDITIVE_PROTOCOL_EXPORT_NOTE =
+  'The protocol manifest only adds explicit local source exports; targeted lanes are selected. Run test:all once at the integration boundary.'
+export const DEFERRED_FULL_QUALITY_FEEDBACK_NOTE =
+  'The final full quality suite is deferred until the configuration batch is committed; running safe targeted feedback now.'
 
 interface CliOptions extends AffectedTestOptions {
   all: boolean
@@ -57,6 +63,59 @@ const compatibilityRegisterValidatorFiles = new Set([
 const compatibilityRegisterRoot = '.archived-docs/architecture-and-migration/original-risu-behavioral-compatibility/'
 const compatibilityBaselineTest = 'util/compat-baseline.test.ts'
 const compatibilityRegisterValidatorTest = 'util/validate-original-risu-compatibility-registers.test.ts'
+const protocolManifestPath = 'packages/protocol/package.json'
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function isAdditiveProtocolExportChange(
+  beforeSource: string,
+  afterSource: string,
+  packageRoot = path.resolve('packages/protocol'),
+): boolean {
+  let before: unknown
+  let after: unknown
+  try {
+    before = JSON.parse(beforeSource)
+    after = JSON.parse(afterSource)
+  } catch {
+    return false
+  }
+  if (!isRecord(before) || !isRecord(after) || !isRecord(before.exports) || !isRecord(after.exports)) return false
+
+  const { exports: beforeExports, ...beforePackage } = before
+  const { exports: afterExports, ...afterPackage } = after
+  if (!isDeepStrictEqual(beforePackage, afterPackage)) return false
+
+  for (const [subpath, target] of Object.entries(beforeExports)) {
+    if (!(subpath in afterExports) || !isDeepStrictEqual(target, afterExports[subpath])) return false
+  }
+
+  const addedExports = Object.entries(afterExports).filter(([subpath]) => !(subpath in beforeExports))
+  if (addedExports.length === 0) return false
+  const sourceRoot = path.resolve(packageRoot, 'src')
+  for (const [subpath, target] of addedExports) {
+    if (!/^\.\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/.test(subpath)) return false
+    if (
+      typeof target !== 'string' ||
+      !/^\.\/src\/(?:[A-Za-z0-9][A-Za-z0-9.-]*\/)*[A-Za-z0-9][A-Za-z0-9.-]*\.ts$/.test(target)
+    ) {
+      return false
+    }
+    const absoluteTarget = path.resolve(packageRoot, target)
+    const relativeTarget = path.relative(sourceRoot, absoluteTarget)
+    if (relativeTarget === '..' || relativeTarget.startsWith(`..${path.sep}`) || path.isAbsolute(relativeTarget)) {
+      return false
+    }
+    try {
+      if (!statSync(absoluteTarget).isFile()) return false
+    } catch {
+      return false
+    }
+  }
+  return true
+}
 
 function normalizeRepoPath(file: string): string {
   return file.replaceAll('\\', '/').replace(/^\.\//, '')
@@ -116,6 +175,22 @@ function uniqueSorted(files: Iterable<string>): string[] {
   return [...new Set(files)].sort()
 }
 
+function requiresFullQuality(change: ChangedPath): boolean {
+  const file = change.path
+  return (
+    file === 'package.json' ||
+    file === 'pnpm-lock.yaml' ||
+    file === 'pnpm-workspace.yaml' ||
+    file === '.npmrc' ||
+    file === 'index.html' ||
+    file === 'vite.config.ts' ||
+    (file === protocolManifestPath && change.impact !== 'protocol-additive-exports') ||
+    file === 'packages/protocol/tsconfig.json' ||
+    fullQualityRunnerFiles.has(file) ||
+    file.startsWith('.github/')
+  )
+}
+
 export function planAffectedTests(changes: readonly ChangedPath[], options: AffectedTestOptions): AffectedTestPlan {
   const normalized = changes.map((change) => ({ ...change, path: normalizeRepoPath(change.path) }))
   const notes: string[] = []
@@ -140,20 +215,11 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   const directSmokeTests = uniqueSorted(
     existing.map((change) => change.path).filter((file) => browserSmokePattern.test(file)),
   )
-
-  const fullQualityChanged = changedFiles.some(
-    (file) =>
-      file === 'package.json' ||
-      file === 'pnpm-lock.yaml' ||
-      file === 'pnpm-workspace.yaml' ||
-      file === '.npmrc' ||
-      file === 'index.html' ||
-      file === 'vite.config.ts' ||
-      file === 'packages/protocol/package.json' ||
-      file === 'packages/protocol/tsconfig.json' ||
-      fullQualityRunnerFiles.has(file) ||
-      file.startsWith('.github/'),
+  const additiveProtocolExports = normalized.some(
+    (change) => change.path === protocolManifestPath && change.impact === 'protocol-additive-exports',
   )
+
+  const fullQualityChanged = normalized.some(requiresFullQuality)
   if (fullQualityChanged) {
     const fullQualityCommands: TestCommand[] = [{ label: 'full quality suite', args: ['test:all'] }]
     if (compatibilityInfrastructureChanged) {
@@ -206,7 +272,8 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
     deletedServerTestSupport ||
     deletedServerTest
   const runFullGates = rootRunnerChanged
-  if (protocolSourceChanged || deletedProtocolSource) {
+  if (additiveProtocolExports) notes.push(ADDITIVE_PROTOCOL_EXPORT_NOTE)
+  if (additiveProtocolExports || protocolSourceChanged || deletedProtocolSource) {
     commands.push({ label: 'protocol typecheck', args: ['check:protocol'] })
   }
 
@@ -299,6 +366,28 @@ export function planAffectedTests(changes: readonly ChangedPath[], options: Affe
   return { commands, notes }
 }
 
+export function planAffectedTestFeedback(
+  changes: readonly ChangedPath[],
+  options: AffectedTestOptions,
+): AffectedTestPlan {
+  const affectedPlan = planAffectedTests(changes, options)
+  if (!affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE)) return affectedPlan
+
+  const targetedPlan = planAffectedTests(
+    changes.filter((change) => !requiresFullQuality({ ...change, path: normalizeRepoPath(change.path) })),
+    options,
+  )
+  return {
+    commands: targetedPlan.commands,
+    notes: [
+      DEFERRED_FULL_QUALITY_FEEDBACK_NOTE,
+      ...targetedPlan.notes.filter(
+        (note) => note !== 'No affected automated test lane was found for the changed paths.',
+      ),
+    ],
+  }
+}
+
 function gitOutput(args: string[], cwd = process.cwd()): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' })
   if (result.status !== 0) {
@@ -346,6 +435,20 @@ export function collectChangedPaths(base: string, cwd = process.cwd()): ChangedP
   }
   for (const file of gitOutput(['ls-files', '--others', '--exclude-standard', '-z'], cwd).split('\0').filter(Boolean)) {
     record({ path: file, status: 'A' })
+  }
+
+  const protocolManifest = byPath.get(protocolManifestPath)
+  if (protocolManifest && protocolManifest.status !== 'D') {
+    try {
+      const mergeBase = gitOutput(['merge-base', base, 'HEAD'], cwd).trim()
+      const beforeSource = gitOutput(['show', `${mergeBase}:${protocolManifestPath}`], cwd)
+      const afterSource = readFileSync(path.join(cwd, protocolManifestPath), 'utf8')
+      if (isAdditiveProtocolExportChange(beforeSource, afterSource, path.join(cwd, 'packages/protocol'))) {
+        byPath.set(protocolManifestPath, { ...protocolManifest, impact: 'protocol-additive-exports' })
+      }
+    } catch {
+      // Missing/invalid baselines and filesystem races remain on the fail-closed full-quality path.
+    }
   }
 
   return [...byPath.values()].sort((left, right) => left.path.localeCompare(right.path))

@@ -14,14 +14,24 @@ export interface QualityLane {
 }
 
 export interface QualityLaneResult {
+  finishedOffsetMs: number
   id: string
   exitCode: number
   elapsedMs: number
+  startedOffsetMs: number
 }
 
-interface CliOptions {
+export interface TestAllCliOptions {
   dryRun: boolean
   jobs: number
+  timingsJson: boolean
+}
+
+export interface QualityRunReport {
+  aggregateElapsedMs: number
+  jobs: number
+  lanes: Array<QualityLaneResult & Pick<QualityLane, 'after' | 'isolated' | 'label'>>
+  schemaVersion: 1
 }
 
 type LaneRunner = (lane: QualityLane) => Promise<QualityLaneResult>
@@ -117,9 +127,10 @@ export function parseTestAllJobs(raw: string | undefined): number {
   return raw ? parsePositiveInteger(raw, 'RISU_TEST_ALL_JOBS') : defaultJobs
 }
 
-function parseCli(args: string[]): CliOptions {
+export function parseTestAllCli(args: string[]): TestAllCliOptions {
   let dryRun = false
   let jobs = parseTestAllJobs(process.env.RISU_TEST_ALL_JOBS?.trim())
+  let timingsJson = false
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
@@ -132,20 +143,23 @@ function parseCli(args: string[]): CliOptions {
       index += 1
     } else if (arg.startsWith('--jobs=')) {
       jobs = parsePositiveInteger(arg.slice('--jobs='.length), '--jobs')
+    } else if (arg === '--timings=json') {
+      timingsJson = true
     } else if (arg === '--') {
       continue
     } else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage: pnpm test:all [--jobs <count>] [--dry-run]
+      console.log(`Usage: pnpm test:all [--jobs <count>] [--dry-run] [--timings=json]
 
 Runs independent quality lanes with bounded concurrency, then runs dist- or load-sensitive
-lanes in isolation. RISU_TEST_ALL_JOBS sets the default concurrency (${defaultJobs}).`)
+lanes in isolation. RISU_TEST_ALL_JOBS sets the default concurrency (${defaultJobs}).
+--timings=json prints a final machine-readable critical-path record.`)
       process.exit(0)
     } else {
       throw new Error(`unknown option: ${arg}`)
     }
   }
 
-  return { dryRun, jobs }
+  return { dryRun, jobs, timingsJson }
 }
 
 function lanePriority(lane: QualityLane): number {
@@ -259,8 +273,36 @@ function printPlan(jobs: number): void {
   }
 }
 
+export function createQualityRunReport(
+  lanes: readonly QualityLane[],
+  results: readonly QualityLaneResult[],
+  jobs: number,
+  aggregateElapsedMs: number,
+): QualityRunReport {
+  const byId = new Map(results.map((result) => [result.id, result]))
+  return {
+    aggregateElapsedMs,
+    jobs,
+    lanes: lanes.map((lane) => {
+      const result = byId.get(lane.id)
+      if (!result) throw new Error(`missing quality result for ${lane.id}`)
+      return {
+        after: lane.after,
+        elapsedMs: result.elapsedMs,
+        exitCode: result.exitCode,
+        finishedOffsetMs: result.finishedOffsetMs,
+        id: lane.id,
+        isolated: lane.isolated,
+        label: lane.label,
+        startedOffsetMs: result.startedOffsetMs,
+      }
+    }),
+    schemaVersion: 1,
+  }
+}
+
 async function run(): Promise<void> {
-  const options = parseCli(process.argv.slice(2))
+  const options = parseTestAllCli(process.argv.slice(2))
   validateQualityLanePhases(qualityLanes)
   printPlan(options.jobs)
   if (options.dryRun) return
@@ -268,6 +310,7 @@ async function run(): Promise<void> {
   const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
   const children = new Set<ChildProcess>()
   let interruptedSignal: NodeJS.Signals | undefined
+  const startedAt = performance.now()
 
   const interrupt = (signal: NodeJS.Signals): void => {
     interruptedSignal = signal
@@ -277,8 +320,11 @@ async function run(): Promise<void> {
   process.once('SIGTERM', () => interrupt('SIGTERM'))
 
   const runLane: LaneRunner = async (lane) => {
-    if (interruptedSignal) return { id: lane.id, exitCode: 1, elapsedMs: 0 }
-    const startedAt = performance.now()
+    if (interruptedSignal) {
+      const offset = performance.now() - startedAt
+      return { id: lane.id, exitCode: 1, elapsedMs: 0, finishedOffsetMs: offset, startedOffsetMs: offset }
+    }
+    const laneStartedAt = performance.now()
     console.log(`\n[test:all] starting ${lane.label}: ${displayCommand(lane)}`)
 
     const exitCode = await new Promise<number>((resolve) => {
@@ -300,13 +346,19 @@ async function run(): Promise<void> {
       })
     })
 
-    const elapsedMs = performance.now() - startedAt
+    const finishedAt = performance.now()
+    const elapsedMs = finishedAt - laneStartedAt
     const status = exitCode === 0 ? 'passed' : `failed (exit ${exitCode})`
     console.log(`\n[test:all] ${lane.label} ${status} in ${formatDuration(elapsedMs)}`)
-    return { id: lane.id, exitCode, elapsedMs }
+    return {
+      id: lane.id,
+      exitCode,
+      elapsedMs,
+      finishedOffsetMs: finishedAt - startedAt,
+      startedOffsetMs: laneStartedAt - startedAt,
+    }
   }
 
-  const startedAt = performance.now()
   const regularLanes = qualityLanes.filter((lane) => !lane.isolated)
   const isolatedLanes = qualityLanes.filter((lane) => lane.isolated)
   const results = await runLanePool(regularLanes, options.jobs, runLane)
@@ -320,12 +372,15 @@ async function run(): Promise<void> {
     return
   }
 
-  console.log(`\n[test:all] completed in ${formatDuration(performance.now() - startedAt)}`)
+  const aggregateElapsedMs = performance.now() - startedAt
+  console.log(`\n[test:all] completed in ${formatDuration(aggregateElapsedMs)}`)
   for (const lane of qualityLanes) {
     const result = results.find((candidate) => candidate.id === lane.id)
     const status = result?.exitCode === 0 ? 'PASS' : 'FAIL'
     console.log(`  ${status}  ${lane.label} (${formatDuration(result?.elapsedMs ?? 0)})`)
   }
+  if (options.timingsJson)
+    console.log(JSON.stringify(createQualityRunReport(qualityLanes, results, options.jobs, aggregateElapsedMs)))
   if (results.some((result) => result.exitCode !== 0)) process.exitCode = 1
 }
 

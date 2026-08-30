@@ -68,6 +68,13 @@ entrypoints are:
 | Full local quality aggregate | `pnpm test:all` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
+Use the owning test file or `test:affected` during edits, and reuse an exact
+passing watcher result instead of rerunning `check` plus `test:affected`. Run a
+complete owning lane or `test:all` once per coherent verification batch. Do not
+run all component checks and lanes immediately before `test:all`; the aggregate
+already owns them. Related additive protocol exports are intentionally batched
+on targeted feedback before the one integration-boundary aggregate.
+
 ### Compatibility evidence ownership
 
 Compatibility register validation and the current-stack/cluster golden harness
@@ -145,8 +152,10 @@ report-only; only the focused UI map has thresholds.
 
 `test:all` defaults to two concurrent outer lanes; override it with
 `RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
-`--dry-run`. It waits to build browser smoke until the server typecheck has
-finished writing client declarations under `dist/`. Its ordinary frontend
+`--dry-run`. Pass `--timings=json` to append a machine-readable lane schedule
+and timing record for critical-path analysis. It waits to build browser smoke
+until the server typecheck has finished writing client declarations under
+`dist/`. Its ordinary frontend
 subprocess omits the six UI-map files, then the coverage lane executes them once
 with thresholds after the remaining frontend tests finish. Browser smoke,
 server, and performance lanes run outside the outer pool. Smoke uses its own

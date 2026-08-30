@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { uiCoverageSupportFiles, uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 import { performanceTestFiles } from '../vitest.performance-tests.js'
 import {
+  createQualityRunReport,
+  parseTestAllCli,
   parseTestAllJobs,
   qualityLanes,
   runLanePool,
@@ -16,6 +18,8 @@ describe('test:all orchestration', () => {
     expect(parseTestAllJobs(undefined)).toBe(2)
     expect(parseTestAllJobs('4')).toBe(4)
     expect(() => parseTestAllJobs('0')).toThrow('positive integer')
+    expect(parseTestAllCli(['--timings=json'])).toMatchObject({ timingsJson: true })
+    expect(parseTestAllCli([])).toMatchObject({ timingsJson: false })
   })
 
   it('keeps dist and duplicate-test conflicts ordered and performance gates isolated', () => {
@@ -66,7 +70,13 @@ describe('test:all orchestration', () => {
       await Promise.resolve()
       active -= 1
       events.push(`finish:${lane.id}`)
-      return { id: lane.id, exitCode: lane.id === 'first' ? 1 : 0, elapsedMs: 0 }
+      return {
+        id: lane.id,
+        exitCode: lane.id === 'first' ? 1 : 0,
+        elapsedMs: 0,
+        finishedOffsetMs: 0,
+        startedOffsetMs: 0,
+      }
     })
 
     expect(peakActive).toBe(2)
@@ -80,9 +90,59 @@ describe('test:all orchestration', () => {
       { id: 'second', label: 'second', args: [], after: ['first'] },
     ]
 
-    await expect(runLanePool(lanes, 2, async (lane) => ({ id: lane.id, exitCode: 0, elapsedMs: 0 }))).rejects.toThrow(
-      'dependency cycle',
+    await expect(
+      runLanePool(lanes, 2, async (lane) => ({
+        id: lane.id,
+        exitCode: 0,
+        elapsedMs: 0,
+        finishedOffsetMs: 0,
+        startedOffsetMs: 0,
+      })),
+    ).rejects.toThrow('dependency cycle')
+  })
+
+  it('creates a stable machine-readable timing record in lane declaration order', () => {
+    const lanes: QualityLane[] = [
+      { id: 'first', label: 'First', args: [] },
+      { id: 'second', label: 'Second', args: [], after: ['first'], isolated: true },
+    ]
+    const report = createQualityRunReport(
+      lanes,
+      [
+        { id: 'second', exitCode: 1, elapsedMs: 20, finishedOffsetMs: 35, startedOffsetMs: 15 },
+        { id: 'first', exitCode: 0, elapsedMs: 10, finishedOffsetMs: 10, startedOffsetMs: 0 },
+      ],
+      3,
+      35,
     )
+
+    expect(report).toEqual({
+      aggregateElapsedMs: 35,
+      jobs: 3,
+      lanes: [
+        {
+          after: undefined,
+          elapsedMs: 10,
+          exitCode: 0,
+          finishedOffsetMs: 10,
+          id: 'first',
+          isolated: undefined,
+          label: 'First',
+          startedOffsetMs: 0,
+        },
+        {
+          after: ['first'],
+          elapsedMs: 20,
+          exitCode: 1,
+          finishedOffsetMs: 35,
+          id: 'second',
+          isolated: true,
+          label: 'Second',
+          startedOffsetMs: 15,
+        },
+      ],
+      schemaVersion: 1,
+    })
   })
 
   it('validates the regular-to-isolated phase barrier and isolated order', () => {

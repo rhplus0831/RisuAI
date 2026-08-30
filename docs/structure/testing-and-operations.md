@@ -92,7 +92,11 @@ selection when source changed. `--base <git-ref>` selects a branch diff,
 `--dry-run` prints the plan, `--include-smoke` opts into relevant Playwright
 work, and `--all` selects `test:all`. Deleted tests/source and runner changes
 conservatively widen to their complete lanes. Aggregate/affected runner and CI
-changes widen to `test:all`. On a fresh machine, run
+changes widen to `test:all`. A protocol-package manifest change stays targeted
+only when it adds explicit subpath exports to existing local `src/*.ts` files
+without changing or removing an existing export or another package field; every
+other manifest edit fails closed to `test:all`. Batch related additive exports
+and run the aggregate once at the integration boundary. On a fresh machine, run
 `pnpm exec playwright install --with-deps chromium` before browser smoke.
 `server/fastify/__tests__/README.md` is the maintained topical map for the flat
 Fastify test directory; use it to find command/persistence, generation, memory,
@@ -160,20 +164,23 @@ is pending. A run is published as `passed` or `failed` only when a second
 worktree fingerprint taken after the commands exactly matches the fingerprint
 taken before them; otherwise the result is discarded and the queued generation
 runs. The status includes the worker PID/heartbeat, supervisor identity, base
-ref, generation, target and tested fingerprints, full
+ref, generation, target, tested, and targeted-feedback fingerprints, full
 affected commands, actually executed commands, execution mode and changed
 paths, queued-rerun state, any reused tested fingerprint, notes, per-command
-results, and timings. Status validation trusts the independent supervisor
-heartbeat while the embedded test worker is busy, so a long in-process transform
-or test cannot make active work appear abandoned.
+results, timings, and any deferred quality commands. Status validation trusts
+the independent supervisor heartbeat while the embedded test worker is busy, so
+a long in-process transform or test cannot make active work appear abandoned.
 
-When build, dependency, aggregate-runner, or CI configuration changes make
-targeted selection unsafe, the watcher publishes `waiting-for-commit` and does
-not fall back to `test:all`. It continues to refresh the waiting snapshot while
-the current `HEAD` is unchanged, then rebuilds the affected plan after a commit
-advances `HEAD`. With the default `--base HEAD`, committing the configuration
-change removes it from the uncommitted affected scope and resumes the ordinary
-watch loop.
+When build, dependency, aggregate-runner, or CI configuration changes make the
+final targeted selection unsafe, the watcher records `test:all` as the deferred
+authoritative gate but still runs warm Svelte diagnostics and safe affected
+feedback for non-configuration paths. A matching feedback pass is published as
+`waiting-for-commit` with a separate feedback fingerprint; it never populates
+the authoritative tested fingerprint. Further edits on the same `HEAD` rerun
+only that safe feedback. After the coherent configuration batch is committed
+and the worktree is clean, the watcher runs the deferred `test:all` once for the
+new commit. The deferred command and originating `HEAD` are stored in status so
+a supervised worker restart cannot silently lose the requirement.
 
 Use `pnpm test:watch:await` as the handoff trust boundary. It independently
 fingerprints the current worktree, validates the supervisor lease, and follows
@@ -186,9 +193,11 @@ statuses mean:
   runs with the same watcher options.
 - `1`: the watched affected plan failed for the exact current worktree. Read
   `.test-watch/latest.log`; rerunning is needed only for additional diagnostics.
-- `2`: work is starting, running, queued, recovering, waiting for a commit, or
-  still pending when `test:watch:await` reaches its timeout. Do not start a
-  duplicate manual run.
+- `2`: work is starting, running, queued, recovering, waiting for a commit,
+  still pending at timeout, or targeted feedback passed while a final full gate
+  remains. `test:watch:await` returns immediately for the latter case: commit
+  the completed batch so the watcher can run the deferred aggregate. Do not
+  start a duplicate while a command is active.
 - `3`: the supervisor is missing, stopped, incompatible, stale, or exhausted its
   automatic recovery. Restart `test:watch:agent` or use the normal command.
 
@@ -272,6 +281,18 @@ Fastify/server lane also runs outside the concurrent pool because it contains
 deadline and load-cost assertions. These isolated phases keep concurrent load
 from invalidating timing checks. Every lane still runs when another lane fails,
 and the aggregate exits nonzero at the end.
+Pass `--timings=json` to append a schema-versioned JSON record containing the
+aggregate duration, configured job limit, and each lane's elapsed time plus
+start/finish offsets, dependency metadata, isolation flag, and exit code. This
+is observational only and is intended to expose the real critical path before
+changing concurrency or isolation.
+
+Use focused tests or the watcher during an edit batch, then one complete owning
+lane or one `test:all` at the batch boundary. Do not stack `check:protocol`,
+`check:server`, `check`, component lanes, and `test:all` as independent handoff
+steps: `check:server` already owns the protocol check, while `test:all` owns both
+check families and every local aggregate lane. Repeat a component only when it
+is needed to diagnose a failure.
 
 Config details: `vitest.config.ts` composes three isolated thread-pool projects,
 and `vitest.frontend-routing.ts` owns their disjoint filename/registration

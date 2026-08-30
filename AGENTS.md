@@ -50,8 +50,12 @@ Start by reading `STRUCTURE.md` to understand the project structure.
   test results are live, match the exact current worktree fingerprint, and may
   be used instead of rerunning those two commands. A one exit is a fresh watched
   failure; inspect `.test-watch/latest.log` and fix it rather than rerunning
-  merely to reproduce it. A two exit is still pending or timed out; keep waiting
-  or inspect `pnpm test:watch:status`, but do not duplicate the active test run.
+  merely to reproduce it. A two exit is still pending, timed out, or has passed
+  targeted feedback while a deferred full-quality gate remains. Keep waiting or
+  inspect `pnpm test:watch:status`; do not duplicate an active test run. When
+  targeted feedback passed and the full gate remains, finish the configuration
+  batch and commit it so the watcher can run `pnpm test:all` once for the clean
+  commit.
   A three exit means the supervisor is unavailable or incompatible, so restart
   `pnpm test:watch:agent` in the task terminal or use the normal command.
   Never trust `.test-watch/status.json` or `.test-watch/supervisor.json` without
@@ -68,11 +72,19 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 - During implementation, prefer `pnpm test:affected` for the current uncommitted
   diff or pass `--base <git-ref>` for a branch diff. Use `--dry-run` to inspect
   the selected lanes and `--include-smoke` when browser-smoke files changed.
+  Additive explicit `packages/protocol` exports stay on targeted protocol and
+  dependency-aware lanes; batch related exports and run the aggregate once at
+  the integration boundary.
 - When the owning test file is known, running that file directly is the fastest
   feedback loop. Run the complete owning frontend or server lane before handoff
   when the change is broader than one focused contract.
 - Reserve `pnpm test:all` for build/configuration changes and final pre-merge or
-  CI verification; do not run it after every edit.
+  CI verification; run it once per coherent verification batch, not after every
+  edit or small contract slice. It already owns `check:server` (including
+  `check:protocol`), `pnpm check`, formatting, frontend/server tests, smoke,
+  compatibility, coverage, scale, and performance lanes, so do not run those
+  commands separately immediately before the aggregate unless diagnosing a
+  failure.
 
 # Language File
 

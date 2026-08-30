@@ -22,13 +22,14 @@ import type { TestRunResult, TestSpecification, Vitest } from 'vitest/node'
 import {
   FULL_QUALITY_CHANGE_NOTE,
   collectChangedPaths,
+  planAffectedTestFeedback,
   planAffectedTests,
   type AffectedTestPlan,
   type ChangedPath,
   type TestCommand,
 } from './affected-tests.js'
 
-export const TEST_WATCH_SCHEMA_VERSION = 2
+export const TEST_WATCH_SCHEMA_VERSION = 3
 export const TEST_WATCH_SUPERVISOR_SCHEMA_VERSION = 1
 export const TEST_WATCH_DIRECTORY = '.test-watch'
 export const TEST_WATCH_STATUS_FILE = 'status.json'
@@ -113,9 +114,10 @@ export interface TestWatchStatus {
   commandResults: TestWatchCommandResult[]
   commands: Array<{ command: string; label: string }>
   executionChangedPaths: ChangedPath[]
-  executionMode: 'full' | 'incremental'
+  executionMode: 'feedback' | 'full' | 'incremental'
   durationMs?: number
   failure?: string
+  feedbackFingerprint?: string
   generation: number
   heartbeatAt: string
   includeSmoke: boolean
@@ -123,6 +125,9 @@ export interface TestWatchStatus {
   notes: string[]
   pid: number
   projectRoot: string
+  qualityCommands: TestCommand[]
+  qualityRequired: boolean
+  qualityRequiredHeadCommit?: string
   runFinishedAt?: string
   runStartedAt?: string
   schemaVersion: typeof TEST_WATCH_SCHEMA_VERSION
@@ -157,7 +162,7 @@ export interface TestWatchStatusEvaluation {
   currentFingerprint?: string
   exitCode: 0 | 1 | 2 | 3
   message: string
-  verdict: 'passed' | 'failed' | 'pending' | 'stale' | 'unavailable'
+  verdict: 'passed' | 'failed' | 'full-required' | 'pending' | 'stale' | 'unavailable'
 }
 
 export interface TestWatchCliOptions {
@@ -371,7 +376,10 @@ export function readTestWatchStatus(statusPath: string): TestWatchStatus | undef
   const parsed = JSON.parse(readFileSync(statusPath, 'utf8')) as Partial<Omit<TestWatchStatus, 'schemaVersion'>> & {
     schemaVersion?: number
   }
-  if (typeof parsed.watcherId !== 'string' || (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2)) {
+  if (
+    typeof parsed.watcherId !== 'string' ||
+    (parsed.schemaVersion !== 1 && parsed.schemaVersion !== 2 && parsed.schemaVersion !== 3)
+  ) {
     throw new Error(`unsupported test watcher status schema in ${statusPath}`)
   }
   if (parsed.schemaVersion === 1) {
@@ -380,12 +388,16 @@ export function readTestWatchStatus(statusPath: string): TestWatchStatus | undef
       affectedCommands: parsed.commands ?? [],
       executionChangedPaths: parsed.changedPaths ?? [],
       executionMode: 'full',
+      qualityCommands: [],
+      qualityRequired: false,
       rerunPending: false,
       schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     } as TestWatchStatus
   }
   return {
     ...parsed,
+    qualityCommands: parsed.qualityCommands ?? [],
+    qualityRequired: parsed.qualityRequired ?? false,
     rerunPending: parsed.rerunPending ?? false,
     schemaVersion: TEST_WATCH_SCHEMA_VERSION,
   } as TestWatchStatus
@@ -559,6 +571,22 @@ export function evaluateTestWatchStatus(
         ? `generation ${status.generation} is finishing and a rerun is queued`
         : `generation ${status.generation} is still running`,
       verdict: 'pending',
+    }
+  }
+  if (status.qualityRequired && status.feedbackFingerprint === currentFingerprint) {
+    if (status.state === 'failed') {
+      return {
+        currentFingerprint,
+        exitCode: 1,
+        message: `generation ${status.generation} targeted feedback failed; the final full quality suite is still required`,
+        verdict: 'failed',
+      }
+    }
+    return {
+      currentFingerprint,
+      exitCode: 2,
+      message: `generation ${status.generation} targeted feedback passed; commit the batch to run the final full quality suite`,
+      verdict: 'full-required',
     }
   }
   if (status.state === 'waiting-for-commit') {
@@ -1340,18 +1368,21 @@ function statusFromPlan(
   executionPlan: AffectedTestPlan,
   executionChangedPaths: ChangedPath[],
   executionMode: TestWatchStatus['executionMode'],
+  qualityRequired: boolean,
+  qualityPlan?: AffectedTestPlan,
   reusedTestedFingerprint?: string,
 ): TestWatchStatus {
-  const frontendCheckCommands = affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE) ? [] : [FRONTEND_CHECK_COMMAND]
+  const affectedFrontendCheck = affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE) ? [] : [FRONTEND_CHECK_COMMAND]
+  const executionFrontendCheck = executionPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE) ? [] : [FRONTEND_CHECK_COMMAND]
   return {
     ...current,
-    affectedCommands: [...frontendCheckCommands, ...affectedPlan.commands].map((command) => ({
+    affectedCommands: [...affectedFrontendCheck, ...affectedPlan.commands].map((command) => ({
       command: displayTestCommand(command),
       label: command.label,
     })),
     changedPaths: snapshot.changes,
     commandResults: [],
-    commands: [...frontendCheckCommands, ...executionPlan.commands].map((command) => ({
+    commands: [...executionFrontendCheck, ...executionPlan.commands].map((command) => ({
       command: displayTestCommand(command),
       label: command.label,
     })),
@@ -1359,9 +1390,13 @@ function statusFromPlan(
     executionChangedPaths,
     executionMode,
     failure: undefined,
+    feedbackFingerprint: undefined,
     generation,
     heartbeatAt: new Date().toISOString(),
-    notes: affectedPlan.notes,
+    notes: [...new Set([...affectedPlan.notes, ...executionPlan.notes])],
+    qualityCommands: qualityPlan?.commands ?? [],
+    qualityRequired,
+    qualityRequiredHeadCommit: qualityRequired ? snapshot.headCommit : undefined,
     reusedTestedFingerprint,
     runFinishedAt: undefined,
     runStartedAt: new Date().toISOString(),
@@ -1446,7 +1481,11 @@ async function runStatusCommand(repoRoot: string, options: TestWatchCliOptions):
 async function runAwaitCommand(repoRoot: string, options: TestWatchCliOptions): Promise<number> {
   const deadline = Date.now() + options.waitTimeoutMs
   let inspection = await inspectTestWatch(repoRoot, options)
-  while (inspection.evaluation.exitCode === 2 && Date.now() < deadline) {
+  while (
+    inspection.evaluation.exitCode === 2 &&
+    inspection.evaluation.verdict !== 'full-required' &&
+    Date.now() < deadline
+  ) {
     await new Promise((resolve) =>
       setTimeout(resolve, Math.min(DEFAULT_AWAIT_POLL_MS, Math.max(1, deadline - Date.now()))),
     )
@@ -1800,7 +1839,12 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   } catch {
     existing = undefined
   }
-  if (existing && existing.watcherId !== process.env.RISU_TEST_WATCH_WORKER_ID && isProcessAlive(existing.pid)) {
+  if (
+    existing &&
+    existing.watcherId !== process.env.RISU_TEST_WATCH_WORKER_ID &&
+    existing.supervisorId !== process.env.RISU_TEST_WATCH_SUPERVISOR_ID &&
+    isProcessAlive(existing.pid)
+  ) {
     throw new Error(`test watcher ${existing.pid} is already running for this worktree`)
   }
 
@@ -1821,6 +1865,8 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     notes: [],
     pid: process.pid,
     projectRoot: repoRoot,
+    qualityCommands: [],
+    qualityRequired: false,
     rerunPending: false,
     schemaVersion: TEST_WATCH_SCHEMA_VERSION,
     state: 'starting',
@@ -1836,10 +1882,15 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
   let debounceTimer: NodeJS.Timeout | undefined
   let drainPromise: Promise<void> | undefined
   let generation = 0
-  let lastCompleted: TestWatchStatus | undefined
+  let lastCompleted: TestWatchStatus | undefined =
+    existing?.qualityRequired && existing.state === 'waiting-for-commit' ? existing : undefined
   let lastPassingPlan: AffectedTestPlan | undefined
   let lastPassingSnapshot: WorktreeSnapshot | undefined
-  let waitingForHeadCommit: string | undefined
+  let pendingFullQualityPlan: AffectedTestPlan | undefined =
+    existing?.qualityRequired && existing.qualityCommands.length > 0
+      ? { commands: existing.qualityCommands, notes: [FULL_QUALITY_CHANGE_NOTE] }
+      : undefined
+  let waitingForHeadCommit: string | undefined = existing?.qualityRequiredHeadCommit
   let nextRunAt = 0
   let rerunRequested = false
   let shutdownRequested = false
@@ -1881,33 +1932,59 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       throw new Error(failure, { cause: error })
     }
 
-    if (waitingForHeadCommit === snapshot.headCommit) {
-      persist({
-        ...status,
+    if (waitingForHeadCommit === snapshot.headCommit && lastCompleted?.feedbackFingerprint === snapshot.fingerprint) {
+      lastCompleted = {
+        ...lastCompleted,
         changedPaths: snapshot.changes,
+        pid: process.pid,
         state: 'waiting-for-commit',
+        supervisorId,
         targetFingerprint: snapshot.fingerprint,
-      })
+        watcherId,
+      }
+      persist(lastCompleted)
       return 'waiting-for-commit'
     }
-    waitingForHeadCommit = undefined
 
     if (lastCompleted?.testedFingerprint === snapshot.fingerprint) {
-      persist({ ...lastCompleted, heartbeatAt: new Date().toISOString() })
+      lastCompleted = { ...lastCompleted, pid: process.pid, supervisorId, watcherId }
+      persist(lastCompleted)
       return 'completed'
     }
 
     generation += 1
-    const affectedPlan = planAffectedTests(snapshot.changes, {
+    const currentPlan = planAffectedTests(snapshot.changes, {
       bail: true,
       base: options.base,
       includeSmoke: options.includeSmoke,
     })
+    const currentRequiresFullQuality = currentPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE)
+    if (currentRequiresFullQuality) pendingFullQualityPlan = currentPlan
+    const committedBatchReady = Boolean(
+      pendingFullQualityPlan &&
+      waitingForHeadCommit &&
+      waitingForHeadCommit !== snapshot.headCommit &&
+      snapshot.changes.length === 0,
+    )
+    const qualityRequired = Boolean(pendingFullQualityPlan) && !committedBatchReady
+    const affectedPlan = pendingFullQualityPlan ?? currentPlan
     let executionChangedPaths = snapshot.changes
-    let executionMode: TestWatchStatus['executionMode'] = 'full'
-    let executionPlan = affectedPlan
+    let executionMode: TestWatchStatus['executionMode'] = qualityRequired ? 'feedback' : 'full'
+    let executionPlan = committedBatchReady
+      ? (pendingFullQualityPlan as AffectedTestPlan)
+      : qualityRequired
+        ? currentRequiresFullQuality
+          ? planAffectedTestFeedback(snapshot.changes, {
+              bail: true,
+              base: options.base,
+              includeSmoke: options.includeSmoke,
+            })
+          : currentPlan
+        : currentPlan
     let reusedTestedFingerprint: string | undefined
     if (
+      !qualityRequired &&
+      !committedBatchReady &&
       lastCompleted?.state === 'passed' &&
       lastCompleted.testedFingerprint &&
       lastPassingPlan &&
@@ -1933,6 +2010,8 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       executionPlan,
       executionChangedPaths,
       executionMode,
+      qualityRequired,
+      qualityRequired ? pendingFullQualityPlan : undefined,
       reusedTestedFingerprint,
     )
     if (executionMode === 'incremental') {
@@ -1948,23 +2027,14 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
     )
     for (const note of status.notes) log.stdout.write(`[test:watch] ${note}\n`)
 
-    if (affectedPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE)) {
-      waitingForHeadCommit = snapshot.headCommit
-      status = {
-        ...status,
-        runStartedAt: undefined,
-        state: 'waiting-for-commit',
-      }
-      persist(status)
-      log.stdout.write('[test:watch] waiting for HEAD to advance; pnpm test:all was not started\n')
-      return 'waiting-for-commit'
-    }
-
     const commandResults: TestWatchCommandResult[] = []
     let passed = true
     let failure: string | undefined
     try {
-      for (const command of [FRONTEND_CHECK_COMMAND, ...executionPlan.commands]) {
+      const executionCommands = executionPlan.notes.includes(FULL_QUALITY_CHANGE_NOTE)
+        ? executionPlan.commands
+        : [FRONTEND_CHECK_COMMAND, ...executionPlan.commands]
+      for (const command of executionCommands) {
         log.stdout.write(`[test:watch] ${command.label}: ${displayTestCommand(command)}\n`)
         const result = await runner.run(command, executionChangedPaths)
         commandResults.push(result)
@@ -2010,6 +2080,7 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       return 'completed'
     }
 
+    const remainingQualityRequired = qualityRequired || (committedBatchReady && !passed)
     const completed: TestWatchStatus = {
       ...status,
       commandResults,
@@ -2018,17 +2089,28 @@ async function runWatcher(repoRoot: string, options: TestWatchCliOptions): Promi
       heartbeatAt: new Date().toISOString(),
       rerunPending: false,
       runFinishedAt: new Date().toISOString(),
-      state: passed ? 'passed' : 'failed',
-      testedFingerprint: snapshot.fingerprint,
+      feedbackFingerprint: qualityRequired ? snapshot.fingerprint : undefined,
+      qualityCommands: remainingQualityRequired ? (pendingFullQualityPlan?.commands ?? []) : [],
+      qualityRequired: remainingQualityRequired,
+      qualityRequiredHeadCommit: remainingQualityRequired ? snapshot.headCommit : undefined,
+      state: passed ? (qualityRequired ? 'waiting-for-commit' : 'passed') : 'failed',
+      testedFingerprint: qualityRequired ? undefined : snapshot.fingerprint,
     }
     lastCompleted = completed
-    if (passed) {
+    if (passed && !qualityRequired) {
       lastPassingPlan = affectedPlan
       lastPassingSnapshot = snapshot
     }
+    if (passed && committedBatchReady) {
+      pendingFullQualityPlan = undefined
+      waitingForHeadCommit = undefined
+    } else if (qualityRequired) {
+      waitingForHeadCommit = snapshot.headCommit
+    }
     persist(completed)
-    log.stdout.write(`[test:watch] generation ${generation} ${passed ? 'passed' : 'failed'}\n`)
-    return 'completed'
+    const verdict = passed ? (qualityRequired ? 'targeted feedback passed; full quality required' : 'passed') : 'failed'
+    log.stdout.write(`[test:watch] generation ${generation} ${verdict}\n`)
+    return passed && qualityRequired ? 'waiting-for-commit' : 'completed'
   }
 
   const drain = async (): Promise<void> => {
