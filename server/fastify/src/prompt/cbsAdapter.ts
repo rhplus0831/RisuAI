@@ -1,7 +1,7 @@
 import type { CBSRegisterArg, matcherArg } from '../../../../src/ts/cbs'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { dateTimeFormat, makeArray, parseArray, parseDict } from '@risuai/shared-core/risuchat-parser-helpers'
-import { calcString } from '../../../../src/ts/process/infunctions'
+import { calculateString } from '@risuai/shared-core/calculation'
 import { getChatVar, getGlobalChatVar, setChatVar } from './chatVarBackend.js'
 import {
   getActiveChatPage,
@@ -14,6 +14,8 @@ import {
 } from './promptScope.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
 import { pickHashRand } from '@risuai/shared-core/lore-hash'
+
+const calculationVariables = { getChatVar, getGlobalChatVar }
 
 /**
  * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
@@ -105,7 +107,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
     getChatVar,
     setChatVar,
     getGlobalChatVar,
-    calcString: (str: string) => calcString(str) ?? 0,
+    calcString: (str: string) => calculateString(str, calculationVariables) ?? 0,
     dateTimeFormat,
     // Match the browser parser's module scope: database-enabled, current-chat,
     // current-character, and effective prompt/agent module integration.

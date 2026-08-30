@@ -1038,19 +1038,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/cbsAdapter.ts",
-      "specifier": "../../../../src/ts/process/infunctions",
-      "target": "src/ts/process/infunctions.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "calcString"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/cbsCallbackMemo.ts",
       "specifier": "../../../../src/ts/cbs",
       "target": "src/ts/cbs.ts",
@@ -1593,19 +1580,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
-      "specifier": "../../../../src/ts/process/infunctions",
-      "target": "src/ts/process/infunctions.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "calcString"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",

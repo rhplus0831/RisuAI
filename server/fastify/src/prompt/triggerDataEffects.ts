@@ -1,7 +1,7 @@
 import type { Chat, character } from '../../../../src/ts/storage/database.svelte'
 import type { PromptMessage } from './promptMessage.js'
 import type { ServerTriggerEffect as triggerEffect } from './triggerDescriptors.js'
-import { calcString } from '../../../../src/ts/process/infunctions'
+import { calculateString } from '@risuai/shared-core/calculation'
 import { encodingForModel, tokenize, type TokenEncoding } from './tokens.js'
 import {
   assertBoundedRegexHaystack,
@@ -16,6 +16,7 @@ import {
   triggerReplaceBoundedRegexWithCompatibility,
 } from './boundedRegex.js'
 import type { TriggerVarEngine } from './triggerVars.js'
+import { getChatVar, getGlobalChatVar } from './chatVarBackend.js'
 import {
   getCachedRegexDelimiter,
   getCachedTriggerRegex,
@@ -93,6 +94,8 @@ export interface V2DataEffectDeps {
 }
 
 export type V2DataEffectResult = boolean | 'abort-run'
+
+const calculationVariables = { getChatVar, getGlobalChatVar }
 
 function compileTriggerRegexWithCompatibility(deps: V2DataEffectDeps, pattern: string, flags: string, context: string) {
   const options = deps.regexCompatibility
@@ -571,7 +574,7 @@ export function applyV2DataEffect(effect: triggerEffect, deps: V2DataEffectDeps)
           const parsed = parseFloat(engine.getVar(varName))
           return isNaN(parsed) ? '0' : parsed.toString()
         })
-        engine.setVar(outVar, (calcString(expression) ?? 0).toString())
+        engine.setVar(outVar, (calculateString(expression, calculationVariables) ?? 0).toString())
       } catch {
         engine.setVar(outVar, '0')
       }

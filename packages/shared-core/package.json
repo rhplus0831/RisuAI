@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./agent-only-lorebook": "./src/agentOnlyLorebook.ts",
     "./agent-preset-output-references": "./src/agentPresetOutputReferences.ts",
+    "./calculation": "./src/calculation.ts",
     "./chat-display-tail-count": "./src/chatDisplayTailCount.ts",
     "./chat-load-pages": "./src/chatLoadPages.ts",
     "./chatml-rows": "./src/chatMLRows.ts",
