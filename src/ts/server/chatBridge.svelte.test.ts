@@ -364,6 +364,26 @@ afterEach(() => {
 })
 
 describe('watchServerBackedChatMetadata baselines', () => {
+  it('fails closed when the selected stable character owner is ambiguous', () => {
+    resourceDatabase.current = {
+      characters: [
+        {
+          chaId: 'duplicate-character',
+          chats: [{ id: 'chat-a', name: 'A', message: [] }],
+        },
+        {
+          chaId: 'duplicate-character',
+          chats: [{ id: 'chat-b', name: 'B', message: [] }],
+        },
+      ],
+    }
+    selectedCharID.set(0)
+
+    const baseline = currentChatMetadataBaselines()
+    expect(baseline.characterId).toBeUndefined()
+    expect(baseline.chats).toEqual(new Map())
+  })
+
   it('stages exact chat and folder payloads and forwards replay-safe transport ids', async () => {
     setupChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })

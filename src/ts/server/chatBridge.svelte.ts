@@ -21,7 +21,11 @@ import {
 import { selectedCharID } from '../stores.svelte'
 import type { Chat, ChatFolder } from '../storage/database.svelte'
 import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getResourceDatabase as getDatabase,
+} from './resourceState.svelte'
 import { dispatchDurableMutation } from './durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import {
@@ -105,7 +109,7 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
   let previousChats = new Map<string, ChatSnapshot>()
   let previousFolders = new Map<string, ChatFolderSnapshot>()
   let previousSelectedChar = get(selectedCharID)
-  let previousCharacterId = getDatabase().characters?.[previousSelectedChar]?.chaId
+  let previousCharacterId = resolveMetadataCharacter(undefined, previousSelectedChar)?.chaId
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   resetActiveChatMetadataBaselines = () => {
@@ -473,10 +477,18 @@ function applyFolderMetadataPatch(
 }
 
 function resolveMetadataCharacter(characterId: string | undefined, selectedChar: number) {
-  return (
-    getDatabase().characters?.find((candidate) => Boolean(characterId) && candidate.chaId === characterId) ??
-    getDatabase().characters?.[selectedChar]
-  )
+  if (characterId) {
+    const owner = getCharacterResourceOwner(characterId)
+    // Once the owner resource is ready, a missing or duplicate stable id is a
+    // hard failure. Positional fallback remains only for pre-readiness legacy
+    // databases whose owner list has not been established yet.
+    if (owner || charactersResourceState.status === 'ready') return owner
+  }
+  if (charactersResourceState.status === 'ready') {
+    const candidate = charactersResourceState.characters[selectedChar]
+    return candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
+  }
+  return getDatabase().characters?.[selectedChar]
 }
 
 function applyMetadataPatch(target: Record<string, unknown>, patch: Record<string, unknown>): void {
@@ -515,7 +527,7 @@ function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {
 
 export function currentChatMetadataBaselines(previous?: ChatMetadataBaselines): ChatMetadataBaselines {
   const selectedChar = get(selectedCharID)
-  const character = getDatabase().characters?.[selectedChar]
+  const character = resolveMetadataCharacter(undefined, selectedChar)
   const characterId = character?.chaId
   const chats = (character?.chats ?? []).filter(hasStringId)
   const folders = (character?.chatFolders ?? []).filter(hasStringId)
