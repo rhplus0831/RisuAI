@@ -42,4 +42,6 @@ Completed slice: [Shared-core foundation and first leaf](slices/phase-3-pure-sha
 
 Completed slice: [Chat load-page normalization](slices/phase-3-pure-shared-core/chat-load-page-normalization.md).
 
-Active slice: [Chat display-tail normalization](slices/phase-3-pure-shared-core/chat-display-tail-normalization.md).
+Completed slice: [Chat display-tail normalization](slices/phase-3-pure-shared-core/chat-display-tail-normalization.md).
+
+Active slice: [Regex output-size normalization](slices/phase-3-pure-shared-core/regex-output-size-normalization.md).

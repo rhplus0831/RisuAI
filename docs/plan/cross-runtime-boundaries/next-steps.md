@@ -4,19 +4,20 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [chat display-tail normalization
-slice](phases/slices/phase-3-pure-shared-core/chat-display-tail-normalization.md).
+Execute the [regex output-size normalization
+slice](phases/slices/phase-3-pure-shared-core/regex-output-size-normalization.md).
 
-1. Move the default/minimum/maximum constants and
-   `normalizeChatDisplayTailCount` into an explicit shared-core subpath.
-2. Preserve number/string coercion, blank handling, finite-number fallback,
-   rounding, and the `1..500` clamp exactly.
-3. Migrate the Fastify defaulting path and browser storage normalization to the
-   shared owner.
-4. Delete `src/ts/chatDisplayTailCount.ts` only after owner and consumer tests
-   pass.
-5. Keep the persisted setting name, resource payloads, and rendering behavior
-   unchanged.
+1. Move the `16` MiB default, `1..64` MiB bounds,
+   `normalizeRegexOutputSizeLimitMiB`, and `regexOutputSizeLimitCodeUnits` into
+   an explicit shared-core subpath.
+2. Preserve numeric-only input, non-finite fallback, truncation toward zero,
+   clamping, and the `1024 * 1024` code-unit multiplier exactly.
+3. Migrate Fastify defaulting, command validation, bounded-regex/script
+   execution, and browser storage/settings/worker consumers together.
+4. Delete `src/ts/regexOutputSizeLimit.ts` only after parity and closed-world
+   ownership tests pass.
+5. Keep the setting key, command range validation, persistence, payloads,
+   worker budgets, and browser/server regex behavior unchanged.
 
 ## Foundations Released
 
@@ -34,12 +35,14 @@ slice](phases/slices/phase-3-pure-shared-core/chat-display-tail-normalization.md
   `d78c67a3a`.
 - Chat load-page normalization and all production consumers are released at
   `c12e807a5`.
+- Chat display-tail normalization and both production consumers are released at
+  `6fc15d7a1`.
 
 ## Not In This Slice
 
-- Do not move the settings row, resource owner, payload schema, or persistence
-  behavior into shared core.
-- Do not combine another normalization helper with this leaf.
+- Do not move the settings row, command handler, worker orchestration, resource
+  owner, payload schema, or persistence behavior into shared core.
+- Do not change the regex engine, timeout policy, or output-size units.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

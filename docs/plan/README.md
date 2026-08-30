@@ -9,7 +9,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 chat display-tail normalization](cross-runtime-boundaries/status.md) | The shared-core foundation, chat-page leaf, and chat-load normalization are released through `c12e807a5`; 335 direct root-`src` edges remain. |
+| [Cross-runtime boundaries](cross-runtime-boundaries/PLAN.md) | Active | [Phase 3 regex output-size normalization](cross-runtime-boundaries/status.md) | The shared-core foundation and three chat normalization leaves are released through `6fc15d7a1`; 334 direct root-`src` edges remain. |
 | [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 legacy flat model configuration migration](canonical-state-and-compatibility/status.md) | Phase 1 migration/recovery foundation closed at `1e758cd22`; each resource-family closeout releases the matching Workstream 3 phase. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 2 lorebook page consumer migration](client-resource-ownership/status.md) | The complete page owner released at `e751edc69`; migrate only that standalone pointer while retaining lorebook bodies/collections. |
 

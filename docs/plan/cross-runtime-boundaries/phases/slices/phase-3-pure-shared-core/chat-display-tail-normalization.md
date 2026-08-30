@@ -1,6 +1,6 @@
 # Chat Display-Tail Normalization
 
-Status: ready.
+Status: complete at `6fc15d7a1`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -41,3 +41,11 @@ both typechecks, architecture inventory, formatting, and `git diff --check`.
 
 Stop if the helper needs browser reactivity, aggregate state, persistence, or a
 host-specific dependency.
+
+## Result
+
+The constants and normalizer now live at
+`@risuai/shared-core/chat-display-tail-count`. Both production consumers use
+the explicit shared subpath, the old browser-tree module is gone, differential
+fixtures preserve the historical coercion result, and the reviewed boundary
+fell to 334 direct root-`src` edges.
