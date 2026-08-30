@@ -1,4 +1,4 @@
-import { parseChatMLRows } from './parser/chatMLCore'
+import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 
 export const AGENT_PRESET_SCHEMA_VERSION = 1
 export const AGENT_SCHEMA_VERSION = 1

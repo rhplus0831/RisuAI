@@ -2,7 +2,7 @@ import type { Database, character } from '../../../../src/ts/storage/database.sv
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import { applyDescriptionPromptRole, applyPromptBlockRole } from '../../../../src/ts/process/promptBlockRole.js'
-import { parseChatMLRows } from '../../../../src/ts/parser/chatMLCore.js'
+import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import {
   resolveEffectivePromptTemplate,
   type EffectivePromptTemplateOptions,

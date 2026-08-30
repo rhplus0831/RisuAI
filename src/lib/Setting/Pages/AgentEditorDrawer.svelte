@@ -9,7 +9,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
-  import { parseChatMLRows } from 'src/ts/parser/chatMLCore'
+  import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import {
     AGENT_PRESET_RUNTIME_MAX_INPUT_CHARS_MAX,

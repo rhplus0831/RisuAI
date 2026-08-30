@@ -67,6 +67,7 @@ describe('@risuai/shared-core import boundary', () => {
         'agentPresetOutputReferences.ts',
         'chatDisplayTailCount.ts',
         'chatLoadPages.ts',
+        'chatMLRows.ts',
         'chatPage.ts',
         'index.ts',
         'inlayTokens.ts',

@@ -15,7 +15,7 @@ import {
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
-import { parseChatMLRows } from '../../../../src/ts/parser/chatMLCore.js'
+import { parseChatMLRows } from '@risuai/shared-core/chatml-rows'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
 import type { DatabaseSync } from 'node:sqlite'
