@@ -27,6 +27,7 @@ import { processScriptAsync } from './prompt/scripts.js'
 import { isBoundedRegexError } from './prompt/boundedRegex.js'
 import { emitProtocolMetric, protocolDurationMs, protocolNowMs } from './protocolMetrics.js'
 import { DisplaySourceCache } from './displaySourceCache.js'
+import { resolvePromptModelId } from './prompt/promptScope.js'
 
 interface DisplaySourceServiceOptions {
   db: DatabaseSync
@@ -409,6 +410,7 @@ export class DisplaySourceService {
       firstmsg: target.firstMessage,
       ...(target.role === null ? {} : { chatRole: target.role }),
     }
+    const model = resolvePromptModelId(scope.database, 'chatMain')
 
     const varEngine = createTriggerVarEngine({
       chat: scope.chat,
@@ -431,7 +433,7 @@ export class DisplaySourceService {
               selectedCharID: scope.selectedCharID,
               chatPage: scope.chatPage,
               varEngine,
-              model: scope.database.aiModel,
+              model,
               signal,
               execBudget: luaExecBudget,
               requestHistoryDb: this.db,
@@ -451,7 +453,7 @@ export class DisplaySourceService {
           runTrigger(
             {
               modules,
-              model: scope.database.aiModel,
+              model,
               database: scope.database,
               selectedCharID: scope.selectedCharID,
               chatPage: scope.chatPage,

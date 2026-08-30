@@ -77,6 +77,10 @@ export function modelInfoForPromptScope(profile: ResolvedModelProfile): LLMModel
   }
 }
 
+export function resolvePromptModelId(database: Database, role: 'chatMain' | 'chatAux'): string {
+  return resolveModelProfile({ database, role }).modelId
+}
+
 export function getActiveModelInfo(): LLMModel {
   if (!activeScope) {
     throw new Error('promptScope not set; call setActivePromptScope before expandVariables')
