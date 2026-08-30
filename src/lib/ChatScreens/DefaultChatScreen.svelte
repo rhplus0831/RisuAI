@@ -119,7 +119,7 @@
     isChatMessageHydrationPending,
   } from 'src/ts/server/chatMessageHydration.svelte'
   import { buildTranscriptWindowIdentity, getLoadPagesForMessageJump } from './DefaultChatScreen.loadPages'
-  import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages'
+  import { getAdditionalChatLoadPages, getInitialChatLoadPages } from '@risuai/shared-core/chat-load-pages'
   import { guardActiveChatGenerationSettingsForSend } from 'src/ts/activeChatGenerationSettings'
   import { characterRoutePath, currentRoute, navigate, type AppRoute } from 'src/ts/router'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'

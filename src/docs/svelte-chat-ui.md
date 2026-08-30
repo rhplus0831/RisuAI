@@ -53,7 +53,7 @@ empty transcript as a render failure, inspect
 state until its messages arrive and a retryable error state after failed
 hydration.
 
-`src/ts/chatLoadPages.ts` normalizes two durable Advanced settings:
+`@risuai/shared-core/chat-load-pages` normalizes two durable Advanced settings:
 `chatLoadInitialPages` controls the initial resident tail and
 `chatLoadAdditionalPages` controls each ordinary expansion. Their defaults are
 30 and 15. `DefaultChatScreen.svelte` reads both helpers, resets to the
@@ -67,7 +67,7 @@ Server defaults and migration normalization live in
 `ScrollToMessageStore`, transcript-window identity, image-load waits, folded
 message state, and route freshness all affect scroll behavior. A queued bookmark
 jump expands and hydrates the necessary window only after its target route is
-current. `DefaultChatScreen.loadPages.test.ts`, `src/ts/chatLoadPages.test.ts`,
+current. `DefaultChatScreen.loadPages.test.ts`, the shared-core load-page tests,
 `src/ts/setting/advancedSettingsData.test.ts`, and
 `src/ts/server/chatMessageHydration.test.ts` guard this boundary.
 

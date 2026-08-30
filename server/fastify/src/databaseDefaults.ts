@@ -7,7 +7,7 @@ import {
   DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
   normalizeChatLoadPages,
-} from '../../../src/ts/chatLoadPages.js'
+} from '@risuai/shared-core/chat-load-pages'
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,

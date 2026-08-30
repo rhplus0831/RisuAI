@@ -28,7 +28,7 @@ import {
 } from './hydrationReads'
 import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
-import { DEFAULT_CHAT_LOAD_INITIAL_PAGES, getInitialChatLoadPages } from '../chatLoadPages'
+import { DEFAULT_CHAT_LOAD_INITIAL_PAGES, getInitialChatLoadPages } from '@risuai/shared-core/chat-load-pages'
 import { setChatStructureHydrationHooks } from './chatStructureHydrationHooks'
 import {
   captureCharacterLorebookBodyProjectionEpoch,

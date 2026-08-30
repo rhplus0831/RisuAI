@@ -801,21 +801,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/chatLoadPages.js",
-      "target": "src/ts/chatLoadPages.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES",
-        "DEFAULT_CHAT_LOAD_INITIAL_PAGES",
-        "normalizeChatLoadPages"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
       "specifier": "../../../src/ts/defaulthotkeys.js",
       "target": "src/ts/defaulthotkeys.ts",
       "kind": "static",

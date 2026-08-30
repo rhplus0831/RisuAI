@@ -135,7 +135,7 @@ import {
   DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES,
   DEFAULT_CHAT_LOAD_INITIAL_PAGES,
   normalizeChatLoadPages,
-} from '../chatLoadPages'
+} from '@risuai/shared-core/chat-load-pages'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { optimisticallyRehomeGenerationReferences } from '../generationReferenceCascade'
 import {

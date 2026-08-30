@@ -1,4 +1,4 @@
-import { DEFAULT_CHAT_LOAD_INITIAL_PAGES } from '../../ts/chatLoadPages'
+import { DEFAULT_CHAT_LOAD_INITIAL_PAGES } from '@risuai/shared-core/chat-load-pages'
 
 export const DEFAULT_CHAT_LOAD_PAGES = DEFAULT_CHAT_LOAD_INITIAL_PAGES
 export const CHAT_JUMP_LOAD_PADDING = 5

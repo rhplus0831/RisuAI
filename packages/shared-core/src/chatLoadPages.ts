@@ -12,10 +12,10 @@ export function normalizeChatLoadPages(value: unknown, fallback: number): number
   return Math.floor(numberValue)
 }
 
-export function getInitialChatLoadPages(db: { chatLoadInitialPages?: number }): number {
-  return normalizeChatLoadPages(db.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
+export function getInitialChatLoadPages(settings: { chatLoadInitialPages?: number }): number {
+  return normalizeChatLoadPages(settings.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
 }
 
-export function getAdditionalChatLoadPages(db: { chatLoadAdditionalPages?: number }): number {
-  return normalizeChatLoadPages(db.chatLoadAdditionalPages, DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
+export function getAdditionalChatLoadPages(settings: { chatLoadAdditionalPages?: number }): number {
+  return normalizeChatLoadPages(settings.chatLoadAdditionalPages, DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
 }
