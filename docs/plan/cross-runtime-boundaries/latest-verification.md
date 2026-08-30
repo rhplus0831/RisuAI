@@ -4,41 +4,39 @@ Date: 2026-08-30
 
 ## Candidate
 
-- Implementation commit: `8a1084a53f638860bb7f1a151f2e8fc98f0356a1`
+- Implementation commit: `e729dabe489ce4974cf0f669a74e47ba69927008`
 - Opening Phase 0 gate: `b01e88b03461753afe8f573029ce2e5ab47892ef`
 - Environment: Node `v24.19.0`, pnpm `11.23.0`, Linux workspace
-- Scope: server-tool contract ownership; no tool execution, provider
-  translation, prompt construction, authorization, active-writer, persistence,
-  or error behavior changed.
+- Scope: client-context DTO and normalizer ownership; no browser environment
+  capture, generation assembly, prompt/CBS, authorization, active-writer, or
+  recovery behavior changed.
 
 ## Contract And Inventory Proof
 
-- `@risuai/protocol/server-tool` owns schema-derived definition, call, result,
-  and round types plus the existing limits and normalizing validators.
-- Thirteen focused contract tests exercise limits, normalized round trips,
-  provider-safe names, duplicates, malformed and cyclic JSON, count and byte
-  bounds, unavailable tools, thought signatures, and call/result identity; the
-  two-test protocol import audit remains clean.
-- Browser UI/completion and Fastify generation consumers use the package
-  contract; the old application-tree module was removed.
-- 345 direct root-`src` edges remain across 132 importers and 72 targets.
-- Lanes: 242 production, 95 server-test, 8 browser-smoke. Usage: 136 runtime, 42
-  mixed, 167 type-only.
-- The exact reduction is eight production edges: six type-only and two mixed.
+- `@risuai/protocol/client-context` owns the schema-derived reported context DTO
+  and existing behavior-preserving normalizer.
+- Fourteen protocol fixtures exercise language syntax and trimming, partial and
+  unknown-field behavior, invalid and empty inputs, finite positive dimensions,
+  rounding, and clamping; browser tests retain guarded host-getter coverage.
+- Fastify generation/prompt and neutral display-source consumers use the package
+  contract; the browser adapter remains the only `navigator`/`window` reader.
+- 341 direct root-`src` edges remain across 128 importers and 71 targets.
+- Lanes: 238 production, 95 server-test, 8 browser-smoke. Usage: 135 runtime, 42
+  mixed, 164 type-only.
+- The exact reduction is four production edges: one runtime and three type-only.
 
 ## Commands And Results
 
-- Focused server-tool protocol/import-boundary suite — passed, 2 files and 15
-  tests.
-- Focused browser completion, Iris UI, and architecture suite — passed, 3 files
-  and 42 tests.
-- Focused Fastify completion/provider/tool suite — passed, 6 files and 353 tests.
+- Focused protocol, browser-adapter, import-boundary, and architecture suite —
+  passed, 4 files and 27 tests.
+- Focused browser request/display suite — passed, 5 files and 122 tests.
+- Focused Fastify generation suite — passed, 2 files and 248 tests.
 - `pnpm check:protocol`, `pnpm check:server`, and `pnpm check` — passed; the
-  mandatory architecture gate reported 345 cross-runtime edges and both runtime
+  mandatory architecture gate reported 341 cross-runtime edges and both runtime
   typecheck families were clean.
 - `pnpm test:affected -- --dry-run` — correctly escalated package-export changes
   to `pnpm test:all`.
-- `pnpm test:affected` / `pnpm test:all` — passed every lane in 4m42s: 6,761
+- `pnpm test:affected` / `pnpm test:all` — passed every lane in 4m45s: 6,775
   frontend tests; 3,650 server tests with one skip; 41 browser-smoke tests; 206
   UI coverage tests; 18 compatibility-harness tests; the Realm scale test; six
   frontend performance tests; register, typecheck, formatting, and coverage
@@ -47,7 +45,7 @@ Date: 2026-08-30
 
 ## Dependency Release And Verdict
 
-The server-tool contract is released at `8a1084a53`. Tool execution, provider
-translation, prompt construction, authorization, active-writer authority,
-persistence, and error policy remain with their existing owners. The slice
-passes; Phase 1 continues with the client-context contract.
+The client-context contract is released at `e729dabe4`. Browser capture,
+generation assembly, prompt/CBS behavior, authorization, active-writer policy,
+and recovery remain with their existing owners. The slice passes; Phase 1
+continues with the display-source contract.

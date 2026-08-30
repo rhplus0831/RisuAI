@@ -4,18 +4,19 @@ Date: 2026-08-30
 
 ## Current Best Task
 
-Execute the [client-context contract
-slice](phases/slices/phase-1-protocol-contract-completion/client-context-contract.md).
+Execute the [display-source contract
+slice](phases/slices/phase-1-protocol-contract-completion/display-source-contract.md).
 
-1. Define the schema-derived reported-client-context DTO and behavior-preserving
-   normalizer at an explicit protocol subpath.
-2. Preserve language trimming and syntax, finite positive dimension checks,
-   rounding, clamping, ignored fields, and undefined-empty normalization.
-3. Migrate Fastify route/prompt consumers and the display-source contract to the
-   package owner while leaving browser environment capture in its browser adapter.
-4. Keep the browser adapter as the only `navigator`/`window` reader and add
-   package fixtures for normalization boundaries.
-5. Refresh the boundary baseline for the exact four removed cross-runtime edges
+1. Define schema-first display request/response DTOs, layer/version taxonomies,
+   bounds, namespace inputs, and normalizers at an explicit protocol subpath.
+2. Preserve page-session normalization, dependency canonicalization, namespace
+   ordering, streaming-target semantics, and response fallback statuses.
+3. Migrate browser display-source callers plus Fastify bootstrap, route, and
+   service consumers without moving rendering, CBS, caches, persistence, or
+   active-writer policy.
+4. Move the existing parity fixtures to the package owner and extend the protocol
+   import audit.
+5. Refresh the boundary baseline for the exact three removed cross-runtime edges
    and record the contract release.
 
 ## Boundary Conventions Released
@@ -36,14 +37,14 @@ Workstream 2's compatibility inventory.
 - Do not introduce the route operation catalog yet.
 - Do not move aggregate `Database`, character state, or Svelte state into a
   shared package.
-- Do not move `navigator`, `window`, prompt assembly, CBS behavior, route
-  authorization, active-writer policy, or authoritative recovery into protocol.
-- Do not combine unrelated display-source, OAuth, standalone-settings, or prompt
+- Do not move display rendering, parser/CBS execution, caches, persistence,
+  authorization, active-writer policy, or recovery into protocol.
+- Do not combine unrelated OAuth, standalone-settings, generation, or prompt
   contract families.
 
 ## Handoff
 
 After the slice passes, update [`status.md`](status.md) with exact edge counts
-and the client-context release cursor, refresh
+and the display-source release cursor, refresh
 [`latest-verification.md`](latest-verification.md), then select the next
 wire-contract family from [`baseline.json`](baseline.json).

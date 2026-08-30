@@ -1,6 +1,6 @@
 # Client-Context Contract
 
-Status: ready.
+Status: complete at `e729dabe489ce4974cf0f669a74e47ba69927008`.
 
 Parent: [Phase 1](../../phase-1-protocol-contract-completion.md)
 
@@ -57,3 +57,18 @@ Fastify generation/prompt tests, protocol import audit, `pnpm check:protocol`,
 
 Stop if extraction changes any normalized output, requires browser globals in
 the protocol package, or moves prompt, route, authorization, or writer behavior.
+
+## Result
+
+- `@risuai/protocol/client-context` now owns the TypeBox schema, derived DTO,
+  and behavior-preserving client-context normalizer.
+- Protocol fixtures prove trimming, language syntax, partial and unknown-field
+  handling, empty/malformed inputs, finite positive dimensions, rounding, and
+  clamping; browser fixtures retain guarded host-getter coverage.
+- Fastify generation/prompt and neutral display-source consumers use the
+  explicit package subpath, while the application adapter remains the only
+  `navigator` and `window` reader.
+- Prompt/CBS behavior, generation assembly, authorization, writer policy, and
+  browser privacy-getter recovery did not move.
+- The boundary cursor fell by exactly four production edges, from 345 to 341:
+  one runtime and three type-only.
