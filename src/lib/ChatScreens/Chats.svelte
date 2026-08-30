@@ -3,7 +3,7 @@
   import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characterImage'
-  import { selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte'
+  import { ReloadChatPointer } from 'src/ts/stores.svelte'
   import { createSimpleCharacter } from 'src/ts/simpleCharacter'
   import {
     RegexDisplayReloadPointer,
@@ -41,17 +41,14 @@
     type GenerationDisplayProjection,
   } from 'src/ts/process/generationDisplayProjection.svelte'
   import { activateDisplaySourceChat, releaseDisplaySourceChat } from 'src/ts/server/displaySources'
+  import { getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
+  import { preferChatMetadataOwner, projectChatMetadata } from 'src/ts/server/chatMetadataOwner'
 
-  const getCurrentChatRoomId = () => {
-    const charId = get(selectedCharID)
-    if (charId < 0) return null
-    const char = getDatabase().characters[charId]
-    if (!char) return null
-    return char.chats?.[char.chatPage]?.id ?? null
-  }
+  const getCurrentChatRoomId = () => chatId ?? null
 
   let {
     messages,
+    chatId,
     currentCharacter,
     onReroll,
     unReroll,
@@ -71,6 +68,7 @@
     initialRowsPending = false,
   }: {
     messages: Message[]
+    chatId?: string | null
     currentCharacter: character
     onReroll: () => void
     unReroll: () => void
@@ -89,6 +87,16 @@
     initialDisplayPending?: boolean
     initialRowsPending?: boolean
   } = $props()
+
+  function legacyChatMetadataFallback(): ReturnType<typeof projectChatMetadata> | undefined {
+    if (!chatId) return undefined
+    const chat = currentCharacter.chats?.find((candidate) => candidate?.id === chatId)
+    return chat ? projectChatMetadata(chatId, chat) : undefined
+  }
+
+  let currentChatMetadata = $derived(
+    preferChatMetadataOwner(chatId ? getChatMetadataOwnerState(chatId) : undefined, legacyChatMetadataFallback()),
+  )
 
   let chatBody: HTMLDivElement
   let latestMessageScrollSpacerHeight = $state(0)
@@ -134,7 +142,7 @@
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: currentCharacter?.chaId,
-      chatId: currentCharacter?.chats?.[currentCharacter.chatPage]?.id,
+      chatId: chatId ?? undefined,
     }),
   )
 
@@ -148,13 +156,12 @@
       untrack(() => currentCharacter.customscript),
     )
     const database = getDatabase()
-    const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
-    const currentChatId = currentChat?.id
+    const currentChatId = chatId ?? null
     recordChatRowsBuild(currentChatId)
     const generationPersistenceLookup = buildGenerationPersistenceStateLookup(
       getGenerationFinalizationPersistencesForChat(currentChatId),
     )
-    const lastMemoryId = currentChat?.lastMemory
+    const lastMemoryId = currentChatMetadata?.lastMemory
     const { loadStart, loadEnd } = getTranscriptWindowRange({
       messageCount: messages.length,
       loadPages,
@@ -716,13 +723,12 @@
       const retainedIds = untrack(() => $automaticTranslationMessageIds).filter(
         (id) => residentMessageIds.has(id) && !$serverOwnedGeneratedMessageIds.has(id),
       )
-      const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
       const appendedIds = newlyAppendedMessageIds({
         previousChatId: previousChatRoomId,
         currentChatId: currentChatRoomId,
         previousMessageIds,
         messages,
-        autoTranslate: currentChat?.autoTranslate === true,
+        autoTranslate: currentChatMetadata?.autoTranslate === true,
       })
       replaceAutomaticTranslationMessageIds([
         ...retainedIds,

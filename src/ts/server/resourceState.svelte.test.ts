@@ -53,6 +53,7 @@ import {
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
+  getChatMetadataOwnerState,
   hasCharacterRowProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasNewerCharacterLorebookBodyResourceRevision,
@@ -178,6 +179,32 @@ afterEach(() => {
 })
 
 describe('resource-scoped database state', () => {
+  it('projects stable chat metadata from the character resource owner', () => {
+    const owner = metadataCharacter('char-a', 'Owner')
+    owner.chats = [
+      {
+        id: 'chat-a',
+        lastMemory: 'owner-memory',
+        autoTranslate: true,
+        message: [{ role: 'user', data: 'owner transcript' }],
+      },
+    ] as never
+    applyCharactersResource({
+      version: 1,
+      revision: 1,
+      characters: [owner],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(getChatMetadataOwnerState('chat-a')).toEqual({
+      chatId: 'chat-a',
+      lastMemory: 'owner-memory',
+      autoTranslate: true,
+    })
+    expect(getChatMetadataOwnerState('chat-a')).not.toHaveProperty('message')
+  })
+
   it('accepts a lower full snapshot after database replacement fences are reset', () => {
     applySettingsResource({ revision: 12, settings: { language: 'en' } })
     applyCollectionsResource({ revision: 12, collections: completeCollections() })

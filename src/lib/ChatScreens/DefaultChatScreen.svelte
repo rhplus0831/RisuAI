@@ -2988,6 +2988,7 @@
               onNewReroll={newReroll}
               onSelectRerollCandidate={selectRerollCandidate}
               rerollTarget={currentRerollTarget}
+              chatId={currentChatId}
               {currentCharacter}
               {currentUsername}
               {userIcon}

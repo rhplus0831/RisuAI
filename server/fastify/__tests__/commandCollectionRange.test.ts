@@ -5,6 +5,9 @@ import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
+import { loadPersisted } from '../src/repository.js'
+import { normalizeTemplate } from '../src/prompt/templates.js'
+import type { FastifyDatabase as Database } from '../src/prompt/serverTypes.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
@@ -566,7 +569,7 @@ describe('presets collection range', () => {
     ])
   })
 
-  it('POST prompt-presets/select persists applied promptTemplate + settings', async () => {
+  it('POST prompt-presets/select persists only selection settings', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 0
@@ -584,17 +587,49 @@ describe('presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readSettings().promptPresetsId).toBe(1)
     expect(readSettings().mainPrompt).toBe('prompt 1')
-    expect(readCollection('prompt_templates')).toEqual([
-      { id: expect.any(String), type: 'plain', text: 'sp-1', role: 'system' },
+    expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'current', role: 'system' }])
+  })
+
+  it('POST prompt-presets and reorder persist only the modern owner table', async () => {
+    const seed = seedDatabase()
+    seed.promptPresetsId = 0
+    seed.promptPresets = [{ id: 'prompt-0', name: 'Prompt 0' }]
+    seed.promptTemplate = [{ type: 'plain', text: 'stale-legacy-table' }]
+    let revision = await importDatabase(seed)
+
+    const created = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets',
+      payload: {
+        baseRevision: revision,
+        preset: { id: 'prompt-1', name: 'Prompt 1', promptTemplate: [{ type: 'plain', text: 'owner-1' }] },
+      },
+    })
+    expect(created.metric.writtenTables).toEqual(['prompt_presets'])
+    expect(readCollection('prompt_templates')).toMatchObject([
+      { type: 'plain', text: 'stale-legacy-table', role: 'system' },
+    ])
+    revision = created.revision
+
+    const reordered = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/reorder',
+      payload: { baseRevision: revision, promptPresetIds: ['prompt-1', 'prompt-0'] },
+    })
+    expect(reordered.metric.writtenTables).toEqual(['prompt_presets', 'settings'])
+    expect(reordered.body.selectedPromptPresetId).toBe('prompt-0')
+    expect(readSettings().promptPresetsId).toBe(1)
+    expect(readCollection('prompt_templates')).toMatchObject([
+      { type: 'plain', text: 'stale-legacy-table', role: 'system' },
     ])
   })
 
-  it('PATCH selected prompt-presets/:id persists touched settings and promptTemplate projections', async () => {
+  it('PATCH selected prompt-presets/:id persists the owner row and touched settings only', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 0
@@ -619,14 +654,12 @@ describe('presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['prompt_presets', 'prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['prompt_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(collectionRowidsByPosition('prompt_presets')).toEqual(beforeRowids)
     expect(readSettings().mainPrompt).toBe('prompt 0 patched')
-    expect(readCollection('prompt_templates')).toEqual([
-      { id: expect.any(String), type: 'plain', text: 'sp-0 patched', role: 'system' },
-    ])
+    expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'current', role: 'system' }])
     expect(body).toMatchObject({
       promptPresetId: 'prompt-0',
       acknowledgedKeys: ['mainPrompt', 'promptTemplate'],
@@ -772,7 +805,7 @@ describe('presets collection range', () => {
     ])
   })
 
-  it('DELETE selected prompt-presets/:id persists the next selected promptTemplate + settings', async () => {
+  it('DELETE selected prompt-presets/:id persists the next selection and settings only', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 1
@@ -791,16 +824,62 @@ describe('presets collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['prompt_presets', 'prompt_templates', 'settings'])
+    expect(metric.writtenTables).toEqual(['prompt_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect(readCollection('prompt_presets').map((p) => (p as { id: string }).id)).toEqual(['prompt-0'])
     expect(readSettings().promptPresetsId).toBe(0)
     expect(body.selectedPromptPresetId).toBe('prompt-0')
     expect(readSettings().mainPrompt).toBe('prompt 0')
-    expect(readCollection('prompt_templates')).toEqual([
-      { id: expect.any(String), type: 'plain', text: 'sp-0', role: 'system' },
+    expect(readCollection('prompt_templates')).toMatchObject([{ type: 'plain', text: 'sp-1', role: 'system' }])
+  })
+
+  it('keeps stale legacy prompt_templates out of selected modern generation after reopen', async () => {
+    const seed = seedDatabase()
+    seed.promptPresetsId = 0
+    seed.promptPresets = [
+      { id: 'prompt-0', name: 'Prompt 0', promptTemplate: [{ type: 'plain', text: 'owner-0' }] },
+      { id: 'prompt-1', name: 'Prompt 1', promptTemplate: [{ type: 'plain', text: 'owner-1' }] },
+    ]
+    seed.promptTemplate = [{ type: 'plain', text: 'stale-legacy-table' }]
+    const revision = await importDatabase(seed)
+
+    const { metric } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/select',
+      payload: { baseRevision: revision, promptPresetId: 'prompt-1' },
+    })
+    expect(metric.writtenTables).toEqual(['settings'])
+    expect(readCollection('prompt_templates')).toMatchObject([
+      { type: 'plain', text: 'stale-legacy-table', role: 'system' },
     ])
+
+    await harness.app.close()
+    const reopened = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir: harness.dataDir,
+        bodyLimit: 20 * 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      assetGc: false,
+      memoryWorker: false,
+    })
+    harness.app = reopened.app
+
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const persisted = loadPersisted(sqlite, harness.dataDir).database as Database
+      const generated = normalizeTemplate(persisted, { utilityBot: false } as Parameters<typeof normalizeTemplate>[1])
+      expect(generated.promptTemplate).toHaveLength(2)
+      expect(generated.promptTemplate?.[0]).toMatchObject({ type: 'plain', text: 'owner-1', role: 'system' })
+      expect(generated.promptTemplate?.[1]).toEqual({ type: 'postEverything' })
+    } finally {
+      sqlite.close()
+    }
   })
 })
 
