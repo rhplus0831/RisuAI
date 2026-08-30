@@ -8,6 +8,9 @@ import {
   collectSourceFileModuleEdges,
   compareCrossRuntimeBaseline,
   createCrossRuntimeBaseline,
+  refreshCompatibilityBaseline,
+  validateCompatibilityBaseline,
+  type CompatibilityBaseline,
   type CrossRuntimeBaseline,
 } from './architecture-inventory.js'
 
@@ -133,6 +136,68 @@ describe('cross-runtime baseline gate', () => {
     expect(compareCrossRuntimeBaseline(observation, baseline)).toEqual([
       'edge server/fastify/src/example.ts -> src/example.ts uses unknown policy missing-policy',
       expect.stringContaining('cross-runtime architecture inventory drifted'),
+    ])
+  })
+})
+
+describe('compatibility disposition gate', () => {
+  it('validates the reviewed repository matrix and fixture provenance', () => {
+    const baseline = JSON.parse(
+      fs.readFileSync(
+        path.join(REPO_ROOT, 'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json'),
+        'utf8',
+      ),
+    ) as CompatibilityBaseline
+
+    expect(validateCompatibilityBaseline(REPO_ROOT, baseline)).toEqual([])
+    expect(baseline.surfaces).toHaveLength(19)
+    expect(new Set(baseline.surfaces.map((surface) => surface.id)).size).toBe(19)
+    expect(new Set(baseline.surfaces.map((surface) => surface.disposition))).toEqual(
+      new Set(['canonical', 'migrate', 'import-only', 'explicit-compatibility', 'remove']),
+    )
+  })
+
+  it('rejects probe drift and missing fixtures', () => {
+    const root = fixtureRoot()
+    const fixture = path.join(root, 'fixture.ts')
+    const source = path.join(root, 'src/compatibility.ts')
+    fs.writeFileSync(fixture, 'export const fixture = true\n')
+    fs.writeFileSync(source, 'export const legacyMirror = true\n')
+    const baseline = refreshCompatibilityBaseline(root, {
+      schemaVersion: 1,
+      openingAnchor: 'test-anchor',
+      conventionRelease: 'test-release',
+      decisionPolicy: 'Test policy.',
+      surfaces: [
+        {
+          id: 'legacy-mirror',
+          family: 'repair',
+          surface: 'legacyMirror',
+          currentOwner: 'test owner',
+          roles: ['repair'],
+          currentPrecedence: 'Test precedence.',
+          missingBehavior: 'Test missing behavior.',
+          malformedBehavior: 'Test malformed behavior.',
+          damagedDatabaseBehavior: 'Test damaged behavior.',
+          historicalFixture: 'fixture.ts',
+          provenance: 'Test provenance.',
+          disposition: 'migrate',
+          targetOwner: 'test target',
+          migrationPhase: 'test phase',
+          oldReaderOrExporter: 'test old reader',
+          rollbackProof: 'test rollback',
+          workstream3Cursor: 'test hold',
+          probes: [{ path: 'src/compatibility.ts', kind: 'identifier', value: 'legacyMirror', expectedCount: 0 }],
+        },
+      ],
+    })
+
+    expect(validateCompatibilityBaseline(root, baseline)).toEqual([])
+    fs.writeFileSync(source, 'export const legacyMirror = true\nexport const next = legacyMirror\n')
+    fs.rmSync(fixture)
+    expect(validateCompatibilityBaseline(root, baseline)).toEqual([
+      'compatibility surface legacy-mirror fixture does not exist: fixture.ts',
+      'compatibility surface legacy-mirror probe drifted: src/compatibility.ts identifier "legacyMirror" expected 1, observed 2',
     ])
   })
 })

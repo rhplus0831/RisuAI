@@ -83,6 +83,51 @@ export interface CrossRuntimeBaseline {
   >
 }
 
+export type CompatibilityDisposition =
+  | 'canonical'
+  | 'migrate'
+  | 'import-only'
+  | 'export-only'
+  | 'explicit-compatibility'
+  | 'quarantine'
+  | 'remove'
+
+export interface CompatibilityProbe {
+  path: string
+  kind: 'identifier' | 'text'
+  value: string
+  expectedCount: number
+}
+
+export interface CompatibilitySurface {
+  id: string
+  family: 'model-configuration' | 'prompt-template' | 'translator' | 'repair' | 'interchange'
+  surface: string
+  currentOwner: string
+  roles: Array<'read' | 'write' | 'fallback' | 'repair' | 'import' | 'export' | 'backup' | 'recovery'>
+  currentPrecedence: string
+  missingBehavior: string
+  malformedBehavior: string
+  damagedDatabaseBehavior: string
+  historicalFixture: string
+  provenance: string
+  disposition: CompatibilityDisposition
+  targetOwner: string
+  migrationPhase: string
+  oldReaderOrExporter: string
+  rollbackProof: string
+  workstream3Cursor: string
+  probes: CompatibilityProbe[]
+}
+
+export interface CompatibilityBaseline {
+  schemaVersion: 1
+  openingAnchor: string
+  conventionRelease: string
+  decisionPolicy: string
+  surfaces: CompatibilitySurface[]
+}
+
 const POLICY_IDS = {
   wire: 'protocol-wire-contract',
   pure: 'shared-pure-runtime',
@@ -616,13 +661,117 @@ export function compareCrossRuntimeBaseline(
   return errors
 }
 
+function countTextOccurrences(source: string, value: string): number {
+  if (!value) return 0
+  let count = 0
+  let offset = 0
+  while ((offset = source.indexOf(value, offset)) >= 0) {
+    count += 1
+    offset += value.length
+  }
+  return count
+}
+
+function countIdentifierOccurrences(file: string, source: string, value: string): number {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, sourceKind(file))
+  let count = 0
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === value) count += 1
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return count
+}
+
+export function observeCompatibilityProbe(repoRoot: string, probe: CompatibilityProbe): number {
+  const absolutePath = path.join(repoRoot, probe.path)
+  if (!fs.existsSync(absolutePath) || !fs.statSync(absolutePath).isFile()) {
+    throw new Error(`Compatibility probe path does not exist: ${probe.path}`)
+  }
+  const source = fs.readFileSync(absolutePath, 'utf8')
+  return probe.kind === 'identifier'
+    ? countIdentifierOccurrences(absolutePath, source, probe.value)
+    : countTextOccurrences(source, probe.value)
+}
+
+export function refreshCompatibilityBaseline(repoRoot: string, baseline: CompatibilityBaseline): CompatibilityBaseline {
+  return {
+    ...baseline,
+    surfaces: baseline.surfaces.map((surface) => ({
+      ...surface,
+      probes: surface.probes.map((probe) => ({
+        ...probe,
+        expectedCount: observeCompatibilityProbe(repoRoot, probe),
+      })),
+    })),
+  }
+}
+
+export function validateCompatibilityBaseline(repoRoot: string, baseline: CompatibilityBaseline): string[] {
+  const errors: string[] = []
+  if (baseline.schemaVersion !== 1) errors.push('compatibility schemaVersion must be 1')
+  if (!baseline.openingAnchor || !baseline.conventionRelease || !baseline.decisionPolicy) {
+    errors.push('compatibility baseline is missing its anchor, convention release, or decision policy')
+  }
+  const ids = new Set<string>()
+  for (const surface of baseline.surfaces) {
+    if (ids.has(surface.id)) errors.push(`duplicate compatibility surface id: ${surface.id}`)
+    ids.add(surface.id)
+    const requiredText: Array<[string, string]> = [
+      ['surface', surface.surface],
+      ['currentOwner', surface.currentOwner],
+      ['currentPrecedence', surface.currentPrecedence],
+      ['missingBehavior', surface.missingBehavior],
+      ['malformedBehavior', surface.malformedBehavior],
+      ['damagedDatabaseBehavior', surface.damagedDatabaseBehavior],
+      ['historicalFixture', surface.historicalFixture],
+      ['provenance', surface.provenance],
+      ['targetOwner', surface.targetOwner],
+      ['migrationPhase', surface.migrationPhase],
+      ['oldReaderOrExporter', surface.oldReaderOrExporter],
+      ['rollbackProof', surface.rollbackProof],
+      ['workstream3Cursor', surface.workstream3Cursor],
+    ]
+    for (const [field, value] of requiredText) {
+      if (!value.trim()) errors.push(`compatibility surface ${surface.id} has empty ${field}`)
+    }
+    if (surface.roles.length === 0) errors.push(`compatibility surface ${surface.id} has no roles`)
+    if (surface.probes.length === 0) errors.push(`compatibility surface ${surface.id} has no closed-world probes`)
+    const fixturePath = surface.historicalFixture.split('#', 1)[0]
+    if (!fs.existsSync(path.join(repoRoot, fixturePath))) {
+      errors.push(`compatibility surface ${surface.id} fixture does not exist: ${fixturePath}`)
+    }
+    for (const probe of surface.probes) {
+      try {
+        const actual = observeCompatibilityProbe(repoRoot, probe)
+        if (actual !== probe.expectedCount) {
+          errors.push(
+            `compatibility surface ${surface.id} probe drifted: ${probe.path} ${probe.kind} ${JSON.stringify(probe.value)} expected ${probe.expectedCount}, observed ${actual}`,
+          )
+        }
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error))
+      }
+    }
+  }
+  return errors
+}
+
 function loadBaseline(file: string): CrossRuntimeBaseline {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as CrossRuntimeBaseline
+}
+
+function loadCompatibilityBaseline(file: string): CompatibilityBaseline {
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as CompatibilityBaseline
 }
 
 async function run(): Promise<void> {
   const repoRoot = process.cwd()
   const baselinePath = path.join(repoRoot, 'docs/plan/cross-runtime-boundaries/baseline.json')
+  const compatibilityBaselinePath = path.join(
+    repoRoot,
+    'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json',
+  )
   const observation = collectCrossRuntimeObservation(repoRoot)
   if (process.argv.includes('--print-cross-runtime')) {
     process.stdout.write(
@@ -630,8 +779,24 @@ async function run(): Promise<void> {
     )
     return
   }
+  if (process.argv.includes('--print-compatibility')) {
+    if (!fs.existsSync(compatibilityBaselinePath)) {
+      throw new Error(`Missing compatibility baseline: ${compatibilityBaselinePath}`)
+    }
+    process.stdout.write(
+      stableJson(refreshCompatibilityBaseline(repoRoot, loadCompatibilityBaseline(compatibilityBaselinePath))),
+    )
+    return
+  }
   if (!fs.existsSync(baselinePath)) throw new Error(`Missing cross-runtime architecture baseline: ${baselinePath}`)
-  const errors = compareCrossRuntimeBaseline(observation, loadBaseline(baselinePath))
+  if (!fs.existsSync(compatibilityBaselinePath)) {
+    throw new Error(`Missing compatibility baseline: ${compatibilityBaselinePath}`)
+  }
+  const compatibilityBaseline = loadCompatibilityBaseline(compatibilityBaselinePath)
+  const errors = [
+    ...compareCrossRuntimeBaseline(observation, loadBaseline(baselinePath)),
+    ...validateCompatibilityBaseline(repoRoot, compatibilityBaseline),
+  ]
   if (errors.length > 0) {
     for (const error of errors) console.error(`[architecture-inventory] ${error}`)
     process.exitCode = 1
@@ -650,6 +815,10 @@ async function run(): Promise<void> {
   )
   console.log(
     `[architecture-inventory] PASS ${edgeCount} cross-runtime edges (${runtimeEdges} runtime/mixed) across production=${laneCounts.production}, server-test=${laneCounts['server-test']}, browser-smoke=${laneCounts['browser-smoke']}`,
+  )
+  const probeCount = compatibilityBaseline.surfaces.reduce((total, surface) => total + surface.probes.length, 0)
+  console.log(
+    `[architecture-inventory] PASS ${compatibilityBaseline.surfaces.length} compatibility surfaces with ${probeCount} closed-world probes`,
   )
 }
 
