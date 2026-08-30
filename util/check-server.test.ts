@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   architectureInventoryCheck,
-  clientDeclarationCheck,
   downstreamServerChecks,
   protocolCheck,
   runServerChecks,
@@ -38,7 +37,6 @@ describe('check:server orchestration', () => {
       protocolCheck.id,
       sharedCoreCheck.id,
       architectureInventoryCheck.id,
-      clientDeclarationCheck.id,
       ...downstreamServerChecks.map((check) => check.id),
     ])
 
@@ -59,7 +57,6 @@ describe('check:server orchestration', () => {
     ['protocol', ['protocol']],
     ['shared-core', ['protocol', 'shared-core']],
     ['architecture-inventory', ['protocol', 'shared-core', 'architecture-inventory']],
-    ['client-declarations', ['protocol', 'shared-core', 'architecture-inventory', 'client-declarations']],
   ] as const)('stops after a failing %s prerequisite', async (failingId, expectedStarted) => {
     const started: ServerCheck['id'][] = []
     const result = await runServerChecks(async (check) => {

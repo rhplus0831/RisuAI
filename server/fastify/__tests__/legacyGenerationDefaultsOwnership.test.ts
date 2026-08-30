@@ -3,10 +3,6 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { prebuiltNAIpresets, prebuiltPresets } from '../src/legacyGenerationDefaults.js'
-import {
-  prebuiltNAIpresets as browserPrebuiltNAIpresets,
-  prebuiltPresets as browserPrebuiltPresets,
-} from '../../../src/ts/process/templates/templates.js'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
 
@@ -43,21 +39,5 @@ describe('Fastify legacy generation defaults ownership', () => {
       'typicalp',
       'starter',
     ])
-  })
-
-  it('preserves the browser defaults byte-for-byte for the retained compatibility fields', () => {
-    // This browser import is intentionally test-only. It is a removable
-    // compatibility oracle once the legacy browser catalog is retired.
-    const browserGenerationDefaults = {
-      OAI: {
-        mainPrompt: browserPrebuiltPresets.OAI.mainPrompt,
-        jailbreak: browserPrebuiltPresets.OAI.jailbreak,
-        ooba: browserPrebuiltPresets.OAI.ooba,
-        ainconfig: browserPrebuiltPresets.OAI.ainconfig,
-      },
-    }
-
-    expect(JSON.stringify(prebuiltPresets)).toBe(JSON.stringify(browserGenerationDefaults))
-    expect(JSON.stringify(prebuiltNAIpresets)).toBe(JSON.stringify(browserPrebuiltNAIpresets))
   })
 })

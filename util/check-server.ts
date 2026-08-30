@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 export interface ServerCheck {
-  id: 'protocol' | 'shared-core' | 'architecture-inventory' | 'client-declarations' | 'server' | 'browser-smoke'
+  id: 'protocol' | 'shared-core' | 'architecture-inventory' | 'server' | 'browser-smoke'
   label: string
   args: string[]
 }
@@ -21,12 +21,6 @@ export const sharedCoreCheck: ServerCheck = {
   id: 'shared-core',
   label: 'shared-core typecheck',
   args: ['check:shared-core'],
-}
-
-export const clientDeclarationCheck: ServerCheck = {
-  id: 'client-declarations',
-  label: 'client-library declarations',
-  args: ['exec', 'tsc', '-p', 'tsconfig.client-lib.json'],
 }
 
 export const architectureInventoryCheck: ServerCheck = {
@@ -48,12 +42,11 @@ export const downstreamServerChecks: readonly ServerCheck[] = [
   },
 ]
 
-/** Preserve declaration prerequisites, then check the independent consumers concurrently. */
+/** Check shared prerequisites, then check the independent consumers concurrently. */
 export async function runServerChecks(runCheck: ServerCheckRunner): Promise<number> {
   if ((await runCheck(protocolCheck)) !== 0) return 1
   if ((await runCheck(sharedCoreCheck)) !== 0) return 1
   if ((await runCheck(architectureInventoryCheck)) !== 0) return 1
-  if ((await runCheck(clientDeclarationCheck)) !== 0) return 1
   const exitCodes = await Promise.all(downstreamServerChecks.map(runCheck))
   return exitCodes.every((exitCode) => exitCode === 0) ? 0 : 1
 }

@@ -7,6 +7,5 @@
     "playwright.fastify-smoke.config.ts",
     "server/fastify/browser-smoke/**/*.ts",
     "server/fastify/src/vendor.d.ts"
-  ],
-  "references": [{ "path": "./tsconfig.client-lib.json" }]
+  ]
 }
