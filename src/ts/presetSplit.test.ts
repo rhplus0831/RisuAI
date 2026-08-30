@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { MODEL_ROLES } from './model/modelRoles'
 import {
   applyEffectivePresetComposition,
   clearPromptPresetRecommendedModelPresetReferences,
@@ -270,6 +271,92 @@ describe('preset split helpers', () => {
 })
 
 describe('effective preset composition', () => {
+  it('keeps legacy model preset selection on the effective clone without changing durable bindings', () => {
+    const durableBindings = Object.fromEntries(
+      MODEL_ROLES.map((role) => [role, { mode: 'profile', profileId: `profile-${role}` }]),
+    )
+    const base = {
+      aiModel: 'base-model',
+      openAIKey: 'base-key',
+      modelRoleProfiles: durableBindings,
+    }
+    const modelPreset = {
+      id: 'legacy-model-preset',
+      aiModel: 'preset-model',
+      openAIKey: 'preset-inline-key',
+    }
+
+    const effective = composeEffectivePresetSettings({ base, modelPreset, scope: 'model-runtime' })
+
+    expect(effective).toMatchObject({
+      aiModel: 'preset-model',
+      openAIKey: 'preset-inline-key',
+      modelRoleProfiles: Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
+    })
+    expect(base.modelRoleProfiles).toBe(durableBindings)
+    expect(base.modelRoleProfiles).toEqual(durableBindings)
+    expect(modelPreset).not.toHaveProperty('modelRoleProfiles')
+  })
+
+  it('lets canonical model preset ownership win over stale legacy fields', () => {
+    const effective = composeEffectivePresetSettings({
+      base: {
+        aiModel: 'base-model',
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'base-profile' } },
+      },
+      modelPreset: {
+        id: 'canonical-model-preset',
+        aiModel: 'stale-flat-model',
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'preset-profile' } },
+      },
+      scope: 'model-runtime',
+    })
+
+    expect(effective.modelRoleProfiles).toEqual({
+      chatMain: { mode: 'profile', profileId: 'preset-profile' },
+    })
+  })
+
+  it.each(['modelProfiles', 'modelProfileOrder', 'modelRuntimeDefaults'] as const)(
+    'does not activate legacy compatibility when %s is present',
+    (canonicalField) => {
+      const baseBindings = { chatMain: { mode: 'profile', profileId: 'base-profile' } }
+      const effective = composeEffectivePresetSettings({
+        base: { modelRoleProfiles: baseBindings },
+        modelPreset: { aiModel: 'stale-flat-model', [canonicalField]: [] },
+        scope: 'model-runtime',
+      })
+
+      expect(effective.modelRoleProfiles).toEqual(baseBindings)
+    },
+  )
+
+  it('does not treat an empty model preset row as legacy compatibility', () => {
+    const baseBindings = { chatMain: { mode: 'profile', profileId: 'base-profile' } }
+    const effective = composeEffectivePresetSettings({
+      base: { modelRoleProfiles: baseBindings },
+      modelPreset: { id: 'empty-row', aiModel: '   ', openAIKey: null },
+      scope: 'model-runtime',
+    })
+
+    expect(effective.modelRoleProfiles).toEqual(baseBindings)
+  })
+
+  it('does not treat a parameter-only model preset as legacy model selection', () => {
+    const baseBindings = { chatMain: { mode: 'profile', profileId: 'base-profile' } }
+    const effective = composeEffectivePresetSettings({
+      base: { modelRoleProfiles: baseBindings },
+      modelPreset: { id: 'parameters-only', maxContext: 8192, temperature: 70 },
+      scope: 'model-runtime',
+    })
+
+    expect(effective).toMatchObject({
+      maxContext: 8192,
+      temperature: 70,
+      modelRoleProfiles: baseBindings,
+    })
+  })
+
   it('composes base, model preset, then prompt preset overrides for full generation', () => {
     const base = {
       apiType: 'base-api',

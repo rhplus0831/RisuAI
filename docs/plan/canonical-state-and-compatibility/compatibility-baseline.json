@@ -119,6 +119,12 @@
           "kind": "identifier",
           "value": "normalizeFallbackModels",
           "expectedCount": 2
+        },
+        {
+          "path": "src/ts/presetSplit.ts",
+          "kind": "identifier",
+          "value": "applyLegacyModelPresetCompatibilitySelection",
+          "expectedCount": 2
         }
       ]
     },

@@ -1,4 +1,5 @@
 import { normalizePromptTemplate } from './process/promptTemplateNormalization'
+import { normalizeModelRoleProfiles } from './model/modelProfileRecords'
 
 type JsonRecord = Record<string, unknown>
 
@@ -199,6 +200,15 @@ const PROMPT_PRESET_MODEL_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MOD
 const MODEL_PRESET_ONLY_FIELDS = MODEL_PRESET_FIELDS.filter(
   (field) => !PROMPT_PRESET_MODEL_OVERRIDE_FIELD_SET.has(field),
 )
+const CANONICAL_MODEL_PRESET_OWNER_FIELDS = new Set<ModelPresetField>([
+  'modelProfiles',
+  'modelProfileOrder',
+  'modelRoleProfiles',
+  'modelRuntimeDefaults',
+])
+const LEGACY_MODEL_PRESET_COMPATIBILITY_FIELDS = MODEL_PRESET_ONLY_FIELDS.filter(
+  (field) => !CANONICAL_MODEL_PRESET_OWNER_FIELDS.has(field),
+)
 
 /**
  * Detect a legacy/full preset before preset defaults are merged into it.
@@ -207,15 +217,27 @@ const MODEL_PRESET_ONLY_FIELDS = MODEL_PRESET_FIELDS.filter(
  */
 export function hasModelPresetOnlyFields(source: unknown): boolean {
   if (!isRecord(source)) return false
-  return MODEL_PRESET_ONLY_FIELDS.some((field) => {
-    if (!Object.prototype.hasOwnProperty.call(source, field)) return false
-    const value = source[field]
-    if (value === null || value === undefined) return false
-    if (typeof value === 'string') return value.trim().length > 0
-    if (Array.isArray(value)) return value.length > 0
-    if (typeof value === 'object') return Object.keys(value).length > 0
-    return true
-  })
+  return hasMeaningfulPresetField(source, MODEL_PRESET_ONLY_FIELDS)
+}
+
+/**
+ * Legacy model presets may still contain inline provider credentials that must
+ * not be copied into durable profile records. Keep that compatibility local to
+ * an effective request clone until the Phase 5 credential repair boundary can
+ * migrate it explicitly. Any canonical preset owner field disables this seam.
+ */
+export function isLegacyModelPresetCompatibilityRecord(source: unknown): boolean {
+  if (!isRecord(source)) return false
+  if (MODEL_PRESET_FIELDS.some((field) => CANONICAL_MODEL_PRESET_OWNER_FIELDS.has(field) && hasOwn(source, field))) {
+    return false
+  }
+  return hasMeaningfulPresetField(source, LEGACY_MODEL_PRESET_COMPATIBILITY_FIELDS)
+}
+
+export function applyLegacyModelPresetCompatibilitySelection(target: JsonRecord, preset: unknown): boolean {
+  if (!isLegacyModelPresetCompatibilityRecord(preset)) return false
+  target.modelRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(undefined))
+  return true
 }
 
 export function extractModelPresetFields(source: unknown): JsonRecord {
@@ -384,6 +406,7 @@ export function composeEffectivePresetSettings(input: ComposeEffectivePresetSett
 export function applyEffectivePresetComposition(target: JsonRecord, options: EffectivePresetCompositionOptions): void {
   const scope = options.scope ?? 'full-generation'
   applyMappedPresetFields(target, options.modelPreset, MODEL_PRESET_FIELDS)
+  applyLegacyModelPresetCompatibilitySelection(target, options.modelPreset)
 
   if (scope === 'full-generation') {
     applyPromptPresetFields(target, options.promptPreset)
@@ -439,6 +462,22 @@ function pickPresetFields(source: unknown, fields: readonly string[]): JsonRecor
     }
   }
   return picked
+}
+
+function hasMeaningfulPresetField(source: JsonRecord, fields: readonly string[]): boolean {
+  return fields.some((field) => {
+    if (!hasOwn(source, field)) return false
+    const value = source[field]
+    if (value === null || value === undefined) return false
+    if (typeof value === 'string') return value.trim().length > 0
+    if (Array.isArray(value)) return value.length > 0
+    if (typeof value === 'object') return Object.keys(value).length > 0
+    return true
+  })
+}
+
+function hasOwn(source: JsonRecord, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(source, key)
 }
 
 function normalizePromptTemplateField(record: JsonRecord): JsonRecord {
