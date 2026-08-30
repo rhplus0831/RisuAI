@@ -1,6 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import type { Message } from '../../../src/ts/storage/database.svelte'
 import { getChatMessages } from './messageStore.js'
 import type { AssembleMutationPayload } from './prompt/assemble.js'
 import type { GenerationFinalizationTargetSnapshot } from './routes/generationChat.js'
@@ -11,6 +10,15 @@ export const GENERATION_FINALIZATION_LEGACY_SNAPSHOT_ERROR = 'stalled_legacy'
 export const GENERATION_FINALIZATION_RETRY_BASE_DELAY_MS = 5_000
 export const GENERATION_FINALIZATION_RETRY_MAX_DELAY_MS = 5 * 60_000
 export const GENERATION_FINALIZATION_STALLED_FAILURE_THRESHOLD = 3
+
+export interface GenerationFinalizationMessage {
+  role: 'user' | 'char'
+  data: string
+  chatId?: string
+  generationInfo?: {
+    generationId?: string
+  }
+}
 
 export interface GenerationFinalizationAttempt {
   generationId: string
@@ -25,8 +33,8 @@ export interface GenerationFinalizationAttempt {
   chatId: string
   mode: GenerationFinalizationMode
   targetMessageId?: string
-  message: Message
-  alternateMessages?: Message[]
+  message: GenerationFinalizationMessage
+  alternateMessages?: GenerationFinalizationMessage[]
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
   characterFieldMutations?: AssembleMutationPayload['characterFieldMutations']
   localLoreMutation?: AssembleMutationPayload['localLoreMutation']
@@ -90,7 +98,7 @@ export interface GenerationFinalizationRetryProjection {
   state: GenerationFinalizationProjectionState
   failureCount: number
   nextAttemptAt?: string
-  provisionalMessage?: Message
+  provisionalMessage?: GenerationFinalizationMessage
   projectionFence?: GenerationFinalizationTargetSnapshot
 }
 
@@ -397,7 +405,7 @@ export function listPendingGenerationFinalizationRetries(
     .flatMap((row) => {
       const nextAttemptAt = retryNextAttemptAt(row.updated_at, row.failure_count, options)
       if (Date.parse(nextAttemptAt) > nowMs) return []
-      const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
+      const alternateMessages = JSON.parse(row.alternate_messages_json) as GenerationFinalizationMessage[]
       const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
       const legacySnapshotMissing =
         (row.mode === 'continue' || row.mode === 'regenerate') && row.target_snapshot_json === null
@@ -414,7 +422,7 @@ export function listPendingGenerationFinalizationRetries(
           chatId: row.chat_id,
           mode: row.mode,
           ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
-          message: JSON.parse(row.message_json) as Message,
+          message: JSON.parse(row.message_json) as GenerationFinalizationMessage,
           ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
           chatVarMutations: mutations.chatVarMutations,
           ...(mutations.characterFieldMutations?.length
@@ -477,7 +485,7 @@ function listGenerationFinalizationRetryRows(
 }
 
 function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow): GenerationFinalizationAttempt {
-  const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
+  const alternateMessages = JSON.parse(row.alternate_messages_json) as GenerationFinalizationMessage[]
   const mutations = parseGenerationFinalizationMutations(row.chat_var_mutations_json)
   return {
     generationId: row.generation_id,
@@ -491,7 +499,7 @@ function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow)
     chatId: row.chat_id,
     mode: row.mode,
     ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
-    message: JSON.parse(row.message_json) as Message,
+    message: JSON.parse(row.message_json) as GenerationFinalizationMessage,
     ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
     chatVarMutations: mutations.chatVarMutations,
     ...(mutations.characterFieldMutations?.length
@@ -507,14 +515,17 @@ function parseGenerationFinalizationAttempt(row: GenerationFinalizationRetryRow)
   }
 }
 
-function rowMatchesMessage(row: unknown, message: Message): boolean {
+function rowMatchesMessage(row: unknown, message: GenerationFinalizationMessage): boolean {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return false
   const record = row as Record<string, unknown>
   if (record.role !== message.role || record.data !== message.data) return false
   return message.chatId === undefined || record.chatId === message.chatId
 }
 
-function finalizationAlreadyCommitted(rows: readonly Message[], attempt: GenerationFinalizationAttempt): boolean {
+function finalizationAlreadyCommitted(
+  rows: readonly GenerationFinalizationMessage[],
+  attempt: GenerationFinalizationAttempt,
+): boolean {
   const snapshot = attempt.targetSnapshot
   if (!snapshot) {
     return rows.some(
@@ -545,7 +556,7 @@ export function findUncommittedGenerationFinalizationForChat(
   db: DatabaseSync,
   chatId: string,
 ): { generationId: string } | undefined {
-  const rows = getChatMessages(db, chatId) as unknown as Message[]
+  const rows = getChatMessages(db, chatId) as unknown as GenerationFinalizationMessage[]
   for (const row of listGenerationFinalizationRetryRows(db, { pendingChatId: chatId })) {
     const attempt = parseGenerationFinalizationAttempt(row)
     if (!finalizationAlreadyCommitted(rows, attempt)) {
@@ -555,7 +566,10 @@ export function findUncommittedGenerationFinalizationForChat(
   return undefined
 }
 
-function finalizationTargetIsFresh(rows: readonly Message[], attempt: GenerationFinalizationAttempt): boolean {
+function finalizationTargetIsFresh(
+  rows: readonly GenerationFinalizationMessage[],
+  attempt: GenerationFinalizationAttempt,
+): boolean {
   const snapshot = attempt.targetSnapshot
   if (!snapshot) return false
   if (rows.length !== snapshot.transcriptLength) return false
@@ -573,12 +587,12 @@ function finalizationTargetIsFresh(rows: readonly Message[], attempt: Generation
  * protected by the same assembly-time snapshot fence used by persistence.
  */
 export function listGenerationFinalizationRetryProjections(db: DatabaseSync): GenerationFinalizationRetryProjection[] {
-  const rowsByChat = new Map<string, Message[]>()
+  const rowsByChat = new Map<string, GenerationFinalizationMessage[]>()
   return listGenerationFinalizationRetryRows(db).map((row) => {
     const attempt = parseGenerationFinalizationAttempt(row)
     let chatRows = rowsByChat.get(attempt.chatId)
     if (!chatRows) {
-      chatRows = getChatMessages(db, attempt.chatId) as unknown as Message[]
+      chatRows = getChatMessages(db, attempt.chatId) as unknown as GenerationFinalizationMessage[]
       rowsByChat.set(attempt.chatId, chatRows)
     }
     const committed = finalizationAlreadyCommitted(chatRows, attempt)
