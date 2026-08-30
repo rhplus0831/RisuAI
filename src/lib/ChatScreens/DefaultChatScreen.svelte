@@ -177,6 +177,7 @@
   } from 'src/ts/server/greetingTranslations.svelte'
 
   import { loadPlaygroundMenu } from 'src/ts/routeComponentPreload'
+  import { cleanAutoSuggestionInput } from 'src/ts/model/autoSuggestionCleanup'
   const composerFileOperationGuard = createLatestOperationGuard<string>()
   const composerOperationGuard = createLatestOperationGuard<string>()
 
@@ -2837,13 +2838,7 @@
           {#if getDatabase().useAutoSuggestions}
             <Suggestion
               messageInput={(msg) => {
-                messageInput =
-                  (getDatabase().subModel === 'textgen_webui' ||
-                    getDatabase().subModel === 'mancer' ||
-                    getDatabase().subModel.startsWith('local_')) &&
-                  getDatabase().autoSuggestClean
-                    ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
-                    : msg
+                messageInput = cleanAutoSuggestionInput(msg, getDatabase())
                 markComposerDraftChanged('message')
               }}
               {send}
