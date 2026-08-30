@@ -41,7 +41,7 @@ import {
   isServerStandaloneSettingPayload,
   type ServerStandaloneSettingName,
   type ServerStandaloneSettingPayload,
-} from './standaloneSettingsProtocol'
+} from '@risuai/protocol/standalone-settings'
 import {
   isBardWikiChatResource,
   isBardWikiDocumentResource,

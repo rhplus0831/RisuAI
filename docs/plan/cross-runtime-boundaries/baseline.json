@@ -3382,20 +3382,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/routes/resourceReads.ts",
-      "specifier": "../../../../src/ts/server/standaloneSettingsProtocol.js",
-      "target": "src/ts/server/standaloneSettingsProtocol.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "ServerStandaloneSettingName",
-        "isServerStandaloneSettingName"
-      ],
-      "count": 1,
-      "policy": "protocol-wire-contract"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
       "specifier": "../../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",

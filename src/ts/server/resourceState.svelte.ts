@@ -33,7 +33,7 @@ import {
   SERVER_STANDALONE_SETTING_NAMES,
   type ServerStandaloneSettingName,
   type ServerStandaloneSettingPayload,
-} from './standaloneSettingsProtocol'
+} from '@risuai/protocol/standalone-settings'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0

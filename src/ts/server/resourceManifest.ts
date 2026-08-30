@@ -1,7 +1,7 @@
 import type { AppRoute } from '../routerRoute'
 import type { ServerCollectionName } from './resourceState.svelte'
 import { MODEL_PROFILE_SETTINGS_KEYS, type SettingsGroup } from './settingsGroups'
-import { SERVER_STANDALONE_SETTING_NAMES, type ServerStandaloneSettingName } from './standaloneSettingsProtocol'
+import { SERVER_STANDALONE_SETTING_NAMES, type ServerStandaloneSettingName } from '@risuai/protocol/standalone-settings'
 
 export const RESOURCE_PURPOSES = ['render', 'interact', 'mutate', 'generate', 'editor-prefill'] as const
 export type ResourcePurpose = (typeof RESOURCE_PURPOSES)[number]

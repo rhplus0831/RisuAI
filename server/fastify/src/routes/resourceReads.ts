@@ -8,10 +8,7 @@ import {
   isServerShellSettings,
   type ServerShellSettings,
 } from '@risuai/protocol/shell-resource'
-import {
-  isServerStandaloneSettingName,
-  type ServerStandaloneSettingName,
-} from '../../../../src/ts/server/standaloneSettingsProtocol.js'
+import { isServerStandaloneSettingName, type ServerStandaloneSettingName } from '@risuai/protocol/standalone-settings'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'

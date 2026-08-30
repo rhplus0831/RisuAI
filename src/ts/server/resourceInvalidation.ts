@@ -75,7 +75,7 @@ import { createDestructiveRefreshToken } from './staleStateGuards'
 import { applyServerInlayCatalogResource, getServerInlayCatalogResource } from './inlayCatalog'
 import { applyServerShellResource } from './shellHydration'
 import { SERVER_SHELL_SETTINGS_KEYS } from '@risuai/protocol/shell-resource'
-import type { ServerStandaloneSettingName } from './standaloneSettingsProtocol'
+import type { ServerStandaloneSettingName } from '@risuai/protocol/standalone-settings'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 import {
   isBardWikiChatResourceLoaded,
