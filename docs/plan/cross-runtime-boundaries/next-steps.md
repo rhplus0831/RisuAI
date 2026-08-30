@@ -4,19 +4,18 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [prompt-row rendering and budget seam
-slice](phases/slices/phase-4-server-consumer-migration/prompt-row-rendering-budget-seam.md).
+Execute the [chat-variable defaults seam
+slice](phases/slices/phase-4-server-consumer-migration/chat-variable-defaults-seam.md).
 
-1. Define one general Fastify-owned prompt message/multimodal record, reusing it
-   for the already-migrated memory-summary domain.
-2. Replace the five direct production and five focused-test `OpenAIChat` imports
-   in history, memory, budget finalization, preflight, and templates.
-3. Preserve role mapping, row order, memo/name metadata, disabled/all-before
-   filtering, thoughts, inlays, multimodal-only rows, and asset dimensions.
-4. Preserve independent re-tokenization, overflow removal eligibility, template
-   slot/coalescing behavior, and input immutability.
-5. Refresh the baseline after the five focused owners and a closed ownership
-   assertion pass.
+1. Replace `chatVarDefaults.ts`'s aggregate browser `Database` and character
+   declarations with two local structural inputs containing only
+   `templateDefaultVariables` and `defaultVariables`.
+2. Preserve character defaults before template defaults, first occurrence wins,
+   and nullish/blank parsing behavior.
+3. Add direct focused fixtures rather than widening the aggregate prompt-variable
+   test dependency.
+4. Add a closed import assertion, then refresh the architecture baseline and run
+   both type gates.
 
 ## Foundations Released
 
@@ -73,15 +72,15 @@ slice](phases/slices/phase-4-server-consumer-migration/prompt-row-rendering-budg
   no longer depend on the browser prompt-row declaration.
 - Memory-summary messages are released at `856834205`; four production and four
   test consumers use a Fastify-owned record.
+- Prompt-row rendering/budget is released at `6adc180fe` with prompt-summary
+  reuse at `701bc555f`; six production and five test imports were removed.
 
 ## Not In This Slice
 
-- Do not change model-profile resolution, tokenizer selection, provider
-  requests, prompt database inputs, or persistence.
-- Do not include aggregate `Database`, `Chat`, character, `PromptItem`, trigger,
-  or module contracts in the prompt-row record.
-- Do not combine general history, lorebook, Agent preset, CBS, trigger, or Lua
-  orchestration into this slice.
+- Do not change parser syntax, chat-variable persistence, CBS evaluation, prompt
+  scope, or mutation tracking.
+- Do not migrate the aggregate prompt-variable test or broader database/chat
+  contracts in this slice.
 
 ## Handoff
 

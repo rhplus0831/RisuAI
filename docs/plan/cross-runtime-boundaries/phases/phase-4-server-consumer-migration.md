@@ -47,5 +47,6 @@ Completed slices:
 - [Memory-embedding configuration seam](slices/phase-4-server-consumer-migration/memory-embedding-configuration-seam.md)
 - [Provider-message input seam](slices/phase-4-server-consumer-migration/provider-message-input-seam.md)
 - [Memory-summary message seam](slices/phase-4-server-consumer-migration/memory-summary-message-seam.md)
+- [Prompt-row rendering and budget seam](slices/phase-4-server-consumer-migration/prompt-row-rendering-budget-seam.md)
 
-Active slice: [Prompt-row rendering and budget seam](slices/phase-4-server-consumer-migration/prompt-row-rendering-budget-seam.md).
+Active slice: [Chat-variable defaults seam](slices/phase-4-server-consumer-migration/chat-variable-defaults-seam.md).

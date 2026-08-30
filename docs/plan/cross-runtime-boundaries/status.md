@@ -12,16 +12,16 @@ in [`latest-verification.md`](latest-verification.md).
 - Plan state: Active; Phases 0 through 3 complete; seventeen neutral shared-core
   leaves are released.
 - Current phase: [Phase 4 server consumer migration](phases/phase-4-server-consumer-migration.md).
-- Active slice: [Prompt-row rendering and budget seam](phases/slices/phase-4-server-consumer-migration/prompt-row-rendering-budget-seam.md), ready.
+- Active slice: [Chat-variable defaults seam](phases/slices/phase-4-server-consumer-migration/chat-variable-defaults-seam.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: memory-summary message seam at `856834205`,
-  after the provider-message seam at `e0be7d72e`; focused memory planner,
-  chunk, prompt, adapter, summarize-job, and ownership owners,
+- Latest implementation candidate: prompt-row rendering/budget at `6adc180fe`
+  plus prompt-summary reuse at `701bc555f`; focused history, memory, budget,
+  preflight, templates, assembly, and ownership owners,
   architecture inventory, shared-core/root/downstream typechecks, formatting,
   and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
@@ -67,6 +67,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Memory-embedding configuration seam | `3a96d8505` | Released through Fastify-owned model/settings/job input records; three production consumers dropped five type-only browser-application-model edges and one server-test edge. |
 | Provider-message input seam | `e0be7d72e` | Released through Fastify-owned provider-message and multimodal records; provider conversion dropped its browser prompt-model type edge. |
 | Memory-summary message seam | `856834205` | Released through a Fastify-owned message/multimodal record; four production and four focused test consumers dropped their browser prompt-model type edges. |
+| Prompt-row rendering and budget seam | `6adc180fe` (`701bc555f` summary follow-up) | Released through one Fastify-owned prompt message/multimodal record; six production and five focused test consumers dropped eleven type-only browser prompt-model edges. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -91,12 +92,12 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 271 direct root-`src` edges remain: 177 production, 86 server-test, and 8
+- 260 direct root-`src` edges remain: 171 production, 81 server-test, and 8
   browser-smoke, spanning 111 importers and 52 targets.
-- Usage is 97 runtime, 38 mixed, and 136 type-only; 135 runtime/mixed edges
+- Usage is 97 runtime, 38 mixed, and 125 type-only; 135 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse and completed Phase 4 server seams, removed 104 edges and
+  shared-helper reuse and completed Phase 4 server seams, removed 115 edges and
   27 source targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -109,7 +110,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
 | [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Complete | Closed at `96e0dedfb` after seventeen audited neutral leaves. |
-| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Four server-input seams complete; prompt-row rendering and budget consumers are next. |
+| [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Active | Prompt-row rendering/budget and summary ownership are complete; chat-variable defaults are next. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
 | [7. Verification and closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
@@ -130,7 +131,6 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Give history, memory, budget finalization,
-preflight, and template rendering one Fastify-owned prompt-row record while
-preserving row order, filtering, multimodals, token removal, and template
-semantics.
+Use [`next-steps.md`](next-steps.md). Narrow chat-variable default parsing to
+the character and database fields it observes while preserving concatenation,
+first-match precedence, nullish fallback, and key/value parsing.

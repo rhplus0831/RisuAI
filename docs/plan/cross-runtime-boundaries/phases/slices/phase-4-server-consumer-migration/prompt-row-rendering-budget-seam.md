@@ -1,6 +1,6 @@
 # Prompt-Row Rendering And Budget Seam
 
-Status: ready.
+Status: complete through `701bc555f`.
 
 Parent: [Phase 4](../../phase-4-server-consumer-migration.md)
 
@@ -19,7 +19,7 @@ browser prompt-model imports.
   plus their five focused server fixtures.
 - Destination: a Fastify-owned prompt message and multimodal record containing
   only row data observed by server prompt/token consumers.
-- Expected delta: five production and five server-test type-only
+- Delivered delta: six production and five server-test type-only
   browser-application-model edges.
 
 ## Behavior Contract
