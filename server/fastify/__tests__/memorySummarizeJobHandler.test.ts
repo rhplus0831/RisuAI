@@ -62,6 +62,24 @@ function database(settings: Record<string, unknown> = {}) {
   return {
     subModel: 'gpt-4o-mini',
     openAIKey: 'sk-test',
+    providerCredentials: [
+      {
+        id: 'credential-memory',
+        name: 'Memory',
+        type: 'apiKey',
+        apiKey: 'sk-test',
+      },
+    ],
+    modelProfiles: [
+      {
+        id: 'profile-memory',
+        name: 'Memory',
+        providerId: 'openai',
+        modelId: 'gpt-4o-mini',
+        providerOptions: { credentialId: 'credential-memory', requestModel: 'gpt-4o-mini' },
+      },
+    ],
+    modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-memory' } },
     hypaV3PresetId: 0,
     hypaV3Presets: [
       {
@@ -74,6 +92,10 @@ function database(settings: Record<string, unknown> = {}) {
         },
       },
     ],
+    hypaV3Settings: {
+      summarizationPrompt: 'STALE FLAT PROMPT {{slot}}',
+      summarizationRequestsPerMinute: 1,
+    },
     characters: [{ chats: [{ id: 'chat-1' }] }],
   }
 }
@@ -839,11 +861,31 @@ describe('summarize memory job handler', () => {
               id: 'model-global',
               name: 'Global model',
               modelRoles: { memory: 'gpt4om' },
+              modelProfiles: [
+                {
+                  id: 'profile-global-memory',
+                  name: 'Global memory',
+                  providerId: 'openai',
+                  modelId: 'gpt-4o-mini',
+                  providerOptions: { credentialId: 'credential-memory', requestModel: 'gpt-4o-mini' },
+                },
+              ],
+              modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-global-memory' } },
             },
             {
               id: 'model-chat',
               name: 'Chat model',
               modelRoles: { memory: 'gpt41-mini' },
+              modelProfiles: [
+                {
+                  id: 'profile-chat-memory',
+                  name: 'Chat memory',
+                  providerId: 'openai',
+                  modelId: 'gpt41-mini',
+                  providerOptions: { credentialId: 'credential-memory', requestModel: 'gpt41-mini' },
+                },
+              ],
+              modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-chat-memory' } },
             },
           ],
           promptPresets: [{ id: 'prompt-chat', name: 'Chat prompt' }],

@@ -49,7 +49,6 @@ interface HypaV3EmbedJobPayload {
 interface MemoryEmbeddingJobDatabase extends MemoryEmbeddingSettings {
   hypaV3Presets?: unknown
   hypaV3PresetId?: unknown
-  hypaV3Settings?: unknown
 }
 
 export function createEmbedMemoryJobHandler(
@@ -724,7 +723,7 @@ function loadDatabase(opts: EmbedMemoryJobHandlerOptions): MemoryEmbeddingJobDat
 
 function resolveHypaV3Settings(database: MemoryEmbeddingJobDatabase): HypaV3Settings {
   const db = database
-  let rawSettings: unknown = db.hypaV3Settings
+  let rawSettings: unknown = null
   const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
   if (Array.isArray(db.hypaV3Presets)) {
     const preset = db.hypaV3Presets[presetId]

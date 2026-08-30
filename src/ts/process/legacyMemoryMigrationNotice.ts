@@ -17,9 +17,7 @@ export function detectActiveRetiredMemoryAlgorithms(database: Partial<Database>)
   const v3Active = database.hypaV3 === true || algorithm === 'hypaMemoryV3'
 
   if (v3Active) {
-    const experimentalSelected = selectedPreset
-      ? selectedPreset.settings?.useExperimentalImpl === true
-      : database.hypaV3Settings?.useExperimentalImpl === true
+    const experimentalSelected = selectedPreset?.settings?.useExperimentalImpl === true
     if (experimentalSelected) {
       retired.push('Experimental Hypa V3')
     }

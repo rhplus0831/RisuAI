@@ -103,6 +103,10 @@ function database(settings: Record<string, unknown> = {}) {
         },
       },
     ],
+    hypaV3Settings: {
+      embeddingRequestsPerMinute: 1,
+      embeddingMaxConcurrent: 1,
+    },
   }
 }
 

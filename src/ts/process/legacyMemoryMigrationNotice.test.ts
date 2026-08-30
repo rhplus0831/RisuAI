@@ -60,6 +60,14 @@ describe('legacy memory migration notice', () => {
         hypaV3Presets: [{ name: 'Maintained', settings: { useExperimentalImpl: false } as any }],
       }),
     ).toEqual([])
+    expect(
+      detectActiveRetiredMemoryAlgorithms({
+        hypaV3: true,
+        hypaV3PresetId: 99,
+        hypaV3Presets: [{ name: 'Maintained', settings: { useExperimentalImpl: false } as any }],
+        hypaV3Settings: { useExperimentalImpl: true } as any,
+      }),
+    ).toEqual([])
   })
 
   it('queues one non-blocking notice per database and persists dismissal only after it closes', async () => {

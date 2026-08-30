@@ -53,7 +53,6 @@ interface HypaV3SummarizeJobPayload {
 interface DatabaseLike {
   hypaV3Presets?: unknown
   hypaV3PresetId?: unknown
-  hypaV3Settings?: unknown
   characters?: unknown
 }
 
@@ -454,7 +453,7 @@ function findChatById(database: Database, chatId: string): ChatLike | undefined 
 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {
   const db = database as DatabaseLike
-  let rawSettings: unknown = db.hypaV3Settings
+  let rawSettings: unknown = null
   const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
   if (Array.isArray(db.hypaV3Presets)) {
     const preset = db.hypaV3Presets[presetId]

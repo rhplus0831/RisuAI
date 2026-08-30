@@ -63,7 +63,6 @@ export interface PromptMemoryQueryDatabase extends MemoryEmbeddingSettings {
   hypaV3?: boolean
   hypaV3PresetId?: number
   hypaV3Presets?: readonly { settings?: Partial<HypaV3Settings> }[]
-  hypaV3Settings?: Partial<HypaV3Settings> | null
 }
 
 export interface PrefetchPromptMemoryQueryInput {
@@ -357,7 +356,7 @@ function resolveHypaV3PresetSettings(database: PromptMemoryQueryDatabase): Parti
   if (preset && typeof preset === 'object' && 'settings' in preset) {
     return preset.settings as Partial<HypaV3Settings>
   }
-  return database.hypaV3Settings as Partial<HypaV3Settings> | null | undefined
+  return null
 }
 
 async function settleEmbedding<T>(promise: Promise<T>, signal: AbortSignal): Promise<SettledEmbedding<T>> {
