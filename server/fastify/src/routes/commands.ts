@@ -189,6 +189,7 @@ import {
   createChatRecord,
   ensureCharacterChatFolders,
   ensureCharacterChats,
+  requireChatLocationExact,
   normalizeAllCharacterChats,
   readChatFolderId,
   readChatFolderIdList,
@@ -6206,8 +6207,13 @@ export function registerCommandRoutes(
           const target = hasModulePatch
             ? ensureModuleCommandDatabase(database)
             : ensureCharacterDatabaseObject(database)
-          const characters = normalizeAllCharacterChats(target)
-          const { character, chatIndex } = requireChatLocation(characters, chatId)
+          const characters = hasModulePatch
+            ? normalizeAllCharacterChats(target)
+            : ([ensureCharacterDatabaseObject(target).characters?.[0]].filter(Boolean) as CharacterRecord[])
+          const { character, chatIndex } = (hasModulePatch ? requireChatLocation : requireChatLocationExact)(
+            characters,
+            chatId,
+          )
           if (hasModulePatch) {
             const modules = ensureModuleRecords(target)
             validateNormalModuleLinks(modules, patch.modules as string[], 'patch.modules')
@@ -6847,8 +6853,10 @@ export function registerCommandRoutes(
         // This callback only locates + rewrites the one chat row.
         chatScopedRead: { chatId },
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { character, chat } = requireChatLocation(characters, chatId)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
+          const { character, chat } = requireChatLocationExact(characters, chatId)
           // This path updates only the chat row's `scriptstate`; sibling chat
           // normalization is validate-only.
           chat.scriptstate ??= {}
@@ -6898,8 +6906,10 @@ export function registerCommandRoutes(
         // Chat is located for validation only; writes go to the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
+          requireChatLocationExact(characters, chatId)
           if (activeMessageIdExists(targetDb, message.chatId)) {
             throw new ValidationError(`Duplicate message id: ${message.chatId}`)
           }
@@ -6946,7 +6956,9 @@ export function registerCommandRoutes(
         // a missing message falls back broad and the callback throws as before.
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
           if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
@@ -6955,7 +6967,7 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          requireChatLocation(characters, location.chatId)
+          requireChatLocationExact(characters, location.chatId)
           const liveGenerationInfo = location.message.generationInfo
           const liveGenerationId =
             liveGenerationInfo && typeof liveGenerationInfo === 'object' && !Array.isArray(liveGenerationInfo)
@@ -7045,7 +7057,9 @@ export function registerCommandRoutes(
         // Same message-id-resolved scoped read as the PATCH route.
         chatScopedRead: { messageId },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
           const resolved = resolveActiveMessageLocationById(targetDb, messageId)
           if (resolved.ok === false) {
             if (resolved.reason === 'ambiguous') {
@@ -7054,7 +7068,7 @@ export function registerCommandRoutes(
             throw new EntityNotFoundError(`Message not found: ${messageId}`)
           }
           const { location } = resolved
-          const { chat } = requireChatLocation(characters, location.chatId)
+          const { chat } = requireChatLocationExact(characters, location.chatId)
           const deleted = deleteActiveMessageById(targetDb, messageId)
           if (deleted.ok === false) {
             if (deleted.reason === 'ambiguous') {
@@ -7108,8 +7122,10 @@ export function registerCommandRoutes(
         // Chat is located for validation only; truncate hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { chat } = requireChatLocation(characters, chatId)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
+          const { chat } = requireChatLocationExact(characters, chatId)
           const truncated = truncateActiveChatMessages(targetDb, chatId, afterMessageId)
           if (truncated.ok === false) {
             if (truncated.reason === 'ambiguous-after') {
@@ -7157,8 +7173,10 @@ export function registerCommandRoutes(
         // Chat is located for validation only; replacement hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { chat } = requireChatLocation(characters, chatId)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
+          const { chat } = requireChatLocationExact(characters, chatId)
           const base = getChatMessages(targetDb, chatId)
           let keepCount = 0
           if (afterMessageId !== null) {
@@ -7262,8 +7280,10 @@ export function registerCommandRoutes(
         // Chat is located for validation only; persistence hits the message store.
         chatScopedRead: { chatId },
         mutate(database, targetDb) {
-          const characters = normalizeAllCharacterChats(database)
-          requireChatLocation(characters, chatId)
+          const characters = [ensureCharacterDatabaseObject(database).characters?.[0]].filter(
+            Boolean,
+          ) as CharacterRecord[]
+          requireChatLocationExact(characters, chatId)
           const write = writeGenerationChatMessage(
             targetDb,
             chatId,

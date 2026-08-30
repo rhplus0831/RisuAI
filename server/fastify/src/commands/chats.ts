@@ -632,6 +632,30 @@ export function requireChatLocation(characters: readonly CharacterRecord[], chat
   throw new EntityNotFoundError(`Chat not found: ${chatId}`)
 }
 
+/**
+ * Locate a chat without normalizing any character or sibling chat rows.
+ * Targeted command reads may intentionally contain lightweight sibling shells;
+ * repairing those shells would mint IDs/defaults outside the command range.
+ */
+export function requireChatLocationExact(characters: readonly CharacterRecord[], chatId: string): ChatLocation {
+  for (let characterIndex = 0; characterIndex < characters.length; characterIndex++) {
+    const character = characters[characterIndex]
+    if (!Array.isArray(character.chats)) continue
+    const chatIndex = character.chats.findIndex(
+      (chat) => !!chat && typeof chat === 'object' && !Array.isArray(chat) && (chat as JsonRecord).id === chatId,
+    )
+    if (chatIndex !== -1) {
+      return {
+        character,
+        characterIndex,
+        chat: character.chats[chatIndex] as ChatRecord,
+        chatIndex,
+      }
+    }
+  }
+  throw new EntityNotFoundError(`Chat not found: ${chatId}`)
+}
+
 export function requireCharacterChat(
   character: CharacterRecord,
   chatId: string,

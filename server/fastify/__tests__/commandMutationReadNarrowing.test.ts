@@ -1058,6 +1058,70 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
     }
   })
 
+  it('single-chat commands leave noncanonical sibling rows byte-identical', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const db = openDatabase(harness.dataDir)
+    try {
+      const siblingId = fixture.characters[0].chats[1].id
+      const siblingBefore = db.prepare('SELECT rowid, data_json FROM chats WHERE id = ?').get(siblingId) as {
+        rowid: number
+        data_json: string
+      }
+      const sibling = JSON.parse(siblingBefore.data_json) as Record<string, unknown>
+      sibling.folderId = 'orphan-folder'
+      sibling.opaqueOwnerField = { keep: true }
+      sibling.generationSettings = {
+        configured: 'legacy',
+        sidebarToggles: { keep: 'on', invalid: 17 },
+        unknown: { nested: true },
+      }
+      const siblingJson = JSON.stringify(sibling)
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(siblingJson, siblingId)
+
+      const assertSiblingStable = () => {
+        const siblingAfter = db.prepare('SELECT rowid, data_json FROM chats WHERE id = ?').get(siblingId) as {
+          rowid: number
+          data_json: string
+        }
+        expect(siblingAfter.rowid).toBe(siblingBefore.rowid)
+        expect(siblingAfter.data_json).toBe(siblingJson)
+      }
+
+      let response = await command('PATCH', `/api/v1/commands/chats/${fixture.hot.chatId}/scriptstate`, {
+        baseRevision: revision,
+        patch: { '$sibling-proof': 'target-only' },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      let nextRevision = response.json().revision as number
+      assertSiblingStable()
+
+      response = await command('POST', `/api/v1/commands/chats/${fixture.hot.chatId}/messages`, {
+        baseRevision: nextRevision,
+        message: { role: 'user', data: 'target-only message', chatId: 'target-only-message' },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      nextRevision = response.json().revision as number
+      assertSiblingStable()
+
+      response = await command('POST', `/api/v1/commands/chats/${fixture.hot.chatId}/generation-result`, {
+        baseRevision: nextRevision,
+        generationResult: {
+          message: {
+            role: 'char',
+            data: 'target-only generation',
+            chatId: 'target-only-generation',
+            generationInfo: { generationId: 'target-only-generation' },
+          },
+        },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      assertSiblingStable()
+    } finally {
+      db.close()
+    }
+  })
+
   it('falls back to the broad load for an unknown chat id — the 404 contract is unchanged', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)

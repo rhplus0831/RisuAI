@@ -50,7 +50,7 @@ import {
   isModelProfileGenerationGuardAssemblyError,
 } from '../prompt/effectiveGenerationConfig.js'
 import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
-import { normalizeAllCharacterChats, requireChatLocation } from '../commands/chats.js'
+import { requireChatLocationExact } from '../commands/chats.js'
 import { createMessageRecord, validateUniqueMessageIds } from '../commands/messages.js'
 import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events.js'
 import { applyTargetedCommandMutation } from '../commands/mutations.js'
@@ -1669,8 +1669,10 @@ function persistAssemblyMutations(args: {
       mutationPath: 'targeted-assembly',
       chatScopedRead: { chatId: args.input.chatId, exactChatRow: hasLocalLoreWrite },
       mutate(database, targetDb) {
-        const characters = normalizeAllCharacterChats(database)
-        const { character, chat } = requireChatLocation(characters, args.input.chatId)
+        const characters = [(database as { characters?: unknown[] }).characters?.[0]].filter(
+          Boolean,
+        ) as import('../commands/characters.js').CharacterRecord[]
+        const { character, chat } = requireChatLocationExact(characters, args.input.chatId)
         validateGenerationChatVarMutationsFresh({
           chatId: args.input.chatId,
           chat,
@@ -3605,8 +3607,10 @@ function persistServerGenerationResult(args: {
       mutationPath: 'targeted-generation',
       chatScopedRead: { chatId: args.chatId, exactChatRow: args.localLoreMutation !== undefined },
       mutate(database, targetDb) {
-        const characters = normalizeAllCharacterChats(database)
-        const { character, chat } = requireChatLocation(characters, args.chatId)
+        const characters = [(database as { characters?: unknown[] }).characters?.[0]].filter(
+          Boolean,
+        ) as import('../commands/characters.js').CharacterRecord[]
+        const { character, chat } = requireChatLocationExact(characters, args.chatId)
         if (args.targetSnapshot) {
           const freshness = validateGenerationFinalizationTargetFresh({
             chatId: args.chatId,
