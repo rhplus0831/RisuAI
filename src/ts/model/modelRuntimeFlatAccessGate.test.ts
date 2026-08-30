@@ -28,6 +28,11 @@ type InventoryEntry = {
   reason: string
 }
 
+type AccessOccurrence = {
+  marker: string
+  line: number
+}
+
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const roots = ['src/ts', 'src/lib', 'server/fastify/src'] as const
 const fields = [
@@ -646,11 +651,11 @@ function productionFiles(): string[] {
   return files.sort()
 }
 
-function scanAccesses(): Map<string, number> {
+function scanAccesses(): Map<string, AccessOccurrence[]> {
   const receivers =
     '(?:db|database|state\\.database|scope\\.database|context\\.database|ctx\\.database|args\\.database|input\\.state\\.database|input\\.settings|dispatchDatabase|next|newPres|getDatabase\\(\\))'
   const access = new RegExp(`(?<![A-Za-z0-9_.])${receivers}\\.(${fields.join('|')})\\b`, 'g')
-  const found = new Map<string, number>()
+  const found = new Map<string, AccessOccurrence[]>()
   for (const relative of productionFiles()) {
     const lines = fs.readFileSync(path.join(repoRoot, relative), 'utf8').split(/\r?\n/)
     lines.forEach((line, index) => {
@@ -661,12 +666,17 @@ function scanAccesses(): Map<string, number> {
       for (const match of code.matchAll(access)) {
         const marker = match[0]
         const key = `${relative}\u0000${marker}`
-        found.set(key, (found.get(key) ?? 0) + 1)
-        void index
+        const occurrences = found.get(key) ?? []
+        occurrences.push({ marker, line: index + 1 })
+        found.set(key, occurrences)
       }
     })
   }
   return found
+}
+
+function describeOccurrences(occurrences: readonly AccessOccurrence[] | undefined): string {
+  return occurrences?.map(({ marker, line }) => `${marker} (line ${line})`).join(', ') ?? 'none'
 }
 
 describe('flat model/runtime access closed world', () => {
@@ -678,19 +688,29 @@ describe('flat model/runtime access closed world', () => {
       expect(expected.has(key), `duplicate inventory marker: ${entry.path}:${entry.marker}`).toBe(false)
       expected.set(key, entry)
       expect(
-        found.get(key) ?? 0,
-        `${entry.path} marker ${entry.marker} count changed; update this gate with an explicit classification`,
+        found.get(key)?.length ?? 0,
+        `${entry.path}:${entry.marker} count changed (found ${describeOccurrences(found.get(key))}); update this gate with an explicit file/marker classification`,
       ).toBe(entry.expectedCount)
     }
 
-    const unclassified = [...found.keys()].filter((key) => !expected.has(key))
-    expect(unclassified, 'new flat model/runtime access is unclassified; add an exact file/marker disposition').toEqual(
-      [],
-    )
+    const unclassified = [...found.entries()]
+      .filter(([key]) => !expected.has(key))
+      .map(([key, occurrences]) => {
+        const [relative, marker] = key.split('\u0000')
+        return `${relative}:${describeOccurrences(occurrences)} (add an exact file/marker classification)`
+      })
+    expect(
+      unclassified,
+      'new flat model/runtime access is unclassified; the failure lists exact file, marker, and source lines',
+    ).toEqual([])
 
+    // Keep this manifest explicit even when the current Phase 2 slice has no
+    // ordinary-pending entries; a future ordinary access must be reviewed and
+    // named here instead of being silently absorbed by a fallback category.
     const ordinaryPending = inventory
       .filter((entry) => entry.classification === 'ordinary-pending')
       .map((entry) => `${entry.path}:${entry.marker} (${entry.reason})`)
-    expect(ordinaryPending).toEqual([])
+    const expectedOrdinaryPending: readonly string[] = []
+    expect(ordinaryPending).toEqual(expectedOrdinaryPending)
   })
 })
