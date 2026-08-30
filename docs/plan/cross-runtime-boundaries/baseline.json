@@ -3169,20 +3169,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
-      "specifier": "../../../../src/ts/translator/historySlots.js",
-      "target": "src/ts/translator/historySlots.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "HistorySlotContext",
-        "createHistorySlotResolver"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
       "specifier": "../../../../src/ts/translator/pipeline.js",
       "target": "src/ts/translator/pipeline.ts",
       "kind": "static",

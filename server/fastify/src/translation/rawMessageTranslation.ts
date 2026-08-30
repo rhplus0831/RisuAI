@@ -16,7 +16,7 @@ import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { ValidationError } from '../repository.js'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
-import { createHistorySlotResolver, type HistorySlotContext } from '../../../../src/ts/translator/historySlots.js'
+import { createHistorySlotResolver, type HistorySlotContext } from '@risuai/shared-core/history-slots'
 import { applyProfileBoundGenerationFields } from '../prompt/effectiveGenerationConfig.js'
 
 export type RawMessageTranslatorType = 'google' | 'deepl' | 'deeplX' | 'llm'

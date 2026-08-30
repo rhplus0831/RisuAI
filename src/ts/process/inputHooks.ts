@@ -8,7 +8,7 @@ import {
   resolveHistorySlot,
   type HistorySlotContext,
   type HistorySlotResolver,
-} from '../translator/historySlots'
+} from '@risuai/shared-core/history-slots'
 import { requestChatData } from './request/request'
 
 const INPUT_HOOK_SLOT_PATTERN = /{{slot::(content|draft)}}|{{slot::(history|historytrans)::([^}]*)}}/g

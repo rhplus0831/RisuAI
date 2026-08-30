@@ -8,7 +8,7 @@ import {
   type TranslatorPresetStep,
   type TranslatorPresetStepModel,
 } from './presets'
-import { replaceHistorySlots, type HistorySlotResolver } from './historySlots'
+import { replaceHistorySlots, type HistorySlotResolver } from '@risuai/shared-core/history-slots'
 
 const TRANSLATOR_INPUT_SLOT_PATTERN = /{{(?:solt::content|slot::(?:content|prev|out::[^}]+))}}/
 const TRANSLATOR_OUTPUT_SLOT_PATTERN = /{{slot::out::([^}]+)}}/g

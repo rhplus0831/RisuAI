@@ -11,6 +11,7 @@
     "./chat-load-pages": "./src/chatLoadPages.ts",
     "./chatml-rows": "./src/chatMLRows.ts",
     "./chat-page": "./src/chatPage.ts",
+    "./history-slots": "./src/historySlots.ts",
     "./inlay-tokens": "./src/inlayTokens.ts",
     "./internal-reasoning": "./src/internalReasoning.ts",
     "./legacy-openai-model-aliases": "./src/legacyOpenAIModelAliases.ts",

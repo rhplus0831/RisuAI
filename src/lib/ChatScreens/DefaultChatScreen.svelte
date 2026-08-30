@@ -166,7 +166,7 @@
   } from './DefaultChatScreen.composerDrafts'
   import { runInputHook, type InputHookHistoryContext } from 'src/ts/process/inputHooks'
   import { createDraftHookTranslation } from 'src/ts/process/draftHookTranslation'
-  import { maximumHistorySlotCount } from 'src/ts/translator/historySlots'
+  import { maximumHistorySlotCount } from '@risuai/shared-core/history-slots'
   import InputHookPickerDialog from './InputHookPickerDialog.svelte'
   import LazyComponent from '../UI/LazyComponent.svelte'
   import {
