@@ -10,7 +10,7 @@ import {
   runTranslatorPipeline,
   translatorPipelineSignature,
   type TranslatorHistoryResolver,
-} from '../../../../src/ts/translator/pipeline.js'
+} from '@risuai/shared-core/translator-pipeline'
 import { dispatchChatProvider, type ChatDispatchHistoryInput } from '../prompt/chatDispatch.js'
 import { tokenize } from '../prompt/tokens.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'

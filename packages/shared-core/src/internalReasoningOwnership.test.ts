@@ -14,7 +14,6 @@ describe('internal-reasoning shared-core ownership', () => {
       'server/fastify/src/generation/stripCoT.ts',
       'server/fastify/src/prompt/agentPresetExecution.ts',
       'server/fastify/src/translation/rawMessageTranslation.ts',
-      'src/ts/translator/pipeline.ts',
       'src/ts/translator/translator.ts',
     ]
 

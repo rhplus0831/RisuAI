@@ -114,6 +114,7 @@ describe('@risuai/shared-core import boundary', () => {
         'routerRoute.ts',
         'scriptModelOverrides.ts',
         'settingsGroups.ts',
+        'translatorPipeline.ts',
         'translatorPresets.ts',
       ],
       violations: [],

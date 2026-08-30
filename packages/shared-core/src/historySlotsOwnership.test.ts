@@ -12,7 +12,6 @@ describe('history-slot shared-core ownership', () => {
   it('keeps every production consumer on the shared leaf', () => {
     const sharedImport = "from '@risuai/shared-core/history-slots'"
     for (const consumer of [
-      'src/ts/translator/pipeline.ts',
       'src/ts/process/inputHooks.ts',
       'src/lib/ChatScreens/DefaultChatScreen.svelte',
       'server/fastify/src/translation/rawMessageTranslation.ts',

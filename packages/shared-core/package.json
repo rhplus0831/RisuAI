@@ -37,6 +37,7 @@
     "./model-profile-resolver": "./src/modelProfileResolver.ts",
     "./module-activation": "./src/moduleActivation.ts",
     "./translator-presets": "./src/translatorPresets.ts",
+    "./translator-pipeline": "./src/translatorPipeline.ts",
     "./openai-models": "./src/openaiModels.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
