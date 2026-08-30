@@ -36,7 +36,7 @@ describe('browser model-runtime consumer ownership', () => {
   })
 
   it('routes prompt-visible model identity through resolved role contexts', () => {
-    const cbs = source('src/ts/cbs.ts')
+    const cbs = source('packages/shared-core/src/cbsRegistry.ts')
     const browserParser = source('src/ts/parser/parser.svelte.ts')
     const serverAdapter = source('server/fastify/src/prompt/cbsAdapter.ts')
     const pluginApi = source('src/ts/plugins/apiV3/v3.svelte.ts')
