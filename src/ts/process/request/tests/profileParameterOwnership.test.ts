@@ -25,4 +25,18 @@ describe('browser request parameter ownership', () => {
       expect(profileInputs, consumer).toHaveLength(calls.length)
     }
   })
+
+  it('keeps provider-specific sampler overrides behind resolved runtime inputs', () => {
+    const anthropic = source('src/ts/process/request/anthropic.ts')
+    const openai = source('src/ts/process/request/openAI/requests.ts')
+    const request = source('src/ts/process/request/request.ts')
+
+    expect(anthropic).toContain('const thinkingType = hasResolvedProfile')
+    expect(anthropic).not.toContain('if (db.thinkingType ===')
+    expect(openai).toContain('const deepseekThinkingType = hasResolvedProfile')
+    expect(openai).not.toContain('if (db.deepseekThinkingType ===')
+    expect(request).toContain('temperature: arg.resolvedProfile')
+    expect(request).toContain('arg.resolvedProfile.runtimeOptions.presencePenalty!')
+    expect(request).toContain('arg.resolvedProfile.runtimeOptions.frequencyPenalty!')
+  })
 })

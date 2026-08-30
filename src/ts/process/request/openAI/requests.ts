@@ -153,6 +153,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   const providerOptions = resolvedProfile?.providerOptions
   const runtimeOptions = resolvedProfile?.runtimeOptions
   const hasResolvedProfile = resolvedProfile !== undefined
+  const deepseekThinkingType = hasResolvedProfile ? runtimeOptions?.deepseekThinkingType : db.deepseekThinkingType
+  const deepseekReasoningEffort = hasResolvedProfile
+    ? runtimeOptions?.deepseekReasoningEffort
+    : db.deepseekReasoningEffort
   const reverseProxyOobaSystemHoist =
     aiModel === 'reverse_proxy' &&
     (hasResolvedProfile ? providerOptions?.reverseProxy?.oobaSystemHoist === true : db.reverseProxyOobaMode)
@@ -585,10 +589,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   })
 
   if (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle)) {
-    if (db.deepseekThinkingType === 'enabled') {
+    if (deepseekThinkingType === 'enabled') {
       body.thinking = {
         type: 'enabled',
-        reasoning_effort: db.deepseekReasoningEffort ?? 'high',
+        reasoning_effort: deepseekReasoningEffort ?? 'high',
       }
       delete body.temperature
       delete body.top_p
@@ -1832,6 +1836,9 @@ function wrapToolStream(
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
       const db = getDatabase()
+      const deepseekThinkingType = arg.resolvedProfile
+        ? arg.resolvedProfile.runtimeOptions.deepseekThinkingType
+        : db.deepseekThinkingType
       let reader = stream.getReader()
       let prefix = ''
       let lastValue
@@ -1863,7 +1870,7 @@ function wrapToolStream(
             let assistantReasoningContent = ''
             const shouldPassDeepSeekReasoning =
               arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingInput) ||
-              (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) && db.deepseekThinkingType === 'enabled')
+              (arg.modelInfo.flags.includes(LLMFlags.deepSeekThinkingToggle) && deepseekThinkingType === 'enabled')
 
             if (shouldPassDeepSeekReasoning) {
               const extracted = extractThoughts(content)

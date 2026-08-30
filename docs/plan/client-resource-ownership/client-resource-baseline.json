@@ -5118,7 +5118,7 @@
         },
         {
           "file": "src/ts/process/request/tests/anthropicProfileOptions.test.ts",
-          "count": 6
+          "count": 8
         },
         {
           "file": "src/ts/process/request/tests/cohereHordeOobaLegacyProfileOptions.test.ts",
@@ -5142,7 +5142,7 @@
         },
         {
           "file": "src/ts/process/request/tests/openaiProfileOptions.test.ts",
-          "count": 18
+          "count": 20
         },
         {
           "file": "src/ts/process/request/tests/openaiResponsesLegacyProfileOptions.test.ts",

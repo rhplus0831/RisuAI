@@ -128,6 +128,46 @@ afterEach(() => {
 })
 
 describe('requestOpenAI profile provider options', () => {
+  it('uses profile-owned DeepSeek thinking over conflicting flat settings', async () => {
+    const resolved = resolveModelProfile({ database: db({ aiModel: 'gpt-5' } as Partial<Database>) })
+    const profile: ResolvedModelProfile = {
+      ...resolved,
+      runtimeOptions: {
+        ...resolved.runtimeOptions,
+        deepseekThinkingType: 'enabled',
+        deepseekReasoningEffort: 'max',
+      },
+      modelInfo: {
+        ...resolved.modelInfo,
+        flags: [...resolved.modelInfo.flags, LLMFlags.deepSeekThinkingToggle],
+      },
+    }
+    setDatabase(db({ deepseekThinkingType: 'off', deepseekReasoningEffort: 'high' } as Partial<Database>))
+
+    const payload = await preview(makeArg(profile))
+
+    expect(payload.body.thinking).toEqual({ type: 'enabled', reasoning_effort: 'max' })
+    expect(payload.body.temperature).toBeUndefined()
+  })
+
+  it('retains flat DeepSeek thinking for callers without a resolved profile', async () => {
+    setDatabase(db({ deepseekThinkingType: 'enabled', deepseekReasoningEffort: 'high' } as Partial<Database>))
+
+    const payload = await preview({
+      formated: [{ role: 'user', content: 'hello' }],
+      bias: {},
+      biasString: [],
+      aiModel: 'gpt-5',
+      maxTokens: 64,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: modelInfo({ flags: [LLMFlags.deepSeekThinkingToggle] }),
+    } as RequestDataArgumentExtended)
+
+    expect(payload.body.thinking).toEqual({ type: 'enabled', reasoning_effort: 'high' })
+  })
+
   it('uses durable profile image capability instead of a conflicting flat model', async () => {
     const modelId = 'xcustom:::vision-profile'
     const profileDatabase = db({

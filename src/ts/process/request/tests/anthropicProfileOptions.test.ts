@@ -140,6 +140,53 @@ afterEach(() => {
 })
 
 describe('requestClaude profile provider options', () => {
+  it('uses profile-owned adaptive thinking over conflicting flat settings', async () => {
+    const resolved = resolveModelProfile({
+      database: db({
+        aiModel: 'claude-sonnet-4-5-20250929',
+        thinkingType: 'adaptive',
+        adaptiveThinkingEffort: 'medium',
+      } as Partial<Database>),
+    })
+    const profile: ResolvedModelProfile = {
+      ...resolved,
+      runtimeOptions: {
+        ...resolved.runtimeOptions,
+        thinkingType: 'adaptive',
+        adaptiveThinkingEffort: 'medium',
+      },
+      modelInfo: {
+        ...resolved.modelInfo,
+        flags: [...resolved.modelInfo.flags, LLMFlags.claudeAdaptiveThinking],
+      },
+    }
+    setDatabase(db({ thinkingType: 'off', adaptiveThinkingEffort: 'low' } as Partial<Database>))
+
+    const payload = await preview(makeArg(profile))
+
+    expect(payload.body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(payload.body.output_config).toEqual({ effort: 'medium' })
+  })
+
+  it('retains flat adaptive thinking for callers without a resolved profile', async () => {
+    setDatabase(db({ thinkingType: 'adaptive', adaptiveThinkingEffort: 'low' } as Partial<Database>))
+
+    const payload = await preview({
+      formated: [{ role: 'user', content: 'hello' }],
+      bias: {},
+      biasString: [],
+      aiModel: 'claude-sonnet-4-5-20250929',
+      maxTokens: 64,
+      useStreaming: false,
+      previewBody: true,
+      mode: 'model',
+      modelInfo: modelInfo({ flags: [LLMFlags.claudeAdaptiveThinking] }),
+    } as RequestDataArgumentExtended)
+
+    expect(payload.body.thinking).toEqual({ type: 'adaptive', display: 'summarized' })
+    expect(payload.body.output_config).toEqual({ effort: 'low' })
+  })
+
   it('uses reverse_proxy profile URL, key, request model, additional params, and risu header over flat DB and arg conflicts', async () => {
     const profile = resolveModelProfile({
       database: db({

@@ -118,7 +118,10 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
   const aiModel = arg.aiModel
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
+  const runtimeOptions = resolvedProfile?.runtimeOptions
   const hasResolvedProfile = resolvedProfile !== undefined
+  const thinkingType = hasResolvedProfile ? runtimeOptions?.thinkingType : db.thinkingType
+  const adaptiveThinkingEffort = hasResolvedProfile ? runtimeOptions?.adaptiveThinkingEffort : db.adaptiveThinkingEffort
   const useStreaming = arg.useStreaming
   const ollamaCloudAnthropic = aiModel === 'ollama-cloud'
   let replacerURL = hasResolvedProfile
@@ -436,13 +439,13 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
   )
 
   // Handle thinking mode: off, adaptive, or budget
-  if (db.thinkingType === 'off') {
+  if (thinkingType === 'off') {
     delete body.thinking
-  } else if (db.thinkingType === 'adaptive' && arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)) {
+  } else if (thinkingType === 'adaptive' && arg.modelInfo.flags.includes(LLMFlags.claudeAdaptiveThinking)) {
     // Adaptive thinking mode
     delete body.thinking
     body.thinking = { type: 'adaptive', display: 'summarized' }
-    let effort = db.adaptiveThinkingEffort ?? 'high'
+    let effort = adaptiveThinkingEffort ?? 'high'
     if (effort === 'xhigh' && !arg.modelInfo.flags.includes(LLMFlags.claudeXHighEffort)) {
       effort = 'high'
     }

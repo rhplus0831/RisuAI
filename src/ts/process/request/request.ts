@@ -1530,10 +1530,14 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
       : await pluginProcess({
           bias: bias,
           prompt_chat: formated,
-          temperature: db.temperature / 100,
+          temperature: arg.resolvedProfile ? arg.resolvedProfile.runtimeOptions.temperature! : db.temperature / 100,
           max_tokens: maxTokens,
-          presence_penalty: db.PresensePenalty / 100,
-          frequency_penalty: db.frequencyPenalty / 100,
+          presence_penalty: arg.resolvedProfile
+            ? arg.resolvedProfile.runtimeOptions.presencePenalty!
+            : db.PresensePenalty / 100,
+          frequency_penalty: arg.resolvedProfile
+            ? arg.resolvedProfile.runtimeOptions.frequencyPenalty!
+            : db.frequencyPenalty / 100,
         })
 
     if (!d) {
