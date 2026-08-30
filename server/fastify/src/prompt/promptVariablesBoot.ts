@@ -1,6 +1,6 @@
-import { registerCBS } from '../../../../src/ts/cbs'
+import { registerCBS } from '@risuai/shared-core/cbs-registry'
 import { setChatVarBackend } from './chatVarBackend.js'
-import { registerRisuChatParserMatcher } from '../../../../src/ts/parser/risuChatParser'
+import { registerRisuChatParserMatcher } from '@risuai/shared-core/risuchat-parser'
 import { buildServerCBSArg } from './cbsAdapter.js'
 import { chatVarBackend } from './promptScope.js'
 

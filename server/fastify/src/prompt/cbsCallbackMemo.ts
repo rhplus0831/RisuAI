@@ -1,19 +1,6 @@
-/** Names of the assembly-scoped CBS callbacks that are memoized. */
-export type CbsCallbackMemoName = 'charhistory' | 'userhistory' | 'lorebook'
+import type { CbsCallbackMemo, CbsCallbackMemoName } from '@risuai/shared-core/cbs-contracts'
 
-/**
- * Fastify-owned callback memo contract.
- *
- * The parser only observes this small cache surface; it does not need the
- * browser's aggregate CBS registration or database declarations. The memo is
- * intentionally created per assembly by this module, never shared globally.
- */
-export interface CbsCallbackMemo {
-  entries: Map<string, string>
-  historyGeneration: number
-  loreGeneration?: number
-  recordMiss?: (name: CbsCallbackMemoName, key: string) => void
-}
+export type { CbsCallbackMemo, CbsCallbackMemoName } from '@risuai/shared-core/cbs-contracts'
 
 export interface AssemblyCbsCallbackMemoInstrumentation {
   callbackMisses: Record<CbsCallbackMemoName, number>

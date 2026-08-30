@@ -4864,7 +4864,7 @@ describe('run-var fixed-point skip', () => {
   const msg = (role: string, data: string, chatId: string) => ({ role, data, chatId }) as never
 
   it('only skips bodies risuChatParser provably returns unchanged (ground truth)', async () => {
-    const { risuChatParser } = await import('../../../src/ts/parser/risuChatParser')
+    const { risuChatParser } = await import('@risuai/shared-core/risuchat-parser')
     const db = makeDatabase({ maxContext: 100_000, maxResponse: 50 } as Partial<Database>)
 
     // Marker-free prose — including bare `}` / `#}` / `<` text the parser

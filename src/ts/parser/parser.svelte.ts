@@ -38,6 +38,7 @@ import {
   registerRisuChatParserCBS,
   risuChatParser as risuChatParserImpl,
   type RisuChatParserArg,
+  type matcherArg,
 } from './risuChatParser'
 import {
   dateTimeFormat,
@@ -53,7 +54,7 @@ import { insertSentenceParagraphBreaks } from './sentenceBreaks'
 export { dateTimeFormat, makeArray, parseArray, parseDict, risuEscape, risuUnescape }
 export type { CbsConditions }
 
-export function risuChatParser(da: string, arg?: RisuChatParserArg): string {
+export function risuChatParser(da: string, arg?: RisuChatParserArg | matcherArg): string {
   return risuChatParserImpl(da, arg)
 }
 

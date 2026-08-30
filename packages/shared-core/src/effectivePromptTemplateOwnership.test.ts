@@ -17,7 +17,7 @@ describe('effective prompt-template shared-core ownership', () => {
       'server/fastify/src/prompt/staticSections.ts',
       'src/ts/process/promptAssembly/normalizeTemplate.ts',
       'src/ts/utilState.ts',
-      'src/ts/cbs.ts',
+      'packages/shared-core/src/cbsRegistry.ts',
       'src/ts/process/templates/templateCheck.ts',
       'src/lib/Setting/Pages/OtherBotSettings.svelte',
     ]) {

@@ -14,7 +14,7 @@ import {
   phase9DriftGroup,
   phase9OverBudgetEachInput,
 } from '../../../test/fixtures/phase9BaselineDriftFixtures.js'
-import { RisuParserBudgetError } from '../../../src/ts/parser/risuChatParser.js'
+import { RisuParserBudgetError } from '@risuai/shared-core/risuchat-parser'
 import { expandVariables, type ExpandContext } from '../src/prompt/variables.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 

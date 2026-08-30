@@ -1,5 +1,5 @@
-import type { CBSRegisterArg, matcherArg } from '../../../../src/ts/cbs'
-import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
+import type { CBSRegisterArg, CbsDatabase, CbsMatcherArg as matcherArg } from '@risuai/shared-core/cbs-contracts'
+import { risuChatParser } from '@risuai/shared-core/risuchat-parser'
 import { dateTimeFormat, makeArray, parseArray, parseDict } from '@risuai/shared-core/risuchat-parser-helpers'
 import { calculateString } from '@risuai/shared-core/calculation'
 import { getChatVar, getGlobalChatVar, setChatVar } from './chatVarBackend.js'
@@ -48,7 +48,7 @@ function selectedPersonaProfileField(field: 'name' | 'personaPrompt'): string | 
   if (!database || !Number.isInteger(database.selectedPersona)) return undefined
   const persona = database.personas?.[database.selectedPersona]
   if (!persona || typeof persona.id !== 'string') return undefined
-  if (database.personas.filter((candidate) => candidate?.id === persona.id).length !== 1) return undefined
+  if (database.personas.filter((candidate: { id?: unknown }) => candidate?.id === persona.id).length !== 1) return undefined
   const value = persona[field]
   return typeof value === 'string' ? value : ''
 }
@@ -81,7 +81,7 @@ export function buildServerCBSArg(): Omit<CBSRegisterArg, 'registerFunction'> {
       if (!db) {
         throw new Error('promptScope not set; call setActivePromptScope before expandVariables')
       }
-      return db
+      return db as CbsDatabase
     },
     getUserName: () => {
       const db = getActiveDatabase()

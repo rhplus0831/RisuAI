@@ -21,8 +21,11 @@ describe('CBS callback memo type ownership', () => {
       expect(source(consumer), consumer).not.toContain('src/ts/cbs')
     }
 
-    const owner = source('server/fastify/src/prompt/cbsCallbackMemo.ts')
+    const owner = source('packages/shared-core/src/cbsContracts.ts')
     expect(owner).toContain("export type CbsCallbackMemoName = 'charhistory' | 'userhistory' | 'lorebook'")
     expect(owner).toContain('export interface CbsCallbackMemo')
+    expect(source('server/fastify/src/prompt/cbsCallbackMemo.ts')).toContain(
+      "from '@risuai/shared-core/cbs-contracts'",
+    )
   })
 })

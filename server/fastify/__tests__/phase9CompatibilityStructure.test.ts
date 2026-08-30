@@ -65,7 +65,7 @@ const LUA_API_CLASSIFICATION: Record<string, LuaApiClass> = classifyLuaApis({
 
 describe('Phase 9 scripting, parsing, trigger, and automation structure', () => {
   it('keeps every canonical CBS matcher and alias owned by one registration', () => {
-    const registrations = cbsRegistrations(sourceFile('src/ts/cbs.ts'))
+    const registrations = cbsRegistrations(sourceFile('packages/shared-core/src/cbsRegistry.ts'))
     const owners = new Map<string, string>()
 
     for (const registration of registrations) {
