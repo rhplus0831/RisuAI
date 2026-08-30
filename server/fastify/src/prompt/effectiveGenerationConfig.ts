@@ -25,7 +25,7 @@ import {
   resolveModelProfileWithLegacyCompatibility,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
-import { normalizeModelRoleProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
+import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
 import { serverTokenizerUnsupportedReason } from './tokenizerConfig.js'
 import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapshot'
 import { resolveEffectiveAgentPresetId } from '../../../../src/ts/agentPresetResolver.js'

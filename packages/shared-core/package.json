@@ -29,6 +29,7 @@
     "./mcp-identifier": "./src/mcpIdentifier.ts",
     "./memory-model-capability": "./src/memoryModelCapability.ts",
     "./model-types": "./src/modelTypes.ts",
+    "./model-profile-records": "./src/modelProfileRecords.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
     "./prompt-block-role": "./src/promptBlockRole.ts",

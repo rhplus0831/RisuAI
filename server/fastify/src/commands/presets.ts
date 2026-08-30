@@ -12,7 +12,7 @@ import {
   normalizeModelRuntimeDefaults,
   normalizeModelProfiles,
   normalizeModelRoleProfiles,
-} from '../../../../src/ts/model/modelProfileRecords.js'
+} from '@risuai/shared-core/model-profile-records'
 import {
   normalizeAgentConfiguration,
   normalizeAgentPresetDefaultId,

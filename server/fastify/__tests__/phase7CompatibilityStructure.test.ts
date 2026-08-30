@@ -417,7 +417,7 @@ describe('Phase 7 compatibility structure', () => {
   })
 
   it('classifies every profile provider option and runtime option', () => {
-    const recordsSource = readRepoFile('src/ts/model/modelProfileRecords.ts')
+    const recordsSource = readRepoFile('packages/shared-core/src/modelProfileRecords.ts')
     expect(Object.keys(PROVIDER_OPTION_OWNERS).sort()).toEqual(
       interfacePropertyNames(recordsSource, 'ModelProfileRecordProviderOptions').sort(),
     )

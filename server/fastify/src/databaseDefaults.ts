@@ -35,7 +35,7 @@ import {
   type ModelProfileRecordFallbackRef,
   type ModelProfileRecordProviderOptions,
   type ModelProfileRecordRuntimeOptions,
-} from '../../../src/ts/model/modelProfileRecords.js'
+} from '@risuai/shared-core/model-profile-records'
 import { normalizeProviderCredentials } from '@risuai/shared-core/provider-credential-records'
 import { normalizeScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import {

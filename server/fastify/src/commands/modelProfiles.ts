@@ -31,7 +31,7 @@ import {
   type ModelRoleProfileBinding,
   type ModelRoleProfileMap,
   type ModelRuntimeDefaults,
-} from '../../../../src/ts/model/modelProfileRecords.js'
+} from '@risuai/shared-core/model-profile-records'
 import {
   ProviderCredentialRecordValidationError,
   readProviderCredentials,

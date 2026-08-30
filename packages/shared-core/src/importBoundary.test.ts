@@ -86,6 +86,7 @@ describe('@risuai/shared-core import boundary', () => {
         'loreHash.ts',
         'mcpIdentifier.ts',
         'memoryModelCapability.ts',
+        'modelProfileRecords.ts',
         'modelRoles.ts',
         'modelTypes.ts',
         'moduleIntegration.ts',

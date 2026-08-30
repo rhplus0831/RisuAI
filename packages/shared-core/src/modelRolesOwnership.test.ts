@@ -33,7 +33,6 @@ describe('model-role shared-core ownership', () => {
       'src/lib/Setting/Pages/Model/ModelRoleList.svelte',
       'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
       'src/ts/model/modelProfileMutations.ts',
-      'src/ts/model/modelProfileRecords.ts',
       'src/ts/model/modelProfileResolver.ts',
       'src/ts/model/modelProfileUiState.ts',
       'src/ts/process/__fixtures__/mocks/serverCompletionFetch.ts',

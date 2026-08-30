@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import { normalizeModelProfiles } from '../../../../src/ts/model/modelProfileRecords.js'
+import { normalizeModelProfiles } from '@risuai/shared-core/model-profile-records'
 import {
   ProviderCredentialRecordValidationError,
   readProviderCredentials,
