@@ -205,11 +205,10 @@ function durableProfileTokenizerSelection(database: Database, profile: ResolvedM
   const profileRuntimeTokenizer = profileRecord?.runtimeOptions?.customTokenizer?.trim()
   if (profileRuntimeTokenizer) return profileRuntimeTokenizer
 
-  const defaultRuntimeTokenizer = database.modelRuntimeDefaults?.customTokenizer?.trim()
-  if (defaultRuntimeTokenizer) return defaultRuntimeTokenizer
-
   const providerTokenizer = profileRecord?.providerOptions?.customApi?.tokenizer
-  return providerTokenizer === undefined ? 'tik' : String(providerTokenizer)
+  if (providerTokenizer !== undefined) return String(providerTokenizer)
+
+  return database.modelRuntimeDefaults?.customTokenizer?.trim() || 'tik'
 }
 
 export function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {
