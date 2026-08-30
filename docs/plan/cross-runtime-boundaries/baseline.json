@@ -53,52 +53,6 @@
   },
   "edges": [
     {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/globals.d.ts",
-      "specifier": "../../../src/ts/server/browserSmoke.js",
-      "target": "src/ts/server/browserSmoke.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "FastifyBrowserSmokeHook"
-      ],
-      "count": 1,
-      "policy": "accidental-browser-support"
-    },
-    {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
-      "specifier": "../../../src/ts/routerRoute.js",
-      "target": "src/ts/routerRoute.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "AppRoute",
-        "parseRoute",
-        "routeKey",
-        "routePathFromState"
-      ],
-      "count": 1,
-      "policy": "accidental-browser-support"
-    },
-    {
-      "lane": "browser-smoke",
-      "importer": "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts",
-      "specifier": "../../../src/ts/server/resourceManifest.js",
-      "target": "src/ts/server/resourceManifest.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "PLAYGROUND_RESOURCE_SURFACE_BY_INDEX",
-        "ResourceRequirement",
-        "SETTINGS_RESOURCE_SURFACE_BY_INDEX",
-        "resolveResourceRequirements",
-        "resourceSurfacesForRoute"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
       "lane": "production",
       "importer": "server/fastify/src/bardWikiCanonicalModel.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
@@ -251,32 +205,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/modelProfiles.ts",
-      "specifier": "../../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/modelProfiles.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte.js",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/presets.ts",
       "specifier": "../../../../src/ts/model/modelProfileRecords.js",
       "target": "src/ts/model/modelProfileRecords.ts",
@@ -385,19 +313,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
       "specifier": "../../../src/ts/presetSplit.js",
       "target": "src/ts/presetSplit.ts",
       "kind": "static",
@@ -453,36 +368,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/displaySourceService.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character",
-        "customscript"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/generation/providerMessages.ts",
-      "specifier": "../../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/memorySummarizeJobHandler.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -506,19 +391,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/memorySummarizeJobHandler.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -548,19 +420,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/memorySummaryModel.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -574,32 +433,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/ollamaCloudToolProxy.ts",
-      "specifier": "../../../src/ts/storage/database.svelte.js",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -630,22 +463,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/agentPresetExecution.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -681,59 +498,12 @@
       "specifier": "../../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
       "kind": "static",
-      "usage": "mixed",
+      "usage": "type-only",
       "symbols": [
-        "ResolvedModelProfile",
-        "resolveModelProfile"
+        "ResolvedModelProfile"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/assemble.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "MessagePresetInfo",
-        "character",
-        "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/assetLookup.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/budgetFinalize.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -808,21 +578,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/chatDispatch.ts",
-      "specifier": "../../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "LLMFlags",
-        "LLMFormat",
-        "LLMProvider"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/chatDispatch.ts",
       "specifier": "../../../../src/ts/process/request/providerCapability",
       "target": "src/ts/process/request/providerCapability.ts",
       "kind": "static",
@@ -835,19 +590,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/chatDispatch.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -881,6 +623,19 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
+      "specifier": "../../../../src/ts/model/modelProfileRecords.js",
+      "target": "src/ts/model/modelProfileRecords.ts",
+      "kind": "static",
+      "usage": "runtime",
+      "symbols": [
+        "normalizeModelRoleProfiles"
+      ],
+      "count": 1,
+      "policy": "shared-pure-runtime"
+    },
+    {
+      "lane": "production",
+      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
       "specifier": "../../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
       "kind": "static",
@@ -889,7 +644,8 @@
         "ResolvedModelProfile",
         "modelProfileGenerationBlockReason",
         "resolveModelProfile",
-        "resolveModelProfileTokenizerSelection"
+        "resolveModelProfileTokenizerSelection",
+        "resolveModelProfileWithLegacyCompatibility"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -904,72 +660,11 @@
       "symbols": [
         "applyEffectivePresetComposition",
         "applyPromptPresetModelOverrides",
+        "isLegacyModelPresetCompatibilityRecord",
         "resolvePromptPresetRegexField"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/effectiveGenerationConfig.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "MessagePresetInfo",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/history.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Message",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/lorebook.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character",
-        "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaPostGenerationTrace.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Message"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -985,35 +680,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/memory.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -1033,62 +699,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/modules.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/plainSections.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/preflight.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/promptAssets.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/promptScope.ts",
       "specifier": "../../../../src/ts/model/modelProfileResolver",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -1100,32 +710,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/promptScope.ts",
-      "specifier": "../../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "LLMModel"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/promptScope.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -1155,23 +739,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/scripts.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character",
-        "customscript"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/staticSections.ts",
       "specifier": "../../../../src/ts/process/promptAssembly/effectivePromptTemplate.js",
       "target": "src/ts/process/promptAssembly/effectivePromptTemplate.ts",
@@ -1182,21 +749,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/staticSections.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -1214,20 +766,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/prompt/templates.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/prompt/tokenizerConfig.ts",
       "specifier": "../../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -1239,76 +777,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/tokenizerConfig.ts",
-      "specifier": "../../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags",
-        "LLMTokenizer"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/tokenizerConfig.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerDataEffects.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggers.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/triggerVars.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -1326,19 +794,6 @@
     {
       "lane": "production",
       "importer": "server/fastify/src/prompt/variables.ts",
-      "specifier": "../../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "LLMModel"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/variables.ts",
       "specifier": "../../../../src/ts/parser/risuChatParser",
       "target": "src/ts/parser/risuChatParser.ts",
       "kind": "static",
@@ -1348,20 +803,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/variables.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -1460,19 +901,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/routes/generation.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/routes/generationChat.ts",
       "specifier": "../../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -1488,20 +916,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/routes/generationChat.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database",
-        "Message"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
       "specifier": "../../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -1514,19 +928,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/translation/rawMessageTranslation.ts",
-      "specifier": "../../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "production",
@@ -1572,38 +973,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/agentPresetExecution.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/assemble.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags",
-        "LLMFormat",
-        "LLMProvider",
-        "LLMTokenizer"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/assemble.test.ts",
       "specifier": "../../../src/ts/parser/risuChatParser",
       "target": "src/ts/parser/risuChatParser.ts",
@@ -1617,49 +986,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/assemble.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character",
-        "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/bardWikiPrompt.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/budgetFinalize.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/chatDispatchLogitBias.test.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver.js",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -1670,19 +996,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/chatDispatchLogitBias.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "server-test",
@@ -1700,37 +1013,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "LLMFlags",
-        "LLMFormat",
-        "LLMModel",
-        "LLMProvider",
-        "LLMTokenizer",
-        "OpenAIParameters"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/chatDispatchProfileOptions.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/commands.test.ts",
       "specifier": "../../../src/ts/chatGenerationSettings.js",
       "target": "src/ts/chatGenerationSettings.ts",
@@ -1742,33 +1024,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/commands.test.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags",
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/commands.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte.js",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "server-test",
@@ -1785,205 +1040,17 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/databaseDefaults.test.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/generation.chat.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags",
-        "LLMFormat",
-        "LLMTokenizer"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/generation.completion.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/history.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/lorebook.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "Message",
-        "character",
-        "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/luaRuntime.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character",
-        "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memory.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memorySummaryModel.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat",
-        "LLMTokenizer"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/memorySummaryModel.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/modelProfileResolver.server.test.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver",
       "target": "src/ts/model/modelProfileResolver.ts",
       "kind": "static",
       "usage": "runtime",
       "symbols": [
-        "resolveModelProfile"
+        "resolveModelProfile",
+        "resolveModelProfileWithLegacyCompatibility"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/modelProfileResolver.server.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/modelProfileResolver.server.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/modules.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character",
-        "customscript",
-        "loreBook"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/modulesMemo.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "server-test",
@@ -2030,19 +1097,6 @@
     {
       "lane": "server-test",
       "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "mixed",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/phase7CompatibilityStructure.test.ts",
       "specifier": "../../../src/ts/process/request/providerCapability.js",
       "target": "src/ts/process/request/providerCapability.ts",
       "kind": "static",
@@ -2052,35 +1106,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/plainSections.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/preflight.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     },
     {
       "lane": "server-test",
@@ -2097,21 +1122,6 @@
     },
     {
       "lane": "server-test",
-      "importer": "server/fastify/__tests__/promptVariables.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
       "importer": "server/fastify/__tests__/providerCapabilityRoute.test.ts",
       "specifier": "../../../src/ts/model/modelProfileResolver",
       "target": "src/ts/model/modelProfileResolver.ts",
@@ -2119,45 +1129,6 @@
       "usage": "runtime",
       "symbols": [
         "resolveModelProfile"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/providerCapabilityRoute.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFormat"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/providerCapabilityRoute.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/providerMessages.test.ts",
-      "specifier": "../../../src/ts/model/types",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -2174,105 +1145,6 @@
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/scripts.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character",
-        "customscript"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/splitPresets.test.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMFlags"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/staticSections.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/templates.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/tokenizerConfig.test.ts",
-      "specifier": "../../../src/ts/model/types.js",
-      "target": "src/ts/model/types.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "LLMTokenizer"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/tokenizerConfig.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Database"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
-    },
-    {
-      "lane": "server-test",
-      "importer": "server/fastify/__tests__/triggers.test.ts",
-      "specifier": "../../../src/ts/storage/database.svelte",
-      "target": "src/ts/storage/database.svelte.ts",
-      "kind": "static",
-      "usage": "type-only",
-      "symbols": [
-        "Chat",
-        "Database",
-        "character"
-      ],
-      "count": 1,
-      "policy": "browser-application-model"
     }
   ],
   "nonLiteralModuleReferences": [],
@@ -2317,10 +1189,10 @@
     },
     {
       "id": "browser-resource-surfaces",
-      "owner": "Browser hydration and cache resource metadata",
-      "path": "src/ts/server/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST",
+      "owner": "Shared browser hydration and cache resource metadata",
+      "path": "packages/shared-core/src/resourceManifest.ts#RESOURCE_SURFACE_MANIFEST",
       "count": 59,
-      "authority": "Browser hydration and cache resource metadata",
+      "authority": "Shared browser hydration and cache resource metadata",
       "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
       "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",
       "reviewTrigger": "A route, durable operation, resource surface, cache/stream class, or command event is added or removed."

@@ -1018,7 +1018,7 @@
       "files": [
         {
           "file": "src/lib/Mobile/MobileBody.svelte",
-          "count": 1
+          "count": 2
         },
         {
           "file": "src/lib/ObserverShell.svelte",
@@ -1038,7 +1038,7 @@
         },
         {
           "file": "src/lib/Others/GridCatalog.svelte",
-          "count": 6
+          "count": 5
         },
         {
           "file": "src/lib/Others/HypaV3Progress.svelte",
@@ -1146,7 +1146,7 @@
         },
         {
           "file": "src/lib/SideBars/Sidebar.svelte",
-          "count": 27
+          "count": 25
         },
         {
           "file": "src/lib/SideBars/Toggles.svelte",
@@ -1366,7 +1366,7 @@
         },
         {
           "file": "src/ts/translator/translator.ts",
-          "count": 27
+          "count": 28
         }
       ]
     },
@@ -1486,7 +1486,7 @@
         },
         {
           "file": "src/ts/process/request/serverPromptAssembly.ts",
-          "count": 3
+          "count": 4
         },
         {
           "file": "src/ts/process/sendChatPromptAssembly.ts",
@@ -2610,7 +2610,7 @@
         },
         {
           "file": "src/ts/server/chatMessageHydration.svelte.ts",
-          "count": 2
+          "count": 3
         }
       ]
     },
