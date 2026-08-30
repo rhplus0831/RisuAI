@@ -33,7 +33,7 @@ import type {
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
 import type { ProviderCredentialRecord } from '../model/providerCredentialRecords'
-import type { ScriptModelOverrides } from '../model/scriptModelOverrides'
+import type { ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import {
   serializeScriptDefinitionCollectionDigestInput,
   type ScriptDefinitionCollectionMutation,

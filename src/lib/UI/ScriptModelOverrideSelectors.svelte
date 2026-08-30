@@ -10,7 +10,7 @@
     updateScriptModelOverrideProfileId,
     type ScriptModelOverrides,
     type ScriptModelRole,
-  } from 'src/ts/model/scriptModelOverrides'
+  } from '@risuai/shared-core/script-model-overrides'
   import { getDatabase } from 'src/ts/storage/database.svelte'
 
   interface Props {

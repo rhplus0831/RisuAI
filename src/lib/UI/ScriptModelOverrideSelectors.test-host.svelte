@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { ScriptModelOverrides } from 'src/ts/model/scriptModelOverrides'
+  import type { ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
   import ScriptModelOverrideSelectors from './ScriptModelOverrideSelectors.svelte'
 
   interface Props {

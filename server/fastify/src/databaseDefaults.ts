@@ -37,7 +37,7 @@ import {
   type ModelProfileRecordRuntimeOptions,
 } from '../../../src/ts/model/modelProfileRecords.js'
 import { normalizeProviderCredentials } from '../../../src/ts/model/providerCredentialRecords.js'
-import { normalizeScriptModelOverrides } from '../../../src/ts/model/scriptModelOverrides.js'
+import { normalizeScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import {
   DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   normalizeRegexOutputSizeLimitMiB,

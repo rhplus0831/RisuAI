@@ -328,20 +328,6 @@
     },
     {
       "lane": "production",
-      "importer": "server/fastify/src/commands/characters.ts",
-      "specifier": "../../../../src/ts/model/scriptModelOverrides.js",
-      "target": "src/ts/model/scriptModelOverrides.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeScriptModelOverrides",
-        "readScriptModelOverrides"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
       "importer": "server/fastify/src/commands/chats.ts",
       "specifier": "../../../../src/ts/chatGenerationSettings.js",
       "target": "src/ts/chatGenerationSettings.ts",
@@ -500,20 +486,6 @@
       ],
       "count": 1,
       "policy": "browser-application-model"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/commands/modules.ts",
-      "specifier": "../../../../src/ts/model/scriptModelOverrides.js",
-      "target": "src/ts/model/scriptModelOverrides.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeScriptModelOverrides",
-        "readScriptModelOverrides"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
     },
     {
       "lane": "production",
@@ -784,19 +756,6 @@
       "usage": "runtime",
       "symbols": [
         "normalizeProviderCredentials"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/databaseDefaults.ts",
-      "specifier": "../../../src/ts/model/scriptModelOverrides.js",
-      "target": "src/ts/model/scriptModelOverrides.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "normalizeScriptModelOverrides"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"
@@ -1896,19 +1855,6 @@
         "ResolvedModelProfile",
         "resolveModelProfile",
         "resolveModelProfileByProfileId"
-      ],
-      "count": 1,
-      "policy": "shared-pure-runtime"
-    },
-    {
-      "lane": "production",
-      "importer": "server/fastify/src/prompt/luaRuntime.ts",
-      "specifier": "../../../../src/ts/model/scriptModelOverrides.js",
-      "target": "src/ts/model/scriptModelOverrides.ts",
-      "kind": "static",
-      "usage": "runtime",
-      "symbols": [
-        "scriptModelOverrideProfileId"
       ],
       "count": 1,
       "policy": "shared-pure-runtime"

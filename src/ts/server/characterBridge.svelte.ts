@@ -31,7 +31,7 @@ import {
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
 import { characterOwnerMutationKey } from './resourceOwnerMutationKeys'
-import { normalizeScriptModelOverrides } from '../model/scriptModelOverrides'
+import { normalizeScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 
 interface PendingCharacterPatch {

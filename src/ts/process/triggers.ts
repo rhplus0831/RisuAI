@@ -31,7 +31,7 @@ import {
   scriptModelOverrideProfileId,
   type ScriptModelOverrides,
   type ScriptModelRole,
-} from '../model/scriptModelOverrides'
+} from '@risuai/shared-core/script-model-overrides'
 import { calcString } from './infunctions'
 import {
   currentChatScriptstateSnapshot,

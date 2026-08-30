@@ -26,7 +26,7 @@ import {
   normalizeScriptModelOverrides,
   scriptModelOverrideProfileId,
   type ScriptModelOverrides,
-} from '../model/scriptModelOverrides'
+} from '@risuai/shared-core/script-model-overrides'
 import { v4 } from 'uuid'
 import { createNonSecurityUuid } from '../nonSecurityUuid'
 import { getModuleLorebooks, getModuleTriggerOwner, getModuleTriggers } from './modules'

@@ -79,6 +79,7 @@ describe('@risuai/shared-core import boundary', () => {
         'modelRoles.ts',
         'punctuation.ts',
         'regexOutputSizeLimit.ts',
+        'scriptModelOverrides.ts',
       ],
       violations: [],
     })

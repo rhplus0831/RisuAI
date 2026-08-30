@@ -17,7 +17,7 @@ import {
   resolveModelProfileByProfileId,
   type ResolvedModelProfile,
 } from '../../../../src/ts/model/modelProfileResolver.js'
-import { scriptModelOverrideProfileId } from '../../../../src/ts/model/scriptModelOverrides.js'
+import { scriptModelOverrideProfileId } from '@risuai/shared-core/script-model-overrides'
 import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
 import { tokenize } from './tokens.js'

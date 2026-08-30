@@ -9,10 +9,7 @@ import {
   validateOptionalServerAssetRef,
 } from './assets.js'
 import { repairCreatedLorebookEntries } from './lorebooks.js'
-import {
-  normalizeScriptModelOverrides,
-  readScriptModelOverrides,
-} from '../../../../src/ts/model/scriptModelOverrides.js'
+import { normalizeScriptModelOverrides, readScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 
 type JsonRecord = Record<string, unknown>
 

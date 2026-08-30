@@ -66,7 +66,7 @@ import {
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
-import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '../model/scriptModelOverrides'
+import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 
 export interface MCPModule {
   url: string
