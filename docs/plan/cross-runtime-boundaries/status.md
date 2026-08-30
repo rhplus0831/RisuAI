@@ -9,21 +9,20 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Snapshot
 
-- Plan state: Active; Phases 0 through 2 complete; ten Phase 3 leaf slices are
+- Plan state: Active; Phases 0 through 2 complete; eleven Phase 3 leaf slices are
   complete.
 - Current phase: [Phase 3 pure shared core](phases/phase-3-pure-shared-core.md).
-- Active slice: [History-slot rendering](phases/slices/phase-3-pure-shared-core/history-slot-rendering.md), ready.
+- Active slice: [Lore hash randomization](phases/slices/phase-3-pure-shared-core/lore-hash-randomization.md), ready.
 - Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
 - Runtime changes through Phase 1: shell, character-summary,
   provider-operation, embedding-operation, image-generation, TTS-synthesis,
   server-tool, client-context, display-source, MCP OAuth refresh, and
   standalone-settings contracts moved to explicit protocol subpaths without
   wire changes.
-- Latest implementation candidate: ChatML row parsing at `14f44ed87`, after
-  inlay-token matching at `92dde59e1`; focused differential/ownership, all five
+- Latest implementation candidate: history-slot rendering at `7e03538ea`, after
+  ChatML row parsing at `14f44ed87`; focused differential/ownership, all four
   browser/Fastify owners, architecture inventory, shared-core/root/downstream
-  typechecks, formatting, and diff checks passed. The portfolio gate was
-  reverified through `c0b8776b3`; see
+  typechecks, formatting, and diff checks passed; see
   [`latest-verification.md`](latest-verification.md).
 
 ## Dependency Cursors
@@ -56,6 +55,7 @@ in [`latest-verification.md`](latest-verification.md).
 | Punctuation trimming | `386bdd750` | Released through `@risuai/shared-core/punctuation`; all four direct production consumers use the shared leaf and two production root-`src` edges were removed. |
 | Inlay-token matching | `92dde59e1` | Released through `@risuai/shared-core/inlay-tokens`; both production consumers use the shared leaf and one production root-`src` edge was removed. |
 | ChatML row parsing | `14f44ed87` | Released through `@risuai/shared-core/chatml-rows`; all five production consumers use the shared leaf and two production root-`src` edges were removed. |
+| History-slot rendering | `7e03538ea` | Released through `@risuai/shared-core/history-slots`; all four production consumers use the shared leaf and one production runtime/mixed root-`src` edge was removed. |
 | Workstream 2 inventory prerequisite | Package/dependency conventions at `b01e88b03` | Released. |
 | Workstream 2 shared-contract prerequisite | Per contract family | Blocked until the matching Phase 1 contract closes. |
 | Workstream 3 contract prerequisite | Per contract/resource family | Blocked until the matching Phase 1/2 contract closes. |
@@ -80,12 +80,12 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Current Boundary Cursor
 
-- 316 direct root-`src` edges remain: 213 production, 95 server-test, and 8
-  browser-smoke, spanning 128 importers and 59 targets.
-- Usage is 113 runtime, 41 mixed, and 162 type-only; 154 runtime/mixed edges
+- 315 direct root-`src` edges remain: 212 production, 95 server-test, and 8
+  browser-smoke, spanning 128 importers and 58 targets.
+- Usage is 113 runtime, 40 mixed, and 162 type-only; 153 runtime/mixed edges
   remain.
 - The completed Phase 1 and Phase 3 slices, plus the reviewed Workstream 2
-  shared-helper reuse, removed 59 edges and 20 source
+  shared-helper reuse, removed 60 edges and 21 source
   targets.
   Both consuming TypeScript projects still reference
   `tsconfig.client-lib.json`; Phase 6 remains responsible for that decoupling.
@@ -97,7 +97,7 @@ in [`latest-verification.md`](latest-verification.md).
 | [0. Boundary inventory and gates](phases/phase-0-boundary-inventory-and-gates.md) | Complete | Closed at `b01e88b03`. |
 | [1. Protocol contract completion](phases/phase-1-protocol-contract-completion.md) | Complete | Closed at `33d1643ae`. |
 | [2. Route operation and policy catalog](phases/phase-2-route-operation-and-policy-catalog.md) | Complete | Closed at `6a6d0ac1f`. |
-| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and ten neutral leaves complete; history-slot rendering is next. |
+| [3. Pure shared core](phases/phase-3-pure-shared-core.md) | Active | Shared-core foundation and eleven neutral leaves complete; lore hash randomization is next. |
 | [4. Server consumer migration](phases/phase-4-server-consumer-migration.md) | Queued | Destination contracts/helpers pass audits. |
 | [5. Browser adapter migration](phases/phase-5-browser-adapter-migration.md) | Queued | Matching server/shared contracts are stable. |
 | [6. Typecheck/package decoupling](phases/phase-6-typecheck-and-package-decoupling.md) | Queued | No unapproved consuming import remains. |
@@ -119,7 +119,7 @@ in [`latest-verification.md`](latest-verification.md).
 
 ## Start Here
 
-Use [`next-steps.md`](next-steps.md). Move only dependency-free history-slot
-rendering into the audited shared-core owner while preserving slot grammar,
-history cutoffs, greeting fallback, token-budget eviction, translations, and
-sync/async behavior.
+Use [`next-steps.md`](next-steps.md). Move only dependency-free lore hash
+randomization into the audited shared-core owner while preserving JavaScript
+integer coercion, seed hashing, advancement, and deterministic browser/Fastify
+outputs.

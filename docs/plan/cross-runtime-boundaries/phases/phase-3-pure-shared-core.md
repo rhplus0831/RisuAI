@@ -58,4 +58,6 @@ Completed slice: [Inlay-token matching](slices/phase-3-pure-shared-core/inlay-to
 
 Completed slice: [ChatML row parsing](slices/phase-3-pure-shared-core/chatml-row-parsing.md).
 
-Active slice: [History-slot rendering](slices/phase-3-pure-shared-core/history-slot-rendering.md).
+Completed slice: [History-slot rendering](slices/phase-3-pure-shared-core/history-slot-rendering.md).
+
+Active slice: [Lore hash randomization](slices/phase-3-pure-shared-core/lore-hash-randomization.md).

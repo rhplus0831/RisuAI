@@ -4,23 +4,20 @@ Date: 2026-08-31
 
 ## Current Best Task
 
-Execute the [history-slot rendering
-slice](phases/slices/phase-3-pure-shared-core/history-slot-rendering.md).
+Execute the [lore hash randomization
+slice](phases/slices/phase-3-pure-shared-core/lore-hash-randomization.md).
 
-1. Move the pure history-slot types, grammar, collectors, renderers, and
-   synchronous/asynchronous resolver factories into an explicit shared-core
-   subpath.
-2. Preserve the `history`/`historytrans` grammar and the inclusive 1..50 count
-   bound, invalid-slot erasure, message filtering, `allBefore` cutoff, greeting
-   fallback, role mapping, transform timing, and exact block separators.
-3. Preserve paired source/translation token accounting, oldest-first eviction,
-   the 2048 fallback budget, per-count caching, async de-duplication, and output
-   ordering.
-4. Migrate the three browser production consumers and the Fastify raw-message
-   translator, then delete the browser-tree owner only after differential and
-   closed-world ownership proof passes.
-5. Keep tokenizer implementation, translator orchestration, chat state,
-   persistence, prompt dispatch, and UI behavior unchanged.
+1. Move `sfc32` and `pickHashRand` into an explicit shared-core subpath.
+2. Preserve the `5515` seed, four sequential word hashes, UTF-16 `charCodeAt`
+   behavior, signed 32-bit coercion/overflow, `cid % 1000` advancement, and the
+   exact unsigned division result.
+3. Point the browser utility facade and Fastify lorebook activation at the
+   shared subpath, and replace the private Fastify CBS copy only after
+   differential vectors prove exact parity.
+4. Cover empty/Unicode/long strings and negative, zero, boundary, and large
+   identifiers with deterministic and repeated-call fixtures.
+5. Keep CBS parsing, lorebook activation policy, chat variables, persistence,
+   and UI behavior unchanged.
 
 ## Foundations Released
 
@@ -54,14 +51,15 @@ slice](phases/slices/phase-3-pure-shared-core/history-slot-rendering.md).
   `92dde59e1`.
 - ChatML row parsing and all five production consumers are released at
   `14f44ed87`.
+- History-slot rendering and all four production consumers are released at
+  `7e03538ea`.
 
 ## Not In This Slice
 
-- Do not move tokenizers, translator pipelines, input-hook orchestration, chat
-  state selection, request routing, provider policy, or UI orchestration into
-  shared core.
-- Do not alter slot parsing, message filtering, greeting inclusion, translation
-  fallback, token-budget eviction, or transform-callback semantics.
+- Do not move CBS/lorebook orchestration, database state, chat-variable policy,
+  request routing, provider policy, or UI orchestration into shared core.
+- Do not change modulo behavior, normalize negative identifiers, replace the
+  PRNG, or broaden this slice into unrelated utility helpers.
 - Do not accept browser stores, DOM/Svelte, Fastify, filesystem, process-global,
   credential, persistence, or aggregate database dependencies.
 

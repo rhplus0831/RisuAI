@@ -1,6 +1,6 @@
 # History-Slot Rendering
 
-Status: ready.
+Status: complete at `7e03538ea`.
 
 Parent: [Phase 3](../../phase-3-pure-shared-core.md)
 
@@ -52,3 +52,12 @@ consumer owners; both typechecks; architecture inventory; formatting; and
 
 Stop if the leaf needs browser stores, DOM/Svelte, Fastify, filesystem,
 process-global state, credentials, persistence, or an aggregate database.
+
+## Release Evidence
+
+- `@risuai/shared-core/history-slots` owns the pure implementation and all four
+  production consumers import that subpath.
+- Differential, ownership, and import-boundary files passed 8, 1, and 2 tests;
+  browser owners passed 16, 12, and 97, and the Fastify owner passed 32.
+- The browser-tree implementation was deleted and one production mixed
+  root-`src` edge plus one target left the checked inventory.
