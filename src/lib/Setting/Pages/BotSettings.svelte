@@ -120,7 +120,7 @@
     type PromptTemplateStructuralFinalSettlement,
     type PromptTemplateStructuralMutationOutcome,
     type PromptTemplateStructuralOwnerState,
-  } from 'src/ts/server/promptTemplateBridge.svelte'
+  } from 'src/ts/server/promptTemplateMutations.svelte'
   import {
     beginPromptPresetIconUpload,
     capturePromptPresetIconUploadTarget,

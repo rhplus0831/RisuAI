@@ -42,7 +42,7 @@ import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } fro
 import {
   queuePromptItemProjectionUpdate,
   resetPromptTemplateSelectionDirtyState,
-} from './server/promptTemplateBridge.svelte'
+} from './server/promptTemplateMutations.svelte'
 
 const testDatabaseState = {
   get db() {

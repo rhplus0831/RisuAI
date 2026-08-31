@@ -277,7 +277,7 @@ import {
   queuePromptItemProjectionUpdate,
   reapplyPendingPromptTemplateStructuralProjections,
   resetPendingPromptTemplateStructuralMutationsForTests,
-} from 'src/ts/server/promptTemplateBridge.svelte'
+} from 'src/ts/server/promptTemplateMutations.svelte'
 import type { PromptItem } from 'src/ts/process/prompt'
 
 type MountedComponent = Parameters<typeof unmount>[0]

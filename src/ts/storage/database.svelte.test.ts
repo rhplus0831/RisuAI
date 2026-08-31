@@ -77,7 +77,7 @@ import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } fro
 import {
   queuePromptItemProjectionUpdate,
   resetPromptTemplateSelectionDirtyState,
-} from '../server/promptTemplateBridge.svelte'
+} from '../server/promptTemplateMutations.svelte'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'

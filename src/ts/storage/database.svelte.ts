@@ -127,7 +127,7 @@ import {
 import {
   flushPendingPromptTemplatePatches,
   promptTemplateOwnerMutationKey,
-} from '../server/promptTemplateBridge.svelte'
+} from '../server/promptTemplateMutations.svelte'
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,

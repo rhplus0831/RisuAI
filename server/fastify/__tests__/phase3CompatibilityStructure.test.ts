@@ -243,12 +243,6 @@ const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = [
     outcomes: ['accepted', 'queued-retained', 'failed-owner-scoped-rollback'],
   },
   {
-    file: 'promptTemplateBridge.svelte.ts',
-    flusher: 'flushPendingPromptTemplatePatches',
-    commands: ['prompt item mutations', 'prompt settings patch'],
-    outcomes: ['accepted', 'queued-retained', 'failed-owner-scoped-rollback'],
-  },
-  {
     file: 'scriptDefinitionBridge.svelte.ts',
     flusher: 'flushPendingServerBackedScriptDefinitionPatches',
     registrationId: 'script-definition',

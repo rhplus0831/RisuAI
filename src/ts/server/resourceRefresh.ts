@@ -10,7 +10,7 @@ import {
   mergePendingPluginStorageResource,
 } from '../pluginCommands'
 import { reapplyPendingPresetProjections } from '../storage/database.svelte'
-import { reapplyPendingPromptTemplateStructuralProjections } from './promptTemplateBridge.svelte'
+import { reapplyPendingPromptTemplateStructuralProjections } from './promptTemplateMutations.svelte'
 import { triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import {

@@ -12,7 +12,6 @@ import {
   type ServerCommandTransportOptions,
   type SettingsPatch,
 } from './commands'
-import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import {
   capturePromptTemplateOwnerProjectionEpoch,
   currentPromptTemplateOwnerId,
@@ -23,10 +22,11 @@ import {
 import {
   captureCollectionProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
-  getResourceDatabase as getDatabase,
+  collectionsResourceState,
   hasCollectionProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
   markSettingsGroupAcknowledgementTainted,
+  settingsResourceState,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
@@ -64,6 +64,30 @@ export function cloneJsonValue<T>(value: T): T {
 export function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
+}
+
+function withPromptTemplateOwnerWrite<T>(write: () => T): T {
+  return write()
+}
+
+function legacyPromptTemplateOwnerValue(): unknown {
+  if (collectionsResourceState.statuses.promptTemplate !== 'ready') return undefined
+  return collectionsResourceState.values.promptTemplate
+}
+
+function writeLegacyPromptTemplateOwnerValue(value: PromptItem[] | undefined): void {
+  if (collectionsResourceState.statuses.promptTemplate !== 'ready') return
+  if (value === undefined) {
+    delete (collectionsResourceState.values as unknown as Record<string, unknown>).promptTemplate
+  } else {
+    collectionsResourceState.values.promptTemplate = value
+  }
+}
+
+function promptPresetOwnerRows(): Array<Record<string, unknown>> | null {
+  if (collectionsResourceState.statuses.promptPresets !== 'ready') return null
+  const presets = collectionsResourceState.values.promptPresets
+  return Array.isArray(presets) ? (presets as unknown as Array<Record<string, unknown>>) : null
 }
 
 export interface PromptTemplateOwnerMutationFence {
@@ -266,17 +290,17 @@ export function applyPromptItemProjectionWrite(
   if (!draftItem) return null
   if (ownerId !== null && !findCanonicalPromptTemplatePreset(ownerId)) return null
   const snapshot = cloneJsonValue(draftItem)
-  withTrustedResourceWrite(() => {
+  withPromptTemplateOwnerWrite(() => {
     const owner = ownerId === null ? null : findCanonicalPromptTemplatePreset(ownerId)
-    const template = ownerId === null ? getDatabase().promptTemplate : owner?.promptTemplate
+    const template = ownerId === null ? legacyPromptTemplateOwnerValue() : owner?.promptTemplate
     if (!Array.isArray(template)) {
-      if (ownerId === null) getDatabase().promptTemplate = cloneJsonValue(draftItems)
+      if (ownerId === null) writeLegacyPromptTemplateOwnerValue(cloneJsonValue(draftItems))
       else if (owner) owner.promptTemplate = cloneJsonValue(draftItems)
       return
     }
     const index = template.findIndex((item) => item.id === itemId)
     if (index === -1) {
-      if (ownerId === null) getDatabase().promptTemplate = cloneJsonValue(draftItems)
+      if (ownerId === null) writeLegacyPromptTemplateOwnerValue(cloneJsonValue(draftItems))
       else if (owner) owner.promptTemplate = cloneJsonValue(draftItems)
       return
     }
@@ -295,9 +319,9 @@ export function restorePromptItemProjectionWrite(
   previousItem: PromptItem,
   ownerId: string | null = currentPromptTemplateOwnerId(),
 ): void {
-  withTrustedResourceWrite(() => {
+  withPromptTemplateOwnerWrite(() => {
     const owner = ownerId === null ? null : findCanonicalPromptTemplatePreset(ownerId)
-    const template = ownerId === null ? getDatabase().promptTemplate : owner?.promptTemplate
+    const template = ownerId === null ? legacyPromptTemplateOwnerValue() : owner?.promptTemplate
     if (!Array.isArray(template)) return
     const index = template.findIndex((item) => item.id === itemId)
     if (index !== -1) template[index] = cloneJsonValue(previousItem)
@@ -327,14 +351,14 @@ function promptTemplateOwnerCollectionName(ownerId: string | null): 'promptTempl
 }
 
 function captureCanonicalPromptTemplateOwnerState(ownerId: string | null): PromptTemplateOwnerStateSnapshot | null {
-  const database = getDatabase()
   if (ownerId === null) {
-    if (database.promptTemplate === undefined) return { enabled: false }
-    return canonicalPromptTemplateEnabledState(database.promptTemplate)
+    const promptTemplate = legacyPromptTemplateOwnerValue()
+    if (promptTemplate === undefined) return { enabled: false }
+    return canonicalPromptTemplateEnabledState(promptTemplate)
   }
 
-  const presets = database.promptPresets
-  if (!Array.isArray(presets)) return null
+  const presets = promptPresetOwnerRows()
+  if (!presets) return null
   const seenPresetIds = new Set<string>()
   let owner: Record<string, unknown> | null = null
   for (const candidate of presets) {
@@ -466,7 +490,7 @@ export function reapplyPendingPromptTemplateStructuralProjections(ownerId?: stri
       : new Set([ownerId])
   if (ownerIds.size === 0) return
 
-  withTrustedResourceWrite(() => {
+  withPromptTemplateOwnerWrite(() => {
     for (const targetOwnerId of ownerIds) {
       const current = readPromptTemplateStructuralOwnerState(targetOwnerId)
       if (!current) continue
@@ -544,7 +568,7 @@ function applyPromptTemplateStructuralOperation(
 }
 
 function rollbackPromptTemplateStructuralProjection(attempt: PendingPromptTemplateStructuralAttempt): void {
-  withTrustedResourceWrite(() => {
+  withPromptTemplateOwnerWrite(() => {
     const live = readPromptTemplateStructuralOwnerState(attempt.ownerId)
     if (!live) return
     const operation = attempt.operation
@@ -597,15 +621,15 @@ function reorderPromptTemplateStructuralItems(items: PromptItem[], itemIds: read
 }
 
 function readPromptTemplateStructuralOwnerState(ownerId: string | null): PromptTemplateStructuralOwnerState | null {
-  const database = getDatabase()
   if (ownerId === null) {
-    if (database.promptTemplate === undefined) return { enabled: false }
-    if (!Array.isArray(database.promptTemplate)) return null
-    return { enabled: true, items: cloneJsonValue(database.promptTemplate as PromptItem[]) }
+    const promptTemplate = legacyPromptTemplateOwnerValue()
+    if (promptTemplate === undefined) return { enabled: false }
+    if (!Array.isArray(promptTemplate)) return null
+    return { enabled: true, items: cloneJsonValue(promptTemplate as PromptItem[]) }
   }
 
-  const presets = database.promptPresets
-  if (!Array.isArray(presets)) return null
+  const presets = promptPresetOwnerRows()
+  if (!presets) return null
   const matches = presets.filter((preset) => preset?.id === ownerId)
   if (matches.length !== 1) return null
   const preset = matches[0] as unknown as Record<string, unknown>
@@ -618,15 +642,13 @@ function writePromptTemplateStructuralOwnerState(
   ownerId: string | null,
   state: PromptTemplateStructuralOwnerState,
 ): void {
-  const database = getDatabase()
   if (ownerId === null) {
-    if (state.enabled) database.promptTemplate = cloneJsonValue(state.items ?? [])
-    else delete (database as unknown as Record<string, unknown>).promptTemplate
+    writeLegacyPromptTemplateOwnerValue(state.enabled ? cloneJsonValue(state.items ?? []) : undefined)
     return
   }
 
-  const presets = database.promptPresets
-  if (!Array.isArray(presets)) return
+  const presets = promptPresetOwnerRows()
+  if (!presets) return
   const matches = presets.filter((preset) => preset?.id === ownerId)
   if (matches.length !== 1) return
   const preset = matches[0] as unknown as Record<string, unknown>
@@ -1219,11 +1241,11 @@ function restorePromptItemProjectionFields(
   changedFields: readonly string[],
 ): boolean {
   let complete = true
-  withTrustedResourceWrite(() => {
-    const database = getDatabase()
+  withPromptTemplateOwnerWrite(() => {
     const targets: PromptItem[][] = []
     if (ownerId === null) {
-      if (Array.isArray(database.promptTemplate)) targets.push(database.promptTemplate as PromptItem[])
+      const promptTemplate = legacyPromptTemplateOwnerValue()
+      if (Array.isArray(promptTemplate)) targets.push(promptTemplate as PromptItem[])
       else complete = false
     } else {
       const owner = findCanonicalPromptTemplatePreset(ownerId)
@@ -1292,8 +1314,9 @@ function rollbackPromptSettingsPatch(
 ): void {
   markSettingsGroupAcknowledgementTainted('prompt')
   if (projectionEpoch === null || hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)) return
-  withTrustedResourceWrite(() => {
-    const target = getDatabase() as unknown as Record<string, unknown>
+  withPromptTemplateOwnerWrite(() => {
+    if (settingsResourceState.groupStatuses.prompt !== 'ready') return
+    const target = settingsResourceState.value as unknown as Record<string, unknown>
     for (const [key, previousValue] of Object.entries(previous)) {
       if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
         target[key] = cloneJsonValue(previousValue)
@@ -1642,8 +1665,8 @@ function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
 }
 
 function findCanonicalPromptTemplatePreset(ownerId: string): Record<string, unknown> | null {
-  const presets = getDatabase().promptPresets
-  if (!Array.isArray(presets)) return null
+  const presets = promptPresetOwnerRows()
+  if (!presets) return null
   const seenPresetIds = new Set<string>()
   let owner: Record<string, unknown> | null = null
   for (const candidate of presets) {
@@ -1664,9 +1687,9 @@ function applyPromptTemplateCollectionRollback(
 ): boolean {
   binding.setItems(nextItems)
   let complete = true
-  withTrustedResourceWrite(() => {
+  withPromptTemplateOwnerWrite(() => {
     if (ownerId === null) {
-      getDatabase().promptTemplate = cloneJsonValue(nextItems)
+      writeLegacyPromptTemplateOwnerValue(cloneJsonValue(nextItems))
       return
     }
     const owner = findCanonicalPromptTemplatePreset(ownerId)
@@ -1680,7 +1703,10 @@ function applyPromptTemplateCollectionRollback(
 }
 
 function readPromptTemplateOwnerItems(ownerId: string | null): PromptItem[] {
-  if (ownerId === null) return (getDatabase().promptTemplate ?? []) as PromptItem[]
+  if (ownerId === null) {
+    const promptTemplate = legacyPromptTemplateOwnerValue()
+    return (Array.isArray(promptTemplate) ? promptTemplate : []) as PromptItem[]
+  }
   const owner = findCanonicalPromptTemplatePreset(ownerId)
   return (Array.isArray(owner?.promptTemplate) ? owner.promptTemplate : []) as PromptItem[]
 }

@@ -81,7 +81,7 @@ import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
 import {
   flushPendingPromptTemplateOwnerPatches,
   promptTemplateOwnerMutationKey,
-} from './server/promptTemplateBridge.svelte'
+} from './server/promptTemplateMutations.svelte'
 import {
   chatResourceOwnerMutationKey,
   loadoutOwnerMutationKey,

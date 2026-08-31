@@ -319,7 +319,7 @@ import {
   type PromptItemOptimisticAcknowledgement,
   type PromptItemSnapshot,
 } from './commands'
-import { queuePromptItemProjectionUpdate as queuePromptItemProjectionUpdateForPromptSettings } from 'src/ts/server/promptTemplateBridge.svelte'
+import { queuePromptItemProjectionUpdate as queuePromptItemProjectionUpdateForPromptSettings } from 'src/ts/server/promptTemplateMutations.svelte'
 import {
   applyPromptItemProjectionWrite,
   capturePromptTemplateOwnerMutationFence,
@@ -341,7 +341,7 @@ import {
   snapshotJson,
   stagePromptItemDeleteMutation,
   type PromptTemplateDraftBinding,
-} from './promptTemplateBridge.svelte'
+} from './promptTemplateMutations.svelte'
 
 const BIG = 'x'.repeat(5000)
 type MountedComponent = Parameters<typeof unmount>[0]

@@ -27,7 +27,7 @@ vi.mock('./lorebookBridge.svelte', () => ({
   }),
 }))
 
-vi.mock('./promptTemplateBridge.svelte', () => ({
+vi.mock('./promptTemplateMutations.svelte', () => ({
   flushPendingPromptTemplatePatches: vi.fn((options: unknown) => {
     calls.promptTemplate.push(options)
   }),

@@ -393,7 +393,7 @@ describe('static architecture gate: prompt-template dispatch boundaries', () => 
   })
 
   it('does not mirror prompt item edits through whole-preset commands', () => {
-    expect(readSource('src/ts/server/promptTemplateBridge.svelte.ts')).not.toContain(
+    expect(readSource('src/ts/server/promptTemplateMutations.svelte.ts')).not.toContain(
       "mirrorTopLevelPresetField('promptTemplate'",
     )
   })

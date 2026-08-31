@@ -2,7 +2,7 @@ import type { ServerCommandTransportOptions } from './commands'
 import { flushPendingServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { flushPendingCharacterDraftPatches } from './characterDraft.svelte'
 import { flushPendingServerBackedLorebookPatches } from './lorebookBridge.svelte'
-import { flushPendingPromptTemplatePatches } from './promptTemplateBridge.svelte'
+import { flushPendingPromptTemplatePatches } from './promptTemplateMutations.svelte'
 import { flushPendingServerBackedScriptDefinitionPatches } from './scriptDefinitionBridge.svelte'
 import { flushRegisteredPendingBridgePatches } from './pendingBridgeFlushRegistry'
 
