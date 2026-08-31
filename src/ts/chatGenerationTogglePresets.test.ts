@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import {
   compareChatGenerationTogglePresetToActiveState,
@@ -9,6 +10,9 @@ import {
   type ChatGenerationTogglePreset,
 } from './chatGenerationTogglePresetPlanning'
 import { normalizeChatGenerationTogglePresets } from './chatGenerationTogglePresetRecords'
+import { getChatGenerationTogglePresets } from './chatGenerationTogglePresets'
+import { replaceResourceDatabase, settingsResourceState } from './server/resourceState.svelte'
+import type { Database } from './storage/database.svelte'
 
 function preset(
   id: string,
@@ -19,6 +23,10 @@ function preset(
 ): ChatGenerationTogglePreset {
   return { id, name, createdAt: 1, updatedAt, sidebarToggles, sidebarToggleKinds }
 }
+
+beforeEach(() => {
+  replaceResourceDatabase({ chatGenerationTogglePresets: [] } as unknown as Database)
+})
 
 describe('Saved Toggles domain helpers', () => {
   it('penalizes stale keys in Jaccard similarity', () => {
@@ -145,5 +153,25 @@ describe('Saved Toggles domain helpers', () => {
         },
       ])[0],
     ).not.toHaveProperty('jailbreakToggle')
+  })
+
+  it('reads canonical toggle presets from the ready sidebar settings owner', () => {
+    const saved = preset('saved', 'Saved', { flag: '1' }, { flag: 'boolean' })
+    settingsResourceState.value.chatGenerationTogglePresets = [saved]
+
+    expect(getChatGenerationTogglePresets()).toEqual([saved])
+  })
+
+  it('fails closed for duplicate preset ids or an errored ready owner', () => {
+    const saved = preset('saved', 'Saved', { flag: '1' }, { flag: 'boolean' })
+    settingsResourceState.value.chatGenerationTogglePresets = [saved, { ...saved, name: 'Duplicate' }]
+
+    expect(getChatGenerationTogglePresets()).toEqual([])
+
+    settingsResourceState.value.chatGenerationTogglePresets = [saved]
+    settingsResourceState.groupStatuses.sidebar = 'error'
+    settingsResourceState.groupErrors.sidebar = 'forced sidebar owner failure'
+
+    expect(getChatGenerationTogglePresets()).toEqual([])
   })
 })

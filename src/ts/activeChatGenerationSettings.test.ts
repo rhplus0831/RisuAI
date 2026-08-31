@@ -14,7 +14,12 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+} from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
@@ -981,6 +986,92 @@ describe('active chat generation settings helper', () => {
       settings: { personaId: 'persona-b', promptPresetId: 'preset-b' },
       persona: { id: 'persona-b' },
       promptPreset: { id: 'preset-b' },
+    })
+  })
+
+  it('uses the revisioned character selection owner instead of the compatibility store', () => {
+    const database = clonePlain(testDatabaseState.db)
+    database.currentChar = 0
+    database.characters.push({
+      ...clonePlain(database.characters[0]),
+      chaId: 'char-b',
+      name: 'Character B',
+      chats: [
+        {
+          ...clonePlain(database.characters[0].chats[1]),
+          id: 'chat-c',
+          name: 'Chat C',
+        },
+      ],
+    })
+    testDatabaseState.db = database
+    charactersResourceState.currentChar = 0
+    charactersResourceState.selectionRevision = 1
+    selectedCharID.set(1)
+
+    expect(resolveActiveChatGenerationSettings().identity).toMatchObject({
+      selectedCharIndex: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+    })
+  })
+
+  it('fails closed when selected character or chat stable ids are duplicated', () => {
+    const duplicateCharacterDatabase = clonePlain(testDatabaseState.db)
+    duplicateCharacterDatabase.characters.push({
+      ...clonePlain(duplicateCharacterDatabase.characters[0]),
+      chats: [
+        {
+          ...clonePlain(duplicateCharacterDatabase.characters[0].chats[0]),
+          id: 'chat-other',
+        },
+      ],
+    })
+    testDatabaseState.db = duplicateCharacterDatabase
+
+    expect(resolveActiveChatGenerationSettings()).toMatchObject({
+      character: undefined,
+      chat: undefined,
+      identity: { characterIndex: -1, chatIndex: -1 },
+    })
+
+    seedDb()
+    testDatabaseState.db.characters[0].chats.push({
+      ...clonePlain(testDatabaseState.db.characters[0].chats[0]),
+      name: 'Duplicate Chat A',
+    })
+
+    expect(resolveActiveChatGenerationSettings()).toMatchObject({
+      character: { chaId: 'char-a' },
+      chat: undefined,
+      identity: { characterIndex: 0, chatIndex: -1 },
+    })
+  })
+
+  it('does not fall back to stale persona rows after the ready owner errors', () => {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        global: '0',
+        chat: '0',
+        character: '0',
+      },
+    }
+    collectionsResourceState.statuses.personas = 'error'
+    collectionsResourceState.errors.personas = 'forced persona owner failure'
+
+    const state = resolveActiveChatGenerationSettings()
+
+    expect(state.persona).toBeUndefined()
+    expect(state.readiness.ready).toBe(false)
+    expect(state.readiness.missing).toContainEqual({
+      code: 'persona_missing',
+      field: 'generationSettings.personaId',
+      personaId: 'persona-a',
     })
   })
 

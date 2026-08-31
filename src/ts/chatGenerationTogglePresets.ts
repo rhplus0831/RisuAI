@@ -15,7 +15,8 @@ import {
   createSidebarToggleValuesForActiveChat,
 } from './chatGenerationTogglePresetPlanning'
 import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
-import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { settingsResourceState } from './server/resourceState.svelte'
+import { getDatabase } from './storage/database.svelte'
 import { isActiveChatTargetFresh } from './chatCommands'
 import type { ChatGenerationSettingsSaveOperation } from './chatCommands'
 import { createNonSecurityUuid } from './nonSecurityUuid'
@@ -36,7 +37,18 @@ export type {
 } from './chatGenerationTogglePresetPlanning'
 
 export function getChatGenerationTogglePresets(): ChatGenerationTogglePreset[] {
-  return normalizeChatGenerationTogglePresets(getDatabase().chatGenerationTogglePresets)
+  const status = settingsResourceState.groupStatuses.sidebar
+  if (settingsResourceState.status === 'error' || status === 'error') return []
+  if (status === 'ready') {
+    return normalizeStableTogglePresetOwner(settingsResourceState.value.chatGenerationTogglePresets)
+  }
+  if (
+    (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading') &&
+    (status === undefined || status === 'idle' || status === 'loading')
+  ) {
+    return normalizeStableTogglePresetOwner(getDatabase().chatGenerationTogglePresets)
+  }
+  return []
 }
 
 export function saveCurrentChatGenerationTogglePreset(
@@ -142,4 +154,10 @@ function writeChatGenerationTogglePresets(presets: readonly ChatGenerationToggle
   applyServerBackedSettingsPatch({
     [CHAT_GENERATION_TOGGLE_PRESETS_FIELD]: cloneChatGenerationTogglePresetList(presets),
   })
+}
+
+function normalizeStableTogglePresetOwner(value: unknown): ChatGenerationTogglePreset[] {
+  if (!Array.isArray(value)) return []
+  const normalized = normalizeChatGenerationTogglePresets(value)
+  return normalized.length === value.length ? normalized : []
 }

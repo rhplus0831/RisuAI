@@ -25,9 +25,18 @@ import {
 } from './chatCommands'
 import { language } from '../lang'
 import type { ServerCommandTransportOptions } from './server/commands'
-import { getResourceDatabase } from './server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  SERVER_COLLECTION_NAMES,
+  settingsResourceState,
+  type ServerCollectionName,
+  type ServerResourceStatus,
+} from './server/resourceState.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from './server/settingsGroups'
 import { selectedCharID } from './stores.svelte'
-import type { Chat, Database, character } from './storage/database.svelte'
+import { getDatabase, type Chat, type Database, type character } from './storage/database.svelte'
 import { resolvePersonaModuleIdsById } from './personaModuleLinks'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
@@ -68,6 +77,190 @@ export interface ResolveActiveChatGenerationSettingsOptions {
   target?: ActiveChatTarget | null
 }
 
+interface ActiveChatOwnerProjection {
+  db: Database
+  selectedCharIndex: number
+  usesCharacterOwner: boolean
+}
+
+type OwnerRead<T> = { status: 'available'; value: T } | { status: 'unavailable'; value: T }
+
+function explicitDatabaseProjection(db: Database): ActiveChatOwnerProjection {
+  return {
+    db,
+    selectedCharIndex: get(selectedCharID),
+    usesCharacterOwner: false,
+  }
+}
+
+function activeChatOwnerProjection(): ActiveChatOwnerProjection {
+  let compatibilityDatabase: Database | undefined
+  const compatibility = () => (compatibilityDatabase ??= getDatabase())
+  const databaseBase = activeChatDatabaseBase(compatibility)
+  const characters = readCharacterOwners(compatibility)
+  const personas = readCollectionOwner<ChatGenerationPersonaReference>('personas', compatibility)
+  const modelPresets = readCollectionOwner<ChatGenerationModelPresetReference>('modelPresets', compatibility)
+  const promptPresets = readCollectionOwner<ActiveChatGenerationPromptPresetReference>('promptPresets', compatibility)
+  const modules = readCollectionOwner<ChatGenerationModuleReference>('modules', compatibility)
+  const agentConfiguration = readAgentConfigurationOwner(compatibility)
+  const moduleSettings = readModuleSettingsOwner(compatibility)
+
+  const db = {
+    ...databaseBase,
+    characters: characters.value,
+    currentChar: characters.selectedCharIndex,
+    personas: personas.value,
+    modelPresets: modelPresets.value,
+    promptPresets: promptPresets.value,
+    modules: modules.value,
+    agents: agentConfiguration.value.agents,
+    agentPresets: agentConfiguration.value.agentPresets,
+    agentPresetDefaultId: agentConfiguration.value.agentPresetDefaultId,
+    enabledModules: moduleSettings.value,
+  } as unknown as Database
+
+  return {
+    db,
+    selectedCharIndex: characters.selectedCharIndex,
+    usesCharacterOwner: characters.usesOwner,
+  }
+}
+
+function activeChatDatabaseBase(compatibility: () => Database): Partial<Database> {
+  const database: Partial<Database> = {}
+
+  if (canUseCompatibility(settingsResourceState.status)) {
+    // Cold-start compatibility is deliberately read through the storage
+    // adapter, not the resource facade. Project only settings here so a mixed
+    // readiness state cannot smuggle stale collections or character rows into
+    // the canonical generation snapshot.
+    const fallback = compatibility() as unknown as Record<string, unknown>
+    for (const [key, value] of Object.entries(fallback)) {
+      if (key === 'characters' || SERVER_COLLECTION_NAMES.includes(key as ServerCollectionName)) continue
+      ;(database as Record<string, unknown>)[key] = value
+    }
+  } else if (settingsResourceState.status === 'ready') {
+    for (const [key, value] of Object.entries(settingsResourceState.value)) {
+      const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+      if (group && settingsResourceState.groupStatuses[group] !== 'ready') continue
+      ;(database as Record<string, unknown>)[key] = value
+    }
+  }
+
+  if (canUseCompatibility(collectionsResourceState.status)) {
+    // The collection adapter is used only while the whole collection owner is
+    // idle/loading. Ready or errored slices never fall back to aggregate data.
+    const fallback = compatibility()
+    for (const name of SERVER_COLLECTION_NAMES) {
+      database[name] = fallback[name] as never
+    }
+  } else if (collectionsResourceState.status === 'ready') {
+    for (const name of SERVER_COLLECTION_NAMES) {
+      if (collectionsResourceState.statuses[name] !== 'ready') continue
+      database[name] = collectionsResourceState.values[name] as never
+    }
+  }
+
+  return database
+}
+
+function readCharacterOwners(compatibility: () => Database): {
+  status: OwnerRead<character[]>['status']
+  value: character[]
+  selectedCharIndex: number
+  usesOwner: boolean
+} {
+  if (charactersResourceState.status === 'error') {
+    return { status: 'unavailable', value: [], selectedCharIndex: -1, usesOwner: false }
+  }
+  if (charactersResourceState.status === 'ready') {
+    return {
+      status: 'available',
+      value: charactersResourceState.characters,
+      selectedCharIndex:
+        charactersResourceState.selectionRevision !== null ? charactersResourceState.currentChar : get(selectedCharID),
+      usesOwner: true,
+    }
+  }
+  if (!canUseCompatibility(charactersResourceState.status)) {
+    return { status: 'unavailable', value: [], selectedCharIndex: -1, usesOwner: false }
+  }
+  return {
+    status: 'available',
+    value: safeArray(compatibility().characters),
+    selectedCharIndex: get(selectedCharID),
+    usesOwner: false,
+  }
+}
+
+function readCollectionOwner<T extends { id?: string | null }>(
+  name: ServerCollectionName,
+  compatibility: () => Database,
+): OwnerRead<T[]> {
+  const mode = collectionOwnerMode(name)
+  if (mode === 'unavailable') return { status: 'unavailable', value: [] }
+  const value = mode === 'ready' ? collectionsResourceState.values[name] : compatibility()[name]
+  const collection = stableReferenceCollection<T>(value)
+  return collection ? { status: 'available', value: collection } : { status: 'unavailable', value: [] }
+}
+
+function collectionOwnerMode(name: ServerCollectionName): 'ready' | 'compatibility' | 'unavailable' {
+  const status = collectionsResourceState.statuses[name]
+  if (collectionsResourceState.status === 'error' || status === 'error') return 'unavailable'
+  if (status === 'ready') return 'ready'
+  if (canUseCompatibility(collectionsResourceState.status) && canUseCompatibility(status)) return 'compatibility'
+  return 'unavailable'
+}
+
+function readAgentConfigurationOwner(compatibility: () => Database): OwnerRead<{
+  agents: ChatGenerationAgentReference[]
+  agentPresets: ChatGenerationAgentPresetReference[]
+  agentPresetDefaultId?: string
+}> {
+  const mode = settingsGroupOwnerMode('agents')
+  if (mode === 'unavailable') return unavailableAgentConfiguration()
+  const source = (mode === 'ready' ? settingsResourceState.value : compatibility()) as Partial<Database>
+  const agents = stableReferenceCollection<ChatGenerationAgentReference>(source.agents, true)
+  const agentPresets = stableReferenceCollection<ChatGenerationAgentPresetReference>(source.agentPresets, true)
+  if (!agents || !agentPresets) return unavailableAgentConfiguration()
+  const defaultId = source.agentPresetDefaultId
+  if (defaultId !== undefined && defaultId !== null && !nonEmptyString(defaultId)) {
+    return unavailableAgentConfiguration()
+  }
+  return {
+    status: 'available',
+    value: {
+      agents,
+      agentPresets,
+      agentPresetDefaultId: nonEmptyString(defaultId) ? defaultId : undefined,
+    },
+  }
+}
+
+function unavailableAgentConfiguration(): OwnerRead<{
+  agents: ChatGenerationAgentReference[]
+  agentPresets: ChatGenerationAgentPresetReference[]
+  agentPresetDefaultId?: string
+}> {
+  return { status: 'unavailable', value: { agents: [], agentPresets: [] } }
+}
+
+function readModuleSettingsOwner(compatibility: () => Database): OwnerRead<string[]> {
+  const mode = settingsGroupOwnerMode('modules')
+  if (mode === 'unavailable') return { status: 'unavailable', value: [] }
+  const source = (mode === 'ready' ? settingsResourceState.value : compatibility()) as Partial<Database>
+  const enabledModules = stableStringIdList(source.enabledModules, true)
+  return enabledModules ? { status: 'available', value: enabledModules } : { status: 'unavailable', value: [] }
+}
+
+function settingsGroupOwnerMode(group: 'agents' | 'modules'): 'ready' | 'compatibility' | 'unavailable' {
+  const status = settingsResourceState.groupStatuses[group]
+  if (settingsResourceState.status === 'error' || status === 'error') return 'unavailable'
+  if (status === 'ready') return 'ready'
+  if (canUseCompatibility(settingsResourceState.status) && canUseCompatibility(status)) return 'compatibility'
+  return 'unavailable'
+}
+
 export type ActiveChatGenerationSettingsGuardResult =
   | { status: 'ok'; state: ActiveChatGenerationSettingsState }
   | { status: 'error'; error: string; state: ActiveChatGenerationSettingsState }
@@ -85,20 +278,24 @@ export type ActiveChatGenerationSettingsSaveOptions = ServerCommandTransportOpti
 export function resolveActiveChatGenerationSettings(
   options: ResolveActiveChatGenerationSettingsOptions = {},
 ): ActiveChatGenerationSettingsState {
-  const db = options.db ?? getResourceDatabase()
+  const ownerProjection = options.db ? explicitDatabaseProjection(options.db) : activeChatOwnerProjection()
+  const db = ownerProjection.db
   const characters = safeArray<character>(db.characters)
   const selectedCharIndex =
     options.selectedCharIndex ??
-    (options.target ? resolveTargetCharacterIndex(characters, options.target) : get(selectedCharID))
-  const character = characters[selectedCharIndex]
+    (options.target ? resolveTargetCharacterIndex(characters, options.target) : ownerProjection.selectedCharIndex)
+  const character = resolveUniqueCharacterAtIndex(characters, selectedCharIndex)
+  const readyCharacter =
+    character && ownerProjection.usesCharacterOwner && !isReadyCharacterOwner(character) ? undefined : character
   const chatIndex =
     options.chatIndex ??
-    (options.target && character
-      ? resolveTargetChatIndex(character, options.target)
-      : Number.isInteger(character?.chatPage)
-        ? character.chatPage
+    (options.target && readyCharacter
+      ? resolveTargetChatIndex(characters, readyCharacter, options.target)
+      : Number.isInteger(readyCharacter?.chatPage)
+        ? readyCharacter.chatPage
         : -1)
-  const chat = chatIndex >= 0 ? character?.chats?.[chatIndex] : undefined
+  const chat =
+    chatIndex >= 0 && readyCharacter ? resolveUniqueChatAtIndex(characters, readyCharacter, chatIndex) : undefined
   const settings = chat?.generationSettings
   const personas = safeArray<ChatGenerationPersonaReference>(
     db.personas as unknown as ChatGenerationPersonaReference[] | undefined,
@@ -114,19 +311,19 @@ export function resolveActiveChatGenerationSettings(
   )
   const effectiveAgentPresetId = resolveEffectiveAgentPresetId(db, settings)
 
-  const readiness = resolveReadiness(db, character, chat, settings)
+  const readiness = resolveReadiness(db, readyCharacter, chat, settings)
   const identity: ActiveChatGenerationSettingsIdentity = {
     selectedCharIndex,
-    characterIndex: character ? selectedCharIndex : -1,
+    characterIndex: readyCharacter ? selectedCharIndex : -1,
     chatIndex: chat ? chatIndex : -1,
-    characterId: character?.chaId,
+    characterId: readyCharacter?.chaId,
     chatId: nonEmptyString(chat?.id) ? chat.id : undefined,
   }
 
   return {
     db,
     identity,
-    character,
+    character: readyCharacter,
     chat,
     settings,
     persona: findById(personas, settings?.personaId),
@@ -136,7 +333,7 @@ export function resolveActiveChatGenerationSettings(
     agentPreset: findById(agentPresets, effectiveAgentPresetId),
     readiness,
     requiredSidebarToggles: readiness.requirements.sidebarToggles,
-    displayedSidebarToggles: resolveDisplayedToggles(db, character, chat, settings),
+    displayedSidebarToggles: resolveDisplayedToggles(db, readyCharacter, chat, settings),
     staleSidebarToggleKeys: readiness.staleSidebarToggleKeys,
     missingLabels: createChatGenerationSettingsMissingLabels(readiness.missing, readiness.requirements.sidebarToggles),
   }
@@ -697,21 +894,110 @@ function missingReasonLabel(
 
 function resolveTargetCharacterIndex(characters: readonly character[], target: ActiveChatTarget): number {
   if (target.characterId !== undefined) {
-    return characters.findIndex((character) => character.chaId === target.characterId)
+    const matches = characters
+      .map((characterOwner, index) => ({ characterOwner, index }))
+      .filter(({ characterOwner }) => characterOwner?.chaId === target.characterId)
+    return matches.length === 1 ? matches[0].index : -1
   }
-  return target.selectedCharID >= 0 && target.selectedCharID < characters.length ? target.selectedCharID : -1
+  return resolveUniqueCharacterAtIndex(characters, target.selectedCharID) ? target.selectedCharID : -1
 }
 
-function resolveTargetChatIndex(character: character, target: ActiveChatTarget): number {
+function resolveTargetChatIndex(
+  characters: readonly character[],
+  characterOwner: character,
+  target: ActiveChatTarget,
+): number {
   if (target.chatId !== undefined) {
-    return character.chats?.findIndex((chat) => chat.id === target.chatId) ?? -1
+    const matches = (characterOwner.chats ?? [])
+      .map((chatOwner, index) => ({ chatOwner, index }))
+      .filter(({ chatOwner }) => chatOwner?.id === target.chatId)
+    if (matches.length !== 1) return -1
+    return resolveUniqueChatOwner(characters, characterOwner, target.chatId) === matches[0].chatOwner
+      ? matches[0].index
+      : -1
   }
-  return target.chatPage >= 0 && target.chatPage < (character.chats?.length ?? 0) ? target.chatPage : -1
+  return resolveUniqueChatAtIndex(characters, characterOwner, target.chatPage) ? target.chatPage : -1
 }
 
 function findById<T extends { id?: string | null }>(values: readonly T[], id: string | undefined): T | undefined {
   if (!nonEmptyString(id)) return undefined
-  return values.find((value) => value.id === id)
+  const matches = values.filter((value) => value.id === id)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function resolveUniqueCharacterAtIndex(characters: readonly character[], index: number): character | undefined {
+  if (!Number.isInteger(index) || index < 0) return undefined
+  const candidate = characters[index]
+  if (!nonEmptyString(candidate?.chaId)) return undefined
+  return characters.filter((characterOwner) => characterOwner?.chaId === candidate.chaId).length === 1
+    ? candidate
+    : undefined
+}
+
+function resolveUniqueChatAtIndex(
+  characters: readonly character[],
+  characterOwner: character,
+  index: number,
+): Chat | undefined {
+  if (!Number.isInteger(index) || index < 0) return undefined
+  const candidate = characterOwner.chats?.[index]
+  if (!nonEmptyString(candidate?.id)) return undefined
+  return resolveUniqueChatOwner(characters, characterOwner, candidate.id) === candidate ? candidate : undefined
+}
+
+function resolveUniqueChatOwner(
+  characters: readonly character[],
+  characterOwner: character,
+  chatId: string,
+): Chat | undefined {
+  let owner: { characterOwner: character; chatOwner: Chat } | undefined
+  for (const candidateCharacter of characters) {
+    for (const candidateChat of candidateCharacter.chats ?? []) {
+      if (candidateChat?.id !== chatId) continue
+      if (owner) return undefined
+      owner = { characterOwner: candidateCharacter, chatOwner: candidateChat }
+    }
+  }
+  return owner?.characterOwner === characterOwner ? owner.chatOwner : undefined
+}
+
+function isReadyCharacterOwner(characterOwner: character): boolean {
+  return (
+    nonEmptyString(characterOwner.chaId) &&
+    charactersResourceState.rowStatuses[characterOwner.chaId] === 'ready' &&
+    getCharacterResourceOwner(characterOwner.chaId) === characterOwner
+  )
+}
+
+function stableReferenceCollection<T extends { id?: string | null }>(
+  value: unknown,
+  allowMissing = false,
+): T[] | undefined {
+  if (value === undefined && allowMissing) return []
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
+    const id = (candidate as { id?: unknown }).id
+    if (!nonEmptyString(id) || ids.has(id)) return undefined
+    ids.add(id)
+  }
+  return value as T[]
+}
+
+function stableStringIdList(value: unknown, allowMissing = false): string[] | undefined {
+  if (value === undefined && allowMissing) return []
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!nonEmptyString(candidate) || ids.has(candidate)) return undefined
+    ids.add(candidate)
+  }
+  return value
+}
+
+function canUseCompatibility(status: ServerResourceStatus | undefined): boolean {
+  return status === undefined || status === 'idle' || status === 'loading'
 }
 
 function safeArray<T>(value: readonly T[] | undefined): T[] {
