@@ -1,9 +1,9 @@
 import { get, writable } from 'svelte/store'
-import { getDatabase, mergeServerResourceFields, type Database, type PromptPreset } from '../storage/database.svelte'
+import type { Database, PromptPreset } from '../storage/database.svelte'
 import { normalizePromptTemplate } from '../process/promptTemplateNormalization'
 import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerPromptPresetTemplate } from './hydrationReads'
-import { withServerResourceApply } from './resourceWriteGuard.svelte'
+import { collectionsResourceState, settingsResourceState } from './resourceState.svelte'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 
 export interface PromptTemplateHydrationState {
@@ -29,28 +29,33 @@ let promptTemplateOwnerRevisions = new Map<string | null, number>()
 let promptTemplateOwnerAcknowledgementTaints = new Set<string | null>()
 
 export function currentPromptTemplateOwnerId(): string | null {
-  const database = getDatabase()
-  const selectedIndex = database.promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return null
-  const preset = database.promptPresets?.[selectedIndex]
+  const resolution = currentPromptTemplateOwnerResolution()
+  if (resolution.status === 'ready') return resolution.ownerId
+
+  // Preserve a resident ambiguous stable ID as the modern owner key so callers
+  // cannot reinterpret that row as the legacy aggregate owner. Hydration still
+  // resolves the complete owner snapshot again and fails closed.
+  const selectedIndex = (settingsResourceState.value as Record<string, unknown>).promptPresetsId
+  if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return null
+  const presets = collectionsResourceState.values.promptPresets
+  const preset = Array.isArray(presets) ? presets[selectedIndex as number] : undefined
   const selectedPromptPresetId = preset?.id
   if (typeof selectedPromptPresetId !== 'string' || selectedPromptPresetId.trim() === '') return null
-  // Preserve an ambiguous stable ID as a modern owner key so callers cannot
-  // reinterpret a malformed selected row as the legacy aggregate owner. Every
-  // owner operation resolves it again with the exact-one helper and fails closed.
-  return resolveUniquePromptPreset(database.promptPresets, selectedPromptPresetId)?.id ?? selectedPromptPresetId
+  return selectedPromptPresetId
 }
 
-export function isPromptTemplateHydrated(promptPresetId: string | null = currentPromptTemplateOwnerId()): boolean {
+export function isPromptTemplateHydrated(promptPresetId?: string | null): boolean {
   return isPromptTemplateHydratedInState(get(promptTemplateHydrationStateStore), promptPresetId)
 }
 
 export function isPromptTemplateHydratedInState(
   state: PromptTemplateHydrationState,
-  promptPresetId: string | null = currentPromptTemplateOwnerId(),
+  promptPresetId?: string | null,
 ): boolean {
-  if (state.hydratedOwnerIds.has(promptPresetId)) return true
-  return promptPresetId === null && Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
+  const ownerResolution = resolveRequestedPromptTemplateOwner(promptPresetId)
+  if (ownerResolution.status !== 'ready') return false
+  if (state.hydratedOwnerIds.has(ownerResolution.ownerId)) return true
+  return ownerResolution.ownerId === null && localPromptTemplateOwnerIsResolved(null)
 }
 
 export function promptTemplateOwnerUsesSelectedFallback(
@@ -145,7 +150,9 @@ export async function ensurePromptTemplateHydrated(
     promptPresetId?: string | null
   } = {},
 ): Promise<boolean> {
-  const ownerId = options.promptPresetId === undefined ? currentPromptTemplateOwnerId() : options.promptPresetId
+  const ownerResolution = resolveRequestedPromptTemplateOwner(options.promptPresetId)
+  if (ownerResolution.status !== 'ready') return false
+  const ownerId = ownerResolution.ownerId
   const minimumRevision = normalizedMinimumRevision(options.minimumRevision)
   const ownerRevision = peekPromptTemplateOwnerRevision(ownerId)
   if (
@@ -185,20 +192,27 @@ export async function ensurePromptTemplateHydrated(
 
   const generation = promptTemplateHydrationGeneration
   const ownerEpoch = capturePromptTemplateOwnerProjectionEpoch(ownerId)
-  const baselineRevision = maximumRevision(peekCachedServerCommandRevision(), ownerRevision, minimumRevision)
+  const baselineRevision = maximumRevision(
+    peekCachedServerCommandRevision(),
+    ownerRevision,
+    promptTemplateCollectionRevision(ownerId),
+    minimumRevision,
+  )
   if (baselineRevision === null && !options.force) {
     const resolved = localPromptTemplateOwnerIsResolved(ownerId)
     if (resolved) markPromptTemplateProjectionApplied(ownerId)
     return resolved
   }
   const applyProjection = options.applyProjection ?? true
-  const includeCompatibilityProjection = ownerId === null
-  const ownerSnapshot = promptTemplateOwnerSnapshot(ownerId, includeCompatibilityProjection)
+  const ownerSnapshot = promptTemplateOwnerSnapshot(ownerId)
+  if (ownerSnapshot === null) return false
+  const compatibilitySnapshot = applyProjection ? promptTemplateOwnerSnapshot(null) : null
   const request = (async () => {
     const result = await fetchServerPromptPresetTemplate(ownerId)
     if (generation !== promptTemplateHydrationGeneration) return false
     if (hasPromptTemplateOwnerProjectionEpochChanged(ownerId, ownerEpoch)) return false
-    const ownerIsCurrent = ownerId === currentPromptTemplateOwnerId()
+    const currentOwner = currentPromptTemplateOwnerResolution()
+    const ownerIsCurrent = currentOwner.status === 'ready' && ownerId === currentOwner.ownerId
     if (applyProjection && !ownerIsCurrent) return false
     if (result.status !== 'ok') {
       promptTemplateHydrationWarning(result.status === 'error' ? result.error : 'server resource read unavailable')
@@ -207,7 +221,7 @@ export async function ensurePromptTemplateHydrated(
     if (isOlderThanRevision(result.revision, baselineRevision)) {
       return false
     }
-    if (promptTemplateOwnerSnapshot(ownerId, includeCompatibilityProjection) !== ownerSnapshot) {
+    if (promptTemplateOwnerSnapshot(ownerId) !== ownerSnapshot) {
       return false
     }
 
@@ -215,6 +229,14 @@ export async function ensurePromptTemplateHydrated(
     const selectedFallbackPromptTemplate = result.selectedFallbackPromptTemplate as
       | Database['promptTemplate']
       | undefined
+    if (
+      applyProjection &&
+      ownerIsCurrent &&
+      selectedFallbackPromptTemplate !== undefined &&
+      (compatibilitySnapshot === null || promptTemplateOwnerSnapshot(null) !== compatibilitySnapshot)
+    ) {
+      return false
+    }
     if (
       !applyPromptTemplateProjectionFields(fields, ownerId, {
         applyCompatibilityProjection: applyProjection && ownerIsCurrent && selectedFallbackPromptTemplate !== undefined,
@@ -243,7 +265,12 @@ export async function ensurePromptTemplateHydrated(
 }
 
 function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
-  if (ownerId !== currentPromptTemplateOwnerId() || !promptTemplateHydrationState.hydratedOwnerIds.has(ownerId)) {
+  const currentOwner = currentPromptTemplateOwnerResolution()
+  if (
+    currentOwner.status !== 'ready' ||
+    ownerId !== currentOwner.ownerId ||
+    !promptTemplateHydrationState.hydratedOwnerIds.has(ownerId)
+  ) {
     return false
   }
   const preset = uniquePromptPresetOwner(ownerId)
@@ -299,22 +326,17 @@ function maximumRevision(...values: Array<number | null>): number | null {
   return revisions.length > 0 ? Math.max(...revisions) : null
 }
 
-function promptTemplateOwnerSnapshot(ownerId: string | null, includeCompatibilityProjection: boolean): string {
-  const ownerMatches =
-    ownerId === null || !Array.isArray(getDatabase().promptPresets)
-      ? []
-      : getDatabase().promptPresets.filter((candidate) => candidate?.id === ownerId)
-  return snapshotJson({
-    ownerId,
-    ownerExists: ownerId === null || ownerMatches.length === 1,
-    owner: ownerMatches.length === 1 ? ownerMatches[0] : ownerMatches,
-    ...(includeCompatibilityProjection
-      ? {
-          compatibilityPresent: Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate'),
-          compatibility: getDatabase().promptTemplate,
-        }
-      : {}),
-  })
+function promptTemplateOwnerSnapshot(ownerId: string | null): string | null {
+  if (ownerId === null) {
+    if (collectionsResourceState.statuses.promptTemplate !== 'ready') return null
+    const values = collectionsResourceState.values as Record<string, unknown>
+    const present = Object.prototype.hasOwnProperty.call(values, 'promptTemplate')
+    if (present && !Array.isArray(values.promptTemplate)) return null
+    return snapshotJson({ ownerId, present, promptTemplate: values.promptTemplate })
+  }
+
+  const owner = uniquePromptPresetOwner(ownerId)
+  return owner ? snapshotJson({ ownerId, owner }) : null
 }
 
 function snapshotJson(value: unknown): string {
@@ -335,62 +357,134 @@ export function applyPromptTemplateProjectionFields(
     selectedFallbackPromptTemplate?: Database['promptTemplate']
   } = {},
 ): boolean {
-  if (ownerId === null) {
-    mergeServerResourceFields(fields)
-    return true
-  }
-
   const hasPromptTemplate = Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')
   const promptTemplate = (fields as Record<string, unknown>).promptTemplate
   if (hasPromptTemplate && promptTemplate !== null && !Array.isArray(promptTemplate)) return false
   const normalizedPromptTemplate = hasPromptTemplate ? normalizePromptTemplate(promptTemplate) : null
+
+  if (ownerId === null) {
+    if (collectionsResourceState.statuses.promptTemplate !== 'ready') return false
+    if (hasPromptTemplate) {
+      if (promptTemplate === null) {
+        delete collectionsResourceState.values.promptTemplate
+      } else {
+        collectionsResourceState.values.promptTemplate = normalizedPromptTemplate as Database['promptTemplate']
+      }
+    }
+    return true
+  }
+
   const normalizedSelectedFallback =
     options.selectedFallbackPromptTemplate === undefined
       ? undefined
       : normalizePromptTemplate(options.selectedFallbackPromptTemplate)
+  const presets = canonicalPromptPresetCollection()
+  const preset = presets ? resolveUniquePromptPreset(presets, ownerId) : undefined
+  if (!preset) return false
 
-  return withServerResourceApply(() => {
-    const database = getDatabase()
-    const presets = database.promptPresets
-    if (!Array.isArray(presets)) return false
-    const matches = presets.filter((candidate): candidate is PromptPreset => candidate?.id === ownerId)
-    if (matches.length !== 1) return false
-    const preset = matches[0]
-
-    if (hasPromptTemplate) {
-      if (promptTemplate === null) {
-        delete preset.promptTemplate
-      } else {
-        preset.promptTemplate = normalizedPromptTemplate as PromptPreset['promptTemplate']
-      }
-    }
-
+  const applyCompatibilityProjection = options.applyCompatibilityProjection ?? false
+  if (applyCompatibilityProjection) {
+    const currentOwner = currentPromptTemplateOwnerResolution()
     if (
-      (options.applyCompatibilityProjection ?? false) &&
-      ownerId === currentPromptTemplateOwnerId() &&
-      hasPromptTemplate
+      currentOwner.status !== 'ready' ||
+      currentOwner.ownerId !== ownerId ||
+      collectionsResourceState.statuses.promptTemplate !== 'ready'
     ) {
-      if (normalizedSelectedFallback !== undefined) {
-        database.promptTemplate = normalizedSelectedFallback as Database['promptTemplate']
-      } else if (promptTemplate === null) {
-        delete (database as unknown as Record<string, unknown>).promptTemplate
-      } else {
-        database.promptTemplate = normalizedPromptTemplate as Database['promptTemplate']
-      }
+      return false
     }
-    return true
-  })
+  }
+
+  const nextPreset = JSON.parse(JSON.stringify(preset)) as PromptPreset
+  if (hasPromptTemplate) {
+    if (promptTemplate === null) {
+      delete nextPreset.promptTemplate
+    } else {
+      nextPreset.promptTemplate = normalizedPromptTemplate as PromptPreset['promptTemplate']
+    }
+  }
+  collectionsResourceState.values.promptPresets = presets.map((candidate) =>
+    candidate === preset ? nextPreset : candidate,
+  ) as Database['promptPresets']
+
+  if (applyCompatibilityProjection && hasPromptTemplate) {
+    if (normalizedSelectedFallback !== undefined) {
+      collectionsResourceState.values.promptTemplate = normalizedSelectedFallback as Database['promptTemplate']
+    } else if (promptTemplate === null) {
+      delete collectionsResourceState.values.promptTemplate
+    } else {
+      collectionsResourceState.values.promptTemplate = normalizedPromptTemplate as Database['promptTemplate']
+    }
+  }
+  return true
 }
 
 function localPromptTemplateOwnerIsResolved(promptPresetId: string | null): boolean {
-  if (promptPresetId === null) return Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
+  if (promptPresetId === null) {
+    const snapshot = promptTemplateOwnerSnapshot(null)
+    return snapshot !== null && Object.prototype.hasOwnProperty.call(collectionsResourceState.values, 'promptTemplate')
+  }
   const preset = uniquePromptPresetOwner(promptPresetId)
   return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
 function uniquePromptPresetOwner(promptPresetId: string): PromptPreset | undefined {
-  const presets = getDatabase().promptPresets
+  const presets = canonicalPromptPresetCollection()
   return resolveUniquePromptPreset(presets, promptPresetId) as PromptPreset | undefined
+}
+
+type PromptTemplateOwnerResolution = { status: 'ready'; ownerId: string | null } | { status: 'unavailable' | 'invalid' }
+
+function resolveRequestedPromptTemplateOwner(promptPresetId: string | null | undefined): PromptTemplateOwnerResolution {
+  if (promptPresetId === undefined) return currentPromptTemplateOwnerResolution()
+  if (promptPresetId === null) {
+    return collectionsResourceState.statuses.promptTemplate === 'ready'
+      ? { status: 'ready', ownerId: null }
+      : { status: 'unavailable' }
+  }
+  if (typeof promptPresetId !== 'string' || promptPresetId.trim() === '') return { status: 'invalid' }
+  return uniquePromptPresetOwner(promptPresetId)
+    ? { status: 'ready', ownerId: promptPresetId }
+    : collectionsResourceState.statuses.promptPresets === 'ready'
+      ? { status: 'invalid' }
+      : { status: 'unavailable' }
+}
+
+function currentPromptTemplateOwnerResolution(): PromptTemplateOwnerResolution {
+  if (settingsResourceState.standaloneStatuses.promptPresetsId !== 'ready') {
+    return { status: 'unavailable' }
+  }
+  const selectedIndex = (settingsResourceState.value as Record<string, unknown>).promptPresetsId
+  if (selectedIndex === undefined || selectedIndex === -1) return { status: 'ready', ownerId: null }
+  const presets = canonicalPromptPresetCollection()
+  if (!presets) return { status: 'invalid' }
+  if (
+    !Number.isInteger(selectedIndex) ||
+    (selectedIndex as number) < 0 ||
+    (selectedIndex as number) >= presets.length
+  ) {
+    return { status: 'invalid' }
+  }
+  const preset = presets[selectedIndex as number]
+  return preset && typeof preset.id === 'string' ? { status: 'ready', ownerId: preset.id } : { status: 'invalid' }
+}
+
+function canonicalPromptPresetCollection(): PromptPreset[] | null {
+  if (collectionsResourceState.statuses.promptPresets !== 'ready') return null
+  const presets = collectionsResourceState.values.promptPresets
+  if (!Array.isArray(presets)) return null
+  const seen = new Set<string>()
+  for (const preset of presets) {
+    if (!preset || typeof preset !== 'object' || typeof preset.id !== 'string' || preset.id.trim() === '') return null
+    if (seen.has(preset.id)) return null
+    seen.add(preset.id)
+  }
+  return presets as PromptPreset[]
+}
+
+function promptTemplateCollectionRevision(ownerId: string | null): number | null {
+  const collectionName = ownerId === null ? 'promptTemplate' : 'promptPresets'
+  const revision = collectionsResourceState.revisions[collectionName]
+  return Number.isInteger(revision) && (revision as number) >= 0 ? (revision as number) : null
 }
 
 function promptTemplateHydrationWarning(message: string): void {

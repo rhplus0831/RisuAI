@@ -23,6 +23,7 @@ import {
   peekCachedServerCommandRevision,
   setCachedServerCommandRevision,
 } from './commands'
+import { collectionsResourceState } from './resourceState.svelte'
 import {
   capturePromptTemplateOwnerProjectionEpoch,
   clonePromptTemplateSelectedFallback,
@@ -597,7 +598,7 @@ describe('promptTemplate hydration', () => {
       item('root-row', 'fresh root fallback'),
     ])
 
-    delete testDatabaseState.db.promptTemplate
+    delete collectionsResourceState.values.promptTemplate
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
     expect(testDatabaseState.db.promptTemplate).toEqual([item('root-row', 'fresh root fallback')])
