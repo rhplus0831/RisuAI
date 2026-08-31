@@ -1,8 +1,6 @@
-import { get } from 'svelte/store'
 import { createBlankChar } from './characterDefaults'
 import { getCharImage } from './characterImage'
-import { selectedCharID } from './stores/coreStores.svelte'
-import { getDatabase, type character, type Database } from './storage/database.svelte'
+import type { character, Database } from './storage/database.svelte'
 import { charactersResourceState } from './server/resourceState.svelte'
 import { defaultEmotion } from './util'
 
@@ -13,18 +11,12 @@ export function selectCharacterOwner(characters: readonly character[], selectedI
 }
 
 export function getSelectedCharacterOwner(): character | undefined {
-  if (charactersResourceState.status === 'error') return undefined
+  if (charactersResourceState.status !== 'ready') return undefined
   return selectCharacterOwner(charactersResourceState.characters, charactersResourceState.currentChar)
 }
 
 function characterOwnerRows(): readonly character[] {
-  const status = charactersResourceState.status
-  if (status === 'ready') return charactersResourceState.characters
-  // Explicit bootstrap compatibility: pre-owner callers may still publish the
-  // aggregate while character resources are idle or loading. Owner errors must
-  // never fall back to that potentially stale projection.
-  if (status === 'idle' || status === 'loading') return getDatabase().characters ?? []
-  return []
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 export async function getCustomBackground(db: unknown) {
@@ -95,16 +87,9 @@ export async function getEmotionForCharacter(
 
 /** @deprecated Use getEmotionForCharacter with an explicit owner row. */
 export async function getEmotion(
-  db: Database,
+  _db: Database,
   chaEmotion: { [key: string]: [string, string, number][] },
   type: 'contain' | 'plain' | 'css',
 ) {
-  const status = charactersResourceState.status
-  const currentChar =
-    status === 'ready'
-      ? getSelectedCharacterOwner()
-      : status === 'idle' || status === 'loading'
-        ? db.characters[get(selectedCharID)]
-        : undefined
-  return getEmotionForCharacter(currentChar, chaEmotion, type)
+  return getEmotionForCharacter(getSelectedCharacterOwner(), chaEmotion, type)
 }

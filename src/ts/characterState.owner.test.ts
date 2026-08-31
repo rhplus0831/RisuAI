@@ -67,30 +67,28 @@ describe('character owner emotion projection', () => {
     expect(getSelectedCharacterOwner()).toBe(owner)
   })
 
-  it('uses aggregate compatibility only while the character owner is idle or loading', () => {
+  it.each(['idle', 'loading', 'error'] as const)('does not read aggregate rows while the owner is %s', (status) => {
     const aggregate = character({ chaId: 'aggregate-character' })
     ownerState.aggregateCharacters = [aggregate]
     charactersResourceState.characters = [character({ chaId: 'stale-owner' })]
     charactersResourceState.currentChar = 0
 
-    charactersResourceState.status = 'loading'
-    expect(findCharacterIndexbyId('aggregate-character')).toBe(0)
-    expect(findCharacterbyId('aggregate-character')).toBe(aggregate)
-    expect(getSelectedCharacterOwner()?.chaId).toBe('stale-owner')
-
-    charactersResourceState.status = 'error'
+    charactersResourceState.status = status
     expect(findCharacterIndexbyId('aggregate-character')).toBe(-1)
     expect(findCharacterbyId('aggregate-character').name).toBe('Unknown Character')
     expect(getSelectedCharacterOwner()).toBeUndefined()
   })
 
-  it('does not render an aggregate character after the owner enters error', async () => {
-    const aggregate = character({ chaId: 'aggregate-character' })
-    selectedCharID.set(0)
-    charactersResourceState.status = 'error'
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not render an aggregate character while the owner is %s',
+    async (status) => {
+      const aggregate = character({ chaId: 'aggregate-character' })
+      selectedCharID.set(0)
+      charactersResourceState.status = status
 
-    await expect(getEmotion({ characters: [aggregate] } as any, {}, 'contain')).resolves.toEqual([])
-  })
+      await expect(getEmotion({ characters: [aggregate] } as any, {}, 'contain')).resolves.toEqual([])
+    },
+  )
 
   it('renders the explicit owner row, including emotion and imggen selection', async () => {
     const owner = character()
