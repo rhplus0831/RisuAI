@@ -2711,6 +2711,22 @@ describe('select supa memory flag patch', () => {
 })
 
 describe('character-row snapshot kit', () => {
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not expose retained character rows while the owner is %s',
+    (status) => {
+      testDatabaseState.db = {
+        characters: [{ chaId: 'char-a', name: 'Retained', chats: [], supaMemory: true }],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      } as any
+      charactersResourceState.status = status
+
+      expect(currentCharacterRowSnapshot(0).character).toBeUndefined()
+      expect(currentCharacterSupaMemorySnapshot('char-a')).toBeNull()
+      expect(applyCharacterRowMutationScoped(0, 'char-a', (character) => (character.name = 'mutated'))).toBe(false)
+    },
+  )
+
   it('fails closed for ordinary row mutation when the owner is missing, duplicated, or errored', () => {
     const aggregate = { chaId: 'char-a', name: 'Aggregate', chats: [] }
     testDatabaseState.db = {

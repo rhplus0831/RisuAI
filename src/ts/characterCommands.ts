@@ -15,7 +15,6 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte'
@@ -32,7 +31,7 @@ import {
 } from './server/pendingMutationOutbox'
 import { CHARACTER_SELECTION_MUTATION_KEY, characterOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { selectedCharID } from './stores.svelte'
-import { getDatabase, type character, type folder } from './storage/database.svelte'
+import type { character, folder } from './storage/database.svelte'
 
 export interface CharacterStateSnapshot {
   characters: character[]
@@ -275,83 +274,36 @@ function pendingMutationStagingFailure(error: unknown): Exclude<ServerCommandRes
 }
 
 function characterRowsOwner(): character[] {
-  if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-  if (isCharacterColdStartCompatibilityState()) {
-    return getDatabase().characters ?? []
-  }
-  return []
-}
-
-function isCharacterColdStartCompatibilityState(): boolean {
-  return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-}
-
-/**
- * Explicit cold-start/local compatibility seam. Normal server-backed writes go
- * directly to the character resource owners; only pre-hydration compatibility
- * state is allowed through the guarded aggregate projection.
- */
-function withCharacterColdStartCompatibilityWrite<T>(callback: () => T): T {
-  return withTrustedResourceWrite(callback)
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 function updateCharacterRowsOwner(mutator: (characters: character[]) => boolean | void): boolean {
-  if (charactersResourceState.status === 'ready') {
-    return mutator(charactersResourceState.characters) !== false
-  }
-  if (!isCharacterColdStartCompatibilityState()) return false
-  return withCharacterColdStartCompatibilityWrite(() => mutator(getDatabase().characters ?? []) !== false)
+  return charactersResourceState.status === 'ready' && mutator(charactersResourceState.characters) !== false
 }
 
 function replaceCharacterRowsOwner(characters: character[]): boolean {
-  if (charactersResourceState.status === 'ready') {
-    charactersResourceState.characters = characters
-    return true
-  }
-  if (!isCharacterColdStartCompatibilityState()) return false
-  return withCharacterColdStartCompatibilityWrite(() => {
-    getDatabase().characters = characters
-    return true
-  })
+  if (charactersResourceState.status !== 'ready') return false
+  charactersResourceState.characters = characters
+  return true
 }
 
 function characterOrderOwner(): (string | folder)[] {
-  if (charactersResourceState.status === 'ready') return charactersResourceState.characterOrder
-  if (isCharacterColdStartCompatibilityState()) {
-    return getDatabase().characterOrder ?? []
-  }
-  return []
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characterOrder : []
 }
 
 function currentCharOwner(): number | undefined {
-  if (charactersResourceState.status === 'ready') return charactersResourceState.currentChar
-  if (isCharacterColdStartCompatibilityState()) {
-    return (getDatabase() as unknown as { currentChar?: number }).currentChar
-  }
-  return undefined
+  return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : undefined
 }
 
 function setCurrentCharOwner(currentChar: number | undefined): void {
   if (charactersResourceState.status === 'ready') {
     charactersResourceState.currentChar = currentChar ?? -1
-    return
-  }
-  if (isCharacterColdStartCompatibilityState()) {
-    withCharacterColdStartCompatibilityWrite(() => {
-      ;(getDatabase() as unknown as { currentChar?: number }).currentChar = currentChar
-    })
   }
 }
 
 function setCharacterOrderOwner(characterOrder: (string | folder)[]): void {
   if (charactersResourceState.status === 'ready') {
     charactersResourceState.characterOrder = characterOrder
-    return
-  }
-  if (isCharacterColdStartCompatibilityState()) {
-    withCharacterColdStartCompatibilityWrite(() => {
-      getDatabase().characterOrder = characterOrder
-    })
   }
 }
 
@@ -492,11 +444,7 @@ export function currentCharacterTrashTimeSnapshot(index: number = get(selectedCh
 }
 
 export function currentCharacterSupaMemorySnapshot(characterId: string): CharacterSupaMemorySnapshot | null {
-  const character =
-    uniqueCharacterOwnerById(characterId) ??
-    (isCharacterColdStartCompatibilityState()
-      ? getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-      : undefined)
+  const character = uniqueCharacterOwnerById(characterId)
   if (!character) return null
   return {
     characterId,
@@ -568,9 +516,6 @@ function characterForSnapshot(
     | Pick<CharacterTrashTimeSnapshot, 'characterId' | 'index'>,
 ): character | undefined {
   if (snapshot.characterId) return uniqueCharacterOwnerById(snapshot.characterId)
-  if (isCharacterColdStartCompatibilityState()) {
-    return characterRowsOwner()[snapshot.index]
-  }
   return undefined
 }
 
@@ -843,18 +788,13 @@ function restoreCharacterSelectionById(characterId: string): void {
 
 function uniqueCharacterOwnerAt(index: number): character | undefined {
   if (index < 0) return undefined
-  const candidate = characterRowsOwner()[index]
-  if (isCharacterColdStartCompatibilityState()) return candidate
   if (charactersResourceState.status !== 'ready') return undefined
+  const candidate = characterRowsOwner()[index]
   return candidate?.chaId ? uniqueCharacterOwnerById(candidate.chaId) : undefined
 }
 
 function uniqueCharacterOwnerById(characterId: string): character | undefined {
-  if (!characterId) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
-  const matches = characterRowsOwner().filter((candidate) => candidate?.chaId === characterId)
-  if (isCharacterColdStartCompatibilityState()) return matches[0]
-  return undefined
+  return characterId && charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
 }
 
 /** Apply one optimistic create to the explicit character collection owner. */
