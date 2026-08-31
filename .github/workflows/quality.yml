@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - fastify
 
 permissions:
   contents: read
