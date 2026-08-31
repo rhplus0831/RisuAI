@@ -15,7 +15,7 @@ import {
   missingAssetIds,
   type AddAssetResult,
 } from '../repository.js'
-import { assetBulkUploadRateLimit, assetExistsRateLimit, assetUploadRateLimit } from '../routeRateLimits.js'
+import { assetExistsRateLimit } from '../routeRateLimits.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
@@ -214,76 +214,68 @@ export function registerAssetsRoutes(
     requireActiveWriter(activeWriterState, req, reply)
   }
 
-  app.post(
-    '/api/v1/assets',
-    { config: { rateLimit: assetUploadRateLimit }, onRequest: requireUploadAccess },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      const contentType = req.headers['content-type']
-      if (typeof contentType !== 'string') {
-        reply.code(400)
-        return { error: 'Content-Type header required' }
-      }
-      if (!Buffer.isBuffer(req.body)) {
-        reply.code(400)
-        return { error: 'Body must be raw bytes of a supported asset type' }
-      }
-      try {
-        const result = addAsset(db, dataDir, { bytes: req.body, contentType })
-        reply.code(result.created ? 201 : 200)
-        if (prefersMinimalResponse(req.headers.prefer)) {
-          reply.header('preference-applied', PREFER_RETURN_MINIMAL)
-          return {
-            assetId: result.entry.id,
-            revision: result.revision,
-          }
-        }
+  app.post('/api/v1/assets', { onRequest: requireUploadAccess }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const contentType = req.headers['content-type']
+    if (typeof contentType !== 'string') {
+      reply.code(400)
+      return { error: 'Content-Type header required' }
+    }
+    if (!Buffer.isBuffer(req.body)) {
+      reply.code(400)
+      return { error: 'Body must be raw bytes of a supported asset type' }
+    }
+    try {
+      const result = addAsset(db, dataDir, { bytes: req.body, contentType })
+      reply.code(result.created ? 201 : 200)
+      if (prefersMinimalResponse(req.headers.prefer)) {
+        reply.header('preference-applied', PREFER_RETURN_MINIMAL)
         return {
           assetId: result.entry.id,
-          size: result.entry.size,
-          contentType: result.entry.contentType,
           revision: result.revision,
         }
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400)
-          return { error: err.message }
-        }
-        throw err
       }
-    },
-  )
+      return {
+        assetId: result.entry.id,
+        size: result.entry.size,
+        contentType: result.entry.contentType,
+        revision: result.revision,
+      }
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
 
-  app.post(
-    '/api/v1/assets/bulk',
-    { config: { rateLimit: assetBulkUploadRateLimit }, onRequest: requireUploadAccess },
-    async (req, reply) => {
-      if (!(await requireAuth(authState, req, reply))) return
-      try {
-        const uploads = readBulkAssets(req.body)
-        const results = addAssets(db, dataDir, uploads)
-        reply.code(results.some((result) => result.created) ? 201 : 200)
-        const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
-        if (prefersMinimalResponse(req.headers.prefer)) {
-          reply.header('preference-applied', PREFER_RETURN_MINIMAL)
-          return {
-            assetIds: results.map((result) => result.entry.id),
-            revision,
-          }
-        }
+  app.post('/api/v1/assets/bulk', { onRequest: requireUploadAccess }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    try {
+      const uploads = readBulkAssets(req.body)
+      const results = addAssets(db, dataDir, uploads)
+      reply.code(results.some((result) => result.created) ? 201 : 200)
+      const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
+      if (prefersMinimalResponse(req.headers.prefer)) {
+        reply.header('preference-applied', PREFER_RETURN_MINIMAL)
         return {
-          assets: results.map(assetUploadResponse),
+          assetIds: results.map((result) => result.entry.id),
           revision,
         }
-      } catch (err) {
-        if (err instanceof ValidationError) {
-          reply.code(400)
-          return { error: err.message }
-        }
-        throw err
       }
-    },
-  )
+      return {
+        assets: results.map(assetUploadResponse),
+        revision,
+      }
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        reply.code(400)
+        return { error: err.message }
+      }
+      throw err
+    }
+  })
 
   app.get<{ Params: { id: string } }>('/api/v1/assets/:id', { exposeHeadRoute: false }, async (req, reply) => {
     const entry = assetById(db, req.params.id)

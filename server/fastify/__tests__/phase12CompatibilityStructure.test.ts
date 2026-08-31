@@ -125,8 +125,6 @@ const RATE_LIMIT_OWNERS: Record<string, Owner> = {
   ttsSynthesisRateLimit: rateOwner('server/fastify/src/routes/tts.ts', 'ttsSynthesisRateLimit'),
   proxyStreamCreateRateLimit: rateOwner('server/fastify/src/routes/streamJobs.ts', 'proxyStreamCreateRateLimit'),
   importRateLimit: rateOwner('server/fastify/src/routes/save.ts', 'importRateLimit'),
-  assetUploadRateLimit: rateOwner('server/fastify/src/routes/assets.ts', 'assetUploadRateLimit'),
-  assetBulkUploadRateLimit: rateOwner('server/fastify/src/routes/assets.ts', 'assetBulkUploadRateLimit'),
   assetExistsRateLimit: rateOwner('server/fastify/src/routes/assets.ts', 'assetExistsRateLimit'),
   generationSubmitRateLimit: rateOwner('server/fastify/src/routes/generationChat.ts', 'generationSubmitRateLimit'),
 }

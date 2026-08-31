@@ -14,12 +14,7 @@ import {
   PROTOCOL_ROUTE_MANIFEST,
   PROTOCOL_ROUTE_POLICIES,
 } from '../src/routeManifest.js'
-import {
-  assetBulkUploadRateLimit,
-  assetExistsRateLimit,
-  authLoginRateLimit,
-  generationSubmitRateLimit,
-} from '../src/routeRateLimits.js'
+import { assetExistsRateLimit, authLoginRateLimit, generationSubmitRateLimit } from '../src/routeRateLimits.js'
 
 // Table-wide protection invariants for the Fastify port.
 //
@@ -467,13 +462,12 @@ describe('active-writer header validation', () => {
 })
 
 describe('explicit route rate limits', () => {
-  it('allows the legacy CharX request burst represented by the high-asset fixture', () => {
+  it('allows the public asset-existence burst represented by the high-asset fixture', () => {
     const fixtureAssetCount = 4_361
     const legacyAssetBatchSize = 32
     const requiredBurst = Math.ceil(fixtureAssetCount / legacyAssetBatchSize)
 
     expect(Number(assetExistsRateLimit.max)).toBeGreaterThanOrEqual(requiredBurst)
-    expect(Number(assetBulkUploadRateLimit.max)).toBeGreaterThanOrEqual(requiredBurst)
   })
 
   it('limits auth login attempts with an explicit route limit', async () => {
