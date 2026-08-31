@@ -33,6 +33,7 @@ vi.mock('./alert', async (importActual) => {
 import {
   applyAttemptedCharacterFieldRollback,
   applyCompatibleCharacterPatch,
+  applyCharacterRowMutationScoped,
   changedCharacterFields,
   createCharacterOrderFolder,
   currentCharacterRowSnapshot,
@@ -74,7 +75,12 @@ import {
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import * as pendingMutationOutboxModule from './server/pendingMutationOutbox'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+  resetServerResourceState,
+} from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
 import { installStoreRuntimeEffects } from './stores/runtimeEffects.svelte'
 import { removeChar } from './characters'
@@ -327,6 +333,7 @@ async function withMockedNow<T>(now: number, fn: () => Promise<T>): Promise<T> {
 }
 
 beforeEach(() => {
+  resetServerResourceState()
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
@@ -2658,6 +2665,26 @@ describe('select supa memory flag patch', () => {
 })
 
 describe('character-row snapshot kit', () => {
+  it('fails closed for ordinary row mutation when the owner is missing, duplicated, or errored', () => {
+    const aggregate = { chaId: 'char-a', name: 'Aggregate', chats: [] }
+    testDatabaseState.db = {
+      characters: [aggregate],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    charactersResourceState.characters = [
+      { chaId: 'char-a', name: 'Owner A', chats: [] },
+      { chaId: 'char-a', name: 'Duplicate A', chats: [] },
+    ] as any
+    selectedCharID.set(0)
+
+    expect(applyCharacterRowMutationScoped(0, 'char-a', (character) => (character.name = 'mutated'))).toBe(false)
+    expect(charactersResourceState.characters.map((character) => character.name)).toEqual(['Owner A', 'Duplicate A'])
+
+    charactersResourceState.status = 'error'
+    expect(applyCharacterRowMutationScoped(0, 'char-a', (character) => (character.name = 'mutated'))).toBe(false)
+  })
+
   it('fails closed when the ready owner collection contains duplicate stable IDs', () => {
     testDatabaseState.db = {
       characters: [{ chaId: 'char-a', name: 'Aggregate', chats: [], lastInteraction: 7 }],

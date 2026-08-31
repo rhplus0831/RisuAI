@@ -1291,7 +1291,7 @@ export async function removeChar(
   name: string,
   type: 'normal' | 'permanent' | 'permanentForce' = 'normal',
 ): Promise<CharacterMutationOutcome | null> {
-  const characterId = getDatabase().characters?.[index]?.chaId
+  const characterId = characterOwnerAt(index)?.chaId
   if (!characterId || pendingCharacterRemovalIds.has(characterId)) return null
   pendingCharacterRemovalIds.add(characterId)
   try {
@@ -1307,12 +1307,14 @@ export async function removeChar(
     }
     const liveIndex = findLiveCharacterIndex(characterId)
     if (liveIndex < 0) return null
+    const liveCharacter = characterOwnerAt(liveIndex)
+    if (!liveCharacter) return null
     let dispatch: () => Promise<CharacterMutationOutcome> | undefined
     if (type === 'normal') {
       const previous = currentCharacterTrashTimeSnapshot(liveIndex)
       const trashTime = Date.now()
       withTrustedResourceWrite(() => {
-        getDatabase().characters[liveIndex].trashTime = trashTime
+        liveCharacter.trashTime = trashTime
       })
       dispatch = () => dispatchUpdateCharacterTrashTimeWithOutcome(characterId, trashTime, previous)
     } else {
@@ -1474,15 +1476,19 @@ function characterIdAtIndex(index: number | undefined): string | undefined {
 }
 
 function characterRowsOwner(): character[] {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
+  if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+    return getDatabase().characters ?? []
+  }
+  return []
 }
 
 function currentCharacterIndexOwner(): number | undefined {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.currentChar
-    : (getDatabase() as unknown as { currentChar?: number }).currentChar
+  if (charactersResourceState.status === 'ready') return charactersResourceState.currentChar
+  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+    return (getDatabase() as unknown as { currentChar?: number }).currentChar
+  }
+  return undefined
 }
 
 function setCurrentCharacterIndexOwner(index: number): void {
@@ -1498,7 +1504,8 @@ function setCurrentCharacterIndexOwner(index: number): void {
 function characterOwnerAt(index: number): character | undefined {
   if (index < 0) return undefined
   const candidate = characterRowsOwner()[index]
-  if (charactersResourceState.status !== 'ready') return candidate
+  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') return candidate
+  if (charactersResourceState.status !== 'ready') return undefined
   if (!candidate?.chaId) return undefined
   return getCharacterResourceOwner(candidate.chaId)
 }

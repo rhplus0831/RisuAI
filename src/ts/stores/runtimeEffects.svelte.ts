@@ -80,7 +80,10 @@ function collectionOwner<Name extends ServerCollectionName>(name: Name): Databas
 function selectedRuntimeCharacterOwner(): character | undefined {
   const status = charactersResourceState.status
   if (status === 'ready') {
-    const owner = getSelectedCharacterOwner()
+    const owner =
+      charactersResourceState.selectionRevision !== null
+        ? getSelectedCharacterOwner()
+        : selectCharacterOwner(charactersResourceState.characters, get(selectedCharID))
     return owner?.chaId && getCharacterResourceOwner(owner.chaId) === owner ? owner : undefined
   }
   if (status === 'idle' || status === 'loading') {

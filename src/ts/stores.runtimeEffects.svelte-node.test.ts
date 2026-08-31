@@ -31,6 +31,7 @@ const runtimeEffectState = vi.hoisted(() => ({
   charactersResourceState: {
     characters: [] as any[],
     currentChar: -1,
+    selectionRevision: null as number | null,
     status: 'ready',
   },
   moduleUpdate: vi.fn(),
@@ -126,6 +127,7 @@ beforeEach(() => {
   })
   runtimeEffectState.charactersResourceState.characters = []
   runtimeEffectState.charactersResourceState.currentChar = -1
+  runtimeEffectState.charactersResourceState.selectionRevision = null
   runtimeEffectState.charactersResourceState.status = 'ready'
   selectedCharID.set(-1)
   selIdState.selId = -1
@@ -182,6 +184,7 @@ describe('store runtime effects', () => {
     const owner = { chaId: 'character-owner', chats: [], chatPage: 0, supaMemory: false }
     runtimeEffectState.charactersResourceState.characters = [owner]
     runtimeEffectState.charactersResourceState.currentChar = 0
+    runtimeEffectState.charactersResourceState.selectionRevision = 1
     runtimeEffectState.database.characters = [{ chaId: 'stale-character', supaMemory: false }]
     runtimeEffectState.settingsResourceState.value.hypaV3 = true
     runtimeEffectState.settingsResourceState.value.hypaV3PresetId = 0
