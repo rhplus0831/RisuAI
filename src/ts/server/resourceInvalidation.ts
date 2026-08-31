@@ -71,7 +71,6 @@ import {
   type ServerCharactersResourcePayload,
   type ServerLegacyPresetResourceBaseline,
 } from './resourceState.svelte'
-import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from './staleStateGuards'
 import { applyServerInlayCatalogResource, getServerInlayCatalogResource } from './inlayCatalog'
 import { applyServerShellResource } from './shellHydration'
@@ -302,25 +301,17 @@ export async function refreshAllServerResources(
       )
       const mergedCollections = withPendingCollections(collections, options.hooks)
       const mergedCharacters = withPendingAgentPresetCharacters(characters, options.hooks)
-      const { settingsApplied, collectionsApplied, charactersApplied, inlayCatalogApplied } = withServerResourceApply(
-        () => {
-          const applied = {
-            settingsApplied: !superseded.settings && applySettingsResource(mergedSettings),
-            collectionsApplied: !superseded.collections && applyCollectionsResource(mergedCollections),
-            // A complete refresh is used for startup, revision gaps, restores, and
-            // unknown resources. Character reads intentionally omit transcripts,
-            // so retaining same-id resident bodies here could preserve stale chat
-            // data across a restore. Leave the chats as API-hydration stubs.
-            charactersApplied:
-              !superseded.characters &&
-              applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
-            inlayCatalogApplied: applyServerInlayCatalogResource(inlayCatalog, { force: true }),
-          }
-          options.hooks?.reapplyPendingPresetProjections?.()
-          options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
-          return applied
-        },
-      )
+      const settingsApplied = !superseded.settings && applySettingsResource(mergedSettings)
+      const collectionsApplied = !superseded.collections && applyCollectionsResource(mergedCollections)
+      // A complete refresh is used for startup, revision gaps, restores, and
+      // unknown resources. Character reads intentionally omit transcripts,
+      // so retaining same-id resident bodies here could preserve stale chat
+      // data across a restore. Leave the chats as API-hydration stubs.
+      const charactersApplied =
+        !superseded.characters && applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false })
+      const inlayCatalogApplied = applyServerInlayCatalogResource(inlayCatalog, { force: true })
+      options.hooks?.reapplyPendingPresetProjections?.()
+      options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
       if (collectionsApplied) resetPromptTemplateHydration()
       if (!superseded.settings && (settingsApplied || settingsFullAlreadyAtLeast(revision))) {
         hydrateLorebookPageOwnerFromResidentSettings()
@@ -450,15 +441,16 @@ async function executeTargetedRefreshPlan(
 
   if (completed.length > 0) {
     try {
-      const failedApply = withServerResourceApply(() => {
-        for (const entry of completed) {
-          if (entry.result.status !== 'ok') continue
-          if (!applyTargetedRead(entry, readSupersessions, options.hooks)) return targetedReadLabel(entry)
+      let failedApply: string | null = null
+      for (const entry of completed) {
+        if (entry.result.status !== 'ok') continue
+        if (!applyTargetedRead(entry, readSupersessions, options.hooks)) {
+          failedApply = targetedReadLabel(entry)
+          break
         }
-        options.hooks?.reapplyPendingPresetProjections?.()
-        options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
-        return null
-      })
+      }
+      options.hooks?.reapplyPendingPresetProjections?.()
+      options.hooks?.reapplyPendingPromptTemplateStructuralProjections?.()
       if (failedApply) {
         return { status: 'error', error: `Failed to apply server ${failedApply} response` }
       }

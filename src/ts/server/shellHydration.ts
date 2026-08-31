@@ -7,7 +7,6 @@ import {
 } from './resourceState.svelte'
 import type { ServerShellResourcePayload } from './resourceReads'
 import { SERVER_SHELL_PROTOCOL_VERSION } from '@risuai/protocol/shell-resource'
-import { withServerResourceApply } from './resourceWriteGuard.svelte'
 
 /** Apply one already-validated shell response as an atomic client projection. */
 export function applyServerShellResource(payload: ServerShellResourcePayload): boolean {
@@ -20,16 +19,14 @@ export function applyServerShellResource(payload: ServerShellResourcePayload): b
     return false
   }
 
-  const applied = withServerResourceApply(() => {
-    const settingsApplied = applyShellSettingsResource({
-      revision: payload.revision,
-      settings: payload.settings,
-    })
-    const charactersApplied = applyCharactersResource(payload.characters, {
-      preserveResidentChatBodies: false,
-    })
-    return settingsApplied && charactersApplied
+  const settingsApplied = applyShellSettingsResource({
+    revision: payload.revision,
+    settings: payload.settings,
   })
+  const charactersApplied = applyCharactersResource(payload.characters, {
+    preserveResidentChatBodies: false,
+  })
+  const applied = settingsApplied && charactersApplied
   if (applied) setAppliedServerResourceRevision(payload.revision)
   return applied
 }

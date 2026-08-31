@@ -12,7 +12,6 @@ import { lorebookPageOwner } from './server/lorebookPageOwner.svelte'
 import { resetPromptTemplateHydration } from './server/promptTemplateHydration'
 import { clearResourceCache } from './server/resourceCache'
 import { resetServerResourceState } from './server/resourceState.svelte'
-import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 import { selectedCharID } from './stores.svelte'
 
 /**
@@ -31,7 +30,7 @@ export async function discardObserverProjectionState(reason: ObserverProjectionD
   await clearResourceCache()
 
   if (reason === 'auth-loss') {
-    withServerResourceApply(() => resetServerResourceState())
+    resetServerResourceState()
     selectedCharID.set(-1)
     clearCachedServerCommandRevision()
     clearAppliedServerResourceRevision()

@@ -34,7 +34,6 @@ import {
   updateHypaV3PresetOwnerState,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, type SettingsGroup, type SettingsGroupProjectionEpochs } from './settingsGroups'
-import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './staleStateGuards'
 import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
@@ -1603,9 +1602,7 @@ async function refreshSparseObjectSettingBaseline(
   const result = await fetchServerSettingsGroup(group, signal)
   if (result.status !== 'ok') return null
   const authoritative = result.settings[key]
-  const applied = withServerResourceApply(() =>
-    applySettingsGroupResource(result, SERVER_SETTINGS_KEYS_BY_GROUP[group]),
-  )
+  const applied = applySettingsGroupResource(result, SERVER_SETTINGS_KEYS_BY_GROUP[group])
   if (!applied) return null
   return isPlainJsonObject(authoritative) ? cloneJsonValue(authoritative) : null
 }

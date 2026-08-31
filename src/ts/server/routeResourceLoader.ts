@@ -30,7 +30,6 @@ import {
   settingsResourceState,
 } from './resourceState.svelte'
 import { currentPromptTemplateOwnerId, ensurePromptTemplateHydrated } from './promptTemplateHydration'
-import { withServerResourceApply } from './resourceWriteGuard.svelte'
 
 export type RouteResourceLoadStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -519,7 +518,7 @@ async function loadStandaloneSetting(
     const existingRevision = settingsResourceState.standaloneRevisions[setting]
     if (existingRevision !== undefined && existingRevision >= result.revision) return { identity, ok: true }
   }
-  const applied = withServerResourceApply(() => applyStandaloneSettingResource(result))
+  const applied = applyStandaloneSettingResource(result)
   if (!applied) {
     const error = `Standalone setting ${setting} was superseded before apply`
     failStandaloneSettingResourceLoad(setting, error)

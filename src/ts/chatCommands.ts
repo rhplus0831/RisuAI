@@ -35,7 +35,6 @@ import {
   type ServerCommandTransportOptions,
   type SaveChatGenerationSettingsCommandInput,
 } from './server/commands'
-import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 import {
   applyCharacterResource,
   applyChatFolderMetadataOwnerPatch,
@@ -3611,7 +3610,7 @@ async function reseedChatGenerationSettingsQueue(
   // current guard immediately before applying this authoritative row, then
   // replay all still-pending intents over the freshly read base.
   for (const pending of state.jobs) clearPendingChatGenerationSettingsSave(pending.pendingSave)
-  if (!withServerResourceApply(() => applyCharacterResource(result))) {
+  if (!applyCharacterResource(result)) {
     restoreUnknownChatGenerationSettingsGuards(chatId, state)
     return
   }
