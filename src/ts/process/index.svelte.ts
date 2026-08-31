@@ -462,6 +462,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
 
     if (!assembledByServer) {
       const localAssembly = await assembleLocalSendChatPrompt({
+        database: generationSettingsState.db,
         currentChar,
         currentChat,
         nowChatroom,

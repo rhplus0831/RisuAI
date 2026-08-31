@@ -28,7 +28,6 @@ vi.mock('../scriptings', () => ({
 
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
-import { resolveModelProfile } from '../../model/modelProfileResolver'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
 import {
@@ -102,10 +101,11 @@ function emptyUnformated(): UnformatedPromptSlots {
 
 const passThrough = (text: string) => text
 
-function renderFinalPrompt(args: Omit<RenderFinalPromptArgs, 'modelId'>) {
+function renderFinalPrompt(args: Omit<RenderFinalPromptArgs, 'modelId' | 'database'>) {
   return renderFinalPromptWithModel({
     ...args,
-    modelId: resolveModelProfile({ database: testDatabaseState.db, role: 'chatMain' }).modelId,
+    database: testDatabaseState.db,
+    modelId: testDatabaseState.db.aiModel,
   })
 }
 
@@ -179,6 +179,7 @@ describe('renderFinalPrompt - non-template formatOrder path', () => {
     unformated.description.push({ role: 'system', content: 'DESC' })
 
     const result = await renderFinalPromptWithModel({
+      database: testDatabaseState.db,
       currentChar: makeChar(),
       modelId: 'gpt-4o',
       unformated,

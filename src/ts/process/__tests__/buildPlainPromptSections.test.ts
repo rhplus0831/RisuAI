@@ -5,8 +5,12 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Database, type character } from '../../storage/database.svelte'
-import { buildPlainPromptSections } from '../promptAssembly/buildPlainPromptSections'
+import { getDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
+import { buildPlainPromptSections as buildPlainPromptSectionsWithDatabase } from '../promptAssembly/buildPlainPromptSections'
+
+function buildPlainPromptSections(currentChar: character) {
+  return buildPlainPromptSectionsWithDatabase(currentChar, getDatabase())
+}
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {

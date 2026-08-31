@@ -5,10 +5,34 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Database, type character } from '../../storage/database.svelte'
+import { getDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
-import { preflightTemplateTokens, type PromptUnformatedSlots } from '../promptBudget/preflightTemplateTokens'
+import {
+  preflightTemplateTokens as preflightTemplateTokensWithDatabase,
+  type PromptUnformatedSlots,
+} from '../promptBudget/preflightTemplateTokens'
+
+function preflightTemplateTokens(
+  promptTemplate: Parameters<typeof preflightTemplateTokensWithDatabase>[0],
+  usingPromptTemplate: boolean,
+  unformated: PromptUnformatedSlots,
+  tokenizer: Parameters<typeof preflightTemplateTokensWithDatabase>[3],
+  currentChar: character,
+  positionParser: (text: string, loc: string) => string,
+  descriptionBaseIndex?: number,
+) {
+  return preflightTemplateTokensWithDatabase(
+    promptTemplate,
+    usingPromptTemplate,
+    unformated,
+    tokenizer,
+    currentChar,
+    positionParser,
+    getDatabase(),
+    descriptionBaseIndex,
+  )
+}
 
 class FakeTokenizer {
   /** Returns the content-length of the message so token math is predictable. */

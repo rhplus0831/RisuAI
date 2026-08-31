@@ -166,6 +166,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     const result = await assembleLocalSendChatPrompt({
       currentChar,
       currentChat: chat,
+      database: testDatabaseState.db as never,
       nowChatroom: currentChar,
       selectedChar: 0,
       selectedChat: 0,
@@ -241,6 +242,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     const result = await assembleLocalSendChatPrompt({
       currentChar,
       currentChat: chat,
+      database: testDatabaseState.db as never,
       nowChatroom: currentChar,
       selectedChar: 0,
       selectedChat: 0,

@@ -21,7 +21,6 @@ vi.mock('../triggers', () => ({
 import { setDatabase, type Chat, type Database, type Message, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { ChatTokenizer } from '../../tokenizer'
-import { resolveModelProfile } from '../../model/modelProfileResolver'
 import {
   buildHistoryWindow as buildHistoryWindowWithModel,
   type BuildHistoryWindowArgs,
@@ -97,10 +96,13 @@ function seedDb(extra: Partial<Database> = {}) {
 
 const noCache = () => makeChar({ name: 'Cached' })
 
-function buildHistoryWindow(args: Omit<BuildHistoryWindowArgs, 'modelId'>): Promise<BuildHistoryWindowResult> {
+function buildHistoryWindow(
+  args: Omit<BuildHistoryWindowArgs, 'modelId' | 'database'>,
+): Promise<BuildHistoryWindowResult> {
   return buildHistoryWindowWithModel({
     ...args,
-    modelId: resolveModelProfile({ database: seededDatabase, role: 'chatMain' }).modelId,
+    database: seededDatabase,
+    modelId: seededDatabase.aiModel,
   })
 }
 
@@ -157,6 +159,7 @@ describe('buildHistoryWindow - start-new-chat marker gating', () => {
   it('uses the request-scoped resolved model instead of the flat database model', async () => {
     seedDb({ aiModel: 'gpt-4o' })
     const result = await buildHistoryWindowWithModel({
+      database: seededDatabase,
       currentChar: makeChar(),
       currentChat: makeChat([]),
       modelId: 'novelai:something',

@@ -1,4 +1,4 @@
-import { getDatabase, setCurrentChat, type Chat, type Message, type character } from '../../storage/database.svelte'
+import { setCurrentChat, type Chat, type Database, type Message, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import { getUserName } from '../../utilState'
 import { exampleMessage } from '../exampleMessages'
@@ -17,6 +17,7 @@ export interface BuildHistoryWindowArgs {
   findCharacterbyIdwithCache: (id: string) => character
   depthPrompts: LoreActive[]
   resolvePosition: (text: string) => string
+  database: Database
 }
 
 /**
@@ -56,6 +57,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
     findCharacterbyIdwithCache,
     depthPrompts,
     resolvePosition,
+    database,
   } = args
   let currentChat = args.currentChat
   const nowChatroom = currentChar
@@ -69,7 +71,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
 
   const chats: OpenAIChat[] = examples
 
-  if (!modelId.startsWith('novelai') && !getDatabase().promptSettings?.trimStartNewChat) {
+  if (!modelId.startsWith('novelai') && !database.promptSettings?.trimStartNewChat) {
     chats.push({
       role: 'system',
       content: '[Start a new chat]',
@@ -106,7 +108,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
       content: await processScript(nowChatroom, risuChatParser(firstMsg, { chara: currentChar }), 'editprocess'),
     }
 
-    if (usingPromptTemplate && getDatabase().promptSettings.sendName) {
+    if (usingPromptTemplate && database.promptSettings.sendName) {
       chat.content = `${currentChar.name}: ${chat.content}`
       chat.attr = ['nameAdded']
     }
@@ -135,6 +137,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
       modelId,
       usingPromptTemplate,
       findCharacterbyIdwithCache,
+      database,
     })
     chats.push(chat)
     addedTokens += await tokenizer.tokenizeChat(chat)

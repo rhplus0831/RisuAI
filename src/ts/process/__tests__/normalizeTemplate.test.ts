@@ -5,10 +5,17 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Database, type character } from '../../storage/database.svelte'
+import { getDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import type { PromptItem } from '../prompt'
-import { normalizeTemplate } from '../promptAssembly/normalizeTemplate'
+import {
+  normalizeTemplate as normalizeTemplateWithDatabase,
+  type NormalizeTemplateOptions,
+} from '../promptAssembly/normalizeTemplate'
+
+function normalizeTemplate(currentChar: character, options: Omit<NormalizeTemplateOptions, 'db'> = {}) {
+  return normalizeTemplateWithDatabase(currentChar, { ...options, db: getDatabase() })
+}
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {

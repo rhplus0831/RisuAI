@@ -1,6 +1,6 @@
 import { Buffer } from 'buffer'
 import { v4 } from 'uuid'
-import { getDatabase, type Message, type character } from '../../storage/database.svelte'
+import { type Database, type Message, type character } from '../../storage/database.svelte'
 import { readImage } from '../../globalApi.svelte'
 import { getModelInfo, LLMFlags } from '../../model/modellist'
 import { getUserName } from '../../utilState'
@@ -19,6 +19,7 @@ export interface FormatHistoryMessageArgs {
   modelId: string
   usingPromptTemplate: boolean
   findCharacterbyIdwithCache: (id: string) => character
+  database: Database
 }
 
 /**
@@ -35,7 +36,8 @@ export interface FormatHistoryMessageArgs {
  * cache.
  */
 export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Promise<OpenAIChat> {
-  const { msg, index, totalCount, currentChar, modelId, usingPromptTemplate, findCharacterbyIdwithCache } = args
+  const { msg, index, totalCount, currentChar, modelId, usingPromptTemplate, findCharacterbyIdwithCache, database } =
+    args
   const nowChatroom = currentChar
 
   let formatedChat = (
@@ -130,7 +132,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   const attr: string[] = []
   const role: 'user' | 'assistant' | 'system' = msg.role === 'user' ? 'user' : 'assistant'
 
-  if (usingPromptTemplate && getDatabase().promptSettings.sendName) {
+  if (usingPromptTemplate && database.promptSettings.sendName) {
     const form = `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`
     formatedChat = risuChatParser(form, {
       chara: findCharacterbyIdwithCache(msg.saying).name,
@@ -138,7 +140,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   }
 
   const thoughts: string[] = []
-  const maxThoughtDepth = getDatabase().promptSettings?.maxThoughtTagDepth ?? -1
+  const maxThoughtDepth = database.promptSettings?.maxThoughtTagDepth ?? -1
   formatedChat = formatedChat.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, p1) => {
     if (maxThoughtDepth === -1 || maxThoughtDepth - totalCount <= index) {
       thoughts.push(p1)

@@ -41,7 +41,11 @@ import { clearCachedServerCommandRevision } from '../../server/commands'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
-import { buildMemoryWindow, type BuildMemoryWindowResult } from '../promptAssembly/buildMemoryWindow'
+import {
+  buildMemoryWindow as buildMemoryWindowWithDatabase,
+  type BuildMemoryWindowArgs,
+  type BuildMemoryWindowResult,
+} from '../promptAssembly/buildMemoryWindow'
 import type { PromptItem } from '../prompt'
 
 const testDatabaseState = {
@@ -51,6 +55,10 @@ const testDatabaseState = {
   set db(value: ReturnType<typeof getResourceDatabase>) {
     replaceResourceDatabase(value)
   },
+}
+
+function buildMemoryWindow(args: Omit<BuildMemoryWindowArgs, 'database'>) {
+  return buildMemoryWindowWithDatabase({ ...args, database: testDatabaseState.db })
 }
 
 type NonStop = Exclude<BuildMemoryWindowResult, { stopSending: true }>

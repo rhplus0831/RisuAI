@@ -114,9 +114,10 @@ function seedDb(extra: Partial<Database> = {}) {
 
 const noCache = (_id: string) => makeChar({ name: 'Cached' })
 
-function formatHistoryMessage(args: Omit<FormatHistoryMessageArgs, 'modelId'>) {
+function formatHistoryMessage(args: Omit<FormatHistoryMessageArgs, 'modelId' | 'database'>) {
   return formatHistoryMessageWithModel({
     ...args,
+    database: seededDatabase,
     modelId: resolveModelProfile({ database: seededDatabase, role: 'chatMain' }).modelId,
   })
 }
@@ -192,6 +193,7 @@ describe('formatHistoryMessage - inlay handling', () => {
 
   it('uses the request-scoped resolved model for image capability checks', async () => {
     const result = await formatHistoryMessageWithModel({
+      database: seededDatabase,
       msg: makeMsg({ role: 'user', data: 'see: {{inlay::img-1}}' }),
       index: 0,
       totalCount: 1,

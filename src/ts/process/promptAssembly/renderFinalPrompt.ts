@@ -1,6 +1,6 @@
 import { parseChatML } from '../../parser/chatML'
 import { prebuiltAssetCommand } from '../../util'
-import { getDatabase, type character } from '../../storage/database.svelte'
+import { type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
 import { applyDescriptionPromptRole, applyPromptBlockRole } from '../promptBlockRole'
@@ -25,6 +25,7 @@ export type FormatOrderKey = keyof UnformatedPromptSlots
 
 export interface RenderFinalPromptArgs {
   currentChar: character
+  database: Database
   modelId: string
   unformated: UnformatedPromptSlots
   promptTemplate: PromptItem[] | null
@@ -63,6 +64,7 @@ export interface RenderFinalPromptResult {
 export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<RenderFinalPromptResult> {
   const {
     currentChar,
+    database,
     modelId,
     unformated,
     promptTemplate,
@@ -148,7 +150,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 chara: currentChar,
               }).replace('{{slot}}', pmt[i].content)
 
-              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
+              if (database.promptInfoInsideChat && database.promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -169,7 +171,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 chara: currentChar,
               }).replace('{{slot}}', pmt[i].content)
 
-              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
+              if (database.promptInfoInsideChat && database.promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -186,7 +188,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 chara: currentChar,
               }).replace('{{slot}}', pmt[i].content || card.defaultText || '')
 
-              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
+              if (database.promptInfoInsideChat && database.promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -201,11 +203,11 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
         }
         case 'postEverything': {
           pushPrompts(unformated.postEverything)
-          if (usingPromptTemplate && getDatabase().promptSettings.postEndInnerFormat) {
+          if (usingPromptTemplate && database.promptSettings.postEndInnerFormat) {
             pushPrompts([
               {
                 role: 'system',
-                content: getDatabase().promptSettings.postEndInnerFormat,
+                content: database.promptSettings.postEndInnerFormat,
               },
             ])
           }
@@ -214,10 +216,10 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
         case 'plain':
         case 'jailbreak':
         case 'cot': {
-          if (!getDatabase().jailbreakToggle && card.type === 'jailbreak') {
+          if (!database.jailbreakToggle && card.type === 'jailbreak') {
             continue
           }
-          if (!getDatabase().chainOfThought && card.type === 'cot') {
+          if (!database.chainOfThought && card.type === 'cot') {
             continue
           }
 
@@ -249,11 +251,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
             content: content,
           }
 
-          if (
-            getDatabase().promptInfoInsideChat &&
-            getDatabase().promptTextInfoInsideChat &&
-            card.type2 !== 'globalNote'
-          ) {
+          if (database.promptInfoInsideChat && database.promptTextInfoInsideChat && card.type2 !== 'globalNote') {
             pushPromptInfoBody(prompt.role, prompt.content, promptBodyformatedForChatStore)
           }
 
@@ -290,12 +288,12 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
           }
 
           let chats = unformated.chats.slice(start, end)
-          if (usingPromptTemplate && getDatabase().promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
+          if (usingPromptTemplate && database.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
             chats = systemizeChat(chats)
           }
           pushPrompts(chats)
 
-          if (getDatabase().automaticCachePoint && !hasCachePoint) {
+          if (database.automaticCachePoint && !hasCachePoint) {
             let pointer = formated.length - 1
             let depthRemaining = 3
             while (pointer >= 0) {
@@ -320,7 +318,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 pmt[i].content,
               )
 
-              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
+              if (database.promptInfoInsideChat && database.promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -358,7 +356,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     return v
   })
 
-  const captureInfo = getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat
+  const captureInfo = database.promptInfoInsideChat && database.promptTextInfoInsideChat
   if (captureInfo) {
     promptBodyformatedForChatStore = promptBodyformatedForChatStore.map((v) => {
       v.content = v.content.trim()

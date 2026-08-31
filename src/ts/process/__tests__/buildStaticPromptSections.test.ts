@@ -5,13 +5,17 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
+import { getDatabase, setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import {
   buildAuthorNote,
-  buildCotInstruction,
+  buildCotInstruction as buildCotInstructionWithDatabase,
   buildInlayViewInstruction,
   buildPersona,
 } from '../promptAssembly/buildStaticPromptSections'
+
+function buildCotInstruction(usingPromptTemplate: boolean) {
+  return buildCotInstructionWithDatabase(usingPromptTemplate, getDatabase())
+}
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {

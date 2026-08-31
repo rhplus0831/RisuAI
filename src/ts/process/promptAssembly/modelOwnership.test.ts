@@ -21,7 +21,7 @@ describe('browser prompt-assembly model ownership', () => {
 
   it('resolves the main profile once and passes canonical model and response-budget values', () => {
     const assembly = source('src/ts/process/sendChatPromptAssembly.ts')
-    expect(assembly).toContain("resolveModelProfile({ database: getDatabase(), role: 'chatMain' })")
+    expect(assembly).toContain("resolveModelProfile({ database, role: 'chatMain' })")
     expect(assembly).toContain('const mainModelId = mainProfile.modelId')
     expect(assembly).toContain('const maxResponseTokens = mainProfile.runtimeOptions.maxResponse')
     expect(assembly.match(/modelId: mainModelId/g)).toHaveLength(2)

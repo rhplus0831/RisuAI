@@ -8,7 +8,7 @@ import {
   restoreChatMetadataOwnerSnapshot,
 } from '../../server/resourceState.svelte'
 import { currentChatScopedSnapshot, dispatchUpdateChatScoped } from '../../chatCommands'
-import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
+import { type Chat, type Database, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
 import { hypaMemoryV3 } from '../memory/hypav3'
@@ -46,6 +46,7 @@ export interface BuildMemoryWindowArgs {
    * happy path (2 then 1); never invoked on the fallback budget-trim path.
    */
   setProcessStage: (stage: number) => void
+  database: Database
 }
 
 export type BuildMemoryWindowResult =
@@ -90,19 +91,20 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
     throwError,
     setProcessStage,
     maxContextTokens,
+    database,
   } = args
   let chats = args.chats
   let currentTokens = args.currentTokens
   let currentChat = args.currentChat
 
-  if (nowChatroom.supaMemory && getDatabase().hypaV3) {
+  if (nowChatroom.supaMemory && database.hypaV3) {
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
     setProcessStage(2)
     stageTimings.stage2Start = Date.now()
     const sp = await hypaMemoryV3(chats, currentTokens, maxContextTokens, currentChat, nowChatroom, tokenizer)
     if (sp.error) {
       if (sp.memory) {
-        writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory)
+        writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory, database)
       }
       throwError(sp.error)
       return { stopSending: true }
@@ -110,10 +112,10 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
     chats = sp.chats
     currentTokens = sp.currentTokens
     if (sp.memory) {
-      writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory)
+      writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory, database)
     }
     if (!canUseServerCommands()) {
-      currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
+      currentChat = database.characters[selectedChar].chats[selectedChat]
     }
     stageTimings.stage2Duration = Date.now() - stageTimings.stage2Start
     setProcessStage(1)
@@ -152,7 +154,7 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
       } else if (previous.chatId === currentChat.id && previous.chat) {
         // Pre-extraction compatibility path: aggregate state is authoritative
         // until the resource owner projection is ready.
-        currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
+        currentChat = database.characters[selectedChar].chats[selectedChat]
         currentChat.lastMemory = lastMemory
         dispatchUpdateChatScoped(currentChat.id, { lastMemory }, previous)
       } else {
@@ -199,8 +201,9 @@ function writeLegacyHypaV3Memory(
   selectedChar: number,
   selectedChat: number,
   memory: Chat['hypaV3Data'],
+  database: Database,
 ): void {
   if (canUseServerCommands()) return
   currentChat.hypaV3Data = memory
-  getDatabase().characters[selectedChar].chats[selectedChat].hypaV3Data = memory
+  database.characters[selectedChar].chats[selectedChat].hypaV3Data = memory
 }
