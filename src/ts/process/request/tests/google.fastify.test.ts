@@ -172,6 +172,7 @@ function geminiModelInfo(overrides: Partial<LLMModel> = {}): LLMModel {
 
 function makeVertexArg(): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     bias: {},
     formated: [{ role: 'user', content: 'hello' }],
     aiModel: 'gemini-1.5-pro',
@@ -186,6 +187,7 @@ function makeVertexArg(): RequestDataArgumentExtended {
 
 function makeProfileArg(profile: ResolvedModelProfile, modelInfo: Partial<LLMModel> = {}): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     bias: {},
     formated: [{ role: 'user', content: 'hello' }],
     aiModel: profile.modelId,
@@ -252,6 +254,7 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
     } as Partial<Database>)
 
     const result = await requestGoogleCloudVertex({
+      database: getDatabase(),
       bias: {},
       formated: [{ role: 'user', content: 'hello' }],
       aiModel: testCase.model,
@@ -286,6 +289,7 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
     } as Partial<Database>)
 
     const result = await requestGoogleCloudVertex({
+      database: getDatabase(),
       bias: {},
       formated: [{ role: 'user', content: 'hello' }],
       aiModel: 'gemini-2.5-flash',
@@ -348,6 +352,21 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
         ...getDatabase(),
         aiModel: 'gemini-profile-model',
         google: { accessToken: 'profile-google-key', projectId: 'profile-project' },
+        providerCredentials: [
+          { id: 'google-profile-credential', name: 'Google profile', type: 'apiKey', apiKey: 'profile-google-key' },
+        ],
+        modelProfiles: [
+          {
+            id: 'google-profile',
+            name: 'Google profile',
+            modelId: 'gemini-profile-model',
+            providerOptions: {
+              credentialId: 'google-profile-credential',
+              requestModel: 'gemini-profile-wire-model',
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'google-profile' } },
       } as Database,
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({
@@ -398,6 +417,30 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
         vertexClientEmail: 'svc@profile-project.iam.gserviceaccount.com',
         vertexPrivateKey: '-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----',
         vertexAccessToken: 'profile-cached-token-not-a-credential',
+        providerCredentials: [
+          {
+            id: 'vertex-profile-credential',
+            name: 'Vertex profile',
+            type: 'vertexServiceAccount',
+            vertex: {
+              clientEmail: 'svc@profile-project.iam.gserviceaccount.com',
+              privateKey: '-----BEGIN PRIVATE KEY-----AQID-----END PRIVATE KEY-----',
+            },
+          },
+        ],
+        modelProfiles: [
+          {
+            id: 'vertex-profile',
+            name: 'Vertex profile',
+            modelId: 'gemini-profile-vertex',
+            providerOptions: {
+              credentialId: 'vertex-profile-credential',
+              requestModel: 'gemini-profile-vertex-wire-model',
+              vertex: { projectId: 'profile-project', region: 'us-central1' },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vertex-profile' } },
       } as Database,
       lookupModelInfo: (_database, id) =>
         geminiModelInfo({

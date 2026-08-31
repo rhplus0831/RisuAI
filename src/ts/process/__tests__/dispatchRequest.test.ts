@@ -43,12 +43,14 @@ function makeChar(overrides: Partial<character> = {}): character {
 }
 
 function seedDb(extra: Partial<Database> = {}) {
-  setDatabase({
+  const database = {
     aiModel: 'gpt-4o',
     subModel: 'gpt-4o',
     characters: [makeChar()],
     ...extra,
-  } as unknown as Database)
+  } as unknown as Database
+  setDatabase(database)
+  return database
 }
 
 function makeStageTimings(stage1 = 11, stage2 = 22) {
@@ -64,11 +66,12 @@ function makeRecorder(): Recorder {
   return { stages, setProcessStage: (n) => stages.push(n) }
 }
 
-function baseArgs(over: Partial<Parameters<typeof dispatchRequest>[0]> = {}) {
+function baseArgs(database: Database, over: Partial<Omit<Parameters<typeof dispatchRequest>[0], 'database'>> = {}) {
   const rec = makeRecorder()
   const stageTimings = makeStageTimings()
   return {
     args: {
+      database,
       formated: [{ role: 'user', content: 'hi' }] as OpenAIChat[],
       biases: [] as [string, number][],
       currentChar: makeChar(),
@@ -96,8 +99,8 @@ beforeEach(() => {
 
 describe('dispatchRequest - preview branch', () => {
   it('returns preview without calling requestChatData', async () => {
-    seedDb()
-    const { args, rec, stageTimings } = baseArgs({ isPreview: true })
+    const database = seedDb()
+    const { args, rec, stageTimings } = baseArgs(database, { isPreview: true })
 
     const result = await dispatchRequest(args)
 
@@ -111,10 +114,10 @@ describe('dispatchRequest - preview branch', () => {
 
 describe('dispatchRequest - previewPrompt branch', () => {
   it('returns previewPrompt body when provider succeeds with type=success', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = { type: 'success', result: 'preview-text' }
 
-    const { args } = baseArgs({ isPreviewPrompt: true })
+    const { args } = baseArgs(database, { isPreviewPrompt: true })
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('previewPrompt')
@@ -125,10 +128,10 @@ describe('dispatchRequest - previewPrompt branch', () => {
   })
 
   it('falls through to failed when previewPrompt+provider fail', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = { type: 'fail', result: 'upstream broke' }
 
-    const { args } = baseArgs({ isPreviewPrompt: true })
+    const { args } = baseArgs(database, { isPreviewPrompt: true })
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('failed')
@@ -138,10 +141,10 @@ describe('dispatchRequest - previewPrompt branch', () => {
 
 describe('dispatchRequest - success branches', () => {
   it('returns success with streaming req', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = { type: 'streaming', result: 'fake-stream' }
 
-    const { args } = baseArgs()
+    const { args } = baseArgs(database)
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('success')
@@ -159,7 +162,7 @@ describe('dispatchRequest - success branches', () => {
   })
 
   it('returns success with multiline req', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = {
       type: 'multiline',
       result: [
@@ -168,7 +171,7 @@ describe('dispatchRequest - success branches', () => {
       ],
     }
 
-    const { args } = baseArgs()
+    const { args } = baseArgs(database)
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('success')
@@ -177,10 +180,10 @@ describe('dispatchRequest - success branches', () => {
   })
 
   it('returns success with non-streaming success req when previewPrompt is off', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = { type: 'success', result: 'plain text' }
 
-    const { args } = baseArgs()
+    const { args } = baseArgs(database)
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('success')
@@ -189,14 +192,14 @@ describe('dispatchRequest - success branches', () => {
   })
 
   it('propagates req.model override into generationInfo.model', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = {
       type: 'streaming',
       result: 'x',
       model: 'gpt-fallback',
     }
 
-    const { args } = baseArgs()
+    const { args } = baseArgs(database)
     const result = await dispatchRequest(args)
 
     if (result.status !== 'success') throw new Error('unexpected status')
@@ -204,14 +207,14 @@ describe('dispatchRequest - success branches', () => {
   })
 
   it('preserves a V3 plugin provider id in generation metadata', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = {
       type: 'success',
       result: 'plugin response',
       model: 'pluginmodel:::provider-a',
     }
 
-    const { args } = baseArgs()
+    const { args } = baseArgs(database)
     const result = await dispatchRequest(args)
 
     if (result.status !== 'success') throw new Error('unexpected status')
@@ -221,10 +224,10 @@ describe('dispatchRequest - success branches', () => {
 
 describe('dispatchRequest - failure branches', () => {
   it('returns failed when req.type=fail and carries the failure generationInfo', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = { type: 'fail', result: 'boom' }
 
-    const { args } = baseArgs()
+    const { args } = baseArgs(database)
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('failed')
@@ -237,26 +240,26 @@ describe('dispatchRequest - failure branches', () => {
   })
 
   it('returns aborted when signal trips after the provider returns', async () => {
-    seedDb()
+    const database = seedDb()
     const controller = new AbortController()
     providerState.next = { type: 'streaming', result: 'x' }
     // Abort BEFORE the helper runs; the mocked provider ignores the signal,
     // so the helper observes aborted=true on its post-provider check.
     controller.abort()
 
-    const { args } = baseArgs({ abortSignal: controller.signal })
+    const { args } = baseArgs(database, { abortSignal: controller.signal })
     const result = await dispatchRequest(args)
 
     expect(result.status).toBe('aborted')
   })
 
   it('previewPrompt has priority over abort: if previewPrompt+success, returns previewPrompt even when signal is aborted', async () => {
-    seedDb()
+    const database = seedDb()
     const controller = new AbortController()
     controller.abort()
     providerState.next = { type: 'success', result: 'preview-text' }
 
-    const { args } = baseArgs({
+    const { args } = baseArgs(database, {
       isPreviewPrompt: true,
       abortSignal: controller.signal,
     })
@@ -268,14 +271,14 @@ describe('dispatchRequest - failure branches', () => {
 
 describe('dispatchRequest - request payload', () => {
   it('passes formated, biases, isContinue, and escape flag through to requestChatData', async () => {
-    seedDb()
+    const database = seedDb()
     providerState.next = { type: 'streaming', result: 'x' }
     const formated: OpenAIChat[] = [
       { role: 'system', content: 'sys' },
       { role: 'user', content: 'hi' },
     ]
 
-    const { args } = baseArgs({
+    const { args } = baseArgs(database, {
       formated,
       biases: [['avoid', -100]],
       isContinue: true,
@@ -288,11 +291,26 @@ describe('dispatchRequest - request payload', () => {
 
     expect(providerState.calls).toHaveLength(1)
     const payload = providerState.calls[0].arg as Record<string, unknown>
+    expect(payload.database).toBe(database)
     expect(payload.formated).toBe(formated)
     expect(payload.biasString).toEqual([['avoid', -100]])
     expect(payload.continue).toBe(true)
     expect(payload.escape).toBe(true)
     expect(payload.useStreaming).toBe(true)
     expect(payload.isGroupChat).toBe(false)
+  })
+
+  it('uses the explicit settings owner after the aggregate changes', async () => {
+    const database = seedDb({ outputImageModal: true, rememberToolUsage: true })
+    providerState.next = { type: 'streaming', result: 'x' }
+    const { args } = baseArgs(database)
+
+    seedDb({ outputImageModal: false, rememberToolUsage: false })
+    await dispatchRequest(args)
+
+    const payload = providerState.calls[0].arg as Record<string, unknown>
+    expect(payload.database).toBe(database)
+    expect(payload.imageResponse).toBe(true)
+    expect(payload.rememberToolUsage).toBe(true)
   })
 })

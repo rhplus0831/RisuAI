@@ -11,7 +11,13 @@ import {
 import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { isPluginRuntimeReady, pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
-import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
+import {
+  getCurrentCharacter,
+  getCurrentChat,
+  getDatabase,
+  type character,
+  type Database,
+} from '../../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { tokenizeNum } from '../../tokenizer'
 import { simplifySchema, sleep } from '../../util'
@@ -44,6 +50,8 @@ export type ToolCall = {
 }
 
 interface requestDataArgument {
+  /** Request-scoped settings/model snapshot. Normal chat dispatch must provide this owner explicitly. */
+  database?: Database
   formated: OpenAIChat[]
   bias: { [key: number]: number }
   biasString?: [string, number][]
@@ -75,6 +83,7 @@ interface requestDataArgument {
 }
 
 export interface RequestDataArgumentExtended extends requestDataArgument {
+  database: Database
   aiModel?: string
   multiGen?: boolean
   abortSignal?: AbortSignal
@@ -151,11 +160,12 @@ function additionalParamsForRequest(arg: RequestDataArgumentExtended): [string, 
   const providerOptions = arg.resolvedProfile?.providerOptions
   return arg.resolvedProfile
     ? getRequestAdditionalParameters(
+        arg.database,
         arg.aiModel,
         providerOptions?.additionalParams ?? [],
         providerOptions?.extraHeaders,
       )
-    : getAdditionalParameters(arg.aiModel)
+    : getAdditionalParameters(arg.database, arg.aiModel)
 }
 
 type OllamaThinkMode = boolean | 'low' | 'medium' | 'high'
@@ -634,7 +644,10 @@ export async function requestChatData(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
+  // Non-chat compatibility callers still enter through this public facade.
+  // The normal chat path supplies the active settings owner captured before
+  // prompt assembly, and every downstream shaper consumes this exact snapshot.
+  const db = arg.database ?? getDatabase()
   const resolvedProfile = resolveModelProfile({ database: db, role: model })
   const overrideProfile = arg.profileIdOverride
     ? resolveModelProfileByProfileId({ database: db, role: model, profileId: arg.profileIdOverride })
@@ -707,6 +720,7 @@ export async function requestChatData(
       da = await requestChatDataMain(
         {
           ...arg,
+          database: db,
           staticModel: attempt.staticModel,
           fallbackProfileId: attempt.fallbackProfileId,
         },
@@ -809,10 +823,8 @@ function resolveRequestFallbackAttempts(
   })
 }
 
-export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlags[]) {
+export function reformater(formated: OpenAIChat[], modelInfo: LLMModel | LLMFlags[], db: Database) {
   const flags = Array.isArray(modelInfo) ? modelInfo : modelInfo.flags
-
-  const db = getDatabase()
   let systemPrompt: OpenAIChat | null = null
 
   if (!flags.includes(LLMFlags.hasFullSystemPrompt)) {
@@ -898,8 +910,11 @@ export async function requestChatDataMain(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
-  const targ: RequestDataArgumentExtended = arg
+  // Direct plugin/test callers are the remaining compatibility seam. Once a
+  // request enters provider shaping, the snapshot is mandatory and no helper
+  // may fall back to the mutable aggregate.
+  const db = arg.database ?? getDatabase()
+  const targ: RequestDataArgumentExtended = { ...arg, database: db }
   const resolvedProfile = arg.fallbackProfileId
     ? resolveModelProfileByProfileId({
         database: db,
@@ -984,7 +999,7 @@ export async function requestChatDataMain(
 
   const format = targ.modelInfo.format
 
-  targ.formated = reformater(targ.formated, targ.modelInfo)
+  targ.formated = reformater(targ.formated, targ.modelInfo, db)
 
   if (forceLocalOllamaToolDispatch) {
     return withHalfStreamingMode(requestOllama(targ), halfStreaming)
@@ -1044,7 +1059,7 @@ export async function requestChatDataMain(
 
 async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const temperature = arg.temperature
   const maxTokens = arg.maxTokens
@@ -1161,7 +1176,7 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
 
 async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const maxTokens = arg.maxTokens
   const providerOptions = arg.resolvedProfile?.providerOptions
@@ -1418,7 +1433,7 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
 
 async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
@@ -1489,7 +1504,7 @@ async function requestOoba(arg: RequestDataArgumentExtended): Promise<requestDat
 }
 
 async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
   const isV3Model = arg.aiModel.startsWith('pluginmodel:::')
   const responseModel = isV3Model ? arg.aiModel : 'custom'
   try {
@@ -1521,6 +1536,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
             {},
             arg.mode,
             {
+              database: db,
               modelId: arg.aiModel,
               runtimeOptions: arg.resolvedProfile?.runtimeOptions,
             },
@@ -1586,7 +1602,7 @@ async function requestPlugin(arg: RequestDataArgumentExtended): Promise<requestD
 }
 
 async function requestEcho(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
   const body = applyAdditionalParameters(
     {
       delayMs: (db.echoDelay ?? 0) * 1000,
@@ -1611,7 +1627,7 @@ async function requestEcho(arg: RequestDataArgumentExtended): Promise<requestDat
 
 async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const maxTokens = arg.maxTokens
   const abortSignal = arg.abortSignal
   const hasResolvedProfile = !!arg.resolvedProfile
@@ -1646,6 +1662,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
     },
     arg.mode,
     {
+      database: db,
       modelId: arg.aiModel,
       runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
@@ -1691,7 +1708,7 @@ async function requestKobold(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestNovelList(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
   const biasString = arg.biasString
@@ -1772,7 +1789,7 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
 
 async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const providerOptions = arg.resolvedProfile?.providerOptions
   const ollamaOptions = providerOptions?.ollama
   const hasResolvedProfile = arg.resolvedProfile !== undefined
@@ -1983,7 +2000,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const providerOptions = arg.resolvedProfile?.providerOptions
   const hasResolvedProfile = arg.resolvedProfile !== undefined
@@ -2057,6 +2074,7 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
     },
     arg.mode,
     {
+      database: db,
       modelId: arg.aiModel,
       runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
@@ -2132,7 +2150,7 @@ async function requestCohere(arg: RequestDataArgumentExtended): Promise<requestD
 
 async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const providerOptions = arg.resolvedProfile?.providerOptions
   const runtimeOptions = arg.resolvedProfile?.runtimeOptions
@@ -2259,7 +2277,7 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
 
 async function requestWebLLM(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const currentChar = getCurrentCharacter()
   const maxTokens = arg.maxTokens

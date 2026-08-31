@@ -1,4 +1,4 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import type { LegacyModelMode } from '@risuai/shared-core/model-roles'
 import { parseAdditionalParamJsonValue } from './additionalParams'
 
@@ -80,9 +80,7 @@ export function setObjectValue<T>(obj: T, key: string, value: any): T {
   return obj
 }
 
-export function getAdditionalParameters(aiModel?: string): [string, string][] {
-  const db = getDatabase()
-
+export function getAdditionalParameters(db: Database, aiModel?: string): [string, string][] {
   if (!aiModel) {
     return []
   }
@@ -119,16 +117,17 @@ export function getAdditionalParameters(aiModel?: string): [string, string][] {
  * last so profile-owned additional parameters win conflicts.
  */
 export function getRequestAdditionalParameters(
+  db: Database,
   aiModel: string | undefined,
   profileAdditionalParams?: [string, string][],
   profileExtraHeaders?: Record<string, string>,
 ): [string, string][] {
   if (!aiModel) return []
-  if (profileAdditionalParams === undefined) return getAdditionalParameters(aiModel)
+  if (profileAdditionalParams === undefined) return getAdditionalParameters(db, aiModel)
   if (aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')) return [...profileAdditionalParams]
 
   const profileHeaderNames = new Set(Object.keys(profileExtraHeaders ?? {}).map((header) => header.toLocaleLowerCase()))
-  const globalParams = getAdditionalParameters(aiModel).filter(([key]) => {
+  const globalParams = getAdditionalParameters(db, aiModel).filter(([key]) => {
     if (!key.startsWith('header::')) return true
     return !profileHeaderNames.has(key.slice('header::'.length).toLocaleLowerCase())
   })
@@ -198,12 +197,13 @@ export function applyParameters(
   rename: Partial<Record<LLMParameter, string>>,
   modelMode: ModelModeExtended,
   arg: {
+    database: Database
     ignoreTopKIfZero?: boolean
     modelId: string
     runtimeOptions?: RequestParameterRuntimeOptions
   },
 ): Record<string, any> {
-  const db = getDatabase()
+  const db = arg.database
   const reasoningDisabledEffort = parameters.includes('reasoning_effort_none') ? 'none' : 'minimal'
   const reasoningMinEffort = parameters.includes('reasoning_effort_min_medium') ? 'medium' : 'low'
   const supportsXHighReasoning = parameters.includes('reasoning_effort_xhigh')

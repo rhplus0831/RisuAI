@@ -111,6 +111,7 @@ function makeArg(
   overrides: Partial<RequestDataArgumentExtended> = {},
 ): RequestDataArgumentExtended {
   return {
+    database: getDatabase(),
     formated: [
       { role: 'system', content: 'profile system' },
       { role: 'user', content: 'hello' },
@@ -204,6 +205,7 @@ describe('requestClaude profile provider options', () => {
     setDatabase(db({ thinkingType: 'adaptive', adaptiveThinkingEffort: 'low' } as Partial<Database>))
 
     const payload = await preview({
+      database: getDatabase(),
       formated: [{ role: 'user', content: 'hello' }],
       bias: {},
       biasString: [],
@@ -365,6 +367,7 @@ describe('requestClaude profile provider options', () => {
     )
 
     const payload = await preview({
+      database: getDatabase(),
       formated: [
         { role: 'system', content: 'legacy system' },
         { role: 'user', content: 'hello' },
@@ -412,6 +415,7 @@ describe('requestClaude profile provider options', () => {
     )
 
     const result = await requestClaude({
+      database: getDatabase(),
       formated: [{ role: 'user', content: 'hello' }],
       bias: {},
       biasString: [],

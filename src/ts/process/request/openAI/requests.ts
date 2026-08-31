@@ -1,6 +1,6 @@
 import { language } from 'src/lang'
 import { alertError } from 'src/ts/alert'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import { LLMFlags, LLMFormat, LLMProvider } from 'src/ts/model/modellist'
 import { strongBan, tokenizeNum } from 'src/ts/tokenizer'
 import { getFreeOpenRouterModels } from 'src/ts/model/openrouter'
@@ -119,11 +119,7 @@ function resolveOpenAIWireModel(
   return normalizeLegacyOpenAIModelId(selectedModel)
 }
 
-function getLocalNetworkRequestOptions(
-  url: string,
-  db = getDatabase(),
-  useStreaming = false,
-): LocalNetworkRequestOptions {
+function getLocalNetworkRequestOptions(url: string, db: Database, useStreaming = false): LocalNetworkRequestOptions {
   if (!db.localNetworkMode || !isLocalNetworkUrl(url)) {
     return {}
   }
@@ -147,7 +143,7 @@ function serverOwnedOllamaHeaders(
 export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   let formatedChat: OpenAIChatExtra[] = []
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel ?? ''
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -435,6 +431,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       {},
       arg.mode,
       {
+        database: db,
         modelId: arg.modelInfo.id,
         runtimeOptions: arg.resolvedProfile?.runtimeOptions,
       },
@@ -448,11 +445,12 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
       headers,
       hasResolvedProfile
         ? getRequestAdditionalParameters(
+            db,
             aiModel,
             providerOptions?.additionalParams ?? [],
             providerOptions?.extraHeaders,
           )
-        : getAdditionalParameters(aiModel),
+        : getAdditionalParameters(db, aiModel),
     )
 
     const targs = {
@@ -584,6 +582,7 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   }
 
   body = applyParameters(body, arg.modelInfo.parameters, {}, arg.mode, {
+    database: db,
     modelId: arg.modelInfo.id,
     runtimeOptions: arg.resolvedProfile?.runtimeOptions,
   })
@@ -734,8 +733,13 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     body,
     headers,
     hasResolvedProfile
-      ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
-      : getAdditionalParameters(aiModel),
+      ? getRequestAdditionalParameters(
+          db,
+          aiModel,
+          providerOptions?.additionalParams ?? [],
+          providerOptions?.extraHeaders,
+        )
+      : getAdditionalParameters(db, aiModel),
   )
 
   // Some aux flows are intentionally non-streaming (e.g. memory/translate).
@@ -826,7 +830,7 @@ export async function requestHTTPOpenAI(
   arg: RequestDataArgumentExtended,
   networkOptions: LocalNetworkRequestOptions = {},
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
   const res = await globalFetch(replacerURL, {
     body: body,
     headers: serverOwnedOllamaHeaders(arg, headers),
@@ -1058,7 +1062,7 @@ export async function requestHTTPOpenAI(
 
 export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel ?? ''
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -1136,8 +1140,13 @@ export async function requestOpenAILegacyInstruct(arg: RequestDataArgumentExtend
     body,
     headers,
     hasResolvedProfile
-      ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
-      : getAdditionalParameters(aiModel),
+      ? getRequestAdditionalParameters(
+          db,
+          aiModel,
+          providerOptions?.additionalParams ?? [],
+          providerOptions?.extraHeaders,
+        )
+      : getAdditionalParameters(db, aiModel),
   )
 
   if (arg.previewBody) {
@@ -1237,7 +1246,7 @@ async function decodeRememberedToolCallsForResponses(text: string): Promise<Resp
 }
 
 async function buildClientResponseInputItems(arg: RequestDataArgumentExtended): Promise<ResponseItem[]> {
-  const db = getDatabase()
+  const db = arg.database
   const developerRole = arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)
   const detail = db.gptVisionQuality === 'low' || db.gptVisionQuality === 'high' ? db.gptVisionQuality : 'auto'
   const items: ResponseItem[] = []
@@ -1401,7 +1410,7 @@ function extractClientResponsesText(data: unknown, arg: RequestDataArgumentExten
   if (thoughts.length > 0 && !result.startsWith('<Thoughts>')) {
     result = `<Thoughts>\n\n${thoughts.join('\n\n')}\n\n</Thoughts>\n${result}`
   }
-  if (arg.extractJson && (getDatabase().jsonSchemaEnabled || arg.schema)) {
+  if (arg.extractJson && (arg.database.jsonSchemaEnabled || arg.schema)) {
     return extractJSON(result, arg.extractJson)
   }
   return result
@@ -1416,7 +1425,7 @@ function extractClientResponsesFunctionCalls(data: unknown): ResponseFunctionCal
 }
 
 export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -1450,6 +1459,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     {},
     arg.mode,
     {
+      database: db,
       modelId: arg.modelInfo.id,
       runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
@@ -1538,8 +1548,13 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     body,
     headers,
     hasResolvedProfile
-      ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
-      : getAdditionalParameters(aiModel),
+      ? getRequestAdditionalParameters(
+          db,
+          aiModel,
+          providerOptions?.additionalParams ?? [],
+          providerOptions?.extraHeaders,
+        )
+      : getAdditionalParameters(db, aiModel),
   )
 
   if (arg.previewBody) {
@@ -1667,7 +1682,7 @@ function getTranStream(arg: RequestDataArgumentExtended): TransformStream<Uint8A
   let dataUint: Uint8Array | Buffer = new Uint8Array([])
   let reasoningContent = ''
   let reasoningFromStructured = false
-  const db = getDatabase()
+  const db = arg.database
 
   const appendStreamingFragment = (current: string, incoming?: string) => {
     if (!incoming) {
@@ -1835,7 +1850,7 @@ function wrapToolStream(
 ): ReadableStream<StreamResponseChunk> {
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      const db = getDatabase()
+      const db = arg.database
       const deepseekThinkingType = arg.resolvedProfile
         ? arg.resolvedProfile.runtimeOptions.deepseekThinkingType
         : db.deepseekThinkingType

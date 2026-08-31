@@ -1,6 +1,5 @@
 import { fetchNative, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { LLMFlags, LLMFormat, type LLMModel } from 'src/ts/model/modellist'
-import { getDatabase } from 'src/ts/storage/database.svelte'
 import { base64url, simplifySchema } from 'src/ts/util'
 import { v4 } from 'uuid'
 import { saveInlayedSignature, setInlayAsset, writeInlayImage, type InlaySignature } from '../files/inlays'
@@ -51,7 +50,7 @@ interface GeminiChat {
 
 export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const maxTokens = arg.maxTokens
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -357,6 +356,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
       },
       arg.mode,
       {
+        database: db,
         ignoreTopKIfZero: true,
         modelId: arg.modelInfo.id,
         runtimeOptions: arg.resolvedProfile?.runtimeOptions,
@@ -597,11 +597,12 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
     headers,
     resolvedProfile
       ? getRequestAdditionalParameters(
+          db,
           arg.aiModel,
           providerOptions.additionalParams ?? [],
           providerOptions.extraHeaders,
         )
-      : getAdditionalParameters(arg.aiModel),
+      : getAdditionalParameters(db, arg.aiModel),
   )
 
   if (arg.previewBody) {
@@ -624,7 +625,7 @@ async function requestGoogle(
   headers: { [key: string]: string },
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
-  const db = getDatabase()
+  const db = arg.database
 
   const fallBackGemini = async (originalError: string): Promise<requestDataResponse> => {
     if (!db.antiServerOverloads) {
@@ -1120,7 +1121,7 @@ function wrapToolStream(
 ): ReadableStream<StreamResponseChunk> {
   return new ReadableStream<StreamResponseChunk>({
     async start(controller) {
-      const db = getDatabase()
+      const db = arg.database
       let reader = stream.getReader()
       let prefix = ''
       let lastValue = initStreamState()

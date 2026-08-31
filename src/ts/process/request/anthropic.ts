@@ -5,7 +5,6 @@ import { language } from 'src/lang'
 import { fetchNative, globalFetch, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { LLMFlags, LLMFormat } from 'src/ts/model/modellist'
 import { registerClaudeObserver } from 'src/ts/observer.svelte'
-import { getDatabase } from 'src/ts/storage/database.svelte'
 import { replaceAsync, simplifySchema, sleep } from 'src/ts/util'
 import { v4 } from 'uuid'
 import type { MultiModal } from '../index.svelte'
@@ -114,7 +113,7 @@ function serverOwnedOllamaHeaders(
 
 export async function requestClaude(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   const formated = arg.formated
-  const db = getDatabase()
+  const db = arg.database
   const aiModel = arg.aiModel
   const resolvedProfile = arg.resolvedProfile
   const providerOptions = resolvedProfile?.providerOptions
@@ -433,6 +432,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
     },
     arg.mode,
     {
+      database: db,
       modelId: arg.modelInfo.id,
       runtimeOptions: arg.resolvedProfile?.runtimeOptions,
     },
@@ -465,8 +465,13 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
 
   const bedrock = arg.modelInfo.format === LLMFormat.AWSBedrockClaude
   const additionalParams = hasResolvedProfile
-    ? getRequestAdditionalParameters(aiModel, providerOptions?.additionalParams ?? [], providerOptions?.extraHeaders)
-    : getAdditionalParameters(aiModel)
+    ? getRequestAdditionalParameters(
+        db,
+        aiModel,
+        providerOptions?.additionalParams ?? [],
+        providerOptions?.extraHeaders,
+      )
+    : getAdditionalParameters(db, aiModel)
   const hasCustomAnthropicBeta = additionalParams.some(([key]) => {
     return key.startsWith('header::') && key.slice('header::'.length).toLocaleLowerCase() === 'anthropic-beta'
   })
@@ -891,6 +896,7 @@ async function requestClaudeHTTP(
   body: any,
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
+  const db = arg.database
   if (arg.useStreaming && arg.tools?.length && arg.serverOwnedOllamaAuth) {
     return requestClaudeToolStream(replacerURL, headers, body, arg)
   }
@@ -1040,7 +1046,6 @@ async function requestClaudeHTTP(
     }
   }
 
-  const db = getDatabase()
   const res = await globalFetch(replacerURL, {
     body: body,
     headers: serverOwnedOllamaHeaders(arg, headers),
@@ -1213,6 +1218,7 @@ async function requestClaudeToolStream(
   body: any,
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
+  const db = arg.database
   const stream = new ReadableStream<StreamResponseChunk>({
     async start(controller) {
       let prefix = ''
@@ -1383,7 +1389,7 @@ async function requestClaudeToolStream(
 
           body.messages.push({ role: 'assistant', content: assistantContent })
           body.messages.push({ role: 'user', content: toolResultContent })
-          if (!getDatabase().simplifiedToolUse && (text || thinking)) {
+          if (!db.simplifiedToolUse && (text || thinking)) {
             const current = thinking ? `<Thoughts>\n${thinking}\n</Thoughts>\n\n${text}` : text
             prefix = [prefix, current].filter(Boolean).join('\n\n')
           }

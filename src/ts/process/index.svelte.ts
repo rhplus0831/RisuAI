@@ -527,6 +527,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       // wired here (a bare disconnect only detaches; an explicit stop cancels).
     } else {
       const dispatch = await dispatchRequest({
+        database: generationSettingsState.db,
         formated,
         biases,
         currentChar,
