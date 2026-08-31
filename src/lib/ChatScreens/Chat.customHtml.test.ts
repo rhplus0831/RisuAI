@@ -387,6 +387,13 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  applyMessageTranslationLocalEffect: (chatId: string, messageId: string, translation: unknown) => {
+    const messages = customHtmlMocks.getChatMessageOwnerState(chatId)?.messages ?? []
+    const matches = messages.filter((message) => message.chatId === messageId)
+    if (matches.length !== 1) return false
+    matches[0].translation = translation
+    return true
+  },
   applyServerChatMessagesResource: vi.fn(() => true),
   getChatMessageOwnerState: customHtmlMocks.getChatMessageOwnerState,
   hydrateActiveChat: vi.fn(async () => undefined),

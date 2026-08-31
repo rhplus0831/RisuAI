@@ -8,7 +8,6 @@ import {
   type MessageTranslation,
   type Chat,
   type character,
-  withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import {
@@ -958,19 +957,14 @@ export async function reconcileAcceptedSendCompletion(
 export function applyMessageTranslationLocalEffect(
   chatId: string,
   messageId: string,
-  translation: MessageTranslation,
+  translation: MessageTranslation | null,
 ): boolean {
   if (!chatId || !messageId) return false
-  let applied = false
-  withTrustedResourceWrite(() => {
-    const chat = uniqueChatForHydration(chatId)?.chat
-    if (!chat) return
-    const matches = (chat.message ?? []).filter((message) => message.chatId === messageId)
-    if (matches.length !== 1) return
-    matches[0].translation = JSON.parse(JSON.stringify(translation)) as MessageTranslation
-    applied = true
-  })
-  if (!applied) return false
+  const chat = uniqueChatForHydration(chatId)?.chat
+  if (!chat) return false
+  const matches = (chat.message ?? []).filter((message) => message.chatId === messageId)
+  if (matches.length !== 1) return false
+  matches[0].translation = translation === null ? null : (JSON.parse(JSON.stringify(translation)) as MessageTranslation)
   advanceChatProjectionEpoch(chatId)
   syncChatMessageOwnerProjection(chatId)
   return true

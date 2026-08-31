@@ -146,7 +146,6 @@
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
   } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     captureChatButtonTriggerFreshness,
     chatButtonTriggerChatSignature,
@@ -160,7 +159,11 @@
 
   import { createBranchComment, parseBranchComment } from './branchComment'
   import { characterRoutePath, navigate, parseRoute } from 'src/ts/router'
-  import { getChatMessageOwnerState, hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+  import {
+    applyMessageTranslationLocalEffect,
+    getChatMessageOwnerState,
+    hydrateChatMessages,
+  } from 'src/ts/server/chatMessageHydration.svelte'
   import { rekeyClonedChat } from 'src/ts/chatFork'
   import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
   import type { GenerationPersistenceIndicatorState } from 'src/ts/process/generationPersistenceState'
@@ -1125,20 +1128,16 @@
     nextTranslation: MessageTranslation | null,
     options: { expectedCurrentTranslation?: MessageTranslation | null } = {},
   ): boolean {
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveMessage = findLiveMessageByTarget(target)
-      if (!liveMessage) return
-      if (
-        'expectedCurrentTranslation' in options &&
-        !isSameTranslation(liveMessage.translation, options.expectedCurrentTranslation ?? null)
-      ) {
-        return
-      }
-      liveMessage.translation = nextTranslation
-      applied = true
-    })
-    return applied
+    if (!target.chatId) return false
+    const liveMessage = findLiveMessageByTarget(target)
+    if (!liveMessage) return false
+    if (
+      'expectedCurrentTranslation' in options &&
+      !isSameTranslation(liveMessage.translation, options.expectedCurrentTranslation ?? null)
+    ) {
+      return false
+    }
+    return applyMessageTranslationLocalEffect(target.chatId, target.messageId, nextTranslation)
   }
 
   function activeRawTranslation(): MessageTranslation | null {
@@ -2038,23 +2037,15 @@
     }
 
     const nextChatSnapshot = cloneJsonValue(nextChat) as Chat
-    let applied = false
+    if (!target.snapshot.characterId || !target.snapshot.chatId) return false
+    const owner = mutableChatBridgeById(target.snapshot.characterId, target.snapshot.chatId)
+    const character = owner?.character
+    const chatIndex = owner && character ? character.chats.indexOf(owner.chat) : -1
+    if (!character || chatIndex < 0) return false
 
-    withTrustedResourceWrite(() => {
-      if (!target.snapshot.characterId || !target.snapshot.chatId) return
-      const owner = mutableChatBridgeById(target.snapshot.characterId, target.snapshot.chatId)
-      const character = owner?.character
-      const chatIndex = owner && character ? character.chats.indexOf(owner.chat) : -1
-      if (!character || chatIndex < 0) return
-
-      character.chats[chatIndex] = nextChatSnapshot
-      applied = true
-    })
-
-    if (applied) {
-      dispatchCompatibleChatUpdateScoped(target.previous.chat, nextChatSnapshot, target.previous)
-    }
-    return applied
+    character.chats[chatIndex] = nextChatSnapshot
+    dispatchCompatibleChatUpdateScoped(target.previous.chat, nextChatSnapshot, target.previous)
+    return true
   }
 
   async function handleButtonTriggerWithin(event: UIEvent) {

@@ -15,7 +15,6 @@ import { HypaProcesser } from './memory/hypamemory'
 import { runLuaEditTrigger } from './scriptings'
 import { pluginV2 } from '../plugins/plugins.svelte'
 import { runTrigger } from './triggers'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { canUseServerCommands } from '../server/commands'
 import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
 import { getActivePromptPresetRegexScripts } from './promptPresetRegex'
@@ -32,7 +31,6 @@ import { assertClientRegexPatternSafe } from './regexSafety'
 import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
 import { getSelectedCharacterOwner } from '../characterState'
 import {
-  charactersResourceState,
   collectionsResourceState,
   settingsResourceState,
   type ServerCollectionName,
@@ -387,19 +385,7 @@ function applyInjectMutation(data: string, mode: ScriptMode, chatID: number, cha
 
     const previous = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped(messageId, { data }, previous)
-    return
   }
-
-  const characterStatus = charactersResourceState.status
-  if (characterStatus !== 'idle' && characterStatus !== 'loading') return
-  // Compatibility-only pre-readiness path. A ready/error owner with command
-  // access unavailable must not receive an unpersisted trusted write.
-  withTrustedResourceWrite(() => {
-    const message = selectedChatMessage(chat, chatID)
-    if (message) {
-      message.data = data
-    }
-  })
 }
 
 // Regex-script sources are constant across the per-token streaming re-runs that

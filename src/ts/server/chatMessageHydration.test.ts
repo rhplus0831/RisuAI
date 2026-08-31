@@ -1021,6 +1021,8 @@ describe('chat message hydration bridge', () => {
     await pendingHydration
 
     expect(db().characters[0].chats[0].message).toEqual([{ ...resident, translation }])
+    expect(applyMessageTranslationLocalEffect('chat-1', 'm-resident', null)).toBe(true)
+    expect(db().characters[0].chats[0].message[0].translation).toBeNull()
     expect(applyMessageTranslationLocalEffect('chat-2', 'm-resident', translation)).toBe(false)
   })
 
