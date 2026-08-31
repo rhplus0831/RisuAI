@@ -31,17 +31,20 @@ vi.mock(import('../../../stores.svelte'), () => ({
 
 import { risuChatParser } from '../../parser.svelte'
 import { RisuParserBudgetError } from '../../risuChatParser'
+import { replaceResourceDatabase } from '../../../server/resourceState.svelte'
 
 const fixtures = PHASE9_BASELINE_DRIFT_FIXTURES
 
 beforeEach(() => {
   state.database = phase9DriftDatabase([phase9DriftCharacter()])
+  replaceResourceDatabase(state.database)
 })
 
 describe('Phase 9 baseline-drift decisions — current browser parser', () => {
   it('keeps the RH+-authorized group retirement observable', () => {
     const group = phase9DriftGroup()
     state.database = phase9DriftDatabase([group, phase9DriftCharacter()])
+    replaceResourceDatabase(state.database)
 
     expect(risuChatParser(fixtures.groupCharacter.input, { chara: group as never })).toBe(
       fixtures.groupCharacter.currentExpected,
@@ -65,6 +68,7 @@ describe('Phase 9 baseline-drift decisions — current browser parser', () => {
         })),
       },
     ]
+    replaceResourceDatabase(state.database)
 
     expect(JSON.parse(risuChatParser(fixtures.historyWindow.input))).toEqual(fixtures.historyWindow.currentExpected)
     expect(risuChatParser(fixtures.reverse.input)).toBe(fixtures.reverse.currentExpected)

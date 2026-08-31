@@ -2,7 +2,6 @@ import DOMPurify from 'dompurify'
 import markdownit from 'markdown-it'
 import { sha256Hex } from '../sha256Fallback'
 import {
-  getDatabase,
   type Chat,
   type Database,
   type character,
@@ -11,7 +10,7 @@ import {
   type triggerscript,
 } from '../storage/database.svelte'
 import versionInfo from '../../../version.json'
-import { CurrentTriggerIdStore, selectedCharID } from '../stores.svelte'
+import { CurrentTriggerIdStore } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
@@ -97,14 +96,6 @@ function nonBlankStableId(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
 
-function canUseCompatibility(status: string): boolean {
-  return status === 'idle' || status === 'loading'
-}
-
-function compatibilityParserDatabase(): Database {
-  return getDatabase()
-}
-
 function uniqueCharacterOwner(characters: readonly character[], characterId: string): character | undefined {
   let owner: character | undefined
   for (const candidate of characters) {
@@ -182,42 +173,23 @@ function readySelectedChatOwner(characterOwner: character): Chat | undefined {
   } as Chat
 }
 
-function compatibilitySelectedContext(database: Database): { character: character; chat?: Chat } | undefined {
-  const characterOwner = selectedCharacterOwner(database.characters ?? [], get(selectedCharID))
-  if (!characterOwner) return undefined
-  return {
-    character: characterOwner,
-    chat: selectedChatOwner(database.characters ?? [], characterOwner),
-  }
-}
-
 function parserSelectedContext(): { character: character; chat?: Chat } | undefined {
-  if (charactersResourceState.status === 'ready') {
-    const characterOwner = readySelectedCharacterOwner()
-    if (!characterOwner) return undefined
-    return { character: characterOwner, chat: readySelectedChatOwner(characterOwner) }
-  }
-  if (!canUseCompatibility(charactersResourceState.status)) return undefined
-  return compatibilitySelectedContext(compatibilityParserDatabase())
+  if (charactersResourceState.status !== 'ready') return undefined
+  const characterOwner = readySelectedCharacterOwner()
+  if (!characterOwner) return undefined
+  return { character: characterOwner, chat: readySelectedChatOwner(characterOwner) }
 }
 
 function parserSelectedCharacterIndex(): number {
-  if (charactersResourceState.status === 'ready') {
-    return readySelectedCharacterOwner() ? charactersResourceState.currentChar : -1
-  }
-  if (!canUseCompatibility(charactersResourceState.status)) return -1
-  const database = compatibilityParserDatabase()
-  return compatibilitySelectedContext(database) ? get(selectedCharID) : -1
+  return charactersResourceState.status === 'ready' && readySelectedCharacterOwner()
+    ? charactersResourceState.currentChar
+    : -1
 }
 
 function parserCharacterOwnerById(characterId: string): character | undefined {
   const normalizedCharacterId = characterId.trim()
   if (!normalizedCharacterId) return undefined
-  if (charactersResourceState.status === 'ready') {
-    return getCharacterResourceOwner(normalizedCharacterId)
-  }
-  if (!canUseCompatibility(charactersResourceState.status)) return undefined
-  return uniqueCharacterOwner(compatibilityParserDatabase().characters ?? [], normalizedCharacterId)
+  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(normalizedCharacterId) : undefined
 }
 
 function projectSelectedCharacter(
@@ -251,15 +223,11 @@ function parserSettingOwnerStatus(key: keyof Database): ServerResourceStatus {
   if (settingsResourceState.status === 'error') return 'error'
   const group = SERVER_SETTINGS_GROUP_BY_KEY[String(key)]
   if (group) {
-    return (
-      settingsResourceState.groupStatuses[group] ??
-      (canUseCompatibility(settingsResourceState.status) ? settingsResourceState.status : 'idle')
-    )
+    return settingsResourceState.groupStatuses[group] ?? 'idle'
   }
   if (standaloneSettingNames.has(String(key))) {
     return (
-      settingsResourceState.standaloneStatuses[key as keyof typeof settingsResourceState.standaloneStatuses] ??
-      (canUseCompatibility(settingsResourceState.status) ? settingsResourceState.status : 'idle')
+      settingsResourceState.standaloneStatuses[key as keyof typeof settingsResourceState.standaloneStatuses] ?? 'idle'
     )
   }
   return settingsResourceState.status
@@ -268,39 +236,22 @@ function parserSettingOwnerStatus(key: keyof Database): ServerResourceStatus {
 function parserSettingsProjection(): Partial<Database> {
   if (settingsResourceState.status === 'error') return {}
   const ownerValues = settingsResourceState.value as Partial<Database>
-  const compatibilityValues = canUseCompatibility(settingsResourceState.status)
-    ? compatibilityParserDatabase()
-    : undefined
-  const settings = { ...(compatibilityValues ?? ownerValues) }
-  const keys = new Set<keyof Database>([
-    ...(Object.keys(settings) as (keyof Database)[]),
-    ...(Object.keys(ownerValues) as (keyof Database)[]),
-  ])
-  for (const key of keys) {
-    const status = parserSettingOwnerStatus(key)
-    if (status === 'ready') {
-      if (Object.prototype.hasOwnProperty.call(ownerValues, key)) settings[key] = ownerValues[key] as never
-      else delete settings[key]
-    } else if (status === 'error') {
-      delete settings[key]
-    }
+  const settings: Partial<Database> = {}
+  for (const key of Object.keys(ownerValues) as (keyof Database)[]) {
+    if (parserSettingOwnerStatus(key) === 'ready') settings[key] = ownerValues[key] as never
   }
   return settings
 }
 
 function parserRuntimeDatabase(): Database {
-  let compatibilityDatabase: Database | undefined
-  const compatibility = () => (compatibilityDatabase ??= compatibilityParserDatabase())
   const database = parserSettingsProjection()
 
   for (const collectionName of SERVER_COLLECTION_NAMES) {
     const status = collectionsResourceState.statuses[collectionName]
     if (status === 'ready') {
       database[collectionName] = collectionsResourceState.values[collectionName] as never
-    } else if (status === 'error' || !canUseCompatibility(collectionsResourceState.status)) {
-      delete database[collectionName]
     } else {
-      database[collectionName] = compatibility()[collectionName] as never
+      delete database[collectionName]
     }
   }
 
@@ -309,13 +260,6 @@ function parserRuntimeDatabase(): Database {
       charactersResourceState.characters,
       charactersResourceState.currentChar,
       parserSelectedContext(),
-    )
-  } else if (canUseCompatibility(charactersResourceState.status)) {
-    const compatibilityDatabase = compatibility()
-    database.characters = projectSelectedCharacter(
-      compatibilityDatabase.characters ?? [],
-      get(selectedCharID),
-      compatibilitySelectedContext(compatibilityDatabase),
     )
   } else {
     database.characters = []
@@ -333,11 +277,6 @@ function parserSetting<K extends keyof Database>(key: K): Database[K] | undefine
   const status = parserSettingOwnerStatus(key)
   if (status === 'ready') {
     return (settingsResourceState.value as Partial<Database>)[key] as Database[K] | undefined
-  }
-  if (canUseCompatibility(status)) {
-    return canUseCompatibility(settingsResourceState.status)
-      ? compatibilityParserDatabase()[key]
-      : ((settingsResourceState.value as Partial<Database>)[key] as Database[K] | undefined)
   }
   return undefined
 }
@@ -810,12 +749,7 @@ function buildAssetResolutionContext(
 function moduleAssetsForCharacter(char: simpleCharacterArgument | character): [string, string, string][] {
   const ownerCharacter = parserCharacterOwnerById(char.chaId)
   const contextCharacter = char.type === 'simple' ? ownerCharacter : char
-  const rows =
-    charactersResourceState.status === 'ready'
-      ? charactersResourceState.characters
-      : canUseCompatibility(charactersResourceState.status)
-        ? (compatibilityParserDatabase().characters ?? [])
-        : []
+  const rows = charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   const contextChat = contextCharacter
     ? contextCharacter === ownerCharacter
       ? charactersResourceState.status === 'ready'

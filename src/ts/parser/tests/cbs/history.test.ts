@@ -10,9 +10,8 @@ import {
 
 //#region module mocks
 
-// A single shared, mutable DB the history CBS functions read through
-// `getDatabase()`. Exposing the same object to the test lets us assert the live
-// `Message` rows are never mutated by the shallow-spread render path.
+// A single shared, mutable owner fixture lets us assert the live `Message`
+// rows are never mutated by the shallow-spread render path.
 const mocks = vi.hoisted(() => {
   const db = {
     characters: [
@@ -71,14 +70,15 @@ vi.mock(import('../../../stores.svelte'), () => {
 beforeEach(() => {
   vi.clearAllMocks()
   selectedCharID.set(0)
-  charactersResourceState.characters = []
-  charactersResourceState.currentChar = -1
-  charactersResourceState.status = 'idle'
-  settingsResourceState.value = {}
-  settingsResourceState.status = 'idle'
+  charactersResourceState.characters = mocks.db.characters as never
+  charactersResourceState.currentChar = 0
+  charactersResourceState.status = 'ready'
+  settingsResourceState.value = { username: mocks.db.username }
+  settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses.account = 'ready'
   collectionsResourceState.values = {}
   collectionsResourceState.statuses = {}
-  collectionsResourceState.status = 'idle'
+  collectionsResourceState.status = 'ready'
 })
 
 describe('history CBS functions shallow-spread', () => {

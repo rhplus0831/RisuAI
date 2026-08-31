@@ -47,9 +47,9 @@ const toolCallHtml = (payload: string) =>
 beforeEach(() => {
   mocks.db.paragraphBreakBySentences = false
   mocks.db.paragraphBreakSentenceCount = 3
-  settingsResourceState.value = {}
-  settingsResourceState.status = 'idle'
-  settingsResourceState.groupStatuses = {}
+  settingsResourceState.value = mocks.db
+  settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses = { display: 'ready' }
   settingsResourceState.standaloneStatuses = {}
 })
 

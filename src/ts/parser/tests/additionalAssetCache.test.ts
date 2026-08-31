@@ -119,13 +119,17 @@ beforeEach(() => {
   charactersResourceState.characters = []
   charactersResourceState.currentChar = -1
   charactersResourceState.status = 'idle'
-  settingsResourceState.value = {}
-  settingsResourceState.status = 'idle'
-  settingsResourceState.groupStatuses = {}
+  settingsResourceState.value = mocks.db
+  settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses = { advanced: 'ready', display: 'ready', modules: 'ready' }
   settingsResourceState.standaloneStatuses = {}
-  collectionsResourceState.values = {}
-  collectionsResourceState.statuses = {}
-  collectionsResourceState.status = 'idle'
+  collectionsResourceState.values = {
+    modules: mocks.db.modules,
+    promptPresets: [],
+    personas: [],
+  }
+  collectionsResourceState.statuses = { modules: 'ready', promptPresets: 'ready', personas: 'ready' }
+  collectionsResourceState.status = 'ready'
 })
 
 describe('additional asset resolution cache', () => {
@@ -152,13 +156,14 @@ describe('additional asset resolution cache', () => {
         assets: mocks.moduleAssets,
       },
     ]
+    collectionsResourceState.values.modules = mocks.db.modules as never
 
     await expect(ParseMarkdown('{{raw::portrait}} {{raw::frame}}', character, 'back')).resolves.toContain(
       '/resolved/character-old',
     )
 
     character.additionalAssets![0][1] = 'character-new'
-    mocks.moduleAssets[0][1] = 'module-new'
+    collectionsResourceState.values.modules![0].assets![0][1] = 'module-new'
     const updated = await ParseMarkdown('{{raw::portrait}} {{raw::frame}}', character, 'back')
 
     expect(updated).toContain('/resolved/character-new')
