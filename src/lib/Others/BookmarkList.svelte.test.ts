@@ -70,6 +70,7 @@ import { language } from 'src/lang'
 import { bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
 import type { ChatMutationFinalOutcome, ChatMutationOutcome } from 'src/ts/chatCommands'
 import {
+  charactersResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
@@ -123,6 +124,7 @@ function seedBookmarkDatabase(messageResident: boolean): void {
         triggerscript: [],
       },
     ],
+    currentChar: 0,
   } as never)
 }
 
@@ -158,6 +160,7 @@ function seedBookmarkOwners(aResident: boolean, bResident: boolean): void {
     language: 'en',
     username: 'User',
     characters: [bookmarkOwner('a', aResident), bookmarkOwner('b', bResident)],
+    currentChar: 0,
   } as never)
 }
 
@@ -421,6 +424,7 @@ describe('BookmarkList hydration and navigation', () => {
     await tick()
     expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a', { strict: true })
 
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     await vi.waitFor(() => expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-b', { strict: true }))
 
@@ -447,6 +451,7 @@ describe('BookmarkList hydration and navigation', () => {
     await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-a-old"]')).not.toBeNull())
     expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
 
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     await vi.waitFor(() => expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-b', { strict: true }))
     expect(target.querySelector('[role="status"]')?.textContent).toBe(language.loading)
@@ -467,6 +472,29 @@ describe('BookmarkList hydration and navigation', () => {
     await tick()
 
     expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+  })
+
+  it('fails closed on character owner errors and duplicate active chat ids', async () => {
+    seedBookmarkDatabase(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push({
+        ...bookmarkOwner('b', true),
+        chats: [{ ...bookmarkOwner('b', true).chats[0], id: 'chat-a' }],
+      } as any)
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    seedBookmarkDatabase(true)
+    charactersResourceState.status = 'error'
+    component = mount(BookmarkList, { target })
+    await tick()
     expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
   })
 })

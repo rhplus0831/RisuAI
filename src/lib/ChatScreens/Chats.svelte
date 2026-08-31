@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte'
-  import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type character, type Database, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characterImage'
   import { ReloadChatPointer } from 'src/ts/stores.svelte'
@@ -41,8 +41,12 @@
     type GenerationDisplayProjection,
   } from 'src/ts/process/generationDisplayProjection.svelte'
   import { activateDisplaySourceChat, releaseDisplaySourceChat } from 'src/ts/server/displaySources'
-  import { getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
-  import { preferChatMetadataOwner, projectChatMetadata } from 'src/ts/server/chatMetadataOwner'
+  import {
+    charactersResourceState,
+    getChatMetadataOwnerState,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
+  import { projectChatMetadata } from 'src/ts/server/chatMetadataOwner'
 
   const getCurrentChatRoomId = () => chatId ?? null
 
@@ -90,13 +94,32 @@
 
   function legacyChatMetadataFallback(): ReturnType<typeof projectChatMetadata> | undefined {
     if (!chatId) return undefined
-    const chat = currentCharacter.chats?.find((candidate) => candidate?.id === chatId)
-    return chat ? projectChatMetadata(chatId, chat) : undefined
+    const chats = currentCharacter.chats?.filter((candidate) => candidate?.id === chatId) ?? []
+    return chats.length === 1 ? projectChatMetadata(chatId, chats[0]) : undefined
   }
 
-  let currentChatMetadata = $derived(
-    preferChatMetadataOwner(chatId ? getChatMetadataOwnerState(chatId) : undefined, legacyChatMetadataFallback()),
+  let currentChatMetadata = $derived.by(() => {
+    if (!chatId) return undefined
+    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)
+    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+    if (charactersResourceState.characters.length > 0 && !getChatMetadataOwnerState(chatId)) return undefined
+    return legacyChatMetadataFallback()
+  })
+
+  function readSettingsGroup(group: 'display' | 'sidebar'): Partial<Database> {
+    const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value as Partial<Database>
+    if (status === 'idle' || status === 'loading') return getDatabase()
+    return {}
+  }
+
+  let showMemoryLimit = $derived(readSettingsGroup('display').showMemoryLimit === true)
+  let autoScrollToNewMessage = $derived(
+    settingsResourceState.groupStatuses.sidebar === 'error'
+      ? false
+      : readSettingsGroup('sidebar').autoScrollToNewMessage !== false,
   )
+  let alwaysScrollToNewMessage = $derived(readSettingsGroup('sidebar').alwaysScrollToNewMessage === true)
 
   let chatBody: HTMLDivElement
   let latestMessageScrollSpacerHeight = $state(0)
@@ -155,7 +178,6 @@
       currentCharacter,
       untrack(() => currentCharacter.customscript),
     )
-    const database = getDatabase()
     const currentChatId = chatId ?? null
     recordChatRowsBuild(currentChatId)
     const generationPersistenceLookup = buildGenerationPersistenceStateLookup(
@@ -215,7 +237,7 @@
         name: message.role === 'user' ? currentUsername : getCharacterDisplayName(currentCharacter),
         character: simpleChar,
         generationPersistenceState: generationPersistenceStateFromLookup(generationPersistenceLookup, message),
-        isLastMemory: isMemoryLimitMessage(database.showMemoryLimit, lastMemoryId, message.chatId),
+        isLastMemory: isMemoryLimitMessage(showMemoryLimit, lastMemoryId, message.chatId),
         scopeId: currentChatId ?? null,
         awaitInitialDisplayParse: shouldAwaitInitialDisplayParse(i, messages.length),
         isRegenerationTarget:
@@ -636,9 +658,7 @@
     }
 
     if (projectionKey && projectionKey !== previousRegenerateProjectionKey) {
-      const database = getDatabase()
-      const follow =
-        database.autoScrollToNewMessage && (pendingRegenerateWasAtLatest || database.alwaysScrollToNewMessage)
+      const follow = autoScrollToNewMessage && (pendingRegenerateWasAtLatest || alwaysScrollToNewMessage)
       generationFollowState = { projectionKey, follow, userCancelled: false }
       transcriptUserIntentPending = false
       if (follow) {
@@ -746,12 +766,10 @@
     // Only auto-scroll if it's the same chat and new messages were added
     if (isSameChat && messages.length > previousLength) {
       const lastMsg = messages[messages.length - 1]
-      const database = getDatabase()
       if (lastMsg && lastMsg.role === 'char') {
         const latestMessageKey = getLatestMessageAlignmentKey()
         const isAssistantPlaceholder = lastMsg.data === '' && latestMessageKey !== null
-        const shouldFollowLatest =
-          database.autoScrollToNewMessage && (wasAtBottomBeforeUpdate || database.alwaysScrollToNewMessage)
+        const shouldFollowLatest = autoScrollToNewMessage && (wasAtBottomBeforeUpdate || alwaysScrollToNewMessage)
 
         if (isAssistantPlaceholder) {
           // A newly appended empty assistant row is the generation placeholder.
@@ -799,12 +817,10 @@
       const completedLatestMessageKey = pendingGeneratedMessageEndKey
       pendingGeneratedMessageEndKey = null
       const wasAtLatestPosition = transcriptIsAtLatestPosition()
-      const database = getDatabase()
       setTranscriptAnchor('free')
       recomputeLatestMessageGeometry(true)
 
-      const shouldFollowLatest =
-        database.autoScrollToNewMessage && (wasAtLatestPosition || database.alwaysScrollToNewMessage)
+      const shouldFollowLatest = autoScrollToNewMessage && (wasAtLatestPosition || alwaysScrollToNewMessage)
       if (
         shouldFollowLatest &&
         currentChatRoomId &&

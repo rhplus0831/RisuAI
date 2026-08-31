@@ -26,13 +26,13 @@
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import { navigateToCharacterChatMessage } from 'src/ts/router'
-  import type { Chat as ChatData, character } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type Chat as ChatData, type character } from 'src/ts/storage/database.svelte'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(resolveBookmarkCharacter())
@@ -168,12 +168,17 @@
   }
 
   function readCharacterOwners(): readonly character[] {
-    const owners = charactersResourceState.characters
-    if (owners.length > 0 || charactersResourceState.status === 'ready') return owners
-    return getDatabase().characters ?? []
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+      return charactersResourceState.characters.length > 0
+        ? charactersResourceState.characters
+        : (getDatabase().characters ?? [])
+    }
+    return []
   }
 
   function uniqueCharacterOwner(characterId: string): character | undefined {
+    if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
     let owner: character | undefined
     for (const candidate of readCharacterOwners()) {
       if (candidate?.chaId !== characterId) continue
@@ -183,17 +188,31 @@
     return owner
   }
 
+  function currentSelectedCharacterIndex(): number {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
+  }
+
+  function activeChatIdIsUnique(character: character): boolean {
+    const chatId = character.chats?.[character.chatPage]?.id
+    if (!chatId) return false
+    return (
+      readCharacterOwners().reduce(
+        (count, candidate) => count + (candidate.chats ?? []).filter((chat) => chat?.id === chatId).length,
+        0,
+      ) === 1
+    )
+  }
+
   function resolveBookmarkCharacter(): character | undefined {
-    const selectedIndex = $selectedCharID
+    const selectedIndex = currentSelectedCharacterIndex()
     const owners = readCharacterOwners()
     const candidate = owners[selectedIndex]
-    if (candidate?.chaId) return uniqueCharacterOwner(candidate.chaId)
-    if (charactersResourceState.status === 'ready' || owners.length > 0) return undefined
-    return getDatabase().characters?.[selectedIndex]
+    const character = candidate?.chaId ? uniqueCharacterOwner(candidate.chaId) : undefined
+    return character && activeChatIdIsUnique(character) ? character : undefined
   }
 
   function captureBookmarkHydrationOwner(): BookmarkHydrationOwner | null {
-    const selectedCharacterIndex = $selectedCharID
+    const selectedCharacterIndex = currentSelectedCharacterIndex()
     const characterReference = chara
     const chatPage = characterReference?.chatPage
     const chatReference = chatPage === undefined ? undefined : characterReference?.chats?.[chatPage]
@@ -350,7 +369,7 @@
   ): boolean {
     let applied = false
     withTrustedResourceWrite(() => {
-      const character = getDatabase().characters[$selectedCharID]
+      const character = chara?.chaId ? uniqueCharacterOwner(chara.chaId) : undefined
       const liveChat = character?.chats?.find((candidate) => candidate.id === chatId)
       if (!liveChat) return
       if (patch.bookmarks) liveChat.bookmarks = patch.bookmarks

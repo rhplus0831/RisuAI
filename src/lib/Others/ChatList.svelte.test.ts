@@ -474,6 +474,29 @@ describe('ChatList DOM contract harness', () => {
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
   })
 
+  it('fails closed on character owner errors and duplicate chat ids', async () => {
+    const chara = seedModalDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push({
+        ...chara,
+        chaId: 'char-b',
+        chats: [makeChat('chat-b', 'Duplicate Chat')],
+      })
+    })
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    seedModalDatabase()
+    charactersResourceState.status = 'error'
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+  })
+
   it('uses a blocking focus contract and owns Escape and backdrop close interactions', async () => {
     seedModalDatabase()
     const opener = document.createElement('button')
@@ -543,12 +566,14 @@ describe('ChatList DOM contract harness', () => {
     await tick()
     expect(modalRoot()).toBeTruthy()
 
+    charactersResourceState.currentChar = -1
     selectedCharID.set(-1)
     await tick()
 
     expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
     expect(close).toHaveBeenCalledOnce()
 
+    charactersResourceState.currentChar = 0
     selectedCharID.set(0)
     await tick()
     expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
@@ -576,6 +601,7 @@ describe('ChatList DOM contract harness', () => {
     const staleDeleteButton = rowActionButton(rowByChatId('chat-c'), 'delete')
     const staleImportButton = modalRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="import"]')!
 
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     staleCreateButton.click()
     staleOpenButton.click()
@@ -1153,6 +1179,7 @@ describe('ChatList DOM contract harness', () => {
     deleteButtonForRow(rowByChatId('chat-b')).click()
     await tick()
 
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     await tick()
     expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()

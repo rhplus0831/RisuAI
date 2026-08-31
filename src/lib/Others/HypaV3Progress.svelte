@@ -1,8 +1,22 @@
 <script lang="ts" module>
-  import type { character } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type character } from 'src/ts/storage/database.svelte'
 
   export function resolveOpenChatId(characterOwner: character | undefined): string | null {
     return characterOwner?.chats?.[characterOwner.chatPage]?.id ?? null
+  }
+
+  export function resolveUniqueOpenChatId(
+    characterOwner: character | undefined,
+    characters: readonly character[],
+  ): string | null {
+    const chatId = resolveOpenChatId(characterOwner)
+    if (!chatId || !characterOwner?.chaId) return null
+    if (characters.filter((candidate) => candidate?.chaId === characterOwner.chaId).length !== 1) return null
+    const chatMatches = characters.reduce(
+      (count, character) => count + (character.chats ?? []).filter((chat) => chat?.id === chatId).length,
+      0,
+    )
+    return chatMatches === 1 ? chatId : null
   }
 
   export function resolveUniqueChatLabel(
@@ -26,7 +40,7 @@
 
 <script lang="ts">
   import { language } from 'src/lang'
-  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { memoryJobProjectionStore, selectMemoryProgress } from 'src/ts/server/memoryJobProjection.svelte'
   import { groupMemoryJobsForPresentation, type MemoryProgressGroup } from 'src/ts/server/memoryJobPresentation'
@@ -34,14 +48,37 @@
   import type { ServerMemoryJob } from 'src/ts/process/request/serverMemory'
 
   let isExpanded = $state(false)
-  const selectedCharacter = $derived(
-    getSelectedCharacterOwner() ??
-      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters?.[$selectedCharID]),
-  )
+  function characterRowsOwner(): readonly character[] {
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+      return charactersResourceState.characters.length > 0
+        ? charactersResourceState.characters
+        : (getDatabase().characters ?? [])
+    }
+    return []
+  }
+
+  function selectedCharacterOwner(): character | undefined {
+    if (charactersResourceState.status === 'ready') return getSelectedCharacterOwner()
+    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+    const rows = characterRowsOwner()
+    const candidate = rows[$selectedCharID]
+    if (!candidate?.chaId) return undefined
+    return rows.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+  }
+
+  function openChatOnlyOwner(): boolean {
+    const status = settingsResourceState.groupStatuses.display ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value.hypaV3ProgressOpenChatOnly === true
+    if (status === 'idle' || status === 'loading') return getDatabase().hypaV3ProgressOpenChatOnly === true
+    return false
+  }
+
+  const selectedCharacter = $derived(selectedCharacterOwner())
   const openChatId = $derived.by(() => {
-    return resolveOpenChatId(selectedCharacter)
+    return resolveUniqueOpenChatId(selectedCharacter, characterRowsOwner())
   })
-  const openChatOnly = $derived(getDatabase().hypaV3ProgressOpenChatOnly === true)
+  const openChatOnly = $derived(openChatOnlyOwner())
   const progress = $derived(selectMemoryProgress($memoryJobProjectionStore, openChatId, openChatOnly))
   const groups: MemoryProgressGroup[] = $derived.by(() =>
     groupMemoryJobsForPresentation(progress.presentedJobs, openChatId, chatLabel),
@@ -53,9 +90,7 @@
 
   function chatLabel(chatId: string): string {
     return resolveUniqueChatLabel(
-      charactersResourceState.status === 'ready'
-        ? charactersResourceState.characters
-        : (getDatabase().characters ?? []),
+      characterRowsOwner(),
       chatId,
       language.hypaV3Progress.unnamedChat,
       language.hypaV3Progress.unknownChat(shortJobId(chatId)),

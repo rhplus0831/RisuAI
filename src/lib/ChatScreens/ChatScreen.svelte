@@ -4,15 +4,21 @@
     resourceStatus: string,
     aggregate: T | undefined,
   ): T | undefined {
-    return owner ?? (resourceStatus === 'ready' ? undefined : aggregate)
+    if (resourceStatus === 'ready') return owner
+    if (resourceStatus === 'idle' || resourceStatus === 'loading') return aggregate
+    return undefined
   }
 </script>
 
 <script lang="ts">
   import { getCustomBackground, getEmotionForCharacter, getSelectedCharacterOwner } from '../../ts/characterState'
 
-  import { getDatabase, isServerCharacterShell } from 'src/ts/storage/database.svelte'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+  import { getDatabase, isServerCharacterShell, type Database } from 'src/ts/storage/database.svelte'
+  import {
+    charactersResourceState,
+    getChatMetadataOwnerState,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { CharEmotion, selectedCharID } from '../../ts/stores.svelte'
   import ResizeBox from './ResizeBox.svelte'
   import DefaultChatScreen from './DefaultChatScreen.svelte'
@@ -36,16 +42,36 @@
   let openModuleList = $state(false)
   let openBardWiki = $state(false)
   let bardWikiChatId = $state<string | null>(null)
-  let selectedCharacter = $derived(
-    $selectedCharID >= 0
-      ? resolveSelectedCharacterForDisplay(
-          getSelectedCharacterOwner(),
-          charactersResourceState.status,
-          getDatabase().characters?.[$selectedCharID],
-        )
-      : undefined,
+  let selectedCharacterIndex = $derived(
+    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID,
   )
-  let selectedChatId = $derived(selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id ?? null)
+  let selectedCharacter = $derived.by(() => {
+    if (selectedCharacterIndex < 0) return undefined
+    const status = charactersResourceState.status
+    const aggregate =
+      status === 'idle' || status === 'loading' ? getDatabase().characters?.[selectedCharacterIndex] : undefined
+    return resolveSelectedCharacterForDisplay(
+      status === 'ready' ? getSelectedCharacterOwner() : undefined,
+      status,
+      aggregate,
+    )
+  })
+  let selectedChatId = $derived.by(() => {
+    const chatId = selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id
+    if (!chatId) return null
+    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)?.chatId ?? null
+    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return null
+
+    const characterRows =
+      charactersResourceState.characters.length > 0
+        ? charactersResourceState.characters
+        : (getDatabase().characters ?? [])
+    const matchCount = characterRows.reduce(
+      (count, character) => count + (character.chats ?? []).filter((chat) => chat?.id === chatId).length,
+      0,
+    )
+    return matchCount === 1 ? chatId : null
+  })
   let selectedCharacterShellId = $derived(
     isServerCharacterShell(selectedCharacter) ? (selectedCharacter?.chaId ?? null) : null,
   )
@@ -67,15 +93,27 @@
   })
 
   const wallPaper = `background: url(${defaultWallpaper})`
+  function readDisplaySettings(): Partial<Database> {
+    const status = settingsResourceState.groupStatuses.display ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value as Partial<Database>
+    if (status === 'idle' || status === 'loading') return getDatabase()
+    return {}
+  }
+
+  let displaySettings = $derived(readDisplaySettings())
+  let theme = $derived(typeof displaySettings.theme === 'string' ? displaySettings.theme : 'fastify')
+  let waifuWidth = $derived(typeof displaySettings.waifuWidth === 'number' ? displaySettings.waifuWidth : 100)
+  let waifuWidth2 = $derived(typeof displaySettings.waifuWidth2 === 'number' ? displaySettings.waifuWidth2 : 100)
+  let classicMaxWidth = $derived(displaySettings.classicMaxWidth === true)
   const externalStyles = $derived.by(() => {
-    const database = getDatabase()
+    const settings = displaySettings
     return (
       'background: ' +
-      (database.textScreenColor ? database.textScreenColor + '80' : 'rgba(0,0,0,0.8)') +
+      (settings.textScreenColor ? settings.textScreenColor + '80' : 'rgba(0,0,0,0.8)') +
       ';\n' +
-      (database.textBorder ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;' : '') +
-      (database.textScreenRounded ? 'border-radius: 2rem; padding: 1rem;' : '') +
-      (database.textScreenBorder ? `border: 0.3rem solid ${database.textScreenBorder};` : '')
+      (settings.textBorder ? 'text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;' : '') +
+      (settings.textScreenRounded ? 'border-radius: 2rem; padding: 1rem;' : '') +
+      (settings.textScreenBorder ? `border: 0.3rem solid ${settings.textScreenBorder};` : '')
     )
   })
   let bgImg = $state('')
@@ -83,7 +121,8 @@
   const loadLatestBackground = createLatestBackgroundLoader(getCustomBackground)
   $effect.pre(() => {
     ;(async () => {
-      const customBackground = getDatabase().customBackground
+      const customBackground =
+        typeof displaySettings.customBackground === 'string' ? displaySettings.customBackground : ''
       if (customBackground !== lastBg) {
         lastBg = customBackground
         const loadedBackground = await loadLatestBackground(customBackground)
@@ -97,21 +136,21 @@
 
 {#if selectedCharacterShellId}
   <CharacterShellHydrationGate characterId={selectedCharacterShellId} />
-{:else if getDatabase().theme === 'waifu'}
+{:else if theme === 'waifu'}
   <div class="grow h-full flex justify-center relative" style={bgImg.length < 4 ? wallPaper : bgImg}>
     <SideBarArrow />
     <BackgroundDom />
-    {#if $selectedCharID >= 0}
+    {#if selectedCharacter}
       {#if selectedCharacter?.viewScreen !== 'none'}
-        <div class="h-full mr-10 flex justify-end halfw" style:width="{42 * (getDatabase().waifuWidth2 / 100)}rem">
+        <div class="h-full mr-10 flex justify-end halfw" style:width="{42 * (waifuWidth2 / 100)}rem">
           <TransitionImage classType="waifu" src={getEmotionForCharacter(selectedCharacter, $CharEmotion, 'plain')} />
         </div>
       {/if}
     {/if}
     <div
       class="h-full w-2xl"
-      style:width="{42 * (getDatabase().waifuWidth / 100)}rem"
-      class:halfwp={$selectedCharID >= 0 && selectedCharacter?.viewScreen !== 'none'}>
+      style:width="{42 * (waifuWidth / 100)}rem"
+      class:halfwp={selectedCharacter !== undefined && selectedCharacter?.viewScreen !== 'none'}>
       <DefaultChatScreen
         route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
@@ -120,14 +159,14 @@
         bind:openBardWiki />
     </div>
   </div>
-{:else if getDatabase().theme === 'waifuMobile'}
+{:else if theme === 'waifuMobile'}
   <div class="grow h-full relative" style={bgImg.length < 4 ? wallPaper : bgImg}>
     <SideBarArrow />
     <BackgroundDom />
     <div
       class="w-full absolute z-10 bottom-0 left-0"
-      class:per33={$selectedCharID >= 0 && selectedCharacter?.viewScreen !== 'none'}
-      class:h-full={!($selectedCharID >= 0 && selectedCharacter?.viewScreen !== 'none')}>
+      class:per33={selectedCharacter !== undefined && selectedCharacter?.viewScreen !== 'none'}
+      class:h-full={!(selectedCharacter !== undefined && selectedCharacter?.viewScreen !== 'none')}>
       <DefaultChatScreen
         route={visibleRoute}
         customStyle={`${externalStyles}backdrop-filter: blur(4px);`}
@@ -135,7 +174,7 @@
         bind:openModuleList
         bind:openBardWiki />
     </div>
-    {#if $selectedCharID >= 0}
+    {#if selectedCharacter}
       {#if selectedCharacter?.viewScreen !== 'none'}
         <div class="h-full w-full absolute bottom-0 left-0 max-w-full">
           <TransitionImage classType="mobile" src={getEmotionForCharacter(selectedCharacter, $CharEmotion, 'plain')} />
@@ -147,8 +186,8 @@
   <div class="grow h-full min-w-0 relative justify-center flex">
     <SideBarArrow />
     <BackgroundDom />
-    <div style={bgImg} class="h-full w-full" class:max-w-6xl={getDatabase().classicMaxWidth}>
-      {#if $selectedCharID >= 0}
+    <div style={bgImg} class="h-full w-full" class:max-w-6xl={classicMaxWidth}>
+      {#if selectedCharacter}
         {#if selectedCharacter?.viewScreen !== 'none' && !selectedCharacter?.inlayViewScreen}
           <ResizeBox />
         {/if}

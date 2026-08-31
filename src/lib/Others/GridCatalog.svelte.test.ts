@@ -56,6 +56,15 @@ vi.mock('src/ts/server/resourceState.svelte', async (importOriginal) => {
     ),
   }
 })
+vi.mock('../../ts/storage/database.svelte', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../ts/storage/database.svelte')>()
+  return {
+    ...actual,
+    getDatabase: vi.fn((options?: { snapshot?: boolean }) =>
+      resourceStateMocks.fallbackDatabase ? resourceStateMocks.fallbackDatabase : actual.getDatabase(options),
+    ),
+  }
+})
 vi.mock('../../ts/router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../ts/router')>()),
   navigate: routerSpies.navigate,
@@ -338,6 +347,17 @@ describe('GridCatalog derived lists', () => {
     expect(descriptionForCharacterId('trash', 'trash-beta')).toBe('Description de la corbeille')
   })
 
+  it('fails language settings errors closed to the description fallback order', async () => {
+    getDatabase().language = 'ko'
+    getDatabase().characters[0].creatorNotes = '# `en`\nEnglish description\n# `ko`\n한국어 설명'
+    settingsResourceState.groupStatuses.language = 'error'
+
+    mountCatalog()
+    await clickCatalogTab('list')
+
+    expect(descriptionForCharacterId('list', 'alpha-main')).toBe('English description')
+  })
+
   it('GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
     seedCatalog()
     mountCatalog()
@@ -430,9 +450,14 @@ describe('GridCatalog derived lists', () => {
     gridAction('list', 'fallback-character', 'open').click()
     expect(routerSpies.navigate).toHaveBeenCalledWith('/character/fallback-character/fallback-chat')
 
+    charactersResourceState.status = 'error'
+    await tick()
+    expect(gridRows('list')).toEqual([])
+
     charactersResourceState.characters = [
       makeCharacter({ chaId: 'resident-character', name: 'Resident Character' }),
     ] as any
+    charactersResourceState.status = 'loading'
     await tick()
     expect(listHeadings('list')).toEqual(['Resident Character'])
 

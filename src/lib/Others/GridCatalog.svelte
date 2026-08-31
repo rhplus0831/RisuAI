@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import { getCharacterDisplayInfo } from 'src/ts/characterDisplayName'
-  import { type Database } from '../../ts/storage/database.svelte'
+  import { getDatabase, type Database } from '../../ts/storage/database.svelte'
 
   export interface GridCatalogCharacter {
     chaId?: string
@@ -65,7 +65,7 @@
   import {
     charactersResourceState,
     getCharacterResourceOwner,
-    getResourceDatabase as getDatabase,
+    settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
@@ -192,9 +192,20 @@
   }
 
   function readCharacterOwners(): readonly Database['characters'][number][] {
-    const owners = charactersResourceState.characters
-    if (owners.length > 0 || charactersResourceState.status === 'ready') return owners
-    return getDatabase().characters ?? []
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+      return charactersResourceState.characters.length > 0
+        ? charactersResourceState.characters
+        : (getDatabase().characters ?? [])
+    }
+    return []
+  }
+
+  function readCatalogLanguage(): string | undefined {
+    const status = settingsResourceState.groupStatuses.language ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value.language as string | undefined
+    if (status === 'idle' || status === 'loading') return getDatabase().language
+    return undefined
   }
 
   function uniqueCharacterOwner(characterId: string) {
@@ -431,7 +442,7 @@
                 {char.name || 'Unnamed'}
               </h4>
               <span class="text-textcolor2" data-risu-character-description
-                >{resolveGridCatalogDescription(char.desc, getDatabase().language)}</span>
+                >{resolveGridCatalogDescription(char.desc, readCatalogLanguage())}</span>
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="open"
@@ -489,7 +500,7 @@
                 {char.name || 'Unnamed'}
               </h4>
               <span class="text-textcolor2" data-risu-character-description
-                >{resolveGridCatalogDescription(char.desc, getDatabase().language)}</span>
+                >{resolveGridCatalogDescription(char.desc, readCatalogLanguage())}</span>
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="restore"

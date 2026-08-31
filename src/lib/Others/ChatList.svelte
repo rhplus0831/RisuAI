@@ -4,12 +4,8 @@
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import {
-    charactersResourceState,
-    getResourceDatabase as getDatabase,
-    getCharacterResourceOwner,
-  } from 'src/ts/server/resourceState.svelte'
-  import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
+  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
+  import { getDatabase, isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
@@ -46,9 +42,13 @@
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
   function readCharacterOwners() {
-    const owners = charactersResourceState.characters
-    if (owners.length > 0 || charactersResourceState.status === 'ready') return owners
-    return getDatabase().characters ?? []
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
+      return charactersResourceState.characters.length > 0
+        ? charactersResourceState.characters
+        : (getDatabase().characters ?? [])
+    }
+    return []
   }
 
   function uniqueCharacterOwner(characterId) {
@@ -72,7 +72,7 @@
   }
 
   function selectedCharacterIndex() {
-    return $selectedCharID
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
   }
 
   const ownerSelectedCharIndex = selectedCharacterIndex()
@@ -100,9 +100,28 @@
   let modalCharacter = $derived.by(() => {
     if (invalidated) return undefined
     const character = resolveOriginCharacter(ownerCharacterId, ownerSelectedCharIndex, ownerCharacterReference)
-    if (!character || !isOriginCharacterSelected(character, ownerCharacterId)) return undefined
+    if (
+      !character ||
+      !isOriginCharacterSelected(character, ownerCharacterId) ||
+      !characterChatIdsAreUnique(character)
+    ) {
+      return undefined
+    }
     return character
   })
+
+  function characterChatIdsAreUnique(character) {
+    const stableChatIds = (character.chats ?? []).map((chat) => chat?.id).filter(Boolean)
+    if (new Set(stableChatIds).size !== stableChatIds.length) return false
+    const rows = readCharacterOwners()
+    return stableChatIds.every(
+      (chatId) =>
+        rows.reduce(
+          (count, candidate) => count + (candidate.chats ?? []).filter((chat) => chat?.id === chatId).length,
+          0,
+        ) === 1,
+    )
+  }
 
   // The owner detail is authoritative when hydrated; shell rows intentionally
   // fall back to the compatibility character for the existing lazy path.
@@ -342,7 +361,7 @@
     let applied = false
     withTrustedResourceWrite(() => {
       const liveCharacter = previousCharacter?.chaId
-        ? getDatabase().characters?.find((candidate) => candidate.chaId === previousCharacter.chaId)
+        ? uniqueCharacterOwner(previousCharacter.chaId)
         : resolveOriginCharacter(undefined, ownerSelectedCharIndex, ownerCharacterReference)
       const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
       if (!liveChat || liveChat.name !== previousChat?.name) return
