@@ -1,6 +1,6 @@
 import { mutateChatWithScopedCommand } from '../../chatCommands'
 import type { Chat, Message, character } from '../../storage/database.svelte'
-import { getChatTranscriptOwnerState } from '../../server/chatTranscriptOwner'
+import { getChatMessageOwnerState } from '../../server/chatMessageHydration.svelte'
 import { charactersResourceState, getCharacterResourceOwner } from '../../server/resourceState.svelte'
 
 export interface StablePostGenerationChatTarget {
@@ -67,7 +67,7 @@ export function resolveStablePostGenerationMessage(
   if (!target) return null
   const resolution = resolveStablePostGenerationChat(target)
   if (!resolution) return null
-  const ownerMessages = getChatTranscriptOwnerState(target.chatId)?.messages
+  const ownerMessages = getChatMessageOwnerState(target.chatId)?.messages
   if (!ownerMessages) return null
   const ownerMatches = ownerMessages.filter((candidate) => candidate?.chatId === target.messageId)
   if (ownerMatches.length !== 1) return null
@@ -94,7 +94,7 @@ export function mutateStablePostGenerationChat(
   const applied = mutateChatWithScopedCommand(
     (chat, character) => {
       if (character.chaId !== target.characterId || chat.id !== target.chatId) return
-      const transcriptOwner = getChatTranscriptOwnerState(target.chatId)
+      const transcriptOwner = getChatMessageOwnerState(target.chatId)
       if (!transcriptOwner) return
       chat.message = transcriptOwner.messages
       if (mutate(chat, character) === false) return
