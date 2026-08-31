@@ -44,6 +44,7 @@ const promptHydration = vi.hoisted(() => ({
   currentOwner: null as string | null,
   ensure: vi.fn(async () => true),
   invalidate: vi.fn(),
+  stale: vi.fn(),
   mark: vi.fn(),
   reset: vi.fn(),
   isHydrated: vi.fn(() => true),
@@ -103,6 +104,7 @@ vi.mock('./promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: promptHydration.ensure,
   invalidatePromptTemplateHydration: promptHydration.invalidate,
   isPromptTemplateHydrated: promptHydration.isHydrated,
+  markPromptTemplateHydrationStale: promptHydration.stale,
   markPromptTemplateProjectionApplied: promptHydration.mark,
   resetPromptTemplateHydration: promptHydration.reset,
 }))
@@ -329,6 +331,7 @@ beforeEach(() => {
   for (const mock of [
     promptHydration.ensure,
     promptHydration.invalidate,
+    promptHydration.stale,
     promptHydration.mark,
     promptHydration.reset,
     promptHydration.isHydrated,
@@ -2302,7 +2305,8 @@ describe('API-backed resource invalidation', () => {
 
     expect(api.collection).toHaveBeenCalledTimes(1)
     expect(api.collection).toHaveBeenCalledWith('promptTemplate', undefined)
-    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.stale).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.invalidate).not.toHaveBeenCalled()
     expect(promptHydration.ensure).toHaveBeenCalledWith({
       applyProjection: false,
       force: true,
@@ -2312,6 +2316,22 @@ describe('API-backed resource invalidation', () => {
     expect(promptHydration.mark).toHaveBeenCalledWith(null, 3)
     expect(api.settings).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
+  })
+
+  it('fully invalidates a retained prompt owner when its targeted refresh fails', async () => {
+    seedResources(1)
+    promptHydration.currentOwner = 'prompt-preset-a'
+    promptHydration.ensure.mockResolvedValueOnce(false)
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'promptItem', { id: 'item-a', parentId: 'prompt-preset-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'error', error: 'Failed to refresh an invalidated prompt-template owner' })
+
+    expect(promptHydration.stale).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
   })
 
   it.each([

@@ -108,6 +108,17 @@ export function resetPromptTemplateHydration(): void {
   publishPromptTemplateHydratedOwnerIds(new Set())
 }
 
+/**
+ * Fence an already-resident owner before a forced refresh without making its
+ * editor disappear. The retained body remains usable while the authoritative
+ * replacement is in flight; callers must fully invalidate it if that refresh
+ * fails.
+ */
+export function markPromptTemplateHydrationStale(promptPresetId: string | null = currentPromptTemplateOwnerId()): void {
+  if (promptPresetId !== null) promptTemplateHydrationInFlight.delete(promptPresetId)
+  promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
+}
+
 export function invalidatePromptTemplateHydration(
   promptPresetId: string | null = currentPromptTemplateOwnerId(),
 ): void {
@@ -115,8 +126,7 @@ export function invalidatePromptTemplateHydration(
     promptTemplateSelectedFallbackOwnerIds.delete(promptPresetId)
     promptTemplateSelectedFallbacks.delete(promptPresetId)
   }
-  if (promptPresetId !== null) promptTemplateHydrationInFlight.delete(promptPresetId)
-  promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
+  markPromptTemplateHydrationStale(promptPresetId)
   setPromptTemplateOwnerHydrated(promptPresetId, false)
 }
 

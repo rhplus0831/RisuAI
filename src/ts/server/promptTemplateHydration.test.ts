@@ -33,6 +33,7 @@ import {
   isPromptTemplateHydrated,
   isPromptTemplateOwnerAcknowledgementTainted,
   markPromptTemplateOwnerAcknowledgementTainted,
+  markPromptTemplateHydrationStale,
   markPromptTemplateProjectionApplied,
   peekPromptTemplateOwnerRevision,
   promptTemplateHydrationStateStore,
@@ -481,6 +482,22 @@ describe('promptTemplate hydration', () => {
     await expect(pending).resolves.toBe(false)
     expect(hasPromptTemplateOwnerProjectionEpochChanged('preset-a', epoch)).toBe(true)
     expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
+  })
+
+  it('keeps a resident owner available while fencing a forced refresh', async () => {
+    setCachedServerCommandRevision(7)
+    ;(testDatabaseState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A', promptTemplate: [item('resident-row', 'resident body')] }],
+    }
+    markPromptTemplateProjectionApplied('preset-a', 7)
+    const epoch = capturePromptTemplateOwnerProjectionEpoch('preset-a')
+
+    markPromptTemplateHydrationStale('preset-a')
+
+    expect(hasPromptTemplateOwnerProjectionEpochChanged('preset-a', epoch)).toBe(true)
+    expect(isPromptTemplateHydrated('preset-a')).toBe(true)
+    expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([item('resident-row', 'resident body')])
   })
 
   it('hydrates an explicit non-current prompt preset owner without overwriting the visible projection', async () => {

@@ -18,6 +18,7 @@ import {
   ensurePromptTemplateHydrated,
   invalidatePromptTemplateHydration,
   isPromptTemplateHydrated,
+  markPromptTemplateHydrationStale,
   markPromptTemplateProjectionApplied,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
@@ -1633,9 +1634,18 @@ async function refreshInvalidatedPromptTemplateOwners(
   if (ownerIds.size === 0) return null
 
   const selectedOwnerId = currentPromptTemplateOwnerId()
-  for (const ownerId of ownerIds) invalidatePromptTemplateHydration(ownerId)
+  // Prompt-item events update an owner whose complete body is still resident.
+  // Keep that body mounted while the forced read revalidates it so a routine
+  // value-only acknowledgement cannot destroy the focused editor. Prompt-preset
+  // events replace owner shells, so those still require a full invalidation.
+  const retainedOwnerIds = plan.refreshSelectedPromptTemplate ? new Set<string>() : new Set(plan.promptTemplateOwnerIds)
+  for (const ownerId of ownerIds) {
+    if (retainedOwnerIds.has(ownerId)) markPromptTemplateHydrationStale(ownerId)
+    else invalidatePromptTemplateHydration(ownerId)
+  }
+  const ownerIdList = [...ownerIds]
   const results = await Promise.all(
-    [...ownerIds].map((ownerId) =>
+    ownerIdList.map((ownerId) =>
       ensurePromptTemplateHydrated({
         applyProjection: ownerId === selectedOwnerId,
         force: true,
@@ -1644,6 +1654,10 @@ async function refreshInvalidatedPromptTemplateOwners(
       }),
     ),
   )
+  results.forEach((applied, index) => {
+    const ownerId = ownerIdList[index]
+    if (!applied && retainedOwnerIds.has(ownerId)) invalidatePromptTemplateHydration(ownerId)
+  })
   return results.every(Boolean) ? null : 'Failed to refresh an invalidated prompt-template owner'
 }
 
