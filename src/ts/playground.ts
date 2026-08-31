@@ -1,20 +1,21 @@
 import { get } from 'svelte/store'
-import { findCharacterIndexbyId } from './characterState'
 import { characterFormatUpdate, createBlankChar } from './characters'
-import { getDatabase, setCharacterByIndex, type character } from './storage/database.svelte'
+import type { character } from './storage/database.svelte'
 import { PlaygroundStore, selectedCharID } from './stores.svelte'
 import {
-  currentCharacterStateSnapshot,
+  applyCharacterRowMutationScoped,
+  cloneJsonValue,
   currentCharacterSelectionSnapshot,
   dispatchCreateAndSelectCharacter,
   dispatchSelectCharacter,
-  restoreCharacterState,
+  restoreCharacterSelection,
+  type CharacterStateSnapshot,
 } from './characterCommands'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { canUseServerCommands } from './server/commands'
 import type { CharacterMutationOutcome } from './characterCommands'
 import { alertNormal } from './alert'
 import { language } from '../lang'
+import { charactersResourceState } from './server/resourceState.svelte'
 
 export const PLAYGROUND_CHARACTER_ID = '§playground'
 
@@ -22,6 +23,20 @@ interface InFlightPlaygroundCreate {
   completion: Promise<CharacterMutationOutcome>
   freshnessChecks: Set<() => boolean>
   previousPlaygroundMode: number
+}
+
+interface PlaygroundCharacterOwner {
+  characters: character[]
+  characterOrder: CharacterStateSnapshot['characterOrder']
+  currentChar: number
+  playgroundIndex: number
+}
+
+interface PlaygroundCreateProjectionFence {
+  listRevision: number | null
+  orderRevision: number | null
+  selectionRevision: number | null
+  characterIndex: number
 }
 
 let inFlightPlaygroundCreate: InFlightPlaygroundCreate | null = null
@@ -38,20 +53,36 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
   }
 
   const previousPlaygroundMode = get(PlaygroundStore)
-  const charIndex = findCharacterIndexbyId(PLAYGROUND_CHARACTER_ID)
+  const owner = currentPlaygroundCharacterOwner()
+  if (!owner) return
+
+  const charIndex = owner.playgroundIndex
   PlaygroundStore.set(2)
 
   if (charIndex !== -1) {
-    if (get(selectedCharID) === charIndex) {
+    if (owner.currentChar === charIndex) {
+      selectedCharID.set(charIndex)
       return
     }
 
     const previous = currentCharacterSelectionSnapshot(PLAYGROUND_CHARACTER_ID)
     const lastInteraction = Date.now()
-    const formattedChar = formatPlaygroundCharacterAtIndex(charIndex, lastInteraction)
+    const durable = canUseServerCommands()
+    if (!formatPlaygroundCharacterAtIndex(charIndex, lastInteraction, durable)) {
+      PlaygroundStore.set(previousPlaygroundMode)
+      return
+    }
 
+    charactersResourceState.currentChar = charIndex
     selectedCharID.set(charIndex)
-    dispatchSelectCharacter(formattedChar.chaId, previous, lastInteraction)
+    if (!durable) return
+    try {
+      dispatchSelectCharacter(PLAYGROUND_CHARACTER_ID, previous, lastInteraction)
+    } catch (error) {
+      restoreCharacterSelection(previous)
+      if (isFresh()) PlaygroundStore.set(previousPlaygroundMode)
+      console.warn('Unable to select playground character', error)
+    }
     return
   }
 
@@ -66,14 +97,8 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
 
   if (canUseServerCommands()) {
     const freshnessChecks = new Set([isFresh])
-    const previous = currentCharacterStateSnapshot()
-    withTrustedResourceWrite(() => {
-      const database = getDatabase()
-      database.characters.push(formattedChar)
-      const index = database.characters.length - 1
-      ;(database as unknown as { currentChar?: number }).currentChar = index
-      selectedCharID.set(index)
-    })
+    const previous = currentPlaygroundCharacterStateSnapshot(owner)
+    const projectionFence = stagePlaygroundCreateProjection(formattedChar)
 
     let pending: Promise<CharacterMutationOutcome> | undefined
     try {
@@ -82,16 +107,14 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
       })
     } catch (error) {
       freshnessChecks.clear()
-      restoreCharacterState(previous)
-      selectedCharID.set(previous.selectedCharID)
+      rollbackStagedPlaygroundCreate(previous, formattedChar, projectionFence)
       if (isFresh()) PlaygroundStore.set(previousPlaygroundMode)
       console.warn('Unable to create playground character', error)
       return
     }
     if (!pending) {
       freshnessChecks.clear()
-      restoreCharacterState(previous)
-      selectedCharID.set(previous.selectedCharID)
+      rollbackStagedPlaygroundCreate(previous, formattedChar, projectionFence)
       if (isFresh()) PlaygroundStore.set(previousPlaygroundMode)
       return
     }
@@ -106,13 +129,9 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
     return
   }
 
-  withTrustedResourceWrite(() => {
-    const database = getDatabase()
-    database.characters.push(formattedChar)
-    const index = database.characters.length - 1
-    ;(database as unknown as { currentChar?: number }).currentChar = index
-    selectedCharID.set(index)
-  })
+  // Narrow local-only compatibility: a revision-less owner may still be used by
+  // non-server test/dev runtimes. It never enters the aggregate database facade.
+  stagePlaygroundCreateProjection(formattedChar)
 }
 
 async function settlePlaygroundCreateForRoute(
@@ -148,23 +167,120 @@ function hasFreshPlaygroundCreateRoute(freshnessChecks: ReadonlySet<() => boolea
 }
 
 function activateExistingPlaygroundProjection(): boolean {
-  const index = findCharacterIndexbyId(PLAYGROUND_CHARACTER_ID)
+  const owner = currentPlaygroundCharacterOwner()
+  if (!owner) return false
+  const index = owner.playgroundIndex
   if (index === -1) return false
-  withTrustedResourceWrite(() => {
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = index
-    selectedCharID.set(index)
-  })
+  charactersResourceState.currentChar = index
+  selectedCharID.set(index)
   PlaygroundStore.set(2)
   return true
 }
 
-function formatPlaygroundCharacterAtIndex(index: number, lastInteraction = Date.now()): character {
-  const char = structuredClone(getDatabase().characters[index]) as character
+function formatPlaygroundCharacterAtIndex(index: number, lastInteraction: number, durable: boolean): boolean {
+  const owner = currentPlaygroundCharacterOwner()
+  if (!owner || owner.playgroundIndex !== index) return false
+  const char = cloneJsonValue(owner.characters[index])
   char.utilityBot = true
   char.name = 'assistant'
   char.firstMessage = '{{none}}'
   const formattedChar = characterFormatUpdate(char)
   formattedChar.lastInteraction = lastInteraction
-  setCharacterByIndex(index, formattedChar)
-  return formattedChar
+
+  if (!durable) {
+    replaceCharacterValue(owner.characters[index], formattedChar)
+    return true
+  }
+  return applyCharacterRowMutationScoped(index, PLAYGROUND_CHARACTER_ID, (target) => {
+    replaceCharacterValue(target, formattedChar)
+  })
+}
+
+function currentPlaygroundCharacterOwner(): PlaygroundCharacterOwner | null {
+  if (charactersResourceState.status !== 'ready' || charactersResourceState.error !== null) return null
+  const characters = charactersResourceState.characters
+  const characterOrder = charactersResourceState.characterOrder
+  const currentChar = charactersResourceState.currentChar
+  if (!Array.isArray(characters) || !Array.isArray(characterOrder) || !Number.isInteger(currentChar)) return null
+  if (currentChar < -1 || currentChar >= characters.length) return null
+
+  const ids = new Set<string>()
+  let playgroundIndex = -1
+  for (let index = 0; index < characters.length; index += 1) {
+    const characterId = characters[index]?.chaId
+    if (typeof characterId !== 'string' || !characterId.trim() || ids.has(characterId)) return null
+    ids.add(characterId)
+    if (characterId === PLAYGROUND_CHARACTER_ID) playgroundIndex = index
+  }
+
+  const playgroundStatus = charactersResourceState.rowStatuses[PLAYGROUND_CHARACTER_ID]
+  if (
+    charactersResourceState.rowErrors[PLAYGROUND_CHARACTER_ID] ||
+    (playgroundStatus && playgroundStatus !== 'ready')
+  ) {
+    return null
+  }
+  return { characters, characterOrder, currentChar, playgroundIndex }
+}
+
+function currentPlaygroundCharacterStateSnapshot(owner: PlaygroundCharacterOwner): CharacterStateSnapshot {
+  return {
+    characters: cloneJsonValue(owner.characters),
+    characterOrder: cloneJsonValue(owner.characterOrder),
+    currentChar: owner.currentChar,
+    selectedCharID: get(selectedCharID),
+  }
+}
+
+function stagePlaygroundCreateProjection(character: character): PlaygroundCreateProjectionFence {
+  const characterIndex = charactersResourceState.characters.length
+  const fence: PlaygroundCreateProjectionFence = {
+    listRevision: charactersResourceState.listRevision,
+    orderRevision: charactersResourceState.orderRevision,
+    selectionRevision: charactersResourceState.selectionRevision,
+    characterIndex,
+  }
+  charactersResourceState.characters.push(character)
+  charactersResourceState.currentChar = characterIndex
+  selectedCharID.set(characterIndex)
+  return fence
+}
+
+function rollbackStagedPlaygroundCreate(
+  previous: CharacterStateSnapshot,
+  attempted: character,
+  fence: PlaygroundCreateProjectionFence,
+): void {
+  if (
+    charactersResourceState.status !== 'ready' ||
+    charactersResourceState.listRevision !== fence.listRevision ||
+    charactersResourceState.selectionRevision !== fence.selectionRevision
+  ) {
+    return
+  }
+  const matches = charactersResourceState.characters.filter((candidate) => candidate?.chaId === PLAYGROUND_CHARACTER_ID)
+  const live = charactersResourceState.characters[fence.characterIndex]
+  if (matches.length !== 1 || live !== matches[0] || !sameCharacterValue(live, attempted)) return
+
+  charactersResourceState.characters.splice(fence.characterIndex, 1)
+  if (charactersResourceState.orderRevision === fence.orderRevision) {
+    charactersResourceState.characterOrder = cloneJsonValue(previous.characterOrder)
+  }
+  if (charactersResourceState.currentChar === fence.characterIndex) {
+    charactersResourceState.currentChar = previous.currentChar ?? -1
+  }
+  if (get(selectedCharID) === fence.characterIndex) selectedCharID.set(previous.selectedCharID)
+}
+
+function replaceCharacterValue(target: character, next: character): void {
+  const targetRecord = target as unknown as Record<string, unknown>
+  const nextRecord = cloneJsonValue(next) as unknown as Record<string, unknown>
+  for (const key of Object.keys(targetRecord)) {
+    if (!Object.prototype.hasOwnProperty.call(nextRecord, key)) delete targetRecord[key]
+  }
+  Object.assign(targetRecord, nextRecord)
+}
+
+function sameCharacterValue(left: character | undefined, right: character): boolean {
+  return !!left && JSON.stringify(left) === JSON.stringify(right)
 }
