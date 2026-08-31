@@ -11,11 +11,17 @@
   } from 'src/ts/moduleCommands'
   import type { RisuModule } from 'src/ts/process/modules'
   import type { ServerCommandResult } from 'src/ts/server/commands'
-  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { selectedCharID, SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { resolveActiveModuleStates, type ModuleActivationSource } from 'src/ts/moduleActivation'
+  import type { Chat, Database, character } from 'src/ts/storage/database.svelte'
 
   interface Props {
     close?: any
@@ -28,12 +34,112 @@
   let scopedModuleMutationStates = $state<
     Record<string, { sequence: number; status: 'saving' | 'queued' | 'failed'; error?: string }>
   >({})
+  let moduleOwnerSnapshot = $derived(readModuleOwners())
+  let moduleOwners = $derived(moduleOwnerSnapshot ?? [])
+  let enabledModuleIds = $derived(readEnabledModuleIds())
+  let selectedCharacter = $derived(selectedCharacterOwner())
+  let selectedChat = $derived(selectedCharacter ? uniqueSelectedChatOwner(selectedCharacter) : undefined)
+  let scopedModuleOwnerReady = $derived(!!selectedCharacter && !!selectedChat)
   let activeModuleStates = $derived.by(() => {
-    const database = getResourceDatabase()
-    const character = database.characters[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
-    return new Map(resolveActiveModuleStates(database, character, chat).map((state) => [state.module.id, state]))
+    const database = moduleActivationOwnerSnapshot()
+    return new Map(
+      resolveActiveModuleStates(database, selectedCharacter, selectedChat).map((state) => [state.module.id, state]),
+    )
   })
+
+  function readUniqueIdCollection<T extends { id: string }>(value: unknown): T[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as T[]
+  }
+
+  function readModuleOwners(): RisuModule[] | null {
+    if (collectionsResourceState.statuses.modules !== 'ready') return null
+    const value = collectionsResourceState.values.modules
+    const modules = readUniqueIdCollection<RisuModule>(value)
+    if (!Array.isArray(value) || modules.length !== value.length) return null
+    return modules.every((module) => typeof module.name === 'string') ? modules : null
+  }
+
+  function readEnabledModuleIds(): string[] {
+    if (settingsResourceState.groupStatuses.modules !== 'ready') return []
+    const value = settingsResourceState.value.enabledModules
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (
+        typeof candidate !== 'string' ||
+        candidate.trim() !== candidate ||
+        candidate.length === 0 ||
+        ids.has(candidate)
+      ) {
+        return []
+      }
+      ids.add(candidate)
+    }
+    return value
+  }
+
+  function selectedCharacterOwner(): character | undefined {
+    if (charactersResourceState.status !== 'ready') return undefined
+    const candidate = charactersResourceState.characters[$selectedCharID]
+    if (!candidate?.chaId) return undefined
+    return getCharacterResourceOwner(candidate.chaId)
+  }
+
+  function uniqueSelectedChatOwner(character: character): Chat | undefined {
+    const candidate = character.chats?.[character.chatPage]
+    if (!candidate?.id) return undefined
+    let owner: Chat | undefined
+    for (const chat of character.chats ?? []) {
+      if (chat?.id !== candidate.id) continue
+      if (owner) return undefined
+      owner = chat
+    }
+    return owner
+  }
+
+  function moduleActivationOwnerSnapshot(): Database {
+    const settings = settingsResourceState.value
+    return {
+      modules: moduleOwners,
+      enabledModules: enabledModuleIds,
+      personas:
+        collectionsResourceState.statuses.personas === 'ready'
+          ? readUniqueIdCollection(collectionsResourceState.values.personas)
+          : [],
+      promptPresets:
+        collectionsResourceState.statuses.promptPresets === 'ready'
+          ? readUniqueIdCollection(collectionsResourceState.values.promptPresets)
+          : [],
+      agentPresets:
+        settingsResourceState.groupStatuses.agents === 'ready' ? readUniqueIdCollection(settings.agentPresets) : [],
+      agentPresetDefaultId:
+        settingsResourceState.groupStatuses.agents === 'ready' && typeof settings.agentPresetDefaultId === 'string'
+          ? settings.agentPresetDefaultId
+          : undefined,
+      moduleIntergration:
+        settingsResourceState.groupStatuses.advanced === 'ready' && typeof settings.moduleIntergration === 'string'
+          ? settings.moduleIntergration
+          : '',
+      selectedPersona:
+        settingsResourceState.standaloneStatuses.selectedPersona === 'ready' &&
+        Number.isInteger(settings.selectedPersona)
+          ? settings.selectedPersona
+          : -1,
+      selectedPersonaId:
+        settingsResourceState.standaloneStatuses.selectedPersonaId === 'ready' &&
+        (typeof settings.selectedPersonaId === 'string' || settings.selectedPersonaId === null)
+          ? settings.selectedPersonaId
+          : null,
+    } as Database
+  }
 
   function sortModules(modules: RisuModule[], search: string) {
     return modules
@@ -186,10 +292,10 @@
     <TextInput className="mt-4" placeholder={language.search} ariaLabel={language.search} bind:value={moduleSearch} />
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
-      {#if getResourceDatabase().modules.length === 0}
+      {#if moduleOwners.length === 0}
         <div class="text-textcolor2 p-3">{language.noModules}</div>
       {:else}
-        {#each sortModules(getResourceDatabase().modules, moduleSearch) as rmodule, i}
+        {#each sortModules(moduleOwners, moduleSearch) as rmodule, i}
           {@const inheritedLabels = inheritedActivationLabels(rmodule.id)}
           {#if i !== 0}
             <div class="border-t-1 border-selected"></div>
@@ -226,6 +332,8 @@
                     {/each}
                   </span>
                 {:else if rmodule.mcp}
+                  <span class="mr-2" aria-hidden="true"></span>
+                {:else if !scopedModuleOwnerReady}
                   <span class="mr-2" aria-hidden="true"></span>
                 {:else}
                   <button

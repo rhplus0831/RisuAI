@@ -53,9 +53,15 @@
     type ModuleMutationOutcome,
     type ModuleEditorSaveOutcome,
   } from 'src/ts/moduleCommands'
-  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { resolveActiveModuleStates, type ModuleActivationSource } from 'src/ts/moduleActivation'
   import { selectedCharID } from 'src/ts/stores.svelte'
+  import type { Chat, Database, character } from 'src/ts/storage/database.svelte'
   import type { ServerCommandResult } from 'src/ts/server/commands'
   import {
     deleteModuleEditorDraft,
@@ -94,11 +100,15 @@
   let rowMutationErrors = $state<Record<string, string>>({})
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
-  let sortedModuleRows = $derived(sortModuleSettingsRows(getResourceDatabase().modules ?? [], normalizedModuleSearch))
+  let moduleOwnerSnapshot = $derived(readModuleOwners())
+  let moduleOwners = $derived(moduleOwnerSnapshot ?? [])
+  let enabledModuleIdSnapshot = $derived(readEnabledModuleIds())
+  let enabledModuleIds = $derived(enabledModuleIdSnapshot ?? [])
+  let sortedModuleRows = $derived(sortModuleSettingsRows(moduleOwners, normalizedModuleSearch))
   let activeModuleStates = $derived.by(() => {
-    const database = getResourceDatabase()
-    const character = database.characters[$selectedCharID]
-    const chat = character?.chats?.[character.chatPage]
+    const database = moduleActivationOwnerSnapshot()
+    const character = selectedCharacterOwner()
+    const chat = character ? uniqueSelectedChatOwner(character) : undefined
     return new Map(resolveActiveModuleStates(database, character, chat).map((state) => [state.module.id, state]))
   })
   let activeDraftGeneration: ModuleEditorDraftGeneration | null = null
@@ -114,6 +124,114 @@
     if ((mode !== 1 && mode !== 2) || !editorInitialSnapshot) return false
     return moduleEditorSnapshotFingerprint(tempModule) !== moduleEditorSnapshotFingerprint(editorInitialSnapshot)
   })
+
+  function readUniqueIdCollection<T extends { id: string }>(value: unknown): T[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as T[]
+  }
+
+  function readModuleOwners(): RisuModule[] | null {
+    if (collectionsResourceState.statuses.modules !== 'ready') return null
+    const modules = readUniqueIdCollection<RisuModule>(collectionsResourceState.values.modules)
+    if (
+      !Array.isArray(collectionsResourceState.values.modules) ||
+      modules.length !== collectionsResourceState.values.modules.length
+    ) {
+      return null
+    }
+    return modules.every((module) => typeof module.name === 'string') ? modules : null
+  }
+
+  function uniqueModuleOwner(moduleId: string): RisuModule | undefined {
+    let owner: RisuModule | undefined
+    for (const module of moduleOwners) {
+      if (module.id !== moduleId) continue
+      if (owner) return undefined
+      owner = module
+    }
+    return owner
+  }
+
+  function readEnabledModuleIds(): string[] | null {
+    if (settingsResourceState.groupStatuses.modules !== 'ready') return null
+    const value = settingsResourceState.value.enabledModules
+    if (!Array.isArray(value)) return null
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (
+        typeof candidate !== 'string' ||
+        candidate.trim() !== candidate ||
+        candidate.length === 0 ||
+        ids.has(candidate)
+      ) {
+        return null
+      }
+      ids.add(candidate)
+    }
+    return value
+  }
+
+  function selectedCharacterOwner(): character | undefined {
+    if (charactersResourceState.status !== 'ready') return undefined
+    const candidate = charactersResourceState.characters[$selectedCharID]
+    if (!candidate?.chaId) return undefined
+    return getCharacterResourceOwner(candidate.chaId)
+  }
+
+  function uniqueSelectedChatOwner(character: character): Chat | undefined {
+    const candidate = character.chats?.[character.chatPage]
+    if (!candidate?.id) return undefined
+    let owner: Chat | undefined
+    for (const chat of character.chats ?? []) {
+      if (chat?.id !== candidate.id) continue
+      if (owner) return undefined
+      owner = chat
+    }
+    return owner
+  }
+
+  function moduleActivationOwnerSnapshot(): Database {
+    const settings = settingsResourceState.value
+    return {
+      modules: moduleOwners,
+      enabledModules: enabledModuleIds,
+      personas:
+        collectionsResourceState.statuses.personas === 'ready'
+          ? readUniqueIdCollection(collectionsResourceState.values.personas)
+          : [],
+      promptPresets:
+        collectionsResourceState.statuses.promptPresets === 'ready'
+          ? readUniqueIdCollection(collectionsResourceState.values.promptPresets)
+          : [],
+      agentPresets:
+        settingsResourceState.groupStatuses.agents === 'ready' ? readUniqueIdCollection(settings.agentPresets) : [],
+      agentPresetDefaultId:
+        settingsResourceState.groupStatuses.agents === 'ready' && typeof settings.agentPresetDefaultId === 'string'
+          ? settings.agentPresetDefaultId
+          : undefined,
+      moduleIntergration:
+        settingsResourceState.groupStatuses.advanced === 'ready' && typeof settings.moduleIntergration === 'string'
+          ? settings.moduleIntergration
+          : '',
+      selectedPersona:
+        settingsResourceState.standaloneStatuses.selectedPersona === 'ready' &&
+        Number.isInteger(settings.selectedPersona)
+          ? settings.selectedPersona
+          : -1,
+      selectedPersonaId:
+        settingsResourceState.standaloneStatuses.selectedPersonaId === 'ready' &&
+        (typeof settings.selectedPersonaId === 'string' || settings.selectedPersonaId === null)
+          ? settings.selectedPersonaId
+          : null,
+    } as Database
+  }
 
   function reportDraftStorageFailure(): void {
     draftStorageError = language.moduleSave.draftStorageFailed
@@ -250,7 +368,7 @@
     mutationError = ''
 
     if (recovered.mode === 'create') {
-      const canonical = getResourceDatabase().modules.find((candidate) => candidate.id === recovered.moduleId)
+      const canonical = uniqueModuleOwner(recovered.moduleId)
       if (canonical && JSON.stringify(canonical) === JSON.stringify(recovered.tempModule)) {
         await deleteModuleEditorDraft(recovered.generation)
         resetEditorDraftRuntime()
@@ -267,7 +385,7 @@
       return
     }
 
-    const latest = getResourceDatabase().modules.find((candidate) => candidate.id === recovered.moduleId)
+    const latest = uniqueModuleOwner(recovered.moduleId)
     if (!latest || !recovered.editBaseline) {
       tempModule = cloneJsonValue(recovered.tempModule)
       editBaseline = recovered.editBaseline ? cloneJsonValue(recovered.editBaseline) : null
@@ -320,7 +438,7 @@
   })
 
   function isModuleEnabled(moduleId: string) {
-    return getResourceDatabase().enabledModules.includes(moduleId)
+    return enabledModuleIds.includes(moduleId)
   }
 
   function hasActivationSource(moduleId: string, source: ModuleActivationSource) {
@@ -381,7 +499,8 @@
   async function toggleGlobalModule(moduleId: string): Promise<void> {
     if (!beginRowMutation(moduleId, 'toggle')) return
     try {
-      const enabled = !getResourceDatabase().enabledModules.includes(moduleId)
+      if (!moduleOwnerSnapshot || !enabledModuleIdSnapshot || !uniqueModuleOwner(moduleId)) return
+      const enabled = !enabledModuleIds.includes(moduleId)
       reconcileRowMutation(moduleId, await setGlobalModuleEnabled(moduleId, enabled))
     } catch (error) {
       rowMutationErrors = { ...rowMutationErrors, [moduleId]: thrownMutationError(error) }
@@ -395,6 +514,7 @@
     try {
       const confirmed = await alertConfirm(`${language.removeConfirm}${moduleName}`)
       if (!confirmed) return
+      if (!moduleOwnerSnapshot || !uniqueModuleOwner(moduleId)) return
       reconcileRowMutation(moduleId, await deleteGlobalModule(moduleId))
     } catch (error) {
       rowMutationErrors = { ...rowMutationErrors, [moduleId]: thrownMutationError(error) }
@@ -404,7 +524,7 @@
   }
 
   async function createModuleFromDraft() {
-    if (mutationPending) return
+    if (mutationPending || !moduleOwnerSnapshot) return
     if (tempModule.name.trim() === '') {
       alertError(language.errors.emptyText)
       return
@@ -438,7 +558,7 @@
     const draft = cloneJsonValue(tempModule)
     const generation = captureCurrentModuleEditorDraft()
     const attempt = beginModuleSaveAttempt()
-    const latest = getResourceDatabase().modules.find((candidate) => candidate.id === draft.id)
+    const latest = uniqueModuleOwner(draft.id)
     if (!latest || editBaseline?.id !== draft.id) {
       reportModuleSaveFailure(language.moduleSave.editTargetMissing)
       return
@@ -496,7 +616,7 @@
   <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
   <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
-    {#if getResourceDatabase().modules.length === 0}
+    {#if moduleOwners.length === 0}
       <div class="text-textcolor2 p-3">{language.noModules}</div>
     {:else}
       {#each sortedModuleRows as moduleRow, i (moduleRow.rmodule.id)}
@@ -523,7 +643,7 @@
               data-risu-module-action="toggle-enabled"
               aria-label={`${language.enableGlobal}: ${moduleName}`}
               aria-pressed={isModuleEnabled(rmodule.id)}
-              disabled={isRowMutationPending(rmodule.id)}
+              disabled={isRowMutationPending(rmodule.id) || !enabledModuleIdSnapshot}
               class={isModuleEnabled(rmodule.id)
                 ? 'mr-2 cursor-pointer text-blue-500'
                 : isModuleIntegrated(rmodule.id)
@@ -620,7 +740,8 @@
     <button
       data-risu-module-action="create"
       aria-label={language.createModule}
-      class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
+      disabled={!moduleOwnerSnapshot}
+      class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
       onclick={async () => {
         beginEditorInteraction()
         tempModule = {
@@ -639,8 +760,8 @@
       data-risu-module-action="import-mcp"
       aria-label={`${language.import}: MCP`}
       aria-busy={mcpImportPending}
-      disabled={mcpImportPending}
-      class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
+      disabled={mcpImportPending || !moduleOwnerSnapshot}
+      class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
       onclick={async () => {
         if (mcpImportPending) return
         mcpImportPending = true
@@ -655,7 +776,8 @@
     <button
       data-risu-module-action="import"
       aria-label={`${language.import}: ${language.module}`}
-      class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
+      disabled={!moduleOwnerSnapshot}
+      class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
       onclick={async () => {
         await importModule()
       }}>

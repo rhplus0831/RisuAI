@@ -13,7 +13,7 @@
     ensureClientLorebookEntryIds as ensureImportedLorebookEntryIds,
     replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft,
   } from 'src/ts/server/lorebookBridge.svelte'
-  import { getResourceDatabase as getModuleImportDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState as moduleImportCollections } from 'src/ts/server/resourceState.svelte'
   import {
     applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft,
     ensureClientScriptDefinitionIds as ensureImportedScriptDefinitionIds,
@@ -32,10 +32,30 @@
     moduleId: string,
     currentModule: ImportTargetRisuModule | null | undefined,
   ): ImportTargetRisuModule | null {
-    return (
-      getModuleImportDatabase().modules?.find((module) => module.id === moduleId) ??
-      (currentModule?.id === moduleId ? currentModule : null)
-    )
+    if (currentModule?.id !== moduleId || moduleImportCollections.statuses.modules !== 'ready') return null
+    const modules = uniqueModuleImportOwners(moduleImportCollections.values.modules)
+    if (!modules) return null
+    return modules.find((module) => module.id === moduleId) ?? null
+  }
+
+  function uniqueModuleImportOwners(value: unknown): ImportTargetRisuModule[] | null {
+    if (!Array.isArray(value)) return null
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+      const module = candidate as ImportTargetRisuModule
+      if (
+        typeof module.id !== 'string' ||
+        module.id.trim() !== module.id ||
+        module.id.length === 0 ||
+        ids.has(module.id) ||
+        typeof module.name !== 'string'
+      ) {
+        return null
+      }
+      ids.add(module.id)
+    }
+    return value as ImportTargetRisuModule[]
   }
 
   function latestModuleLorebook(
@@ -161,7 +181,7 @@
     type ModuleAssetEntry,
     type ModuleAssetUploadOperation,
   } from 'src/ts/server/moduleAssetUpload'
-  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { assetListRenderKey } from 'src/ts/media/assetList'
   import ScriptModelOverrideSelectors from 'src/lib/UI/ScriptModelOverrideSelectors.svelte'
 
@@ -261,8 +281,12 @@
     })
   })
 
+  const useAdditionalAssetsPreview = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' &&
+      settingsResourceState.value.useAdditionalAssetsPreview === true,
+  )
   const moduleAssetSourceKey = $derived(
-    getResourceDatabase().useAdditionalAssetsPreview
+    useAdditionalAssetsPreview
       ? (currentModule?.assets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
       : '',
   )
@@ -272,7 +296,7 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (getResourceDatabase().useAdditionalAssetsPreview) {
+    if (useAdditionalAssetsPreview) {
       for (const asset of currentModule?.assets ?? []) {
         const assetPath = asset[1]
         nextExtensions[assetPath] = (
@@ -723,7 +747,7 @@
           {#each currentModule.assets as assets, i (assetListRenderKey(assets, i))}
             <tr>
               <td class="font-medium truncate">
-                {#if assetFilePath[assets[1]] && getResourceDatabase().useAdditionalAssetsPreview}
+                {#if assetFilePath[assets[1]] && useAdditionalAssetsPreview}
                   {#if assetFileExtensions[assets[1]] === 'mp4'}
                     <!-- svelte-ignore a11y_media_has_caption -->
                     <video controls class="mt-2 px-2 w-full m-1 rounded-md"

@@ -125,8 +125,10 @@ import ModuleSettings from './ModuleSettings.svelte'
 import { language } from 'src/lang'
 import type { RisuModule } from 'src/ts/process/modules'
 import {
+  collectionsResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { requestActiveModuleEditorLeave } from 'src/ts/moduleEditorLeaveGuard'
@@ -520,8 +522,9 @@ describe('ModuleSettings derived module rows', () => {
     getDatabase().promptPresets = [{ id: 'gpt-preset', name: 'GPT', moduleIntergration: 'shared' }]
     getDatabase().characters = [
       {
+        chaId: 'character-a',
         chatPage: 0,
-        chats: [{ generationSettings: { promptPresetId: 'gpt-preset' } }],
+        chats: [{ id: 'chat-a', generationSettings: { promptPresetId: 'gpt-preset' } }],
       },
     ] as any
     selectedCharID.set(0)
@@ -530,6 +533,38 @@ describe('ModuleSettings derived module rows', () => {
 
     expect(rowForModuleId('beta-id').getAttribute('data-risu-integration-state')).toBe('integrated')
     expect(moduleAction('beta-id', 'toggle-enabled').getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('fails closed for errored or duplicate module collection owners', () => {
+    collectionsResourceState.statuses.modules = 'error'
+    mountSettings()
+
+    expect(moduleRows()).toEqual([])
+    expect(moduleSurfaceAction('create').disabled).toBe(true)
+    expect(moduleSurfaceAction('import').disabled).toBe(true)
+
+    unmount(component!)
+    component = undefined
+    seedModules()
+    getDatabase().modules = [
+      makeModule({ id: 'duplicate-id', name: 'First duplicate' }),
+      makeModule({ id: 'duplicate-id', name: 'Second duplicate' }),
+    ]
+    mountSettings()
+
+    expect(moduleRows()).toEqual([])
+    expect(moduleSurfaceAction('create').disabled).toBe(true)
+    expect(moduleCommandSpies.setGlobalModuleEnabled).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch enable mutations when the enabled-module owner is unavailable', () => {
+    settingsResourceState.groupStatuses.modules = 'error'
+    mountSettings()
+
+    const toggle = moduleAction('beta-id', 'toggle-enabled')
+    expect(toggle.disabled).toBe(true)
+    toggle.click()
+    expect(moduleCommandSpies.setGlobalModuleEnabled).not.toHaveBeenCalled()
   })
 
   it('keeps a module toggle busy through its durable outcome and reports queued work', async () => {

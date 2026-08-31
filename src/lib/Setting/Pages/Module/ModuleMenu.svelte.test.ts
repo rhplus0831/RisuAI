@@ -21,6 +21,7 @@ vi.mock('src/ts/globalApi.svelte', async (importActual) => ({
 import {
   applyImportedModuleLorebookRows,
   applyImportedModuleRegexRows,
+  latestModuleForImport,
   parseImportedLorebookRows,
 } from './ModuleMenu.svelte'
 import ModuleMenu from './ModuleMenu.svelte'
@@ -29,8 +30,10 @@ import type { RisuModule } from 'src/ts/process/modules'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { resetServerBackedLorebookBridgeForTests } from 'src/ts/server/lorebookBridge.svelte'
 import {
+  collectionsResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 
 let liveModule: RisuModule
@@ -190,6 +193,15 @@ describe('ModuleMenu stale import guards', () => {
     expect(draftModule.regex).toEqual(liveModule.regex)
     expect(draftModule.trigger).toEqual(liveModule.trigger)
   })
+
+  it('fails closed when the canonical module collection is errored or ambiguous', () => {
+    collectionsResourceState.statuses.modules = 'error'
+    expect(latestModuleForImport(liveModule.id, draftModule)).toBeNull()
+
+    collectionsResourceState.statuses.modules = 'ready'
+    getDatabase().modules = [liveModule, cloneJsonValue(liveModule)]
+    expect(latestModuleForImport(liveModule.id, draftModule)).toBeNull()
+  })
 })
 
 describe('ModuleMenu asset previews', () => {
@@ -215,6 +227,23 @@ describe('ModuleMenu asset previews', () => {
       expect(source?.getAttribute('src')).toBe('blob:module-asset')
       expect(source?.getAttribute('type')).toBe('video/mp4')
       expect(target.querySelector('img')).toBeNull()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('does not resolve asset previews while the display settings owner is errored', async () => {
+    getDatabase().useAdditionalAssetsPreview = true
+    settingsResourceState.groupStatuses.display = 'error'
+    draftModule.assets = [['Clip', 'asset-video', 'MP4']]
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ModuleMenu, { target, props: { currentModule: draftModule, draftOnly: true } })
+
+    try {
+      await tick()
+      expect(globalApiSpies.getFileSrc).not.toHaveBeenCalled()
     } finally {
       unmount(component)
       target.remove()
