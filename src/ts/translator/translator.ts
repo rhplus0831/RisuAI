@@ -1,5 +1,7 @@
 import { get } from 'svelte/store'
 import { getDatabase, type character, type customscript } from '../storage/database.svelte'
+import type { Database } from '../storage/databaseTypes'
+import { safeStructuredClone } from '../safeStructuredClone'
 import { getTranslatorPresetFromState, type TranslatorPreset } from './presets'
 import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
@@ -21,8 +23,14 @@ import localforage from 'localforage'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { resolveTranslatorPipeline, runTranslatorPipeline, translatorPipelineSignature } from './pipeline'
 import { stripInternalReasoning } from '@risuai/shared-core/internal-reasoning'
-import { captureActiveChatTarget } from '../chatCommands'
 import { findChatGenerationActivity } from '../process/generationActivity.svelte'
+import type { ActiveChatTarget } from '../types/activeChatTarget'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+  collectionsResourceState,
+} from '../server/resourceState.svelte'
 
 export const TRANSLATE_CACHE_MAX_ENTRIES = 256
 export const TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES = 64
@@ -48,15 +56,80 @@ let activeTranslateCacheScope: string | null = null
 let llmCacheIndex: string[] | null = null
 let llmCacheIndexLoad: Promise<string[]> | null = null
 
-function activeChatTranslatorPresetId(db = getDatabase()): string | null {
-  const character = db.characters?.[get(selectedCharID)]
+type TranslatorResourceMode = 'ready' | 'compatibility' | 'unavailable'
+
+function getTranslatorResourceMode(): TranslatorResourceMode {
+  const statuses = [settingsResourceState.status, collectionsResourceState.status, charactersResourceState.status]
+  if (statuses.every((status) => status === 'ready')) return 'ready'
+  if (statuses.every((status) => status === 'idle' || status === 'loading')) return 'compatibility'
+  return 'unavailable'
+}
+
+/**
+ * Translator reads are owner-backed once resources are ready. During bootstrap,
+ * the compatibility facade remains usable while all resources are idle/loading;
+ * a resource error never falls back to stale aggregate database state.
+ */
+function getTranslatorDatabase(snapshot = false): Database | null {
+  const mode = getTranslatorResourceMode()
+  if (mode === 'unavailable') return null
+  if (mode === 'compatibility') return getDatabase({ snapshot })
+  const database = {
+    ...settingsResourceState.value,
+    ...collectionsResourceState.values,
+    characters: charactersResourceState.characters,
+    characterOrder: charactersResourceState.characterOrder,
+    currentChar: charactersResourceState.currentChar,
+  } as Database
+  return snapshot ? safeStructuredClone(database) : database
+}
+
+function getSelectedTranslatorCharacter(db: Database | null): character | undefined {
+  const mode = getTranslatorResourceMode()
+  if (mode === 'ready') {
+    const row = charactersResourceState.characters[charactersResourceState.currentChar]
+    return row?.chaId ? getCharacterResourceOwner(row.chaId) : undefined
+  }
+  if (mode !== 'compatibility' || !db) return undefined
+  const index = get(selectedCharID)
+  const row = db.characters?.[index]
+  if (!row?.chaId) return undefined
+  const matches = db.characters.filter((candidate) => candidate?.chaId === row.chaId)
+  return matches.length === 1 ? row : undefined
+}
+
+function getSelectedTranslatorCharacterIndex(): number {
+  return getTranslatorResourceMode() === 'ready' ? charactersResourceState.currentChar : get(selectedCharID)
+}
+
+function getSelectedTranslatorChat(db: Database | null): character['chats'][number] | undefined {
+  const character = getSelectedTranslatorCharacter(db)
   const chatPage = character?.chatPage
-  const presetId = typeof chatPage === 'number' ? character?.chats?.[chatPage]?.translatorPresetId : undefined
+  const chat = typeof chatPage === 'number' ? character?.chats?.[chatPage] : undefined
+  if (!chat?.id || !character) return undefined
+  return character.chats.filter((candidate) => candidate?.id === chat.id).length === 1 ? chat : undefined
+}
+
+function captureTranslatorActiveChatTarget(db: Database | null): ActiveChatTarget | null {
+  const character = getSelectedTranslatorCharacter(db)
+  const chatPage = character?.chatPage
+  const chat = getSelectedTranslatorChat(db)
+  if (!character || !chat?.id) return null
+  return {
+    selectedCharID: getSelectedTranslatorCharacterIndex(),
+    chatPage: typeof chatPage === 'number' ? chatPage : 0,
+    characterId: character.chaId,
+    chatId: chat.id,
+  }
+}
+
+function activeChatTranslatorPresetId(db: Database | null = getTranslatorDatabase()): string | null {
+  const presetId = getSelectedTranslatorChat(db)?.translatorPresetId
   return typeof presetId === 'string' && presetId.trim() ? presetId : null
 }
 
 function captureTranslatorPresetScope(
-  db = getDatabase(),
+  db: Database | null = getTranslatorDatabase(),
   scope?: TranslatorPresetScope,
 ): CapturedTranslatorPresetScope {
   if (scope === 'global') return { translatorPresetId: null }
@@ -75,16 +148,15 @@ function getTranslateCacheKey(
   return JSON.stringify({
     reverse,
     text,
-    settings: getTranslatorSettingsSignature(getDatabase(), scope),
+    settings: getTranslatorSettingsSignature(getTranslatorDatabase(), scope),
   })
 }
 
-function getCurrentTranslateCacheScope(db = getDatabase()) {
-  const charId = get(selectedCharID)
-  const character = db.characters?.[charId]
-  const chatPage = character?.chatPage
-  const chatId = typeof chatPage === 'number' ? character?.chats?.[chatPage]?.id : undefined
-  return `${charId}:${chatId ?? chatPage ?? 'none'}`
+function getCurrentTranslateCacheScope(db: Database | null = getTranslatorDatabase()) {
+  if (!db) return 'unavailable:none'
+  const charId = getSelectedTranslatorCharacterIndex()
+  const chatId = getSelectedTranslatorChat(db)?.id
+  return `${charId}:${chatId ?? 'none'}`
 }
 
 function clearTranslateCacheEntries() {
@@ -96,7 +168,7 @@ function clearTranslateHTMLMemoEntries() {
   translateHTMLMemo.clear()
 }
 
-function syncTranslateCacheScope(db = getDatabase()) {
+function syncTranslateCacheScope(db: Database | null = getTranslatorDatabase()) {
   const scope = getCurrentTranslateCacheScope(db)
   if (activeTranslateCacheScope !== null && activeTranslateCacheScope !== scope) {
     clearTranslateCacheEntries()
@@ -170,14 +242,14 @@ export const __translatorTestHooks = {
     return Array.from(llmCacheWriteFailures)
   },
   getTranslateProfileCacheSignature() {
-    return getTranslateProfileCacheSignature(getDatabase())
+    return getTranslateProfileCacheSignature(getTranslatorDatabase())
   },
   getCurrentLLMTranslationCacheKey(text: string) {
     return getCurrentLLMTranslationCacheKey(text)
   },
   getCurrentTranslateHTMLMemoKey(html: string) {
-    const db = getDatabase()
-    const currentCharacter = db.characters?.[get(selectedCharID)]
+    const db = getTranslatorDatabase()
+    const currentCharacter = getSelectedTranslatorCharacter(db)
     if (!currentCharacter) return null
     return getTranslateHTMLMemoKey(html, false, '', 0, currentCharacter, captureTranslatorPresetScope(db))
   },
@@ -205,7 +277,8 @@ function safeStringify(value: unknown) {
   }
 }
 
-function getTranslateModelProfile(db = getDatabase()) {
+function getTranslateModelProfile(db: Database | null = getTranslatorDatabase()) {
+  if (!db) return null
   const profile = resolveModelProfile({ database: db, role: 'translate' })
   if (
     profile.source.kind === 'durable-profile' &&
@@ -217,26 +290,29 @@ function getTranslateModelProfile(db = getDatabase()) {
   return profile
 }
 
-function getTranslateSourceLanguage(db = getDatabase()): 'ja' | 'en' {
+function getTranslateSourceLanguage(db: Database | null = getTranslatorDatabase()): 'ja' | 'en' {
+  if (!db) return 'en'
   const profile = getTranslateModelProfile(db)
-  return isNovelListModelProfile(profile) ? 'ja' : 'en'
+  return profile && isNovelListModelProfile(profile) ? 'ja' : 'en'
 }
 
 export function getTranslatorSettingsSignature(
-  db = getDatabase(),
+  db: Database | null = getTranslatorDatabase(),
   scope: TranslatorPresetScope | CapturedTranslatorPresetScope = captureTranslatorPresetScope(db),
 ) {
-  const selectedCharacter = db.characters?.[get(selectedCharID)]
+  const selectedCharacter = getSelectedTranslatorCharacter(db)
+  const translatorType = db?.translatorType
   const capturedScope = captureTranslatorPresetScope(db, scope)
-  const pipeline = db.translatorType === 'llm' ? resolveTranslatorPipeline(db, capturedScope.translatorPresetId) : null
+  const pipeline =
+    db && translatorType === 'llm' ? resolveTranslatorPipeline(db, capturedScope.translatorPresetId) : null
   return {
-    translatorType: db.translatorType,
-    translator: db.translator,
-    translatorInputLanguage: db.translatorInputLanguage,
+    translatorType,
+    translator: db?.translator,
+    translatorInputLanguage: db?.translatorInputLanguage,
     translateSourceLanguage: getTranslateSourceLanguage(db),
-    translateProfile: db.translatorType === 'llm' ? getTranslateProfileCacheSignature(db) : null,
+    translateProfile: translatorType === 'llm' ? getTranslateProfileCacheSignature(db) : null,
     llmPrompt:
-      db.translatorType === 'llm'
+      translatorType === 'llm'
         ? {
             pipeline: translatorPipelineSignature(pipeline ?? []),
             characterId: selectedCharacter?.chaId ?? null,
@@ -246,24 +322,28 @@ export function getTranslatorSettingsSignature(
                 : '',
           }
         : null,
-    useExperimentalGoogleTranslator: db.useExperimentalGoogleTranslator,
+    useExperimentalGoogleTranslator: db?.useExperimentalGoogleTranslator,
     deeplOptions: {
-      freeApi: db.deeplOptions?.freeApi,
-      key: db.deeplOptions?.key,
+      freeApi: db?.deeplOptions?.freeApi,
+      key: db?.deeplOptions?.key,
     },
     deeplXOptions: {
-      url: db.deeplXOptions?.url,
-      token: db.deeplXOptions?.token,
+      url: db?.deeplXOptions?.url,
+      token: db?.deeplXOptions?.token,
     },
   }
 }
 
-export function getTranslatorSettingsSignatureKey(db = getDatabase(), scope?: TranslatorPresetScope): string {
+export function getTranslatorSettingsSignatureKey(
+  db: Database | null = getTranslatorDatabase(),
+  scope?: TranslatorPresetScope,
+): string {
   return safeStringify(getTranslatorSettingsSignature(db, scope))
 }
 
-function getTranslateProfileCacheSignature(db = getDatabase()) {
+function getTranslateProfileCacheSignature(db: Database | null = getTranslatorDatabase()) {
   const profile = getTranslateModelProfile(db)
+  if (!profile || !db) return null
   const customModel = profile.providerOptions.customModel
 
   return {
@@ -317,10 +397,7 @@ function getScriptSignature(scripts: customscript[] | undefined) {
   }))
 }
 
-function getRelevantScriptSignature(
-  db: ReturnType<typeof getDatabase>,
-  alwaysExistChar: character | simpleCharacterArgument,
-) {
+function getRelevantScriptSignature(db: Database, alwaysExistChar: character | simpleCharacterArgument) {
   const isRelevant = (script: customscript) => script.type === 'edittrans' || script.type === 'editdisplay'
   return {
     presetRegex: getScriptSignature(getActivePromptPresetRegexScripts(db).filter(isRelevant)),
@@ -333,13 +410,10 @@ function getRelevantScriptSignature(
   }
 }
 
-function getTranslatorNoteSignature(
-  db: ReturnType<typeof getDatabase>,
-  alwaysExistChar: character | simpleCharacterArgument,
-) {
-  const selectedCharacter = db.characters?.[get(selectedCharID)]
+function getTranslatorNoteSignature(db: Database, alwaysExistChar: character | simpleCharacterArgument) {
+  const selectedCharacter = getSelectedTranslatorCharacter(db)
   return {
-    selectedCharID: get(selectedCharID),
+    selectedCharID: getSelectedTranslatorCharacterIndex(),
     selectedChaId: selectedCharacter?.chaId,
     selectedTranslatorNote: selectedCharacter?.type === 'character' ? (selectedCharacter.translatorNote ?? '') : '',
     activeTranslatorNote: alwaysExistChar?.type === 'character' ? (alwaysExistChar.translatorNote ?? '') : '',
@@ -354,8 +428,8 @@ function getTranslateHTMLMemoKey(
   alwaysExistChar: character | simpleCharacterArgument,
   scope: CapturedTranslatorPresetScope,
 ) {
-  const db = getDatabase()
-  const preset = db.translatorType === 'llm' ? getCurrentTranslatorPreset(scope.translatorPresetId) : null
+  const db = getTranslatorDatabase()
+  const preset = db?.translatorType === 'llm' ? getCurrentTranslatorPreset(scope.translatorPresetId) : null
   return safeStringify({
     version: 1,
     html,
@@ -368,14 +442,14 @@ function getTranslateHTMLMemoKey(
     chatScope: getCurrentTranslateCacheScope(db),
     translator: {
       ...getTranslatorSettingsSignature(db, scope),
-      htmlTranslation: db.htmlTranslation,
-      combineTranslation: db.combineTranslation,
-      playMessageOnTranslateEnd: db.playMessageOnTranslateEnd,
-      noWaitForTranslate: db.noWaitForTranslate,
+      htmlTranslation: db?.htmlTranslation,
+      combineTranslation: db?.combineTranslation,
+      playMessageOnTranslateEnd: db?.playMessageOnTranslateEnd,
+      noWaitForTranslate: db?.noWaitForTranslate,
       preset: preset ? translatorPipelineSignature(preset.steps) : null,
-      llmCacheMutationEpoch: db.translatorType === 'llm' ? llmCacheMutationEpoch : 0,
+      llmCacheMutationEpoch: db?.translatorType === 'llm' ? llmCacheMutationEpoch : 0,
     },
-    scripts: getRelevantScriptSignature(db, alwaysExistChar),
+    scripts: db ? getRelevantScriptSignature(db, alwaysExistChar) : null,
     character: {
       chaId: alwaysExistChar.chaId,
       type: alwaysExistChar.type ?? 'character',
@@ -637,7 +711,7 @@ function getLLMTranslationCacheKey(
     translatorNote,
     preset: translatorPipelineSignature(preset.steps),
     char: {
-      selectedCharID: get(selectedCharID),
+      selectedCharID: getSelectedTranslatorCharacterIndex(),
       chaId: currentChar?.chaId ?? null,
       type: currentChar?.type ?? null,
     },
@@ -646,12 +720,12 @@ function getLLMTranslationCacheKey(
 }
 
 function getCurrentLLMTranslationCacheKey(text: string): string | null {
-  const db = getDatabase()
-  if (db.translatorType !== 'llm') {
+  const db = getTranslatorDatabase()
+  if (!db || db.translatorType !== 'llm') {
     return null
   }
 
-  const currentChar = db.characters?.[get(selectedCharID)]
+  const currentChar = getSelectedTranslatorCharacter(db)
   const scope = captureTranslatorPresetScope(db)
   const preset = getCurrentTranslatorPreset(scope.translatorPresetId)
   if (!preset) return null
@@ -673,11 +747,13 @@ function getCurrentLLMTranslationCacheKey(text: string): string | null {
 let waitTrans = 0
 
 export function getCurrentTranslatorPreset(boundPresetId = activeChatTranslatorPresetId()): TranslatorPreset | null {
-  return getTranslatorPresetFromState(getDatabase({ snapshot: true }), boundPresetId)
+  const db = getTranslatorDatabase(true)
+  return db ? getTranslatorPresetFromState(db, boundPresetId) : null
 }
 
 export async function translate(text: string, reverse: boolean, presetScope?: TranslatorPresetScope) {
-  const db = getDatabase()
+  const db = getTranslatorDatabase()
+  if (!db) return text
   const capturedPresetScope = captureTranslatorPresetScope(db, presetScope)
   syncTranslateCacheScope(db)
   const cached = readTranslateCache(reverse, text, capturedPresetScope)
@@ -713,7 +789,7 @@ export async function runTranslator(
   exarg?: { translatorNote?: string; translatorPresetId?: string | null },
 ) {
   const capturedPresetScope = captureTranslatorPresetScope(
-    getDatabase(),
+    getTranslatorDatabase(),
     exarg && Object.prototype.hasOwnProperty.call(exarg, 'translatorPresetId')
       ? { translatorPresetId: exarg.translatorPresetId }
       : undefined,
@@ -730,7 +806,8 @@ export async function runTranslator(
     translatorNote: exarg?.translatorNote,
     translatorPresetId: capturedPresetScope.translatorPresetId,
   }
-  const db = getDatabase()
+  const db = getTranslatorDatabase()
+  if (!db) return text
   if (db.translatorType === 'llm' && db.translatorSendTextAsIs === true) {
     throw new Error('LLM Send Text As-Is raw translation requires the server message translation command.')
   }
@@ -791,7 +868,8 @@ async function translateMain(
     translatorPresetId: string | null
   },
 ) {
-  let db = getDatabase()
+  const db = getTranslatorDatabase()
+  if (!db) return text
   if (db.translatorType === 'llm') {
     const tr = arg.to || 'en'
     return translateLLM(text, {
@@ -904,8 +982,8 @@ async function jaTrans(text: string) {
 }
 
 export function isExpTranslator() {
-  const db = getDatabase()
-  return db.translatorType === 'llm' || db.translatorType === 'deepl' || db.translatorType === 'deeplX'
+  const db = getTranslatorDatabase()
+  return db?.translatorType === 'llm' || db?.translatorType === 'deepl' || db?.translatorType === 'deeplX'
 }
 
 export async function translateHTML(
@@ -916,13 +994,19 @@ export async function translateHTML(
   regenerate = false,
   presetScope?: TranslatorPresetScope,
 ): Promise<string> {
-  const translationTarget = captureActiveChatTarget()
+  const db = getTranslatorDatabase()
+  if (!db) return html
+  const translationTarget = captureTranslatorActiveChatTarget(db)
   let alwaysExistChar: character | simpleCharacterArgument
   if (charArg !== '') {
     if (typeof charArg === 'string') {
-      const db = getDatabase()
-      const charId = get(selectedCharID)
-      alwaysExistChar = db.characters[charId]
+      alwaysExistChar = getSelectedTranslatorCharacter(db) ?? {
+        type: 'simple',
+        customscript: [],
+        virtualscript: null,
+        emotionImages: [],
+        chaId: 'simple',
+      }
     } else {
       alwaysExistChar = charArg
     }
@@ -935,11 +1019,11 @@ export async function translateHTML(
       chaId: 'simple',
     }
   }
-  let db = getDatabase()
   const capturedPresetScope = captureTranslatorPresetScope(db, presetScope)
   const sendTextAsIs = db.translatorType === 'llm' && db.translatorSendTextAsIs === true
   if (findChatGenerationActivity(translationTarget)) {
-    if (!(db.translatorType === 'llm' && (await getLLMCache(html)) !== null)) {
+    const streamingCache = db.translatorType === 'llm' ? await getLLMCache(html) : null
+    if (!(db.translatorType === 'llm' && streamingCache !== null)) {
       return html
     }
   }
@@ -1162,7 +1246,7 @@ export async function translateHTML(
 }
 
 function needSuperChunkedTranslate() {
-  return getDatabase().translatorType === 'deeplX'
+  return getTranslatorDatabase()?.translatorType === 'deeplX'
 }
 
 async function translateLLM(
@@ -1176,10 +1260,10 @@ async function translateLLM(
   },
 ): Promise<string> {
   const originalText = text
-  const db = getDatabase()
+  const db = getTranslatorDatabase()
+  if (!db) return originalText
   const sendTextAsIs = db.translatorSendTextAsIs === true
-  const charIndex = get(selectedCharID)
-  const currentChar = db.characters[charIndex]
+  const currentChar = getSelectedTranslatorCharacter(db)
   const translatorNote = resolveTranslatorNote(arg.translatorNote, currentChar)
   const preset = getCurrentTranslatorPreset(
     Object.prototype.hasOwnProperty.call(arg, 'translatorPresetId')
@@ -1385,7 +1469,8 @@ function applyEdittransRegex(
 ): string {
   if (charArg === '') return text
 
-  const db = getDatabase()
+  const db = getTranslatorDatabase()
+  if (!db) return text
   const scripts = (db.globalscript ?? [])
     .concat(getActivePromptPresetRegexScripts(db))
     .concat(alwaysExistChar?.customscript ?? [])

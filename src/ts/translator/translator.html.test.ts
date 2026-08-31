@@ -77,6 +77,20 @@ vi.mock('../stores.svelte', () => ({
   selectedCharID: testState.selectedCharID,
 }))
 
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: { status: 'idle' },
+  collectionsResourceState: { status: 'idle' },
+  charactersResourceState: { status: 'idle', characters: [], currentChar: -1 },
+  getResourceDatabase: (options: { snapshot?: boolean } = {}) =>
+    options.snapshot ? JSON.parse(JSON.stringify(testState.db)) : testState.db,
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = (testState.db.characters ?? []).filter(
+      (character: { chaId?: string }) => character.chaId === characterId,
+    )
+    return matches.length === 1 ? matches[0] : undefined
+  },
+}))
+
 vi.mock('../chatCommands', () => ({
   captureActiveChatTarget: () => {
     const character = testState.db.characters?.[0]
@@ -162,6 +176,7 @@ vi.mock('../../etc/send.mp3', () => ({
 }))
 
 import { DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS, __translatorTestHooks, setLLMCache, translateHTML } from './translator'
+import { createTranslatorPreset } from './presets'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
@@ -172,6 +187,8 @@ function resetDatabase() {
     translator: 'ko',
     translatorInputLanguage: 'ja',
     translatorType: 'google',
+    translatorPresets: [createTranslatorPreset('Default', { id: 'default', prompt: 'Default {{slot}}' })],
+    translatorPresetId: 'default',
     aiModel: 'openai',
     useExperimentalGoogleTranslator: false,
     noWaitForTranslate: true,
