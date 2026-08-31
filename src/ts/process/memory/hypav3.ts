@@ -4,7 +4,7 @@ import { TaskRateLimiter } from './taskRateLimiter'
 import { type EmbeddingText, type EmbeddingResult, HypaProcessorV2 } from './hypamemoryv2'
 import { type DisplayMode as ModalDisplayMode } from 'src/lib/Others/HypaV3Modal/types'
 import { parseChatML } from 'src/ts/parser/chatML'
-import { type Chat, type character, type Database, getDatabase } from 'src/ts/storage/database.svelte'
+import type { Chat, character, Database } from 'src/ts/storage/database.svelte'
 import { type OpenAIChat } from '../index.svelte'
 import { requestChatData } from '../request/request'
 import { chatCompletion, unloadEngine } from '../webllm'
@@ -17,7 +17,7 @@ import {
   type LocalMemoryJobHandle,
 } from 'src/ts/server/memoryJobProjection.svelte'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
-import { getHypaV3PresetOwnerStateSnapshot } from 'src/ts/server/resourceState.svelte'
+import { getHypaV3PresetOwnerStateSnapshot, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
 export interface HypaV3Preset {
   id: string
@@ -105,6 +105,13 @@ export function resolveHypaV3ResponseTokenReservation(database: Database): numbe
   return resolveModelProfile({ database, role: 'chatMain' }).runtimeOptions.maxResponse ?? database.maxResponse
 }
 
+function hypaV3RuntimeDatabase(): Database {
+  if (settingsResourceState.status !== 'ready') {
+    throw new Error('HypaV3 settings owner unavailable')
+  }
+  return settingsResourceState.value as Database
+}
+
 async function runLocalMemoryOperation<T>(
   room: Chat,
   kind: LocalMemoryJobHandle['kind'],
@@ -187,7 +194,7 @@ async function hypaMemoryV3MainExp(
   char: character,
   tokenizer: ChatTokenizer,
 ): Promise<HypaV3Result> {
-  const db = getDatabase()
+  const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
   // Validate settings
@@ -833,7 +840,7 @@ async function hypaMemoryV3Main(
   char: character,
   tokenizer: ChatTokenizer,
 ): Promise<HypaV3Result> {
-  const db = getDatabase()
+  const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
   // Validate settings
@@ -1479,7 +1486,7 @@ function sanitizeSummaryContent(content: string): string {
 }
 
 export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
-  const db = getDatabase()
+  const db = hypaV3RuntimeDatabase()
   const settings = getCurrentHypaV3Preset().settings
 
   const strMessages = oaiMessages.map((chat) => `${chat.role}: ${sanitizeSummaryContent(chat.content)}`).join('\n')

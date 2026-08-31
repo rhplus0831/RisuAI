@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../../storage/database.svelte'
-import { getCurrentHypaV3Preset, resolveHypaV3ResponseTokenReservation } from './hypav3'
-import { replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { getCurrentHypaV3Preset, resolveHypaV3ResponseTokenReservation, summarize } from './hypav3'
+import { replaceResourceDatabase, settingsResourceState } from '../../server/resourceState.svelte'
 
 function database(overrides: Partial<Database> = {}): Database {
   return {
@@ -98,4 +98,18 @@ describe('HypaV3 model ownership', () => {
 
     expect(() => getCurrentHypaV3Preset()).toThrow('Preset not found. Please select a valid preset.')
   })
+
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not summarize while the settings owner is %s',
+    async (status) => {
+      replaceResourceDatabase(database())
+      settingsResourceState.status = status
+
+      try {
+        await expect(summarize([])).rejects.toThrow('HypaV3 settings owner unavailable')
+      } finally {
+        settingsResourceState.status = 'ready'
+      }
+    },
+  )
 })
