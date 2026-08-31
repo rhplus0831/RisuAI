@@ -11,7 +11,7 @@ const fakes = vi.hoisted(() => ({
     calls: 0,
   },
   embedding: { calls: 0 },
-  llm: { calls: 0 },
+  llm: { calls: 0, lastOptions: undefined as unknown },
   imggen: { calls: [] as unknown[] },
   finalize: { calls: [] as { stage4Duration: number; finalized: boolean }[] },
 }))
@@ -51,8 +51,9 @@ vi.mock('../postGeneration/emotionFallbackEmbedding', () => ({
 }))
 
 vi.mock('../postGeneration/emotionFallbackLlm', () => ({
-  runEmotionLlmFallback: async () => {
+  runEmotionLlmFallback: async (options: unknown) => {
     fakes.llm.calls++
+    fakes.llm.lastOptions = options
   },
 }))
 
@@ -163,6 +164,7 @@ function baseArgs(over: Partial<Parameters<typeof runStage4>[0]> = {}) {
   const stages: number[] = []
   return {
     args: {
+      database: getDatabase(),
       req: { type: 'success', result: 'done' } as unknown as DispatchSuccessReq,
       currentChar: makeChar(),
       result: 'rendered text',
@@ -188,6 +190,7 @@ beforeEach(() => {
   fakes.loadEmotion.calls = 0
   fakes.embedding.calls = 0
   fakes.llm.calls = 0
+  fakes.llm.lastOptions = undefined
   fakes.imggen.calls = []
   fakes.finalize.calls = []
 })
@@ -318,6 +321,7 @@ describe('runStage4 - emotion fallback routing', () => {
 
     expect(result).toEqual({ status: 'done' })
     expect(fakes.llm.calls).toBe(1)
+    expect((fakes.llm.lastOptions as { database: Database }).database).toBe(args.database)
     expect(fakes.embedding.calls).toBe(0)
     expect(fakes.finalize.calls).toHaveLength(0)
   })

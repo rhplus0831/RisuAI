@@ -1,4 +1,4 @@
-import { type character, type MessageGenerationInfo } from '../../storage/database.svelte'
+import { type character, type Database, type MessageGenerationInfo } from '../../storage/database.svelte'
 import { settingsResourceState } from '../../server/resourceState.svelte'
 import { loadAndTrimCharEmotion } from './charEmotionStore'
 import { applyEmotionFromResponse } from './emotionFromResponse'
@@ -20,6 +20,7 @@ import { yieldBeforeCompletionEffect } from '../completionEffectScheduling'
 export type RunStage4Result = { status: 'resend' } | { status: 'done' }
 
 export interface RunStage4Args {
+  database: Database
   req: DispatchSuccessReq
   currentChar: character
   result: string
@@ -142,6 +143,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
         }
 
         await runEmotionLlmFallback({
+          database: args.database,
           result,
           currentChar,
           abortSignal,

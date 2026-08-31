@@ -667,6 +667,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     }
 
     const stage4 = await runStage4({
+      database: generationSettingsState.db,
       req,
       currentChar,
       result,

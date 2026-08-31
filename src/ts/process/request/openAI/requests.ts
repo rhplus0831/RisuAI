@@ -319,10 +319,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     }
 
     if (bia[1] === -101) {
-      arg.bias = await strongBan(bia[0], arg.bias)
+      arg.bias = await strongBan(bia[0], arg.bias, db)
       continue
     }
-    const tokens = await tokenizeNum(bia[0])
+    const tokens = await tokenizeNum(bia[0], db)
 
     for (const token of tokens) {
       arg.bias[token] = bia[1]

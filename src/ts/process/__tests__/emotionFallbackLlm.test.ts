@@ -20,7 +20,7 @@ vi.mock('../modules', async (importActual) => {
 
 import { get } from 'svelte/store'
 import { CharEmotion } from '../../stores.svelte'
-import type { character } from '../../storage/database.svelte'
+import type { Database, character } from '../../storage/database.svelte'
 import { runEmotionLlmFallback } from '../postGeneration/emotionFallbackLlm'
 import type { CharEmotionEntry, CharEmotionMap } from '../postGeneration/charEmotionStore'
 
@@ -31,8 +31,8 @@ function makeChar(emotionImages: [string, string][]): character {
   } as unknown as character
 }
 
-function freshState(): { tempEmotion: CharEmotionEntry[]; charemotions: CharEmotionMap } {
-  return { tempEmotion: [], charemotions: {} }
+function freshState(): { database: Database; tempEmotion: CharEmotionEntry[]; charemotions: CharEmotionMap } {
+  return { database: {} as Database, tempEmotion: [], charemotions: {} }
 }
 
 describe('runEmotionLlmFallback', () => {
@@ -73,6 +73,8 @@ describe('runEmotionLlmFallback', () => {
     expect(mode).toBe('emotion')
     expect(signal).toBeInstanceOf(AbortSignal)
     expect(arg.maxTokens).toBe(30)
+    expect(arg.database).toBe(state.database)
+    expect(tokenizeNumSpy).toHaveBeenCalledWith('happy', state.database)
     expect(arg.formated[0].role).toBe('system')
     expect(arg.formated[0].content).toContain('happy')
     expect(arg.formated[1]).toMatchObject({ role: 'user', content: expect.stringContaining('Good morning') })
@@ -102,7 +104,8 @@ describe('runEmotionLlmFallback', () => {
     // tempEmotion [['a',...]] -> recency penalty for length=1, i=0:
     //   modifier = 20 - (1 - 1) * 5 = 20
     //   emobias[1] -= 20 -> -10
-    const state: { tempEmotion: CharEmotionEntry[]; charemotions: CharEmotionMap } = {
+    const state: { database: Database; tempEmotion: CharEmotionEntry[]; charemotions: CharEmotionMap } = {
+      database: {} as Database,
       tempEmotion: [['a', 'a.png', 500]],
       charemotions: { 'cha-1': [['a', 'a.png', 500]] },
     }
@@ -118,6 +121,7 @@ describe('runEmotionLlmFallback', () => {
     })
     const [arg] = requestChatDataSpy.mock.calls[0]
     expect(arg.bias).toEqual({ 1: -10 })
+    expect(tokenizeNumSpy.mock.calls.every(([, database]) => database === state.database)).toBe(true)
   })
 
   it('on fail with no abort, calls throwError(rq.result)', async () => {

@@ -1085,7 +1085,7 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
 
   for (let i = 0; i < biasString.length; i++) {
     const bia = biasString[i]
-    const tokens = await tokenizeNum(bia[0])
+    const tokens = await tokenizeNum(bia[0], db)
 
     const tokensInNumberArray: number[] = []
 
