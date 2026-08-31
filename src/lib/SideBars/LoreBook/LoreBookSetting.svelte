@@ -29,7 +29,7 @@
     scopedLorebookMutationUiStates,
     trackScopedLorebookMutationUiOperation,
   } from 'src/ts/server/scopedLorebookMutationUiState'
-  import { createServerBackedCharacterDraft } from 'src/ts/server/characterBridge.svelte'
+  import { createCharacterOwnerDraft } from 'src/ts/server/characterDraft.svelte'
   import {
     hasCharacterLorebookHydrationFailed,
     hydrateActiveCharacterLorebook,
@@ -44,7 +44,7 @@
   } from 'src/ts/server/resourceState.svelte'
 
   let submenu = $state(0)
-  const characterLoreSettingsDraft = createServerBackedCharacterDraft(['loreSettings', 'lorePlus'])
+  const characterLoreSettingsDraft = createCharacterOwnerDraft(['loreSettings', 'lorePlus'])
   interface Props {
     globalMode?: boolean
   }

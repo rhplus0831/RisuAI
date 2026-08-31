@@ -15,8 +15,8 @@ vi.mock('./settingsBridge.svelte', () => ({
   }),
 }))
 
-vi.mock('./characterBridge.svelte', () => ({
-  flushPendingServerBackedCharacterPatches: vi.fn((options: unknown) => {
+vi.mock('./characterDraft.svelte', () => ({
+  flushPendingCharacterDraftPatches: vi.fn((options: unknown) => {
     calls.character.push(options)
   }),
 }))

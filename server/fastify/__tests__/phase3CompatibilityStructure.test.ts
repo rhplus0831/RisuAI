@@ -236,13 +236,6 @@ const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = [
     outcomes: ['accepted', 'queued-retained', 'failed-owned-field-rollback'],
   },
   {
-    file: 'characterBridge.svelte.ts',
-    flusher: 'flushPendingServerBackedCharacterPatches',
-    registrationId: 'character-profile',
-    commands: ['character profile patch'],
-    outcomes: ['accepted', 'queued-retained', 'failed-owned-field-rollback'],
-  },
-  {
     file: 'lorebookBridge.svelte.ts',
     flusher: 'flushPendingServerBackedLorebookPatches',
     registrationId: 'lorebook',

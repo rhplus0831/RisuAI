@@ -214,7 +214,7 @@ describe('static architecture gate: CharConfig boundaries', () => {
     const source = readSource(file)
     const draftSeed = sourceBetween(
       source,
-      'const characterDraft = createServerBackedCharacterDraft([',
+      'const characterDraft = createCharacterOwnerDraft([',
       '  let characterScriptsDraft = $state<customscript[]>([])',
     )
     const scriptAddHandler = sourceBetween(

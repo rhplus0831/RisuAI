@@ -2904,6 +2904,14 @@ export function getCharacterResourceOwner(characterId: string): character | unde
   return index >= 0 ? charactersResourceState.characters[index] : undefined
 }
 
+/** Notify owner consumers after an optimistic mutation of one ready character row. */
+export function markCharacterResourceOwnerChanged(characterId: string): boolean {
+  if (!getCharacterResourceOwner(characterId)) return false
+  advanceCharacterRowProjectionEpoch(characterId)
+  markResourceDatabaseChanged()
+  return true
+}
+
 function uniqueCharacterOwnerIndex(characterId: string): number {
   let ownerIndex = -1
   for (const [index, candidate] of charactersResourceState.characters.entries()) {

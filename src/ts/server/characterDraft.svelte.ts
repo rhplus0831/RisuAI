@@ -8,22 +8,17 @@ import {
   cloneJsonValue,
   dispatchUpdateCharacter,
   isCharacterPatchValueCurrent,
-  restoreCharacterState,
   sanitizeCharacterPatch,
   type CharacterStateSnapshot,
 } from '../characterCommands'
 import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTransportOptions } from './commands'
 import { selectedCharID } from '../stores.svelte'
-import {
-  getLocalCharacterProjectionMutationEpoch,
-  getServerResourceApplyEpoch,
-  withTrustedResourceWrite,
-} from './resourceWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type character } from '../storage/database.svelte'
 import {
+  captureCharacterRowProjectionEpoch,
   charactersResourceState,
   getCharacterResourceOwner,
-  getResourceDatabase as getDatabase,
+  markCharacterResourceOwnerChanged,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
@@ -58,69 +53,55 @@ const pendingPatches = new Map<string, PendingCharacterPatch>()
 const pendingCharacterAttempts: PendingCharacterAttempt[] = []
 const activeCharacterDraftFailureSettlers = new Set<(attempt: PendingCharacterAttempt) => void>()
 let nextCharacterAttemptSequence = 0
-let suppressRollbackDispatch = false
-const activeCharacterProfileBaselineResetters = new Set<() => void>()
+const CHARACTER_DRAFT_DELAY_MS = 300
 
-/** Use stable character owners once the collection is ready; preserve the
- * bootstrap compatibility view while startup is still assembling owners. */
-function characterRowsForBridge(): character[] {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
+function characterOwnerRows(): character[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
-function uniqueCharacterForBridge(characterId: string): character | undefined {
+function uniqueCharacterOwner(characterId: string): character | undefined {
   if (!characterId) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
-
-  let owner: character | undefined
-  for (const character of characterRowsForBridge()) {
-    if (character.chaId !== characterId) continue
-    if (owner) return undefined
-    owner = character
-  }
-  return owner
+  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
 }
 
-function selectedCharacterForBridge(index: number): character | undefined {
+function selectedCharacterOwner(index: number): character | undefined {
   if (index < 0) return undefined
-  const candidate = characterRowsForBridge()[index]
-  return candidate?.chaId ? uniqueCharacterForBridge(candidate.chaId) : undefined
-}
-
-function currentCharForBridge(): number | undefined {
-  return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
-    ? charactersResourceState.currentChar
-    : (getDatabase() as unknown as { currentChar?: number }).currentChar
+  const candidate = characterOwnerRows()[index]
+  return candidate?.chaId ? uniqueCharacterOwner(candidate.chaId) : undefined
 }
 
 function applyCharacterProjectionPatchById(characterId: string, patch: CharacterSnapshot): void {
-  const owner = uniqueCharacterForBridge(characterId)
+  const owner = uniqueCharacterOwner(characterId)
   if (!owner) return
-  const characters = characterRowsForBridge()
+  const characters = characterOwnerRows()
   const index = characters.indexOf(owner)
   if (index < 0) return
   applyCharacterProjectionPatch(characters, index, patch)
-}
-
-export interface WatchServerBackedCharacterProfileOptions {
-  delayMs?: number
+  markCharacterResourceOwnerChanged(characterId)
 }
 
 export type CharacterDraftValue = Record<string, any> & CharacterSnapshot
 
-export interface ServerBackedCharacterDraft {
+export interface CharacterOwnerDraft {
   characterId: string | null
   value: CharacterDraftValue
 }
 
-export function createServerBackedCharacterDraft(keys: readonly string[]): ServerBackedCharacterDraft {
+export interface CharacterOwnerDraftOptions {
+  delayMs?: number
+}
+
+export function createCharacterOwnerDraft(
+  keys: readonly string[],
+  options: CharacterOwnerDraftOptions = {},
+): CharacterOwnerDraft {
+  const delayMs = options.delayMs ?? CHARACTER_DRAFT_DELAY_MS
   const initialSelected = get(selectedCharID)
-  const initialCharacter = selectedCharacterForBridge(initialSelected)
+  const initialCharacter = selectedCharacterOwner(initialSelected)
   const initialCharacterId =
     initialCharacter && !isServerCharacterShell(initialCharacter) ? (initialCharacter.chaId ?? null) : null
   const initialSeed = currentCharacterDraftSeed(initialSelected, initialCharacterId, keys)
-  const draft = $state<ServerBackedCharacterDraft>({
+  const draft = $state<CharacterOwnerDraft>({
     characterId: initialCharacterId,
     value: cloneJsonValue(initialSeed.serverValue),
   })
@@ -129,8 +110,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   let previousServerSnapshot = ''
   let previousSeedSelected = Number.NaN
   let previousSeedCharacterId: string | null = null
-  let previousSeedResourceApplyEpoch = -1
-  let previousSeedLocalMutationEpoch = -1
+  let previousSeedProjectionEpoch = -1
   const dirtyFields = new Set<keyof CharacterDraftValue & string>()
   const selectedCharMirror = $state({ value: get(selectedCharID) })
   let draftInitialized = false
@@ -175,21 +155,18 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
   $effect(() => {
     const selected = selectedCharMirror.value
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    const selectedCharacter = selectedCharacterForBridge(selected)
+    const selectedCharacter = selectedCharacterOwner(selected)
     const characterId =
       selectedCharacter && !isServerCharacterShell(selectedCharacter) ? (selectedCharacter.chaId ?? null) : null
     const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
-    const resourceApplyChanged = resourceApplyEpoch !== previousSeedResourceApplyEpoch
-    const localMutationEpoch = getLocalCharacterProjectionMutationEpoch()
-    const localProjectionChanged = localMutationEpoch !== previousSeedLocalMutationEpoch
+    const projectionEpoch = characterId ? captureCharacterRowProjectionEpoch(characterId) : -1
+    const ownerProjectionChanged = projectionEpoch !== previousSeedProjectionEpoch
 
-    if (!identityChanged && !resourceApplyChanged && !localProjectionChanged) return
+    if (!identityChanged && !ownerProjectionChanged) return
 
     previousSeedSelected = selected
     previousSeedCharacterId = characterId
-    previousSeedResourceApplyEpoch = resourceApplyEpoch
-    previousSeedLocalMutationEpoch = localMutationEpoch
+    previousSeedProjectionEpoch = projectionEpoch
 
     const { serverSnapshot, serverValue } = untrack(() => currentCharacterDraftSeed(selected, characterId, keys))
 
@@ -199,7 +176,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     const shouldSeedDraft =
       identityChanged ||
-      localProjectionChanged ||
+      ownerProjectionChanged ||
       untrack(() => {
         const draftSnapshot = snapshotJson({
           characterId: draft.characterId,
@@ -210,7 +187,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     if (shouldSeedDraft) {
       suppressDraftDispatch = true
-      if (!identityChanged && (resourceApplyChanged || localProjectionChanged) && dirtyFields.size > 0) {
+      if (!identityChanged && ownerProjectionChanged && dirtyFields.size > 0) {
         draft.characterId = characterId
         mergeProjectionIntoDirtyDraft({
           draft: draft.value,
@@ -268,14 +245,23 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
     previousDraftDispatchSnapshot = draftSnapshot
 
     untrack(() => {
+      const character = uniqueCharacterOwner(characterId)
+      if (!character || isServerCharacterShell(character)) return
+      const previousProfile = scalarCharacterProfile(character as unknown as Record<string, unknown>)
       const changedPatch: CharacterSnapshot = {}
       for (const key of changedFields) {
         changedPatch[key] = cloneJsonValue(draft.value[key])
       }
       const patch = sanitizeCharacterPatch(changedPatch)
-      withTrustedResourceWrite(() => {
-        applyCharacterProjectionPatchById(characterId, patch)
-      })
+      applyCharacterProjectionPatchById(characterId, patch)
+      if (canUseServerCommands() && Object.keys(patch).length > 0) {
+        queueCharacterPatch(
+          characterId,
+          patch,
+          selectedCharacterProfileSnapshot(characterId, previousProfile, get(selectedCharID)),
+          delayMs,
+        )
+      }
       previousServerSnapshot = snapshotJson({ characterId, value: patch })
     })
   })
@@ -303,7 +289,7 @@ function changedTopLevelDraftFields(
 }
 
 function reassertDirtyDraftFields(
-  selected: number,
+  _selected: number,
   characterId: string | null,
   draft: CharacterDraftValue,
   dirtyFields: ReadonlySet<keyof CharacterDraftValue & string>,
@@ -317,18 +303,18 @@ function reassertDirtyDraftFields(
   const sanitized = sanitizeCharacterPatch(patch)
   if (Object.keys(sanitized).length === 0) return
 
-  withTrustedResourceWrite(() => {
-    const character = uniqueCharacterForBridge(characterId)
-    if (!character || isServerCharacterShell(character)) return
-    applyCharacterProjectionPatchById(characterId, sanitized)
-  })
+  const character = uniqueCharacterOwner(characterId)
+  if (!character || isServerCharacterShell(character)) return
+  const pending: CharacterSnapshot = {}
+  for (const [key, value] of Object.entries(sanitized)) {
+    if (!isCharacterPatchValueCurrent(character as unknown as Record<string, unknown>, key, value)) {
+      pending[key] = cloneJsonValue(value)
+    }
+  }
+  if (Object.keys(pending).length > 0) applyCharacterProjectionPatchById(characterId, pending)
 }
 
-function applyCharacterProjectionPatch(
-  characters: NonNullable<ReturnType<typeof getDatabase>['characters']>,
-  index: number,
-  patch: CharacterSnapshot,
-): void {
+function applyCharacterProjectionPatch(characters: character[], index: number, patch: CharacterSnapshot): void {
   const character = characters[index]
   const deletesField = Object.entries(patch).some(
     ([field, value]) => value === null && CHARACTER_PATCH_DELETABLE_KEYS.has(field),
@@ -348,7 +334,7 @@ function currentCharacterDraftSeed(
   characterId: string | null,
   keys: readonly string[],
 ): { serverSnapshot: string; serverValue: CharacterDraftValue } {
-  const character = characterId ? uniqueCharacterForBridge(characterId) : selectedCharacterForBridge(selected)
+  const character = characterId ? uniqueCharacterOwner(characterId) : selectedCharacterOwner(selected)
   if (!character || isServerCharacterShell(character)) {
     const serverValue = normalizeCharacterDraft(pickCharacterFields({}, keys))
     return {
@@ -362,82 +348,6 @@ function currentCharacterDraftSeed(
     serverSnapshot: snapshotJson({ characterId, value: serverValue }),
     serverValue,
   }
-}
-
-export function watchServerBackedCharacterProfile(options: WatchServerBackedCharacterProfileOptions = {}): () => void {
-  if (!canUseServerCommands()) return () => {}
-
-  const delayMs = options.delayMs ?? 300
-  let initialized = false
-  let previousSelected = -1
-  let previousProfileSnapshot = ''
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
-  const resetProfileBaseline = () => {
-    const index = get(selectedCharID)
-    const character = selectedCharacterForBridge(index)
-    const currentProfile =
-      character && !isServerCharacterShell(character)
-        ? scalarCharacterProfile(character as unknown as Record<string, unknown>)
-        : {}
-    initialized = true
-    previousSelected = index
-    previousProfileSnapshot = snapshotJson(currentProfile)
-    previousResourceApplyEpoch = getServerResourceApplyEpoch()
-  }
-  activeCharacterProfileBaselineResetters.add(resetProfileBaseline)
-
-  const stop = $effect.root(() => {
-    $effect(() => {
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
-      const index = get(selectedCharID)
-      const character = selectedCharacterForBridge(index)
-      const isShell = isServerCharacterShell(character)
-      const currentProfile =
-        character && !isShell ? scalarCharacterProfile(character as unknown as Record<string, unknown>) : {}
-      const currentProfileSnapshot = snapshotJson(currentProfile)
-
-      if (
-        !initialized ||
-        index !== previousSelected ||
-        !character?.chaId ||
-        isShell ||
-        resourceApplyEpoch !== previousResourceApplyEpoch
-      ) {
-        initialized = true
-        previousSelected = index
-        previousResourceApplyEpoch = resourceApplyEpoch
-        previousProfileSnapshot = currentProfileSnapshot
-        return
-      }
-
-      if (suppressRollbackDispatch || currentProfileSnapshot === previousProfileSnapshot || !character.chaId) {
-        if (suppressRollbackDispatch) {
-          previousProfileSnapshot = currentProfileSnapshot
-        }
-        return
-      }
-
-      const previousProfile = JSON.parse(previousProfileSnapshot) as CharacterSnapshot
-      const patch = changedProfileFields(previousProfile, currentProfile)
-      if (Object.keys(patch).length > 0) {
-        const previousState = selectedCharacterProfileSnapshot(character.chaId, previousProfile, get(selectedCharID))
-        untrack(() => queueCharacterPatch(character.chaId, patch, previousState, delayMs))
-      }
-
-      previousProfileSnapshot = currentProfileSnapshot
-    })
-  })
-
-  return () => {
-    flushPendingServerBackedCharacterPatches()
-    activeCharacterProfileBaselineResetters.delete(resetProfileBaseline)
-    stop()
-  }
-}
-
-/** Advance profile watchers after a dedicated command persists its own projection. */
-export function syncServerBackedCharacterProfileBaselines(): void {
-  for (const reset of activeCharacterProfileBaselineResetters) reset()
 }
 
 function queueCharacterPatch(
@@ -470,13 +380,13 @@ function queueCharacterPatch(
   pendingPatches.set(characterId, nextPatch)
 }
 
-export function flushPendingServerBackedCharacterPatches(options: ServerCommandTransportOptions = {}): void {
+export function flushPendingCharacterDraftPatches(options: ServerCommandTransportOptions = {}): void {
   for (const characterId of Array.from(pendingPatches.keys())) {
     runPendingCharacterPatch(characterId, options)
   }
 }
 
-registerPendingBridgePatchFlusher('character-profile', flushPendingServerBackedCharacterPatches)
+registerPendingBridgePatchFlusher('character-draft', flushPendingCharacterDraftPatches)
 
 function runPendingCharacterPatch(characterId: string, options: ServerCommandTransportOptions = {}): void {
   const commandPatch = pendingPatches.get(characterId)
@@ -535,10 +445,9 @@ function registerCharacterAttempt(characterId: string, snapshot: CharacterStateS
 }
 
 function rollbackCharacterAttempt(attempt: PendingCharacterAttempt): void {
-  rollbackServerBackedCharacterProfile(attempt.previous)
+  rollbackCharacterDraftAttempt(attempt.previous)
   for (const settleDraft of activeCharacterDraftFailureSettlers) settleDraft(attempt)
   rebaseLaterCharacterAttempts(attempt)
-  syncServerBackedCharacterProfileBaselines()
   clearCharacterAttempt(attempt)
 }
 
@@ -618,23 +527,11 @@ function selectedCharacterProfileSnapshot(
   return {
     characters: [],
     characterOrder: [],
-    currentChar: currentCharForBridge(),
+    currentChar: charactersResourceState.currentChar,
     selectedCharID: selected,
     profileCharacterId: characterId,
     profile,
   } as CharacterStateSnapshot
-}
-
-function changedProfileFields(previous: CharacterSnapshot, current: CharacterSnapshot): CharacterSnapshot {
-  const patch: CharacterSnapshot = {}
-  const keys = new Set([...Object.keys(previous), ...Object.keys(current)])
-  for (const key of keys) {
-    if (CHARACTER_PATCH_EXCLUDED_KEYS.has(key)) continue
-    if (snapshotJson(previous[key]) !== snapshotJson(current[key])) {
-      patch[key] = cloneJsonValue(current[key])
-    }
-  }
-  return patch
 }
 
 function pickCharacterFields(character: CharacterSnapshot, keys: readonly string[]): CharacterDraftValue {
@@ -763,35 +660,24 @@ function snapshotJson(value: unknown): string {
   return snapshot === undefined ? '__undefined__' : snapshot
 }
 
-export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSnapshot): void {
+function rollbackCharacterDraftAttempt(snapshot: CharacterStateSnapshot): void {
   const profileSnapshot = snapshot as CharacterStateSnapshot & {
     profileCharacterId?: string
     profile?: CharacterSnapshot
     attemptedProfile?: CharacterSnapshot
   }
 
-  suppressRollbackDispatch = true
-  try {
-    if (profileSnapshot.profileCharacterId && profileSnapshot.profile) {
-      withTrustedResourceWrite(() => {
-        const character = uniqueCharacterForBridge(profileSnapshot.profileCharacterId)
-        if (!character) return
-        if (profileSnapshot.attemptedProfile) {
-          applyAttemptedCharacterFieldRollback({
-            target: character as unknown as Record<string, unknown>,
-            previous: profileSnapshot.profile,
-            attempted: profileSnapshot.attemptedProfile,
-          })
-          return
-        }
-        Object.assign(character, cloneJsonValue(profileSnapshot.profile))
-      })
-    } else {
-      restoreCharacterState(snapshot)
-    }
-  } finally {
-    queueMicrotask(() => {
-      suppressRollbackDispatch = false
+  if (!profileSnapshot.profileCharacterId || !profileSnapshot.profile) return
+  const character = uniqueCharacterOwner(profileSnapshot.profileCharacterId)
+  if (!character) return
+  if (profileSnapshot.attemptedProfile) {
+    applyAttemptedCharacterFieldRollback({
+      target: character as unknown as Record<string, unknown>,
+      previous: profileSnapshot.profile,
+      attempted: profileSnapshot.attemptedProfile,
     })
+  } else {
+    Object.assign(character, cloneJsonValue(profileSnapshot.profile))
   }
+  markCharacterResourceOwnerChanged(profileSnapshot.profileCharacterId)
 }

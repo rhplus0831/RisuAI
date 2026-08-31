@@ -143,7 +143,7 @@ can render its greeting. Guards are
 `src/lib/SideBars/CharConfig.svelte` owns profile, icon/view/media, advanced,
 scripts, TTS, lorebook, import/export, and character deletion surfaces. Its
 server-backed profile draft is created synchronously before initial render:
-`createServerBackedCharacterDraft()` reads the current selected character and
+`createCharacterOwnerDraft()` reads the current selected character owner and
 clones the requested fields before installing reactive synchronization. The
 first frame therefore reflects the server projection rather than empty control
 defaults. `CharConfig.svelte.test.ts` includes an initial-draft rendering guard.

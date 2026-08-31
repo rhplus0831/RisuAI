@@ -61,12 +61,7 @@
   import { applyModule } from 'src/ts/process/modules'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
-  import {
-    createServerBackedCharacterDraft,
-    flushPendingServerBackedCharacterPatches,
-    syncServerBackedCharacterProfileBaselines,
-    watchServerBackedCharacterProfile,
-  } from 'src/ts/server/characterBridge.svelte'
+  import { createCharacterOwnerDraft, flushPendingCharacterDraftPatches } from 'src/ts/server/characterDraft.svelte'
   import {
     appendFreshCharacterAdditionalAssets,
     beginCharacterAdditionalAssetUpload,
@@ -122,6 +117,7 @@
     getCharacterResourceOwner,
     getChatMetadataOwnerSnapshot,
     hasCharacterRowProjectionEpochChanged,
+    markCharacterResourceOwnerChanged,
     restoreChatMetadataOwnerSnapshot,
     settingsResourceState,
     type ChatMetadataOwnerFields,
@@ -184,7 +180,7 @@
     desc: 0,
     firstMsg: 0,
   })
-  const characterDraft = createServerBackedCharacterDraft([
+  const characterDraft = createCharacterOwnerDraft([
     'name',
     'displayName',
     'desc',
@@ -319,14 +315,6 @@
     return () => {
       synthesis.removeEventListener('voiceschanged', refreshVoices)
     }
-  })
-
-  $effect(() => {
-    // The retained character draft still needs its persistence bridge. Chat
-    // metadata and script definitions below dispatch through their dedicated
-    // owner commands, so their aggregate watchers are no longer mounted here.
-    const stopCharacter = untrack(() => watchServerBackedCharacterProfile())
-    return stopCharacter
   })
 
   $effect(() =>
@@ -782,6 +770,7 @@
     }
 
     snapshot.character.alternateGreetings = cloneJsonValue(alternateGreetings)
+    markCharacterResourceOwnerChanged(snapshot.characterId)
     if (snapshot.readyOwner) {
       for (const chat of snapshot.chats) {
         const fmIndex = nextByChatId.get(chat.chatId)
@@ -810,6 +799,7 @@
 
     if (snapshotJson(character.alternateGreetings) === snapshotJson(attemptedGreetings)) {
       character.alternateGreetings = cloneJsonValue(snapshot.alternateGreetings)
+      markCharacterResourceOwnerChanged(snapshot.characterId)
     }
     const attemptedByChatId = new Map(attemptedChatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
     if (snapshot.readyOwner && charactersResourceState.status === 'ready') {
@@ -835,7 +825,6 @@
         }
       }
     }
-    syncServerBackedCharacterProfileBaselines()
   }
 
   async function applyAlternateGreetingMutation(operation: AlternateGreetingMutation): Promise<void> {
@@ -854,7 +843,7 @@
     if (serverBacked) {
       // Older debounced edits must enter the shared command queue first so this
       // collection-wide mutation remains the final atomic write.
-      flushPendingServerBackedCharacterPatches()
+      flushPendingCharacterDraftPatches()
     }
 
     const applyOptimistic = () => {
@@ -863,19 +852,9 @@
       ) {
         return
       }
-      characterDraft.value.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
-      characterDraft.value = { ...characterDraft.value }
-      syncServerBackedCharacterProfileBaselines()
     }
     const rollback = () => {
       const attemptedGreetings = snapshotJson(mutation.alternateGreetings)
-      if (
-        characterDraft.characterId === characterId &&
-        snapshotJson(characterDraft.value.alternateGreetings) === attemptedGreetings
-      ) {
-        characterDraft.value.alternateGreetings = cloneJsonValue(ownerSnapshot.alternateGreetings)
-        characterDraft.value = { ...characterDraft.value }
-      }
       rollbackAlternateGreetingOwnerProjection(ownerSnapshot, mutation.alternateGreetings, mutation.chatGreetingIndices)
     }
 

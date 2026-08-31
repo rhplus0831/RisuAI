@@ -103,9 +103,9 @@ vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
   watchServerBackedLorebooks: () => () => {},
 }))
 
-vi.mock('src/ts/server/characterBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/characterBridge.svelte')>()),
-  createServerBackedCharacterDraft: () => ({
+vi.mock('src/ts/server/characterDraft.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/characterDraft.svelte')>()),
+  createCharacterOwnerDraft: () => ({
     value: { lorePlus: false, loreSettings: undefined },
   }),
 }))
