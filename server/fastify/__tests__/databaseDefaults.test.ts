@@ -97,6 +97,9 @@ describe('database defaults', () => {
     expect(database.selectedPersona).toBe(0)
     expect(database.loadouts).toEqual([])
     expect(database.lastLoadedLoadoutName).toBe('')
+    expect(database.hypaV3Presets).toEqual([expect.objectContaining({ id: 'default-hypa-v3-preset', name: 'Default' })])
+    expect(database.selectedHypaV3PresetId).toBe('default-hypa-v3-preset')
+    expect(database.hypaV3PresetId).toBe(0)
     expect(database.inputHooks).toEqual([
       {
         id: 'default-translate',
@@ -186,6 +189,31 @@ describe('database defaults', () => {
     ])
     expect(database.selectedPersonaId).toBe('owned')
     expect(database.selectedPersona).toBe(1)
+  })
+
+  it('repairs Hypa V3 preset ids deterministically and gives unique stable selection precedence', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        hypaV3Presets: [
+          { id: '', name: 'Missing', settings: {} },
+          { id: 'owned', name: 'Owned', settings: {} },
+          { id: 'duplicate', name: 'First duplicate', settings: {} },
+          { id: 'duplicate', name: 'Second duplicate', settings: {} },
+        ],
+        hypaV3PresetId: 3,
+        selectedHypaV3PresetId: 'owned',
+      },
+      { providerDefaults: false },
+    )
+
+    expect((database.hypaV3Presets as Array<{ id: string }>).map(({ id }) => id)).toEqual([
+      'hypa-v3-preset-1',
+      'owned',
+      'duplicate',
+      'hypa-v3-preset-4',
+    ])
+    expect(database.selectedHypaV3PresetId).toBe('owned')
+    expect(database.hypaV3PresetId).toBe(1)
   })
 
   it('deterministically migrates usable legacy model selections without copying inline secrets', () => {

@@ -21,11 +21,12 @@ import {
   createCollectionTables,
   createSettingsTable,
   migrateLegacyFlatModelConfigurationInSqlite,
+  repairPersistedHypaV3PresetSelectionIdentityInSqlite,
   repairPersistedPersonaSelectionIdentityInSqlite,
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 35
+export const CURRENT_SCHEMA_VERSION = 36
 
 export const CURRENT_SCHEMA_TABLES = [
   'assets',
@@ -466,6 +467,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createCollectionTables(db)
       createSettingsTable(db)
       repairPersistedPersonaSelectionIdentityInSqlite(db)
+    },
+  },
+  {
+    version: 36,
+    name: 'durable-hypa-v3-preset-identity',
+    up: (db) => {
+      createCollectionTables(db)
+      createSettingsTable(db)
+      repairPersistedHypaV3PresetSelectionIdentityInSqlite(db)
     },
   },
 ]

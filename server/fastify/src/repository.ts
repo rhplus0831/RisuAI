@@ -44,6 +44,10 @@ import {
   repairPersonaSelectionIdentity,
   selectedPersonaIndexFromStableId,
 } from '@risuai/shared-core/persona-selection-identity'
+import {
+  hypaV3PresetIndexFromStableId,
+  repairHypaV3PresetSelectionIdentity,
+} from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -311,6 +315,48 @@ export function repairPersistedPersonaSelectionIdentityInSqlite(db: DatabaseSync
   })
   settings.selectedPersona = result.selectedPersona
   settings.selectedPersonaId = result.selectedPersonaId
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  return true
+}
+
+/** Explicit migration/import/recovery-boundary Hypa V3 preset identity repair. */
+export function repairPersistedHypaV3PresetSelectionIdentity(database: unknown): boolean {
+  if (!isRecord(database)) return false
+  return repairHypaV3PresetSelectionIdentity(database).changed
+}
+
+/** Schema-migration and backup-recovery adapter for split settings/Hypa V3 preset rows. */
+export function repairPersistedHypaV3PresetSelectionIdentityInSqlite(db: DatabaseSync): boolean {
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!settingsRow) return false
+
+  const settings = JSON.parse(settingsRow.data_json) as unknown
+  if (!isRecord(settings)) return false
+  const rows = db.prepare('SELECT position, data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+    position: number
+    data_json: string
+  }>
+
+  if (rows.length === 0) {
+    const result = repairHypaV3PresetSelectionIdentity(settings)
+    if (result.changed) db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    return result.changed
+  }
+
+  const hypaV3Presets = rows.map((row) => JSON.parse(row.data_json))
+  const projection: JsonRecord = { ...settings, hypaV3Presets }
+  const result = repairHypaV3PresetSelectionIdentity(projection)
+  if (!result.changed) return false
+
+  const updatePreset = db.prepare('UPDATE hypa_v3_presets SET data_json = ? WHERE position = ?')
+  hypaV3Presets.forEach((preset, index) => {
+    const encoded = JSON.stringify(preset)
+    if (encoded !== rows[index]!.data_json) updatePreset.run(encoded, rows[index]!.position)
+  })
+  settings.hypaV3PresetId = result.hypaV3PresetId
+  settings.selectedHypaV3PresetId = result.selectedHypaV3PresetId
   db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
   return true
 }
@@ -1477,6 +1523,7 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
   migrateLegacyFlatModelConfiguration(database)
   repairPersistedGlobalLorebookIds(database)
   repairPersistedPersonaSelectionIdentity(database)
+  repairPersistedHypaV3PresetSelectionIdentity(database)
   repairChatIds(database)
   replaceAllSettingsInTable(db, database)
   replaceAllCharactersInTable(db, database)
@@ -1550,6 +1597,7 @@ function loadPersistedDatabase(
   }
   database = loadCollectionsFromSqlite(db, rec)
   projectSelectedPersonaCompatibilityIndex(database as Record<string, unknown>)
+  projectSelectedHypaV3PresetCompatibilityIndex(database as Record<string, unknown>)
   return database
 }
 
@@ -1557,6 +1605,12 @@ function loadPersistedDatabase(
 function projectSelectedPersonaCompatibilityIndex(database: Record<string, unknown>): void {
   if (!Array.isArray(database.personas)) return
   database.selectedPersona = selectedPersonaIndexFromStableId(database)
+}
+
+/** Normal reads derive the legacy numeric pointer without repairing or persisting rows. */
+function projectSelectedHypaV3PresetCompatibilityIndex(database: Record<string, unknown>): void {
+  if (!Array.isArray(database.hypaV3Presets)) return
+  database.hypaV3PresetId = hypaV3PresetIndexFromStableId(database)
 }
 
 export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
@@ -1838,6 +1892,11 @@ function loadDatabaseFieldsFromSqlite(
     const projection = { ...settings, ...fields }
     projectSelectedPersonaCompatibilityIndex(projection)
     settings.selectedPersona = projection.selectedPersona
+  }
+  if (fieldKeys.includes('hypaV3Presets')) {
+    const projection = { ...settings, ...fields }
+    projectSelectedHypaV3PresetCompatibilityIndex(projection)
+    settings.hypaV3PresetId = projection.hypaV3PresetId
   }
 
   return { fields, settings }
@@ -2242,6 +2301,7 @@ export function loadPersistedDatabaseForMemoryJob(db: DatabaseSync, dataDir: str
   if (presetRows.length > 0) {
     settings.hypaV3Presets = presetRows.map((row) => JSON.parse(row.data_json))
   }
+  projectSelectedHypaV3PresetCompatibilityIndex(settings)
 
   if (isRecord(parsedTargetChat) && isRecord(parsedTargetChat.generationSettings)) {
     const modelPresetId = parsedTargetChat.generationSettings.modelPresetId
@@ -2789,6 +2849,7 @@ export async function applyImport(
     if (isRecord(importedDatabase)) {
       migrateLegacyFlatModelConfiguration(importedDatabase)
       repairPersistedPersonaSelectionIdentity(importedDatabase)
+      repairPersistedHypaV3PresetSelectionIdentity(importedDatabase)
     }
     const messageFree = splitChatMessagesIntoTable(db, {
       ...current,
@@ -3997,6 +4058,7 @@ function restoreSqliteFromBackup(
       db.exec('DELETE FROM request_history')
       repairPersistedGlobalLorebookIdsInSqlite(db)
       repairPersistedPersonaSelectionIdentityInSqlite(db)
+      repairPersistedHypaV3PresetSelectionIdentityInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)

@@ -671,6 +671,45 @@ describe('server .risu fixture harness', () => {
     },
   )
 
+  it.each(['legacy', 'blocks'] as const)(
+    'repairs and round-trips stable Hypa V3 preset identity in %s exports',
+    (envelope) => {
+      const snapshot = buildRisuSaveExportSnapshotFromPersisted({
+        _version: 1,
+        database: {
+          characters: [],
+          hypaV3PresetId: 2,
+          selectedHypaV3PresetId: 'duplicate-memory',
+          hypaV3Presets: [
+            { id: 'duplicate-memory', name: 'First', settings: {} },
+            { id: 'duplicate-memory', name: 'Second', settings: {} },
+            { name: 'Selected', settings: {} },
+          ],
+        },
+        assets: [],
+      })
+
+      expect(snapshot.database).toMatchObject({
+        hypaV3PresetId: 2,
+        selectedHypaV3PresetId: 'hypa-v3-preset-3',
+        hypaV3Presets: [
+          { id: 'duplicate-memory', name: 'First' },
+          { id: 'hypa-v3-preset-2', name: 'Second' },
+          { id: 'hypa-v3-preset-3', name: 'Selected' },
+        ],
+      })
+
+      const encoded =
+        envelope === 'legacy'
+          ? encodeRisuSaveLegacyExportSnapshot(snapshot, 'legacy-raw')
+          : encodeRisuSaveBlockExportSnapshot(snapshot)
+      expect(decodeRisuSaveImportSnapshot(encoded).database).toMatchObject({
+        hypaV3PresetId: 2,
+        selectedHypaV3PresetId: 'hypa-v3-preset-3',
+      })
+    },
+  )
+
   it.each(['legacy', 'blocks'] as const)('rejects malformed portable metadata in %s envelopes', (envelope) => {
     const malformed = [
       null,

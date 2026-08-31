@@ -10,6 +10,7 @@ import {
   loadPersisted,
   loadPersistedDatabaseFields,
   loadPersistedDatabaseForMemoryJob,
+  loadPersistedForCollectionMutation,
   replaceAllCharactersInTable,
   writePersistedWithMessages,
   writePluginStorageKey,
@@ -351,6 +352,48 @@ describe('targeted writer kit', () => {
     writeSettingsOnly(db, settings)
 
     expect((loadPersisted(db, dataDir).database as Record<string, unknown>).promptTemplate).toBeNull()
+  })
+
+  it('derives the Hypa V3 numeric compatibility pointer in full and scoped projections without persisting it', () => {
+    writeSingleCollectionTable(db, 'hypaV3Presets', [
+      { id: 'memory-a', name: 'A', settings: {} },
+      { id: 'memory-b', name: 'B', settings: {} },
+    ])
+    const settings = readSettings()
+    settings.selectedHypaV3PresetId = 'memory-b'
+    settings.hypaV3PresetId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).hypaV3PresetId).toBe(1)
+    expect(
+      (loadPersistedForCollectionMutation(db, dataDir, ['hypaV3Presets']).database as Record<string, unknown>)
+        .hypaV3PresetId,
+    ).toBe(1)
+    expect((loadPersistedDatabaseForMemoryJob(db, dataDir) as Record<string, unknown>).hypaV3PresetId).toBe(1)
+    expect(readSettings().hypaV3PresetId).toBe(0)
+  })
+
+  it('fails closed on ambiguous Hypa V3 stable identity without repairing ordinary repository reads', () => {
+    const damagedPresets = [
+      { id: 'duplicate-memory', name: 'A', settings: {} },
+      { id: 'duplicate-memory', name: 'B', settings: {} },
+    ]
+    writeSingleCollectionTable(db, 'hypaV3Presets', damagedPresets)
+    const settings = readSettings()
+    settings.selectedHypaV3PresetId = 'duplicate-memory'
+    settings.hypaV3PresetId = 0
+    writeSettingsOnly(db, settings)
+
+    expect((loadPersisted(db, dataDir).database as Record<string, unknown>).hypaV3PresetId).toBe(-1)
+    expect(
+      (loadPersistedForCollectionMutation(db, dataDir, ['hypaV3Presets']).database as Record<string, unknown>)
+        .hypaV3PresetId,
+    ).toBe(-1)
+    expect(readCollection('hypa_v3_presets')).toEqual(damagedPresets)
+    expect(readSettings()).toMatchObject({
+      selectedHypaV3PresetId: 'duplicate-memory',
+      hypaV3PresetId: 0,
+    })
   })
 
   it('does not bind a memory job to an ambiguous prompt preset row', () => {

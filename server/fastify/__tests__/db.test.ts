@@ -292,6 +292,95 @@ describe('schema migrations', () => {
     }
   })
 
+  it('rolls back and deterministically retries durable Hypa V3 preset identity repair', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const legacySettings = { hypaV3PresetId: 2, selectedHypaV3PresetId: 'duplicate' }
+    const legacyPresets = [{ id: 'hypa-v3-preset-1' }, { id: 'duplicate' }, { id: 'duplicate' }, {}]
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(legacySettings))
+    const insertPreset = initial.prepare('INSERT INTO hypa_v3_presets (position, data_json) VALUES (?, ?)')
+    legacyPresets.forEach((preset, index) => insertPreset.run(index, JSON.stringify(preset)))
+    initial.prepare('UPDATE schema_version SET version = 35, revision = 23 WHERE id = 1').run()
+    initial.exec(`
+      CREATE TRIGGER fail_hypa_v3_identity_migration_version_bump
+      BEFORE UPDATE OF version ON schema_version
+      WHEN NEW.version = 36
+      BEGIN
+        SELECT RAISE(ABORT, 'injected Hypa V3 identity version bump failure');
+      END;
+    `)
+    initial.close()
+
+    expect(() => openDatabase(dataDir)).toThrow(
+      /durable-hypa-v3-preset-identity.*injected Hypa V3 identity version bump failure/,
+    )
+
+    const afterFailure = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(afterFailure)).toEqual({ version: 35, revision: 23 })
+      const settings = afterFailure.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      expect(JSON.parse(settings.data_json)).toEqual(legacySettings)
+      expect(
+        (
+          afterFailure.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+            data_json: string
+          }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(legacyPresets)
+      afterFailure.exec('DROP TRIGGER fail_hypa_v3_identity_migration_version_bump')
+    } finally {
+      afterFailure.close()
+    }
+
+    const retried = openDatabase(dataDir)
+    let repairedSettings: Record<string, unknown>
+    let repairedPresets: unknown[]
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      repairedSettings = JSON.parse(
+        (retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      ) as Record<string, unknown>
+      repairedPresets = (
+        retried.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+          data_json: string
+        }>
+      ).map(({ data_json }) => JSON.parse(data_json))
+      expect(repairedSettings).toMatchObject({
+        hypaV3PresetId: 2,
+        selectedHypaV3PresetId: 'hypa-v3-preset-3',
+      })
+      expect(repairedPresets).toEqual([
+        { id: 'hypa-v3-preset-1' },
+        { id: 'duplicate' },
+        { id: 'hypa-v3-preset-3' },
+        { id: 'hypa-v3-preset-4' },
+      ])
+    } finally {
+      retried.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      expect(
+        JSON.parse(
+          (reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ),
+      ).toEqual(repairedSettings)
+      expect(
+        (
+          reopened.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+            data_json: string
+          }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(repairedPresets)
+    } finally {
+      reopened.close()
+    }
+  })
+
   it('migrates finalization retries to retain multi-generation alternates', () => {
     const dataDir = makeDataDir()
     seedSchemaVersion(dataDir, 19, 4)

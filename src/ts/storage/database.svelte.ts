@@ -56,6 +56,7 @@ import {
   type AgentRecord,
 } from '../agentPresetRecords'
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
+import { repairHypaV3PresetSelectionIdentity } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { normalizeTranslatorPresetStateWithLegacyCompatibility, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
@@ -3356,17 +3357,21 @@ export function setDatabase(data: Database) {
     data.bardWiki = { ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS }
   }
   data.hypaV3Presets ??= [
-    createHypaV3Preset('Default', {
-      summarizationPrompt: (data as { supaMemoryPrompt?: string }).supaMemoryPrompt ?? '',
-      ...data.hypaV3Settings,
-    }),
+    createHypaV3Preset(
+      'Default',
+      {
+        summarizationPrompt: (data as { supaMemoryPrompt?: string }).supaMemoryPrompt ?? '',
+        ...data.hypaV3Settings,
+      },
+      'default-hypa-v3-preset',
+    ),
   ]
+  repairHypaV3PresetSelectionIdentity(data as unknown as Record<string, unknown>)
   if (data.hypaV3Presets.length > 0) {
     data.hypaV3Presets = data.hypaV3Presets.map((preset, i) =>
-      createHypaV3Preset(preset.name || `Preset ${i + 1}`, preset.settings || {}),
+      createHypaV3Preset(preset.name || `Preset ${i + 1}`, preset.settings || {}, preset.id),
     )
   }
-  data.hypaV3PresetId ??= 0
   normalizeTranslatorPresetStateWithLegacyCompatibility(data)
   data.showDeprecatedTriggerV2 ??= false
   data.returnCSSError ??= true
@@ -4236,6 +4241,7 @@ export interface Database {
   legacyMemoryMigrationNoticeDismissed?: boolean
   hypaV3Settings: HypaV3Settings // legacy
   hypaV3Presets: HypaV3Preset[]
+  selectedHypaV3PresetId: string | null
   hypaV3PresetId: number
   realmDirectOpen: boolean
   OaiCompAPIKeys: { [key: string]: string }

@@ -255,6 +255,38 @@ describe('legacy db.json boot import', () => {
     expect(loadPersistedWithMessages(secondDb, dataDir)).toEqual(afterFirstBoot)
   })
 
+  it('repairs Hypa V3 preset ids and persists stable selection before retiring a legacy snapshot', () => {
+    const dataDir = makeDataDir()
+    const filePath = path.join(dataDir, 'db.json')
+    const legacy = snapshot('legacy-hypa', 'legacy-chat', 'legacy message')
+    ;(legacy.database as Record<string, unknown>).hypaV3PresetId = 2
+    ;(legacy.database as Record<string, unknown>).selectedHypaV3PresetId = 'duplicate'
+    ;(legacy.database as Record<string, unknown>).hypaV3Presets = [
+      { id: 'duplicate', name: 'First', settings: {} },
+      { id: 'duplicate', name: 'Second', settings: {} },
+      { name: 'Legacy selected', settings: {} },
+    ]
+    writeFileSync(filePath, JSON.stringify(legacy))
+
+    const firstDb = makeDb(dataDir)
+    ensureDbJsonImported(firstDb, dataDir, makeLogger())
+    const afterFirstBoot = loadPersistedWithMessages(firstDb, dataDir)
+    expect(afterFirstBoot.database).toMatchObject({
+      hypaV3PresetId: 2,
+      selectedHypaV3PresetId: 'hypa-v3-preset-3',
+      hypaV3Presets: [
+        { id: 'duplicate', name: 'First' },
+        { id: 'hypa-v3-preset-2', name: 'Second' },
+        { id: 'hypa-v3-preset-3', name: 'Legacy selected' },
+      ],
+    })
+    closeDb(firstDb)
+
+    const secondDb = makeDb(dataDir)
+    ensureDbJsonImported(secondDb, dataDir, makeLogger())
+    expect(loadPersistedWithMessages(secondDb, dataDir)).toEqual(afterFirstBoot)
+  })
+
   it('quarantines an invalid envelope without clobbering an existing quarantine or touching tables', () => {
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)

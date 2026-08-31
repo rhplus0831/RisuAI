@@ -85,6 +85,7 @@ describe('@risuai/shared-core import boundary', () => {
         'effectivePromptTemplate.ts',
         'googleModels.ts',
         'historySlots.ts',
+        'hypaV3PresetSelectionIdentity.ts',
         'index.ts',
         'inlayTokens.ts',
         'internalReasoning.ts',

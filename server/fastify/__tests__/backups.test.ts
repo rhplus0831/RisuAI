@@ -1888,6 +1888,65 @@ describe('backups', () => {
     })
   })
 
+  it('repairs durable Hypa V3 preset identity while restoring a pre-v36 SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'pre-v36-hypa',
+      hypaV3PresetId: 0,
+      selectedHypaV3PresetId: 'memory-before-backup',
+      hypaV3Presets: [{ id: 'memory-before-backup', name: 'Before backup', settings: {} }],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'pre-v36 Hypa V3 preset identity' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const settingsRow = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.hypaV3PresetId = 2
+      settings.selectedHypaV3PresetId = 'duplicate-memory'
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      backupDb.exec('DELETE FROM hypa_v3_presets')
+      const insertPreset = backupDb.prepare('INSERT INTO hypa_v3_presets (position, data_json) VALUES (?, ?)')
+      insertPreset.run(0, JSON.stringify({ id: 'duplicate-memory', name: 'First', settings: {} }))
+      insertPreset.run(1, JSON.stringify({ id: 'duplicate-memory', name: 'Second', settings: {} }))
+      insertPreset.run(2, JSON.stringify({ name: 'Selected', settings: {} }))
+      backupDb.prepare('UPDATE schema_version SET version = 35 WHERE id = 1').run()
+    } finally {
+      backupDb.close()
+    }
+
+    await importDb(harness.app, assertion, { tag: 'live-after-hypa-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      hypaV3PresetId: 2,
+      selectedHypaV3PresetId: 'hypa-v3-preset-3',
+      hypaV3Presets: [
+        { id: 'duplicate-memory', name: 'First' },
+        { id: 'hypa-v3-preset-2', name: 'Second' },
+        { id: 'hypa-v3-preset-3', name: 'Selected' },
+      ],
+    })
+  })
+
   it('round-trips split model and prompt preset tables with backup/restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, {

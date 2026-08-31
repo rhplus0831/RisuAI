@@ -51,6 +51,7 @@ import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@risuai/protocol'
 import { repairPersonaSelectionIdentity } from '@risuai/shared-core/persona-selection-identity'
+import { repairHypaV3PresetSelectionIdentity } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 type JsonRecord = Record<string, unknown>
 
@@ -1365,6 +1366,7 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
     const existingSettings = isRecord(database.hypaV3Settings) ? database.hypaV3Settings : {}
     database.hypaV3Presets = [
       {
+        id: 'default-hypa-v3-preset',
         name: 'Default',
         settings: {
           ...cloneJson(DEFAULT_HYPA_V3_SETTINGS),
@@ -1378,6 +1380,7 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
       const source = isRecord(preset) ? preset : {}
       const settings = isRecord(source.settings) ? source.settings : {}
       return {
+        ...(typeof source.id === 'string' ? { id: source.id } : {}),
         name: typeof source.name === 'string' && source.name ? source.name : `Preset ${index + 1}`,
         settings: {
           ...cloneJson(DEFAULT_HYPA_V3_SETTINGS),
@@ -1386,7 +1389,7 @@ function normalizeHypaV3Presets(database: JsonRecord): void {
       }
     })
   }
-  if (!Number.isInteger(database.hypaV3PresetId)) database.hypaV3PresetId = 0
+  repairHypaV3PresetSelectionIdentity(database)
 }
 
 function normalizeTranslatorPresets(database: JsonRecord): void {

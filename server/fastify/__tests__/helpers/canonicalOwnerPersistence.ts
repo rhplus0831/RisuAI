@@ -128,9 +128,11 @@ export function canonicalOwnerPersistenceDatabase(): JsonRecord {
     username: 'stale persona scalar',
     personaPrompt: 'stale persona prompt scalar',
     userNote: 'stale persona note scalar',
-    hypaV3PresetId: 1,
+    selectedHypaV3PresetId: 'hypa-owner',
+    hypaV3PresetId: 0,
     hypaV3Presets: [
       {
+        id: 'hypa-unselected',
         name: 'Unselected Hypa Preset',
         settings: {
           summarizationPrompt: 'unselected hypa prompt',
@@ -138,6 +140,7 @@ export function canonicalOwnerPersistenceDatabase(): JsonRecord {
         },
       },
       {
+        id: 'hypa-owner',
         name: 'Selected Hypa Owner',
         settings: {
           summarizationPrompt: 'selected hypa prompt',
@@ -158,7 +161,7 @@ export function canonicalOwnerPersistenceSnapshot(database: unknown): JsonRecord
   const selectedPrompt = selectedArrayRecord(source.promptPresets, source.promptPresetsId)
   const selectedTranslator = uniqueRecordById(source.translatorPresets, source.translatorPresetId)
   const selectedPersona = uniqueRecordById(source.personas, source.selectedPersonaId)
-  const selectedHypaPreset = selectedArrayRecord(source.hypaV3Presets, source.hypaV3PresetId)
+  const selectedHypaPreset = uniqueRecordById(source.hypaV3Presets, source.selectedHypaV3PresetId)
   const selectedHypaSettings = isRecord(selectedHypaPreset?.settings) ? selectedHypaPreset.settings : {}
   const roleBindings = isRecord(source.modelRoleProfiles) ? source.modelRoleProfiles : {}
 
@@ -185,8 +188,7 @@ export function canonicalOwnerPersistenceSnapshot(database: unknown): JsonRecord
       note: selectedPersona?.note ?? null,
     },
     hypa: {
-      // Hypa still persists a numeric compatibility pointer. Until its stable-id
-      // contract lands, pin both that pointer and the selected row's content.
+      selectedId: source.selectedHypaV3PresetId ?? null,
       selectedIndex: source.hypaV3PresetId ?? null,
       selectedName: selectedHypaPreset?.name ?? null,
       summarizationPrompt: selectedHypaSettings.summarizationPrompt ?? null,
@@ -257,6 +259,7 @@ export const EXPECTED_CANONICAL_OWNER_PERSISTENCE_SNAPSHOT: JsonRecord = {
     note: 'selected persona note',
   },
   hypa: {
+    selectedId: 'hypa-owner',
     selectedIndex: 1,
     selectedName: 'Selected Hypa Owner',
     summarizationPrompt: 'selected hypa prompt',

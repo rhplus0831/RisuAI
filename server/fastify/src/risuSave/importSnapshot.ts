@@ -5,7 +5,12 @@ import {
   decodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
 import type { ExpandedSizeLimitOptions } from './importLimits.js'
-import { COLLECTION_FIELDS, repairPersistedPersonaSelectionIdentity, ValidationError } from '../repository.js'
+import {
+  COLLECTION_FIELDS,
+  repairPersistedHypaV3PresetSelectionIdentity,
+  repairPersistedPersonaSelectionIdentity,
+  ValidationError,
+} from '../repository.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePersonaCollection } from '../commands/personas.js'
@@ -451,6 +456,7 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
   // repair passes. Run the authoritative repair after defaults so imported
   // rows always reach SQLite with stable book and entry ids.
   ensureGlobalLorebookCollection(normalized)
+  repairPersistedHypaV3PresetSelectionIdentity(normalized)
   return normalized
 }
 

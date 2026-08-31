@@ -37,6 +37,12 @@ describe('settings group contracts', () => {
     expect(SERVER_SETTINGS_GROUP_BY_KEY).not.toHaveProperty('translatorPresetId')
   })
 
+  it('keeps stable Hypa V3 selection in the memory settings owner', () => {
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.memory).toEqual(
+      expect.arrayContaining(['hypaV3Presets', 'selectedHypaV3PresetId', 'hypaV3PresetId']),
+    )
+  })
+
   it('persists reduced motion through the display settings group', () => {
     expect(SERVER_SETTINGS_GROUP_BY_KEY.reducedMotion).toBe('display')
     expect(SERVER_SETTINGS_KEYS_BY_GROUP.display).toContain('reducedMotion')

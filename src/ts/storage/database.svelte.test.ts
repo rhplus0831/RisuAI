@@ -426,6 +426,41 @@ describe('settings database normalization', () => {
     ])
   })
 
+  it('repairs legacy Hypa V3 preset ids deterministically and preserves stable selection precedence', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    legacyData.hypaV3Presets = [
+      { id: '', name: 'Missing', settings: {} },
+      { id: 'owned', name: 'Owned', settings: {} },
+      { id: 'duplicate', name: 'First duplicate', settings: {} },
+      { id: 'duplicate', name: 'Second duplicate', settings: {} },
+    ] as any
+    legacyData.hypaV3PresetId = 3
+    legacyData.selectedHypaV3PresetId = 'owned'
+
+    setDatabase(legacyData)
+
+    expect(getDatabase().hypaV3Presets.map(({ id }) => id)).toEqual([
+      'hypa-v3-preset-1',
+      'owned',
+      'duplicate',
+      'hypa-v3-preset-4',
+    ])
+    expect(getDatabase().selectedHypaV3PresetId).toBe('owned')
+    expect(getDatabase().hypaV3PresetId).toBe(1)
+
+    const reopened = clonePlain(getDatabase())
+    setDatabase(reopened)
+    expect(getDatabase().hypaV3Presets.map(({ id }) => id)).toEqual([
+      'hypa-v3-preset-1',
+      'owned',
+      'duplicate',
+      'hypa-v3-preset-4',
+    ])
+    expect(getDatabase().selectedHypaV3PresetId).toBe('owned')
+    expect(getDatabase().hypaV3PresetId).toBe(1)
+  })
+
   it('preserves a legacy custom palette separately and defaults presets to the standard palette', () => {
     seedPresetDatabase()
     const legacyCustomData = clonePlain(getDatabase())

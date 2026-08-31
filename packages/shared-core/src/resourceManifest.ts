@@ -288,6 +288,8 @@ export const RESOURCE_SURFACE_MANIFEST = {
       projection('selected-character', ['interact', 'editor-prefill']),
       collection('promptTemplate', ['interact', 'editor-prefill']),
     ],
+    notes:
+      'The memory group owns selectedHypaV3PresetId; hypaV3PresetId is its derived numeric compatibility projection.',
   },
   'settings:display': {
     family: 'settings',
@@ -701,6 +703,8 @@ export const RESOURCE_SURFACE_MANIFEST = {
       projection('selected-character', ['render', 'interact', 'mutate']),
       projection('selected-chat', ['render', 'interact', 'mutate']),
     ],
+    notes:
+      'The memory group owns selectedHypaV3PresetId; hypaV3PresetId is its derived numeric compatibility projection.',
   },
   'overlay:loadouts': {
     family: 'overlay',

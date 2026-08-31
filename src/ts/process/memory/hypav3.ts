@@ -16,8 +16,10 @@ import {
   updateLocalMemoryJob,
   type LocalMemoryJobHandle,
 } from 'src/ts/server/memoryJobProjection.svelte'
+import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
 export interface HypaV3Preset {
+  id: string
   name: string
   settings: HypaV3Settings
 }
@@ -1578,7 +1580,11 @@ export function getCurrentHypaV3Preset(): HypaV3Preset {
   return preset
 }
 
-export function createHypaV3Preset(name = 'New Preset', existingSettings = {}): HypaV3Preset {
+export function createHypaV3Preset(
+  name = 'New Preset',
+  existingSettings = {},
+  id = createNonSecurityUuid(),
+): HypaV3Preset {
   const settings: HypaV3Settings = {
     summarizationModel: 'subModel',
     summarizationPrompt: '',
@@ -1612,6 +1618,7 @@ export function createHypaV3Preset(name = 'New Preset', existingSettings = {}): 
   }
 
   return {
+    id,
     name,
     settings,
   }

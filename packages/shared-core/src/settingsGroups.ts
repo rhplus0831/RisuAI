@@ -174,6 +174,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   hypaV3Key: 'memory',
   hypaV3PresetId: 'memory',
   hypaV3Presets: 'memory',
+  selectedHypaV3PresetId: 'memory',
   iconsize: 'display',
   imageCompression: 'media',
   ImagenAspectRatio: 'media',
