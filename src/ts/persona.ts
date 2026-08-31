@@ -1828,7 +1828,6 @@ export function deleteSelectedUserPersonaWithOutcome(
     return null
   }
   const references = optimisticallyRehomeGenerationReferences({
-    getDatabase: generationReferenceDatabase,
     kind: 'persona',
     deletedId: personaId,
     replacement: selectedId ? { id: selectedId } : null,
@@ -1838,13 +1837,6 @@ export function deleteSelectedUserPersonaWithOutcome(
 
 export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
   return deleteSelectedUserPersonaWithOutcome(expectedPersonaId) !== null
-}
-
-function generationReferenceDatabase(): Database {
-  const loadouts = collectionsResourceState.values.loadouts
-  return {
-    loadouts: collectionsResourceState.statuses.loadouts === 'error' || !Array.isArray(loadouts) ? [] : loadouts,
-  } as Database
 }
 
 function currentPersonaIconUploadFreshness() {
