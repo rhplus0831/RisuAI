@@ -1357,7 +1357,7 @@ export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void 
     }
     return
   }
-  // Pre-hydration compatibility seam for bridge baselines captured before the
+  // Pre-hydration compatibility seam for baselines captured before the
   // explicit character owner resource becomes ready.
   withChatOwnerProjectionWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
@@ -1419,8 +1419,8 @@ export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnap
     }
     return
   }
-  // Pre-hydration compatibility seam; normal bridge rollback uses the stable
-  // folder owner above.
+  // Pre-hydration compatibility seam; normal rollback uses the stable folder
+  // owner above.
   withChatOwnerProjectionWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     const folder = character?.chatFolders?.find((candidate) => candidate.id === snapshot.folderId)
@@ -6451,7 +6451,7 @@ interface AppliedChatNoteRollback {
 // Author-note editors debounce outside this module, but the staged durable
 // mutation still belongs to one globally stable chat owner. Keep that exact
 // owner here so chat deletion/reset can drain only affected notes without
-// walking the process-wide bridge registry.
+// walking the process-wide owner mutation registry.
 const appliedChatNoteRollbacks = new Map<string, AppliedChatNoteRollback>()
 const pendingChatNoteOwnerMutations = new Map<string, PendingChatNoteOwnerMutation>()
 

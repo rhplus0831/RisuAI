@@ -106,12 +106,12 @@
     setPromptPresetModelOverrideEnabled,
   } from 'src/ts/promptPresetModelOverrides.svelte'
   import { promptPresetModelOverrideFieldForDatabaseKey, resolvePromptPresetRegexField } from 'src/ts/presetSplit'
-  // Prompt-owner bridge: retained for owner-specific hydration fences, durable structural commands, and rollback.
+  // Prompt-owner helpers provide hydration fences, durable structural commands, and rollback.
   import {
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
     dispatchPromptTemplateStructuralMutation,
-    flushPendingPromptTemplatePatches,
+    commitPendingPromptTemplateMutations,
     promptTemplateOwnerCommandId,
     promptTemplateOwnerMutationKey,
     runPromptTemplateOwnerCommand,
@@ -1130,7 +1130,7 @@
       return
     }
     if (ownerId !== currentPromptTemplateOwnerId()) return
-    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+    if (canUseServerCommands()) commitPendingPromptTemplateMutations()
 
     const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     const previous = snapshotPromptTemplateOwnerProjection(ownerId)

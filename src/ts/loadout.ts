@@ -79,7 +79,7 @@ import {
 } from './server/pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
 import {
-  flushPendingPromptTemplateOwnerPatches,
+  commitPendingPromptTemplateOwnerMutations,
   promptTemplateOwnerMutationKey,
 } from './server/promptTemplateMutations.svelte'
 import {
@@ -2065,7 +2065,7 @@ async function applyLoadoutNowExclusive(
   }
   if (promptPresetSelection) {
     const promptPresetOwnerIds = new Set([previousPromptPresetId, promptPresetSelection.presetId])
-    flushPendingPromptTemplateOwnerPatches(promptPresetOwnerIds)
+    commitPendingPromptTemplateOwnerMutations(promptPresetOwnerIds)
     for (const presetId of promptPresetOwnerIds) {
       if (presetId) flushPendingSplitPresetPatch('prompt', presetId)
     }

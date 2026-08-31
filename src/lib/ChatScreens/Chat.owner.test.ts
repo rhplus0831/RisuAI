@@ -8,7 +8,7 @@ describe('Chat explicit owner reads', () => {
   it('keeps character, chat, and settings reads off the aggregate facade', () => {
     expect(source).not.toContain('getDatabase')
     expect(source).not.toContain('function preReadyCharacterRows()')
-    expect(source).toContain('function mutableChatBridgeRows()')
+    expect(source).toContain('function mutableChatOwnerRows()')
     expect(source).toContain('function readSettingsGroup(group: SettingsGroup)')
     expect(source).not.toContain('getResourceDatabase')
   })

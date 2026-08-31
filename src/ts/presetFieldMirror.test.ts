@@ -111,7 +111,7 @@ describe('mirrorTopLevelPresetField', () => {
     { status: 'accepted' as const },
     { status: 'queued' as const, settlement: Promise.resolve('accepted' as const) },
     { status: 'failed' as const },
-  ])('returns the $status owner mutation outcome to bridge callers', (result) => {
+  ])('returns the $status owner mutation outcome to owner callers', (result) => {
     const outcome = Promise.resolve(result)
     presetUpdateState.updateModelPreset.mockReturnValueOnce(outcome)
 

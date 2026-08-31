@@ -1188,7 +1188,7 @@ async function collectStreamingText(stream: ReadableStream<{ [key: string]: stri
 }
 
 // Persist an in-place working-copy lorebook edit through the character lorebook
-// owner. The bridge captures the live owner baseline, projects only that list,
+// owner. The helper captures the live owner baseline, projects only that list,
 // and owns durable rollback/recovery.
 function persistCharacterLorebookEdit(char: character): void {
   void replaceCharacterLorebookCollectionWithOutcome(char.chaId, char.globalLore ?? [], 0)

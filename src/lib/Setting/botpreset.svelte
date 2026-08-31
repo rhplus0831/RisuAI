@@ -39,7 +39,7 @@
   } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { prebuiltPresets } from 'src/ts/process/templates/templates'
-  // Active-chat owner bridge: retained for chat-scoped selection persistence and settlement reporting.
+  // Active-chat owner helpers provide chat-scoped selection persistence and settlement reporting.
   import {
     createManualModelPresetSelection,
     createPromptPresetSelection,
@@ -50,7 +50,7 @@
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
-  // Prompt-template hydration bridge: retained for duplicating the exact prompt owner body.
+  // Prompt-template hydration resolves the exact owner body before duplication.
   import {
     clonePromptTemplateSelectedFallback,
     ensurePromptTemplateHydrated,
@@ -504,7 +504,7 @@
   function extractLegacy(preset: StableLegacyPreset, mode: 'all' | 'model' | 'prompt') {
     const index = legacyPresets.findIndex((candidate) => candidate.id === preset.id)
     if (index < 0) return
-    // Compatibility bridge: legacy extraction remains index-based after resolving the stable owner id.
+    // Compatibility adapter: legacy extraction remains index-based after resolving the stable owner id.
     extractLegacyBotPresetByIndex(index, mode)
     if (legacyPresets.length <= 1) close()
   }
@@ -512,7 +512,7 @@
   async function downloadModernPromptPreset(presetId: string): Promise<void> {
     const index = livePresetIndex('prompt', presetId)
     if (index < 0) return
-    // Compatibility bridge: the export facade accepts an index, resolved here from the stable prompt owner id.
+    // Compatibility adapter: the export API accepts an index, resolved here from the stable prompt owner id.
     await downloadPreset(index, 'risupreset')
   }
 

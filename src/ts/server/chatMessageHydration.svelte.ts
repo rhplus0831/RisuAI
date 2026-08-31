@@ -50,7 +50,7 @@ import { registerChatHydrationRuntime } from '../process/generationRuntimeBridge
 export const BULK_HYDRATION_BATCH_SIZE = 32
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_LOAD_INITIAL_PAGES
 
-// The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
+// The bootstrap ships chat *stubs* (empty message[]). This owner hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
 // resource apply re-stubs it. Bulk readers that need every chat call
 // `ensureAllChatsHydrated`.
@@ -1231,7 +1231,7 @@ export async function ensureCharacterLorebookHydrated(
 ): Promise<boolean> {
   if (!characterId) return false
   if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId)) return true
-  // A resident projection is recorded in the authoritative bridge registry at
+  // A resident projection is recorded in the authoritative owner registry at
   // bootstrap/refresh. If it is not recorded, fail closed even when reads are
   // unavailable or the stub setting just changed; exporting `[]` would create a
   // plausible-looking but incomplete file.

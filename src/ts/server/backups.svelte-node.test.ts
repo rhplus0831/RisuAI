@@ -217,7 +217,7 @@ describe('server backup helpers', () => {
     })
   })
 
-  it('retires old bridge state before asynchronous ownership preparation finishes', async () => {
+  it('retires old owner state before asynchronous ownership preparation finishes', async () => {
     const preparation = deferred<{ discarded: number }>()
     const order: string[] = []
     ownerResetSpies.resetRegisteredOwnerState.mockImplementationOnce(() => {

@@ -36,7 +36,7 @@
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
     dispatchPromptTemplateStructuralMutation,
-    flushPendingPromptTemplatePatches,
+    commitPendingPromptTemplateMutations,
     queuePromptItemProjectionUpdate,
     reconcilePromptTemplateDraft,
     reapplyPendingPromptTemplateStructuralProjections,
@@ -774,7 +774,7 @@
     if (nextIndex < 0 || nextIndex >= promptTemplateDraft.value.length) return
     const sequence = beginPromptTemplateStructuralMutation()
     if (sequence === null) return
-    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+    if (canUseServerCommands()) commitPendingPromptTemplateMutations()
     const previous = currentPromptTemplateSnapshot()
     const templates = [...promptTemplateDraft.value]
     const temp = templates[originalIndex]
@@ -975,7 +975,7 @@
       resetPromptItemDragState()
       return
     }
-    if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+    if (canUseServerCommands()) commitPendingPromptTemplateMutations()
     const templates = [...promptTemplateDraft.value]
     const previous = currentPromptTemplateSnapshot()
     const projectionFence = capturePromptTemplateOwnerMutationFence()
@@ -1021,7 +1021,7 @@
   onDestroy(() => {
     promptTemplateHydrationRequestId += 1
     document.removeEventListener('keydown', handleKeyDown)
-    flushPendingPromptTemplatePatches()
+    commitPendingPromptTemplateMutations()
     flushPendingSettingsOwnerMutations()
     promptTokenizeDebouncer.cancel()
   })
@@ -1132,7 +1132,7 @@
               if (!removed) return
               const sequence = beginPromptTemplateStructuralMutation()
               if (sequence === null) return
-              if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+              if (canUseServerCommands()) commitPendingPromptTemplateMutations()
               const previous = currentPromptTemplateSnapshot()
               const projectionFence = capturePromptTemplateOwnerMutationFence()
               let templates = [...promptTemplateDraft.value]
@@ -1208,7 +1208,7 @@
         if (promptTemplateStructuralMutationPending || promptTemplateUsesSelectedFallback) return
         const sequence = beginPromptTemplateStructuralMutation()
         if (sequence === null) return
-        if (canUseServerCommands()) flushPendingPromptTemplatePatches()
+        if (canUseServerCommands()) commitPendingPromptTemplateMutations()
         const previous = currentPromptTemplateSnapshot()
         const promptItem = createPromptItem()
         const projectionFence = capturePromptTemplateOwnerMutationFence()

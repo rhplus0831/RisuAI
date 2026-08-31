@@ -957,7 +957,7 @@ export function getChatMetadataOwnerState(chatId: string): ChatMetadataOwnerStat
 }
 
 // Chat metadata is intentionally a closed, scalar owner surface. Keep this
-// list in sync with the fields the metadata bridge is allowed to persist; do
+// list in sync with the fields the metadata owner is allowed to persist; do
 // not widen it into a generic chat/database snapshot.
 export const CHAT_METADATA_OWNER_KEYS = [
   'name',
@@ -1701,7 +1701,7 @@ export function applyGlobalLorebookMutationLocalEffect(
 }
 
 /**
- * Fence an accepted optimistic lorebook-entry mutation. The bridge already
+ * Fence an accepted optimistic lorebook-entry mutation. The owner already
  * contains the accepted collection (and may contain a newer queued edit), so
  * only advance the owning resource revision after validating the live target.
  */

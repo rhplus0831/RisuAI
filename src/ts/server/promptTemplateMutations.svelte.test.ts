@@ -303,7 +303,7 @@ import {
   applyPromptItemProjectionWrite,
   capturePromptTemplateOwnerMutationFence,
   cloneJsonValue,
-  flushPendingPromptTemplatePatches,
+  commitPendingPromptTemplateMutations,
   queuePromptItemProjectionUpdate,
   queuePromptSettingsProjectionPatch,
   reconcilePromptTemplateDraft,
@@ -409,7 +409,7 @@ function draftBindingFor(
 
 async function flushPromptItemDirtyTestState(draftItems: PromptItem[]): Promise<void> {
   getResourceDatabase().promptTemplate = cloneJsonValue(draftItems)
-  flushPendingPromptTemplatePatches()
+  commitPendingPromptTemplateMutations()
   await Promise.resolve()
   await Promise.resolve()
 }
@@ -1144,7 +1144,7 @@ describe('prompt template collection rollback guards', () => {
   })
 })
 
-describe('flushPendingPromptTemplatePatches', () => {
+describe('commitPendingPromptTemplateMutations', () => {
   it('does not dispatch prompt item updates while the template is unloaded', async () => {
     hydrationState.setHydrated(false)
     resourceDatabase.current = {}
@@ -1213,7 +1213,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(durableState.stages[1].handle).not.toBe(durableState.stages[0].handle)
     expect(durableState.stages[1].handle.mutationId).toBe(durableState.stages[0].handle.mutationId)
 
-    flushPendingPromptTemplatePatches()
+    commitPendingPromptTemplateMutations()
     await flushMicrotasks()
 
     expect(durableState.dispatches[0].handle).toBe(durableState.stages[1].handle)
@@ -1295,7 +1295,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     })
 
     await vi.advanceTimersByTimeAsync(500)
-    flushPendingPromptTemplatePatches()
+    commitPendingPromptTemplateMutations()
     await flushMicrotasks()
 
     expect(durableState.dispatches).toHaveLength(1)
@@ -1397,7 +1397,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     }
 
     queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500)
-    flushPendingPromptTemplatePatches({ keepalive: true })
+    commitPendingPromptTemplateMutations({ keepalive: true })
     await Promise.resolve()
 
     expect(commandState.commands).toHaveLength(1)
@@ -2662,7 +2662,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       })
       expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([prerequisite?.handle])
 
-      flushPendingPromptTemplatePatches({ keepalive: true })
+      commitPendingPromptTemplateMutations({ keepalive: true })
       await flushMicrotasks()
 
       expect(durableState.dispatches.map(({ handle }) => handle)).toEqual([prerequisite?.handle, successor?.handle])
@@ -3075,7 +3075,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 
     queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
-    flushPendingPromptTemplatePatches({ keepalive: true })
+    commitPendingPromptTemplateMutations({ keepalive: true })
     await Promise.resolve()
 
     expect(commandState.commands).toHaveLength(1)

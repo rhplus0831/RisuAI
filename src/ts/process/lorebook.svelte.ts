@@ -61,7 +61,7 @@ function selectedGlobalLorebookOwner(): GlobalLorebookOwner | undefined {
 
 function ensureSelectedGlobalLorebookOwner(): GlobalLorebookOwner | undefined {
   // @legacy-compatibility Imported pre-owner databases may have books without
-  // ids. The bridge normalizes only this collection; subsequent access uses its
+  // ids. The owner helper normalizes only this collection; subsequent access uses its
   // explicit collection owner.
   ensureGlobalLorebookListIds()
   return selectedGlobalLorebookOwner()
@@ -809,7 +809,7 @@ export async function importLoreBook(
     if (!resolveLorebookImportEntries(target)) return null
 
     // Build the next entries from the stable target after parsing, so changes
-    // made while the picker was open become part of the bridge's rollback baseline.
+    // made while the picker was open become part of the owner's rollback baseline.
     const current = resolveLorebookImportEntries(target)
     if (!current) return null
 

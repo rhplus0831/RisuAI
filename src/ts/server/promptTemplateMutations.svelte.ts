@@ -861,17 +861,17 @@ export function replacePendingPromptSettingsProjectionPatchValue(key: string, va
   if (correctionOnly) runPendingPromptSettingsPatch()
 }
 
-export function flushPendingPromptTemplatePatches(options: ServerCommandTransportOptions = {}): void {
+export function commitPendingPromptTemplateMutations(options: ServerCommandTransportOptions = {}): void {
   for (const pendingKey of Array.from(pendingPromptItemUpdates.keys())) {
     runPendingPromptItemUpdate(pendingKey, options)
   }
   runPendingPromptSettingsPatch(options)
 }
 
-registerPendingOwnerMutationFlusher('prompt-template', flushPendingPromptTemplatePatches)
+registerPendingOwnerMutationFlusher('prompt-template', commitPendingPromptTemplateMutations)
 
 /** Stage only prompt-item drafts owned by the explicitly named presets. */
-export function flushPendingPromptTemplateOwnerPatches(
+export function commitPendingPromptTemplateOwnerMutations(
   ownerIds: ReadonlySet<string | null>,
   options: ServerCommandTransportOptions = {},
 ): void {

@@ -249,7 +249,7 @@ const db = () =>
     }
   ).db
 
-describe('chat message hydration bridge', () => {
+describe('chat message hydration owner', () => {
   it('fails closed when a ready resource collection has duplicate chat owners', async () => {
     testDatabaseState.db.characters.push({
       chaId: 'char-2',

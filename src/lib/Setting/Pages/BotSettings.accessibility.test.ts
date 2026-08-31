@@ -136,13 +136,13 @@ describe('BotSettings pending prompt persistence', () => {
     const toggleEnd = source.indexOf('function currentPromptPresetIconUploadTarget', toggleStart)
     const toggleSource = source.slice(toggleStart, toggleEnd)
 
-    expect(toggleSource).toContain('flushPendingPromptTemplatePatches()')
+    expect(toggleSource).toContain('commitPendingPromptTemplateMutations()')
     expect(toggleSource).toContain("path: '/prompt-items/enable'")
     expect(toggleSource).toContain('promptTemplateOwnerMutationKey(ownerId)')
     expect(toggleSource).toContain('dispatchPromptTemplateStructuralMutation({')
     expect(toggleSource).toContain('outbox,')
     expect(toggleSource).toContain('intent,')
-    expect(toggleSource.indexOf('flushPendingPromptTemplatePatches()')).toBeLessThan(
+    expect(toggleSource.indexOf('commitPendingPromptTemplateMutations()')).toBeLessThan(
       toggleSource.indexOf('setSelectedPromptPresetTemplateProjection(enabled)'),
     )
   })

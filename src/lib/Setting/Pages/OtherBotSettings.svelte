@@ -33,8 +33,8 @@
   import { onDestroy } from 'svelte'
   // Retained WS3 seams: per-key drafts keep the existing rebase/rollback and
   // reload contract, while the exact-patch helper owns atomic Hypa imports.
-  // Both retire with the settings bridge after their narrow command/draft
-  // replacements land; neither is used for normal owner reads in this page.
+  // Both are narrow settings-owner command/draft helpers; neither is used for
+  // aggregate reads in this page.
   import {
     applyServerBackedSettingsPatch,
     createServerBackedSettingDraft,

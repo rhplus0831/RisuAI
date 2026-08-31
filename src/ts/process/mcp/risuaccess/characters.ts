@@ -691,7 +691,7 @@ export class CharacterHandler extends MCPToolHandler {
       }
       entries.push(newEntry)
       if (canUseServerCommands()) {
-        if (!replaceCharacterLorebooksThroughServerBridge(char.chaId, entries)) {
+        if (!replaceCharacterLorebooksThroughOwnerCommand(char.chaId, entries)) {
           return characterLorebookNotReadyResponse(char)
         }
       } else {
@@ -724,7 +724,7 @@ export class CharacterHandler extends MCPToolHandler {
     }
 
     if (canUseServerCommands()) {
-      if (!replaceCharacterLorebooksThroughServerBridge(char.chaId, entries)) {
+      if (!replaceCharacterLorebooksThroughOwnerCommand(char.chaId, entries)) {
         return characterLorebookNotReadyResponse(char)
       }
     } else {
@@ -785,7 +785,7 @@ export class CharacterHandler extends MCPToolHandler {
 
     entries.splice(entryIndex, 1)
     if (canUseServerCommands()) {
-      if (!replaceCharacterLorebooksThroughServerBridge(char.chaId, entries)) {
+      if (!replaceCharacterLorebooksThroughOwnerCommand(char.chaId, entries)) {
         return characterLorebookNotReadyResponse(char)
       }
     } else {
@@ -1216,7 +1216,7 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function replaceCharacterLorebooksThroughServerBridge(characterId: string, entries: loreBook[]): boolean {
+function replaceCharacterLorebooksThroughOwnerCommand(characterId: string, entries: loreBook[]): boolean {
   if (lorebookStubsEnabled() && !isCharacterLorebookHydrated(characterId)) return false
   ensureClientLorebookEntryIds(entries)
   return replaceCharacterLorebookCollectionFull(characterId, entries, 0)

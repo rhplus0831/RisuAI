@@ -211,28 +211,28 @@
     return owner
   }
 
-  // This retained mutable bridge is restricted to ready, uniquely identified
-  // character/chat owners while its remaining writes move to commands.
-  function mutableChatBridgeRows(): readonly Character[] {
+  // Mutable access is restricted to ready, uniquely identified character/chat
+  // owners while command helpers retain durable mutation authority.
+  function mutableChatOwnerRows(): readonly Character[] {
     return characterRowsForRead()
   }
 
-  function mutableCharacterBridgeById(characterId: string): Character | undefined {
+  function mutableCharacterOwnerById(characterId: string): Character | undefined {
     if (!characterId || charactersResourceState.status !== 'ready') return undefined
     return getCharacterResourceOwner(characterId)
   }
 
-  function mutableChatBridgeById(characterId: string, chatId: string): CharacterChatOwner | undefined {
+  function mutableChatOwnerById(characterId: string, chatId: string): CharacterChatOwner | undefined {
     const readOwner = uniqueChatReadOwner(chatId)
     return readOwner?.character.chaId === characterId ? readOwner : undefined
   }
 
-  function mutableActiveChatBridge(): CharacterChatOwner | undefined {
+  function mutableActiveChatOwner(): CharacterChatOwner | undefined {
     const character = selectedCharacterReadOwner()
     const chatPage = character?.chatPage
     const chatId = typeof chatPage === 'number' ? character?.chats?.[chatPage]?.id : undefined
     if (!character?.chaId || !chatId) return undefined
-    return mutableChatBridgeById(character.chaId, chatId)
+    return mutableChatOwnerById(character.chaId, chatId)
   }
 
   function readSettingsGroup(group: SettingsGroup): Partial<Database> {
@@ -401,7 +401,7 @@
   let messageEditTarget: MessageEditorTarget | null = null
 
   function captureMessageEditorTarget(): MessageEditorTarget | null {
-    const owner = mutableActiveChatBridge()
+    const owner = mutableActiveChatOwner()
     if (!owner || idx < 0) return null
     const { character, chat } = owner
     const liveMessage = chat?.message?.[idx]
@@ -431,7 +431,7 @@
   function isCurrentMessageEditorTarget(target: MessageEditorTarget): boolean {
     if (idx !== target.messageIndex) return false
 
-    const owner = mutableActiveChatBridge()
+    const owner = mutableActiveChatOwner()
     if (!owner) return false
     const { character, chat } = owner
     const readMessage = currentLiveMessage()
@@ -672,9 +672,9 @@
     const route = parseRoute(window.location.pathname)
     if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
 
-    const character = mutableCharacterBridgeById(characterId)
+    const character = mutableCharacterOwnerById(characterId)
     if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
-    if (mutableChatBridgeById(characterId, sourceChatId)?.chat !== character.chats?.[character.chatPage]) return
+    if (mutableChatOwnerById(characterId, sourceChatId)?.chat !== character.chats?.[character.chatPage]) return
 
     navigate(characterRoutePath(characterId, sourceChatId), { replace: true })
   }
@@ -720,11 +720,11 @@
     // Resolve the branch source from the target captured at interaction time so a chat switch
     // during the confirm/hydration await cannot retarget the branch to whatever chat is now active.
     if (!sourceCharacterId || !sourceChatId) return
-    const bridge = mutableChatBridgeById(sourceCharacterId, sourceChatId)
-    if (!bridge) {
+    const owner = mutableChatOwnerById(sourceCharacterId, sourceChatId)
+    if (!owner) {
       return
     }
-    const { character: currentCharacter, chat: currentChat } = bridge
+    const { character: currentCharacter, chat: currentChat } = owner
 
     const branchIndex = sourceMessageId
       ? currentChat.message.findIndex((candidate) => candidate.chatId === sourceMessageId)
@@ -811,10 +811,10 @@
     }
 
     if (!isCurrentMessageEditorTarget(originTarget)) return
-    const currentOwner = mutableActiveChatBridge()
+    const currentOwner = mutableActiveChatOwner()
     const currentCharacter = currentOwner?.character
     const sourceOwner = currentCharacter?.chaId
-      ? mutableChatBridgeById(currentCharacter.chaId, branchReference.sourceChatId)
+      ? mutableChatOwnerById(currentCharacter.chaId, branchReference.sourceChatId)
       : undefined
     const sourceChat = sourceOwner?.chat
     const sourceMessages =
@@ -833,7 +833,7 @@
 
   function resolveActiveMessageTarget(target: MessageEditorTarget): { chat: Chat; messageIndex: number } | null {
     if (!target.characterId || !target.chatId) return null
-    const owner = mutableChatBridgeById(target.characterId, target.chatId)
+    const owner = mutableChatOwnerById(target.characterId, target.chatId)
     const character = owner?.character
     const chat = owner?.chat
     if (!character || !chat || character !== target.characterReference) {
@@ -1440,7 +1440,7 @@
     if (!isCurrentMessageEditorTarget(target)) return
 
     const previous = currentChatScopedSnapshot()
-    const chat = mutableActiveChatBridge()?.chat
+    const chat = mutableActiveChatOwner()?.chat
     if (!chat) return
     const liveMessage = chat.message[idx]
     if (!liveMessage || liveMessage.data === message) return
@@ -1468,7 +1468,7 @@
 
   function handlePartialEditSave(e: CustomEvent<PartialEditSaveDetail>) {
     if (idx >= 0) {
-      const chat = mutableActiveChatBridge()?.chat
+      const chat = mutableActiveChatOwner()?.chat
       const liveMessage = chat?.message?.[idx]
       const readMessage = currentLiveMessage()
       if (!liveMessage?.chatId || readMessage?.chatId !== liveMessage.chatId) return
@@ -1946,10 +1946,10 @@
   }
 
   function readChatButtonTriggerLiveTarget(identity: ChatButtonTriggerIdentity): ChatButtonTriggerTarget | null {
-    const owner = mutableActiveChatBridge()
+    const owner = mutableActiveChatOwner()
     if (!owner) return null
     const { character, chat } = owner
-    const selectedCharacterIndex = mutableChatBridgeRows().indexOf(character)
+    const selectedCharacterIndex = mutableChatOwnerRows().indexOf(character)
     const chatPage = character.chats.indexOf(chat)
     if (selectedCharacterIndex < 0 || chatPage < 0) return null
 
@@ -1989,7 +1989,7 @@
     }
 
     if (!liveTarget.characterId || !liveTarget.chatId) return null
-    const owner = mutableChatBridgeById(liveTarget.characterId, liveTarget.chatId)
+    const owner = mutableChatOwnerById(liveTarget.characterId, liveTarget.chatId)
     if (!owner) return null
     const { chat } = owner
 
@@ -2033,7 +2033,7 @@
 
     const nextChatSnapshot = cloneJsonValue(nextChat) as Chat
     if (!target.snapshot.characterId || !target.snapshot.chatId) return false
-    const owner = mutableChatBridgeById(target.snapshot.characterId, target.snapshot.chatId)
+    const owner = mutableChatOwnerById(target.snapshot.characterId, target.snapshot.chatId)
     const character = owner?.character
     const chatIndex = owner && character ? character.chats.indexOf(owner.chat) : -1
     if (!character || chatIndex < 0) return false
@@ -2087,16 +2087,16 @@
       if (!triggerTarget?.snapshot.characterId || !triggerTarget.snapshot.chatId) {
         return
       }
-      const triggerBridge = mutableChatBridgeById(triggerTarget.snapshot.characterId, triggerTarget.snapshot.chatId)
-      if (!triggerBridge) return
-      const currentChar = triggerBridge.character
+      const triggerOwner = mutableChatOwnerById(triggerTarget.snapshot.characterId, triggerTarget.snapshot.chatId)
+      if (!triggerOwner) return
+      const currentChar = triggerOwner.character
 
       let triggerResult = null
       if (triggerName) {
         const triggerController = createManualTriggerAbortController()
         try {
           triggerResult = await runTrigger(currentChar, 'manual', {
-            chat: triggerTarget.previous.chat ?? triggerBridge.chat,
+            chat: triggerTarget.previous.chat ?? triggerOwner.chat,
             manualName: triggerName,
             triggerId: triggerId || undefined,
             signal: triggerController.signal,
@@ -2139,7 +2139,7 @@
 
   async function toggleBookmark() {
     const previous = currentChatScopedSnapshot()
-    const chat = mutableActiveChatBridge()?.chat
+    const chat = mutableActiveChatOwner()?.chat
 
     const readMessage = currentLiveMessage()
     if (!chat?.message[idx]?.chatId || readMessage?.chatId !== chat.message[idx].chatId) return
@@ -3039,7 +3039,7 @@
     aria-label={language.disableMessage}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
-      const chat = mutableActiveChatBridge()?.chat
+      const chat = mutableActiveChatOwner()?.chat
       const currentMessage = chat?.message[idx]
       const readMessage = currentLiveMessage()
       if (!currentMessage?.chatId || readMessage?.chatId !== currentMessage.chatId) return
@@ -3073,7 +3073,7 @@
     aria-label={language.disableAbove}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
-      const chat = mutableActiveChatBridge()?.chat
+      const chat = mutableActiveChatOwner()?.chat
       const currentMessage = chat?.message[idx]
       const readMessage = currentLiveMessage()
       if (!currentMessage?.chatId || readMessage?.chatId !== currentMessage.chatId) return
@@ -3387,7 +3387,7 @@
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {
                   const previous = currentChatScopedSnapshot()
-                  const chat = mutableActiveChatBridge()?.chat
+                  const chat = mutableActiveChatOwner()?.chat
                   if (!chat?.message[idx]?.chatId || chat.message[idx].chatId !== ownerMessage?.chatId) return
                   const role = chat.message[idx].role === 'char' ? 'user' : 'char'
                   const messageId = chat.message[idx].chatId

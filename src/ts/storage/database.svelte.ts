@@ -120,7 +120,7 @@ import {
   peekPromptTemplateOwnerRevision,
 } from '../server/promptTemplateHydration'
 import {
-  flushPendingPromptTemplatePatches,
+  commitPendingPromptTemplateMutations,
   promptTemplateOwnerMutationKey,
 } from '../server/promptTemplateMutations.svelte'
 import {
@@ -6505,7 +6505,7 @@ export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetM
         : promptPresetOwner()[selectIndex]
     const selectPromptPresetId = nextSelectedPreset?.id
     if (!promptPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
-    flushPendingPromptTemplatePatches()
+    commitPendingPromptTemplateMutations()
     flushPendingSplitPresetPatches()
     flushRegisteredPendingOwnerMutation('settings', {})
     const deleteIntent: DurableMutationIntent = {
@@ -6602,10 +6602,10 @@ export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
     if (!promptPresetId) return Promise.resolve({ status: 'failed' })
     if (previousSelectedId === promptPresetId) return Promise.resolve({ status: 'accepted' })
     // Flush row edits while their owner is still selected. Once the selection
-    // changes, the prompt-template bridge deliberately rejects old-owner timer
+    // changes, the prompt-template owner deliberately rejects old-owner timer
     // callbacks, which would otherwise turn a quick preset switch into silent
     // data loss.
-    flushPendingPromptTemplatePatches()
+    commitPendingPromptTemplateMutations()
     flushPendingSplitPresetPatches()
     if (canUseServerCommands()) {
       flushRegisteredPendingOwnerMutation('settings', {})

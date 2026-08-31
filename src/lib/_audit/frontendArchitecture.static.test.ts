@@ -266,7 +266,7 @@ describe('static architecture gate: CharConfig boundaries', () => {
   })
 })
 
-describe('static architecture gate: lorebook bridge boundaries', () => {
+describe('static architecture gate: lorebook owner boundaries', () => {
   it('uses dirty projection merge instead of blind LoreBookData replacement', () => {
     const source = readSource('src/lib/SideBars/LoreBook/LoreBookData.svelte')
     expect(source).toContain('dirtyDraftFields')
@@ -354,7 +354,7 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
     expect(lorebookList).toContain('onCollectionChange={updateModuleLorebookCollection}')
   })
 
-  it('routes lorebook component collection writes through bridge helpers', () => {
+  it('routes lorebook component collection writes through owner helpers', () => {
     const setting = readSource('src/lib/SideBars/LoreBook/LoreBookSetting.svelte')
     const list = readSource('src/lib/SideBars/LoreBook/LoreBookList.svelte')
     for (const source of [setting, list]) {
@@ -373,7 +373,7 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
     expect(list).toContain('replaceGlobalLorebookEntryCollection')
   })
 
-  it('delegates LoreBookData local activation to the bridge', () => {
+  it('delegates LoreBookData local activation to the owner helper', () => {
     const source = readSource('src/lib/SideBars/LoreBook/LoreBookData.svelte')
     expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
@@ -451,8 +451,8 @@ describe('static architecture gate: prompt-template dispatch boundaries', () => 
   })
 })
 
-describe('static architecture gate: script-definition bridge boundaries', () => {
-  it('routes CharConfig script draft writes through the bridge helper', () => {
+describe('static architecture gate: script-definition owner boundaries', () => {
+  it('routes CharConfig script draft writes through the owner helper', () => {
     const source = readSource('src/lib/SideBars/CharConfig.svelte')
     const start = source.indexOf('let characterScriptsDraft')
     const end = source.indexOf('let lasttokens', start)
@@ -485,7 +485,7 @@ describe('static architecture gate: script-definition bridge boundaries', () => 
     expect(preMismatchSource).not.toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
   })
 
-  it('wires ModuleMenu regex and trigger drafts through the script bridge', () => {
+  it('wires ModuleMenu regex and trigger drafts through the script owner', () => {
     const source = readSource('src/lib/Setting/Pages/Module/ModuleMenu.svelte')
     expect(source).toContain('applyModuleScriptDefinitionDraft')
     expect(source).toContain('snapshotModuleScriptDraft')
@@ -494,7 +494,7 @@ describe('static architecture gate: script-definition bridge boundaries', () => 
   })
 })
 
-describe('static architecture gate: settings bridge boundaries', () => {
+describe('static architecture gate: settings owner boundaries', () => {
   it('keeps WelcomeRisu free of direct trusted projection writes', () => {
     const source = readSource('src/lib/Others/WelcomeRisu.svelte')
     expect(source).toContain('applyOnboardingServerBackedSettings')
