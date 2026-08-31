@@ -1,4 +1,6 @@
 import type { RisuPlugin } from './plugins/plugins.svelte'
+import type { Chat, character } from './storage/database.svelte'
+import type { Database } from './storage/databaseTypes'
 import {
   bulkPluginStorageCommand,
   canUseServerCommands,
@@ -25,16 +27,25 @@ import {
   type DurableMutationIntent,
   type DurableMutationRequest,
 } from './server/pendingMutationOutbox'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { captureSettingsPatchProjectionEpochs, getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from './server/resourceState.svelte'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
-import type { SettingsGroupProjectionEpochs } from './server/settingsGroups'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 
 export interface PluginStateSnapshot {
   plugins: RisuPlugin[]
   currentPluginProvider: string
   pluginCustomStorage: Record<string, unknown>
+}
+
+export interface PluginChatOwnerSnapshot {
+  characterId: string
+  chatId: string
+  chat: Chat
 }
 
 export type PluginStorageSnapshot = Record<string, unknown>
@@ -47,7 +58,6 @@ export interface PluginSettingsPatchRollbackSnapshot {
 interface PluginSettingsPatchRollbackStep {
   patch: Record<string, unknown>
   group: SettingsGroup
-  optimisticProjectionEpochs: SettingsGroupProjectionEpochs
   rollbackSnapshot: PluginSettingsPatchRollbackSnapshot
 }
 
@@ -189,21 +199,152 @@ export function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+/** Read one explicit plugin collection owner without exposing the aggregate facade. */
+export function currentPluginCollectionSnapshot(): RisuPlugin[] {
+  const plugins = collectionsResourceState.values.plugins
+  return Array.isArray(plugins) ? cloneJsonValue(plugins as RisuPlugin[]) : []
+}
+
+/** Read one explicit plugin-storage owner without exposing the aggregate facade. */
+export function currentPluginStorageOwnerSnapshot(): PluginStorageSnapshot {
+  const storage = collectionsResourceState.values.pluginCustomStorage
+  return storage && typeof storage === 'object' && !Array.isArray(storage)
+    ? cloneJsonValue(storage as Record<string, unknown>)
+    : {}
+}
+
+/** Read one plugin-storage value for APIs that clone only the requested entry. */
+export function currentPluginStorageValueOwner(key: string): unknown {
+  const storage = collectionsResourceState.values.pluginCustomStorage
+  return storage && typeof storage === 'object' && !Array.isArray(storage)
+    ? (storage as Record<string, unknown>)[key]
+    : undefined
+}
+
+/** Read the plugin-provider settings owner as a detached scalar. */
+export function currentPluginProviderOwnerSnapshot(): string {
+  const provider = (settingsResourceState.value as Record<string, unknown>).currentPluginProvider
+  return typeof provider === 'string' ? provider : ''
+}
+
+/** Read selected settings owner fields as detached values. */
+export function currentPluginSettingsOwnerSnapshot(keys: readonly string[]): Record<string, unknown> {
+  const settings = settingsResourceState.value as Record<string, unknown>
+  return Object.fromEntries(keys.map((key) => [key, cloneJsonValue(settings[key])]))
+}
+
+/** Materialize the complete plugin-facing database shape from explicit owners. */
+export function currentPluginDatabaseSnapshot(): Record<string, unknown> {
+  return cloneJsonValue({
+    ...(settingsResourceState.value as Record<string, unknown>),
+    ...(collectionsResourceState.values as Record<string, unknown>),
+    characters: charactersResourceState.characters,
+    characterOrder: charactersResourceState.characterOrder,
+    currentChar: charactersResourceState.currentChar,
+  })
+}
+
+/** Resolve a unique character owner by its visible collection index. */
+export function currentPluginCharacterSnapshot(index: number): character | undefined {
+  const candidate = charactersResourceState.characters[index]
+  if (!candidate?.chaId) return undefined
+  const owner = getCharacterResourceOwner(candidate.chaId)
+  return owner === candidate ? cloneJsonValue(candidate) : undefined
+}
+
+/** Resolve a unique character owner by stable id. */
+export function currentPluginCharacterOwnerSnapshot(characterId: string): character | undefined {
+  const owner = getCharacterResourceOwner(characterId)
+  return owner ? cloneJsonValue(owner) : undefined
+}
+
+/** Resolve a unique chat owner beneath one unique character owner. */
+export function currentPluginChatOwnerSnapshot(
+  characterId: string,
+  chatId: string,
+): PluginChatOwnerSnapshot | undefined {
+  const character = getCharacterResourceOwner(characterId)
+  if (!character || typeof chatId !== 'string' || chatId.trim() === '') return undefined
+  const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+  if (matches.length !== 1) return undefined
+  return { characterId, chatId, chat: cloneJsonValue(matches[0]) }
+}
+
+/** Replace one unique character owner after validating its stable id. */
+export function replacePluginCharacterOwnerAt(index: number, characterId: string, nextCharacter: character): boolean {
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner || owner !== charactersResourceState.characters[index] || nextCharacter?.chaId !== characterId)
+    return false
+  charactersResourceState.characters[index] = cloneJsonValue(nextCharacter)
+  return true
+}
+
+/** Replace the explicit character-list owner for local compatibility writes. */
+export function replacePluginCharactersOwner(characters: readonly character[]): void {
+  charactersResourceState.characters = cloneJsonValue([...characters])
+}
+
+/** Apply the explicit character-order/selection owners for local compatibility writes. */
+export function applyPluginCharacterPointerOwner(key: 'characterOrder' | 'currentChar', value: unknown): void {
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (key === 'characterOrder' && Array.isArray(value)) {
+    const order = cloneJsonValue(value) as Database['characterOrder']
+    charactersResourceState.characterOrder = order
+    settings.characterOrder = cloneJsonValue(order)
+  } else if (key === 'currentChar' && Number.isInteger(value)) {
+    charactersResourceState.currentChar = value as number
+    settings.currentChar = value as number
+  }
+}
+
+/** Replace one unique chat owner after validating both stable ids. */
+export function replacePluginChatOwner(characterId: string, chatId: string, nextChat: Chat): boolean {
+  const character = getCharacterResourceOwner(characterId)
+  if (!character || nextChat?.id !== chatId) return false
+  const matches = (character.chats ?? []).filter((chat) => chat?.id === chatId)
+  if (matches.length !== 1) return false
+  const index = character.chats.indexOf(matches[0])
+  if (index < 0) return false
+  character.chats[index] = cloneJsonValue(nextChat)
+  return true
+}
+
+/** Replace the explicit plugin collection owner with an immutable snapshot. */
+export function replacePluginCollectionOwner(plugins: readonly RisuPlugin[]): void {
+  collectionsResourceState.values.plugins = cloneJsonValue(plugins) as typeof collectionsResourceState.values.plugins
+}
+
+/** Replace the explicit plugin-storage owner with an immutable snapshot. */
+export function replacePluginStorageOwner(storage: Record<string, unknown>): void {
+  collectionsResourceState.values.pluginCustomStorage = cloneJsonValue(
+    storage,
+  ) as typeof collectionsResourceState.values.pluginCustomStorage
+}
+
+/** Apply a settings-owner patch without entering the aggregate write guard. */
+export function applyPluginSettingsOwnerPatch(patch: Record<string, unknown>): void {
+  const settings = settingsResourceState.value as Record<string, unknown>
+  for (const [key, value] of Object.entries(patch)) settings[key] = cloneJsonValue(value)
+}
+
+/** Apply the provider owner as a scoped settings write. */
+export function applyPluginProviderOwner(provider: string): void {
+  ;(settingsResourceState.value as Record<string, unknown>).currentPluginProvider = provider
+}
+
 export function currentPluginStateSnapshot(): PluginStateSnapshot {
   return {
-    plugins: cloneJsonValue(getDatabase().plugins ?? []),
-    currentPluginProvider: getDatabase().currentPluginProvider ?? '',
-    pluginCustomStorage: cloneJsonValue(getDatabase().pluginCustomStorage ?? {}),
+    plugins: currentPluginCollectionSnapshot(),
+    currentPluginProvider: currentPluginProviderOwnerSnapshot(),
+    pluginCustomStorage: currentPluginStorageOwnerSnapshot(),
   }
 }
 
 export function restorePluginState(snapshot: PluginStateSnapshot): void {
-  withTrustedResourceWrite(() => {
-    pluginWatchSuppressionVersion += 1
-    getDatabase().plugins = cloneJsonValue(snapshot.plugins)
-    getDatabase().currentPluginProvider = snapshot.currentPluginProvider
-    getDatabase().pluginCustomStorage = cloneJsonValue(snapshot.pluginCustomStorage)
-  })
+  pluginWatchSuppressionVersion += 1
+  replacePluginCollectionOwner(snapshot.plugins)
+  applyPluginProviderOwner(snapshot.currentPluginProvider)
+  replacePluginStorageOwner(snapshot.pluginCustomStorage)
 }
 
 export function currentPluginWatchSuppressionVersion(): number {
@@ -560,10 +701,11 @@ export function dispatchEnablePlugin(
 }
 
 function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
-  const plugins = getDatabase().plugins ?? []
-  const index = plugins.findIndex((plugin) => plugin.name === pluginName)
-  if (index === -1) return null
-  return { plugin: plugins[index], index }
+  const plugins = currentPluginCollectionSnapshot()
+  const matches = plugins.map((plugin, index) => ({ plugin, index })).filter(({ plugin }) => plugin.name === pluginName)
+  if (matches.length !== 1) return null
+  const [{ plugin, index }] = matches
+  return { plugin, index }
 }
 
 export function setPluginArgument(
@@ -581,14 +723,14 @@ export function setPluginArgument(
     [arg]: value,
   })
 
-  withTrustedResourceWrite(() => {
-    const target = findPluginByName(pluginName)
-    if (!target) return
-    getDatabase().plugins[target.index] = {
-      ...target.plugin,
-      realArg: nextRealArg,
-    }
-  })
+  const target = findPluginByName(pluginName)
+  if (!target) return null
+  const nextPlugins = currentPluginCollectionSnapshot()
+  nextPlugins[target.index] = {
+    ...target.plugin,
+    realArg: nextRealArg,
+  }
+  replacePluginCollectionOwner(nextPlugins)
   return dispatchUpdatePlugin(plugin.name, { realArg: nextRealArg }, previous)
 }
 
@@ -600,14 +742,14 @@ export function togglePluginEnabled(pluginName: string): Promise<PluginMutationO
   const previous = currentPluginStateSnapshot()
   const enabled = !plugin.enabled
 
-  withTrustedResourceWrite(() => {
-    const target = findPluginByName(pluginName)
-    if (!target) return
-    getDatabase().plugins[target.index] = {
-      ...target.plugin,
-      enabled,
-    }
-  })
+  const target = findPluginByName(pluginName)
+  if (!target) return null
+  const nextPlugins = currentPluginCollectionSnapshot()
+  nextPlugins[target.index] = {
+    ...target.plugin,
+    enabled,
+  }
+  replacePluginCollectionOwner(nextPlugins)
   return dispatchEnablePlugin(plugin.name, enabled, previous)
 }
 
@@ -618,12 +760,8 @@ export function deletePlugin(pluginName: string): Promise<PluginMutationOutcome>
   const { plugin } = current
   const previous = currentPluginStateSnapshot()
 
-  withTrustedResourceWrite(() => {
-    if (getDatabase().currentPluginProvider === plugin.name) {
-      getDatabase().currentPluginProvider = ''
-    }
-    getDatabase().plugins = (getDatabase().plugins ?? []).filter((candidate) => candidate.name !== plugin.name)
-  })
+  if (currentPluginProviderOwnerSnapshot() === plugin.name) applyPluginProviderOwner('')
+  replacePluginCollectionOwner(currentPluginCollectionSnapshot().filter((candidate) => candidate.name !== plugin.name))
   return dispatchDeletePlugin(plugin.name, previous)
 }
 
@@ -659,7 +797,7 @@ export function dispatchSelectPluginProvider(
 
 export function dispatchReorderPlugins(previous: PluginStateSnapshot): Promise<PluginMutationOutcome> | null {
   if (!canUseServerCommands()) return null
-  const attemptedPluginIds = (getDatabase().plugins ?? []).map((plugin) => plugin.name)
+  const attemptedPluginIds = currentPluginCollectionSnapshot().map((plugin) => plugin.name)
   const rollbackEntry = pluginOrderRollbackEntry(previous, attemptedPluginIds)
   const operation = issuePluginNonStorageOperation([rollbackEntry], previous.plugins)
   const intent: DurableMutationIntent = {
@@ -927,30 +1065,28 @@ function rollbackPluginNonStorageEntries(
 ): void {
   let changed = false
 
-  withTrustedResourceWrite(() => {
-    void entries
-    for (const target of operation.targets) {
-      const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
-      const operationRecords = pendingOperations?.filter((record) => record.sequence === operation.sequence) ?? []
-      if (!pendingOperations || operationRecords.length === 0) continue
+  void entries
+  for (const target of operation.targets) {
+    const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
+    const operationRecords = pendingOperations?.filter((record) => record.sequence === operation.sequence) ?? []
+    if (!pendingOperations || operationRecords.length === 0) continue
 
-      for (const operationRecord of operationRecords) {
-        operationRecord.status = 'failed'
-      }
-      changed = cascadeFailedPluginNonStorageOperationsForTarget(target, pendingOperations) || changed
-
-      if (pendingOperations.length > 0) {
-        pendingPluginNonStorageOperationsByTarget.set(target, pendingOperations)
-      } else {
-        pendingPluginNonStorageOperationsByTarget.delete(target)
-      }
+    for (const operationRecord of operationRecords) {
+      operationRecord.status = 'failed'
     }
+    changed = cascadeFailedPluginNonStorageOperationsForTarget(target, pendingOperations) || changed
 
-    if (changed) {
-      pluginWatchSuppressionVersion += 1
+    if (pendingOperations.length > 0) {
+      pendingPluginNonStorageOperationsByTarget.set(target, pendingOperations)
+    } else {
+      pendingPluginNonStorageOperationsByTarget.delete(target)
     }
-    releaseAcceptedPluginRuntimeBaselineIfSettled()
-  })
+  }
+
+  if (changed) {
+    pluginWatchSuppressionVersion += 1
+  }
+  releaseAcceptedPluginRuntimeBaselineIfSettled()
 }
 
 function cascadeFailedPluginNonStorageOperationsForTarget(
@@ -995,16 +1131,16 @@ function rollbackPluginNonStorageEntryIfLiveMatches(entry: PluginNonStorageRollb
 }
 
 function rollbackPluginCreateIfLiveMatches(entry: PluginCreateRollbackEntry): boolean {
-  const plugins = getDatabase().plugins ?? []
+  const plugins = currentPluginCollectionSnapshot()
   const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
   if (index === -1 || !isJsonValueEqual(plugins[index], entry.attemptedPlugin)) return false
 
-  getDatabase().plugins = plugins.filter((_, pluginIndex) => pluginIndex !== index)
+  replacePluginCollectionOwner(plugins.filter((_, pluginIndex) => pluginIndex !== index))
   return true
 }
 
 function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): boolean {
-  const plugins = getDatabase().plugins ?? []
+  const plugins = currentPluginCollectionSnapshot()
   const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
   if (index === -1) return false
 
@@ -1026,25 +1162,26 @@ function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): bool
     delete nextPlugin[entry.field]
   }
 
-  getDatabase().plugins[index] = nextPlugin
+  plugins[index] = nextPlugin
+  replacePluginCollectionOwner(plugins)
   return true
 }
 
 function rollbackPluginDeleteIfLiveMatches(entry: PluginDeleteRollbackEntry): boolean {
   let changed = false
-  const plugins = getDatabase().plugins ?? []
+  const plugins = currentPluginCollectionSnapshot()
   const liveIndex = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
 
   if (liveIndex === -1) {
     const nextPlugins = [...plugins]
     const insertIndex = boundedInsertIndex(entry.previousIndex, nextPlugins.length)
     nextPlugins.splice(insertIndex, 0, cloneJsonValue(entry.previousPlugin))
-    getDatabase().plugins = nextPlugins
+    replacePluginCollectionOwner(nextPlugins)
     changed = true
   }
 
-  if (entry.providerChanged && (getDatabase().currentPluginProvider ?? '') === entry.attemptedProvider) {
-    getDatabase().currentPluginProvider = entry.previousProvider
+  if (entry.providerChanged && currentPluginProviderOwnerSnapshot() === entry.attemptedProvider) {
+    applyPluginProviderOwner(entry.previousProvider)
     changed = true
   }
 
@@ -1052,13 +1189,13 @@ function rollbackPluginDeleteIfLiveMatches(entry: PluginDeleteRollbackEntry): bo
 }
 
 function rollbackPluginProviderIfLiveMatches(entry: PluginProviderRollbackEntry): boolean {
-  if ((getDatabase().currentPluginProvider ?? '') !== entry.attemptedProvider) return false
-  getDatabase().currentPluginProvider = entry.previousProvider
+  if (currentPluginProviderOwnerSnapshot() !== entry.attemptedProvider) return false
+  applyPluginProviderOwner(entry.previousProvider)
   return true
 }
 
 function rollbackPluginOrderIfLiveMatches(entry: PluginOrderRollbackEntry): boolean {
-  const plugins = getDatabase().plugins ?? []
+  const plugins = currentPluginCollectionSnapshot()
   const livePluginIds = plugins.map((plugin) => plugin.name)
   if (!isStringArrayEqual(livePluginIds, entry.attemptedPluginIds)) return false
 
@@ -1085,7 +1222,7 @@ function rollbackPluginOrderIfLiveMatches(entry: PluginOrderRollbackEntry): bool
     )
   )
     return false
-  getDatabase().plugins = reorderedPlugins
+  replacePluginCollectionOwner(reorderedPlugins)
   return true
 }
 
@@ -1163,14 +1300,12 @@ function boundedInsertIndex(index: number, length: number): number {
 }
 
 export function currentPluginStorageSnapshot(): PluginStorageSnapshot {
-  return cloneJsonValue(getDatabase().pluginCustomStorage ?? {})
+  return currentPluginStorageOwnerSnapshot()
 }
 
 export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
-  withTrustedResourceWrite(() => {
-    pluginWatchSuppressionVersion += 1
-    getDatabase().pluginCustomStorage = cloneJsonValue(snapshot)
-  })
+  pluginWatchSuppressionVersion += 1
+  replacePluginStorageOwner(snapshot)
 }
 
 export function dispatchPutPluginStorage(
@@ -1492,35 +1627,26 @@ function rollbackPluginStorageEntries(
 ): void {
   let changed = false
 
-  withTrustedResourceWrite(() => {
-    const liveStorage = ensureLivePluginStorage()
+  const liveStorage = currentPluginStorageOwnerSnapshot()
+  for (const entry of entries) {
+    const pendingOperations = pendingPluginStorageOperationsByKey.get(entry.key)
+    const operationRecord = pendingOperations?.find((record) => record.sequence === operation.sequence)
+    if (!pendingOperations || !operationRecord) continue
 
-    for (const entry of entries) {
-      const pendingOperations = pendingPluginStorageOperationsByKey.get(entry.key)
-      const operationRecord = pendingOperations?.find((record) => record.sequence === operation.sequence)
-      if (!pendingOperations || !operationRecord) continue
+    operationRecord.status = 'failed'
+    changed = cascadeFailedPluginStorageOperationsForKey(entry.key, pendingOperations, liveStorage) || changed
 
-      operationRecord.status = 'failed'
-      changed = cascadeFailedPluginStorageOperationsForKey(entry.key, pendingOperations, liveStorage) || changed
-
-      if (pendingOperations.length > 0) {
-        pendingPluginStorageOperationsByKey.set(entry.key, pendingOperations)
-      } else {
-        pendingPluginStorageOperationsByKey.delete(entry.key)
-      }
+    if (pendingOperations.length > 0) {
+      pendingPluginStorageOperationsByKey.set(entry.key, pendingOperations)
+    } else {
+      pendingPluginStorageOperationsByKey.delete(entry.key)
     }
-
-    if (changed) {
-      pluginWatchSuppressionVersion += 1
-    }
-  })
-}
-
-function ensureLivePluginStorage(): Record<string, unknown> {
-  if (!getDatabase().pluginCustomStorage || typeof getDatabase().pluginCustomStorage !== 'object') {
-    getDatabase().pluginCustomStorage = {}
   }
-  return getDatabase().pluginCustomStorage as Record<string, unknown>
+
+  if (changed) {
+    pluginWatchSuppressionVersion += 1
+    replacePluginStorageOwner(liveStorage)
+  }
 }
 
 function issuePluginStorageOperation(entries: PluginStorageRollbackEntry[]): PluginStorageOperationToken {
@@ -1640,7 +1766,6 @@ export function dispatchPluginSettingsPatch(
         step = {
           group,
           patch: {},
-          optimisticProjectionEpochs: {},
           rollbackSnapshot: emptyPluginSettingsPatchRollbackSnapshot(),
         }
         stepsByGroup.set(group, step)
@@ -1653,9 +1778,6 @@ export function dispatchPluginSettingsPatch(
     }
   }
   const steps = Array.from(stepsByGroup.values())
-  for (const step of steps) {
-    step.optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(step.patch)
-  }
   if (steps.length === 0) return Promise.resolve(pluginMutationBatchOutcome([]))
   return dispatchPluginSettingsPatchSteps(steps)
 }
@@ -1678,7 +1800,6 @@ async function dispatchPluginSettingsPatchSteps(
           patchServerBackedSettings({
             patch: cloneJsonValue(frozenPatch),
             acknowledgeOptimistic: true,
-            optimisticProjectionEpochs: step.optimisticProjectionEpochs,
             rollback: () => rollbackPluginSettingsPatch(step.rollbackSnapshot),
             ...transport,
           }),
@@ -1706,7 +1827,7 @@ function captureCurrentPluginSettingsPatchRollbackEntries(
   snapshot: PluginSettingsPatchRollbackSnapshot,
   patch: Record<string, unknown>,
 ): void {
-  const currentSettings = getDatabase() as unknown as Record<string, unknown>
+  const currentSettings = settingsResourceState.value as Record<string, unknown>
 
   for (const [key, value] of Object.entries(patch)) {
     if (!settingsGroupForKey(key) || value === undefined) continue
@@ -1718,13 +1839,22 @@ function captureCurrentPluginSettingsPatchRollbackEntries(
 function rollbackPluginSettingsPatch(snapshot: PluginSettingsPatchRollbackSnapshot): void {
   if (Object.keys(snapshot.attempted).length === 0) return
 
-  withTrustedResourceWrite(() => {
-    const target = getDatabase() as unknown as Record<string, unknown>
-    applyAttemptedFieldRollback({
-      target,
-      previous: snapshot.previous,
-      attempted: snapshot.attempted,
-    })
+  applyAttemptedFieldRollback({
+    target: settingsResourceState.value as Record<string, unknown>,
+    previous: snapshot.previous,
+    attempted: snapshot.attempted,
+  })
+}
+
+/** Roll back only fields that still carry this plugin operation's attempt. */
+export function rollbackPluginSettingsOwner(
+  previous: Record<string, unknown>,
+  attempted: Record<string, unknown>,
+): string[] {
+  return applyAttemptedFieldRollback({
+    target: settingsResourceState.value as Record<string, unknown>,
+    previous,
+    attempted,
   })
 }
 

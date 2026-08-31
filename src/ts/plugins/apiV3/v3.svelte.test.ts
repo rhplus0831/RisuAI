@@ -162,7 +162,86 @@ vi.mock('../../storage/database.svelte', () => ({
 }))
 
 vi.mock('src/ts/pluginCommands', () => ({
-  currentPluginStateSnapshot: vi.fn(() => ({})),
+  currentPluginCollectionSnapshot: vi.fn(() => [...(mockDbState.db.plugins ?? [])]),
+  currentPluginDatabaseSnapshot: vi.fn(() => JSON.parse(JSON.stringify(mockDbState.db))),
+  currentPluginSettingsOwnerSnapshot: vi.fn((keys: readonly string[]) =>
+    Object.fromEntries(keys.map((key) => [key, (mockDbState.db as any)[key]])),
+  ),
+  applyPluginSettingsOwnerPatch: vi.fn((patch: Record<string, unknown>) => Object.assign(mockDbState.db, patch)),
+  rollbackPluginSettingsOwner: vi.fn((previous: Record<string, unknown>, attempted: Record<string, unknown>) => {
+    const rolledBack: string[] = []
+    for (const [key, value] of Object.entries(attempted)) {
+      if (JSON.stringify((mockDbState.db as any)[key]) !== JSON.stringify(value)) continue
+      ;(mockDbState.db as any)[key] = JSON.parse(JSON.stringify(previous[key]))
+      rolledBack.push(key)
+    }
+    return rolledBack
+  }),
+  currentPluginCharacterSnapshot: vi.fn((index: number | string) => {
+    const characters = mockDbState.db.characters as any
+    const rows = Array.isArray(characters) ? characters : Object.values(characters)
+    if (typeof index === 'number') return rows[index]
+    return characters[index] ?? rows.find((character: any) => character?.chaId === index)
+  }),
+  currentPluginCharacterOwnerSnapshot: vi.fn((characterId: string) => {
+    const characters = mockDbState.db.characters as any
+    const rows = Array.isArray(characters) ? characters : Object.values(characters)
+    const matches = rows.filter((character: any) => character?.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  }),
+  currentPluginChatOwnerSnapshot: vi.fn((characterId: string, chatId: string) => {
+    const characters = mockDbState.db.characters as any
+    const rows = Array.isArray(characters) ? characters : Object.values(characters)
+    const characterMatches = rows.filter((candidate: any) => candidate?.chaId === characterId)
+    const chats = characterMatches.length === 1 ? (characterMatches[0].chats ?? []) : []
+    const matches = chats.filter((chat: any) => chat?.id === chatId)
+    return matches.length === 1 ? { characterId, chatId, chat: matches[0] } : undefined
+  }),
+  replacePluginCharacterOwnerAt: vi.fn((index: number | string, characterId: string, next: any) => {
+    const characters = mockDbState.db.characters as any
+    if (Array.isArray(characters)) {
+      if (characters[index as number]?.chaId !== characterId) return false
+      characters[index as number] = next
+      return true
+    }
+    const key =
+      typeof index === 'string' && characters[index]
+        ? index
+        : Object.keys(characters).find((candidate) => characters[candidate]?.chaId === characterId)
+    if (!key || characters[key]?.chaId !== characterId) return false
+    characters[key] = next
+    return true
+  }),
+  replacePluginChatOwner: vi.fn((characterId: string, chatId: string, next: any) => {
+    const characters = mockDbState.db.characters as any
+    const rows = Array.isArray(characters) ? characters : Object.values(characters)
+    const characterMatches = rows.filter((candidate: any) => candidate?.chaId === characterId)
+    const chats = characterMatches.length === 1 ? (characterMatches[0].chats ?? []) : []
+    const indexMatches = chats
+      .map((chat: any, index: number) => ({ chat, index }))
+      .filter(({ chat }: any) => chat?.id === chatId)
+    if (characterMatches.length !== 1 || indexMatches.length !== 1) return false
+    chats[indexMatches[0].index] = next
+    return true
+  }),
+  replacePluginCollectionOwner: vi.fn((plugins: any[]) => {
+    const current = mockDbState.db.plugins as any[]
+    const previousRows = [...current]
+    current.splice(0, current.length, ...plugins)
+    for (let index = 0; index < current.length; index += 1) {
+      const previous = previousRows[index]
+      if (previous && typeof previous === 'object' && plugins[index] && typeof plugins[index] === 'object') {
+        Object.assign(previous, plugins[index])
+        current[index] = previous
+      }
+    }
+    mockDbState.db.plugins = current
+  }),
+  currentPluginStateSnapshot: vi.fn(() => ({
+    plugins: mockDbState.db.plugins ?? [],
+    currentPluginProvider: mockDbState.db.currentPluginProvider ?? '',
+    pluginCustomStorage: mockDbState.db.pluginCustomStorage ?? {},
+  })),
   dispatchUpdatePlugin: vi.fn(),
 }))
 
@@ -330,6 +409,7 @@ vi.mock('src/ts/model/modellist', () => ({
 
 vi.mock('src/ts/model/modelProfileResolver', () => ({
   resolveModelProfile: () => ({ modelInfo: { id: mockResolvedModelState.id } }),
+  resolveModelProfileWithLegacyCompatibility: () => ({ modelInfo: { id: mockResolvedModelState.id } }),
 }))
 
 vi.mock('src/ts/process/request/request', () => ({

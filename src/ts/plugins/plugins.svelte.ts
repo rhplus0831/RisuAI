@@ -1,7 +1,7 @@
 import { get, readonly, writable } from 'svelte/store'
 import { language } from '../../lang'
-import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '../storage/database.svelte'
-import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
+import type { character } from '../storage/database.svelte'
+import { alertConfirm, alertError } from '../alert'
 import { selectSingleFile } from '../filePicker'
 import type { OpenAIChat } from '../process/index.svelte'
 import { pluginFetchNative, pluginGlobalFetch, readImage, saveAsset } from '../globalApi.svelte'
@@ -22,7 +22,14 @@ import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
   acceptedPluginRuntimeProjection,
+  applyPluginProviderOwner,
+  applyPluginSettingsOwnerPatch,
+  currentPluginCharacterSnapshot,
+  currentPluginCollectionSnapshot,
+  currentPluginDatabaseSnapshot,
   currentPluginStorageSnapshot,
+  currentPluginStorageOwnerSnapshot,
+  currentPluginStorageValueOwner,
   currentPluginStateSnapshot,
   currentPluginSettingsPatchRollbackSnapshot,
   dispatchBulkPluginStorage,
@@ -32,6 +39,11 @@ import {
   dispatchPutPluginStorage,
   dispatchSelectPluginProvider,
   dispatchUpdatePlugin,
+  replacePluginCharacterOwnerAt,
+  replacePluginCharactersOwner,
+  applyPluginCharacterPointerOwner,
+  replacePluginCollectionOwner,
+  replacePluginStorageOwner,
   runCreatePluginCommand,
   runUpdatePluginCommand,
   toPluginSnapshot,
@@ -45,7 +57,7 @@ import {
 } from '../moduleCommands'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from '../characterCommands'
 import { canUseServerCommands } from '../server/commands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
 import {
   beginPluginImport,
@@ -165,12 +177,12 @@ Risuai.log("Hello from New Plugin!");
 
 function currentPluginImportFreshness(): PluginImportFreshness<RisuPlugin> {
   return {
-    plugins: getDatabase().plugins ?? [],
+    plugins: currentPluginCollectionSnapshot(),
   }
 }
 
 function isCurrentPluginUpdateTarget(plugin: Pick<RisuPlugin, 'name' | 'script' | 'updateURL'>): boolean {
-  const current = (getDatabase().plugins ?? []).find((candidate) => candidate.name === plugin.name)
+  const current = currentPluginCollectionSnapshot().find((candidate) => candidate.name === plugin.name)
   return current?.script === plugin.script && current.updateURL === plugin.updateURL
 }
 
@@ -568,23 +580,13 @@ export async function importPlugin(
     releasePluginRuntimeSync = deferPluginRuntimeSync()
     let persistenceResult: ReturnType<typeof runCreatePluginCommand> | ReturnType<typeof runUpdatePluginCommand> = null
     if (applyTarget.kind === 'update') {
-      // Re-read the live database inside the trusted write scope so the
-      // optimistic update never mutates the read-only server projection
-      // through a stale reference captured before the scope.
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        db.plugins ??= []
-        db.plugins[applyTarget.index] = pluginData
-        setDatabaseLite(db)
-      })
+      const plugins = currentPluginCollectionSnapshot()
+      if (applyTarget.index < 0 || applyTarget.index >= plugins.length) return { status: 'stale' }
+      plugins[applyTarget.index] = pluginData
+      replacePluginCollectionOwner(plugins)
       persistenceResult = runUpdatePluginCommand(applyTarget.pluginId, toPluginSnapshot(pluginData), previous)
     } else if (applyTarget.kind === 'create') {
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        db.plugins ??= []
-        db.plugins.push(pluginData)
-        setDatabaseLite(db)
-      })
+      replacePluginCollectionOwner([...currentPluginCollectionSnapshot(), pluginData])
       persistenceResult = runCreatePluginCommand(pluginData, previous)
     }
 
@@ -682,11 +684,11 @@ function deferPluginRuntimeSync(): () => void {
 export function startPluginRuntimeSync(): void {
   if (stopPluginRuntimeSyncEffect) return
   pluginRuntimeSyncState.targetSignature ??= pluginRuntimeSignature(
-    acceptedPluginRuntimeProjection(getDatabase().plugins ?? []),
+    acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()),
   )
   stopPluginRuntimeSyncEffect = $effect.root(() => {
     $effect(() => {
-      const signature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
+      const signature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()))
       const suppressionDepth = pluginRuntimeSyncState.suppressionDepth
       const targetSignature = pluginRuntimeSyncState.targetSignature
       if (suppressionDepth > 0 || targetSignature === signature) return
@@ -714,9 +716,7 @@ async function runQueuedPluginLoads() {
   while (pluginLoadQueued) {
     pluginLoadQueued = false
     console.log('Loading plugins...')
-    const db = getDatabase()
-
-    const plugins = acceptedPluginRuntimeProjection(db.plugins ?? [])
+    const plugins = acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot())
     const signature = pluginRuntimeSignature(plugins)
     customProviderStore.set([])
     publishPluginRuntimeState({ phase: 'loading', targetSignature: signature, error: null })
@@ -725,7 +725,7 @@ async function runQueuedPluginLoads() {
       for (const plugin of plugins) assertSupportedPluginApiVersion(plugin)
       await loadV3Plugins(plugins.filter((plugin) => plugin.enabled))
     } catch (error) {
-      const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
+      const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()))
       if (latestSignature !== signature) {
         pluginRuntimeSyncState.targetSignature = latestSignature
         pluginLoadQueued = true
@@ -735,7 +735,7 @@ async function runQueuedPluginLoads() {
       throw error
     }
 
-    const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(getDatabase().plugins ?? []))
+    const latestSignature = pluginRuntimeSignature(acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()))
     if (latestSignature !== signature) {
       pluginRuntimeSyncState.targetSignature = latestSignature
       pluginLoadQueued = true
@@ -749,7 +749,7 @@ async function runQueuedPluginLoads() {
 
 export function loadPlugins(): Promise<void> {
   pluginRuntimeSyncState.targetSignature = pluginRuntimeSignature(
-    acceptedPluginRuntimeProjection(getDatabase().plugins ?? []),
+    acceptedPluginRuntimeProjection(currentPluginCollectionSnapshot()),
   )
   pluginLoadQueued = true
   pluginLoadQueue ??= runQueuedPluginLoads().finally(() => {
@@ -884,17 +884,11 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function pluginCustomStorage(): Record<string, unknown> {
-  const db = getDatabase()
-  db.pluginCustomStorage ??= {}
-  return db.pluginCustomStorage as Record<string, unknown>
-}
-
 async function setPluginStorageValue(key: string, value: unknown): Promise<void> {
   const previous = currentPluginStorageSnapshot()
-  withTrustedResourceWrite(() => {
-    pluginCustomStorage()[key] = cloneJsonValue(value)
-  })
+  const next = currentPluginStorageOwnerSnapshot()
+  next[key] = cloneJsonValue(value)
+  replacePluginStorageOwner(next)
   if (canUseServerCommands()) {
     await requirePluginMutation(dispatchPutPluginStorage(key, value, previous), 'set plugin storage')
   }
@@ -902,9 +896,9 @@ async function setPluginStorageValue(key: string, value: unknown): Promise<void>
 
 async function deletePluginStorageValue(key: string): Promise<void> {
   const previous = currentPluginStorageSnapshot()
-  withTrustedResourceWrite(() => {
-    delete pluginCustomStorage()[key]
-  })
+  const next = currentPluginStorageOwnerSnapshot()
+  delete next[key]
+  replacePluginStorageOwner(next)
   if (canUseServerCommands()) {
     await requirePluginMutation(dispatchDeletePluginStorage(key, previous), 'delete plugin storage')
   }
@@ -912,9 +906,7 @@ async function deletePluginStorageValue(key: string): Promise<void> {
 
 async function replacePluginStorage(values: Record<string, unknown>): Promise<void> {
   const previous = currentPluginStorageSnapshot()
-  withTrustedResourceWrite(() => {
-    getDatabase().pluginCustomStorage = cloneJsonValue(values)
-  })
+  replacePluginStorageOwner(values)
   if (canUseServerCommands()) {
     await requirePluginMutation(dispatchBulkPluginStorage({ values, clear: true }, previous), 'replace plugin storage')
   }
@@ -944,6 +936,7 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
   const blockedKeys: string[] = []
   const persistence: Array<Promise<{ status: 'accepted' | 'queued' | 'failed' }>> = []
   let replacedStorage: Record<string, unknown> | null = null
+  const storageValuesToApply: Record<string, unknown> = {}
 
   for (const [key, value] of Object.entries(newDb)) {
     if (value === undefined) {
@@ -958,9 +951,6 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
         value && typeof value === 'object' && !Array.isArray(value)
           ? cloneJsonValue(value as Record<string, unknown>)
           : {}
-      withTrustedResourceWrite(() => {
-        getDatabase().pluginCustomStorage = cloneJsonValue(replacedStorage)
-      })
       continue
     }
 
@@ -973,13 +963,50 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
     }
 
     if (allowedDbKeys.includes(key)) {
-      withTrustedResourceWrite(() => {
-        ;(getDatabase() as any)[key] = cloneJsonValue(value)
-      })
+      if (key === 'characters' && Array.isArray(value)) {
+        replacePluginCharactersOwner(value as character[])
+        continue
+      }
+      if (key === 'characterOrder' && Array.isArray(value)) {
+        applyPluginCharacterPointerOwner(key, value)
+        continue
+      }
+      if (key === 'currentChar' && Number.isInteger(value)) {
+        applyPluginCharacterPointerOwner(key, value)
+        continue
+      }
+      if (
+        [
+          'personas',
+          'modelPresets',
+          'promptPresets',
+          'botPresets',
+          'promptTemplate',
+          'loadouts',
+          'loreBook',
+          'translatorPresets',
+          'hypaV3Presets',
+        ].includes(key)
+      ) {
+        ;(collectionsResourceState.values as Record<string, unknown>)[key] = cloneJsonValue(value)
+        continue
+      }
+      if (key === 'modules' && Array.isArray(value)) {
+        collectionsResourceState.values.modules = cloneJsonValue(
+          value,
+        ) as typeof collectionsResourceState.values.modules
+      }
+      if (key === 'enabledModules' && Array.isArray(value)) {
+        ;(settingsResourceState.value as Record<string, unknown>).enabledModules = cloneJsonValue(value)
+      }
+      if (key === 'plugins' && Array.isArray(value)) {
+        replacePluginCollectionOwner(value as RisuPlugin[])
+      }
       const mirroredPresetOutcome = mirrorTopLevelPresetFieldWithOutcome(key, value)
       if (mirroredPresetOutcome) {
         persistence.push(mirroredPresetOutcome)
       } else if (key === 'currentPluginProvider' && typeof value === 'string') {
+        applyPluginProviderOwner(value)
         const pending = dispatchSelectPluginProvider(value, previous)
         if (pending) persistence.push(pending)
       } else if (key === 'plugins' && Array.isArray(value)) {
@@ -995,7 +1022,7 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
           )
         }
       } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
-        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : getDatabase().modules
+        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : previousModules.modules
         const pending = dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
         if (pending) {
           persistence.push(
@@ -1007,14 +1034,19 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
         }
       } else {
         settingsPatch[key] = value
+        applyPluginSettingsOwnerPatch({ [key]: value })
       }
       continue
     }
 
     storageValues[key] = cloneJsonValue(value)
-    withTrustedResourceWrite(() => {
-      pluginCustomStorage()[key] = cloneJsonValue(value)
-    })
+    storageValuesToApply[key] = cloneJsonValue(value)
+  }
+
+  if (replacedStorage) {
+    replacePluginStorageOwner({ ...replacedStorage, ...storageValuesToApply })
+  } else if (Object.keys(storageValuesToApply).length > 0) {
+    replacePluginStorageOwner({ ...currentPluginStorageOwnerSnapshot(), ...storageValuesToApply })
   }
 
   if (replacedStorage) {
@@ -1040,9 +1072,7 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
     )
   }
 
-  if (!serverMode && options.full) {
-    setDatabase(getDatabase({ snapshot: true }))
-  }
+  void options
 
   const outcomes = await Promise.all(persistence)
   if (outcomes.some((outcome) => outcome.status === 'failed')) {
@@ -1290,37 +1320,33 @@ export const getV2PluginAPIs = (
     safeNavigator: SafePluginNavigator,
     safeLocation: SafePluginLocation,
     getArg: (arg: string) => {
-      const db = getDatabase()
       const [name, realArg] = arg.split('::')
-      for (const plugin of db.plugins) {
-        if (plugin.name === name) {
-          return plugin.realArg[realArg]
-        }
-      }
+      const matches = currentPluginCollectionSnapshot().filter((candidate) => candidate.name === name)
+      if (matches.length !== 1) return undefined
+      return matches[0].realArg?.[realArg]
     },
     getChar: () => {
-      return getCurrentCharacter({ snapshot: true })
+      const index = get(selectedCharID)
+      return currentPluginCharacterSnapshot(index)
     },
     setChar: (char: any) => {
       lifecycle.assertCurrent()
-      const charid = get(selectedCharID)
+      const charIndex = get(selectedCharID)
+      const previousCharacter = currentPluginCharacterSnapshot(charIndex)
+      if (!previousCharacter?.chaId) return Promise.resolve(null)
       if (!canUseServerCommands()) {
-        withTrustedResourceWrite(() => {
-          getDatabase().characters[charid] = char
-        })
+        replacePluginCharacterOwnerAt(charIndex, previousCharacter.chaId, char)
         return Promise.resolve(null)
       }
 
-      const previousCharacter = getDatabase().characters?.[charid]
       assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setChar')
-      const previous = currentCharacterRowSnapshot(charid)
-      const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
-      const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacterSnapshot, char, previous)
+      const previous = currentCharacterRowSnapshot(charIndex)
+      const preparation = prepareCompatibleCharacterUpdateScoped(previousCharacter, char, previous)
       const optimisticCharacter = preparation.optimisticCharacter
       if (!optimisticCharacter || preparation.factories.length === 0) return Promise.resolve(null)
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[charid] = optimisticCharacter
-      })
+      if (!replacePluginCharacterOwnerAt(charIndex, previousCharacter.chaId, optimisticCharacter)) {
+        return Promise.resolve(null)
+      }
       return preparation.dispatchAsync().then((outcome) => {
         lifecycle.assertCurrent()
         return outcome
@@ -1387,26 +1413,22 @@ export const getV2PluginAPIs = (
       lifecycle.assertCurrent()
       const [name, realArg] = arg.split('::')
       const previous = currentPluginStateSnapshot()
-      let matched = false
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        for (const plugin of db.plugins) {
-          if (plugin.name === name) {
-            plugin.realArg[realArg] = value
-            matched = true
-          }
+      const plugins = currentPluginCollectionSnapshot()
+      const matches = plugins.map((plugin, index) => ({ plugin, index })).filter(({ plugin }) => plugin.name === name)
+      if (matches.length === 1) {
+        const [{ plugin, index }] = matches
+        const nextPlugin = {
+          ...plugin,
+          realArg: { ...(plugin.realArg ?? {}), [realArg]: value },
         }
-      })
-      if (matched) {
-        const plugin = getDatabase().plugins.find((p) => p.name === name)
-        if (plugin) {
-          const pending = dispatchUpdatePlugin(plugin.name, { realArg: plugin.realArg }, previous)
-          if (pending) {
-            return pending.then((outcome) => {
-              lifecycle.assertCurrent()
-              return outcome
-            })
-          }
+        plugins[index] = nextPlugin
+        replacePluginCollectionOwner(plugins)
+        const pending = dispatchUpdatePlugin(plugin.name, { realArg: nextPlugin.realArg }, previous)
+        if (pending) {
+          return pending.then((outcome) => {
+            lifecycle.assertCurrent()
+            return outcome
+          })
         }
       }
       return Promise.resolve(null)
@@ -1478,7 +1500,7 @@ export const getV2PluginAPIs = (
     apiVersionCompatibleWith: ['2.0', '2.1'],
     getDatabase: () => {
       lifecycle.assertCurrent()
-      const db = getDatabase()
+      const db = currentPluginDatabaseSnapshot() as Record<string, any>
       return new Proxy(db, {
         get(target, prop) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
@@ -1493,12 +1515,15 @@ export const getV2PluginAPIs = (
         set(target, prop, value) {
           lifecycle.assertCurrent()
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
-            if (canUseServerCommands()) {
+            if (canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
               void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
                 console.error('Plugin database property save failed:', error)
               })
             } else {
-              ;(target as any)[prop] = value
+              ;(target as any)[prop] = cloneJsonValue(value)
+              void applyPluginDatabasePatch({ [prop]: value }, { full: false }).catch((error) => {
+                console.error('Plugin database property save failed:', error)
+              })
             }
             return true
           } else if (typeof prop === 'string' && canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
@@ -1510,6 +1535,8 @@ export const getV2PluginAPIs = (
             })
             return true
           } else {
+            target.pluginCustomStorage ??= {}
+            target.pluginCustomStorage[prop.toString()] = cloneJsonValue(value)
             void setPluginStorageValue(prop.toString(), value).catch((error) => {
               console.error('Plugin storage property save failed:', error)
             })
@@ -1517,15 +1544,15 @@ export const getV2PluginAPIs = (
           }
         },
         ownKeys(target) {
-          const keys = Reflect.ownKeys(target).filter((key) => typeof key === 'string' && allowedDbKeys.includes(key))
+          const keys = new Set(
+            Reflect.ownKeys(target).filter((key) => typeof key === 'string' && allowedDbKeys.includes(key)),
+          )
           if (target.pluginCustomStorage) {
-            keys.push(
-              ...Object.keys(target.pluginCustomStorage).filter(
-                (key) => !canUseServerCommands() || !unsupportedServerBridgeKeys.has(key),
-              ),
-            )
+            for (const key of Object.keys(target.pluginCustomStorage)) {
+              if (!canUseServerCommands() || !unsupportedServerBridgeKeys.has(key)) keys.add(key)
+            }
           }
-          return keys
+          return [...keys]
         },
         getOwnPropertyDescriptor(target, prop) {
           if (typeof prop !== 'string') {
@@ -1558,7 +1585,7 @@ export const getV2PluginAPIs = (
     },
     pluginStorage: {
       getItem: (key: string) => {
-        const value = getDatabase().pluginCustomStorage?.[key]
+        const value = currentPluginStorageValueOwner(key)
         return value == null ? null : safeStructuredClone(value)
       },
       setItem: (key: string, value: string) => {
@@ -1574,20 +1601,14 @@ export const getV2PluginAPIs = (
         return replacePluginStorage({})
       },
       key: (index: number) => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        const keys = Object.keys(db.pluginCustomStorage)
+        const keys = Object.keys(currentPluginStorageOwnerSnapshot())
         return keys[index] || null
       },
       keys: () => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        return Object.keys(db.pluginCustomStorage)
+        return Object.keys(currentPluginStorageOwnerSnapshot())
       },
       length: () => {
-        const db = getDatabase()
-        db.pluginCustomStorage ??= {}
-        return Object.keys(db.pluginCustomStorage).length
+        return Object.keys(currentPluginStorageOwnerSnapshot()).length
       },
     },
     isDeviceLocalPluginStorageEnabled,
@@ -1612,7 +1633,7 @@ export const getV2PluginAPIs = (
           lifecycle.assertCurrent()
           databasePatch = {
             ...newDb,
-            plugins: mergeInstalledPluginsWithApprovedCandidates(getDatabase().plugins ?? [], approvedCandidates),
+            plugins: mergeInstalledPluginsWithApprovedCandidates(currentPluginCollectionSnapshot(), approvedCandidates),
           }
         }
       }
@@ -1684,7 +1705,9 @@ export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[], assert
   for (const plugin of plugins) {
     assertActive?.()
     assertSupportedPluginApiVersion(plugin)
-    if (!getDatabase().plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
+    if (
+      !currentPluginCollectionSnapshot().some((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)
+    ) {
       const confirmation = await alertConfirm(language.confirmInstallPluginViaPlugin.replace('{plugin}', plugin.name))
       assertActive?.()
       if (confirmation) {
