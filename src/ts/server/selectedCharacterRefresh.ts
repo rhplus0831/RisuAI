@@ -1,5 +1,5 @@
 import { selectedCharID } from '../stores.svelte'
-import { charactersResourceState, getResourceDatabase as getDatabase } from './resourceState.svelte'
+import { charactersResourceState } from './resourceState.svelte'
 import { selectCharacterOwner } from '../characterState'
 
 export interface SelectedCharacterRefreshTarget {
@@ -59,15 +59,11 @@ export function resolveSelectedCharacterIndexAfterRefresh(target: SelectedCharac
       ? (currentChar as number)
       : -1
   if (currentIndex >= 0 && selectedCharacterForRefresh(currentIndex)) return currentIndex
-  if (charactersResourceState.status === 'ready') return -1
-  return legacySelectedCharacterIndex(target.characterId)
+  return -1
 }
 
 function selectedCharacterForRefresh(selectedIndex: number) {
-  const owner = selectCharacterOwner(charactersResourceState.characters, selectedIndex)
-  if (owner) return owner
-  if (charactersResourceState.status === 'ready') return undefined
-  return getDatabase().characters?.[selectedIndex]
+  return selectCharacterOwner(charactersResourceState.characters, selectedIndex)
 }
 
 function uniqueOwnerIndex(characterId: string): number {
@@ -77,12 +73,5 @@ function uniqueOwnerIndex(characterId: string): number {
     if (ownerIndex >= 0) return -1
     ownerIndex = index
   }
-  if (ownerIndex >= 0 || charactersResourceState.status === 'ready') return ownerIndex
-  return legacySelectedCharacterIndex(characterId)
-}
-
-/** Compatibility fallback for local/offline databases before the owner list is ready. */
-function legacySelectedCharacterIndex(characterId: string | undefined): number {
-  if (!characterId) return -1
-  return getDatabase().characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
+  return ownerIndex
 }

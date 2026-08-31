@@ -5,14 +5,19 @@ import {
   currentChatScopedSnapshot,
   dispatchReplaceTailMessagesScoped,
   dispatchUpdateMessageScoped,
-  ensureMessageId,
   type ActiveChatTarget,
 } from '../chatCommands'
 import { safeStructuredClone } from '../polyfill'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { createLatestOperationGuard } from '../server/staleStateGuards'
-import { getDatabase, type Chat, type Message } from '../storage/database.svelte'
+import type { Message } from '../storage/database.svelte'
 import { clearPrererolls, PreUnreroll, Prereroll } from './prereroll'
+import { selectCharacterOwner } from '../characterState'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+} from '../server/resourceState.svelte'
+import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
 
 // Reroll *swipe* state machine, extracted out of `DefaultChatScreen.svelte` so it
 // is unit-testable and so persisted reroll buffers (server alternate rows) can be
@@ -52,20 +57,16 @@ type RerollOperation = {
   target: ActiveChatTarget
 }
 
-function activeChatRecord(): Chat {
-  const character = getDatabase().characters[get(selectedCharID)]
-  return character.chats[character.chatPage]
-}
-
 function currentRerollTarget(): ActiveChatTarget | null {
-  const charId = get(selectedCharID)
-  const character = getDatabase().characters?.[charId]
-  if (!character) return null
+  if (charactersResourceState.status !== 'ready') return null
+  const selectedIndex = get(selectedCharID)
+  const character = selectCharacterOwner(charactersResourceState.characters, selectedIndex)
+  if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return null
   const chatPage = character.chatPage ?? -1
   const chat = character.chats?.[chatPage]
-  if (!chat) return null
+  if (!stableOwnerId(chat?.id) || !getChatMetadataOwnerState(chat.id)) return null
   return {
-    selectedCharID: charId,
+    selectedCharID: selectedIndex,
     chatPage,
     characterId: character.chaId,
     chatId: chat.id,
@@ -73,10 +74,8 @@ function currentRerollTarget(): ActiveChatTarget | null {
 }
 
 function rerollTargetKey(target: ActiveChatTarget | null | undefined): string | null {
-  if (!target) return null
-  const characterKey = target.characterId ? `id:${target.characterId}` : `index:${target.selectedCharID}`
-  const chatKey = target.chatId ? `id:${target.chatId}` : `page:${target.chatPage}`
-  return `character:${characterKey}|chat:${chatKey}`
+  if (!target || !stableOwnerId(target.characterId) || !stableOwnerId(target.chatId)) return null
+  return `character:id:${target.characterId}|chat:id:${target.chatId}`
 }
 
 function currentRerollScopeTarget(): string | null {
@@ -116,21 +115,19 @@ function setOperationRerollState(operation: RerollOperation, state: RerollState)
   rerollStates.set(operation.token.target, state)
 }
 
-function locateRerollTarget(target: ActiveChatTarget): { chat: Chat } | null {
-  const characters = getDatabase().characters ?? []
-  const charId = target.characterId
-    ? characters.findIndex((character) => character.chaId === target.characterId)
-    : target.selectedCharID
-  const character = characters[charId]
+function locateRerollTarget(target: ActiveChatTarget): { messages: Message[] } | null {
+  if (!stableOwnerId(target.characterId) || !stableOwnerId(target.chatId)) return null
+  const character = getCharacterResourceOwner(target.characterId)
   if (!character) return null
-  const chatPage = target.chatId ? character.chats?.findIndex((chat) => chat.id === target.chatId) : target.chatPage
-  const chat = character.chats?.[chatPage]
-  if (!chat) return null
-  return { chat }
+  const matchingChats = character.chats?.filter((chat) => chat.id === target.chatId) ?? []
+  if (matchingChats.length !== 1 || !getChatMetadataOwnerState(target.chatId)) return null
+  const transcript = getChatMessageOwnerState(target.chatId)
+  return transcript ? { messages: transcript.messages } : null
 }
 
 function currentTailGenerationId(): string | undefined {
-  return activeChatRecord()?.message.at(-1)?.generationInfo?.generationId
+  const target = currentRerollTarget()
+  return target ? locateRerollTarget(target)?.messages.at(-1)?.generationInfo?.generationId : undefined
 }
 
 /**
@@ -152,7 +149,7 @@ export function clearRerollBuffer(target: ActiveChatTarget | null = currentRerol
 
 /** Record the just-generated tail as the newest swipe candidate (post-send). */
 export function recordGeneratedReroll(previousLength: number, target: ActiveChatTarget): void {
-  const message = locateRerollTarget(target)?.chat.message
+  const message = locateRerollTarget(target)?.messages
   if (!message) return
   if (previousLength < message.length) {
     // Clone only the freshly generated tail. `message.slice(previousLength)` is a
@@ -182,49 +179,38 @@ export function markRerollChar(target: ActiveChatTarget): void {
 }
 
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────
-// In the live Fastify runtime the resource database is guarded against direct writes;
-// a `message.data = …` / `record.message = …` outside a trusted scope throws. The
-// optimistic local edit must run inside `withTrustedResourceWrite` and
-// re-read the record there, then persist via the dispatch command. Before the guard
-// is enabled (startup and focused tests), the wrapper is a pass-through.
+// Scoped command helpers own the optimistic paint, durable dispatch, retained
+// intent, and current-attempt rollback. Navigation supplies only stable IDs and
+// detached candidate data.
 
 /** Swap just the active tail message's `data` (prefetch reroll), then persist. */
 function applyTailDataSwap(data: string, operation: RerollOperation): boolean {
   if (!isCurrentRerollOperation(operation)) return false
+  const transcript = locateRerollTarget(operation.target)?.messages
+  if (!transcript || transcript.length === 0) return false
+  const messageId = uniqueMessageIdAt(transcript, transcript.length - 1)
+  if (!messageId) return false
   const previous = currentChatScopedSnapshot()
-  const messageId = withTrustedResourceWrite(() => {
-    const record = activeChatRecord()
-    const message = record.message[record.message.length - 1]
-    const id = ensureMessageId(message)
-    message.data = data
-    return id
-  })
-  dispatchUpdateMessageScoped(messageId, { data }, previous, { optimisticPatchAlreadyApplied: true })
+  if (previous.characterId !== operation.target.characterId || previous.chatId !== operation.target.chatId) return false
+  dispatchUpdateMessageScoped(messageId, { data }, previous)
   return true
 }
 
 /** Overwrite the last `slice.length` messages with a saved candidate, then persist. */
 function applyTailSlice(slice: Message[], operation: RerollOperation): boolean {
   if (!isCurrentRerollOperation(operation)) return false
+  const chatId = operation.target.chatId
+  if (!stableOwnerId(chatId)) return false
+  const transcript = locateRerollTarget(operation.target)?.messages
+  if (!transcript || slice.length === 0 || slice.length > transcript.length) return false
+  const start = transcript.length - slice.length
+  const afterMessageId = start > 0 ? uniqueMessageIdAt(transcript, start - 1) : null
+  if (start > 0 && !afterMessageId) return false
+  const attemptedMessages = transcript.slice(0, start).concat(slice)
+  if (!hasStableUniqueMessageIds(attemptedMessages)) return false
   const previous = currentChatScopedSnapshot()
-  const tail = withTrustedResourceWrite(() => {
-    const msgs = activeChatRecord().message
-    const start = msgs.length - slice.length
-    const afterMessageId = start > 0 ? ensureMessageId(msgs[start - 1]) : null
-    for (let i = 0; i < slice.length; i++) {
-      msgs[start + i] = slice[i]
-    }
-    // Mint ids while the projection is writable so the by-reference dispatch
-    // below never has to mutate a refrozen read-only message row.
-    for (const message of msgs.slice(start)) {
-      ensureMessageId(message)
-    }
-    return { afterMessageId, messages: msgs.slice(start) }
-  })
-  const record = activeChatRecord()
-  if (record.id) {
-    dispatchReplaceTailMessagesScoped(record.id, tail.afterMessageId, tail.messages, previous)
-  }
+  if (previous.characterId !== operation.target.characterId || previous.chatId !== operation.target.chatId) return false
+  dispatchReplaceTailMessagesScoped(chatId, afterMessageId, safeStructuredClone(slice), previous)
   return true
 }
 
@@ -233,8 +219,10 @@ async function regenerateFromCurrentTail(deps: RerollDeps, operation: RerollOper
     return
   }
   let state = operationRerollState(operation)
+  const activeMessages = locateRerollTarget(operation.target)?.messages
+  if (!activeMessages) return
   if (state.rerolls.length === 0) {
-    const rerolls = [safeStructuredClone([activeChatRecord().message.at(-1)]) as Message[]]
+    const rerolls = [safeStructuredClone([activeMessages.at(-1)]) as Message[]]
     state = { rerolls, rerollid: rerolls.length - 1 }
     setOperationRerollState(operation, state)
   }
@@ -242,7 +230,7 @@ async function regenerateFromCurrentTail(deps: RerollDeps, operation: RerollOper
   // the operation and replaces it at finalization. The shallow copy is used only
   // to calculate the post-regenerate tail boundary for the in-memory swipe buffer;
   // it is never installed or persisted.
-  const cha = activeChatRecord().message.slice()
+  const cha = activeMessages.slice()
   if (cha.length === 0) {
     return
   }
@@ -294,8 +282,9 @@ export async function reroll(deps: RerollDeps): Promise<void> {
       if (Array.isArray(state.rerolls[state.rerollid + 1])) {
         if (!isCurrentRerollOperation(operation)) return
         const rerollid = state.rerollid + 1
-        setOperationRerollState(operation, { ...state, rerollid })
-        applyTailSlice(safeStructuredClone(state.rerolls[rerollid]), operation)
+        if (applyTailSlice(safeStructuredClone(state.rerolls[rerollid]), operation)) {
+          setOperationRerollState(operation, { ...state, rerollid })
+        }
       }
       return
     }
@@ -340,8 +329,9 @@ export async function unReroll(): Promise<void> {
     if (Array.isArray(state.rerolls[state.rerollid - 1])) {
       if (!isCurrentRerollOperation(operation)) return
       const rerollid = state.rerollid - 1
-      setOperationRerollState(operation, { ...state, rerollid })
-      applyTailSlice(safeStructuredClone(state.rerolls[rerollid]), operation)
+      if (applyTailSlice(safeStructuredClone(state.rerolls[rerollid]), operation)) {
+        setOperationRerollState(operation, { ...state, rerollid })
+      }
     }
   } finally {
     rerollOperationGuard.clear(operation.token)
@@ -358,8 +348,9 @@ export async function selectRerollCandidate(index: number): Promise<void> {
     if (!Number.isInteger(index) || index < 0 || index >= state.rerolls.length) return
     if (index === state.rerollid) return
     if (!isCurrentRerollOperation(operation)) return
-    setOperationRerollState(operation, { ...state, rerollid: index })
-    applyTailSlice(safeStructuredClone(state.rerolls[index]), operation)
+    if (applyTailSlice(safeStructuredClone(state.rerolls[index]), operation)) {
+      setOperationRerollState(operation, { ...state, rerollid: index })
+    }
   } finally {
     rerollOperationGuard.clear(operation.token)
   }
@@ -369,6 +360,25 @@ export async function selectRerollCandidate(index: number): Promise<void> {
 function candidateUid(message: Message | undefined): string | undefined {
   const uid = message?.chatId
   return typeof uid === 'string' && uid.trim() ? uid : undefined
+}
+
+function uniqueMessageIdAt(messages: readonly Message[], index: number): string | undefined {
+  const id = candidateUid(messages[index])
+  return id && messages.filter((message) => candidateUid(message) === id).length === 1 ? id : undefined
+}
+
+function hasStableUniqueMessageIds(messages: readonly Message[]): boolean {
+  const ids = new Set<string>()
+  for (const message of messages) {
+    const id = candidateUid(message)
+    if (!id || ids.has(id)) return false
+    ids.add(id)
+  }
+  return true
+}
+
+function stableOwnerId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 /**

@@ -265,7 +265,12 @@ describe('router initial application', () => {
     const stores = await import('./stores.svelte')
     const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
+      selectedPersonaId: 'persona-a',
       selectedPersona: 0,
+      username: 'A',
+      userIcon: '',
+      personaPrompt: '',
+      userNote: '',
       personas: [
         { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
         { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
@@ -313,7 +318,12 @@ describe('router initial application', () => {
     const router = await importRouterAt('/settings/persona/missing-persona')
     const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
+      selectedPersonaId: 'persona-a',
       selectedPersona: 0,
+      username: 'A',
+      userIcon: '',
+      personaPrompt: '',
+      userNote: '',
       personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
     } as any)
     const pushState = vi.spyOn(window.history, 'pushState')

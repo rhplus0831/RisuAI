@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentChat } from '../storage/database.svelte'
+import type { character, Chat } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { alertInput, alertMd, alertNormal, alertSelect } from '../alert'
 import { sayTTS } from './tts'
@@ -11,14 +11,30 @@ import {
   clearCurrentChatMessagesBeforeSend,
   appendCurrentChatUserMessageForSend,
   mutateChatWithScopedCommand,
-  currentChatScriptstateSnapshot,
   dispatchPatchChatScriptstateScoped,
   isActiveChatTargetFresh,
+  type ChatScriptstateSnapshot,
 } from '../chatCommands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import type { Chat } from '../storage/database.svelte'
 import { coordinateAcceptedChatSend } from './acceptedSendCoordinator.svelte'
 import { canUseGenerationOperationProtocol } from '../server/generationOperations'
+import { selectCharacterOwner } from '../characterState'
+import {
+  applyChatScriptstateOwnerValue,
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+  getChatScriptstateOwnerSnapshot,
+} from '../server/resourceState.svelte'
+import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
+import { safeStructuredClone } from '../polyfill'
+
+interface CommandChatOwner {
+  selectedIndex: number
+  chatPage: number
+  character: character
+  chat: Chat
+  chatId: string
+}
 
 export async function processMultiCommand(command: string) {
   let pipe = ''
@@ -47,8 +63,8 @@ export async function processMultiCommand(command: string) {
 }
 
 async function processCommand(command: string, pipe: string): Promise<false | string> {
-  const db = getDatabase()
-  const currentChar = db.characters[get(selectedCharID)]
+  const owner = selectedCommandChatOwner()
+  const currentChar = owner?.character
   let { commandName, arg, namedArg } = commandParser(command, pipe)
 
   if (!arg) {
@@ -56,13 +72,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
   }
 
   arg = risuChatParser(arg, {
-    chara: currentChar.type === 'character' ? currentChar : null,
+    chara: currentChar?.type === 'character' ? currentChar : null,
   })
 
   const namedArgKeys = Object.keys(namedArg)
   for (const key of namedArgKeys) {
     namedArg[key] = risuChatParser(namedArg[key], {
-      chara: currentChar.type === 'character' ? currentChar : null,
+      chara: currentChar?.type === 'character' ? currentChar : null,
     })
   }
 
@@ -98,13 +114,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return false
     }
     case 'speak': {
-      if (currentChar.type === 'character') {
+      if (currentChar?.type === 'character') {
         await sayTTS(currentChar, arg)
       }
       return pipe
     }
     case 'send': {
-      mutateCurrentChatMessages((chat) => {
+      mutateCurrentChatMessages(owner, (chat) => {
         chat.message.push({
           role: 'user',
           data: arg,
@@ -114,7 +130,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     }
     case 'sendas': {
       // `/sendas` uses the active character; it does not accept a speaker name.
-      mutateCurrentChatMessages((chat) => {
+      mutateCurrentChatMessages(owner, (chat) => {
         chat.message.push({
           role: 'char',
           data: arg,
@@ -125,13 +141,13 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     case 'comment': {
       //works differently, but its close enough
       const addition = `<Comment>\n${arg}\n</Comment>`
-      mutateCurrentChatMessages((chat) => {
+      mutateCurrentChatMessages(owner, (chat) => {
         chat.message[chat.message.length - 1].data += addition
       })
       return pipe
     }
     case 'cut': {
-      mutateCurrentChatMessages((chat) => {
+      mutateCurrentChatMessages(owner, (chat) => {
         const range = /^(\d+)\s*-\s*(\d+)$/.exec(arg.trim())
         if (range) {
           const start = Number.parseInt(range[1], 10)
@@ -154,7 +170,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
     case 'del': {
       const size = /^\d+$/.test(arg.trim()) ? Number.parseInt(arg.trim(), 10) : Number.NaN
       if (Number.isInteger(size) && size > 0) {
-        mutateCurrentChatMessages((chat) => {
+        mutateCurrentChatMessages(owner, (chat) => {
           chat.message = chat.message.slice(0, Math.max(0, chat.message.length - size))
         })
       }
@@ -202,54 +218,32 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return ''
     }
     case 'setvar': {
-      const selectedChar = get(selectedCharID)
-      const previous = currentChatScriptstateSnapshot()
       const stateKey = '$' + namedArg['key']
-      let chatId: string | undefined
-      // No `setDatabase(db)` here: the in-place scriptstate write under the
-      // trusted scope plus the scoped dispatch below already persist the change
-      // (mirroring `setChatVar`). The full normalizer re-filtered every character
-      // and re-cloned the language pack on every var write for nothing.
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        const char = db.characters[selectedChar]
-        const chat = char.chats[char.chatPage]
-        chat.scriptstate = chat.scriptstate ?? {}
-        chat.scriptstate[stateKey] = arg
-        chatId = chat.id
-      })
-      if (chatId) {
-        dispatchPatchChatScriptstateScoped(chatId, { [stateKey]: arg }, [], previous)
+      if (owner) {
+        const previous = commandScriptstateSnapshot(owner)
+        if (previous && applyChatScriptstateOwnerValue(owner.character.chaId, owner.chatId, stateKey, arg)) {
+          dispatchPatchChatScriptstateScoped(owner.chatId, { [stateKey]: arg }, [], previous)
+        }
       }
       return ''
     }
     case 'addvar': {
-      const selectedChar = get(selectedCharID)
-      const previous = currentChatScriptstateSnapshot()
       const stateKey = '$' + namedArg['key']
-      let chatId: string | undefined
-      let newValue = ''
-      // No `setDatabase(db)` here either; see the `setvar` note above.
-      withTrustedResourceWrite(() => {
-        const db = getDatabase()
-        const char = db.characters[selectedChar]
-        const chat = char.chats[char.chatPage]
-        chat.scriptstate = chat.scriptstate ?? {}
-        newValue = (Number(chat.scriptstate[stateKey]) + Number(arg)).toString()
-        chat.scriptstate[stateKey] = newValue
-        chatId = chat.id
-      })
-      if (chatId) {
-        dispatchPatchChatScriptstateScoped(chatId, { [stateKey]: newValue }, [], previous)
+      if (owner) {
+        const previous = commandScriptstateSnapshot(owner)
+        if (!previous) return ''
+        const newValue = (Number(previous.scriptstate?.[stateKey]) + Number(arg)).toString()
+        if (applyChatScriptstateOwnerValue(owner.character.chaId, owner.chatId, stateKey, newValue)) {
+          dispatchPatchChatScriptstateScoped(owner.chatId, { [stateKey]: newValue }, [], previous)
+        }
       }
       return ''
     }
     case 'getvar': {
-      const db = getDatabase()
-      const selectedChar = get(selectedCharID)
-      const char = db.characters[selectedChar]
-      const chat = char.chats[char.chatPage]
-      pipe = chat.scriptstate?.['$' + namedArg['key']]?.toString() ?? 'null'
+      const scriptstate = owner
+        ? getChatScriptstateOwnerSnapshot(owner.character.chaId, owner.chatId)?.scriptstate
+        : undefined
+      pipe = scriptstate?.['$' + namedArg['key']]?.toString() ?? 'null'
       return pipe
     }
     case 'test_lorebook': {
@@ -258,17 +252,33 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return JSON.stringify(p)
     }
     case 'trigger': {
-      const currentChar = getCurrentCharacter()
+      if (!owner || !currentChar) return ''
+      const transcript = getChatMessageOwnerState(owner.chatId)
+      if (!transcript) return ''
+      const currentChat = safeStructuredClone(owner.chat)
+      currentChat.message = safeStructuredClone(transcript.messages)
+      const target = captureActiveChatTarget()
+      if (!target || target.characterId !== currentChar.chaId || target.chatId !== owner.chatId) return ''
       const triggerController = createManualTriggerAbortController()
       try {
         const triggerResult = await runTrigger(currentChar, 'manual', {
-          chat: getCurrentChat(),
+          chat: currentChat,
           manualName: arg,
           signal: triggerController.signal,
         })
 
-        if (triggerResult) {
-          setCurrentChat(triggerResult.chat)
+        const freshOwner = selectedCommandChatOwner()
+        if (
+          triggerResult?.chat.id === owner.chatId &&
+          isActiveChatTargetFresh(target) &&
+          freshOwner &&
+          freshOwner.character.chaId === owner.character.chaId &&
+          freshOwner.chatId === owner.chatId
+        ) {
+          mutateChatWithScopedCommand((chat) => replaceChatRecord(chat, triggerResult.chat), {
+            selectedChar: freshOwner.selectedIndex,
+            selectedChat: freshOwner.chatPage,
+          })
         }
       } finally {
         clearManualTriggerAbortController(triggerController)
@@ -337,12 +347,52 @@ async function processCommand(command: string, pipe: string): Promise<false | st
   return false
 }
 
-// Apply an optimistic mutation to the current chat's message history without
-// mutating the read-only server projection in place. The mutation runs inside
-// a trusted write scope against a freshly read database reference, then the
-// change is forwarded to the server through the compatible chat-update command.
-function mutateCurrentChatMessages(mutate: (chat: Chat) => void): boolean {
-  return mutateChatWithScopedCommand((chat) => mutate(chat))
+function selectedCommandChatOwner(): CommandChatOwner | null {
+  if (charactersResourceState.status !== 'ready') return null
+  const selectedIndex = get(selectedCharID)
+  const character = selectCharacterOwner(charactersResourceState.characters, selectedIndex)
+  const characterId = character?.chaId
+  if (!characterId || getCharacterResourceOwner(characterId) !== character) return null
+
+  const chatPage = character.chatPage
+  const chat = Number.isInteger(chatPage) && chatPage >= 0 ? character.chats?.[chatPage] : undefined
+  const chatId = chat?.id
+  if (!chat || !stableOwnerId(chatId) || !getChatMetadataOwnerState(chatId)) return null
+  return { selectedIndex, chatPage, character, chat, chatId }
+}
+
+function commandScriptstateSnapshot(owner: CommandChatOwner): ChatScriptstateSnapshot | undefined {
+  const snapshot = getChatScriptstateOwnerSnapshot(owner.character.chaId, owner.chatId)
+  if (!snapshot) return undefined
+  return {
+    characterId: snapshot.characterId,
+    chatId: snapshot.chatId,
+    selectedCharID: owner.selectedIndex,
+    scriptstate: snapshot.scriptstate ? { ...snapshot.scriptstate } : undefined,
+  }
+}
+
+// The durable chat command owns optimistic projection and rollback. This
+// compatibility parser supplies only the exact stable character/chat target.
+function mutateCurrentChatMessages(owner: CommandChatOwner | null, mutate: (chat: Chat) => void): boolean {
+  if (!owner) return false
+  return mutateChatWithScopedCommand((chat) => mutate(chat), {
+    selectedChar: owner.selectedIndex,
+    selectedChat: owner.chatPage,
+  })
+}
+
+function replaceChatRecord(target: Chat, replacement: Chat): void {
+  const targetRecord = target as unknown as Record<string, unknown>
+  const replacementRecord = safeStructuredClone(replacement) as unknown as Record<string, unknown>
+  for (const key of Object.keys(targetRecord)) {
+    if (!(key in replacementRecord)) delete targetRecord[key]
+  }
+  Object.assign(targetRecord, replacementRecord)
+}
+
+function stableOwnerId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function commandParser(command: string, pipe: string) {

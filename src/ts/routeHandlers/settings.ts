@@ -1,6 +1,7 @@
 import type { AppRoute } from '../routerRoute'
 import { personaSettingsRoutePath } from '../routerRoute'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { getPersonaOwnerStateSnapshot } from '../server/resourceState.svelte'
+import type { Database } from '../storage/database.svelte'
 import { OpenRealmStore, PlaygroundStore, SettingsMenuIndex, selectedCharID, settingsOpen } from '../stores.svelte'
 
 interface SettingsRouteContext {
@@ -22,12 +23,13 @@ export async function applySettingsRoute(
 }
 
 async function selectRoutedPersona(personaId: string, context: SettingsRouteContext): Promise<void> {
-  const index = uniquePersonaIndex(personaId)
+  const owner = getPersonaOwnerStateSnapshot()
+  const index = uniquePersonaIndex(personaId, owner?.personas)
   if (index < 0) {
     canonicalizePersonaSettingsRoute(context)
     return
   }
-  if (getDatabase().selectedPersona === index) return
+  if (owner?.selectedPersonaId === personaId) return
 
   const { changeUserPersonaWithOutcome } = await import('../persona')
   if (!context.isFresh()) return
@@ -41,9 +43,10 @@ async function selectRoutedPersona(personaId: string, context: SettingsRouteCont
   if (status === 'failed') canonicalizePersonaSettingsRoute(context)
 }
 
-function uniquePersonaIndex(personaId: string): number {
+function uniquePersonaIndex(personaId: string, personas: Database['personas'] | undefined): number {
+  if (!personas) return -1
   let index = -1
-  for (const [candidateIndex, persona] of (getDatabase().personas ?? []).entries()) {
+  for (const [candidateIndex, persona] of personas.entries()) {
     if (persona?.id !== personaId) continue
     if (index !== -1) return -1
     index = candidateIndex
@@ -53,9 +56,8 @@ function uniquePersonaIndex(personaId: string): number {
 
 function canonicalizePersonaSettingsRoute(context: SettingsRouteContext): void {
   if (!context.isFresh()) return
-  const selectedPersona = getDatabase().personas?.[getDatabase().selectedPersona]
-  const selectedId = typeof selectedPersona?.id === 'string' ? selectedPersona.id : undefined
-  const path =
-    selectedId && uniquePersonaIndex(selectedId) >= 0 ? personaSettingsRoutePath(selectedId) : '/settings/persona'
+  const owner = getPersonaOwnerStateSnapshot()
+  const selectedId = owner?.selectedPersonaId ?? undefined
+  const path = selectedId ? personaSettingsRoutePath(selectedId) : '/settings/persona'
   context.replacePath(path)
 }

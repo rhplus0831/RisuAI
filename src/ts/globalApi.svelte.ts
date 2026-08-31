@@ -1,15 +1,7 @@
 import { checkNullish } from './util'
 import { sha256Hex } from './sha256Fallback'
 import { get } from 'svelte/store'
-import {
-  type Chat,
-  type character,
-  type Database,
-  defaultSdDataFunc,
-  getDatabase,
-  appVer,
-  getCurrentCharacter,
-} from './storage/database.svelte'
+import { type Chat, type character, type Database, defaultSdDataFunc, appVer } from './storage/database.svelte'
 import { checkRisuUpdate } from './update'
 import { reloadGuiDisplay, bodyIntercepterStore } from './stores.svelte'
 import { selIdState } from './stores/coreStores.svelte'
@@ -58,6 +50,7 @@ import {
   charactersResourceState,
   getCharacterResourceOwner,
   getChatMetadataOwnerState,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import { getChatMessageOwnerState } from './server/chatMessageHydration.svelte'
 
@@ -685,7 +678,6 @@ export function addFetchLog(arg: {
  */
 export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promise<GlobalFetchResult> {
   try {
-    const db = getDatabase()
     if (arg.abortSignal?.aborted) {
       return { ok: false, data: 'aborted', headers: {}, status: 400 }
     }
@@ -693,7 +685,7 @@ export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promi
     const urlHost = new URL(url).hostname
     const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
     const forcePlainFetch =
-      (knownHostes.includes(urlHost) || db.usePlainFetch || arg.plainFetchForce) &&
+      (knownHostes.includes(urlHost) || settingsResourceState.value.usePlainFetch || arg.plainFetchForce) &&
       !arg.plainFetchDeforce &&
       !useLocalNetworkRoute
 
@@ -837,6 +829,7 @@ async function fetchWithProxy(
     upstreamHeaders['Content-Type'] ??=
       arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json'
     const nodeProxyAuth = await getNodeServerProxyAuth()
+    const requestLocation = settingsResourceState.value.requestLocation
     const headers = {
       'risu-header': encodeURIComponent(JSON.stringify(upstreamHeaders)),
       'risu-url': encodeURIComponent(url),
@@ -846,7 +839,7 @@ async function fetchWithProxy(
         'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
       }),
       ...(nodeProxyAuth && { 'risu-auth': nodeProxyAuth }),
-      ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+      ...(requestLocation && { 'risu-location': requestLocation }),
     }
 
     const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
@@ -1001,7 +994,7 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * call characterCommands.repairCharacterOrderOptimistically().
  */
 export function checkCharOrder() {
-  return !normalizeCharacterOrder(getDatabase().characterOrder, getDatabase().characters).changed
+  return !normalizeCharacterOrder(charactersResourceState.characterOrder, charactersResourceState.characters).changed
 }
 
 /**
@@ -1620,7 +1613,9 @@ async function fetchNativeInternal(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+              ...(settingsResourceState.value.requestLocation && {
+                'risu-location': settingsResourceState.value.requestLocation,
+              }),
             }
           : {
               'risu-header': encodeURIComponent(JSON.stringify(headers)),
@@ -1630,7 +1625,9 @@ async function fetchNativeInternal(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+              ...(settingsResourceState.value.requestLocation && {
+                'risu-location': settingsResourceState.value.requestLocation,
+              }),
             },
         method: arg.method,
         signal: requestSignal,
@@ -1916,11 +1913,12 @@ export function getLanguageCodes() {
     }
   }
 
+  const displayLanguage = settingsResourceState.value.language === 'cn' ? 'zh' : settingsResourceState.value.language
   languageCodes = languageCodes
     .map((v) => {
       return {
         code: v.code.toLocaleLowerCase(),
-        name: new Intl.DisplayNames([getDatabase().language === 'cn' ? 'zh' : getDatabase().language], {
+        name: new Intl.DisplayNames([displayLanguage || 'en'], {
           type: 'language',
           fallback: 'none',
         }).of(v.code),
@@ -2091,9 +2089,12 @@ export let chatFoldedStateMessageIndex = $state({
 })
 
 function globalApiCharacterOwners(): readonly character[] {
-  if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-    return getDatabase().characters ?? []
+  if (
+    charactersResourceState.status === 'ready' ||
+    charactersResourceState.status === 'idle' ||
+    charactersResourceState.status === 'loading'
+  ) {
+    return charactersResourceState.characters
   }
   return []
 }
@@ -2245,8 +2246,8 @@ export function createChatCopyName(originalName: string, type: 'Copy' | 'Branch'
   let name = originalName.replaceAll(/\(((Copy|Branch)( \d+)?)\)$/g, '').trim()
   let copyIndex = 1
   let newName = `${name} (${type})`
-  const char = getCurrentCharacter()
-  while (char.chats.find((v) => v.name === newName)) {
+  const char = selectedGlobalApiCharacterOwner()?.character
+  while (char?.chats.find((v) => v.name === newName)) {
     copyIndex++
     newName = `${name} (${type} ${copyIndex})`
   }

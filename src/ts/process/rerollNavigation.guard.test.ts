@@ -15,10 +15,6 @@ const commandSpies = vi.hoisted(() => ({
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),
-  ensureMessageId: vi.fn((message: { chatId?: string }) => {
-    if (!message.chatId) message.chatId = 'minted'
-    return message.chatId
-  }),
 }))
 vi.mock('../chatCommands', () => commandSpies)
 
@@ -31,8 +27,10 @@ const prerollSpies = vi.hoisted(() => ({
 vi.mock('./prereroll', () => prerollSpies)
 
 import { selectedCharID } from '../stores.svelte'
+import { get } from 'svelte/store'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+import { charactersResourceState } from '../server/resourceState.svelte'
 import {
   getRerollId,
   reroll,
@@ -54,6 +52,35 @@ beforeEach(() => {
     characters: [{ chaId: 'c1', chatPage: 0, chats: [{ id: 'chat-1', message: [] as Msg[] }] }],
   }
   selectedCharID.set(0)
+  commandSpies.currentChatScopedSnapshot.mockImplementation(() => {
+    const selectedIndex = get(selectedCharID)
+    const character = charactersResourceState.characters[selectedIndex]
+    const chat = character?.chats?.[character.chatPage]
+    return {
+      selectedCharID: selectedIndex,
+      characterId: character?.chaId,
+      chatId: chat?.id,
+      chat: chat ? JSON.parse(JSON.stringify(chat)) : undefined,
+    }
+  })
+  commandSpies.dispatchReplaceTailMessagesScoped.mockImplementation(
+    (chatId: string, afterMessageId: string | null, messages: Msg[]) => {
+      const chat = charactersResourceState.characters
+        .flatMap((character) => character.chats ?? [])
+        .find((row) => row.id === chatId)
+      if (!chat) return
+      const index =
+        afterMessageId === null ? -1 : chat.message.findIndex((message) => message.chatId === afterMessageId)
+      chat.message = chat.message.slice(0, index + 1).concat(structuredClone(messages) as never)
+    },
+  )
+  commandSpies.dispatchUpdateMessageScoped.mockImplementation((messageId: string, patch: { data?: string }) => {
+    const message = charactersResourceState.characters
+      .flatMap((character) => character.chats ?? [])
+      .flatMap((chat) => chat.message ?? [])
+      .find((row) => row.chatId === messageId)
+    if (message && patch.data !== undefined) message.data = patch.data
+  })
 })
 
 afterEach(() => {
@@ -104,7 +131,7 @@ describe('reroll swipe under the read-only resource guard', () => {
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
-  it('leaves a failed regenerate target untouched under the trusted guard', async () => {
+  it('leaves a failed regenerate target untouched under the resource guard', async () => {
     seedAndFreeze()
     const sendChatMain = vi.fn(async () => false)
 

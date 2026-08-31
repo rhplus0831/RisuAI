@@ -125,9 +125,13 @@ afterEach(() => {
 
 describe('reroll/swipe chat-scoped rollback', () => {
   it('a swipe clones only the active chat, never the sibling transcript', () => {
-    // No active chat id → `applyTailSlice` skips the network dispatch, isolating the
-    // synchronous rollback-baseline capture (the `currentChatScopedSnapshot`).
-    const { siblingSize } = seedDb(undefined)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify({ error: 'clone probe' }), { status: 503 }),
+      ) as unknown as typeof fetch,
+    )
+    const { siblingSize } = seedDb('chat-active')
     expect(getRerollId()).toBe(1)
 
     const instrumented = withCloneInstrumentation(() => {

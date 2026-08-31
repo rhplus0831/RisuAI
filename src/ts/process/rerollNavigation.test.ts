@@ -9,10 +9,6 @@ const commandSpies = vi.hoisted(() => ({
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),
-  ensureMessageId: vi.fn((message: { chatId?: string }) => {
-    if (!message.chatId) message.chatId = 'minted'
-    return message.chatId
-  }),
 }))
 vi.mock('../chatCommands', () => commandSpies)
 
@@ -25,9 +21,11 @@ const prerollSpies = vi.hoisted(() => ({
 vi.mock('./prereroll', () => prerollSpies)
 
 import { selectedCharID } from '../stores.svelte'
+import { get } from 'svelte/store'
 import type { ActiveChatTarget } from '../chatCommands'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
+import { charactersResourceState } from '../server/resourceState.svelte'
 import {
   clearRerollBuffer,
   getRerollBuffer,
@@ -78,6 +76,35 @@ function bufferUids(target?: ActiveChatTarget): string[][] {
 beforeEach(() => {
   resetRerollNavigation()
   vi.clearAllMocks()
+  commandSpies.currentChatScopedSnapshot.mockImplementation(() => {
+    const selectedIndex = get(selectedCharID)
+    const character = charactersResourceState.characters[selectedIndex]
+    const chat = character?.chats?.[character.chatPage]
+    return {
+      selectedCharID: selectedIndex,
+      characterId: character?.chaId,
+      chatId: chat?.id,
+      chat: chat ? JSON.parse(JSON.stringify(chat)) : undefined,
+    }
+  })
+  commandSpies.dispatchReplaceTailMessagesScoped.mockImplementation(
+    (chatId: string, afterMessageId: string | null, messages: Msg[]) => {
+      const chat = charactersResourceState.characters
+        .flatMap((character) => character.chats ?? [])
+        .find((row) => row.id === chatId)
+      if (!chat) return
+      const index =
+        afterMessageId === null ? -1 : chat.message.findIndex((message) => message.chatId === afterMessageId)
+      chat.message = chat.message.slice(0, index + 1).concat(structuredClone(messages) as never)
+    },
+  )
+  commandSpies.dispatchUpdateMessageScoped.mockImplementation((messageId: string, patch: { data?: string }) => {
+    const message = charactersResourceState.characters
+      .flatMap((character) => character.chats ?? [])
+      .flatMap((chat) => chat.message ?? [])
+      .find((row) => row.chatId === messageId)
+    if (message && patch.data !== undefined) message.data = patch.data
+  })
 })
 
 afterEach(() => {
@@ -188,7 +215,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(sendChatMain).not.toHaveBeenCalled()
   })
 
-  it('marks a prefetched tail swap as caller-owned optimistic state', async () => {
+  it('delegates a prefetched tail swap to the scoped command owner', async () => {
     setupChat([
       { role: 'user', data: 'hi', chatId: 'u1' },
       { role: 'char', data: 'active', chatId: 'g1', generationInfo: { generationId: 'generation-1' } },
@@ -202,8 +229,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(commandSpies.dispatchUpdateMessageScoped).toHaveBeenCalledWith(
       'g1',
       { data: 'prefetched' },
-      expect.objectContaining({ snapshot: true }),
-      { optimisticPatchAlreadyApplied: true },
+      expect.objectContaining({ characterId: 'c1', chatId: 'chat-1' }),
     )
   })
 
@@ -263,6 +289,24 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(
       commandSpies.dispatchReplaceTailMessagesScoped.mock.calls[0][2].map((message: Msg) => message.chatId),
     ).toEqual(['g1'])
+  })
+
+  it('fails closed without moving the swipe pointer when a candidate duplicates an owned message id', async () => {
+    const active: Msg[] = [
+      { role: 'user', data: 'hi', chatId: 'u1' },
+      { role: 'char', data: 'active', chatId: 'g3' },
+    ]
+    setupChat(active)
+    seedRerollBufferFromAlternates(active, [
+      { role: 'char', data: 'active', chatId: 'g3' },
+      { role: 'char', data: 'duplicate id', chatId: 'u1' },
+    ])
+
+    await selectRerollCandidate(0)
+
+    expect(getRerollId()).toBe(1)
+    expect(tailUids()).toEqual(['u1', 'g3'])
+    expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('newReroll regenerates instead of moving to the next saved candidate', async () => {

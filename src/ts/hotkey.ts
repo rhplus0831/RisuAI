@@ -15,7 +15,7 @@ import {
   resolveAlertSelection,
   resolveAlertWorkflow,
 } from './alert'
-import { getDatabase, selectModelPreset, type Database } from './storage/database.svelte'
+import { selectModelPreset, type Database } from './storage/database.svelte'
 import {
   alertStore,
   loadoutModalStore,
@@ -45,7 +45,12 @@ import { closeSettingsRoute, navigate, openSettingsRoute } from './router'
 import { findChatGenerationActivity } from './process/generationActivity.svelte'
 import { requestActiveModuleEditorLeave } from './moduleEditorLeaveGuard'
 import { changeChar } from './characters'
-import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from './server/resourceState.svelte'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
@@ -111,7 +116,7 @@ export function initHotkey() {
       // Suppress only shortcuts that would otherwise run a global app action.
       // Cancelling every modal keydown also cancels native Tab, text selection,
       // and shifted characters.
-      const modalHotkeys = getDatabase()?.hotkeys ?? defaultHotkeys
+      const modalHotkeys = settingsResourceState.value.hotkeys ?? defaultHotkeys
       const matchesConfiguredHotkey = modalHotkeys.some((hotkey) => hotkeyMatches(hotkey, ev))
       const matchesPresetHotkey = ev.ctrlKey && /^[1-9]$/.test(ev.key)
       if (matchesConfiguredHotkey || matchesPresetHotkey) {
@@ -125,9 +130,7 @@ export function initHotkey() {
       return
     }
 
-    const database = getDatabase()
-
-    const hotKeys = database?.hotkeys ?? defaultHotkeys
+    const hotKeys = settingsResourceState.value.hotkeys ?? defaultHotkeys
 
     let hotkeyRan = false
     for (const hotkey of hotKeys) {
@@ -249,7 +252,7 @@ export function initHotkey() {
           break
         }
         case 'scrollToActiveChar': {
-          if (database.enableScrollToActiveChar !== false) {
+          if (settingsResourceState.value.enableScrollToActiveChar !== false) {
             window.dispatchEvent(new CustomEvent('scrollToActiveCharacter'))
           }
           break
@@ -376,8 +379,7 @@ export function initHotkey() {
         const isCharacterDrag = hasDragType(ev.dataTransfer?.types, RISU_SIDEBAR_DRAG_TYPE)
 
         if (isCharacterDrag) {
-          const db = getDatabase()
-          if (db.enableScrollToActiveChar !== false) {
+          if (settingsResourceState.value.enableScrollToActiveChar !== false) {
             const now = Date.now()
             if (now - lastScrollTime > SCROLL_COOLDOWN) {
               lastScrollTime = now
@@ -477,7 +479,9 @@ export async function changeToAdjacentCharacter(direction: 'previous' | 'next'):
     if (!owners) return false
     targetIndex = adjacentCharacterCandidateIndex(owners.candidates, owners.selectedIndex, direction)
   } else if (status === 'idle' || status === 'loading') {
-    targetIndex = adjacentCharacterIndex(getDatabase().characters ?? [], get(selectedCharID), direction)
+    // Retained owner rows remain usable while their authoritative refresh is in
+    // flight; only the selected-index compatibility pointer is consulted here.
+    targetIndex = adjacentCharacterIndex(charactersResourceState.characters, get(selectedCharID), direction)
   } else {
     return false
   }
@@ -633,13 +637,24 @@ export function initMobileGesture() {
 
 export function changeToPreset(num: number): boolean {
   if (!doingAlert()) {
-    const db = getDatabase()
-    const pres = Array.isArray(db.modelPresets) ? db.modelPresets : []
+    const pres =
+      collectionsResourceState.statuses.modelPresets === 'ready' &&
+      Array.isArray(collectionsResourceState.values.modelPresets)
+        ? collectionsResourceState.values.modelPresets
+        : []
     const preset = Number.isInteger(num) && num >= 0 ? pres[num] : undefined
-    if (preset && typeof preset.id === 'string' && preset.id.length > 0) {
+    if (preset && stableOwnerId(preset.id) && pres.filter((candidate) => candidate?.id === preset.id).length === 1) {
       const activeChat = resolveActiveChatGenerationSettings()
       if (activeChat.identity.chatId) {
         const target = captureActiveChatTarget()
+        if (
+          !target ||
+          target.characterId !== activeChat.identity.characterId ||
+          target.chatId !== activeChat.identity.chatId
+        ) {
+          alertError(language.chatGenerationSettingsSaveFailed(language.chatGenerationSettingsTargetChanged))
+          return false
+        }
         const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(
           createManualModelPresetSelection(preset.id),
           { expectedTarget: target },

@@ -156,6 +156,11 @@ function seedReadyCharacterOwners(
   charactersResourceState.characters = characters as any
   charactersResourceState.characterOrder = characterOrder as any
   charactersResourceState.currentChar = currentChar
+  charactersResourceState.rowStatuses = Object.fromEntries(
+    characters.flatMap((character) =>
+      typeof character.chaId === 'string' && character.chaId.length > 0 ? [[character.chaId, 'ready']] : [],
+    ),
+  ) as any
   charactersResourceState.status = 'ready'
 }
 
@@ -289,7 +294,7 @@ describe('hotkey handling under the resource guard', () => {
   })
 
   it.each(['idle', 'loading'] as const)(
-    'keeps aggregate adjacent navigation only while character resources are %s',
+    'keeps retained-owner adjacent navigation while character resources are %s',
     async (status) => {
       testDatabaseState.db.characters = [{ name: 'Charlie' }, { name: 'Alpha' }] as any
       charactersResourceState.status = status
@@ -374,6 +379,13 @@ describe('hotkey handling under the resource guard', () => {
     expect(command.body).toMatchObject({ modelPresetId: 'model-second' })
   })
 
+  it('fails closed when a numbered preset does not have a unique stable id', () => {
+    testDatabaseState.db.modelPresets.push({ id: 'model-second', name: 'Duplicate Model' })
+
+    expect(changeToPreset(1)).toBe(false)
+    expect(changeToPreset(2)).toBe(false)
+  })
+
   it('keeps Ctrl+1 functional when a fresh database has only its default modern preset', async () => {
     const calls = stubCommandFetch()
     testDatabaseState.db.modelPresets = [{ id: 'model-default', name: 'Default Model' }]
@@ -386,7 +398,7 @@ describe('hotkey handling under the resource guard', () => {
 
   it('switches the active chat generation model preset when the chat owns preset selection', async () => {
     const calls = stubCommandFetch()
-    testDatabaseState.db.characters = [
+    const characters = [
       {
         chaId: 'char-a',
         chatPage: 0,
@@ -404,12 +416,13 @@ describe('hotkey handling under the resource guard', () => {
           },
         ],
       },
-    ] as any
+    ]
+    seedReadyCharacterOwners(characters, ['char-a'], 0)
     selectedCharID.set(0)
 
     expect(changeToPreset(1)).toBe(true)
-    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-second')
-    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetSelectionSource).toBe('manual')
+    expect(charactersResourceState.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-second')
+    expect(charactersResourceState.characters[0].chats[0].generationSettings.modelPresetSelectionSource).toBe('manual')
     expect(testDatabaseState.db.modelPresetsId).toBe(0)
 
     const command = await waitForCommand(calls, (call) => call.url.endsWith('/chat-a/generation-settings'))
@@ -425,7 +438,7 @@ describe('hotkey handling under the resource guard', () => {
     const calls = stubCommandFetch({
       generationSettingsResponse: Promise.resolve(jsonResponse({ error: 'hotkey selection rejected' }, 400)),
     })
-    testDatabaseState.db.characters = [
+    const characters = [
       {
         chaId: 'char-a',
         chatPage: 0,
@@ -443,7 +456,8 @@ describe('hotkey handling under the resource guard', () => {
           },
         ],
       },
-    ] as any
+    ]
+    seedReadyCharacterOwners(characters, ['char-a'], 0)
     selectedCharID.set(0)
 
     expect(changeToPreset(1)).toBe(true)
@@ -455,7 +469,7 @@ describe('hotkey handling under the resource guard', () => {
     )
 
     expect(alertSpies.alertToast).not.toHaveBeenCalled()
-    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-default')
+    expect(charactersResourceState.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-default')
   })
 
   it('routes a hotkey settings edit through a sidebar settings patch', async () => {

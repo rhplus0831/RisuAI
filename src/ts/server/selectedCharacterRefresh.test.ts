@@ -42,4 +42,19 @@ describe('selected character refresh owner contract', () => {
     charactersResourceState.currentChar = -1
     expect(resolveSelectedCharacterIndexAfterRefresh({ selectedIndex: 1, characterId: 'removed' })).toBe(-1)
   })
+
+  it('uses retained owner rows while a refresh is loading without consulting an aggregate fallback', () => {
+    charactersResourceState.status = 'loading'
+    charactersResourceState.characters = [character('replacement'), character('owner-a')]
+
+    expect(resolveSelectedCharacterIndexAfterRefresh({ selectedIndex: 0, characterId: 'owner-a' })).toBe(1)
+  })
+
+  it('fails closed when a retained stable id has duplicate owners', () => {
+    charactersResourceState.status = 'loading'
+    charactersResourceState.characters = [character('owner-a'), character('owner-a')]
+    charactersResourceState.currentChar = -1
+
+    expect(resolveSelectedCharacterIndexAfterRefresh({ selectedIndex: 0, characterId: 'owner-a' })).toBe(-1)
+  })
 })
