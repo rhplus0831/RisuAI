@@ -1,5 +1,5 @@
 <script lang="ts" module>
-  import { getDatabase, type character } from 'src/ts/storage/database.svelte'
+  import type { character } from 'src/ts/storage/database.svelte'
 
   export function resolveOpenChatId(characterOwner: character | undefined): string | null {
     return characterOwner?.chats?.[characterOwner.chatPage]?.id ?? null
@@ -40,43 +40,40 @@
 
 <script lang="ts">
   import { language } from 'src/lang'
-  import { charactersResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getChatMetadataOwnerState,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { getSelectedCharacterOwner } from 'src/ts/characterState'
   import { memoryJobProjectionStore, selectMemoryProgress } from 'src/ts/server/memoryJobProjection.svelte'
   import { groupMemoryJobsForPresentation, type MemoryProgressGroup } from 'src/ts/server/memoryJobPresentation'
-  import { selectedCharID } from 'src/ts/stores.svelte'
   import type { ServerMemoryJob } from 'src/ts/process/request/serverMemory'
 
   let isExpanded = $state(false)
   function characterRowsOwner(): readonly character[] {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return charactersResourceState.characters.length > 0
-        ? charactersResourceState.characters
-        : (getDatabase().characters ?? [])
-    }
-    return []
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   }
 
   function selectedCharacterOwner(): character | undefined {
-    if (charactersResourceState.status === 'ready') return getSelectedCharacterOwner()
-    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
-    const rows = characterRowsOwner()
-    const candidate = rows[$selectedCharID]
-    if (!candidate?.chaId) return undefined
-    return rows.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+    if (charactersResourceState.status !== 'ready') return undefined
+    const character = getSelectedCharacterOwner()
+    if (!character?.chaId || charactersResourceState.rowStatuses[character.chaId] === 'error') return undefined
+    return character
   }
 
   function openChatOnlyOwner(): boolean {
-    const status = settingsResourceState.groupStatuses.display ?? 'idle'
-    if (status === 'ready') return settingsResourceState.value.hypaV3ProgressOpenChatOnly === true
-    if (status === 'idle' || status === 'loading') return getDatabase().hypaV3ProgressOpenChatOnly === true
-    return false
+    return (
+      settingsResourceState.status !== 'error' &&
+      settingsResourceState.groupStatuses.display === 'ready' &&
+      settingsResourceState.value.hypaV3ProgressOpenChatOnly === true
+    )
   }
 
   const selectedCharacter = $derived(selectedCharacterOwner())
   const openChatId = $derived.by(() => {
-    return resolveUniqueOpenChatId(selectedCharacter, characterRowsOwner())
+    const chatId = resolveUniqueOpenChatId(selectedCharacter, characterRowsOwner())
+    return chatId && getChatMetadataOwnerState(chatId)?.chatId === chatId ? chatId : null
   })
   const openChatOnly = $derived(openChatOnlyOwner())
   const progress = $derived(selectMemoryProgress($memoryJobProjectionStore, openChatId, openChatOnly))
@@ -89,6 +86,9 @@
   }
 
   function chatLabel(chatId: string): string {
+    if (getChatMetadataOwnerState(chatId)?.chatId !== chatId) {
+      return language.hypaV3Progress.unknownChat(shortJobId(chatId))
+    }
     return resolveUniqueChatLabel(
       characterRowsOwner(),
       chatId,

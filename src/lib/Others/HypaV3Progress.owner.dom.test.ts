@@ -55,7 +55,10 @@ describe('HypaV3Progress owner reads', () => {
 
   it('reads progress filtering settings through the display owner group', () => {
     expect(source).toContain('settingsResourceState.groupStatuses.display')
-    expect(source).toContain("if (status === 'ready') return settingsResourceState.value.hypaV3ProgressOpenChatOnly")
-    expect(source).toContain("if (status === 'idle' || status === 'loading')")
+    expect(source).toContain("settingsResourceState.groupStatuses.display === 'ready'")
+    expect(source).toContain('settingsResourceState.value.hypaV3ProgressOpenChatOnly === true')
+    expect(source).toContain('getChatMetadataOwnerState(chatId)?.chatId === chatId')
+    expect(source).not.toContain('getDatabase')
+    expect(source).not.toContain('selectedCharID')
   })
 })
