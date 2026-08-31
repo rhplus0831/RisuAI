@@ -2,10 +2,15 @@ import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateAssetTriples } from './assets.js'
-import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
-import { ensureCharacterChats } from './chats.js'
+import {
+  type CharacterRecord,
+  ensureCharacterCollection,
+  readCharacterId,
+  readJsonObject,
+  readStrictCharacterRecord,
+} from './characters.js'
 import { isImportableMCPIdentifier } from '@risuai/shared-core/mcp-identifier'
-import { repairCreatedLorebookEntries } from './lorebooks.js'
+import { repairCreatedLorebookEntries, validateStoredLorebookEntries } from './lorebooks.js'
 import { normalizeScriptModelOverrides, readScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 
 type JsonRecord = Record<string, unknown>
@@ -71,6 +76,47 @@ export function ensureModuleRecords(database: JsonRecord): ModuleRecord[] {
   })
   database.modules = modules
   return modules
+}
+
+/**
+ * Read persisted module identities without repairing any row. All identities
+ * are checked together so target lookup cannot silently choose one duplicate.
+ */
+export function readStrictModuleRecords(database: JsonRecord): ModuleRecord[] {
+  if (!Array.isArray(database.modules)) {
+    throw new ValidationError('modules must be an array')
+  }
+  const seen = new Set<string>()
+  return database.modules.map((raw, index) => {
+    const module = readJsonObject(raw, `module[${index}]`) as ModuleRecord
+    const id = readModuleId(module.id, `module[${index}].id`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id: ${id}`)
+    }
+    seen.add(id)
+    return module
+  })
+}
+
+/** Validate one stored module exactly as represented, without normalization. */
+export function validateStoredModuleRecord(
+  module: ModuleRecord,
+  label = 'module',
+  options: { allowMcp?: boolean; validateLorebook?: boolean } = {},
+): ModuleRecord {
+  if (typeof module.name !== 'string' || module.name.trim() === '') {
+    throw new ValidationError(`${label}.name must be a non-empty string`)
+  }
+  if (typeof module.description !== 'string') {
+    throw new ValidationError(`${label}.description must be a string`)
+  }
+  // Some shared validators canonicalize their argument. Validate a shallow
+  // copy so the stored row returned to the command remains byte-faithful.
+  validateModuleRecord({ ...module }, label, options)
+  if (options.validateLorebook && module.lorebook !== undefined) {
+    validateStoredLorebookEntries(module.lorebook, `${label}.lorebook`)
+  }
+  return module
 }
 
 export function createModuleRecord(
@@ -142,11 +188,17 @@ export function requireModuleIndex(
   moduleId: string,
   options: { allowMcp?: boolean } = {},
 ): number {
-  const index = modules.findIndex((module) => module.id === moduleId && (options.allowMcp || !module.mcp))
-  if (index === -1) {
+  const matches = modules.map((module, index) => ({ module, index })).filter(({ module }) => module.id === moduleId)
+  if (matches.length === 0) {
     throw new EntityNotFoundError(`Module not found: ${moduleId}`)
   }
-  return index
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate module id: ${moduleId}`)
+  }
+  if (!options.allowMcp && matches[0].module.mcp) {
+    throw new EntityNotFoundError(`Module not found: ${moduleId}`)
+  }
+  return matches[0].index
 }
 
 export function validateFullModuleOrder(modules: readonly ModuleRecord[], moduleIds: readonly string[]): void {
@@ -194,35 +246,93 @@ export function validateNormalModuleLinks(
   }
 }
 
-export function removeModuleReferences(database: JsonRecord, moduleId: string): void {
-  database.enabledModules = ensureEnabledModules(database).filter((id) => id !== moduleId)
+export interface RemovedModuleReferences {
+  settingsChanged: boolean
+  changedPersonaIndexes: number[]
+  changedLoadoutIndexes: number[]
+  changedCharacters: Array<{ characterId: string; character: CharacterRecord }>
+  changedChats: Array<{ chatId: string; chat: JsonRecord }>
+}
+
+export function removeModuleReferences(database: JsonRecord, moduleId: string): RemovedModuleReferences {
+  const enabledModules = readStrictEnabledModules(database)
+  const nextEnabledModules = enabledModules.filter((id) => id !== moduleId)
+  const result: RemovedModuleReferences = {
+    settingsChanged: nextEnabledModules.length !== enabledModules.length,
+    changedPersonaIndexes: [],
+    changedLoadoutIndexes: [],
+    changedCharacters: [],
+    changedChats: [],
+  }
+  if (result.settingsChanged) database.enabledModules = nextEnabledModules
+
   if (Array.isArray(database.personas)) {
-    for (const persona of database.personas) {
-      if (!persona || typeof persona !== 'object' || Array.isArray(persona)) continue
-      const record = persona as JsonRecord
-      if (Array.isArray(record.modules)) {
-        record.modules = record.modules.filter((id) => id !== moduleId)
-      }
+    for (let index = 0; index < database.personas.length; index++) {
+      const record = readJsonObject(database.personas[index], `persona[${index}]`)
+      if (record.modules === undefined) continue
+      const modules = readStrictStringArray(record.modules, `persona[${index}].modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length === modules.length) continue
+      record.modules = next
+      result.changedPersonaIndexes.push(index)
     }
   }
-  for (const character of ensureCharacterCollection(database)) {
-    character.modules = readStringArray(character.modules, `character ${character.chaId}.modules`).filter(
-      (id) => id !== moduleId,
-    )
-    for (const chat of ensureCharacterChats(character)) {
-      chat.modules = readStringArray(chat.modules, `chat ${chat.id}.modules`).filter((id) => id !== moduleId)
+
+  if (!Array.isArray(database.characters)) {
+    throw new ValidationError('characters must be an array')
+  }
+  const seenCharacterIds = new Set<string>()
+  const seenChatIds = new Set<string>()
+  for (let characterIndex = 0; characterIndex < database.characters.length; characterIndex++) {
+    const character = readJsonObject(
+      database.characters[characterIndex],
+      `character[${characterIndex}]`,
+    ) as CharacterRecord
+    const characterId = readCharacterId(character.chaId, `character[${characterIndex}].chaId`)
+    if (seenCharacterIds.has(characterId)) {
+      throw new ValidationError(`Duplicate character id: ${characterId}`)
+    }
+    seenCharacterIds.add(characterId)
+    if (character.modules !== undefined) {
+      const modules = readStrictStringArray(character.modules, `character ${characterId}.modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length !== modules.length) {
+        character.modules = next
+        result.changedCharacters.push({ characterId, character })
+      }
+    }
+    if (character.chats === undefined) continue
+    if (!Array.isArray(character.chats)) {
+      throw new ValidationError(`character ${characterId}.chats must be an array`)
+    }
+    for (let chatIndex = 0; chatIndex < character.chats.length; chatIndex++) {
+      const chat = readJsonObject(character.chats[chatIndex], `character ${characterId}.chats[${chatIndex}]`)
+      const chatId = readModuleId(chat.id, `character ${characterId}.chats[${chatIndex}].id`)
+      if (seenChatIds.has(chatId)) {
+        throw new ValidationError(`Duplicate chat id: ${chatId}`)
+      }
+      seenChatIds.add(chatId)
+      if (chat.modules === undefined) continue
+      const modules = readStrictStringArray(chat.modules, `chat ${chatId}.modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length === modules.length) continue
+      chat.modules = next
+      result.changedChats.push({ chatId, chat })
     }
   }
 
   if (Array.isArray(database.loadouts)) {
-    for (const loadout of database.loadouts) {
-      if (!loadout || typeof loadout !== 'object' || Array.isArray(loadout)) continue
-      const record = loadout as JsonRecord
-      if (Array.isArray(record.modules)) {
-        record.modules = record.modules.filter((id) => id !== moduleId)
-      }
+    for (let index = 0; index < database.loadouts.length; index++) {
+      const record = readJsonObject(database.loadouts[index], `loadout[${index}]`)
+      if (record.modules === undefined) continue
+      const modules = readStrictStringArray(record.modules, `loadout[${index}].modules`)
+      const next = modules.filter((id) => id !== moduleId)
+      if (next.length === modules.length) continue
+      record.modules = next
+      result.changedLoadoutIndexes.push(index)
     }
   }
+  return result
 }
 
 export function ensureEnabledModules(database: JsonRecord): string[] {
@@ -230,13 +340,34 @@ export function ensureEnabledModules(database: JsonRecord): string[] {
   return database.enabledModules as string[]
 }
 
+export function readStrictEnabledModules(database: JsonRecord): string[] {
+  if (!Array.isArray(database.enabledModules)) {
+    throw new ValidationError('enabledModules must be an array')
+  }
+  const seen = new Set<string>()
+  return database.enabledModules.map((value, index) => {
+    const id = readModuleId(value, `enabledModules[${index}]`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id in enabledModules: ${id}`)
+    }
+    seen.add(id)
+    return id
+  })
+}
+
 export function findCharacterForModuleCommand(database: JsonRecord, characterId: string): CharacterRecord {
-  const characters = ensureCharacterCollection(database)
-  const character = characters.find((candidate) => candidate.chaId === characterId)
-  if (!character) {
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  const matches = characters.filter(
+    (candidate): candidate is JsonRecord =>
+      !!candidate && typeof candidate === 'object' && !Array.isArray(candidate) && candidate.chaId === characterId,
+  )
+  if (matches.length === 0) {
     throw new EntityNotFoundError(`Character not found: ${characterId}`)
   }
-  return character
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate character id: ${characterId}`)
+  }
+  return readStrictCharacterRecord(matches[0], characterId)
 }
 
 export { readCharacterId }
@@ -321,6 +452,21 @@ function readStringArray(input: unknown, label: string): string[] {
     throw new ValidationError(`${label} must be an array`)
   }
   return input.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+}
+
+function readStrictStringArray(input: unknown, label: string): string[] {
+  if (!Array.isArray(input)) {
+    throw new ValidationError(`${label} must be an array`)
+  }
+  const seen = new Set<string>()
+  return input.map((value, index) => {
+    const id = readModuleId(value, `${label}[${index}]`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate module id in ${label}: ${id}`)
+    }
+    seen.add(id)
+    return id
+  })
 }
 
 function readOptionalJsonObject(value: unknown): JsonRecord {

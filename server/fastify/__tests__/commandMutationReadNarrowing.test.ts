@@ -233,6 +233,24 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
     await runScopedModuleDefinitionCommand('triggers')
   })
 
+  it('character module-link commands load only the exact character row and modules collection', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const revision = await importDatabase(fixture.database)
+    const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+      withServerLoadInstrumentation(() =>
+        command('POST', `/api/v1/commands/characters/${fixture.hot.characterId}/modules/reorder`, {
+          baseRevision: revision,
+          moduleIds: ['corpus-module-1'],
+        }),
+      ),
+    )
+
+    expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+    expect(loadRun.corpusLoads.map((load) => load.table)).toEqual(['modules'])
+    expect(loadRun.loadCountByTable).toEqual({ modules: 1 })
+    expect(readCountByTable).toEqual({ schema_version: 1, settings: 1, modules: 1, characters: 1 })
+  })
+
   it('compact definition mutations retain exact character and module-scoped read budgets', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)
@@ -858,6 +876,20 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
       '/api/v1/commands/lorebooks/corpus-lore-1',
       { baseRevision: revision, patch: { name: 'L11 Lore' } },
       ['lore_books'],
+    )
+
+    await runScopedCollectionCommand(
+      'PATCH',
+      '/api/v1/commands/modules/corpus-module-1',
+      { baseRevision: revision, patch: { name: 'L11 Module' } },
+      ['modules'],
+    )
+
+    await runScopedCollectionCommand(
+      'PUT',
+      '/api/v1/commands/modules/corpus-module-1/lorebooks',
+      { baseRevision: revision, entries: [] },
+      ['modules'],
     )
 
     await runScopedCollectionCommand(

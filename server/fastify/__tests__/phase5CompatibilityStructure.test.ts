@@ -200,6 +200,23 @@ const RETAINED_OMITTED_DEFAULTS: Record<string, unknown> = {
 }
 
 describe('Phase 5 compatibility structure', () => {
+  it('keeps ordinary module and lorebook commands off repair-permissive loaders', () => {
+    const commandSource = readRepoFile('server/fastify/src/routes/commands.ts')
+    const moduleCommandBlock = commandSource.slice(
+      commandSource.indexOf("app.post('/api/v1/commands/modules'"),
+      commandSource.indexOf("app.post('/api/v1/commands/plugins'"),
+    )
+    const lorebookCommandSource = readRepoFile('server/fastify/src/commands/lorebooks.ts')
+
+    expect(commandSource).not.toContain('ensureGlobalLorebookCollection')
+    expect(commandSource).not.toContain('repairLorebookEntries')
+    expect(moduleCommandBlock).not.toContain('ensureModuleCommandDatabase')
+    expect(moduleCommandBlock).not.toContain('ensureModuleRecords')
+    expect(moduleCommandBlock).toContain('readStrictModuleRecords')
+    expect(lorebookCommandSource).toContain('validateStoredLorebookEntries(character.globalLore')
+    expect(lorebookCommandSource).toContain('validateStoredLorebookEntries(chat.localLore')
+  })
+
   it('classifies every Database field under settings, collection, character, or derived command ownership', () => {
     const databaseFields = databaseFieldNames()
     const collectionFields = new Set<string>(COLLECTION_FIELDS)

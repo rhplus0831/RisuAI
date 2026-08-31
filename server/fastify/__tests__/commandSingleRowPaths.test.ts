@@ -583,8 +583,8 @@ describe('single chat-row paths', () => {
     expect(readChat('chat-a-1').localLore).toEqual([entry])
   })
 
-  it('preserves degraded sibling fields across every character/chat lorebook mutation', async () => {
-    let revision = await importDatabase(seedDatabase())
+  it('rejects malformed stored child lorebooks across every character/chat lorebook mutation', async () => {
+    const revision = await importDatabase(seedDatabase())
     const entry = (id: string, content = id) => ({
       id,
       key: id,
@@ -596,11 +596,6 @@ describe('single chat-row paths', () => {
       alwaysActive: false,
       selective: false,
     })
-    const withoutField = (row: Record<string, unknown>, field: string): Record<string, unknown> => {
-      const result = structuredClone(row)
-      delete result[field]
-      return result
-    }
 
     mutateRawDb((db) => {
       const characterRow = db.prepare('SELECT data_json FROM characters WHERE id = ?').get('char-a') as {
@@ -628,115 +623,81 @@ describe('single chat-row paths', () => {
       db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), 'chat-a-1')
     })
 
-    const characterSiblings = withoutField(readCharacter('char-a'), 'globalLore')
-    const chatSiblings = withoutField(readChat('chat-a-1'), 'localLore')
+    const characterBefore = readCharacter('char-a')
+    const chatBefore = readChat('chat-a-1')
     const before = rowidSnapshot()
 
-    const characterCommands: Array<{
+    const commands: Array<{
       method: 'DELETE' | 'POST' | 'PUT'
       url: string
       payload: Record<string, unknown>
-      expected?: Record<string, unknown>
+      error: string
     }> = [
       {
         method: 'PUT',
         url: '/api/v1/commands/characters/char-a/lorebooks/entries/char-c',
         payload: { entry: entry('char-c', 'created') },
-        expected: { entryId: 'char-c', entryIndex: 1, created: true },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
       {
         method: 'POST',
         url: '/api/v1/commands/characters/char-a/lorebooks/entries/reorder',
-        payload: { entryIds: ['char-c', 'legacy-character-entry'] },
+        payload: { entryIds: ['legacy-character-entry'] },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
       {
         method: 'DELETE',
         url: '/api/v1/commands/characters/char-a/lorebooks/entries/legacy-character-entry',
         payload: {},
-        expected: { entryId: 'legacy-character-entry', entryIndex: 1 },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
       {
         method: 'PUT',
         url: '/api/v1/commands/characters/char-a/lorebooks',
         payload: { entries: [entry('char-a'), entry('char-b')] },
+        error: 'character char-a.globalLore[0].key must be a string',
       },
-    ]
-
-    for (let index = 0; index < characterCommands.length; index++) {
-      const command = characterCommands[index]
-      const result = await runCommand({
-        method: command.method,
-        url: command.url,
-        payload: { ...command.payload, baseRevision: revision },
-      })
-      revision = result.revision
-      expect(result.metric.mutationPath).toBe('targeted-character-row')
-      expect(result.metric.writtenTables).toEqual(['characters'])
-      assertCommandMetricGate(result.metric)
-      expectNoChurn(before)
-      expect(withoutField(readCharacter('char-a'), 'globalLore')).toStrictEqual(characterSiblings)
-      if (index === 0) {
-        expect((readCharacter('char-a').globalLore as Array<Record<string, unknown>>)[0]).toMatchObject({
-          id: 'legacy-character-entry',
-          key: '',
-          mode: 'normal',
-        })
-      }
-      if (command.expected) expect(result.body).toMatchObject(command.expected)
-    }
-
-    const chatCommands: Array<{
-      method: 'DELETE' | 'POST' | 'PUT'
-      url: string
-      payload: Record<string, unknown>
-      expected?: Record<string, unknown>
-    }> = [
       {
         method: 'PUT',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/chat-c',
         payload: { entry: entry('chat-c', 'created') },
-        expected: { entryId: 'chat-c', entryIndex: 1, created: true },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
       {
         method: 'POST',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/reorder',
-        payload: { entryIds: ['chat-c', 'legacy-chat-entry'] },
+        payload: { entryIds: ['legacy-chat-entry'] },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
       {
         method: 'DELETE',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/legacy-chat-entry',
         payload: {},
-        expected: { entryId: 'legacy-chat-entry', entryIndex: 1 },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
       {
         method: 'PUT',
         url: '/api/v1/commands/chats/chat-a-1/lorebooks',
         payload: { entries: [entry('chat-a'), entry('chat-b')] },
+        error: 'chat chat-a-1.localLore[0].key must be a string',
       },
     ]
 
-    for (let index = 0; index < chatCommands.length; index++) {
-      const command = chatCommands[index]
-      const result = await runCommand({
+    for (const command of commands) {
+      const response = await harness.app.inject({
         method: command.method,
         url: command.url,
+        headers: { 'risu-auth': assertion },
         payload: { ...command.payload, baseRevision: revision },
       })
-      revision = result.revision
-      expect(result.metric.mutationPath).toBe('targeted-chat-row')
-      expect(result.metric.writtenTables).toEqual(['chats'])
-      assertCommandMetricGate(result.metric)
-      expectNoChurn(before)
-      expect(withoutField(readChat('chat-a-1'), 'localLore')).toStrictEqual(chatSiblings)
-      if (index === 0) {
-        expect((readChat('chat-a-1').localLore as Array<Record<string, unknown>>)[0]).toMatchObject({
-          id: 'legacy-chat-entry',
-          key: '',
-          mode: 'normal',
-        })
-      }
-      if (command.expected) expect(result.body).toMatchObject(command.expected)
+      expect(response.statusCode).toBe(400)
+      expect(response.json().error).toBe(command.error)
     }
+
+    expect(readRevision()).toBe(revision)
+    expect(readCharacter('char-a')).toStrictEqual(characterBefore)
+    expect(readChat('chat-a-1')).toStrictEqual(chatBefore)
+    expectNoChurn(before)
   })
 })
 

@@ -13464,6 +13464,116 @@ describe('lorebook commands', () => {
     expect(bootstrap.resourceDatabase.loreBook).toEqual([{ id: 'book-a', name: 'A', data: [] }])
   })
 
+  it('fails closed on malformed or duplicate persisted global and module target ids', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loreBook: [
+        { id: 'book-a', name: 'A', data: [] },
+        { id: 'book-b', name: 'B', data: [] },
+      ],
+      loreBookPage: 0,
+      modules: [
+        { id: 'mod-a', name: 'A', description: '' },
+        { id: 'mod-b', name: 'B', description: '' },
+      ],
+    })
+    const rewriteRow = (
+      table: 'lore_books' | 'modules',
+      position: number,
+      mutate: (row: Record<string, unknown>) => void,
+    ): string => {
+      const db = openDatabase(harness.dataDir)
+      try {
+        const stored = db.prepare(`SELECT data_json FROM ${table} WHERE position = ?`).get(position) as {
+          data_json: string
+        }
+        const row = JSON.parse(stored.data_json) as Record<string, unknown>
+        mutate(row)
+        const dataJson = JSON.stringify(row)
+        db.prepare(`UPDATE ${table} SET data_json = ? WHERE position = ?`).run(dataJson, position)
+        return dataJson
+      } finally {
+        db.close()
+      }
+    }
+    const expectStoredRow = (table: 'lore_books' | 'modules', position: number, dataJson: string): void => {
+      const db = openDatabase(harness.dataDir)
+      try {
+        expect(
+          (db.prepare(`SELECT data_json FROM ${table} WHERE position = ?`).get(position) as { data_json: string })
+            .data_json,
+        ).toBe(dataJson)
+      } finally {
+        db.close()
+      }
+    }
+
+    const duplicateLorebook = rewriteRow('lore_books', 1, (row) => {
+      row.id = 'book-a'
+    })
+    let response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/lorebooks/book-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('Duplicate lorebook id: book-a')
+    expectStoredRow('lore_books', 1, duplicateLorebook)
+    rewriteRow('lore_books', 1, (row) => {
+      row.id = 'book-b'
+    })
+
+    const malformedLorebook = rewriteRow('lore_books', 0, (row) => {
+      delete row.id
+    })
+    response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/lorebooks/book-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('loreBook[0].id must be a non-empty string')
+    expectStoredRow('lore_books', 0, malformedLorebook)
+
+    const duplicateModule = rewriteRow('modules', 1, (row) => {
+      row.id = 'mod-a'
+    })
+    response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('Duplicate module id: mod-a')
+    expectStoredRow('modules', 1, duplicateModule)
+    rewriteRow('modules', 1, (row) => {
+      row.id = 'mod-b'
+    })
+
+    const malformedModule = rewriteRow('modules', 0, (row) => {
+      delete row.id
+    })
+    response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'must not write' } },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('module[0].id must be a non-empty string')
+    expectStoredRow('modules', 0, malformedModule)
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
+  })
+
   it('replaces global, character, chat, and module lorebook entry collections', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -13686,7 +13796,7 @@ describe('lorebook commands', () => {
     expect(readJsonRow('modules', 'mod-b')).not.toHaveProperty('lorebook')
   })
 
-  it('repairs degraded module lorebook ids before applying an entry command', async () => {
+  it('rejects degraded module lorebook ids before applying an entry command', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const entry = (id: string, comment: string) => ({
       id,
@@ -13704,10 +13814,11 @@ describe('lorebook commands', () => {
     })
     const degraded = entry('legacy-id', 'Legacy') as Record<string, unknown>
     delete degraded.id
-    writeJsonRow('modules', 'mod-a', {
+    const degradedModule = {
       ...readJsonRow('modules', 'mod-a'),
       lorebook: [degraded],
-    })
+    }
+    writeJsonRow('modules', 'mod-a', degradedModule)
 
     const response = await harness.app.inject({
       method: 'PUT',
@@ -13716,17 +13827,15 @@ describe('lorebook commands', () => {
       payload: { baseRevision: revision, entry: entry('new-entry', 'New') },
     })
 
-    expect(response.statusCode, JSON.stringify(response.json())).toBe(200)
-    expect(response.json()).toMatchObject({
-      moduleId: 'mod-a',
-      entryId: 'new-entry',
-      created: true,
-    })
-    const persisted = readJsonRow('modules', 'mod-a').lorebook as Array<{ id: string; comment: string }>
-    expect(persisted).toHaveLength(2)
-    expect(persisted.map((candidate) => candidate.comment)).toEqual(['Legacy', 'New'])
-    expect(persisted.every((candidate) => typeof candidate.id === 'string' && candidate.id.length > 0)).toBe(true)
-    expect(new Set(persisted.map((candidate) => candidate.id)).size).toBe(2)
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('module mod-a.lorebook[0].id must be a non-empty string')
+    expect(readJsonRow('modules', 'mod-a')).toStrictEqual(degradedModule)
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
   })
 
   it('applies sparse lorebook entry patches in every scope without replacing unchanged fields or siblings', async () => {
@@ -13887,7 +13996,7 @@ describe('lorebook commands', () => {
     expect(bootstrap.resourceDatabase.loreBook[0].data).toEqual([canonicalEntry])
   })
 
-  it('withholds sparse receipts when character or chat row normalization changes an untargeted sibling', async () => {
+  it('rejects sparse character and chat lorebook writes when an untargeted sibling is malformed', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const entry = (id: string, label: string) => ({
       id,
@@ -13937,10 +14046,8 @@ describe('lorebook commands', () => {
       headers: { 'risu-auth': assertion },
       payload: { baseRevision: revision, patch: { content: 'character update' } },
     })
-    expect(character.statusCode, JSON.stringify(character.json())).toBe(200)
-    expect(character.json()).not.toHaveProperty('patchedKeys')
-    expect(character.json()).not.toHaveProperty('deletedKeys')
-    revision = character.json().revision
+    expect(character.statusCode).toBe(400)
+    expect(character.json().error).toBe('character char-a.globalLore[1].comment must be a string')
 
     const chat = await harness.app.inject({
       method: 'PUT',
@@ -13948,11 +14055,20 @@ describe('lorebook commands', () => {
       headers: { 'risu-auth': assertion },
       payload: { baseRevision: revision, patch: { content: 'chat update' } },
     })
-    expect(chat.statusCode, JSON.stringify(chat.json())).toBe(200)
-    expect(chat.json()).not.toHaveProperty('patchedKeys')
-    expect(chat.json()).not.toHaveProperty('deletedKeys')
-    expect((readJsonRow('characters', 'char-a').globalLore as Array<Record<string, unknown>>)[1].comment).toBe('')
-    expect((readJsonRow('chats', 'chat-a').localLore as Array<Record<string, unknown>>)[1].comment).toBe('')
+    expect(chat.statusCode).toBe(400)
+    expect(chat.json().error).toBe('chat chat-a.localLore[1].comment must be a string')
+    expect((readJsonRow('characters', 'char-a').globalLore as Array<Record<string, unknown>>)[1]).not.toHaveProperty(
+      'comment',
+    )
+    expect((readJsonRow('chats', 'chat-a').localLore as Array<Record<string, unknown>>)[1]).not.toHaveProperty(
+      'comment',
+    )
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
   })
 
   it('rejects malformed lorebook commands without bumping revision', async () => {
@@ -13968,7 +14084,19 @@ describe('lorebook commands', () => {
       headers: { 'risu-auth': assertion },
       payload: {
         baseRevision: revision,
-        entries: [{ id: 'entry-a', key: '', secondkey: '', insertorder: 'bad' }],
+        entries: [
+          {
+            id: 'entry-a',
+            key: '',
+            secondkey: '',
+            insertorder: 'bad',
+            comment: '',
+            content: '',
+            mode: 'normal',
+            alwaysActive: false,
+            selective: false,
+          },
+        ],
       },
     })
     expect(malformed.statusCode).toBe(400)

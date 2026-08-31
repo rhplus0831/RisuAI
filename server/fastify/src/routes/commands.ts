@@ -229,7 +229,6 @@ import {
 import {
   applyLorebookEntryWriteById,
   deleteLorebookEntryById,
-  ensureGlobalLorebookCollection,
   normalizeSelectedCharacterLorebooks,
   normalizeSelectedChatLorebooks,
   readCharacterId as readLorebookCharacterId,
@@ -239,14 +238,15 @@ import {
   readLorebookId,
   readLorebookIdList,
   readModuleId,
-  repairLorebookEntries,
+  readStrictGlobalLorebookCollection,
   reorderLorebookEntriesById,
   requireGlobalLorebookIndex,
   requireModule,
   validateFullLorebookOrder,
   validateGlobalLorebookCreate,
   validateLorebookEntries,
-  type ModuleRecord as LorebookModuleRecord,
+  validateStoredGlobalLorebook,
+  validateStoredLorebookEntries,
 } from '../commands/lorebooks.js'
 import {
   applyScriptDefinitionCollectionMutation,
@@ -268,11 +268,14 @@ import {
   readModuleId as readCommandModuleId,
   readModuleIdList,
   readModulePatch,
+  readStrictEnabledModules,
+  readStrictModuleRecords,
   removeModuleReferences,
   requireModuleIndex,
   validateCharacterModuleLinks,
   validateFullModuleOrder,
   validateNormalModuleLinks,
+  validateStoredModuleRecord,
 } from '../commands/modules.js'
 import {
   convertLegacyModelProfilesCommand,
@@ -610,12 +613,10 @@ function buildPresetReorderAcknowledgement(
 
 function readGlobalLorebookCommandTarget(database: unknown): {
   target: Record<string, unknown>
-  lorebooks: ReturnType<typeof ensureGlobalLorebookCollection>
+  lorebooks: ReturnType<typeof readStrictGlobalLorebookCollection>
 } {
   const target = readJsonObject(database, 'database')
-  // Global lorebook commands persist only the global collection/settings; child
-  // lorebook repair would be validate-only here, so leave it to broad import paths.
-  const lorebooks = ensureGlobalLorebookCollection(target)
+  const lorebooks = readStrictGlobalLorebookCollection(target)
   return { target, lorebooks }
 }
 
@@ -625,25 +626,22 @@ function readScriptDefinitionCommandTarget(database: unknown): Record<string, un
   return readJsonObject(database, 'database')
 }
 
-function readModuleCollectionCommandTarget(
-  database: unknown,
-  options: { repairLorebook?: boolean } = {},
-): {
+function readModuleCollectionCommandTarget(database: unknown): {
   target: Record<string, unknown>
-  modules: LorebookModuleRecord[]
+  modules: ReturnType<typeof readStrictModuleRecords>
 } {
   const target = readJsonObject(database, 'database')
-  const modules = Array.isArray(target.modules)
-    ? (target.modules.map((candidate, index) => {
-        const module = readJsonObject(candidate, `module[${index}]`) as LorebookModuleRecord
-        if (options.repairLorebook) {
-          module.lorebook = repairLorebookEntries(module.lorebook ?? [], `module ${module.id}.lorebook`)
-        }
-        return module
-      }) as LorebookModuleRecord[])
-    : []
-  target.modules = modules
+  const modules = readStrictModuleRecords(target)
   return { target, modules }
+}
+
+function readStrictModuleLorebookTarget(database: unknown, moduleId: string) {
+  const { modules } = readModuleCollectionCommandTarget(database)
+  const module = requireModule(modules, moduleId)
+  validateStoredModuleRecord(module, `module ${moduleId}`)
+  const entries =
+    module.lorebook === undefined ? [] : validateStoredLorebookEntries(module.lorebook, `module ${moduleId}.lorebook`)
+  return { modules, module, entries }
 }
 
 function characterOrderIncludes(order: readonly unknown[], characterId: string): boolean {
@@ -7345,6 +7343,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
+          lorebooks.forEach((candidate, index) => validateStoredGlobalLorebook(candidate, `loreBook[${index}]`))
           const beforeLoreBookPage = target.loreBookPage
           if (lorebooks.some((candidate) => candidate.id === lorebook.id)) {
             throw new ValidationError(`Duplicate lorebook id: ${lorebook.id}`)
@@ -7388,6 +7387,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           Object.assign(lorebooks[index], patch)
           // The clean case: one lorebook's metadata, no pointer move, no child
           // repair persisted — a single-row UPDATE.
@@ -7433,6 +7433,9 @@ export function registerCommandRoutes(
               extra: { lorebookId },
             }
           }
+          lorebooks.forEach((candidate, candidateIndex) =>
+            validateStoredGlobalLorebook(candidate, `loreBook[${candidateIndex}]`),
+          )
           if (lorebooks.length === 1) {
             throw new ValidationError('Cannot delete the last lorebook')
           }
@@ -7472,6 +7475,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
           const { target, lorebooks } = readGlobalLorebookCommandTarget(database)
+          lorebooks.forEach((candidate, index) => validateStoredGlobalLorebook(candidate, `loreBook[${index}]`))
           const beforeLoreBookPage = target.loreBookPage
           validateFullLorebookOrder(lorebooks, lorebookIds)
           const byId = new Map(lorebooks.map((lorebook) => [lorebook.id, lorebook]))
@@ -7557,6 +7561,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           lorebooks[index].data = entries
           // Replacing one lorebook's entries: no pointer move, no child repair
           // persisted — a single-row UPDATE.
@@ -7603,13 +7608,11 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawLorebook = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.loreBook, lorebookId))
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
-          const normalizationIdentity = isDeepStrictEqual(rawLorebook, lorebooks[index])
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           const written = applyLorebookEntryWriteById(lorebooks[index].data, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
@@ -7663,6 +7666,7 @@ export function registerCommandRoutes(
               extra: { lorebookId, entryId, entryIndex: -1 },
             }
           }
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           if (!lorebooks[index].data.some((entry) => entry.id === entryId)) {
             return {
               event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
@@ -7706,6 +7710,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
+          validateStoredGlobalLorebook(lorebooks[index], `loreBook[${index}]`)
           reorderLorebookEntriesById(lorebooks[index].data, entryIds)
           writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
@@ -7742,8 +7747,6 @@ export function registerCommandRoutes(
         characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
           const { character } = normalizeSelectedCharacterLorebooks(database, characterId)
-          // Repair and replace only the owned lorebook field; sibling character
-          // fields are loaded and written without normalization.
           character.globalLore = entries
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -7795,13 +7798,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawCharacter = findJsonRecordById(rawTarget.characters, characterId, 'chaId')
-          const rawCharacterSnapshot = cloneJsonForCommandCertificate(rawCharacter)
           const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
-          const normalizationIdentity = isDeepStrictEqual(rawCharacterSnapshot, character)
           const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          character.globalLore = entries
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
@@ -7953,8 +7953,6 @@ export function registerCommandRoutes(
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
           const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          // Repair and replace only the owned lorebook field; sibling chat
-          // fields are loaded and written without normalization.
           chat.localLore = entries
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
@@ -8006,13 +8004,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawChat = findRawChatRecord(rawTarget, chatId)
-          const rawChatSnapshot = cloneJsonForCommandCertificate(rawChat)
-          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          const normalizationIdentity = isDeepStrictEqual(rawChatSnapshot, chat)
-          const written = applyLorebookEntryWriteById(chat.localLore, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          const { chat, entries, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
+          chat.localLore = entries
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -8074,8 +8069,8 @@ export function registerCommandRoutes(
               extra: { chatId, entryId, entryIndex: -1 },
             }
           }
-          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          if (!chat.localLore.some((entry) => entry.id === entryId)) {
+          const { chat, entries, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          if (!entries.some((entry) => entry.id === entryId)) {
             return {
               event: {
                 ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
@@ -8086,7 +8081,7 @@ export function registerCommandRoutes(
               extra: { chatId, entryId, entryIndex: -1 },
             }
           }
-          const deleted = deleteLorebookEntryById(chat.localLore, entryId)
+          const deleted = deleteLorebookEntryById(entries, entryId)
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -8126,8 +8121,8 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          reorderLorebookEntriesById(chat.localLore, entryIds)
+          const { chat, entries, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          reorderLorebookEntriesById(entries, entryIds)
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -8164,9 +8159,13 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
+          modules.forEach((candidate, index) =>
+            validateStoredModuleRecord(candidate, `module[${index}]`, { allowMcp: true }),
+          )
           if (modules.some((candidate) => candidate.id === module.id)) {
             throw new ValidationError(`Module already exists: ${module.id}`)
           }
@@ -8203,10 +8202,12 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
           const index = requireModuleIndex(modules, moduleId)
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`)
           for (const [key, value] of Object.entries(patch)) {
             if (value === null) {
               delete modules[index][key]
@@ -8214,6 +8215,7 @@ export function registerCommandRoutes(
               modules[index][key] = value
             }
           }
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`)
           writeSingleCollectionRow(innerDb, 'modules', index, modules[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleUpdated, id: moduleId },
@@ -8239,14 +8241,15 @@ export function registerCommandRoutes(
       const moduleId = readCommandModuleId((req.params as { moduleId?: unknown }).moduleId)
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
           const index = modules.findIndex((module) => module.id === moduleId)
           if (index === -1) {
             return {
@@ -8254,8 +8257,23 @@ export function registerCommandRoutes(
               extra: { moduleId },
             }
           }
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`, { allowMcp: true })
           modules.splice(index, 1)
-          removeModuleReferences(target, moduleId)
+          const removed = removeModuleReferences(target, moduleId)
+          writeSingleCollectionTable(innerDb, 'modules', modules)
+          if (removed.settingsChanged) writeSettingsOnly(innerDb, extractSettings(target))
+          for (const changedIndex of removed.changedPersonaIndexes) {
+            writeSingleCollectionRow(innerDb, 'personas', changedIndex, asArray(target.personas)[changedIndex])
+          }
+          for (const changedIndex of removed.changedLoadoutIndexes) {
+            writeSingleCollectionRow(innerDb, 'loadouts', changedIndex, asArray(target.loadouts)[changedIndex])
+          }
+          for (const changed of removed.changedCharacters) {
+            writeSingleCharacterRow(innerDb, changed.characterId, changed.character)
+          }
+          for (const changed of removed.changedChats) {
+            writeSingleChatRowExact(innerDb, changed.chatId, changed.chat)
+          }
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleDeleted, id: moduleId },
             extra: { moduleId },
@@ -8287,10 +8305,13 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          requireModuleIndex(ensureModuleRecords(target), moduleId, { allowMcp: true })
-          const enabledModules = new Set(ensureEnabledModules(target))
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
+          const index = requireModuleIndex(modules, moduleId, { allowMcp: true })
+          validateStoredModuleRecord(modules[index], `module ${moduleId}`, { allowMcp: true })
+          const enabledModules = new Set(readStrictEnabledModules(target))
           if (enabled) {
             enabledModules.add(moduleId)
           } else {
@@ -8330,9 +8351,13 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
+          modules.forEach((candidate, index) =>
+            validateStoredModuleRecord(candidate, `module[${index}]`, { allowMcp: true }),
+          )
           validateFullModuleOrder(modules, moduleIds)
           const byId = new Map(modules.map((module) => [module.id, module]))
           const reordered = moduleIds.map((id) => byId.get(id))
@@ -8368,14 +8393,16 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: {
+          characterId,
+          exactCharacterRow: true,
+          collectionFields: COLLECTION_SCOPED_READS.modules,
+        },
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const modules = ensureModuleRecords(target)
+          const target = readJsonObject(database, 'database')
+          const modules = readStrictModuleRecords(target)
           const character = findCharacterForModuleCommand(target, characterId)
           validateCharacterModuleLinks(modules, moduleIds)
-          // The only persistent change is `character.modules` (the character
-          // row); the `ensureModuleRecords` collection repair is validate-only
-          // so the `modules` table is not rewritten.
           character.modules = moduleIds
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -8836,12 +8863,10 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
-          const module = requireModule(modules, moduleId)
+          const { modules, module } = readStrictModuleLorebookTarget(database, moduleId)
           module.lorebook = entries
-          // One module's lorebook is a single-row edit; the in-memory child
-          // lorebook repairs across characters/chats are dropped to validate-only.
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             // Only the `modules` table is written, so a foreign refresh ships
@@ -8890,15 +8915,12 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const rawTarget = readJsonObject(database, 'database')
-          const rawModule = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.modules, moduleId))
-          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
-          const module = requireModule(modules, moduleId)
-          module.lorebook ??= []
-          const normalizationIdentity = isDeepStrictEqual(rawModule, module)
-          const written = applyLorebookEntryWriteById(module.lorebook, entryId, entryWrite)
-          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
+          const { modules, module, entries } = readStrictModuleLorebookTarget(database, moduleId)
+          const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
+          module.lorebook = entries
+          const certified = written.patchedKeys && written.deletedKeys
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {
@@ -8946,8 +8968,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
+          const { modules } = readModuleCollectionCommandTarget(database)
           const module = modules.find((candidate) => candidate.id === moduleId && !candidate.mcp)
           if (!module) {
             return {
@@ -8959,8 +8982,12 @@ export function registerCommandRoutes(
               extra: { moduleId, entryId, entryIndex: -1 },
             }
           }
-          module.lorebook ??= []
-          if (!module.lorebook.some((entry) => entry.id === entryId)) {
+          validateStoredModuleRecord(module, `module ${moduleId}`)
+          const entries =
+            module.lorebook === undefined
+              ? []
+              : validateStoredLorebookEntries(module.lorebook, `module ${moduleId}.lorebook`)
+          if (!entries.some((entry) => entry.id === entryId)) {
             return {
               event: {
                 ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
@@ -8970,7 +8997,7 @@ export function registerCommandRoutes(
               extra: { moduleId, entryId, entryIndex: -1 },
             }
           }
-          const deleted = deleteLorebookEntryById(module.lorebook, entryId)
+          const deleted = deleteLorebookEntryById(entries, entryId)
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {
@@ -9007,11 +9034,10 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
-          const { modules } = readModuleCollectionCommandTarget(database, { repairLorebook: true })
-          const module = requireModule(modules, moduleId)
-          module.lorebook ??= []
-          reorderLorebookEntriesById(module.lorebook, entryIds)
+          const { modules, module, entries } = readStrictModuleLorebookTarget(database, moduleId)
+          reorderLorebookEntriesById(entries, entryIds)
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {

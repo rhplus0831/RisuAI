@@ -607,6 +607,9 @@ export interface CharacterMutationTarget {
   /** Preserve the stored character payload without stamping its table id into
    * the JSON row. Used when every non-target field must remain exact. */
   exactCharacterRow?: boolean
+  /** Optional collection dependencies needed to validate the character-row
+   * mutation without falling back to a whole-corpus load. */
+  collectionFields?: readonly CollectionFieldKey[]
 }
 
 export interface CharacterSelectionProjection {
@@ -1570,7 +1573,11 @@ export function loadPersistedForCharacterMutation(
   dataDir: string,
   target: CharacterMutationTarget,
 ): Persisted {
-  const settings = loadSettingsFromSqlite(db)
+  const dependencyLoad =
+    target.collectionFields && target.collectionFields.length > 0
+      ? loadDatabaseFieldsFromSqlite(db, target.collectionFields)
+      : undefined
+  const settings = dependencyLoad?.settings ?? loadSettingsFromSqlite(db)
   if (settings === null) return loadPersisted(db, dataDir)
 
   const charRow = db
@@ -1582,9 +1589,11 @@ export function loadPersistedForCharacterMutation(
   if (!isRecord(character)) return loadPersisted(db, dataDir)
   if (!target.exactCharacterRow) character.chaId = target.characterId
 
+  const fields = dependencyLoad?.fields ?? {}
+
   return {
     _version: PERSISTED_VERSION,
-    database: { ...settings, characters: [character] },
+    database: { ...settings, ...fields, characters: [character] },
     assets: [],
   }
 }
