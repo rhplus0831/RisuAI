@@ -31,7 +31,7 @@ vi.mock('src/ts/horde/getModels', () => ({
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   charactersResourceState: { characters: [] },
-  getResourceDatabase: () => ({ customModels: [] }),
+  settingsResourceState: { status: 'ready', value: { customModels: [] } },
 }))
 
 vi.mock('src/ts/process/modules', () => ({

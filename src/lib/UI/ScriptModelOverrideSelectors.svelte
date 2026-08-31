@@ -11,15 +11,22 @@
     type ScriptModelOverrides,
     type ScriptModelRole,
   } from '@risuai/shared-core/script-model-overrides'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { ModelProfileRecord } from '@risuai/shared-core/model-profile-records'
 
   interface Props {
     value?: ScriptModelOverrides
   }
 
   let { value = $bindable() }: Props = $props()
-  let profiles = $derived(getDatabase().modelProfiles ?? [])
-  let profileItems = $derived(modelProfileListItems(profiles, getDatabase().modelProfileOrder))
+  let profiles = $derived.by(() => {
+    if (settingsResourceState.status !== 'ready') return []
+    const rows = (settingsResourceState.value.modelProfiles ?? []) as ModelProfileRecord[]
+    const ids = rows.map((profile) => profile.id)
+    if (ids.some((id) => typeof id !== 'string' || id.trim() === '') || new Set(ids).size !== ids.length) return []
+    return rows
+  })
+  let profileItems = $derived(modelProfileListItems(profiles, settingsResourceState.value.modelProfileOrder))
   let profileIds = $derived(new Set(profiles.map((profile) => profile.id)))
 
   function selectedProfileId(role: ScriptModelRole): string {

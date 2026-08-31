@@ -1,4 +1,3 @@
-import { getDatabase } from '../storage/database.svelte'
 import {
   LLMFlags,
   LLMProvider,
@@ -20,6 +19,28 @@ import { customV3ProviderMetaStore } from '../plugins/apiV3/v3.svelte'
 // Re-export types for backwards compatibility
 export { LLMFlags, LLMProvider, LLMFormat, LLMTokenizer, ProviderNames, OpenAIParameters, ClaudeParameters }
 export type { LLMModel }
+
+/** Narrow settings needed by model-catalog consumers. */
+export interface ModelCatalogContext {
+  customModels?: readonly ModelCatalogCustomModel[]
+  enableCustomFlags?: boolean
+  customFlags?: LLMModel['flags']
+}
+
+export interface ModelCatalogCustomModel {
+  id: string
+  name?: string
+  internalId?: string
+  format: LLMFormat
+  flags: LLMModel['flags']
+  tokenizer: LLMTokenizer
+}
+
+export interface DynamicModelCatalogContext extends ModelCatalogContext {
+  dynamicModelRegistry?: boolean
+  googleAccessToken?: string | null
+  claudeAPIKey?: string | null
+}
 
 function makeDeepInfraModels(id: string[]): LLMModel[] {
   return id.map((id) => {
@@ -624,13 +645,13 @@ for (let i = 0; i < LLMModels.length; i++) {
   }
 }
 
-export async function registerModelDynamic() {
-  if (!getDatabase().dynamicModelRegistry) {
+export async function registerModelDynamic(context: DynamicModelCatalogContext = {}) {
+  if (!context.dynamicModelRegistry) {
     return
   }
   //google
   try {
-    const googleAccessToken = getDatabase().google.accessToken
+    const googleAccessToken = context.googleAccessToken
     if (googleAccessToken) {
       const json = await requestProviderOperation<{ models?: any[] }>('google.models', {
         credential: providerOperationCredential(googleAccessToken),
@@ -674,7 +695,7 @@ export async function registerModelDynamic() {
 
   //Anthropic
   try {
-    const claudeAPIKey = getDatabase().claudeAPIKey
+    const claudeAPIKey = context.claudeAPIKey
     if (claudeAPIKey) {
       const json = await requestProviderOperation<{ data?: { id: string; display_name: string }[] }>(
         'anthropic.models',
@@ -720,8 +741,7 @@ export async function registerModelDynamic() {
 // Expose registration for tests that need dynamic model rows.
 globalThis.registerModelDynamic = registerModelDynamic
 
-export function getModelInfo(id?: string | null): LLMModel {
-  const db = getDatabase()
+export function getModelInfo(id?: string | null, context: ModelCatalogContext = {}): LLMModel {
   if (!id) {
     return {
       id: '',
@@ -739,8 +759,8 @@ export function getModelInfo(id?: string | null): LLMModel {
   const found: LLMModel = safeStructuredClone(LLMModels.find((model) => model.id === id))
 
   if (found) {
-    if (db.enableCustomFlags) {
-      found.flags = db.customFlags
+    if (context.enableCustomFlags && context.customFlags) {
+      found.flags = context.customFlags
     }
 
     return found
@@ -777,7 +797,7 @@ export function getModelInfo(id?: string | null): LLMModel {
     }
   }
   if (id.startsWith('xcustom:::')) {
-    const customModels = db?.customModels || []
+    const customModels = context.customModels || []
     const found = customModels.find((model) => model.id === id)
     if (found) {
       return {

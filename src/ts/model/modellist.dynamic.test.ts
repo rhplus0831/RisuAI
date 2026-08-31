@@ -4,17 +4,9 @@ const providerOperations = vi.hoisted(() => ({
   credential: vi.fn((apiKey: string) => ({ source: 'provided', apiKey })),
   request: vi.fn(),
 }))
-const database = vi.hoisted(() => ({
-  value: {} as Record<string, any>,
-}))
-
 vi.mock('../server/providerOperations', () => ({
   providerOperationCredential: providerOperations.credential,
   requestProviderOperation: providerOperations.request,
-}))
-
-vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => database.value,
 }))
 
 vi.mock('../plugins/plugins.svelte', () => ({
@@ -41,16 +33,10 @@ beforeEach(() => {
   removeAuditModels()
   providerOperations.credential.mockClear()
   providerOperations.request.mockReset()
-  database.value = {
-    dynamicModelRegistry: true,
-    google: { accessToken: 'google-catalog-key' },
-    claudeAPIKey: 'anthropic-catalog-key',
-  }
 })
 
 afterEach(() => {
   removeAuditModels()
-  database.value = {}
 })
 
 describe('registerModelDynamic provider operations', () => {
@@ -78,7 +64,11 @@ describe('registerModelDynamic provider operations', () => {
       throw new Error(`unexpected operation: ${operation}`)
     })
 
-    await registerModelDynamic()
+    await registerModelDynamic({
+      dynamicModelRegistry: true,
+      googleAccessToken: 'google-catalog-key',
+      claudeAPIKey: 'anthropic-catalog-key',
+    })
 
     expect(providerOperations.request.mock.calls.map(([operation]) => operation)).toEqual([
       'google.models',
@@ -104,23 +94,20 @@ describe('registerModelDynamic provider operations', () => {
     const googleModels = new Promise<{ models: any[] }>((resolve) => {
       releaseGoogle = resolve
     })
-    database.value.aiModel = 'persisted-model'
-    database.value.subModel = 'persisted-submodel'
     providerOperations.request.mockImplementation(async (operation: string) => {
       if (operation === 'google.models') return googleModels
       if (operation === 'anthropic.models') return { data: [] }
       throw new Error(`unexpected operation: ${operation}`)
     })
 
-    const discovery = registerModelDynamic()
+    const discovery = registerModelDynamic({
+      dynamicModelRegistry: true,
+      googleAccessToken: 'google-catalog-key',
+      claudeAPIKey: 'anthropic-catalog-key',
+    })
     await vi.waitFor(() => expect(providerOperations.request).toHaveBeenCalledWith('google.models', expect.any(Object)))
 
-    database.value.aiModel = 'newer-model'
-    database.value.subModel = 'newer-submodel'
     releaseGoogle({ models: [] })
     await discovery
-
-    expect(database.value.aiModel).toBe('newer-model')
-    expect(database.value.subModel).toBe('newer-submodel')
   })
 })

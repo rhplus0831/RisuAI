@@ -17,6 +17,7 @@ import { language } from 'src/lang'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { updateGuisize } from './gui/guisize'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
+import { settingsResourceState } from './server/resourceState.svelte'
 import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import { publishServerBardWikiJobEvent, publishServerBardWikiJobSnapshot } from './server/bardWikiJobEvents'
@@ -578,7 +579,12 @@ async function settleStartupBackgroundReadiness(startupAttemptId: number): Promi
       stopDomObserver ??= observer.startObserveDom()
       customBackground.normalizeLegacyCustomBackgroundSetting()
       legacyMemoryNotice.showLegacyMemoryMigrationNoticeIfNeeded()
-      await modelList.registerModelDynamic()
+      const settings = settingsResourceState.status === 'ready' ? settingsResourceState.value : {}
+      await modelList.registerModelDynamic({
+        dynamicModelRegistry: settings.dynamicModelRegistry,
+        googleAccessToken: settings.google?.accessToken,
+        claudeAPIKey: settings.claudeAPIKey,
+      })
       modules.moduleUpdate()
     }),
   ])

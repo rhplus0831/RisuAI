@@ -1,4 +1,3 @@
-import { getDatabase } from '../storage/database.svelte'
 import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import type { ModelGridItem } from './modelGrid'
 import { createKeyedRequestCache, type KeyedRequestOptions } from './keyedRequestCache'
@@ -201,10 +200,7 @@ function resolveNanoGPTCatalogContext(context?: NanoGPTCatalogFetchContext): {
   apiKey: string
   profileId?: string | null
 } {
-  if (context !== undefined) {
-    return { apiKey: context.apiKey ?? '', profileId: context.profileId }
-  }
-  return { apiKey: getDatabase().nanogptKey }
+  return { apiKey: context?.apiKey ?? '', profileId: context?.profileId }
 }
 
 export async function getNanoGPTModels(context?: NanoGPTCatalogFetchContext): Promise<NanoGPTModelInfo[]> {

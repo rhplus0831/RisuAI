@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { getHordeModels } from 'src/ts/horde/getModels'
   import Accordion from './Accordion.svelte'
   import { language } from 'src/lang'
   import CheckInput from './GUI/CheckInput.svelte'
-  import { getModelInfo, getModelList } from 'src/ts/model/modellist'
+  import { getModelInfo, getModelList, type ModelCatalogCustomModel } from 'src/ts/model/modellist'
   import { ArrowLeft } from '@lucide/svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
@@ -39,6 +39,11 @@
   }
 
   let showUnrec = $state(false)
+  let customModels = $derived(
+    settingsResourceState.status === 'ready'
+      ? ((settingsResourceState.value.customModels ?? []) as ModelCatalogCustomModel[])
+      : [],
+  )
   let providers = $derived(
     getModelList({
       recommendedOnly: !showUnrec,
@@ -134,9 +139,9 @@
         {/await}
       </Accordion>
 
-      {#if getDatabase().customModels?.length > 0}
+      {#if customModels.length > 0}
         <Accordion name={language.customModels}>
-          {#each getDatabase().customModels as model}
+          {#each customModels as model}
             <button
               class="hover:bg-selected px-6 py-2 text-lg"
               onclick={() => {
@@ -168,5 +173,5 @@
     'drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-darkbutton border-darkborderc border': true,
     'my-4': !noMargin,
   }}>
-  {getModelInfo(value)?.fullName || language.none}
+  {getModelInfo(value, { customModels })?.fullName || language.none}
 </button>

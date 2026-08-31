@@ -15,16 +15,6 @@ vi.mock('../server/providerOperations', () => ({
   requestProviderOperation: providerOperations.request,
 }))
 
-const mockDatabase = vi.hoisted(() => ({
-  value: {
-    openrouterKey: 'global-openrouter-key',
-  },
-}))
-
-vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => mockDatabase.value,
-}))
-
 import {
   clearOpenRouterRequestCachesForTests,
   getFreeOpenRouterModels,
@@ -51,16 +41,15 @@ function openRouterModel(id = 'anthropic/claude-sonnet', name = 'Anthropic: Clau
 
 describe('OpenRouter provider operations', () => {
   beforeEach(() => {
-    mockDatabase.value = { openrouterKey: 'global-openrouter-key' }
     clearOpenRouterRequestCachesForTests()
     providerOperations.credential.mockClear()
     providerOperations.request.mockReset()
   })
 
-  it('uses the global OpenRouter credential when no catalog context is provided', async () => {
+  it('uses an explicit OpenRouter catalog credential', async () => {
     providerOperations.request.mockResolvedValueOnce({ data: [] })
 
-    await getOpenRouterModels()
+    await getOpenRouterModels({ apiKey: 'global-openrouter-key' })
 
     expect(providerOperations.credential).toHaveBeenCalledWith('global-openrouter-key', { profileId: undefined })
     expect(providerOperations.request).toHaveBeenCalledWith('openrouter.models', {

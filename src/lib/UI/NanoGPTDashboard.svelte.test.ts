@@ -4,8 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const dashboardMocks = vi.hoisted(() => ({
   applySetting: vi.fn(),
   balance: vi.fn(),
-  database: { nanogptSubscriptionState: 'active' } as Record<string, unknown>,
   subscription: vi.fn(),
+}))
+const settingsState = vi.hoisted(() => ({
+  status: 'ready' as string,
+  value: { nanogptSubscriptionState: 'active' } as Record<string, unknown>,
 }))
 
 vi.mock('src/ts/model/nanogpt', () => ({
@@ -13,8 +16,8 @@ vi.mock('src/ts/model/nanogpt', () => ({
   getNanoGPTSubscription: dashboardMocks.subscription,
 }))
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => dashboardMocks.database,
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: settingsState,
 }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
@@ -31,7 +34,8 @@ let component: MountedComponent | undefined
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  dashboardMocks.database = { nanogptSubscriptionState: 'active' }
+  settingsState.status = 'ready'
+  settingsState.value = { nanogptSubscriptionState: 'active' }
   dashboardMocks.applySetting.mockReset()
   dashboardMocks.balance.mockReset()
   dashboardMocks.subscription.mockReset()
@@ -62,7 +66,7 @@ describe('NanoGPTDashboard account refresh', () => {
     await Promise.resolve()
 
     expect(dashboardMocks.applySetting).not.toHaveBeenCalled()
-    expect(dashboardMocks.database.nanogptSubscriptionState).toBe('active')
+    expect(settingsState.value.nanogptSubscriptionState).toBe('active')
   })
 
   it('persists a fresh successful subscription state', async () => {
@@ -92,6 +96,6 @@ describe('NanoGPTDashboard account refresh', () => {
     await Promise.resolve()
 
     expect(dashboardMocks.applySetting).not.toHaveBeenCalled()
-    expect(dashboardMocks.database.nanogptSubscriptionState).toBe('active')
+    expect(settingsState.value.nanogptSubscriptionState).toBe('active')
   })
 })

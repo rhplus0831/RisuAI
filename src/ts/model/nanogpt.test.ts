@@ -15,16 +15,6 @@ vi.mock('../server/providerOperations', () => ({
   requestProviderOperation: providerOperations.request,
 }))
 
-const mockDatabase = vi.hoisted(() => ({
-  value: {
-    nanogptKey: 'global-nanogpt-key',
-  },
-}))
-
-vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => mockDatabase.value,
-}))
-
 import {
   clearNanoGPTRequestCachesForTests,
   getNanoGPTBalance,
@@ -53,16 +43,15 @@ function nanoModel() {
 
 describe('NanoGPT provider operations', () => {
   beforeEach(() => {
-    mockDatabase.value = { nanogptKey: 'global-nanogpt-key' }
     clearNanoGPTRequestCachesForTests()
     providerOperations.credential.mockClear()
     providerOperations.request.mockReset()
   })
 
-  it('uses the global NanoGPT credential and maps catalog models', async () => {
+  it('uses an explicit NanoGPT catalog credential and maps catalog models', async () => {
     providerOperations.request.mockResolvedValueOnce({ data: [nanoModel()] })
 
-    const models = await getNanoGPTModels()
+    const models = await getNanoGPTModels({ apiKey: 'global-nanogpt-key' })
 
     expect(providerOperations.credential).toHaveBeenCalledWith('global-nanogpt-key', { profileId: undefined })
     expect(providerOperations.request).toHaveBeenCalledWith('nanogpt.models', {

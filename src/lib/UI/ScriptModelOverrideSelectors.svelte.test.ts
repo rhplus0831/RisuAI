@@ -1,19 +1,14 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('src/ts/storage/database.svelte', async () => {
-  const { fromStore, writable } = await import('svelte/store')
-  const database = writable<Record<string, unknown>>({})
-  const reactiveDatabase = fromStore(database)
-  return {
-    getDatabase: () => reactiveDatabase.current,
-    setDatabaseLite: (value: Record<string, unknown>) => database.set(value),
-  }
-})
+const settings = vi.hoisted(() => ({ status: 'ready' as string, value: {} as Record<string, unknown> }))
+
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: settings,
+}))
 
 import { language } from 'src/lang'
 import type { ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import TestHost from './ScriptModelOverrideSelectors.test-host.svelte'
 
 type MountedHost = Parameters<typeof unmount>[0] & { currentValue(): ScriptModelOverrides }
@@ -28,7 +23,8 @@ function select(label: string): HTMLSelectElement {
 }
 
 beforeEach(() => {
-  setDatabaseLite({
+  settings.status = 'ready'
+  settings.value = {
     modelProfiles: [
       { id: 'profile-a', name: 'Profile A' },
       { id: 'profile-b', name: 'Profile B' },
@@ -38,7 +34,7 @@ beforeEach(() => {
       { kind: 'divider', id: 'divider-a' },
       { kind: 'profile', profileId: 'profile-b' },
     ],
-  } as any)
+  } as any
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -51,11 +47,20 @@ afterEach(() => {
 })
 
 describe('ScriptModelOverrideSelectors', () => {
+  it('fails closed when settings owners are unavailable', () => {
+    settings.status = 'error'
+    component = mount(TestHost, { target, props: { value: {} } }) as MountedHost
+
+    const labels = Array.from(select(language.scriptModelOverrides.llm).options).map((option) => option.textContent)
+    expect(labels).not.toContain('Profile A')
+    expect(labels).not.toContain('Profile B')
+  })
+
   it('preserves missing ids, restores divider selections, and updates each role independently', async () => {
     component = mount(TestHost, {
       target,
       props: { value: { llmProfileId: 'missing-main' } },
-    })
+    }) as MountedHost
 
     const main = select(language.scriptModelOverrides.llm)
     expect(Array.from(main.options).map((option) => option.textContent)).toContain(
