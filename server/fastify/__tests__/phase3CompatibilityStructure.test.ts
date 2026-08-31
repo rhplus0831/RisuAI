@@ -229,13 +229,6 @@ interface BridgeClassification {
 
 const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = [
   {
-    file: 'settingsBridge.svelte.ts',
-    flusher: 'flushPendingServerBackedSettingsPatch',
-    registrationId: 'settings',
-    commands: ['settings group patch', 'sparse settings object patch'],
-    outcomes: ['accepted', 'queued-retained', 'failed-owned-field-rollback'],
-  },
-  {
     file: 'lorebookBridge.svelte.ts',
     flusher: 'flushPendingServerBackedLorebookPatches',
     registrationId: 'lorebook',

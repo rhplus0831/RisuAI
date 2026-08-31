@@ -6,7 +6,7 @@ const inputHookSettingsMocks = vi.hoisted(() => ({
   setInputHooks: (_hooks: Array<Record<string, unknown>>) => {},
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+vi.mock('src/ts/server/settingsOwner.svelte', async () => {
   const { fromStore, writable } = await import('svelte/store')
   const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
   const hooks = writable<Array<Record<string, unknown>>>([])

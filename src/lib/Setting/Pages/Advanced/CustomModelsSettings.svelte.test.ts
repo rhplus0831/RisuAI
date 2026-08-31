@@ -1,7 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+vi.mock('src/ts/server/settingsOwner.svelte', async () => {
   const { customModelsDraft } = await import('./CustomModelsSettings.testState.svelte')
   return { createServerBackedSettingDraft: () => customModelsDraft }
 })

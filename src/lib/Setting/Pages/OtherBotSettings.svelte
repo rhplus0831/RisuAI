@@ -39,7 +39,7 @@
     applyServerBackedSettingsPatch,
     createServerBackedSettingDraft,
     persistServerBackedSettingsPatch,
-  } from 'src/ts/server/settingsBridge.svelte'
+  } from 'src/ts/server/settingsOwner.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
   import { providerOperationCredential, requestProviderOperation } from 'src/ts/server/providerOperations'
   import { createLatestOperationGuard, type LatestOperationToken } from 'src/ts/server/staleStateGuards'

@@ -29,7 +29,7 @@ vi.mock('src/ts/process/memory/hypamemory', () => ({
   },
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   createServerBackedSettingDraft: (_key: string, fallback: unknown) => ({ value: fallback }),
 }))
 

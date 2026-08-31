@@ -3,7 +3,7 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, type BardWikiGlobalSettings } from '@risuai/protocol'
 
   const settings = createServerBackedSettingDraft<BardWikiGlobalSettings>('bardWiki', {

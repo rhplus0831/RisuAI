@@ -8,9 +8,7 @@ import {
   type TopLevelPresetFieldMirrorTarget,
 } from '../presetFieldMirror'
 import { extractModelPresetFields, extractPromptPresetFields } from '../presetSplit'
-import { getDatabase } from '../storage/database.svelte'
 import {
-  canUseServerCommands,
   completeOnboardingCommand,
   patchSettingsObjectFieldsCommand,
   patchServerBackedSettings,
@@ -24,20 +22,19 @@ import {
 import { fetchServerSettingsGroup } from './resourceReads'
 import {
   applySettingsGroupResource,
+  captureCollectionProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
   captureSettingsPatchProjectionEpochs,
+  collectionsResourceState,
   getHypaV3PresetOwnerStateSnapshot,
   hasSettingsGroupProjectionEpochChanged,
   isSettingsGroupAcknowledgementTainted,
   markSettingsGroupAcknowledgementTainted,
+  settingsResourceState,
   updateHypaV3PresetOwnerState,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, type SettingsGroup, type SettingsGroupProjectionEpochs } from './settingsGroups'
-import {
-  getServerResourceApplyEpoch,
-  withServerResourceApply,
-  withTrustedResourceWrite,
-} from './resourceWriteGuard.svelte'
+import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './staleStateGuards'
 import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
@@ -94,7 +91,29 @@ const pendingSettingsPatch: PendingSettingsPatch = {
 }
 const pendingSettingsAttempts: PendingSettingsAttempt[] = []
 let nextSettingsAttemptSequence = 0
-let settingsBridgeDatabaseOwnershipEpoch = 0
+let settingsOwnerDatabaseOwnershipEpoch = 0
+
+function settingsOwner(): Record<string, unknown> {
+  return settingsResourceState.value as unknown as Record<string, unknown>
+}
+
+function writeSettingsOwnerValue(key: string, value: unknown): boolean {
+  const group = settingsGroupForKey(key)
+  if (!group || settingsResourceState.groupStatuses[group] !== 'ready') return false
+  settingsOwner()[key] = cloneJsonValue(value)
+  return true
+}
+
+function settingsDraftProjectionToken(key: string): string {
+  const group = settingsGroupForKey(key)
+  const presetTarget = resolveTopLevelPresetFieldMirrorTarget(key)
+  const groupEpoch = group ? captureSettingsGroupProjectionEpoch(group) : -1
+  const presetEpoch = presetTarget
+    ? captureCollectionProjectionEpoch(presetTarget.kind === 'model' ? 'modelPresets' : 'promptPresets')
+    : -1
+  const hypaPresetEpoch = key === 'hypaV3Presets' ? captureCollectionProjectionEpoch('hypaV3Presets') : -1
+  return `${groupEpoch}:${presetEpoch}:${hypaPresetEpoch}`
+}
 
 interface SparseObjectSettingQueue {
   key: string
@@ -158,8 +177,6 @@ registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
   for (const attempt of settledAttempts) clearSettingsAttempt(attempt)
 })
 
-let suppressRollbackDispatch = false
-
 function createSettingsSaveFailureReporter(): () => void {
   let reported = false
   return () => {
@@ -190,7 +207,7 @@ export type ServerBackedSettingsPersistenceReceipt =
       subscribeSettlement: (listener: (settlement: ServerBackedSettingsFinalSettlement) => void) => () => void
     }
 
-export interface WatchServerBackedSettingsOptions<T = unknown> {
+export interface ServerBackedSettingDraftOptions<T = unknown> {
   delayMs?: number
   dispatch?: boolean
   normalizeDraft?: (value: T) => T
@@ -213,7 +230,7 @@ export function applyServerBackedSetting(key: string, value: unknown): void {
 export function createServerBackedSettingDraft<T>(
   key: string,
   fallback: T,
-  options: WatchServerBackedSettingsOptions<T> = {},
+  options: ServerBackedSettingDraftOptions<T> = {},
 ): ServerBackedSettingDraft<T> {
   const initialValue = currentSettingValue(key, fallback)
   const cloneDraftValue = (value: T): T => {
@@ -225,17 +242,17 @@ export function createServerBackedSettingDraft<T>(
   let initialized = false
   let suppressDraftDispatch = false
   let previousServerSnapshot = snapshotJson(initialValue)
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
-  let previousDatabaseOwnershipEpoch = settingsBridgeDatabaseOwnershipEpoch
+  let previousOwnerProjectionToken = settingsDraftProjectionToken(key)
+  let previousDatabaseOwnershipEpoch = settingsOwnerDatabaseOwnershipEpoch
   let previousOwnerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
   let dirty = false
   let dirtyOwnerKey: string | null = null
   let dirtyBaseline = cloneDraftValue(initialValue)
 
   $effect(() => {
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
-    const databaseOwnershipEpoch = settingsBridgeDatabaseOwnershipEpoch
+    const ownerProjectionToken = settingsDraftProjectionToken(key)
+    const ownerProjectionChanged = ownerProjectionToken !== previousOwnerProjectionToken
+    const databaseOwnershipEpoch = settingsOwnerDatabaseOwnershipEpoch
     const databaseOwnershipChanged = databaseOwnershipEpoch !== previousDatabaseOwnershipEpoch
     const ownerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
     const ownerChanged = ownerKey !== previousOwnerKey
@@ -257,7 +274,7 @@ export function createServerBackedSettingDraft<T>(
     } else {
       if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
         suppressDraftDispatch = true
-        if (resourceApplyChanged && dirty) {
+        if (ownerProjectionChanged && dirty) {
           const normalizedServerValue = cloneDraftValue(serverValue)
           if (snapshotJson(dirtyBaseline) === snapshotJson(normalizedServerValue)) {
             reassertDirtySettingDraftValue(key, draft.value)
@@ -290,7 +307,7 @@ export function createServerBackedSettingDraft<T>(
     }
 
     previousOwnerKey = ownerKey
-    previousResourceApplyEpoch = resourceApplyEpoch
+    previousOwnerProjectionToken = ownerProjectionToken
     previousDatabaseOwnershipEpoch = databaseOwnershipEpoch
     previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
   })
@@ -358,14 +375,11 @@ export function createServerBackedSettingDraft<T>(
           draft.value = cloneDraftValue(previous as T)
           return
         }
-      } else {
-        withTrustedResourceWrite(() => {
-          // Re-read the resource database inside the callback: the trusted write opens a
-          // copy-on-write working proxy, so an alias captured earlier still points
-          // at the read-only projection and would throw on write.
-          const target = getDatabase() as unknown as Record<string, unknown>
-          target[key] = attempted
-        })
+      } else if (!writeSettingsOwnerValue(key, attempted)) {
+        dirty = false
+        dirtyOwnerKey = null
+        draft.value = cloneDraftValue(previous as T)
+        return
       }
       const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
       dirtyOwnerKey =
@@ -398,22 +412,17 @@ function currentServerBackedSettingDraftOwnerKey(key: string, dispatch: boolean 
 function reassertDirtySettingDraftValue<T>(key: string, value: T): void {
   if (!settingsGroupForKey(key)) return
 
-  withSuppressedSettingsWatcher(() => {
-    if (key === 'hypaV3Presets' || key === 'selectedHypaV3PresetId') {
-      updateHypaV3PresetOwnerState((owner) => {
-        if (key === 'hypaV3Presets') {
-          owner.hypaV3Presets = cloneJsonValue(value) as typeof owner.hypaV3Presets
-        } else {
-          owner.selectedHypaV3PresetId = value as string | null
-        }
-      })
-      return
-    }
-    withTrustedResourceWrite(() => {
-      const target = getDatabase() as unknown as Record<string, unknown>
-      target[key] = cloneJsonValue(value)
+  if (key === 'hypaV3Presets' || key === 'selectedHypaV3PresetId') {
+    updateHypaV3PresetOwnerState((owner) => {
+      if (key === 'hypaV3Presets') {
+        owner.hypaV3Presets = cloneJsonValue(value) as typeof owner.hypaV3Presets
+      } else {
+        owner.selectedHypaV3PresetId = value as string | null
+      }
     })
-  })
+    return
+  }
+  writeSettingsOwnerValue(key, value)
 }
 
 interface SettingDraftMergeResult<T> {
@@ -665,7 +674,7 @@ function prepareServerBackedSettingsPatch(patch: SettingsPatch): PreparedServerB
   const previous: SettingsPatch = {}
   const attempted: SettingsPatch = {}
 
-  const currentSettings = getDatabase() as unknown as Record<string, unknown>
+  const currentSettings = settingsOwner()
   const currentHypaOwner = getHypaV3PresetOwnerStateSnapshot()
   for (const [key, value] of Object.entries(normalizedPatch)) {
     if (!settingsGroupForKey(key) || value === undefined) continue
@@ -721,28 +730,33 @@ function normalizeHypaV3PresetOwnerPatch(patch: SettingsPatch): SettingsPatch | 
 }
 
 function applyOptimisticServerBackedSettingsPatch(commandPatch: SettingsPatch): boolean {
-  let applied = true
-  withSuppressedSettingsWatcher(() => {
-    const writesHypaOwner = HYPA_V3_PRESET_OWNER_KEYS.some((key) => hasOwnKey(commandPatch, key))
-    if (writesHypaOwner) {
-      applied = updateHypaV3PresetOwnerState((owner) => {
-        if (hasOwnKey(commandPatch, 'hypaV3Presets')) {
-          owner.hypaV3Presets = cloneJsonValue(commandPatch.hypaV3Presets) as typeof owner.hypaV3Presets
-        }
-        if (hasOwnKey(commandPatch, 'selectedHypaV3PresetId')) {
-          owner.selectedHypaV3PresetId = commandPatch.selectedHypaV3PresetId as string | null
-        }
-      })
-    }
-    const genericPatch = Object.fromEntries(
-      Object.entries(commandPatch).filter(([key]) => !HYPA_V3_PRESET_OWNER_KEYS.includes(key as never)),
-    )
-    if (Object.keys(genericPatch).length === 0) return
-    withTrustedResourceWrite(() => {
-      const target = getDatabase() as unknown as Record<string, unknown>
-      for (const [key, value] of Object.entries(genericPatch)) target[key] = cloneJsonValue(value)
+  const genericPatchEntries = Object.entries(commandPatch).filter(
+    ([key]) => !HYPA_V3_PRESET_OWNER_KEYS.includes(key as never),
+  )
+  if (
+    genericPatchEntries.some(([key]) => {
+      const group = settingsGroupForKey(key)
+      return !group || settingsResourceState.groupStatuses[group] !== 'ready'
     })
-  })
+  ) {
+    return false
+  }
+
+  let applied = true
+  const writesHypaOwner = HYPA_V3_PRESET_OWNER_KEYS.some((key) => hasOwnKey(commandPatch, key))
+  if (writesHypaOwner) {
+    applied = updateHypaV3PresetOwnerState((owner) => {
+      if (hasOwnKey(commandPatch, 'hypaV3Presets')) {
+        owner.hypaV3Presets = cloneJsonValue(commandPatch.hypaV3Presets) as typeof owner.hypaV3Presets
+      }
+      if (hasOwnKey(commandPatch, 'selectedHypaV3PresetId')) {
+        owner.selectedHypaV3PresetId = commandPatch.selectedHypaV3PresetId as string | null
+      }
+    })
+  }
+  for (const [key, value] of genericPatchEntries) {
+    if (!writeSettingsOwnerValue(key, value)) applied = false
+  }
   return applied
 }
 
@@ -755,7 +769,7 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   // absolute successor before reserving the command queue, so a remotely
   // started predecessor cannot land after the immediate value.
   queueSettingsPatch(prepared.commandPatch, prepared.previous, 0)
-  flushPendingServerBackedSettingsPatch()
+  flushPendingSettingsOwnerMutations()
 }
 
 /**
@@ -899,9 +913,22 @@ export async function applyOnboardingServerBackedSettings(
   options: ApplyOnboardingServerBackedSettingsOptions,
 ): Promise<boolean> {
   try {
-    const database = getDatabase()
-    const modelPreset = database.modelPresets?.[database.modelPresetsId]
-    const promptPreset = database.promptPresets?.[database.promptPresetsId]
+    if (
+      collectionsResourceState.statuses.modelPresets !== 'ready' ||
+      collectionsResourceState.statuses.promptPresets !== 'ready' ||
+      settingsResourceState.standaloneStatuses.modelPresetsId !== 'ready' ||
+      settingsResourceState.standaloneStatuses.promptPresetsId !== 'ready'
+    ) {
+      return false
+    }
+    const modelPresets = collectionsResourceState.values.modelPresets
+    const promptPresets = collectionsResourceState.values.promptPresets
+    const modelPresetIndex = settingsResourceState.value.modelPresetsId
+    const promptPresetIndex = settingsResourceState.value.promptPresetsId
+    if (!Array.isArray(modelPresets) || !Array.isArray(promptPresets)) return false
+    if (!Number.isInteger(modelPresetIndex) || !Number.isInteger(promptPresetIndex)) return false
+    const modelPreset = modelPresets[modelPresetIndex as number]
+    const promptPreset = promptPresets[promptPresetIndex as number]
     if (!modelPreset?.id || !promptPreset?.id) return false
 
     const choicePatch = buildOnboardingSettingsPatch(options)
@@ -951,58 +978,6 @@ function dispatchServerBackedSettingsPatch(
     previous,
     attempted,
   })
-}
-
-export function watchServerBackedSettings(
-  keys: readonly string[],
-  options: WatchServerBackedSettingsOptions = {},
-): () => void {
-  if (!canUseServerCommands()) return () => {}
-
-  const trackedKeys = Array.from(new Set(keys)).filter((key) => settingsGroupForKey(key))
-  if (trackedKeys.length === 0) return () => {}
-
-  const delayMs = options.delayMs ?? 250
-  const previousSnapshots = new Map<string, string>()
-  const previousValues = new Map<string, unknown>()
-  let initialized = false
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
-
-  const stop = $effect.root(() => {
-    $effect(() => {
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
-      const changed: SettingsPatch = {}
-      const before: SettingsPatch = {}
-
-      for (const key of trackedKeys) {
-        const value = (getDatabase() as unknown as Record<string, unknown> | undefined)?.[key]
-        const snapshot = snapshotJson(value)
-        const previousSnapshot = previousSnapshots.get(key)
-
-        if (initialized && snapshot !== previousSnapshot) {
-          changed[key] = cloneJsonValue(value)
-          before[key] = cloneJsonValue(previousValues.get(key))
-        }
-
-        previousSnapshots.set(key, snapshot)
-        previousValues.set(key, cloneJsonValue(value))
-      }
-
-      if (!initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
-        initialized = true
-        previousResourceApplyEpoch = resourceApplyEpoch
-        return
-      }
-      if (suppressRollbackDispatch || Object.keys(changed).length === 0) return
-
-      untrack(() => queueSettingsPatch(changed, before, delayMs))
-    })
-  })
-
-  return () => {
-    flushPendingServerBackedSettingsPatch()
-    stop()
-  }
 }
 
 function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay: number): void {
@@ -1108,7 +1083,7 @@ function resetPendingSettingsPatch(): void {
   pendingSettingsPatch.outbox = null
 }
 
-export function flushPendingServerBackedSettingsPatch(options: ServerCommandTransportOptions = {}): void {
+export function flushPendingSettingsOwnerMutations(options: ServerCommandTransportOptions = {}): void {
   dispatchPendingSettingsPatch(options)
   for (const state of sparseObjectSettingQueues.values()) {
     if (state.timer) {
@@ -1119,12 +1094,12 @@ export function flushPendingServerBackedSettingsPatch(options: ServerCommandTran
   }
 }
 
-registerPendingBridgePatchFlusher('settings', flushPendingServerBackedSettingsPatch)
-registerPendingBridgeOwnershipResetter('settings', resetServerBackedSettingsBridgeForDatabaseReplacement)
+registerPendingBridgePatchFlusher('settings', flushPendingSettingsOwnerMutations)
+registerPendingBridgeOwnershipResetter('settings', resetSettingsOwnerForDatabaseReplacement)
 
 /** Drop projections, timers, and attempts owned by the database that was replaced. */
-export function resetServerBackedSettingsBridgeForDatabaseReplacement(): void {
-  settingsBridgeDatabaseOwnershipEpoch += 1
+export function resetSettingsOwnerForDatabaseReplacement(): void {
+  settingsOwnerDatabaseOwnershipEpoch += 1
   if (pendingSettingsPatch.timer) clearTimeout(pendingSettingsPatch.timer)
   resetPendingSettingsPatch()
 
@@ -1723,11 +1698,7 @@ function mergeSparseObjectSettingUpdatePair(
 }
 
 function writeSparseObjectSettingProjection(key: string, value: Record<string, unknown>): void {
-  withSuppressedSettingsWatcher(() => {
-    withTrustedResourceWrite(() => {
-      ;(getDatabase() as unknown as Record<string, unknown>)[key] = cloneJsonValue(value)
-    })
-  })
+  writeSettingsOwnerValue(key, value)
 }
 
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
@@ -1761,20 +1732,7 @@ function isUniqueNonBlankStrings(value: unknown): value is string[] {
 }
 
 function rollbackServerBackedSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
-  withSuppressedSettingsWatcher(() => {
-    rollbackSettings(previous, attempted)
-  })
-}
-
-function withSuppressedSettingsWatcher(fn: () => void): void {
-  suppressRollbackDispatch = true
-  try {
-    fn()
-  } finally {
-    queueMicrotask(() => {
-      suppressRollbackDispatch = false
-    })
-  }
+  rollbackSettings(previous, attempted)
 }
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
@@ -1783,13 +1741,10 @@ function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): vo
   const genericAttempted: SettingsPatch = { ...attempted }
   rollbackHypaV3PresetOwner(genericPrevious, genericAttempted)
   if (Object.keys(genericAttempted).length > 0) {
-    withTrustedResourceWrite(() => {
-      const target = getDatabase() as unknown as Record<string, unknown>
-      runtimeProjectionKeys = applyAttemptedFieldRollback({
-        target,
-        previous: genericPrevious,
-        attempted: genericAttempted,
-      })
+    runtimeProjectionKeys = applyAttemptedFieldRollback({
+      target: settingsOwner(),
+      previous: genericPrevious,
+      attempted: genericAttempted,
     })
   }
   applySettingsRuntimeProjectionEffects(runtimeProjectionKeys)
@@ -2009,7 +1964,7 @@ function buildOnboardingSettingsPatch(options: ApplyOnboardingServerBackedSettin
   }
 
   if (options.chatLang !== 0) {
-    const translator = onboardingTranslatorForLanguage(String(getDatabase().language ?? ''))
+    const translator = onboardingTranslatorForLanguage(String(currentSettingValue('language', '')))
     if (translator) patch.translator = translator
   }
 
@@ -2099,8 +2054,10 @@ function currentSettingValue<T>(key: string, fallback: T): T {
     if (!owner) return fallback
     return cloneJsonValue(owner[key as keyof typeof owner]) as T
   }
-  const target = getDatabase() as unknown as Record<string, unknown> | undefined
-  const value = target?.[key]
+  const group = settingsGroupForKey(key)
+  if (group && settingsResourceState.groupStatuses[group] !== 'ready') return fallback
+  if (!group && settingsResourceState.status !== 'ready') return fallback
+  const value = settingsOwner()[key]
   return value === undefined ? fallback : (value as T)
 }
 

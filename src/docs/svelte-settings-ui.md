@@ -17,7 +17,7 @@ shell and routing model.
 | A primitive control is wrong everywhere | The control in `src/lib/UI/GUI/` | Its settings wrapper if only rows are affected |
 | Agent, prompt, or input-hook editor is wrong | The matching page/drawer under `src/lib/Setting/Pages/` | The canonical runtime guide linked from its section below |
 | Role/profile summary, divider, provider panel, or credential editor is wrong | `src/lib/Setting/Pages/Model/` | `src/ts/model/modelProfileUiState.ts`, [Providers And Models](../../docs/structure/providers-and-models.md) |
-| Optimistic value rolls back, queues indefinitely, or survives page exit incorrectly | `src/ts/setting/utils.ts`, `src/ts/server/settingsBridge.svelte.ts` | [Settings Persistence](#settings-persistence) |
+| Optimistic value rolls back, queues indefinitely, or survives page exit incorrectly | `src/ts/setting/utils.ts`, `src/ts/server/settingsOwner.svelte.ts` | [Settings Persistence](#settings-persistence) |
 
 ## Shell And Routed Pages
 
@@ -129,8 +129,8 @@ do not assume an unavailable stored option will remain displayed.
 `getSettingValue` reads from the composed resource projection, nested path, or
 custom getter. `setSettingValue` applies the optimistic projection, runs the
 local side effect, stages encrypted durable intent, and dispatches through the
-settings bridge. Continuous controls are briefly delayed and coalesced by
-settings owner.
+explicit settings owner. Continuous controls are briefly delayed and coalesced
+by `src/ts/server/settingsOwner.svelte.ts`.
 
 `src/ts/server/pendingBridgeFlushRegistry.ts` lets navigation, structural
 actions, and page exit flush queued owner patches before another operation can

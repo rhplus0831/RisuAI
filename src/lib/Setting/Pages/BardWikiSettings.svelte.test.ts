@@ -5,7 +5,7 @@ const bardWikiMocks = vi.hoisted(() => ({
   draft: { value: {} as Record<string, unknown> },
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   createServerBackedSettingDraft: () => bardWikiMocks.draft,
 }))
 

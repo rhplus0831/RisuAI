@@ -194,7 +194,7 @@ vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
   return { ...actual, guardActiveChatGenerationSettingsForSend: shellMocks.guardActiveChatGenerationSettingsForSend }
 })
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({ applyServerBackedSetting: vi.fn() }))
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({ applyServerBackedSetting: vi.fn() }))
 vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
   withTrustedResourceWrite: (callback: () => void) => callback(),
 }))

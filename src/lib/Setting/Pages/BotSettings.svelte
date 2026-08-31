@@ -60,8 +60,7 @@
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
-  // Durable settings-draft bridge: retained for debounced persistence, receipts, and reload reassertion.
-  import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     canUseServerCommands,
@@ -140,8 +139,6 @@
   } from 'src/ts/server/biasImport'
   import { createLatestPromptTokenCounter } from './promptTokenCounter'
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
-  onDestroy(stopServerSettingsWatch)
   const pendingPromptFieldPatch = {
     patch: {} as SettingsPatch,
     previous: {} as SettingsPatch,

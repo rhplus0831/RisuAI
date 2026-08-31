@@ -148,12 +148,29 @@ import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
 import { resetRegisteredPendingBridgeOwnershipState } from './pendingBridgeFlushRegistry'
 import {
   applyServerBackedSettingsPatch,
+  createServerBackedSettingDraft,
   dispatchDurableServerBackedSettingsPatch,
-  flushPendingServerBackedSettingsPatch,
-  watchServerBackedSettings,
-} from './settingsBridge.svelte'
+  flushPendingSettingsOwnerMutations,
+  type ServerBackedSettingDraft,
+} from './settingsOwner.svelte'
 
 const LONG_DELAY = 60_000
+
+function createSettingsOwnerDraft<T>(
+  key: string,
+  fallback: T,
+): { draft: ServerBackedSettingDraft<T>; stop: () => void } {
+  let draft: ServerBackedSettingDraft<T> | undefined
+  const stop = $effect.root(() => {
+    draft = createServerBackedSettingDraft(key, fallback, { delayMs: LONG_DELAY })
+  })
+  flushSync()
+  if (!draft) {
+    stop()
+    throw new Error('setting owner draft was not initialized')
+  }
+  return { draft, stop }
+}
 
 registerPendingMutationDiscardListener((mutationId) => {
   for (const listener of [...(recorded.settlementListeners.get(mutationId) ?? [])]) listener('discarded')
@@ -214,7 +231,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  flushPendingServerBackedSettingsPatch()
+  flushPendingSettingsOwnerMutations()
   await Promise.resolve()
   await clearPendingMutationOutbox()
   resetPendingMutationOutboxForTests()
@@ -222,7 +239,7 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-describe('settings bridge durable marker ordering', () => {
+describe('settings owner durable marker ordering', () => {
   it('drops a queued old-lineage overlay before applying restored settings', async () => {
     setupSettings({ textTheme: 'before' })
     recorded.patchResults.push({ status: 'unavailable' })
@@ -286,14 +303,13 @@ describe('settings bridge durable marker ordering', () => {
 
   it('retains a remotely marked scalar edit ahead of an immediate total-revert correction', async () => {
     setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: LONG_DELAY })
+    const { draft, stop } = createSettingsOwnerDraft('notification', false)
     try {
-      flushSync()
-      testDatabaseState.db.notification = true
+      draft.value = true
       flushSync()
       const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
 
-      testDatabaseState.db.notification = false
+      draft.value = false
       flushSync()
       expect(recorded.dispatched).toHaveLength(1)
 
@@ -328,20 +344,14 @@ describe('settings bridge durable marker ordering', () => {
 
   it('retains a remotely marked scalar edit ahead of a partial-revert absolute closure', async () => {
     setupSettings({ notification: false, useAutoSuggestions: false })
-    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
-      delayMs: LONG_DELAY,
-    })
+    const notification = createSettingsOwnerDraft('notification', false)
     try {
-      flushSync()
-      testDatabaseState.db.notification = true
+      notification.draft.value = true
       flushSync()
       const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
 
-      testDatabaseState.db.notification = false
-      testDatabaseState.db.useAutoSuggestions = true
-      flushSync()
-      expect(recorded.dispatched).toHaveLength(0)
-      flushPendingServerBackedSettingsPatch()
+      applyServerBackedSettingsPatch({ notification: false, useAutoSuggestions: true })
+      await vi.waitFor(() => expect(recorded.dispatched).toHaveLength(1))
 
       const pending = await expectMarkerWinnerAndSuccessor(predecessor)
       expect(pending[1].intent).toEqual({
@@ -361,21 +371,20 @@ describe('settings bridge durable marker ordering', () => {
       })
       expect(recorded.patches).toEqual([{ useAutoSuggestions: true, notification: false }])
     } finally {
-      stop()
+      notification.stop()
     }
   })
 
   it('retains a remotely marked sparse edit ahead of an immediate total-revert correction', async () => {
     const original = { width: 512, height: 768 }
     setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: LONG_DELAY })
+    const { draft, stop } = createSettingsOwnerDraft('NAIImgConfig', original)
     try {
-      flushSync()
-      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+      draft.value = { ...original, width: 832 }
       flushSync()
       const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
 
-      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
+      draft.value = original
       flushSync()
       expect(recorded.dispatched).toHaveLength(1)
 
@@ -414,10 +423,9 @@ describe('settings bridge durable marker ordering', () => {
   it('retains a marked sparse edit ahead of a partial closure with an explicit delete correction', async () => {
     const original = { width: 512, height: 768 }
     setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: LONG_DELAY })
+    const { draft, stop } = createSettingsOwnerDraft('NAIImgConfig', original)
     try {
-      flushSync()
-      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+      draft.value = {
         ...original,
         width: 832,
         temporary: 'staged value',
@@ -425,14 +433,14 @@ describe('settings bridge durable marker ordering', () => {
       flushSync()
       const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
 
-      ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+      draft.value = {
         ...original,
         width: 832,
         height: 1024,
       }
       flushSync()
       expect(recorded.dispatched).toHaveLength(0)
-      flushPendingServerBackedSettingsPatch()
+      flushPendingSettingsOwnerMutations()
 
       const pending = await expectMarkerWinnerAndSuccessor(predecessor)
       expect(pending[1].intent).toEqual({

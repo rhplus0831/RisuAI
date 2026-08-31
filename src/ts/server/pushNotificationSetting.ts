@@ -9,7 +9,7 @@ import {
   persistServerBackedSettingsPatchWithSettlement,
   type ServerBackedSettingsPersistenceOutcome,
   type ServerBackedSettingsPersistenceReceipt,
-} from './settingsBridge.svelte'
+} from './settingsOwner.svelte'
 import {
   normalizePendingPushEndpoints,
   pushNotificationRetryStorage,

@@ -254,7 +254,7 @@ that affect rendered state should follow the visible-state policy in
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `bridgeFlush.ts`                   | Directly imports and flushes every built-in bridge on `pagehide` / hidden visibility with `keepalive`, then also invokes registered extension owners.                                 |
 | `pendingBridgeFlushRegistry.ts`    | Registers bridge flush/reset callbacks for owner-targeted calls and dynamically loaded owners. Most built-in bridges register here as well as being covered by `bridgeFlush.ts`.      |
-| `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches.                                                              |
+| `settingsOwner.svelte.ts`          | Explicit group-owned drafts and patches through `PATCH /commands/settings/:group`, with equality-noop suppression, exact projection fences, durable receipts, and field-scoped rollback. |
 | `lorebookBridge.svelte.ts`         | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
 | `scriptDefinitionOwner.svelte.ts`  | Explicit character/module definition owner mutations plus the global-script settings draft watcher; compact create/update/delete/reorder classification, projection fencing, and full-replacement fallback. |
 

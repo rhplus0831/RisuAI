@@ -33,7 +33,7 @@ vi.mock('../alert', () => ({
   alertError: colorSchemeMocks.alertError,
 }))
 
-vi.mock('../server/settingsBridge.svelte', () => ({
+vi.mock('../server/settingsOwner.svelte', () => ({
   applyServerBackedSettingsPatch: colorSchemeMocks.applyServerBackedSettingsPatch,
 }))
 

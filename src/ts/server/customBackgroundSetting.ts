@@ -1,6 +1,6 @@
 import type { Database } from '../storage/database.svelte'
 import { settingsResourceState } from './resourceState.svelte'
-import { applyServerBackedSetting } from './settingsBridge.svelte'
+import { applyServerBackedSetting } from './settingsOwner.svelte'
 
 export const LEGACY_CUSTOM_BACKGROUND_PENDING_VALUE = '-'
 

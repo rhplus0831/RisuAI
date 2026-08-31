@@ -1,7 +1,7 @@
 import { language } from '../../lang'
 import { alertSelect } from '../alert'
 import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
-import { persistServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
+import { persistServerBackedSettingsPatch } from '../server/settingsOwner.svelte'
 import type { Database } from '../storage/database.svelte'
 import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 

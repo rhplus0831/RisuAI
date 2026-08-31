@@ -2,7 +2,7 @@
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
 
   const colors = [
     ['FontColorStandard', 'Normal Text', false],

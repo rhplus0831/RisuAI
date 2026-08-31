@@ -6,7 +6,7 @@
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import {
     ensureClientScriptDefinitionIds,
     watchGlobalScriptOwnerDraft,

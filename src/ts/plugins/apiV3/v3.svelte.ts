@@ -27,7 +27,7 @@ import {
   rollbackPluginSettingsOwner,
 } from 'src/ts/pluginCommands'
 import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
-import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsOwner.svelte'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
   appendCurrentChatUserMessageForSend,

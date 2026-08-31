@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const triggerAlertMocks = vi.hoisted(() => ({ alertError: vi.fn() }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   createServerBackedSettingDraft: <T>(_key: string, fallback: T) => ({ value: fallback }),
 }))
 

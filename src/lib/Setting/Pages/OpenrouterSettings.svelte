@@ -6,7 +6,7 @@
   import OpenrouterProviderList from 'src/lib/UI/OpenrouterProviderList.svelte'
   import { PlusIcon, TrashIcon } from '@lucide/svelte'
   import { getOpenRouterProviders } from 'src/ts/model/openrouter'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
 
   type OpenrouterProviderSettings = {

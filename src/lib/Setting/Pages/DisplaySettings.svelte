@@ -3,13 +3,10 @@
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import {
-    displayNonRendererServerSettingKeys,
     displayOtherSettingsItems,
     displaySizeSettingsItems,
     displayThemeSettingsItems,
   } from 'src/ts/setting/displaySettingsData.svelte'
-  import { onDestroy } from 'svelte'
-  import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
 
   let submenu = $state(0)
@@ -21,9 +18,6 @@
     }
     submenu = reconcileLegacyGuiSubmenu(Boolean(settingsResourceState.value.useLegacyGUI), submenu)
   })
-
-  const stopServerSettingsWatch = watchServerBackedSettings(displayNonRendererServerSettingKeys)
-  onDestroy(stopServerSettingsWatch)
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.display}</h2>

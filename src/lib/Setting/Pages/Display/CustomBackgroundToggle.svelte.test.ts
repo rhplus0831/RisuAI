@@ -24,7 +24,7 @@ vi.mock('src/ts/storage/database.svelte', async (importActual) => {
   }
 })
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: backgroundMocks.applyServerBackedSetting,
 }))
 

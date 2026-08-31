@@ -28,8 +28,8 @@
   import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
   import {
     createServerBackedSettingDraft,
-    flushPendingServerBackedSettingsPatch,
-  } from 'src/ts/server/settingsBridge.svelte'
+    flushPendingSettingsOwnerMutations,
+  } from 'src/ts/server/settingsOwner.svelte'
   import {
     applyPromptItemProjectionWrite,
     armPendingPromptItemProjectionUpdate,
@@ -1022,7 +1022,7 @@
     promptTemplateHydrationRequestId += 1
     document.removeEventListener('keydown', handleKeyDown)
     flushPendingPromptTemplatePatches()
-    flushPendingServerBackedSettingsPatch()
+    flushPendingSettingsOwnerMutations()
     promptTokenizeDebouncer.cancel()
   })
 </script>

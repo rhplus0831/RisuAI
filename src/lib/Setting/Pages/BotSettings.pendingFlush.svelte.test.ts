@@ -148,12 +148,12 @@ vi.mock('src/ts/server/commands', () => ({
   }),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+vi.mock('src/ts/server/settingsOwner.svelte', async () => {
   const { fromStore, writable } = await import('svelte/store')
 
   return {
     applyServerBackedSetting: vi.fn(),
-    flushPendingServerBackedSettingsPatch: vi.fn(),
+    flushPendingSettingsOwnerMutations: vi.fn(),
     persistServerBackedSettingsPatchWithSettlement: vi.fn(async () => ({ status: 'accepted' as const })),
     createServerBackedSettingDraft: (key: string, fallback: unknown) => {
       const initialValue = botSettingsMocks.settingDraftInitialValues.has(key)
@@ -191,7 +191,6 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       botSettingsMocks.settingDrafts.set(key, draft)
       return draft
     },
-    watchServerBackedSettings: vi.fn(() => vi.fn()),
   }
 })
 

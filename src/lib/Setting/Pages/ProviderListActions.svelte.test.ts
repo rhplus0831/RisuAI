@@ -20,7 +20,7 @@ vi.mock('./ChatFormatSettings.svelte', async () => ({
 vi.mock('src/ts/model/openrouter', () => ({
   getOpenRouterProviders: vi.fn(async () => ['Provider A']),
 }))
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   createServerBackedSettingDraft: (key: string, fallback: unknown) => ({
     value:
       key === 'reverseProxyOobaArgs'

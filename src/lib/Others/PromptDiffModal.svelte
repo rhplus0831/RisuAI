@@ -7,7 +7,7 @@
     type botPreset,
     type PromptDiffPrefs,
   } from '../../ts/storage/database.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type {
     PromptItem,

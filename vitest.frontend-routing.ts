@@ -170,7 +170,7 @@ export const legacyDomTestFiles = [
   'src/ts/server/pushNotifications.test.ts',
   'src/ts/server/resourceRefresh.test.ts',
   'src/ts/server/routeResourceLoader.test.ts',
-  'src/ts/server/settingsBridge.durable.test.ts',
+  'src/ts/server/settingsOwner.durable.svelte.test.ts',
   'src/ts/setting/languageSettingsData.test.ts',
   'src/ts/setting/utils.test.ts',
   'src/ts/storage/backup.test.ts',

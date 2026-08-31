@@ -7,7 +7,7 @@ const popupMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/tokenizer', () => ({ tokenize: popupMocks.tokenize }))
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: popupMocks.applyServerBackedSetting,
 }))
 vi.mock('src/ts/parser/parser.svelte', () => ({

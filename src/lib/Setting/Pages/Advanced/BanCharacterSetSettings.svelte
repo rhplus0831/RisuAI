@@ -2,7 +2,7 @@
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
 
   const banCharactersetDraft = createServerBackedSettingDraft<string[]>('banCharacterset', [])
 

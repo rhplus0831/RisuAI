@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import type { Hotkey } from 'src/ts/defaulthotkeys'
 
   let viewportWidth = $state(window.innerWidth)

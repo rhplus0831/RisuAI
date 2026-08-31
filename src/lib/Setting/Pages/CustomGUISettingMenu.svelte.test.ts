@@ -25,7 +25,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import CustomGUISettingMenu from './CustomGUISettingMenu.svelte'
-import { flushPendingServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+import { flushPendingSettingsOwnerMutations } from 'src/ts/server/settingsOwner.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { CustomGUISettingMenuStore } from 'src/ts/stores.svelte'
 import { language } from 'src/lang'
@@ -56,7 +56,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  flushPendingServerBackedSettingsPatch()
+  flushPendingSettingsOwnerMutations()
   if (component) {
     unmount(component)
     component = undefined

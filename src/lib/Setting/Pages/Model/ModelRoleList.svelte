@@ -15,7 +15,7 @@
     type NormalizedModelRoleOverrides,
   } from '@risuai/shared-core/model-roles'
   import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type { Database, SeparateParameters } from 'src/ts/storage/database.svelte'
   import ModelRoleEditor from './ModelRoleEditor.svelte'

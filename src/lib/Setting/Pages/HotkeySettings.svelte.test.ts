@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const hotkeyMocks = vi.hoisted(() => ({ applyServerBackedSetting: vi.fn() }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: hotkeyMocks.applyServerBackedSetting,
 }))
 

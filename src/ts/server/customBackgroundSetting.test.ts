@@ -17,7 +17,7 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => customBackgroundState.compatibility,
 }))
 
-vi.mock('./settingsBridge.svelte', () => ({
+vi.mock('./settingsOwner.svelte', () => ({
   applyServerBackedSetting: customBackgroundState.applyServerBackedSetting,
 }))
 

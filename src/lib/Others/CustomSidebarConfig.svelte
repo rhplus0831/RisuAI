@@ -5,7 +5,7 @@
   import { getFullSettingsData } from 'src/ts/setting/utils'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import type { CustomSideBarItem } from 'src/ts/storage/database.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'

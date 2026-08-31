@@ -11,7 +11,7 @@
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { isMobile } from 'src/ts/platform'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
 
   let languageMode = $state(popUpEditorStore.language || 'markdown')
   let previewing = $state(false)

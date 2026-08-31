@@ -64,7 +64,7 @@ import {
   ensureClientTriggerDefinitionIds,
   flushPendingScriptDefinitionMutations,
 } from './server/scriptDefinitionOwner.svelte'
-import { flushPendingServerBackedSettingsPatch } from './server/settingsBridge.svelte'
+import { flushPendingSettingsOwnerMutations } from './server/settingsOwner.svelte'
 import { flushPendingCharacterDraftPatches } from './server/characterDraft.svelte'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 
@@ -793,7 +793,7 @@ export async function dispatchDeleteModule(
   previous: GlobalModuleStateSnapshot,
 ): Promise<ModuleMutationOutcome> {
   if (!canUseServerCommands()) return { status: 'failed', result: { status: 'unavailable' } }
-  flushPendingServerBackedSettingsPatch()
+  flushPendingSettingsOwnerMutations()
   flushPendingCharacterDraftPatches()
   flushPendingServerBackedLorebookPatches()
   flushPendingScriptDefinitionMutations()

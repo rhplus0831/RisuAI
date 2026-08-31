@@ -6,7 +6,7 @@ import {
 import { MCPClient, type JsonRPC, type MCPRefreshTokenSource, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps, type RisuModule } from '../modules'
 import { canUseServerCommands, type PatchServerBackedSettingsInput } from '../../server/commands'
-import { dispatchDurableServerBackedSettingsPatch } from '../../server/settingsBridge.svelte'
+import { dispatchDurableServerBackedSettingsPatch } from '../../server/settingsOwner.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
 import { language } from 'src/lang'

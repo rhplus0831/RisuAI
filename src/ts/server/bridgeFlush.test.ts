@@ -9,8 +9,8 @@ const calls = vi.hoisted(() => ({
   scriptDefinition: [] as unknown[],
 }))
 
-vi.mock('./settingsBridge.svelte', () => ({
-  flushPendingServerBackedSettingsPatch: vi.fn((options: unknown) => {
+vi.mock('./settingsOwner.svelte', () => ({
+  flushPendingSettingsOwnerMutations: vi.fn((options: unknown) => {
     calls.settings.push(options)
   }),
 }))

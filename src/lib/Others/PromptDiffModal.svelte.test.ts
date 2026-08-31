@@ -17,7 +17,7 @@ const ensureBotPresetHydratedById = vi.hoisted(() => vi.fn<(presetId: string) =>
 const applyServerBackedSetting = vi.hoisted(() => vi.fn())
 
 vi.mock('src/ts/server/resourceState.svelte', () => ownerState)
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({ applyServerBackedSetting }))
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({ applyServerBackedSetting }))
 vi.mock('../../ts/storage/database.svelte', () => ({
   botPresetHasHydratedSettings: (preset: Record<string, unknown> | undefined) =>
     !!preset?.id && Object.prototype.hasOwnProperty.call(preset, 'localNetworkMode'),

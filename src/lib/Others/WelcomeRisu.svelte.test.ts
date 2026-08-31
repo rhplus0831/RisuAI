@@ -8,9 +8,7 @@ const welcomeMocks = vi.hoisted(() => ({
   changeLanguage: vi.fn(),
   alertError: vi.fn(),
   alertNormal: vi.fn(),
-  stopServerSettingsWatch: vi.fn(),
   updateTextThemeAndCSS: vi.fn(),
-  watchServerBackedSettings: vi.fn(() => welcomeMocks.stopServerSettingsWatch),
 }))
 
 vi.mock('../ChatScreens/Chat.svelte', async () => {
@@ -79,10 +77,9 @@ vi.mock('src/ts/persona', () => ({
   updateSelectedPersonaFieldWithOutcome: welcomeMocks.updateSelectedPersonaFieldWithOutcome,
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyOnboardingServerBackedSettings: welcomeMocks.applyOnboardingServerBackedSettings,
   persistServerBackedSettingsPatchWithSettlement: welcomeMocks.persistServerBackedSettingsPatchWithSettlement,
-  watchServerBackedSettings: welcomeMocks.watchServerBackedSettings,
 }))
 
 import WelcomeRisu from './WelcomeRisu.svelte'
@@ -274,10 +271,7 @@ beforeEach(() => {
   welcomeMocks.alertError.mockReset()
   welcomeMocks.alertNormal.mockReset()
   welcomeMocks.changeLanguage.mockReset()
-  welcomeMocks.stopServerSettingsWatch.mockReset()
   welcomeMocks.updateTextThemeAndCSS.mockReset()
-  welcomeMocks.watchServerBackedSettings.mockClear()
-  welcomeMocks.watchServerBackedSettings.mockReturnValue(welcomeMocks.stopServerSettingsWatch)
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -634,7 +628,6 @@ describe('WelcomeRisu onboarding setup completion', () => {
     persistence.resolve(true)
     await flushAsync()
 
-    expect(welcomeMocks.stopServerSettingsWatch).toHaveBeenCalledTimes(1)
     expect(welcomeMocks.applyOnboardingServerBackedSettings).toHaveBeenCalledTimes(1)
     expect(welcomeMocks.updateTextThemeAndCSS).not.toHaveBeenCalled()
   })

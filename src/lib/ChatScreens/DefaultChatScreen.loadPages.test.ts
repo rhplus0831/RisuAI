@@ -318,7 +318,7 @@ vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
   }
 })
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: vi.fn(),
 }))
 

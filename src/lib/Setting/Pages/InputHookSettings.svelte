@@ -14,7 +14,7 @@
     type ModelProfileRecord,
   } from 'src/ts/model/modelProfileRecords'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import type { InputHook } from 'src/ts/storage/database.svelte'

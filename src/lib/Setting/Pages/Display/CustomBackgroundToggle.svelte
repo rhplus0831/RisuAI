@@ -4,7 +4,7 @@
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import { alertError } from 'src/ts/alert'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
   import { normalizeLegacyCustomBackgroundSetting } from 'src/ts/server/customBackgroundSetting'

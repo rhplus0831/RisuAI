@@ -15,7 +15,7 @@ vi.mock('src/ts/server/requestHistory', () => ({
   deleteRequestHistoryRecord: mocks.remove,
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   persistServerBackedSettingsPatchWithSettlement: mocks.persist,
 }))
 

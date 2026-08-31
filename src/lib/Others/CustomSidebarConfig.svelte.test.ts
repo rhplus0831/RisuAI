@@ -9,7 +9,7 @@ const customSidebarMocks = vi.hoisted(() => ({
 vi.mock('src/ts/stores.svelte', () => ({
   customSideBarConfigDialogStore: customSidebarMocks.store,
 }))
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   createServerBackedSettingDraft: vi.fn(() => customSidebarMocks.draft),
 }))
 vi.mock('src/ts/setting/utils', () => ({

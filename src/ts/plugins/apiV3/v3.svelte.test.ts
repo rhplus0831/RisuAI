@@ -249,7 +249,7 @@ vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: () => mockServerCommands.canUse,
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   dispatchDurableServerBackedSettingsPatch: vi.fn(),
 }))
 
@@ -443,7 +443,7 @@ import {
   additionalSettingsMenu,
   chatPanelStore,
 } from 'src/ts/stores.svelte'
-import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+import { dispatchDurableServerBackedSettingsPatch } from 'src/ts/server/settingsOwner.svelte'
 import {
   ensureCharacterLorebookHydrated,
   hydrateChatMessages,

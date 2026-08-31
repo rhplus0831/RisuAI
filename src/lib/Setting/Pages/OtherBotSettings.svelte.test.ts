@@ -20,7 +20,6 @@ const otherBotMocks = vi.hoisted(() => ({
   saveAsset: vi.fn(),
   selectSingleFile: vi.fn(),
   tokenizePreset: vi.fn(),
-  watchServerBackedSettings: vi.fn(),
 }))
 
 vi.mock('src/ts/filePicker', () => ({ selectSingleFile: otherBotMocks.selectSingleFile }))
@@ -33,7 +32,7 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+vi.mock('src/ts/server/settingsOwner.svelte', async () => {
   const { fromStore, writable } = await import('svelte/store')
 
   return {
@@ -114,7 +113,6 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       }
     },
     persistServerBackedSettingsPatch: otherBotMocks.persistServerBackedSettingsPatch,
-    watchServerBackedSettings: otherBotMocks.watchServerBackedSettings,
   }
 })
 
@@ -230,7 +228,6 @@ beforeEach(() => {
   otherBotMocks.saveAsset.mockReset()
   otherBotMocks.selectSingleFile.mockReset()
   otherBotMocks.tokenizePreset.mockReset().mockResolvedValue(0)
-  otherBotMocks.watchServerBackedSettings.mockReset().mockReturnValue(vi.fn())
   otherBotMocks.initialWavespeedImage = {
     key: 'wavespeed-key',
     model: 'wavespeed/saved-model',
@@ -301,7 +298,6 @@ describe('OtherBotSettings navigation semantics', () => {
       target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.automaticConfirmation}"]`)
         ?.disabled,
     ).toBe(false)
-    expect(otherBotMocks.watchServerBackedSettings).not.toHaveBeenCalled()
   })
 
   it('switches mounted layouts when the authoritative legacy-GUI setting changes', async () => {

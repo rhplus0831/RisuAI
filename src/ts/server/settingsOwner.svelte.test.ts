@@ -58,6 +58,32 @@ const presetMocks = vi.hoisted(() => ({
   }),
 }))
 
+const settingsGroupMocks = vi.hoisted(() => ({
+  forKey(key: string): string | null {
+    if (key === 'NAIImgConfig' || key === 'wavespeedImage' || key === 'sdConfig') return 'media'
+    if (['maxContext', 'maxResponse', 'temperature', 'seperateParameters'].includes(key)) return 'runtime'
+    if (key === 'notification' || key === 'textTheme') return 'display'
+    if (key === 'useAutoSuggestions') return 'sidebar'
+    if (['translator', 'translatorType', 'useAutoTranslateInput'].includes(key)) return 'language'
+    if (['hypaV3PresetId', 'hypaV3Presets', 'selectedHypaV3PresetId'].includes(key)) return 'memory'
+    if (key === 'didFirstSetup') return 'account'
+    if (
+      [
+        'aiModel',
+        'apiType',
+        'claudeCachingExperimental',
+        'customModels',
+        'openrouterRequestModel',
+        'subModel',
+      ].includes(key)
+    ) {
+      return 'providers'
+    }
+    if (key === 'banCharacterset' || key === 'globalscript') return 'advanced'
+    return null
+  },
+}))
+
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   completeOnboardingCommand: vi.fn(async (args: Record<string, unknown>) => {
@@ -146,38 +172,7 @@ vi.mock('./commands', () => ({
     },
   ),
   subscribeServerCommandLocalEffectApplied: () => () => {},
-  settingsGroupForKey: (key: string) => {
-    if (key === 'NAIImgConfig' || key === 'wavespeedImage') return 'media'
-    if (key === 'seperateParameters') return 'runtime'
-    if (key === 'notification') return 'display'
-    if (key === 'useAutoSuggestions') return 'sidebar'
-    return new Set([
-      'aiModel',
-      'apiType',
-      'banCharacterset',
-      'claudeCachingExperimental',
-      'customModels',
-      'didFirstSetup',
-      'globalscript',
-      'hypaV3PresetId',
-      'hypaV3Presets',
-      'selectedHypaV3PresetId',
-      'maxContext',
-      'maxResponse',
-      'notification',
-      'openrouterRequestModel',
-      'sdConfig',
-      'subModel',
-      'temperature',
-      'textTheme',
-      'translator',
-      'translatorType',
-      'useAutoSuggestions',
-      'useAutoTranslateInput',
-    ]).has(key)
-      ? 'test'
-      : null
-  },
+  settingsGroupForKey: settingsGroupMocks.forKey,
 }))
 
 vi.mock('./pendingMutationOutbox', () => ({
@@ -271,24 +266,26 @@ import {
   getResourceDatabase,
   hasSettingsGroupProjectionEpochChanged,
   replaceResourceDatabase,
+  settingsResourceState,
 } from './resourceState.svelte'
 import type { Database } from '../storage/database.svelte'
 import '../stores.svelte'
 import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 import { setSettingsRuntimeProjectionHook } from './settingsRuntimeProjectionHooks'
+import type { SettingsGroup } from './settingsGroups'
 import {
   applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
   createServerBackedSettingDraft,
-  flushPendingServerBackedSettingsPatch,
+  flushPendingSettingsOwnerMutations,
   persistServerBackedSettingsPatch,
   persistServerBackedSettingsPatchWithSettlement,
-  resetServerBackedSettingsBridgeForDatabaseReplacement,
+  resetSettingsOwnerForDatabaseReplacement,
   type ServerBackedSettingDraft,
-  watchServerBackedSettings,
-} from './settingsBridge.svelte'
+} from './settingsOwner.svelte'
 
 const DELAY = 50
+let projectionRevision = 1_000
 
 interface Deferred<T> {
   promise: Promise<T>
@@ -374,9 +371,15 @@ async function flushAndSettle(): Promise<void> {
 }
 
 async function applyProjectionSetting(key: string, value: unknown): Promise<void> {
-  resourceGuardState.epoch += 1
-  ;(testDatabaseState.db as unknown as Record<string, unknown>)[key] = value
+  ;(settingsResourceState.value as Record<string, unknown>)[key] = structuredClone(value)
+  advanceProjectionForKey(key)
   await flushAndSettle()
+}
+
+function advanceProjectionForKey(key: string): void {
+  const group = settingsGroupMocks.forKey(key)
+  if (!group) throw new Error(`Missing test settings group for ${key}`)
+  applySettingsGroupResource({ revision: ++projectionRevision, group: group as SettingsGroup, settings: {} }, [])
 }
 
 beforeEach(() => {
@@ -389,6 +392,7 @@ beforeEach(() => {
   recorded.onboardingInputs.length = 0
   recorded.onboardingResults.length = 0
   resourceGuardState.epoch = 0
+  projectionRevision = 1_000
   alertMocks.alertError.mockClear()
   alertMocks.alertNormal.mockClear()
   durabilityMocks.acknowledged.length = 0
@@ -412,7 +416,7 @@ afterEach(async () => {
   ;(testDatabaseState as { db: unknown }).db = {}
 })
 
-describe('settingsBridge coalescing', () => {
+describe('settings owner mutations', () => {
   it('releases a dirty draft when replacement database ownership is adopted', async () => {
     setupSettings({ textTheme: 'before' })
     const { draft, stop } = await createSettingDraft('textTheme', '')
@@ -421,7 +425,7 @@ describe('settingsBridge coalescing', () => {
     await flushAndSettle()
     expect(testDatabaseState.db.textTheme).toBe('queued')
 
-    resetServerBackedSettingsBridgeForDatabaseReplacement()
+    resetSettingsOwnerForDatabaseReplacement()
     await applyProjectionSetting('textTheme', 'restored')
 
     expect(draft.value).toBe('restored')
@@ -602,46 +606,6 @@ describe('settingsBridge coalescing', () => {
     expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
   })
 
-  it('cancels older same-key debounced patches when an immediate patch supersedes them', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-
-    applyServerBackedSettingsPatch({ notification: false })
-    flushSync()
-    await Promise.resolve()
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
-
-    await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
-    stop()
-  })
-
-  it('direct settings patches suppress watcher echoes for optimistic writes and rollback writes', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
-    flushSync()
-
-    applyServerBackedSettingsPatch({ notification: true })
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
-    expect(testDatabaseState.db.notification).toBe(true)
-
-    recorded.patches[0].rollback?.()
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(testDatabaseState.db.notification).toBe(false)
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
-    stop()
-  })
-
   it('restores only still-attempted keys from a multi-key settings rollback', async () => {
     setupSettings({
       notification: false,
@@ -818,35 +782,6 @@ describe('settingsBridge coalescing', () => {
     expect(testDatabaseState.db.textTheme).toBe('server baseline')
   })
 
-  it('rebases a queued same-key rollback when an in-flight settings write fails', async () => {
-    const firstResult = createDeferred<unknown>()
-    const secondResult = createDeferred<unknown>()
-    recorded.patchResults.push(firstResult.promise, secondResult.promise)
-    setupSettings({ textTheme: 'server baseline' })
-    const stop = watchServerBackedSettings(['textTheme'], { delayMs: DELAY })
-    flushSync()
-
-    applyServerBackedSettingsPatch({ textTheme: 'first attempt' })
-    await flushAndSettle()
-    testDatabaseState.db.textTheme = 'second attempt'
-    flushSync()
-
-    firstResult.resolve({ status: 'error', error: 'first failed' })
-    await flushAndSettle()
-    expect(testDatabaseState.db.textTheme).toBe('second attempt')
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
-      { textTheme: 'first attempt' },
-      { textTheme: 'second attempt' },
-    ])
-
-    secondResult.resolve({ status: 'error', error: 'second failed' })
-    await flushAndSettle()
-    expect(testDatabaseState.db.textTheme).toBe('server baseline')
-    stop()
-  })
-
   it('preserves the existing undefined/no-delete behavior when rolling back an added setting', async () => {
     setupSettings({})
 
@@ -970,7 +905,7 @@ describe('settingsBridge coalescing', () => {
 
     const receipt = persistServerBackedSettingsPatchWithSettlement({ notification: false })
     await vi.waitFor(() => expect(durabilityMocks.dispatched).toHaveLength(1))
-    resetServerBackedSettingsBridgeForDatabaseReplacement()
+    resetSettingsOwnerForDatabaseReplacement()
     publishSettingsSettlement(durabilityMocks.dispatched[0].mutationId, 'discarded')
 
     await expect(receipt).resolves.toEqual({ status: 'failed' })
@@ -1154,643 +1089,6 @@ describe('settingsBridge coalescing', () => {
     expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Beta')])
   })
 
-  it('queued settings rollback suppresses watcher echoes for debounced writes', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
-
-    recorded.patches[0].rollback?.()
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(testDatabaseState.db.notification).toBe(false)
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }, { notification: true }])
-    stop()
-  })
-
-  it('coalesces watched settings into one debounced command', async () => {
-    setupSettings({
-      notification: false,
-      useAutoSuggestions: false,
-    })
-    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
-      delayMs: DELAY,
-    })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    testDatabaseState.db.useAutoSuggestions = true
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true, useAutoSuggestions: true }])
-    stop()
-  })
-
-  it('keeps a scalar correction in the absolute closure while another field remains dirty', async () => {
-    setupSettings({
-      notification: false,
-      useAutoSuggestions: false,
-    })
-    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
-      delayMs: DELAY,
-    })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    testDatabaseState.db.useAutoSuggestions = true
-    flushSync()
-    testDatabaseState.db.notification = false
-    flushSync()
-
-    const stagedRequests = (durabilityMocks.staged.at(-1)?.intent as { requests?: unknown[] }).requests
-    expect(durabilityMocks.staged.at(-1)?.key).toBe('settings:bridge')
-    expect(stagedRequests).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: '/settings/display', body: { patch: { notification: false } } }),
-        expect.objectContaining({
-          path: '/settings/sidebar',
-          body: { patch: { useAutoSuggestions: true } },
-        }),
-      ]),
-    )
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false, useAutoSuggestions: true }])
-    stop()
-  })
-
-  it('merges an immediate setting apply with pending same-field and sibling work', async () => {
-    setupSettings({
-      notification: false,
-      useAutoSuggestions: false,
-    })
-    const stop = watchServerBackedSettings(['notification', 'useAutoSuggestions'], {
-      delayMs: DELAY,
-    })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    testDatabaseState.db.useAutoSuggestions = true
-    flushSync()
-    applyServerBackedSettingsPatch({ notification: false })
-    await flushAndSettle()
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false, useAutoSuggestions: true }])
-    const dispatchedRequests = (durabilityMocks.dispatched.at(-1)?.intent as { requests?: unknown[] }).requests
-    expect(durabilityMocks.dispatched.at(-1)?.key).toBe('settings:bridge')
-    expect(dispatchedRequests).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ path: '/settings/display', body: { patch: { notification: false } } }),
-        expect.objectContaining({
-          path: '/settings/sidebar',
-          body: { patch: { useAutoSuggestions: true } },
-        }),
-      ]),
-    )
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.patches).toHaveLength(1)
-    stop()
-  })
-
-  it('retains the intent-time group epoch across an authoritative apply before debounce dispatch', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
-    flushSync()
-    const intentEpoch = captureSettingsGroupProjectionEpoch('display')
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    resourceGuardState.epoch += 1
-    expect(
-      applySettingsGroupResource(
-        {
-          revision: 1,
-          group: 'display',
-          settings: { notification: false },
-        },
-        ['notification'],
-      ),
-    ).toBe(true)
-    flushSync()
-    expect(hasSettingsGroupProjectionEpochChanged('display', intentEpoch)).toBe(true)
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.patches).toHaveLength(1)
-    expect(recorded.patches[0]).toMatchObject({
-      patch: { notification: true },
-      acknowledgeOptimistic: true,
-      optimisticProjectionEpochs: { display: intentEpoch },
-    })
-    stop()
-  })
-
-  it('sends only changed fields from large watched settings objects', async () => {
-    const original = {
-      width: 512,
-      height: 768,
-      vibe_data: { thumbnail: 'x'.repeat(20_000) },
-    }
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    await flushAndSettle()
-
-    expect(recorded.patches).toHaveLength(0)
-    expect(recorded.objectPatches).toHaveLength(1)
-    expect(recorded.objectPatches[0]).toMatchObject({
-      group: 'media',
-      key: 'NAIImgConfig',
-      update: { patch: { width: 832 } },
-    })
-    expect(recorded.objectPatches[0].attemptedObject).toEqual({ ...original, width: 832 })
-    stop()
-  })
-
-  it('dispatches an immediate sparse correction when the desired object returns to baseline', async () => {
-    const original = { width: 512, height: 768 }
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
-    flushSync()
-    await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(1)
-    expect(recorded.objectPatches[0]).toMatchObject({
-      update: { patch: { width: 512 } },
-      attemptedObject: original,
-    })
-    expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
-      key: 'settings:bridge',
-      intent: {
-        requests: [{ body: { patch: { width: 512 } } }],
-      },
-    })
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.objectPatches).toHaveLength(1)
-    stop()
-  })
-
-  it('keeps sparse delete corrections in the absolute closure while fields remain dirty', async () => {
-    const original = { width: 512, height: 768 }
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
-      ...original,
-      width: 832,
-      temporary: 'staged value',
-    }
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
-      ...original,
-      width: 832,
-      height: 1024,
-    }
-    flushSync()
-
-    expect(durabilityMocks.staged.at(-1)).toMatchObject({
-      key: 'settings:bridge',
-      intent: {
-        requests: [
-          {
-            body: {
-              patch: { width: 832, height: 1024 },
-              deleteKeys: ['temporary'],
-            },
-          },
-        ],
-      },
-    })
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    await flushAndSettle()
-    expect(recorded.objectPatches).toHaveLength(1)
-    expect(recorded.objectPatches[0]).toMatchObject({
-      update: {
-        patch: { width: 832, height: 1024 },
-        deleteKeys: ['temporary'],
-      },
-      attemptedObject: { ...original, width: 832, height: 1024 },
-    })
-    stop()
-  })
-
-  it('retains the sparse-object intent epoch across an authoritative apply before dispatch', async () => {
-    const original = { width: 512, height: 768 }
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    const intentEpoch = captureSettingsGroupProjectionEpoch('media')
-
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    resourceGuardState.epoch += 1
-    expect(
-      applySettingsGroupResource(
-        {
-          revision: 1,
-          group: 'media',
-          settings: { NAIImgConfig: original as never },
-        },
-        ['NAIImgConfig'],
-      ),
-    ).toBe(true)
-    flushSync()
-    expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, width: 832 })
-    expect(hasSettingsGroupProjectionEpochChanged('media', intentEpoch)).toBe(true)
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(1)
-    expect(recorded.objectPatches[0]).toMatchObject({
-      group: 'media',
-      key: 'NAIImgConfig',
-      update: { patch: { width: 832 } },
-      optimisticProjectionEpoch: intentEpoch,
-    })
-    stop()
-  })
-
-  it('keeps a durable sparse-object projection visible after a retryable failure', async () => {
-    const original = { width: 512, height: 768 }
-    const attempted = { width: 832, height: 768 }
-    durabilityMocks.retainFailures = true
-    recorded.objectResults.push({ status: 'error', error: 'temporarily unavailable' })
-    recorded.groupReads.push({
-      status: 'ok',
-      revision: Number.MAX_SAFE_INTEGER,
-      group: 'media',
-      settings: { NAIImgConfig: original },
-    })
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = attempted
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    for (let index = 0; index < 4; index += 1) await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(1)
-    expect(testDatabaseState.db.NAIImgConfig).toEqual(attempted)
-    expect(recorded.groupReads).toHaveLength(1)
-    expect(
-      applySettingsGroupResource(
-        {
-          revision: Number.MAX_SAFE_INTEGER - 1,
-          group: 'media',
-          settings: { NAIImgConfig: original as never },
-        },
-        ['NAIImgConfig'],
-      ),
-    ).toBe(true)
-    expect(testDatabaseState.db.NAIImgConfig).toEqual(attempted)
-    publishSettingsSettlement(durabilityMocks.dispatched.at(-1)!.mutationId, 'accepted')
-    expect(
-      applySettingsGroupResource(
-        {
-          revision: Number.MAX_SAFE_INTEGER,
-          group: 'media',
-          settings: { NAIImgConfig: attempted as never },
-        },
-        ['NAIImgConfig'],
-      ),
-    ).toBe(true)
-    stop()
-  })
-
-  it('retires an in-flight sparse queue before restored settings are applied', async () => {
-    const original = { width: 512, height: 768 }
-    const restored = { width: 640, height: 960 }
-    const firstResult = createDeferred<unknown>()
-    recorded.objectResults.push(firstResult.promise)
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    await flushAndSettle()
-    expect(recorded.objectPatches).toHaveLength(1)
-
-    resetServerBackedSettingsBridgeForDatabaseReplacement()
-    expect(
-      applySettingsGroupResource(
-        {
-          revision: Number.MAX_SAFE_INTEGER,
-          group: 'media',
-          settings: { NAIImgConfig: restored as never },
-        },
-        ['NAIImgConfig'],
-      ),
-    ).toBe(true)
-    firstResult.resolve({ status: 'error', error: 'old database request failed' })
-    for (let index = 0; index < 8; index += 1) await flushAndSettle()
-
-    expect(testDatabaseState.db.NAIImgConfig).toEqual(restored)
-    expect(alertMocks.alertError).not.toHaveBeenCalled()
-    stop()
-  })
-
-  it('rebases a later field edit after an earlier sparse object write fails', async () => {
-    const original = {
-      width: 512,
-      height: 768,
-      vibe_data: { thumbnail: 'x'.repeat(20_000) },
-    }
-    const firstResult = createDeferred<unknown>()
-    recorded.objectResults.push(firstResult.promise)
-    recorded.groupReads.push({
-      status: 'ok',
-      revision: Number.MAX_SAFE_INTEGER,
-      group: 'media',
-      settings: { NAIImgConfig: original },
-    })
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    await flushAndSettle()
-    expect(recorded.objectPatches).toHaveLength(1)
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
-      ...original,
-      width: 832,
-      height: 1024,
-    }
-    flushSync()
-    firstResult.resolve({ status: 'error', error: 'failed' })
-    for (let index = 0; index < 8; index += 1) await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(2)
-    expect(recorded.objectPatches[1]).toMatchObject({
-      group: 'media',
-      key: 'NAIImgConfig',
-      update: { patch: { height: 1024 } },
-      attemptedObject: { ...original, height: 1024 },
-    })
-    expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, height: 1024 })
-    stop()
-  })
-
-  it('preserves a field deliberately returned to the in-flight sparse value after failure', async () => {
-    const original = { width: 512, height: 768 }
-    const firstResult = createDeferred<unknown>()
-    recorded.objectResults.push(firstResult.promise)
-    recorded.groupReads.push({
-      status: 'ok',
-      revision: Number.MAX_SAFE_INTEGER,
-      group: 'media',
-      settings: { NAIImgConfig: original },
-    })
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    await flushAndSettle()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
-      ...original,
-      width: 832,
-      height: 1024,
-    }
-    flushSync()
-    firstResult.resolve({ status: 'error', error: 'failed' })
-    for (let index = 0; index < 8; index += 1) await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(2)
-    expect(recorded.objectPatches[1]).toMatchObject({
-      update: { patch: { width: 832, height: 1024 } },
-      attemptedObject: { ...original, width: 832, height: 1024 },
-    })
-    expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, width: 832, height: 1024 })
-    stop()
-  })
-
-  it('restages an in-flight sparse successor with the exact desired revert intent', async () => {
-    const original = { width: 512, height: 768 }
-    const firstResult = createDeferred<unknown>()
-    recorded.objectResults.push(firstResult.promise)
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.objectPatches).toHaveLength(1)
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
-    flushSync()
-    const staleSuccessor = durabilityMocks.staged.at(-1)
-    expect(staleSuccessor?.intent).toMatchObject({
-      requests: [{ body: { patch: { width: 1024 } } }],
-    })
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
-    flushSync()
-    expect(durabilityMocks.staged.at(-1)).toMatchObject({
-      key: 'settings:bridge',
-      intent: { requests: [{ body: { patch: { width: 512 } } }] },
-    })
-    expect(durabilityMocks.acknowledged).toHaveLength(0)
-
-    firstResult.resolve(sparseObjectAcceptedResult(recorded.objectPatches[0]))
-    for (let index = 0; index < 8; index += 1) await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(2)
-    expect(recorded.objectPatches[1]).toMatchObject({
-      group: 'media',
-      key: 'NAIImgConfig',
-      update: { patch: { width: 512 } },
-      attemptedObject: original,
-    })
-    expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
-      intent: {
-        requests: [{ body: { patch: { width: 512 } } }],
-      },
-    })
-    stop()
-  })
-
-  it('deletes an in-flight sparse successor that rebases to a no-op after failure', async () => {
-    const original = { width: 512, height: 768 }
-    const firstResult = createDeferred<unknown>()
-    recorded.objectResults.push(firstResult.promise)
-    recorded.groupReads.push({
-      status: 'ok',
-      revision: Number.MAX_SAFE_INTEGER,
-      group: 'media',
-      settings: { NAIImgConfig: original },
-    })
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.objectPatches).toHaveLength(1)
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 1024 }
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = original
-    flushSync()
-    const correction = durabilityMocks.staged.at(-1)
-
-    firstResult.resolve({ status: 'error', error: 'failed' })
-    for (let index = 0; index < 8; index += 1) await flushAndSettle()
-
-    expect(recorded.objectPatches).toHaveLength(1)
-    expect(testDatabaseState.db.NAIImgConfig).toEqual(original)
-    expect(durabilityMocks.acknowledged).toEqual(
-      expect.arrayContaining([expect.objectContaining({ mutationId: correction?.mutationId })]),
-    )
-    const replayableStaleSuccessor = durabilityMocks.staged.find(
-      (entry) =>
-        entry.mutationId === correction?.mutationId &&
-        !durabilityMocks.acknowledged.some((acknowledged) => acknowledged.mutationId === entry.mutationId),
-    )
-    expect(replayableStaleSuccessor).toBeUndefined()
-    stop()
-  })
-
-  it('reports a sparse-object settings write failure once while reconciling the authoritative value', async () => {
-    const original = { width: 512, height: 768 }
-    recorded.objectResults.push({ status: 'error', error: 'failed' })
-    recorded.groupReads.push({
-      status: 'ok',
-      revision: Number.MAX_SAFE_INTEGER,
-      group: 'media',
-      settings: { NAIImgConfig: original },
-    })
-    setupSettings({ NAIImgConfig: original })
-    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
-    flushSync()
-    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    for (let index = 0; index < 8; index += 1) await flushAndSettle()
-
-    expect(testDatabaseState.db.NAIImgConfig).toEqual(original)
-    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
-    expect(alertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
-    stop()
-  })
-
-  it('flushes pending watched settings with keepalive and clears the debounce', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    flushPendingServerBackedSettingsPatch({ keepalive: true })
-    await Promise.resolve()
-
-    expect(
-      recorded.patches.map((entry) => ({
-        patch: entry.patch,
-        keepalive: entry.keepalive,
-      })),
-    ).toEqual([{ patch: { notification: true }, keepalive: true }])
-    expect(durabilityMocks.staged).toContainEqual({
-      key: 'settings:bridge',
-      mutationId: expect.any(String),
-      intent: {
-        version: 1,
-        requests: [{ method: 'PATCH', path: '/settings/display', body: { patch: { notification: true } } }],
-      },
-    })
-    expect(durabilityMocks.dispatched).toEqual([
-      expect.objectContaining({ key: 'settings:bridge', intent: durabilityMocks.staged.at(-1)?.intent }),
-    ])
-
-    await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(recorded.patches).toHaveLength(1)
-    stop()
-  })
-
-  it('watcher teardown flushes pending watched settings and clears the debounce', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    stop()
-    await Promise.resolve()
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
-    expect(recorded.patches[0].keepalive).toBeUndefined()
-
-    await vi.advanceTimersByTimeAsync(DELAY * 10)
-    expect(recorded.patches).toHaveLength(1)
-  })
-
-  it('dispatches an immediate durable correction when a watched setting returns to baseline', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
-    flushSync()
-
-    testDatabaseState.db.notification = true
-    flushSync()
-    testDatabaseState.db.notification = false
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
-    expect(durabilityMocks.dispatched.at(-1)).toMatchObject({
-      key: 'settings:bridge',
-      intent: {
-        requests: [{ method: 'PATCH', path: '/settings/display', body: { patch: { notification: false } } }],
-      },
-    })
-    stop()
-  })
-
-  it('refreshes watcher baselines for server projection updates before local edits', async () => {
-    setupSettings({ notification: false })
-    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
-    flushSync()
-
-    resourceGuardState.epoch += 1
-    testDatabaseState.db.notification = true
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.patches).toHaveLength(0)
-
-    testDatabaseState.db.notification = false
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
-    stop()
-  })
-
   it('preserves a dirty setting draft through a stale projection', async () => {
     setupSettings({
       globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
@@ -1908,8 +1206,8 @@ describe('settingsBridge coalescing', () => {
     await flushAndSettle()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    resourceGuardState.epoch += 1
     testDatabaseState.db.textTheme = 'canonical theme'
+    advanceProjectionForKey('textTheme')
     notifyServerCommandLocalEffectApplied(
       {
         type: 'settings.updated',
@@ -1940,8 +1238,8 @@ describe('settingsBridge coalescing', () => {
     await flushAndSettle()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    resourceGuardState.epoch += 1
     testDatabaseState.db.textTheme = 'newer resource value'
+    advanceProjectionForKey('textTheme')
     notifyServerCommandLocalEffectApplied(
       {
         type: 'settings.updated',
@@ -1964,7 +1262,7 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('supports a normalized draft whose persistence is owned by a specialized bridge', async () => {
+  it('supports a normalized draft whose persistence is owned by a specialized mutation owner', async () => {
     setupSettings({ globalscript: [{ in: 'old', out: '', type: 'editinput' }] })
     let draft: ServerBackedSettingDraft<Array<Record<string, string>>> | undefined
     const stop = $effect.root(() => {
@@ -2040,7 +1338,7 @@ describe('settingsBridge coalescing', () => {
     draft.value = 'C'
     await flushAndSettle()
 
-    resourceGuardState.epoch += 1
+    advanceProjectionForKey('textTheme')
     notifyServerCommandLocalEffectApplied(
       {
         type: 'settings.updated',

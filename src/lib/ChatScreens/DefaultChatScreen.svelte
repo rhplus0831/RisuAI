@@ -162,7 +162,7 @@
     setCurrentChatGreetingIndex,
     type ActiveChatTarget,
   } from 'src/ts/chatCommands'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import {
     hasChatMessageHydrationFailed,
     getChatMessageOwnerState,

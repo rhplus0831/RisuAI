@@ -6,7 +6,7 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import ModelList from 'src/lib/UI/ModelList.svelte'
-  import type { ServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import type { ServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import type { SeparateParameters } from 'src/ts/storage/database.svelte'
   import type {
     LegacyFallbackModelKey,

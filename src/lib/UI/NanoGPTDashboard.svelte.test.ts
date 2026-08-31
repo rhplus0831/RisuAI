@@ -20,7 +20,7 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
   settingsResourceState: settingsState,
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: dashboardMocks.applySetting,
 }))
 

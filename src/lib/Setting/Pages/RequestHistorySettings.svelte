@@ -4,7 +4,7 @@
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import { alertConfirm } from 'src/ts/alert'
-  import { persistServerBackedSettingsPatchWithSettlement } from 'src/ts/server/settingsBridge.svelte'
+  import { persistServerBackedSettingsPatchWithSettlement } from 'src/ts/server/settingsOwner.svelte'
   import {
     deleteRequestHistoryRecord,
     getRequestHistoryRecord,

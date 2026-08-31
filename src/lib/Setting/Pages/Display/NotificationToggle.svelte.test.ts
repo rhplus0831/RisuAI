@@ -10,7 +10,7 @@ const notificationMocks = vi.hoisted(() => ({
   retryStorage: vi.fn(),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: notificationMocks.applyServerBackedSetting,
 }))
 

@@ -9,7 +9,7 @@
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import ChatFormatSettings from './ChatFormatSettings.svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   const reverseProxyOobaArgsDraft = createServerBackedSettingDraft<Record<string, any>>('reverseProxyOobaArgs', {})
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>('localStopStrings', null)

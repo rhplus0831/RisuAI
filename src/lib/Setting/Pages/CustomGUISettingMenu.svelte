@@ -2,8 +2,8 @@
   import { flushSync } from 'svelte'
   import {
     createServerBackedSettingDraft,
-    flushPendingServerBackedSettingsPatch,
-  } from 'src/ts/server/settingsBridge.svelte'
+    flushPendingSettingsOwnerMutations,
+  } from 'src/ts/server/settingsOwner.svelte'
   import { CustomGUISettingMenuStore } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
 
@@ -309,7 +309,7 @@
   function closeEditor() {
     persistTree()
     flushSync()
-    flushPendingServerBackedSettingsPatch()
+    flushPendingSettingsOwnerMutations()
     CustomGUISettingMenuStore.set(false)
   }
 

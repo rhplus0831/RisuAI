@@ -4,14 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const displaySettingsMocks = vi.hoisted(() => ({ setLegacyGUI: (_value: boolean) => {} }))
 
 vi.mock('src/ts/setting/displaySettingsData.svelte', () => ({
-  displayNonRendererServerSettingKeys: [],
   displayOtherSettingsItems: [],
   displaySizeSettingsItems: [],
   displayThemeSettingsItems: [],
-}))
-
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  watchServerBackedSettings: () => () => {},
 }))
 
 vi.mock('../SettingRenderer.svelte', async () => {

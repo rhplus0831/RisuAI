@@ -10,28 +10,9 @@
   import {
     applyOnboardingServerBackedSettings,
     persistServerBackedSettingsPatchWithSettlement,
-    watchServerBackedSettings,
     type ServerBackedSettingsPersistenceReceipt,
-  } from 'src/ts/server/settingsBridge.svelte'
+  } from 'src/ts/server/settingsOwner.svelte'
   import { updateSelectedPersonaFieldWithOutcome } from 'src/ts/persona'
-
-  const stopServerSettingsWatch = watchServerBackedSettings([
-    'language',
-    'openAIKey',
-    'openrouterKey',
-    'claudeAPIKey',
-    'textTheme',
-    'maxContext',
-    'maxResponse',
-    'aiModel',
-    'subModel',
-    'openrouterRequestModel',
-    'translator',
-    'translatorType',
-    'useAutoTranslateInput',
-    'didFirstSetup',
-    'claudeCachingExperimental',
-  ])
 
   const airisuStyle = `background: url("${Airisu}");background-size: cover;`
   let step = $state(0)
@@ -172,7 +153,6 @@
 
   onDestroy(() => {
     mounted = false
-    stopServerSettingsWatch()
     invalidatePendingSetupRun()
     languageAttemptId += 1
     apiKeyAttemptId += 1

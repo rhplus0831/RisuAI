@@ -3,7 +3,7 @@
   import { language } from 'src/lang'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
-  import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { applyServerBackedSetting } from 'src/ts/server/settingsOwner.svelte'
   import {
     initializePushNotificationCoordinator,
     pushNotificationCoordinatorState,

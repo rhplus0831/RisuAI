@@ -46,7 +46,7 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotkeyMatches, initHotkey } from './hotkey'
-import { applyServerBackedSetting } from './server/settingsBridge.svelte'
+import { applyServerBackedSetting } from './server/settingsOwner.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { charactersResourceState } from './server/resourceState.svelte'

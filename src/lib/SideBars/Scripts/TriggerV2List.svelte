@@ -20,7 +20,7 @@
     type triggerV2IfAdvanced,
   } from 'src/ts/process/triggers'
   import { onDestroy, onMount, untrack } from 'svelte'
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { createServerBackedSettingDraft } from 'src/ts/server/settingsOwner.svelte'
   import { alertError } from 'src/ts/alert'
   import { parseTriggerV2Import } from './triggerV2Import'
   import {

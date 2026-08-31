@@ -14,7 +14,7 @@ vi.mock('./pushNotifications', () => ({
   enableChatCompletionPushNotifications: vi.fn(async () => ({ status: 'enabled', endpoint: 'test' })),
 }))
 
-vi.mock('./settingsBridge.svelte', () => ({
+vi.mock('./settingsOwner.svelte', () => ({
   persistServerBackedSettingsPatchWithSettlement: vi.fn(async () => ({ status: 'accepted' })),
 }))
 
@@ -27,7 +27,7 @@ import type { PushNotificationRetryStorage } from './pushNotificationRetryStorag
 import type {
   ServerBackedSettingsFinalSettlement,
   ServerBackedSettingsPersistenceReceipt,
-} from './settingsBridge.svelte'
+} from './settingsOwner.svelte'
 import {
   applySettingsRuntimeProjectionEffects,
   setSettingsRuntimeProjectionHook,

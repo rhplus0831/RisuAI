@@ -35,7 +35,7 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => colorSettingsState.database,
 }))
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
+vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: colorSettingsState.applyServerBackedSetting,
 }))
 vi.mock('src/ts/gui/colorscheme', () => ({

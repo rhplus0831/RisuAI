@@ -25,7 +25,7 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => noticeState.database,
 }))
 
-vi.mock('../server/settingsBridge.svelte', () => ({
+vi.mock('../server/settingsOwner.svelte', () => ({
   persistServerBackedSettingsPatch: noticeState.persistSettings,
 }))
 

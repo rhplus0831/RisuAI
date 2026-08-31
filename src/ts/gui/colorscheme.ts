@@ -6,7 +6,7 @@ import { selectSingleFile } from '../filePicker'
 import { alertError } from '../alert'
 import { isLite } from '../lite'
 import { CustomCSSStore, SafeModeStore } from '../stores.svelte'
-import { applyServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
+import { applyServerBackedSettingsPatch } from '../server/settingsOwner.svelte'
 import {
   beginColorSchemeImport,
   captureColorSchemeImportTarget,

@@ -14,7 +14,7 @@ import {
   captureCurrentSidebarToggleValues,
   createSidebarToggleValuesForActiveChat,
 } from './chatGenerationTogglePresetPlanning'
-import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
+import { applyServerBackedSettingsPatch } from './server/settingsOwner.svelte'
 import { settingsResourceState } from './server/resourceState.svelte'
 import { isActiveChatTargetFresh } from './chatCommands'
 import type { ChatGenerationSettingsSaveOperation } from './chatCommands'

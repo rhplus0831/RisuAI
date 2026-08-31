@@ -8,7 +8,7 @@ import { generationFinalizationPersistences } from '../process/generationPersist
 import { activeGenerationJobs, generationJobLifecycles } from '../process/reattach'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { peekAppliedServerResourceRevision } from './commands'
-import { dispatchDurableServerBackedSettingsPatch } from './settingsBridge.svelte'
+import { dispatchDurableServerBackedSettingsPatch } from './settingsOwner.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { alertNormal } from '../alert'
 import { currentRoute, navigate } from '../router'
