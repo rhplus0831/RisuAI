@@ -52,6 +52,7 @@ import {
   hypaV3PresetIndexFromStableId,
   repairHypaV3PresetSelectionIdentity,
 } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
+import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@risuai/shared-core/agent-preset-records'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -443,6 +444,49 @@ export function repairPersistedModelProfileInlineSecretsInSqlite(db: DatabaseSyn
 
     if (ownsTransaction) db.exec('COMMIT')
     return changed
+  } catch (error) {
+    if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+/**
+ * Upgrade settings rows written before the standalone Agent collection existed.
+ *
+ * A missing `agents` key identifies the legacy shape. Once that owner exists,
+ * strict command reads deliberately reject malformed/non-canonical state rather
+ * than repairing ordinary mutations as a side effect.
+ */
+export function migrateLegacyAgentConfigurationInSqlite(db: DatabaseSync): boolean {
+  const ownsTransaction = !db.isTransaction
+  if (ownsTransaction) db.exec('BEGIN IMMEDIATE')
+
+  try {
+    const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+    if (!row) {
+      if (ownsTransaction) db.exec('COMMIT')
+      return false
+    }
+
+    const settings = JSON.parse(row.data_json) as unknown
+    if (!isRecord(settings) || Object.prototype.hasOwnProperty.call(settings, 'agents')) {
+      if (ownsTransaction) db.exec('COMMIT')
+      return false
+    }
+
+    const normalized = normalizeAgentConfiguration(undefined, settings.agentPresets)
+    settings.agents = normalized.agents
+    settings.agentPresets = normalized.agentPresets
+    const defaultId = normalizeAgentPresetDefaultId(settings.agentPresetDefaultId, normalized.agentPresets)
+    if (defaultId) {
+      settings.agentPresetDefaultId = defaultId
+    } else {
+      delete settings.agentPresetDefaultId
+    }
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+    if (ownsTransaction) db.exec('COMMIT')
+    return true
   } catch (error) {
     if (ownsTransaction && db.isTransaction) db.exec('ROLLBACK')
     throw error
@@ -4017,6 +4061,7 @@ function restoreSqliteFromBackup(
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)
+      migrateLegacyAgentConfigurationInSqlite(db)
       repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
       committed = true
@@ -4087,6 +4132,7 @@ function restoreSqliteFromBackup(
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)
+      migrateLegacyAgentConfigurationInSqlite(db)
       repairPersistedModelProfileInlineSecretsInSqlite(db)
       db.exec('COMMIT')
       committed = true

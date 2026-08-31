@@ -278,6 +278,107 @@ describe('bootstrap runtime metadata', () => {
     expect(observer.json().generationFinalizations).toBeUndefined()
   })
 
+  it('migrates the pre-Agent settings owner before generation-settings commands run', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        database: {
+          modelPresets: [{ id: 'model-a', name: 'Model A' }],
+          agentPresets: [
+            {
+              id: 'legacy-agent-preset',
+              name: 'Legacy Agent Preset',
+              enabled: true,
+              version: 1,
+              steps: [],
+            },
+          ],
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Character A',
+              chats: [{ id: 'chat-a', name: 'Chat A', note: '', message: [], localLore: [] }],
+              chatFolders: [],
+              chatPage: 0,
+            },
+          ],
+          characterOrder: ['char-a'],
+        },
+      },
+    })
+    expect(imported.statusCode, imported.body).toBe(200)
+    await harness.app.close()
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      delete settings.agents
+      settings.agentPresets = [
+        {
+          id: 'legacy-agent-preset',
+          name: 'Legacy Agent Preset',
+          enabled: true,
+          version: 1,
+          steps: [],
+        },
+      ]
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      db.close()
+    }
+
+    const rebuilt = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir: harness.dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      memoryWorker: false,
+      assetGc: false,
+    })
+    harness.app = rebuilt.app
+
+    const agents = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/agents',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(agents.statusCode, agents.body).toBe(200)
+    expect(agents.json().settings).toMatchObject({
+      agents: [],
+      agentPresets: [expect.objectContaining({ id: 'legacy-agent-preset', agentUses: [], steps: [] })],
+    })
+
+    const saved = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: imported.json().revision,
+        generationSettings: {
+          configured: true,
+          modelPresetId: 'model-a',
+          modelPresetSelectionSource: 'manual',
+          jailbreakToggle: false,
+        },
+      },
+    })
+    expect(saved.statusCode, saved.body).toBe(200)
+    expect(saved.json().generationSettings).toMatchObject({
+      configured: true,
+      modelPresetId: 'model-a',
+      jailbreakToggle: false,
+    })
+  })
+
   it('gzip-compresses large bootstrap JSON without changing the body', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-bootstrap-compression-'))
     const app = Fastify({ logger: false })

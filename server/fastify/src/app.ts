@@ -64,6 +64,7 @@ import {
   SUPPORTED_ASSET_CONTENT_TYPES,
   ensureDbJsonImported,
   loadPersistedWithMessages,
+  migrateLegacyAgentConfigurationInSqlite,
   recoverInterruptedRestoreSwaps,
   repairPersistedModelProfileInlineSecretsInSqlite,
 } from './repository.js'
@@ -226,6 +227,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   // No-op once converged. Must run after the backfill above, which needs the
   // embedded messages before boot import retires a legacy db.json.
   ensureDbJsonImported(db, config.dataDir, app.log)
+  // Databases created before reusable Agents had only Agent Presets. Upgrade
+  // that legacy owner before strict command validation observes it.
+  migrateLegacyAgentConfigurationInSqlite(db)
   // Pre-credential-store preset copies must be repaired before routes or
   // workers can load them into a response, command baseline, or export.
   repairPersistedModelProfileInlineSecretsInSqlite(db)
