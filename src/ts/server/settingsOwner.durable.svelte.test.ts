@@ -418,7 +418,7 @@ describe('settings owner durable marker ordering', () => {
         ...original,
         width: 832,
         temporary: 'staged value',
-      }
+      } as any
       flushSync()
       const predecessor = await markOnlyPendingMutationAsRemotelyStarted()
 

@@ -296,8 +296,8 @@ function fallbackProfileDatabase(database: Database, profileId: string): Databas
   return cloned
 }
 
-function resolvePolicyProfiles(database: Database): ResolvedModelProfile[] {
-  const primary = resolveModelProfile({ database, role: 'chatMain' })
+function resolvePolicyProfiles(database: Database, resolvedPrimary?: ResolvedModelProfile): ResolvedModelProfile[] {
+  const primary = resolvedPrimary ?? resolveModelProfile({ database, role: 'chatMain' })
   const profiles = [primary]
   for (const fallback of primary.fallbacks) {
     try {
@@ -407,7 +407,7 @@ function dispatchProviderWithPolicies(
     // trigger rewrites from the preceding attempt.
     const baseRows = escapedRows(context.result.formated ?? context.result.prompt.formated ?? [], escape)
     const policyDatabase = context.database
-    const profiles = resolvePolicyProfiles(policyDatabase)
+    const profiles = resolvePolicyProfiles(policyDatabase, state?.resolvedMainProfile)
     const retries = configuredRequestRetries(policyDatabase)
     const requiresBufferedInspection =
       escape ||

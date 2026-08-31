@@ -245,7 +245,7 @@ afterEach(() => {
 const db = () =>
   (
     testDatabaseState as {
-      db: { characters: Array<{ chatPage: number; chats: Array<{ id: string; message: unknown[] }> }> }
+      db: { characters: Array<{ chatPage: number; chats: Array<{ id: string; message: Array<Record<string, any>> }> }> }
     }
   ).db
 

@@ -595,9 +595,6 @@ function characterCreateRollbackFromState(
     attemptedCharacter: cloneJsonValue(character),
     restoreSelection,
     previousCurrentChar: previous.currentChar,
-    previousCurrentCharacterId: Number.isInteger(previous.currentChar)
-      ? previous.characters[previous.currentChar as number]?.chaId
-      : undefined,
     previousSelectedCharID: previous.selectedCharID,
   }
 }

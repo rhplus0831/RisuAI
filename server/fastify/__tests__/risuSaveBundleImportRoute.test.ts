@@ -32,6 +32,7 @@ import {
   LOCAL_BACKUP_ZIP_MAX_ENTRIES,
   LOCAL_BACKUP_ZIP_MAX_NAME_BYTES,
 } from '../src/risuSave/localBackupImport.js'
+import { createInitialDatabase } from '../src/databaseDefaults.js'
 
 interface Harness {
   app: FastifyInstance
@@ -82,11 +83,14 @@ function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): v
       database: {
         version: 1,
         selectedCharID: 0,
+        currentChar: 0,
         characters: [
           {
             chaId: 'bundle-import-char',
             name: 'Bundle Import Character',
             image: imageReference,
+            chatFolders: [],
+            chatPage: 0,
             chats: [
               {
                 id: 'bundle-import-chat',
@@ -107,8 +111,16 @@ function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): v
           },
         ],
         characterOrder: ['bundle-import-char'],
-        personas: [{ id: 'persona-a', name: 'Persona A' }],
+        personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+        selectedPersona: 0,
+        selectedPersonaId: 'persona-a',
+        username: 'Persona A',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+        modelPresetsId: 0,
         modelPresets: [{ id: 'model-a', name: 'Model A' }],
+        promptPresetsId: 0,
         promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
         modules: [{ id: 'module-a', name: 'Module A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
@@ -172,9 +184,11 @@ function persistLiveDatabase(dataDir: string): void {
     writePersistedWithMessages(db, dataDir, {
       _version: 1,
       database: {
+        ...createInitialDatabase(),
         version: 1,
         tag: 'preserve-live-bundle-data',
-        characters: [{ chaId: 'live-char', name: 'Live Character', chats: [] }],
+        currentChar: 0,
+        characters: [{ chaId: 'live-char', name: 'Live Character', chats: [], chatFolders: [], chatPage: -1 }],
         characterOrder: ['live-char'],
         botPresets: [],
         modules: [{ id: 'live-module', name: 'Live Module' }],

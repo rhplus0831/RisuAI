@@ -534,6 +534,7 @@ describe('client scripting lorebook loading', () => {
     const char = makeCharacter(chat)
     selectedCharID.set(0)
     replaceResourceDatabase({
+      currentChar: 0,
       characters: [char],
       maxContext: 100,
       modelProfiles: [
@@ -581,6 +582,7 @@ describe('client scripting lorebook loading', () => {
     const char = makeCharacter(chat)
     selectedCharID.set(0)
     replaceResourceDatabase({
+      currentChar: 0,
       characters: [char],
       maxContext: 2,
       modelProfiles: [],

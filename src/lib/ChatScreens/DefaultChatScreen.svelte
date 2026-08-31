@@ -246,6 +246,7 @@
   }
 
   function selectedCharacterForScreen(): character | undefined {
+    if ($selectedCharID < 0) return undefined
     const owner = getSelectedCharacterOwner()
     if (owner || charactersResourceState.status === 'ready') return owner
     return selectCharacterOwner(charactersResourceState.characters, $selectedCharID)

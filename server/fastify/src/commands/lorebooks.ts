@@ -294,7 +294,7 @@ export function requireGlobalLorebookIndex(lorebooks: readonly GlobalLorebookRec
   return matches[0].index
 }
 
-export function requireModule(modules: readonly ModuleRecord[], moduleId: string): ModuleRecord {
+export function requireModule<T extends ModuleRecord>(modules: readonly T[], moduleId: string): T {
   const matches = modules.filter((candidate) => candidate.id === moduleId)
   if (matches.length === 0) {
     throw new EntityNotFoundError(`Module not found: ${moduleId}`)

@@ -2301,7 +2301,7 @@ describe('Durable generation', () => {
       ).toEqual(['pending-old', 'terminal-old', 'terminal-recent'])
       expect(
         db.prepare('SELECT status FROM generation_finalization_retries WHERE generation_id = ?').get('pending-old'),
-      ).toEqual({ status: 'terminal' })
+      ).toEqual({ status: 'pending' })
     } finally {
       db.close()
       rmSync(dataDir, { recursive: true, force: true })

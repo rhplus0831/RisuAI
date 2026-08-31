@@ -2036,8 +2036,11 @@ function buildProfileProviderCapabilityInputForDatabase(
           : useLegacyFallback
             ? nonBlankString(database.claudeAPIKey)
             : undefined,
-      instructChatTemplate: useLegacyFallback ? nonBlankString(database.instructChatTemplate) : undefined,
-      jinjaTemplate: useLegacyFallback ? nonBlankString(database.JinjaTemplate) : undefined,
+      // Instruct templates remain request settings rather than profile-owned
+      // provider configuration, so durable Horde profiles still need them for
+      // capability classification and prompt shaping.
+      instructChatTemplate: nonBlankString(database.instructChatTemplate),
+      jinjaTemplate: nonBlankString(database.JinjaTemplate),
       ollamaApiKey:
         modelId === 'ollama-cloud'
           ? providerOptions?.ollama?.apiKey

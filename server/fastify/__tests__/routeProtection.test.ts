@@ -431,6 +431,13 @@ describe('active-writer header validation', () => {
 
   it('does not apply the active-writer gate to authenticated hash-aware resource reads', async () => {
     const assertion = await authed()
+    const initialized = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database: { streamGeminiThoughts: false } },
+    })
+    expect(initialized.statusCode, initialized.body).toBe(200)
     await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',

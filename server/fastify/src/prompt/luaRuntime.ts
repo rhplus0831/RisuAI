@@ -20,8 +20,10 @@ import type { ModelRole } from '@risuai/shared-core/model-roles'
 import {
   resolveModelProfile,
   resolveModelProfileByProfileId,
+  resolveModelProfileWithLegacyCompatibility,
   type ResolvedModelProfile,
 } from '@risuai/shared-core/model-profile-resolver'
+import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
 import { scriptModelOverrideProfileId } from '@risuai/shared-core/script-model-overrides'
 import type { TriggerVarEngine } from './triggerVars.js'
 import { expandVariables } from './variables.js'
@@ -1134,7 +1136,12 @@ function resolveLuaLlmProfile(state: RuntimeState, role: ModelRole): ResolvedMod
       : asCharacter(state.ctx)?.scriptModelOverrides
   const profileId =
     role === 'scriptMain' || role === 'scriptAux' ? scriptModelOverrideProfileId(overrides, role) : undefined
-  if (!profileId) return resolveModelProfile({ database: state.ctx.database, role })
+  if (!profileId) {
+    const args = { database: state.ctx.database, role }
+    return normalizeModelRoleProfiles(state.ctx.database.modelRoleProfiles)[role].mode === 'legacy'
+      ? resolveModelProfileWithLegacyCompatibility(args)
+      : resolveModelProfile(args)
+  }
 
   const profile = resolveModelProfileByProfileId({
     database: state.ctx.database,

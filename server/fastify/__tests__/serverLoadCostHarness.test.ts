@@ -119,7 +119,7 @@ async function importDatabase(database: unknown): Promise<number> {
     headers: { 'risu-auth': assertion },
     payload: { database },
   })
-  expect(res.statusCode).toBe(200)
+  expect(res.statusCode, res.body).toBe(200)
   const imported = res.json() as { revision: number }
   return configureImportedCurrentChatGenerationSettings(database, imported.revision)
 }
@@ -143,7 +143,7 @@ async function configureImportedCurrentChatGenerationSettings(
       },
     },
   })
-  expect(res.statusCode).toBe(200)
+  expect(res.statusCode, res.body).toBe(200)
   return (res.json() as { revision: number }).revision
 }
 
@@ -1042,6 +1042,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       },
     ]
     database.modules = [
+      ...(Array.isArray(database.modules) ? database.modules : []),
       {
         id: 'mod-assets',
         name: 'Asset Module',
@@ -1314,6 +1315,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         let expectedCollection = broadDatabase[collection]
         if (collection === 'botPresets') {
           expectedCollection = [{ id: 'preset-a', name: 'Preset A' }]
+        } else if (collection === 'promptTemplate') {
+          expectedCollection = (
+            db.prepare('SELECT data_json FROM prompt_templates ORDER BY position').all() as Array<{
+              data_json: string
+            }>
+          ).map((row) => JSON.parse(row.data_json))
         } else if (collection === 'promptPresets') {
           expectedCollection = (broadDatabase.promptPresets as Array<Record<string, unknown>>).map((preset) => {
             const shell = { ...preset }

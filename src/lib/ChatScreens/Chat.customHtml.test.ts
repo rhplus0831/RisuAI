@@ -674,7 +674,7 @@ beforeEach(() => {
     if (matches.length !== 1) return undefined
     return {
       chatId,
-      messages: matches[0].message,
+      messages: matches[0].message as unknown as Array<Record<string, unknown>>,
       projectionEpoch: 0,
       resourceLoaded: true,
       hydrationPending: false,

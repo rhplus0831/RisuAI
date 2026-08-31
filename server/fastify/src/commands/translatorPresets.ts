@@ -67,8 +67,7 @@ export function normalizeTranslatorPresetCollectionWithLegacyCompatibility(datab
   }
   const presets = repairTranslatorPresetCollection(target)
   const rawSelection = target.translatorPresetId
-  const selectedIndex =
-    typeof rawSelection === 'number' && Number.isInteger(rawSelection) ? rawSelection : Number.NaN
+  const selectedIndex = typeof rawSelection === 'number' && Number.isInteger(rawSelection) ? rawSelection : Number.NaN
   target.translatorPresetId =
     typeof rawSelection === 'string' && rawSelection.trim() && presets.some((preset) => preset.id === rawSelection)
       ? rawSelection
@@ -201,7 +200,8 @@ export function selectedTranslatorPresetId(
   database: JsonRecord,
   presets: readonly TranslatorPresetRecord[],
 ): string | null {
-  return typeof database.translatorPresetId === 'string' && presets.some((preset) => preset.id === database.translatorPresetId)
+  return typeof database.translatorPresetId === 'string' &&
+    presets.some((preset) => preset.id === database.translatorPresetId)
     ? database.translatorPresetId
     : null
 }

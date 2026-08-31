@@ -96,7 +96,7 @@ export function resolveMainTokenizerProfile(database?: Database): ResolvedModelP
   return resolveModelProfile({
     database: resolvedDatabase,
     role: 'chatMain',
-    lookupModelInfo: (modelDatabase, modelId) => getModelInfo(modelId, modelDatabase),
+    lookupModelInfo: (_modelDatabase, modelId) => getModelInfo(modelId, resolvedDatabase),
   })
 }
 

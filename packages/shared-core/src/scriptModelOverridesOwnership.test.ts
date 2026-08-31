@@ -16,11 +16,12 @@ describe('script-model override shared-core ownership', () => {
       'server/fastify/src/commands/modules.ts',
       'server/fastify/src/databaseDefaults.ts',
       'server/fastify/src/prompt/luaRuntime.ts',
+      'server/fastify/src/prompt/moduleDescriptors.ts',
       'src/lib/UI/ScriptModelOverrideSelectors.svelte',
       'src/ts/process/modules.ts',
       'src/ts/process/scriptings.ts',
       'src/ts/process/triggers.ts',
-      'src/ts/server/characterBridge.svelte.ts',
+      'src/ts/server/characterDraft.svelte.ts',
       'src/ts/server/commands.ts',
       'src/ts/storage/database.svelte.ts',
     ]) {

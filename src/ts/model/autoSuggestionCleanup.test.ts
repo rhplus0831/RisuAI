@@ -41,7 +41,7 @@ describe('auto-suggestion input cleanup', () => {
   it('keeps the chat screen off the flat auxiliary model field', () => {
     const chatScreen = fs.readFileSync(`${repoRoot}/src/lib/ChatScreens/DefaultChatScreen.svelte`, 'utf8')
 
-    expect(chatScreen).toContain('cleanAutoSuggestionInput(msg, getDatabase())')
+    expect(chatScreen).toContain('cleanAutoSuggestionInput(msg, autoSuggestionCleanupDatabase)')
     expect(chatScreen).not.toContain('getDatabase().subModel')
   })
 })

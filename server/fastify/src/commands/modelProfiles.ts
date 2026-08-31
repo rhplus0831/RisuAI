@@ -1,10 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { isDeepStrictEqual } from 'node:util'
-import {
-  resolveModelProfile,
-  type FirstClassModelProfileProviderId,
-} from '@risuai/shared-core/model-profile-resolver'
+import { resolveModelProfile, type FirstClassModelProfileProviderId } from '@risuai/shared-core/model-profile-resolver'
 import { resolveMemoryModelCapability } from '@risuai/shared-core/memory-model-capability'
 import type { FastifyDatabase as Database } from '../prompt/serverTypes.js'
 import {

@@ -68,12 +68,14 @@ const RETAINED_ROUND_TRIP_DATABASE_FIELDS = [
   'geminiStream',
   'googleClaudeTokenizing',
   'hubServerType',
+  'hypaV3Settings',
   'igpPrompt',
   'lastPatchNoteCheckVersion',
   'pluginV2',
   'removePunctuationHypa',
   'saveTime',
   'statics',
+  'supaMemoryKey',
 ] as const
 
 type AuthoringCollectionOwner = {

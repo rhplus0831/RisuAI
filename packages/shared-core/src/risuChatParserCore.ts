@@ -37,7 +37,6 @@ export type RisuChatParserArg = {
   parserState?: ParserStateBackend
 }
 
-
 export const matcherMap = new Map<string, RegisterCallback>()
 
 export const RISU_EACH_EXPANSION_BUDGET = {

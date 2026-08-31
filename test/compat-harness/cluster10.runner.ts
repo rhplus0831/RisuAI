@@ -20,8 +20,7 @@ vi.mock('../../src/ts/process/modules', async (importActual) => {
 })
 
 import { JobRegistry, type JobClient } from '../../server/fastify/src/streamJobs'
-import { getResourceDatabase } from '../../src/ts/server/resourceState.svelte'
-import { withTrustedResourceWrite } from '../../src/ts/server/resourceWriteGuard.svelte'
+import { getResourceDatabase } from '../../src/ts/__tests__/resourceDatabaseState'
 import { consumeStreamResponse } from '../../src/ts/process/postGeneration/streamResponse'
 import { requestServerChatGeneration } from '../../src/ts/process/request/serverChat'
 import type { StreamResponseChunk, requestDataResponse } from '../../src/ts/process/request/request'
@@ -258,9 +257,7 @@ describe('cluster 10 fault-seam regressions', () => {
     })
     const duringRetry = target().data
     const canonicalTerminalResult = 'Seed answer. Continued reply.'
-    withTrustedResourceWrite(() => {
-      target().data = canonicalTerminalResult
-    })
+    target().data = canonicalTerminalResult
     const afterCanonicalTerminal = target().data
 
     cluster10.retriedExtendContinueDuplicate = {

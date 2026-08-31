@@ -7,13 +7,17 @@ const { database } = vi.hoisted(() => ({
   },
 }))
 
-vi.mock(import('../../../server/resourceState.svelte'), () => ({
-  settingsResourceState: {
-    value: database,
-    groupStatuses: { media: 'ready' },
-    status: 'ready',
-  },
-}))
+vi.mock(
+  import('../../../server/resourceState.svelte'),
+  () =>
+    ({
+      settingsResourceState: {
+        value: database,
+        groupStatuses: { media: 'ready' },
+        status: 'ready',
+      },
+    }) as unknown as typeof import('../../../server/resourceState.svelte'),
+)
 
 const doLossyCompressionMock = vi.fn()
 vi.mock(import('../lossyCompression'), () => ({

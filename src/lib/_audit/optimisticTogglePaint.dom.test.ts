@@ -139,8 +139,13 @@ async function releaseAndDrainCommandTransport(): Promise<void> {
 function seedOptimisticDb(): void {
   selectedCharID.set(0)
   replaceResourceDatabase({
+    currentChar: 0,
     username: 'User',
     selectedPersona: 0,
+    selectedPersonaId: 'persona-a',
+    personaPrompt: '',
+    userIcon: '',
+    userNote: '',
     botPresetsId: 0,
     modelPresetsId: 0,
     promptPresetsId: 0,
@@ -195,8 +200,13 @@ function seedOptimisticDb(): void {
 
 function seedGroupedDb(): void {
   replaceResourceDatabase({
+    currentChar: 0,
     username: 'User',
     selectedPersona: 0,
+    selectedPersonaId: 'persona-a',
+    personaPrompt: '',
+    userIcon: '',
+    userNote: '',
     botPresetsId: 0,
     modelPresetsId: 0,
     promptPresetsId: 0,

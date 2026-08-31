@@ -283,7 +283,7 @@
         },
         {
           "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts",
-          "count": 21
+          "count": 20
         },
         {
           "file": "src/ts/agentPresets.test.ts",
@@ -291,7 +291,7 @@
         },
         {
           "file": "src/ts/moduleCommands.test.ts",
-          "count": 188
+          "count": 182
         },
         {
           "file": "src/ts/persona.iconUpload.test.ts",

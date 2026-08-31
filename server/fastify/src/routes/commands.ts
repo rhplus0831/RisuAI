@@ -4942,7 +4942,7 @@ export function registerCommandRoutes(
             scoped = requireSelectedPromptPresetCommandTarget(database, promptPresetId)
             items = scoped.items
           } else {
-            items = readStrictPromptTemplateCollection(ensureDatabaseObject(database))
+            items = readStrictPromptTemplateCollection(ensureDatabaseObject(database), { allowMissing: true })
             if (!items.some((item) => item.id === itemId)) {
               return {
                 event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
@@ -5621,7 +5621,8 @@ export function registerCommandRoutes(
             nextSelectedId = currentSelectedId ?? presets[0]?.id
           }
 
-          target.translatorPresetId = nextSelectedId ?? presets[0]?.id
+          const selectedIndex = nextSelectedId ? requireTranslatorPresetIndex(presets, nextSelectedId) : -1
+          target.translatorPresetId = selectedIndex >= 0 ? presets[selectedIndex].id : presets[0]?.id
           const cascadedChatIds = clearChatTranslatorPresetBindings(innerDb, presetId)
           writeTranslatorPresetMutation(innerDb, target, presets)
 
@@ -8608,7 +8609,7 @@ export function registerCommandRoutes(
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutationPath: TARGETED_MUTATION_PATHS.crossOwner,
         mutate(database, innerDb) {
           const target = readJsonObject(database, 'database')
           const modules = readStrictModuleRecords(target)

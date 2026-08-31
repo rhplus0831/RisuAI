@@ -292,7 +292,7 @@ describe('client resource ownership gate', () => {
     ) as ClientResourceBaseline
 
     expect(compareClientResourceBaseline(observation, baseline)).toEqual([])
-    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(4221)
+    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(4214)
     expect(observation.consumers).toHaveLength(216)
     expect(baseline.consumers).toHaveLength(30)
     expect(observation.consumers.filter((consumer) => consumer.lane === 'production')).toEqual([])

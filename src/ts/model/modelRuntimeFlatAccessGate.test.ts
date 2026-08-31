@@ -338,13 +338,6 @@ const inventory: readonly InventoryEntry[] = [
     reason: 'explicit name/context-free generation label fallback',
   },
   {
-    path: 'src/ts/process/files/inlays.ts',
-    marker: 'getDatabase().aiModel',
-    classification: 'context-free-fallback',
-    expectedCount: 1,
-    reason: 'inlay capability fallback without model context',
-  },
-  {
     path: 'server/fastify/src/prompt/chatDispatch.ts',
     marker: 'db.aiModel',
     classification: 'context-free-fallback',
@@ -409,55 +402,6 @@ const inventory: readonly InventoryEntry[] = [
   },
 
   // Explicit compatibility and current authoring/import/export boundaries.
-  {
-    path: 'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
-    marker: 'getDatabase().aiModel',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy conversion/status display',
-  },
-  {
-    path: 'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
-    marker: 'getDatabase().subModel',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy conversion/status display',
-  },
-  {
-    path: 'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
-    marker: 'database.aiModel',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy conversion detection',
-  },
-  {
-    path: 'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
-    marker: 'database.subModel',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy conversion detection',
-  },
-  {
-    path: 'src/lib/Setting/Pages/Model/ModelSettingsShell.svelte',
-    marker: 'database.modelRoles',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy conversion detection',
-  },
-  {
-    path: 'src/lib/Setting/SettingRenderer.svelte',
-    marker: 'getDatabase().aiModel',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy settings renderer fallback',
-  },
-  {
-    path: 'src/lib/Setting/SettingRenderer.svelte',
-    marker: 'getDatabase().subModel',
-    classification: 'compatibility',
-    expectedCount: 1,
-    reason: 'legacy settings renderer fallback',
-  },
   {
     path: 'src/lib/Setting/Pages/OtherBotSettings.svelte',
     marker: 'database.maxResponse',
@@ -591,14 +535,12 @@ const inventory: readonly InventoryEntry[] = [
     expectedCount: 2,
     reason: 'schema/default/import normalization boundary',
   },
-  // This is intentionally enumerated rather than silently allowed: it is the
-  // sole retained older-server compatibility read.
   {
-    path: 'src/ts/process/serverBackedSendChat.ts',
-    marker: 'getDatabase().maxResponse',
+    path: 'src/ts/process/sendChatPromptAssembly.ts',
+    marker: 'database.maxResponse',
     classification: 'compatibility',
     expectedCount: 1,
-    reason: 'explicit fallback for older servers without response-budget metadata',
+    reason: 'explicit fallback for profiles without a response-token budget',
   },
 ]
 

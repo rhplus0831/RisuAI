@@ -564,9 +564,11 @@ describe('multipart .risu import route', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const persisted = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
-      // Disabled root collections are omitted by persistence; the regression was
-      // materializing this value as an active empty array.
-      expect(persisted).not.toHaveProperty('promptTemplate')
+      // The physical root collection stays omitted while normal repository reads
+      // project the selected modern preset's explicitly disabled/null body.
+      expect(persisted.promptTemplate).toBeNull()
+      const rootRows = db.prepare('SELECT COUNT(*) AS count FROM prompt_templates').get() as { count: number }
+      expect(rootRows.count).toBe(0)
       expect((persisted.promptPresets as Array<Record<string, unknown>>)[0].promptTemplate).toBeNull()
     } finally {
       db.close()

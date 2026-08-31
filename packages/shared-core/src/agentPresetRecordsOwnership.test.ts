@@ -20,7 +20,6 @@ describe('agent-preset-records shared-core ownership', () => {
       'server/fastify/src/prompt/assemble.ts',
       'server/fastify/src/prompt/agentPresetErrors.ts',
       'server/fastify/src/databaseDefaults.ts',
-      'server/fastify/src/routes/commands.ts',
       'server/fastify/__tests__/agentPresetExecution.test.ts',
       'server/fastify/__tests__/assemble.test.ts',
     ]) {

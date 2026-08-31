@@ -101,7 +101,7 @@ function productionControlKeys(): string[] {
 
 describe('Phase 4 UI compatibility inventory', () => {
   it('classifies every route family and registered settings/playground slug', () => {
-    const routerSource = read('src/ts/routerRoute.ts')
+    const routerSource = read('packages/shared-core/src/routerRoute.ts')
     const rootSegments = sortedUnique([...routerSource.matchAll(/parts\[0\] === '([^']+)'/gu)].map((match) => match[1]))
 
     expect(rootSegments).toEqual([...phase4RouteInventory.rootSegments])

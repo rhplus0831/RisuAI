@@ -438,7 +438,7 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
       saying: char.chaId,
     })
   }
-  markFixtureActiveChatGenerationSettingsReady()
+  markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
 }
 
 async function drainRouteBackedCommands(): Promise<void> {
@@ -829,7 +829,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // pre-existing multimodal concern; clear it to `undefined` so the
       // format-order path runs and a real prompt (with the inlay row) assembles.
       ;(testDatabaseState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
-      markFixtureActiveChatGenerationSettingsReady()
+      markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
 
       await harness.seed(testDatabaseState.db)
       const inlayUpload = await harness.app.inject({
@@ -938,7 +938,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           ...(testDatabaseState.db.promptSettings ?? {}),
         }
         ;(testDatabaseState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
-        markFixtureActiveChatGenerationSettingsReady()
+        markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
 
         await harness.seed(testDatabaseState.db)
         vi.stubGlobal('fetch', harness.fetch)
@@ -1124,7 +1124,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('pins hypav3-memory server-backed prompt rows and progress side effects', async () => {
     const loaded = await loadFixture('hypav3-memory')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     const expected = await loadExpected('hypav3-memory')
     const providerCall = expected.providerCalls[0]
     expect(providerCall).toBeDefined()
@@ -1197,7 +1197,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('rolls back server-applied chat mutations when /chat dispatch fails after streaming starts', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     const originalMessages = JSON.parse(
       JSON.stringify(testDatabaseState.db.characters[0].chats[0].message),
     ) as Chat['message']
@@ -1262,7 +1262,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('forwards the synthetic say-nothing marker on the server-backed send', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     testDatabaseState.db.characters[0].chats[0].message.at(-1)!.data = '*says nothing*'
 
     setServerChatDispatchResult('Hello there!', { model: 'gpt-4o' }, 'uuid-0')
@@ -1286,7 +1286,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       const loaded = await loadFixture('simple-send')
       cleanups.push(loaded.cleanup)
       testDatabaseState.db.characters[0].chats[0].id = 'chat-canonical-replay'
-      markFixtureActiveChatGenerationSettingsReady()
+      markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
       testDatabaseState.db.notification = true
       testDatabaseState.db.emotionProcesser = 'embedding'
       testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
@@ -1400,7 +1400,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     testDatabaseState.db.characters[0].chats[0].id = 'chat-cancelled-replay'
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     testDatabaseState.db.notification = true
     testDatabaseState.db.emotionProcesser = 'embedding'
     testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Must not run.<|im_end|>'
@@ -1443,7 +1443,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     testDatabaseState.db.characters[0].chats[0].id = 'chat-reattach'
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
     let textAtIgpEvaluation = ''
     const requestModule = await import('../request/request')
@@ -1476,7 +1476,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
   it('speaks every server-derived choice after browser-owned inlay processing', async () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
     testDatabaseState.db.ttsAutoSpeech = true
 
     setServerChatPrompt(

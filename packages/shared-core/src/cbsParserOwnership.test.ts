@@ -23,8 +23,8 @@ describe('CBS/parser shared-core ownership', () => {
   })
 
   it('keeps browser and Fastify facades on the shared owners', () => {
-    expect(source('src/ts/cbs.ts')).toContain("@risuai/shared-core/cbs-registry")
-    expect(source('src/ts/parser/risuChatParser.ts')).toContain("@risuai/shared-core/risuchat-parser")
+    expect(source('src/ts/cbs.ts')).toContain('@risuai/shared-core/cbs-registry')
+    expect(source('src/ts/parser/risuChatParser.ts')).toContain('@risuai/shared-core/risuchat-parser')
     for (const consumer of [
       'server/fastify/src/prompt/cbsAdapter.ts',
       'server/fastify/src/prompt/promptVariablesBoot.ts',

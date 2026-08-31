@@ -1202,9 +1202,7 @@ describe('router character route freshness', () => {
         getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     routerMocks.changeChar.mockImplementation(async (_index: number) => {
-      withTestDatabaseWrite((database) => {
-        database.characters = [charB, charA] as any
-      })
+      replaceResourceDatabase({ characters: [charB, charA] } as any)
       selectedCharID.set(1)
     })
 

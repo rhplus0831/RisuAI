@@ -595,7 +595,7 @@ describe('editdisplay render path logging', () => {
           },
         ],
       },
-    ]
+    ] as any
     collectionsResourceState.statuses.promptPresets = 'error'
 
     const result = await processScriptFull(char, 'PROMPT', 'editdisplay', 0)
@@ -622,7 +622,7 @@ describe('editdisplay render path logging', () => {
             },
           ],
         },
-      ]
+      ] as any
       collectionsResourceState.statuses.promptPresets = status
 
       const result = await processScriptFull(char, 'PROMPT', 'editdisplay', 0)

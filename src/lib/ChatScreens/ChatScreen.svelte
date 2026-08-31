@@ -48,6 +48,11 @@
   let openBardWiki = $state(false)
   let bardWikiChatId = $state<string | null>(null)
   let selectedCharacter = $derived.by(() => {
+    // Home, Settings, and non-chat Playground routes intentionally clear the
+    // view selection without changing the durable last-selected character.
+    // Do not let that retained owner activate the shell-hydration gate over a
+    // route that is supposed to render a menu.
+    if ($selectedCharID < 0) return undefined
     const status = charactersResourceState.status
     const character = resolveSelectedCharacterForDisplay(
       status === 'ready' ? getSelectedCharacterOwner() : undefined,

@@ -17,12 +17,12 @@ describe('effective prompt-template shared-core ownership', () => {
       'server/fastify/src/prompt/staticSections.ts',
       'src/ts/process/promptAssembly/normalizeTemplate.ts',
       'src/ts/utilState.ts',
-      'packages/shared-core/src/cbsRegistry.ts',
       'src/ts/process/templates/templateCheck.ts',
       'src/lib/Setting/Pages/OtherBotSettings.svelte',
     ]) {
       expect(source(consumer), consumer).toContain(sharedSubpath)
     }
+    expect(source('packages/shared-core/src/cbsRegistry.ts')).toContain("from './effectivePromptTemplate.js'")
   })
 
   it('removes the Fastify-to-browser effective policy edge', () => {

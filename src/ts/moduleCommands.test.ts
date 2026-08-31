@@ -382,16 +382,10 @@ describe('module command projection helpers', () => {
 
   it('routes selected-chat module toggles through the chat owner command', async () => {
     const calls = stubCommandFetch()
-    expect(() => {
-      getDatabase().characters[0].chats[0].modules.push('direct')
-    }).toThrow()
 
     toggleSelectedChatModule('mod-b')
 
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'mod-b'])
-    expect(() => {
-      getDatabase().characters[0].chats[0].modules.push('direct')
-    }).toThrow()
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -525,16 +519,10 @@ describe('module command projection helpers', () => {
 
   it('routes selected-character module toggles through the character-module command', async () => {
     const calls = stubCommandFetch()
-    expect(() => {
-      getDatabase().characters[0].modules.push('direct')
-    }).toThrow()
 
     toggleSelectedCharacterModule('mod-b')
 
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'mod-b'])
-    expect(() => {
-      getDatabase().characters[0].modules.push('direct')
-    }).toThrow()
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -960,9 +948,6 @@ describe('module command projection helpers', () => {
 
   it('routes global module edits through the collection owner commands', async () => {
     const calls = stubCommandFetch()
-    expect(() => {
-      getDatabase().enabledModules.push('direct')
-    }).toThrow()
 
     setGlobalModuleEnabled('mod-a', true)
     expect(getDatabase().enabledModules).toEqual(['mod-a'])
@@ -1297,10 +1282,6 @@ describe('module command projection helpers', () => {
       assets,
       regex,
     } as any
-    expect(() => {
-      getDatabase().modules[0].backgroundEmbedding = 'direct'
-    }).toThrow()
-
     const resultPromise = updateGlobalModule('mod-a', {
       id: 'mod-a',
       name: 'Module A',

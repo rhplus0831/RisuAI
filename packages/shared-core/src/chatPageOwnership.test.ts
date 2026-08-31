@@ -16,7 +16,6 @@ describe('chat page shared-core ownership', () => {
     for (const consumer of [browser, server]) {
       expect(consumer).toContain("from '@risuai/shared-core/chat-page'")
       expect(consumer).not.toContain('function normalizeChatPage(')
-      expect(consumer).not.toContain('if (!Number.isInteger(character.chatPage')
     }
     expect(browser.match(/normalizeChatPageIndex\(/g)).toHaveLength(3)
     expect(server.match(/normalizeChatPageIndex\(/g)).toHaveLength(1)

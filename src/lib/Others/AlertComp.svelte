@@ -172,9 +172,10 @@
     }
     const selectedIndex = settingsResourceState.value.botPresetsId
     if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return undefined
-    const presetId = canonicalLegacyPresetOwners()?.[selectedIndex as number]?.id
+    const owners = canonicalLegacyPresetOwners()
+    const presetId = owners?.[selectedIndex as number]?.id
     if (!presetId) return undefined
-    const matches = canonicalLegacyPresetOwners()?.filter((candidate) => candidate.id === presetId) ?? []
+    const matches = owners?.filter((candidate) => candidate.id === presetId) ?? []
     return matches.length === 1 ? matches[0] : undefined
   }
 
@@ -333,8 +334,9 @@
   $effect(() => {
     if ($alertStore.type !== 'cardexport' || $alertStore.submsg !== 'preset') return
     const owner = selectedLegacyPresetOwner()
-    if (!owner?.id || botPresetHasHydratedSettings(owner)) return
+    if (!owner?.id) return
     const presetId = owner.id
+    if (botPresetHasHydratedSettings(owner)) return
     void ensureBotPresetHydratedById(presetId).then((hydrated) => {
       if (!hydrated || $alertStore.type !== 'cardexport' || $alertStore.submsg !== 'preset') return
       const currentOwner = selectedLegacyPresetOwner()

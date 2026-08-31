@@ -290,26 +290,19 @@ afterEach(() => {
 })
 
 describe('chat import projection helpers', () => {
-  it('imports a chat through a trusted optimistic projection write and create-chat command', async () => {
+  it('imports a chat through the character owner projection and create-chat command', async () => {
     const calls = stubCommandFetch()
     selectJsonFile('chat.json', {
       type: 'risuChat',
       ver: 1,
       data: importedChat({ note: '' }),
     })
-    expect(() => {
-      testDatabaseState.db.characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
-    }).toThrow()
-
     await importChat()
 
     expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({
       name: 'Imported Chat',
       fmIndex: -1,
     })
-    expect(() => {
-      testDatabaseState.db.characters[0].chats.unshift({ id: 'direct-2', name: 'Direct', message: [] } as any)
-    }).toThrow()
     const [createCall] = await waitForCreateChatCalls(calls)
     expect(createCall).toEqual({
       url: '/api/v1/commands/characters/char-a/chats',

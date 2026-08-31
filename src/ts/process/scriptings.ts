@@ -390,7 +390,8 @@ export async function runScripted(
       })
 
       declareAPI('cbs', (value) => {
-        return risuChatParser(value, { chara: ScriptingEngineState.currentRun?.char })
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return risuChatParser(value, { chara: currentCharacter?.type === 'character' ? currentCharacter : undefined })
       })
 
       declareAPI('setFullChatMain', (id: string, value: string) => {
@@ -856,7 +857,9 @@ export async function runScripted(
 
       declareAPI('getPersonaDescription', (id: string) => {
         const currentCharacter = ScriptingEngineState.currentRun?.char
-        return risuChatParser(getPersonaPrompt(), { chara: currentCharacter })
+        return risuChatParser(getPersonaPrompt(), {
+          chara: currentCharacter?.type === 'character' ? currentCharacter : undefined,
+        })
       })
 
       declareAPI('getAuthorsNote', (id: string) => {

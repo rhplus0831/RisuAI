@@ -76,7 +76,10 @@ describe('@risuai/protocol import boundary', () => {
 
     expect(runtimeFiles).toEqual([
       'bardWiki.ts',
+      'characterResource.ts',
       'characterSummaryResource.ts',
+      'chatMessagesResource.ts',
+      'chatMetadata.ts',
       'clientContext.ts',
       'displaySource.ts',
       'durableCommandOperation.ts',

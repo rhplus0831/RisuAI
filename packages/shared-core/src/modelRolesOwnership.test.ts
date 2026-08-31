@@ -25,7 +25,6 @@ describe('model-role shared-core ownership', () => {
       'src/lib/Others/IrisModal.svelte',
       'src/lib/Others/ProTools/EasyPanel.svelte',
       'src/lib/Playground/PlaygroundSubtitle.svelte',
-      'src/lib/Setting/Pages/ClaudeThinkingSeparateParams.svelte',
       'src/lib/Setting/Pages/Model/ModelPresetList.svelte',
       'src/lib/Setting/Pages/Model/ModelProfileList.svelte',
       'src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte',

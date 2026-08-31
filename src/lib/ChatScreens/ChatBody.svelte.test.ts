@@ -79,11 +79,15 @@ vi.mock('src/ts/characterState', () => ({
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  collectionsResourceState: { values: { promptPresets: [] } },
+  charactersResourceState: { status: 'idle', characters: [], currentChar: -1 },
+  collectionsResourceState: { status: 'idle', statuses: {}, values: { promptPresets: [] } },
   getCharacterResourceOwner: () => chatBodyMocks.getSelectedCharacterOwner(),
   getChatMetadataOwnerState: (chatId: string) =>
     chatBodyMocks.chatMetadataOwner?.chatId === chatId ? chatBodyMocks.chatMetadataOwner : undefined,
   settingsResourceState: {
+    status: 'idle',
+    groupStatuses: {},
+    standaloneStatuses: {},
     get value() {
       return chatBodyMocks.settingsOwner
     },

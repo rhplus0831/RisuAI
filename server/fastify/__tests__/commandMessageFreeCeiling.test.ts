@@ -306,7 +306,7 @@ describe('message-dependent delete floors', () => {
     expect(messageRowCount('chat-b-1')).toBe(1)
   })
 
-  it('DELETE modules/:id stays message-free and strips references across every table', async () => {
+  it('DELETE modules/:id uses targeted collection writes and strips references across every table', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const { metric } = await runCommand({
@@ -315,10 +315,9 @@ describe('message-dependent delete floors', () => {
       payload: { baseRevision: revision },
     })
 
-    // `removeModuleReferences` spans settings + characters + chats + loadouts, so
-    // the floor is `message-free` writing the full broad set — no single-table
-    // lever applies. The gate enforces exactly the broad table set.
-    expect(metric.mutationPath).toBe('message-free')
+    // `removeModuleReferences` now discovers the broad reference set once but
+    // persists only the changed settings, collection, character, and chat rows.
+    expect(metric.mutationPath).toBe('targeted-cross-owner')
     assertCommandMetricGate(metric)
     expect(readSettings().enabledModules).toEqual([])
     expect(readCharacter('char-a').modules).toEqual([])

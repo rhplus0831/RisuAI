@@ -755,7 +755,7 @@ describe('split preset command routes', () => {
     })
   })
 
-  it('omits the model preset reorder receipt when collection normalization repairs a row', async () => {
+  it('certifies a model preset reorder without repairing an optional missing name', async () => {
     const revision = await importPresets({
       modelPresetsId: 0,
       modelPresets: [
@@ -783,16 +783,15 @@ describe('split preset command routes', () => {
       selectedModelPresetId: 'model-a',
       event: { type: 'modelPreset.reordered' },
     })
-    expect(reordered).not.toHaveProperty('presetReorderCertificate')
-    expect(reordered).not.toHaveProperty('presetKind')
-    expect(reordered).not.toHaveProperty('presetIds')
-    expect(reordered).not.toHaveProperty('settingsWritten')
+    expect(reordered).toMatchObject({
+      presetReorderCertificate: 'preset-reorder-v1',
+      presetKind: 'model',
+      presetIds: ['model-b', 'model-a'],
+      settingsWritten: true,
+    })
 
     const persisted = await readPersistedPresetState()
-    expect(persisted.modelPresets).toEqual([
-      { id: 'model-b', name: 'Model B' },
-      { id: 'model-a', name: 'Preset 1' },
-    ])
+    expect(persisted.modelPresets).toEqual([{ id: 'model-b', name: 'Model B' }, { id: 'model-a' }])
     expect(persisted.settings.modelPresetsId).toBe(1)
   })
 

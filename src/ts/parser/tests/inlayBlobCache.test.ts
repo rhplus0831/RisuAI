@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { LLMModel } from '../../model/modellist'
 import type { InlayAsset } from '../../process/files/inlays'
 import { clearInlayBlobUrlCacheForTests, INLAY_BLOB_URL_CACHE_LIMIT, ParseMarkdown } from '../parser.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -30,7 +31,7 @@ vi.mock(
       getCurrentCharacter: () => ({}),
       getDatabase: () => mocks.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../storage/database.svelte'),
+    }) as unknown as typeof import('../../storage/database.svelte'),
 )
 
 vi.mock(import('../../globalApi.svelte'), () => ({
@@ -106,6 +107,9 @@ beforeEach(() => {
   revokeObjectURL.mockClear()
   mocks.getInlayAssetBlob.mockReset()
   mocks.db.hideAllImages = false
+  settingsResourceState.value = mocks.db
+  settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses.display = 'ready'
 })
 
 afterEach(() => {
@@ -186,7 +190,7 @@ describe('inlay blob URL cache', () => {
 
     await parseInlay('{{inlay::hidden-image}}')
     mocks.getInlayAssetBlob.mockClear()
-    mocks.db.hideAllImages = true
+    settingsResourceState.value.hideAllImages = true
 
     await expect(parseInlay('{{inlay::hidden-image}}')).resolves.toBe('')
     expect(mocks.getInlayAssetBlob).not.toHaveBeenCalled()

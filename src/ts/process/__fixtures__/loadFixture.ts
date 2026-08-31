@@ -17,6 +17,7 @@ import {
   type ChatGenerationPersonaReference,
   type ChatGenerationPromptPresetReference,
 } from '../../chatGenerationSettings'
+import { normalizeModelRoleProfiles } from '@risuai/shared-core/model-profile-records'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -210,7 +211,7 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
  * that exercise successful sends must explicitly mark the active fixture chat
  * as configured instead of relying on the product's legacy global defaults.
  */
-export function markFixtureActiveChatGenerationSettingsReady(): void {
+export function markFixtureActiveChatGenerationSettingsReady(options: { canonicalOpenAiProfile?: boolean } = {}): void {
   const db = composeResourceDatabaseSnapshot()
   const selectedCharacterIndex = getInteger(selectedCharIDValue(), 0)
   const character = db.characters?.[selectedCharacterIndex] ?? db.characters?.[0]
@@ -267,7 +268,7 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   }
   mirrorFixtureDatabaseIntoPreset(db, modelPreset)
   mirrorFixtureDatabaseIntoPreset(db, promptPreset)
-  installFixtureChatMainModelProfile(db, modelPreset, modelPresetIndex)
+  installFixtureChatMainModelProfile(db, modelPreset, modelPresetIndex, options.canonicalOpenAiProfile === true)
 
   const requirements = resolveChatGenerationControlRequirements({
     modelPresetId: modelPreset.id,
@@ -296,19 +297,22 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
     jailbreakToggle: db.jailbreakToggle === true,
     sidebarToggles,
   }
-  db.currentChar = selectedCharacterIndex
-  replaceResourceDatabase(db)
+  replaceResourceDatabase({ ...db, currentChar: selectedCharacterIndex } as Database)
 }
 
 function installFixtureChatMainModelProfile(
   db: Database,
   modelPreset: ChatGenerationModelPresetReference,
   modelPresetIndex: number,
+  canonicalOpenAiProfile: boolean,
 ): void {
   const source = modelPreset as unknown as Record<string, unknown>
   const modelId = isNonEmptyString(source.aiModel) ? source.aiModel : isNonEmptyString(db.aiModel) ? db.aiModel : ''
   const profileId = `fixture-model-profile-${modelPresetIndex}`
+  const credentialId = `fixture-provider-credential-${modelPresetIndex}`
   const customModel = db.customModels?.find((candidate) => candidate.id === modelId)
+  const canonicalProviderId = customModel ? 'custom-api' : 'openai'
+  const canonicalApiKey = customModel?.key ?? db.openAIKey
   const runtimeOptions = compactFixtureRecord({
     maxContext: source.maxContext,
     maxResponse: source.maxResponse,
@@ -327,8 +331,8 @@ function installFixtureChatMainModelProfile(
     adaptiveThinkingEffort: source.adaptiveThinkingEffort,
     deepseekReasoningEffort: source.deepseekReasoningEffort,
     verbosity: source.verbosity,
-    halfStreaming: source.halfStreaming,
-    useStreaming: source.useStreaming,
+    halfStreaming: canonicalOpenAiProfile ? (source.halfStreaming ?? db.halfStreaming) : source.halfStreaming,
+    useStreaming: canonicalOpenAiProfile ? (source.useStreaming ?? db.useStreaming) : source.useStreaming,
     genTime: source.genTime,
     extractJson: source.extractJson,
     jsonSchemaEnabled: source.jsonSchemaEnabled,
@@ -342,15 +346,54 @@ function installFixtureChatMainModelProfile(
     customTokenizer: source.customTokenizer,
   })
 
-  db.modelProfiles = [{ id: profileId, name: 'Fixture Chat Model', modelId, runtimeOptions }]
+  if (canonicalOpenAiProfile) {
+    db.providerCredentials = [
+      {
+        id: credentialId,
+        name: 'Fixture Provider Credential',
+        type: 'apiKey',
+        apiKey: isNonEmptyString(canonicalApiKey) ? canonicalApiKey : 'fixture-provider-key',
+      },
+    ]
+    db.modelProfiles = [
+      {
+        id: profileId,
+        name: 'Fixture Chat Model',
+        providerId: canonicalProviderId,
+        modelId: customModel ? 'custom-api' : modelId,
+        runtimeOptions,
+        providerOptions: customModel
+          ? {
+              credentialId,
+              baseUrl: customModel.url,
+              requestModel: customModel.internalId,
+              customApi: {
+                flags: customModel.flags,
+                tokenizer: customModel.tokenizer,
+              },
+            }
+          : { credentialId },
+      },
+    ]
+  } else {
+    db.modelProfiles = [{ id: profileId, name: 'Fixture Chat Model', modelId, runtimeOptions }]
+  }
   db.modelProfileOrder = [{ kind: 'profile', profileId }]
-  db.modelRoleProfiles = {
-    ...(db.modelRoleProfiles ?? {}),
-    chatMain: { mode: 'profile', profileId },
+  if (canonicalOpenAiProfile) {
+    db.modelRoleProfiles = normalizeModelRoleProfiles({
+      ...(db.modelRoleProfiles ?? {}),
+      chatMain: { mode: 'profile', profileId },
+    })
+  } else {
+    db.modelRoleProfiles = {
+      ...(db.modelRoleProfiles ?? {}),
+      chatMain: { mode: 'profile', profileId },
+    } as Database['modelRoleProfiles']
   }
   source.modelProfiles = cloneFixtureJson(db.modelProfiles)
   source.modelProfileOrder = cloneFixtureJson(db.modelProfileOrder)
   source.modelRoleProfiles = cloneFixtureJson(db.modelRoleProfiles)
+  if (canonicalOpenAiProfile) source.providerCredentials = cloneFixtureJson(db.providerCredentials)
 }
 
 function compactFixtureRecord(record: Record<string, unknown>): Record<string, unknown> {

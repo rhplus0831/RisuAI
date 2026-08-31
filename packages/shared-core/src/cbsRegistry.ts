@@ -13,7 +13,6 @@ import type {
   RegisterCallback,
 } from './cbsContracts.js'
 
-
 function stableMemoStringify(value: unknown): string {
   if (value === undefined) return 'undefined'
   if (value === null || typeof value !== 'object') return JSON.stringify(value)

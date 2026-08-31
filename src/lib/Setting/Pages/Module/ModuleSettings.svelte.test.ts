@@ -219,7 +219,8 @@ function seedModules(readCounter?: NameReadCounter) {
     showDeprecatedTriggerV1: false,
     useAdditionalAssetsPreview: false,
   } as any)
-  getDatabase().modules = modules
+  collectionsResourceState.values.modules = modules
+  collectionsResourceState.statuses.modules = 'ready'
 }
 
 function mountSettings() {

@@ -74,7 +74,8 @@ function seedDatabase(withSummaries = false): void {
   selectedCharID.set(0)
   setDatabaseLite({
     hypaV3PresetId: 0,
-    hypaV3Presets: [{ name: 'Default', settings: { processRegexScript: false } }],
+    selectedHypaV3PresetId: 'memory-default',
+    hypaV3Presets: [{ id: 'memory-default', name: 'Default', settings: { processRegexScript: false } }],
     characters: [
       {
         chaId: 'character-a',

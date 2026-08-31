@@ -11,6 +11,7 @@ describe('ChatScreen selected character ownership', () => {
     expect(source).toContain('return undefined')
     expect(source).toContain('resolveSelectedCharacterForDisplay(')
     expect(source).toContain('const status = charactersResourceState.status')
+    expect(source).toContain('if ($selectedCharID < 0) return undefined')
     expect(source).toContain('selectCharacterOwner(charactersResourceState.characters, $selectedCharID)')
     expect(source).toContain("charactersResourceState.rowStatuses[character.chaId] === 'error'")
     expect(source).not.toContain('getDatabase')

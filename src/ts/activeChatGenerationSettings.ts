@@ -84,7 +84,7 @@ type OwnerRead<T> = { status: 'available'; value: T } | { status: 'unavailable';
 function explicitDatabaseProjection(db: Database): ActiveChatOwnerProjection {
   return {
     db,
-    selectedCharIndex: Number.isInteger(db.currentChar) ? db.currentChar : -1,
+    selectedCharIndex: -1,
     usesCharacterOwner: false,
   }
 }

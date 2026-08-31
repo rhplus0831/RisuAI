@@ -60,14 +60,14 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
 import { setupAuthedClient } from '../../server/fastify/__tests__/helpers/auth'
 import { buildApp } from '../../server/fastify/src/app'
 import { appendCurrentChatUserMessageForSend, captureActiveChatTarget } from '../../src/ts/chatCommands'
+import { resolveActiveChatGenerationSettings } from '../../src/ts/activeChatGenerationSettings'
 import { markFixtureActiveChatGenerationSettingsReady } from '../../src/ts/process/__fixtures__/loadFixture'
 import { isTokenizerUrl, serveTokenizerFetch } from '../../src/ts/process/__fixtures__/mocks/tokenizerFetch'
 import { resetAcceptedSendCoordinatorForTests } from '../../src/ts/process/acceptedSendCoordinator.svelte'
 import { processMultiCommand } from '../../src/ts/process/command'
 import { abortChat, chatProcessStage, doingChat, sendChat } from '../../src/ts/process/index.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../../src/ts/server/commands'
-import { getResourceDatabase } from '../../src/ts/server/resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../../src/ts/server/resourceWriteGuard.svelte'
+import { getResourceDatabase } from '../../src/ts/__tests__/resourceDatabaseState'
 import { setDatabase, type Database } from '../../src/ts/storage/database.svelte'
 import { selectedCharID } from '../../src/ts/stores.svelte'
 import {
@@ -230,7 +230,6 @@ describe('Original-Risu compatibility harness current-stack runner', () => {
   })
 
   afterEach(async () => {
-    setResourceWriteGuardEnabled(false)
     globalThis.fetch = originalFetch
     if (activeHarness) await activeHarness.close()
     activeHarness = undefined
@@ -265,14 +264,19 @@ describe('Original-Risu compatibility harness current-stack runner', () => {
     selectedCharID.set(0)
     resetAcceptedSendCoordinatorForTests()
     clearCachedServerCommandRevision()
-    setResourceWriteGuardEnabled(false)
     setDatabase(createFixtureDatabase(cell.transport, cell.useSayNothing) as Database)
-    markFixtureActiveChatGenerationSettingsReady()
+    markFixtureActiveChatGenerationSettingsReady({ canonicalOpenAiProfile: true })
+    const activeGenerationSettings = resolveActiveChatGenerationSettings()
+    expect(
+      activeGenerationSettings.readiness,
+      JSON.stringify(activeGenerationSettings.readiness.missing),
+    ).toMatchObject({
+      ready: true,
+    })
     const database = getResourceDatabase()
     const chat = database.characters[0].chats[0]
     const revision = await harness.seed(database)
     setCachedServerCommandRevision(revision)
-    setResourceWriteGuardEnabled(true)
 
     let completed = false
     let error: string | undefined

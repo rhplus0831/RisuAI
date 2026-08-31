@@ -118,6 +118,36 @@ const basePayload = {
 }
 
 function writeDatabase(database: Record<string, unknown>): void {
+  const providerCredentials = Array.isArray(database.providerCredentials) ? [...database.providerCredentials] : []
+  const existingApiKeys = new Set(
+    providerCredentials.flatMap((credential) =>
+      credential && typeof credential === 'object' && !Array.isArray(credential)
+        ? [String((credential as Record<string, unknown>).apiKey ?? '')]
+        : [],
+    ),
+  )
+  for (const key of [
+    database.openAIKey,
+    database.proxyKey,
+    database.openrouterKey,
+    database.nanogptKey,
+    database.ollamaApiKey,
+    database.claudeAPIKey,
+    database.mistralKey,
+    database.cohereAPIKey,
+    database.hordeConfig && typeof database.hordeConfig === 'object' && !Array.isArray(database.hordeConfig)
+      ? (database.hordeConfig as Record<string, unknown>).apiKey
+      : undefined,
+  ]) {
+    if (typeof key !== 'string' || key.length === 0 || existingApiKeys.has(key)) continue
+    providerCredentials.push({
+      id: `completion-test-credential-${providerCredentials.length + 1}`,
+      name: 'Completion test credential',
+      type: 'apiKey',
+      apiKey: key,
+    })
+    existingApiKeys.add(key)
+  }
   const db = openDatabase(harness.dataDir)
   try {
     writePersistedWithMessages(db, harness.dataDir, {
@@ -132,6 +162,7 @@ function writeDatabase(database: Record<string, unknown>): void {
         useStreaming: false,
         characters: [],
         ...database,
+        ...(providerCredentials.length > 0 ? { providerCredentials } : {}),
       },
       assets: [],
     })
@@ -448,7 +479,7 @@ describe('POST /api/v1/generate/completion', () => {
         tools: [tool],
       },
     })
-    expect(first.statusCode).toBe(200)
+    expect(first.statusCode, first.body).toBe(200)
     expect(first.json()).toEqual({
       type: 'success',
       result: '',
@@ -1104,19 +1135,24 @@ describe('POST /api/v1/generate/completion', () => {
       {
         label: 'xcustom internal id',
         database: {
-          aiModel: 'xcustom:::profile-openai',
-          customModels: [
+          providerCredentials: [
+            { id: 'xcustom-credential', name: 'Profile OpenAI', type: 'apiKey', apiKey: 'sk-xcustom' },
+          ],
+          modelProfiles: [
             {
-              id: 'xcustom:::profile-openai',
+              id: 'xcustom-profile',
               name: 'Profile OpenAI',
-              internalId: 'xcustom-wire-model',
-              url: 'https://custom.example.com/v1/chat/completions',
-              key: 'sk-xcustom',
-              format: LLMFormat.OpenAICompatible,
-              flags: [],
-              tokenizer: 0,
+              modelId: 'custom-api',
+              providerId: 'custom-api',
+              providerOptions: {
+                credentialId: 'xcustom-credential',
+                baseUrl: 'https://custom.example.com/v1',
+                requestModel: 'xcustom-wire-model',
+              },
             },
           ],
+          modelProfileOrder: ['xcustom-profile'],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'xcustom-profile' } },
         },
         expectedUrl: 'https://custom.example.com/v1/chat/completions',
         expectedModel: 'xcustom-wire-model',
@@ -1180,7 +1216,7 @@ describe('POST /api/v1/generate/completion', () => {
           stream: false,
         },
       })
-      expect(res.statusCode).toBe(200)
+      expect(res.statusCode, `${testCase.label}: ${res.body}`).toBe(200)
       expect(res.json()).toMatchObject({ type: 'success', result: 'profile request ok' })
 
       const sent = captured.at(-1)
@@ -1260,7 +1296,7 @@ describe('POST /api/v1/generate/completion', () => {
       },
     })
 
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(200)
     expect(res.json()).toEqual({ type: 'success', result: 'clean result' })
   })
 

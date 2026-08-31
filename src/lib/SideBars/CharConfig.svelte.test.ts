@@ -1190,7 +1190,7 @@ describe('CharConfig draft-type-less character actions', () => {
         makeCharacter({
           name: 'Aggregate stale',
           alternateGreetings: ['Aggregate zero', 'Aggregate one'],
-          chats: [{ id: 'aggregate-chat', name: 'Aggregate', message: [], fmIndex: 1 }],
+          chats: [{ id: 'aggregate-chat', name: 'Aggregate', message: [], note: '', localLore: [], fmIndex: 1 }],
         }),
       ],
       currentChar: 0,
@@ -1205,8 +1205,8 @@ describe('CharConfig draft-type-less character actions', () => {
         name: 'Owner current',
         alternateGreetings: ['Owner zero', 'Owner one'],
         chats: [
-          { id: 'owner-chat-zero', name: 'Zero', message: [], fmIndex: 0 },
-          { id: 'owner-chat-one', name: 'One', message: [], fmIndex: 1 },
+          { id: 'owner-chat-zero', name: 'Zero', message: [], note: '', localLore: [], fmIndex: 0 },
+          { id: 'owner-chat-one', name: 'One', message: [], note: '', localLore: [], fmIndex: 1 },
         ],
       }),
     ]
@@ -1243,8 +1243,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await mountCharConfig(2, {
       alternateGreetings: ['Zero', 'One'],
       chats: [
-        { id: 'duplicate-chat', name: 'First', message: [], fmIndex: 0 },
-        { id: 'duplicate-chat', name: 'Second', message: [], fmIndex: 1 },
+        { id: 'duplicate-chat', name: 'First', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'duplicate-chat', name: 'Second', message: [], note: '', localLore: [], fmIndex: 1 },
       ],
     })
 
@@ -1304,8 +1304,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await mountCharConfig(2, {
       alternateGreetings: ['Zero', 'One'],
       chats: [
-        { id: 'chat-zero', name: 'Zero', message: [], fmIndex: 0 },
-        { id: 'chat-one', name: 'One', message: [], fmIndex: 1 },
+        { id: 'chat-zero', name: 'Zero', message: [], note: '', localLore: [], fmIndex: 0 },
+        { id: 'chat-one', name: 'One', message: [], note: '', localLore: [], fmIndex: 1 },
       ],
     })
 

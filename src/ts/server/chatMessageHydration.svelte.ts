@@ -216,7 +216,12 @@ function syncChatMessageOwnerProjection(chatId: string): void {
   if (!legacyMessages) return
   const ownerMessages = chatMessageOwnerProjections.get(chatId)
   if (!ownerMessages) {
-    chatMessageOwnerProjections.set(chatId, cloneOwnerMessages(legacyMessages))
+    // The owner array has stable identity so generation/optimistic callers can
+    // retain it across projections. Make that stable array reactive: later
+    // in-place splices must invalidate transcript consumers as well as update
+    // callers that already hold the owner reference.
+    const reactiveOwnerMessages = $state(cloneOwnerMessages(legacyMessages))
+    chatMessageOwnerProjections.set(chatId, reactiveOwnerMessages)
     return
   }
   ownerMessages.splice(0, ownerMessages.length, ...cloneOwnerMessages(legacyMessages))

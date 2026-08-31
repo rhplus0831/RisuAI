@@ -730,7 +730,11 @@ export function getHypaV3PresetOwnerStateSnapshot(): HypaV3PresetOwnerStateSnaps
 
   const selectedHypaV3PresetId = settings.selectedHypaV3PresetId
   if (selectedHypaV3PresetId !== null && !nonEmptyString(selectedHypaV3PresetId)) return null
-  const hypaV3PresetId = hypaV3PresetIndexFromStableId({ selectedHypaV3PresetId, hypaV3Presets })
+  const stableSelectedHypaV3PresetId = selectedHypaV3PresetId as string | null
+  const hypaV3PresetId = hypaV3PresetIndexFromStableId({
+    selectedHypaV3PresetId: stableSelectedHypaV3PresetId,
+    hypaV3Presets,
+  })
   if (
     (hypaV3Presets.length === 0 ? selectedHypaV3PresetId !== null || hypaV3PresetId !== -1 : hypaV3PresetId === -1) ||
     settings.hypaV3PresetId !== hypaV3PresetId
@@ -740,7 +744,7 @@ export function getHypaV3PresetOwnerStateSnapshot(): HypaV3PresetOwnerStateSnaps
 
   return {
     hypaV3Presets: cloneJsonValue(hypaV3Presets) as Database['hypaV3Presets'],
-    selectedHypaV3PresetId,
+    selectedHypaV3PresetId: stableSelectedHypaV3PresetId,
     hypaV3PresetId,
   }
 }
@@ -812,7 +816,8 @@ export function getPersonaOwnerStateSnapshot(): PersonaOwnerStateSnapshot | null
 
   const selectedPersonaId = settings.selectedPersonaId
   if (selectedPersonaId !== null && !nonEmptyString(selectedPersonaId)) return null
-  const selectedPersona = personaSelectionIndex(personas, selectedPersonaId)
+  const stableSelectedPersonaId = selectedPersonaId as string | null
+  const selectedPersona = personaSelectionIndex(personas, stableSelectedPersonaId)
   if (
     (personas.length === 0 ? selectedPersonaId !== null || selectedPersona !== -1 : selectedPersona === -1) ||
     settings.selectedPersona !== selectedPersona ||
@@ -826,7 +831,7 @@ export function getPersonaOwnerStateSnapshot(): PersonaOwnerStateSnapshot | null
 
   return {
     personas: cloneJsonValue(personas) as Database['personas'],
-    selectedPersonaId,
+    selectedPersonaId: stableSelectedPersonaId,
     selectedPersona,
     username: settings.username,
     userIcon: settings.userIcon,
@@ -893,6 +898,7 @@ export function reassertPendingPersonaOwnerRow(persona: Database['personas'][num
 
   const selectedPersonaId = settings.selectedPersonaId
   if (selectedPersonaId !== null && !nonEmptyString(selectedPersonaId)) return false
+  const stableSelectedPersonaId = selectedPersonaId as string | null
   if (
     typeof settings.username !== 'string' ||
     typeof settings.userIcon !== 'string' ||
@@ -904,7 +910,7 @@ export function reassertPendingPersonaOwnerRow(persona: Database['personas'][num
 
   const nextPersonas = [...personas, cloneJsonValue(persona)]
   if (!isUniquePresetCollection(nextPersonas)) return false
-  const selectedPersona = personaSelectionIndex(nextPersonas, selectedPersonaId)
+  const selectedPersona = personaSelectionIndex(nextPersonas, stableSelectedPersonaId)
   if (selectedPersona === -1) return false
 
   collectionsResourceState.values.personas = nextPersonas as Database['personas']

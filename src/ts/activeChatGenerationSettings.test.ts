@@ -976,7 +976,6 @@ describe('active chat generation settings helper', () => {
 
   it('uses the revisioned character selection owner instead of the compatibility store', () => {
     const database = clonePlain(testDatabaseState.db)
-    database.currentChar = 0
     database.characters.push({
       ...clonePlain(database.characters[0]),
       chaId: 'char-b',

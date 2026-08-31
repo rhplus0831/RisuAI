@@ -475,9 +475,12 @@ function readLegacyNonSecretProviderOptions(
       reverseProxy,
     })
   }
-  if (modelId === 'ollama' || modelId === 'ollama-cloud') {
+  if (modelId.includes('ollama')) {
     return removeEmptyModelProviderOptions({
-      requestModel: nonBlankString(database.ollamaModel),
+      requestModel:
+        modelId === 'ollama-cloud'
+          ? (nonBlankString(database.ollamaCloudModel) ?? nonBlankString(database.ollamaModel))
+          : nonBlankString(database.ollamaModel),
       ollama: {
         url: nonBlankString(database.ollamaURL),
         requestFormat: readLegacyLlmFormat(database.ollamaRequestFormat),
@@ -495,6 +498,7 @@ function readLegacyNonSecretProviderOptions(
         }
       : undefined
     return removeEmptyModelProviderOptions({
+      requestModel: nonBlankString(database.openrouterRequestModel),
       openrouter: {
         fallback: typeof database.openrouterFallback === 'boolean' ? database.openrouterFallback : undefined,
         middleOut: typeof database.openrouterMiddleOut === 'boolean' ? database.openrouterMiddleOut : undefined,
@@ -504,6 +508,7 @@ function readLegacyNonSecretProviderOptions(
   }
   if (modelId === 'nanogpt' || modelId.startsWith('nanogpt')) {
     return removeEmptyModelProviderOptions({
+      requestModel: nonBlankString(database.nanogptRequestModel),
       nanogpt: {
         providerHint: nonBlankString(database.nanogptProvider),
         useSubscriptionEndpoint:
@@ -537,6 +542,7 @@ function findReusableLegacyCredentialId(database: JsonRecord, modelId: string): 
 
 function readLegacyApiKey(database: JsonRecord, modelId: string): string | undefined {
   if (modelId === 'reverse_proxy') return nonBlankString(database.proxyKey)
+  if (modelId.startsWith('horde:::')) return nonBlankString(recordValue(database, 'hordeConfig').apiKey)
   if (modelId === 'openrouter') return nonBlankString(database.openrouterKey)
   if (modelId === 'nanogpt' || modelId.startsWith('nanogpt')) return nonBlankString(database.nanogptKey)
   if (modelId === 'ollama' || modelId === 'ollama-cloud') return nonBlankString(database.ollamaApiKey)

@@ -307,6 +307,7 @@ async function waitForCommandFetches(calls: CapturedFetch[]): Promise<void> {
 function seedDb(): void {
   selectedCharID.set(0)
   setDatabaseLite({
+    currentChar: 0,
     modelPresetsId: 0,
     modelPresets: [
       {
@@ -358,6 +359,11 @@ function seedDb(): void {
       },
     ],
     selectedPersona: 0,
+    selectedPersonaId: 'persona-a',
+    username: 'Persona A',
+    personaPrompt: 'Persona A prompt',
+    userIcon: '',
+    userNote: 'A note',
     personas: [
       {
         id: 'persona-a',

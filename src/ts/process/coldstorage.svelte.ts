@@ -1,7 +1,7 @@
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
 import { alertClear, alertError, alertWait } from '../alert'
 import { language } from 'src/lang'
-import type { Chat, character } from '../storage/databaseTypes'
+import type { Chat, character } from '../storage/database.svelte'
 import { forageStorage } from '../globalApi.svelte'
 import {
   getServerCommandBaseRevision,

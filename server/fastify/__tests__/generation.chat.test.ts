@@ -17,6 +17,7 @@ import { type ChatProviderDispatchContext, type GenerationChatRouteOptions } fro
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '@risuai/shared-core/model-types'
+import { extractModelPresetFields, extractPromptPresetFields } from '@risuai/shared-core/preset-split'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
 import {
@@ -203,14 +204,21 @@ function ensureDefaultFixturePersona(database: JsonRecord): void {
     ]
     database.personas = personas
     database.selectedPersona = 0
+    database.selectedPersonaId = DEFAULT_TEST_PERSONA_ID
     saveSelectedPersonaSnapshot(database, personas)
   }
 }
 
 function ensureDefaultFixturePresets(database: JsonRecord): void {
   if (!Array.isArray(database.modelPresets) || database.modelPresets.length === 0) {
+    const modelFields = extractModelPresetFields(database)
+    delete modelFields.modelProfiles
+    delete modelFields.modelProfileOrder
+    delete modelFields.modelRoleProfiles
+    delete modelFields.modelRuntimeDefaults
     database.modelPresets = [
       {
+        ...modelFields,
         id: DEFAULT_TEST_MODEL_PRESET_ID,
         name: 'Default Model',
         maxContext: database.maxContext ?? 100_000,
@@ -223,6 +231,7 @@ function ensureDefaultFixturePresets(database: JsonRecord): void {
   if (!Array.isArray(database.promptPresets) || database.promptPresets.length === 0) {
     database.promptPresets = [
       {
+        ...extractPromptPresetFields(database),
         id: DEFAULT_TEST_PROMPT_PRESET_ID,
         name: 'Default Prompt',
         mainPrompt: database.mainPrompt ?? 'MAIN',
@@ -1396,6 +1405,26 @@ describe('POST /api/v1/generate/chat', () => {
       aiModel: 'openrouter',
       openrouterKey: 'test-openrouter-key',
       openrouterRequestModel: 'vendor/model-name',
+      modelPresets: [
+        {
+          id: DEFAULT_TEST_MODEL_PRESET_ID,
+          name: 'Default Model',
+          modelProfiles: [
+            {
+              id: 'openrouter-profile',
+              name: 'OpenRouter',
+              modelId: 'openrouter',
+              providerOptions: {
+                apiKey: 'test-openrouter-key',
+                requestModel: 'vendor/model-name',
+              },
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-profile' } },
+          maxContext: 100_000,
+          maxResponse: 50,
+        },
+      ],
     })
 
     const res = await harness.app.inject({
@@ -1404,7 +1433,7 @@ describe('POST /api/v1/generate/chat', () => {
       headers: { 'risu-auth': assertion },
       payload: basePayload,
     })
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(200)
 
     expect(parseEvents(res.body).at(-1)?.data.generationInfo).toMatchObject({
       model: 'openrouter-vendor/model-name',
@@ -1459,6 +1488,33 @@ describe('POST /api/v1/generate/chat', () => {
       openrouterKey: 'test-openrouter-free-key',
       openrouterRequestModel: 'risu/free',
       useStreaming: false,
+      providerCredentials: [
+        {
+          id: 'openrouter-credential',
+          name: 'OpenRouter',
+          type: 'apiKey',
+          apiKey: 'test-openrouter-free-key',
+        },
+      ],
+      modelPresets: [
+        {
+          id: DEFAULT_TEST_MODEL_PRESET_ID,
+          name: 'Default Model',
+          modelProfiles: [
+            {
+              id: 'openrouter-free-profile',
+              name: 'OpenRouter Free',
+              modelId: 'openrouter',
+              providerOptions: {
+                credentialId: 'openrouter-credential',
+                requestModel: 'risu/free',
+              },
+              runtimeOptions: { useStreaming: false },
+            },
+          ],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'openrouter-free-profile' } },
+        },
+      ],
     })
 
     const res = await harness.app.inject({

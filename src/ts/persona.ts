@@ -1795,7 +1795,12 @@ export function reorderUserPersonasByIndicesWithOutcome(
   if (!personaCommandIdList(personas)) return null
 
   suppressPersonaSettingsWatcherUntilNextTask()
-  if (!updatePersonaOwnerState((draft) => (draft.personas = personas))) return null
+  if (
+    !updatePersonaOwnerState((draft) => {
+      draft.personas = personas
+    })
+  )
+    return null
   return dispatchReorderPersonas(previous)
 }
 

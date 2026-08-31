@@ -1,5 +1,5 @@
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
-import { mutateStablePostGenerationMessage, type StablePostGenerationMessageTarget } from './stableTarget'
+import { resolveStablePostGenerationMessage, type StablePostGenerationMessageTarget } from './stableTarget'
 
 export interface StageTimings {
   stage1Start: number
@@ -27,8 +27,9 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
     generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
     generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
   }
-  mutateStablePostGenerationMessage(target, (message) => {
-    if (!message.generationInfo) return
-    message.generationInfo = generationInfo
-  })
+  // The generated row is already persisted by the generation operation. This
+  // closeout only fills client-observed timing fields, so avoid a whole-chat
+  // durable diff while retaining the exact stable-id owner resolution.
+  const resolution = resolveStablePostGenerationMessage(target)
+  if (resolution?.message.generationInfo) resolution.message.generationInfo = generationInfo
 }

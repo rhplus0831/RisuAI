@@ -34,7 +34,9 @@
   let mutationPending = $state(false)
   let mutationError = $state('')
   let personaOwner = $derived(getPersonaOwnerStateSnapshot())
-  let personas = $derived(isChatGenerationSelectionMode ? readPersonaOwners() : (personaOwner?.personas ?? []))
+  let personas = $derived(
+    isChatGenerationSelectionMode ? readPersonaOwners() : (uniquePersonaOwners(personaOwner?.personas) ?? []),
+  )
   let selectedPersonaId = $derived(personaOwner?.selectedPersonaId ?? null)
 
   function nonEmptyId(id: unknown): string | null {

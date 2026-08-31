@@ -9,7 +9,7 @@ vi.mock('../platform', async (importActual) => ({
 }))
 
 const commandSpies = vi.hoisted(() => ({
-  currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
+  currentChatScopedSnapshot: vi.fn<() => any>(() => ({ snapshot: true })),
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),

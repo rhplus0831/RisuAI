@@ -378,7 +378,10 @@ describe('Phase 3 compatibility structure', () => {
       .sort()
     expect(bridgeFiles).toEqual(BRIDGE_CLASSIFICATION.map(({ file }) => file).sort())
 
-    const aggregateFlush = readRepoFile('src/ts/server/bridgeFlush.ts')
+    const aggregateFlush = bridgeFiles.length > 0 ? readRepoFile('src/ts/server/bridgeFlush.ts') : ''
+    if (bridgeFiles.length === 0) {
+      expect(() => readRepoFile('src/ts/server/bridgeFlush.ts')).toThrow()
+    }
     for (const bridge of BRIDGE_CLASSIFICATION) {
       const source = readRepoFile(`src/ts/server/${bridge.file}`)
       expect(source).toContain('dispatchDurableMutation')

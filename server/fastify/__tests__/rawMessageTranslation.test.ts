@@ -494,7 +494,14 @@ describe('translateRawMessageData', () => {
           prompt: 'Global {{slot::content}}',
           maxResponse: 100,
           steps: [
-            { id: 'global-step', name: 'Global', enabled: true, prompt: 'Global {{slot::content}}', maxResponse: 100, model: { mode: 'inheritTranslate' } },
+            {
+              id: 'global-step',
+              name: 'Global',
+              enabled: true,
+              prompt: 'Global {{slot::content}}',
+              maxResponse: 100,
+              model: { mode: 'inheritTranslate' },
+            },
           ],
         },
         {
@@ -503,7 +510,14 @@ describe('translateRawMessageData', () => {
           prompt: 'Chat {{slot::content}}',
           maxResponse: 200,
           steps: [
-            { id: 'chat-step', name: 'Chat', enabled: true, prompt: 'Chat {{slot::content}}', maxResponse: 200, model: { mode: 'inheritTranslate' } },
+            {
+              id: 'chat-step',
+              name: 'Chat',
+              enabled: true,
+              prompt: 'Chat {{slot::content}}',
+              maxResponse: 200,
+              model: { mode: 'inheritTranslate' },
+            },
           ],
         },
       ],

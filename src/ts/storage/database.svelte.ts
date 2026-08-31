@@ -296,8 +296,8 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function settingsOwnerRecord(): Record<string, unknown> {
-  return settingsResourceState.value as unknown as Record<string, unknown>
+function settingsOwnerRecord(): Database & Record<string, unknown> {
+  return settingsResourceState.value as Database & Record<string, unknown>
 }
 
 function legacyPresetOwner(): botPreset[] {

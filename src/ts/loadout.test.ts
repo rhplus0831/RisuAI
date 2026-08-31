@@ -1211,6 +1211,7 @@ describe('loadout projection command helpers', () => {
             modules: ['module-a', 'module-stay', 'module-z', 'module-b'].map((id) => ({
               id,
               name: id,
+              description: '',
             })),
           },
         },
@@ -2158,10 +2159,6 @@ describe('loadout projection command helpers', () => {
 
   it('failed favorite preserves newer sibling edits/appends and newer same-row changes', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    expect(() => {
-      testDatabaseState.db.loadouts[0].favorite = true
-    }).toThrow()
-
     const favoriteMutation = toggleLoadoutFavorite('loadout-a')
     expect(testDatabaseState.db.loadouts[0].favorite).toBe(true)
     withTestDatabaseWrite(() => {

@@ -240,7 +240,9 @@ export function isLegacyModelPresetCompatibilityRecord(source: unknown): boolean
 
 export function applyLegacyModelPresetCompatibilitySelection(target: JsonRecord, preset: unknown): boolean {
   if (!isLegacyModelPresetCompatibilityRecord(preset)) return false
-  target.modelRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(undefined))
+  // The normalizer constructs a fresh role map on every call. Cloning that
+  // new value again only adds a JSON round-trip to each generation preflight.
+  target.modelRoleProfiles = normalizeModelRoleProfiles(undefined)
   return true
 }
 

@@ -43,7 +43,7 @@
     },
     {
       "path": "test/compat-harness/current.runner.ts",
-      "sha256": "ebed38141a341a002964610d23b04cae2b9184504d090c2fb3077e1a453715bf"
+      "sha256": "e622658fb135478b9a1fc1e5230694b02c7d004cca8f46a61e0d6b6faf533ef4"
     }
   ],
   "normalizationContract": [

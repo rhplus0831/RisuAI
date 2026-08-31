@@ -26,7 +26,8 @@ vi.mock('src/ts/stores.svelte', async () => {
   }
 })
 
-vi.mock('src/ts/server/resourceState.svelte', () => ({
+vi.mock('src/ts/server/resourceState.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/resourceState.svelte')>()),
   getResourceDatabase: () => ({ doNotWarnExternalServers: true }),
 }))
 

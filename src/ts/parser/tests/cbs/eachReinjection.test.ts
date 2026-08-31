@@ -16,7 +16,7 @@ vi.mock(
       getCurrentCharacter: () => ({}),
       getDatabase: () => testDatabaseState.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../../storage/database.svelte'),
+    }) as unknown as typeof import('../../../storage/database.svelte'),
 )
 
 vi.mock(import('../../../globalApi.svelte'), () => ({

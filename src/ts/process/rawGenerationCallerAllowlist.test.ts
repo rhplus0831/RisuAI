@@ -29,7 +29,7 @@ function runtimeSourceFiles(directory: string): string[] {
 function moduleSource(file: string): string {
   const source = readFileSync(path.join(repositoryRoot, file), 'utf8')
   if (!file.endsWith('.svelte')) return source
-  return source.match(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/)?.[1] ?? ''
+  return [...source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)].map((match) => match[1]).join('\n')
 }
 
 function fullSource(file: string): string {

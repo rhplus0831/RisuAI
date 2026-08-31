@@ -48,6 +48,8 @@ const CLOSED_STRING_VOCABULARIES = {
   },
   'src/ts/startupReadiness.ts': {
     StartupMilestoneRecordResult: ['duplicate', 'pending', 'transitioned'],
+  },
+  'packages/protocol/src/startupTelemetry.ts': {
     StartupStep: [
       'background-readiness',
       'background-runtime',

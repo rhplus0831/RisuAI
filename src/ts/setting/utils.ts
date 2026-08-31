@@ -818,7 +818,7 @@ function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingCont
     }
     obj[parts[parts.length - 1]] = newValue
   } else if (item.bindKey) {
-    settings[item.bindKey] = newValue
+    ;(settings as unknown as Record<keyof Database, unknown>)[item.bindKey] = newValue
   }
   return true
 }

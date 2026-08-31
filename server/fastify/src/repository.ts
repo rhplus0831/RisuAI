@@ -3,7 +3,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
 import { SERVER_CHARACTER_SHELL_MARKER, type ServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
-import { createInitialDatabase, migrateLegacyFlatModelConfiguration } from './databaseDefaults.js'
+import {
+  createInitialDatabase,
+  migrateLegacyFlatModelConfiguration,
+  normalizeDatabaseDefaults,
+} from './databaseDefaults.js'
 import { rebuildAllBardWikiDerivedState } from './bardWikiRepository.js'
 import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
@@ -1520,6 +1524,8 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
   const parsed = readLegacyDatabaseSnapshot(filePath)
   const database = parsed.database as JsonRecord
 
+  normalizeDatabaseDefaults(database)
+  repairLegacyCharacterCompatibilityShape(database)
   migrateLegacyFlatModelConfiguration(database)
   repairPersistedGlobalLorebookIds(database)
   repairPersistedPersonaSelectionIdentity(database)
@@ -1541,6 +1547,25 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
   if (hypa.length > 0) replaceAllChatHypaV3(db, hypa)
 
   if (parsed.assets.length > 0) insertAssetMetadataBatch(db, parsed.assets)
+}
+
+function repairLegacyCharacterCompatibilityShape(database: JsonRecord): void {
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  for (const candidate of characters) {
+    if (!isRecord(candidate)) continue
+    if (!Array.isArray(candidate.chatFolders)) candidate.chatFolders = []
+    if (!Array.isArray(candidate.chats)) candidate.chats = []
+    const chats = candidate.chats as unknown[]
+    const selected = Number.isInteger(candidate.chatPage) ? (candidate.chatPage as number) : 0
+    candidate.chatPage = chats.length === 0 ? 0 : Math.min(Math.max(selected, 0), chats.length - 1)
+    for (const [index, chat] of chats.entries()) {
+      if (!isRecord(chat)) continue
+      if (typeof chat.name !== 'string') chat.name = `New Chat ${index + 1}`
+      if (typeof chat.note !== 'string') chat.note = ''
+      if (!Array.isArray(chat.localLore)) chat.localLore = []
+      if (!Array.isArray(chat.message)) chat.message = []
+    }
+  }
 }
 
 function nextLegacyDatabaseQuarantinePath(filePath: string): string {

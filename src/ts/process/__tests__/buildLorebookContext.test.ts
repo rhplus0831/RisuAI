@@ -65,6 +65,7 @@ function makeChar(globalLore: LoreEntry[] = []): character {
     chatFolders: [],
     chats: [
       {
+        id: 'chat-1',
         name: 'main',
         note: '',
         localLore: [],
@@ -80,6 +81,7 @@ function seedWithLore(globalLore: LoreEntry[] = []) {
   setDatabase({
     aiModel: 'gpt-4o',
     subModel: 'gpt-4o',
+    currentChar: 0,
     characters: [makeChar(globalLore)],
   } as unknown as Database)
   selectedCharID.set(0)

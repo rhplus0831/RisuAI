@@ -143,6 +143,12 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     dbJsonWriteMs: 0,
     forbiddenTables: ['characters', 'chats'],
   },
+  'targeted-cross-owner': {
+    reviewGate: 'cross-owner deletion writes only the explicitly cascaded owner rows',
+    sections: COMMAND_METRIC_SECTIONS,
+    dbJsonWriteMs: 0,
+    maxTables: ['characters', 'chats', 'loadouts', 'modules', 'personas', 'settings'],
+  },
   'targeted-plugin-storage': {
     reviewGate: 'plugin custom storage writes touch only plugin_custom_storage',
     sections: COMMAND_METRIC_SECTIONS,

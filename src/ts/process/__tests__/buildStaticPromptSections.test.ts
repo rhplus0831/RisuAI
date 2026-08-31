@@ -155,8 +155,24 @@ describe('buildPersona', () => {
     seedDb()
   })
 
-  it('returns the persona prompt when db.personaPrompt is set', () => {
-    seedDb({ personaPrompt: 'Curious user persona.', personas: [] })
+  it('returns the selected persona owner prompt', () => {
+    seedDb({
+      selectedPersona: 0,
+      selectedPersonaId: 'persona-a',
+      username: 'Curious User',
+      personaPrompt: 'Curious user persona.',
+      userIcon: '',
+      userNote: '',
+      personas: [
+        {
+          id: 'persona-a',
+          name: 'Curious User',
+          personaPrompt: 'Curious user persona.',
+          icon: '',
+          note: '',
+        },
+      ],
+    })
     expect(buildPersona(makeChar())).toEqual([{ role: 'system', content: 'Curious user persona.' }])
   })
 

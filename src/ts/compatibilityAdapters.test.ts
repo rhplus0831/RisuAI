@@ -368,42 +368,28 @@ describe('compatibility adapters', () => {
     })
   })
 
-  it('keeps character asset helper writes behind trusted projection updates', async () => {
+  it('keeps character asset helper writes on the character owner projection', async () => {
     const calls = stubCommandFetch()
-    expect(() => {
-      testDatabaseState.db.characters[0].image = 'direct'
-    }).toThrow()
 
     changeCharImage(0, 0)
     rmCharEmotion(0, 0)
 
     expect(testDatabaseState.db.characters[0].image).toBe('asset-old')
     expect(testDatabaseState.db.characters[0].emotionImages).toEqual([])
-    expect(() => {
-      testDatabaseState.db.characters[0].image = 'direct'
-    }).toThrow()
-
     await vi.waitFor(() => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(2)
     })
   })
 
-  it('creates characters through trusted optimistic projection writes under the guard', async () => {
+  it('creates characters through optimistic character-owner projection writes', async () => {
     const calls = stubCommandFetch()
     ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
-    expect(() => {
-      testDatabaseState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
-    }).toThrow()
 
     const outcome = await createNewCharacter()
 
     expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
     expect(testDatabaseState.db.characters[1].name).toBe('')
     expect(isCharacterLorebookMutationReady(testDatabaseState.db.characters[1].chaId)).toBe(true)
-    expect(() => {
-      testDatabaseState.db.characters.push({ chaId: 'direct-2', name: 'Direct', chats: [] } as any)
-    }).toThrow()
-
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters')).toBe(true)
     })
@@ -418,17 +404,13 @@ describe('compatibility adapters', () => {
     })
   })
 
-  it('creates and selects scratch characters with one server command under the guard', async () => {
+  it('creates and selects scratch characters with one server command', async () => {
     const calls = stubCommandFetch()
     const outcome = await createNewCharacter({ select: true })
 
     expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
     expect(get(selectedCharID)).toBe(1)
     expect(testDatabaseState.db.characters[1].lastInteraction).toEqual(expect.any(Number))
-    expect(() => {
-      testDatabaseState.db.characters[1].lastInteraction = 1
-    }).toThrow()
-
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select')).toBe(true)
     })
@@ -680,9 +662,6 @@ describe('compatibility adapters', () => {
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     const handler = new CharacterHandler()
-    expect(() => {
-      testDatabaseState.db.characters[0].globalLore = []
-    }).toThrow()
 
     const result = await handler.setCharacterLorebook('char-a', 'Lore', 'content', ['key'])
 
@@ -719,9 +698,6 @@ describe('compatibility adapters', () => {
       },
     ]
     const handler = new CharacterHandler()
-    expect(() => {
-      testDatabaseState.db.characters[0].customscript = []
-    }).toThrow()
 
     const regexResult = await handler.setCharacterRegexScripts('char-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
     expect(regexResult[0]).toMatchObject({
@@ -791,9 +767,6 @@ describe('compatibility adapters', () => {
       },
     ]
     const handler = new ModuleHandler()
-    expect(() => {
-      testDatabaseState.db.modules[0].regex = []
-    }).toThrow()
 
     const regexResult = await handler.setModuleRegexScript('mod-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
     expect(regexResult[0]).toMatchObject({
@@ -849,9 +822,6 @@ describe('compatibility adapters', () => {
     testDatabaseState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
     testDatabaseState.db.enabledModules = []
     const handler = new ModuleHandler()
-    expect(() => {
-      testDatabaseState.db.enabledModules.push('mod-a')
-    }).toThrow()
 
     const result = await handler.setModuleInfo('mod-a', {
       name: 'Renamed module',

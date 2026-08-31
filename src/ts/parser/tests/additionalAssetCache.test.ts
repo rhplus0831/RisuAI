@@ -49,7 +49,7 @@ vi.mock(
       getCurrentChat: () => undefined,
       getDatabase: () => mocks.db,
       reapplyPendingPresetProjections: () => {},
-    }) as typeof import('../../storage/database.svelte'),
+    }) as unknown as typeof import('../../storage/database.svelte'),
 )
 
 vi.mock(import('../../globalApi.svelte'), () => ({

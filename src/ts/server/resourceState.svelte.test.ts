@@ -828,7 +828,11 @@ describe('resource-scoped database state', () => {
     ;(settingsResourceState.value as Record<string, unknown>).selectedPersona = 1
     const before = composeResourceDatabaseSnapshot()
     expect(getPersonaOwnerStateSnapshot()).toBeNull()
-    expect(updatePersonaOwnerState((draft) => draft.personas.reverse())).toBe(false)
+    expect(
+      updatePersonaOwnerState((draft) => {
+        draft.personas.reverse()
+      }),
+    ).toBe(false)
     expect(composeResourceDatabaseSnapshot()).toEqual(before)
   })
 
@@ -884,7 +888,11 @@ describe('resource-scoped database state', () => {
 
     const before = composeResourceDatabaseSnapshot()
     expect(getHypaV3PresetOwnerStateSnapshot()).toBeNull()
-    expect(updateHypaV3PresetOwnerState((draft) => draft.hypaV3Presets.reverse())).toBe(false)
+    expect(
+      updateHypaV3PresetOwnerState((draft) => {
+        draft.hypaV3Presets.reverse()
+      }),
+    ).toBe(false)
     expect(composeResourceDatabaseSnapshot()).toEqual(before)
   })
 

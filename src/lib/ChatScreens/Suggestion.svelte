@@ -249,7 +249,7 @@
       characters: charactersResourceState.characters,
       characterOrder: charactersResourceState.characterOrder,
       currentChar: charactersResourceState.currentChar,
-    }) as Database
+    }) as unknown as Database
   }
 
   let fallbackGenerationTargetKey = $derived.by(() => {

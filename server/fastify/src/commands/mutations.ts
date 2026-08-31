@@ -161,6 +161,7 @@ export const TARGETED_MUTATION_PATHS = {
   characterRow: 'targeted-character-row',
   chatRow: 'targeted-chat-row',
   collection: 'targeted-collection',
+  crossOwner: 'targeted-cross-owner',
   pluginStorage: 'targeted-plugin-storage',
   inlayCatalog: 'targeted-inlay-catalog',
   bardWiki: 'targeted-bardwiki',

@@ -177,7 +177,7 @@ describe('PromptDataItem disclosure control', () => {
     settingsResourceState.value.promptSettings.customChainOfThought = true
     component = mount(PromptDataItemTestHost, {
       target,
-      props: { initialPrompt: { type: 'plain', name: 'Main', text: '', role: 'system' } },
+      props: { initialPrompt: { type: 'plain', type2: 'normal', name: 'Main', text: '', role: 'system' } },
     })
     await tick()
     Array.from(target.querySelectorAll('button'))
@@ -194,7 +194,7 @@ describe('PromptDataItem disclosure control', () => {
     settingsResourceState.groupErrors.prompt = 'invalid prompt settings'
     component = mount(PromptDataItemTestHost, {
       target,
-      props: { initialPrompt: { type: 'plain', name: 'Main', text: '', role: 'system' } },
+      props: { initialPrompt: { type: 'plain', type2: 'normal', name: 'Main', text: '', role: 'system' } },
     })
     await tick()
     Array.from(target.querySelectorAll('button'))

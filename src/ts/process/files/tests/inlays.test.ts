@@ -16,7 +16,6 @@ import {
 import { getImageType } from 'src/ts/media'
 import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
 import { uploadServerAssetBytes } from 'src/ts/server/assets'
-import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const settingsOwnerState = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,
@@ -183,13 +182,13 @@ vi.mock(import('src/ts/model/modellist'), () => ({
   LLMFlags: { hasImageInput: 0 } as never,
 }))
 
-vi.mock(import('src/ts/storage/database.svelte'), () => ({
-  getDatabase: vi.fn(),
-}))
-
-vi.mock(import('src/ts/server/resourceState.svelte'), () => ({
-  settingsResourceState: settingsOwnerState,
-}))
+vi.mock(
+  import('src/ts/server/resourceState.svelte'),
+  () =>
+    ({
+      settingsResourceState: settingsOwnerState,
+    }) as unknown as typeof import('src/ts/server/resourceState.svelte'),
+)
 
 vi.mock(
   import('src/ts/util'),
@@ -264,26 +263,20 @@ describe('supportsInlayImage', () => {
   test('uses request-scoped model flags when provided', () => {
     expect(supportsInlayImage({ flags: [LLMFlags.hasImageInput] })).toBe(true)
     expect(supportsInlayImage({ flags: [] })).toBe(false)
-    expect(getDatabase).not.toHaveBeenCalled()
     expect(getModelInfo).not.toHaveBeenCalled()
   })
 
   test('requires request-scoped model flags', () => {
-    vi.mocked(getDatabase).mockReturnValue({ aiModel: 'legacy-vision' } as never)
     vi.mocked(getModelInfo).mockReturnValue({ flags: [LLMFlags.hasImageInput] } as never)
 
     expect(supportsInlayImage()).toBe(false)
-    expect(getDatabase).not.toHaveBeenCalled()
     expect(getModelInfo).not.toHaveBeenCalled()
   })
 
   test('fails closed instead of using the legacy fallback after an owner error', () => {
     settingsOwnerState.status = 'ready'
     settingsOwnerState.groupStatuses.providers = 'error'
-    vi.mocked(getDatabase).mockReturnValue({ aiModel: 'legacy-vision' } as never)
-
     expect(supportsInlayImage()).toBe(false)
-    expect(getDatabase).not.toHaveBeenCalled()
     expect(getModelInfo).not.toHaveBeenCalled()
   })
 })

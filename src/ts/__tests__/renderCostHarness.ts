@@ -3,6 +3,7 @@ import { get } from 'svelte/store'
 import { vi } from 'vitest'
 import type { character, customscript, Database, Message } from '../storage/database.svelte'
 import { getResourceDatabase, testDatabaseState, withTestDatabaseWrite } from './resourceDatabaseState'
+import { replaceResourceDatabase } from '../server/resourceState.svelte'
 import { applyServerChatMessagesResource } from '../server/chatMessageHydration.svelte'
 import {
   resetGenerationFinalizationPersistencesForTests,

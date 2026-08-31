@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // layer plus the prefetch buffer.
 
 const commandSpies = vi.hoisted(() => ({
-  currentChatScopedSnapshot: vi.fn(() => ({ snapshot: true })),
+  currentChatScopedSnapshot: vi.fn<() => any>(() => ({ snapshot: true })),
   dispatchReplaceTailMessagesScoped: vi.fn(),
   dispatchReplaceMessagesScoped: vi.fn(),
   dispatchUpdateMessageScoped: vi.fn(),

@@ -378,7 +378,7 @@
   function setPromptPresetArchived(preset: StableModernPreset, archived: boolean) {
     const presets = modernPresetOwners('prompt')
     const liveIndex = livePresetIndex('prompt', preset.id)
-    const livePreset = presets[liveIndex]
+    const livePreset = presets[liveIndex] as (PromptPreset & { id: string }) | undefined
     if (!livePreset || livePreset.archived === archived) return
 
     const key = `prompt:${preset.id}`
