@@ -159,6 +159,7 @@ function seedDb(): void {
     ],
     enabledModules: ['global-module'],
     moduleIntergration: 'global-integrated-space',
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -1074,6 +1075,43 @@ describe('active chat generation settings helper', () => {
       personaId: 'persona-a',
     })
   })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not resolve retained persona rows while the collection owner is %s',
+    (status) => {
+      testDatabaseState.db.characters[0].chats[0].generationSettings = {
+        configured: true,
+        personaId: 'persona-a',
+        modelPresetId: 'model-preset-a',
+        promptPresetId: 'preset-b',
+        jailbreakToggle: false,
+        sidebarToggles: { global: '0', chat: '0', character: '0' },
+      }
+      collectionsResourceState.statuses.personas = status
+
+      const state = resolveActiveChatGenerationSettings()
+
+      expect(state.persona).toBeUndefined()
+      expect(state.readiness.missing).toContainEqual({
+        code: 'persona_missing',
+        field: 'generationSettings.personaId',
+        personaId: 'persona-a',
+      })
+    },
+  )
+
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not resolve retained active chat rows while the character owner is %s',
+    (status) => {
+      charactersResourceState.status = status
+
+      expect(resolveActiveChatGenerationSettings()).toMatchObject({
+        character: undefined,
+        chat: undefined,
+        identity: { selectedCharIndex: -1, characterIndex: -1, chatIndex: -1 },
+      })
+    },
+  )
 
   it('does not dispatch or save when the active chat has no id', () => {
     delete testDatabaseState.db.characters[0].chats[0].id
