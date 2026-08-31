@@ -13,6 +13,7 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 import AlertComp from './AlertComp.svelte'
 import {
   alertAddCharacter,
+  alertCardExport,
   alertConfirm,
   alertInput,
   alertNormal,
@@ -196,6 +197,23 @@ describe('AlertComp workflow dialogs', () => {
     expect(resolveAlertWorkflow(get(alertStore).dialogOwner, 'cancel')).toBe(true)
     await expect(result).resolves.toBe('cancel')
   })
+
+  it('fails closed when preset export sees duplicate stable preset owners', async () => {
+    setDatabaseLite({
+      botPresetsId: 0,
+      botPresets: [
+        { id: 'duplicate-preset', name: 'First' },
+        { id: 'duplicate-preset', name: 'Second' },
+      ],
+    } as never)
+    const result = alertCardExport('preset')
+    await tick()
+
+    expect(target.textContent).toContain(language.risupresetDesc)
+    expect(target.textContent).not.toContain('Preset with image or regexes cannot be exported for now.')
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.close}"]`)?.click()
+    await expect(result).resolves.toEqual({ type: 'cancel', type2: '' })
+  })
 })
 
 describe('AlertComp select dialog', () => {
@@ -306,8 +324,10 @@ describe('AlertComp confirmation queue', () => {
 
 function seedBranchDatabase(): void {
   setDatabaseLite({
+    currentChar: 0,
     characters: [
       {
+        chaId: 'branch-character',
         firstMessage: 'Opening greeting',
         alternateGreetings: ['Alternate greeting'],
         chatPage: 0,
@@ -317,8 +337,8 @@ function seedBranchDatabase(): void {
             name: 'Main path',
             fmIndex: -1,
             message: [
-              { role: 'user', data: 'First turn' },
-              { role: 'char', data: 'Second turn' },
+              { chatId: 'branch-message-1', role: 'user', data: 'First turn' },
+              { chatId: 'branch-message-2', role: 'char', data: 'Second turn' },
             ],
           },
         ],

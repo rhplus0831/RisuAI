@@ -1,8 +1,14 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { ensureBotPresetHydratedById, getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
+  import {
+    botPresetHasHydratedSettings,
+    ensureBotPresetHydratedById,
+    type botPreset,
+    type PromptDiffPrefs,
+  } from '../../ts/storage/database.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type {
     PromptItem,
     PromptItemPlain,
@@ -159,8 +165,7 @@
     contextRadius: 3,
   }
 
-  const db = getDatabase()
-  const prefs = db.promptDiffPrefs
+  const prefs = readPromptDiffPrefsOwner()
 
   let diffStyle = $state<DiffStyle>(prefs?.diffStyle ?? DEFAULT_PROMPT_DIFF_PREFS.diffStyle)
   let formatStyle = $state<FormatStyle>(prefs?.formatStyle ?? DEFAULT_PROMPT_DIFF_PREFS.formatStyle)
@@ -174,6 +179,50 @@
   let cardDiffResult = $state<CardDiffResult | null>(null)
   let expandedRanges = $state<ExpandedRange[]>([])
   let promptHydrationVersion = $state(0)
+
+  function readPromptDiffPrefsOwner(): PromptDiffPrefs | undefined {
+    if (
+      settingsResourceState.groupStatuses.display !== 'ready' ||
+      settingsResourceState.groupErrors.display !== undefined
+    ) {
+      return undefined
+    }
+    const value = settingsResourceState.value.promptDiffPrefs
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : undefined
+  }
+
+  function uniqueLegacyPresetOwners(): botPreset[] | null {
+    if (
+      collectionsResourceState.statuses.botPresets !== 'ready' ||
+      collectionsResourceState.errors.botPresets !== undefined
+    ) {
+      return null
+    }
+    const rows = collectionsResourceState.values.botPresets
+    if (!Array.isArray(rows)) return null
+
+    const ids = new Set<string>()
+    for (const row of rows) {
+      const id = row?.id
+      if (typeof id !== 'string' || id.trim().length === 0 || ids.has(id)) return null
+      ids.add(id)
+    }
+    return rows
+  }
+
+  function legacyPresetOwnerIdAt(index: number): string | null {
+    if (!Number.isInteger(index) || index < 0) return null
+    return uniqueLegacyPresetOwners()?.[index]?.id ?? null
+  }
+
+  function legacyPresetOwnerById(presetId: string | null): botPreset | undefined {
+    if (!presetId) return undefined
+    const matches = uniqueLegacyPresetOwners()?.filter((candidate) => candidate.id === presetId) ?? []
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  let firstPresetOwnerId = $derived(legacyPresetOwnerIdAt(firstPresetId))
+  let secondPresetOwnerId = $derived(legacyPresetOwnerIdAt(secondPresetId))
 
   function savePrefsToDB() {
     const nextPrefs = {
@@ -244,11 +293,11 @@
   // Inputs
   const firstCards = $derived.by(() => {
     promptHydrationVersion
-    return getPromptCards(firstPresetId)
+    return getPromptCards(firstPresetOwnerId)
   })
   const secondCards = $derived.by(() => {
     promptHydrationVersion
-    return getPromptCards(secondPresetId)
+    return getPromptCards(secondPresetOwnerId)
   })
 
   // Effects (state invariants + diff recompute)
@@ -259,18 +308,19 @@
   })
 
   $effect(() => {
-    const first = firstPresetId
-    const second = secondPresetId
-    const firstId = getDatabase().botPresets[first]?.id
-    const secondId = getDatabase().botPresets[second]?.id
+    const firstId = firstPresetOwnerId
+    const secondId = secondPresetOwnerId
     if (!firstId || !secondId) return
-    void Promise.all([ensureBotPresetHydratedById(firstId), ensureBotPresetHydratedById(secondId)]).then((hydrated) => {
-      if (!hydrated.every(Boolean) || firstPresetId !== first || secondPresetId !== second) return
-      const nextFirst = getDatabase().botPresets.findIndex((preset) => preset?.id === firstId)
-      const nextSecond = getDatabase().botPresets.findIndex((preset) => preset?.id === secondId)
-      if (nextFirst < 0 || nextSecond < 0) return
-      firstPresetId = nextFirst
-      secondPresetId = nextSecond
+    const ownerIds = [...new Set([firstId, secondId])]
+    const unresolvedOwnerIds = ownerIds.filter((presetId) => {
+      const owner = legacyPresetOwnerById(presetId)
+      return !owner || !botPresetHasHydratedSettings(owner)
+    })
+    if (unresolvedOwnerIds.length === 0) return
+
+    void Promise.all(unresolvedOwnerIds.map((presetId) => ensureBotPresetHydratedById(presetId))).then((hydrated) => {
+      if (!hydrated.every(Boolean) || firstPresetOwnerId !== firstId || secondPresetOwnerId !== secondId) return
+      if (!ownerIds.every((presetId) => botPresetHasHydratedSettings(legacyPresetOwnerById(presetId)))) return
       promptHydrationVersion += 1
     })
   })
@@ -365,7 +415,7 @@
   }
 
   // Data shaping (prompt → cards/lines/raw)
-  function getPromptCards(id: number): PromptCard[] {
+  function getPromptCards(presetId: string | null): PromptCard[] | null {
     const isPromptItemPlain = (item: PromptItem): item is PromptItemPlain =>
       item.type === 'plain' || item.type === 'jailbreak' || item.type === 'cot'
 
@@ -382,8 +432,9 @@
 
     const isPromptItemChat = (item: PromptItem): item is PromptItemChat => item.type === 'chat'
 
-    const db = getDatabase()
-    const formated = safeStructuredClone(db.botPresets[id]?.promptTemplate ?? [])
+    const preset = legacyPresetOwnerById(presetId)
+    if (!botPresetHasHydratedSettings(preset) || !Array.isArray(preset.promptTemplate)) return null
+    const formated = safeStructuredClone(preset.promptTemplate)
     const cards: PromptCard[] = []
 
     for (let i = 0; i < formated.length; i++) {

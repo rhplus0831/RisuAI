@@ -8,7 +8,7 @@
   import CheckInput from './GUI/CheckInput.svelte'
   import { ArrowDown, ArrowUp, XIcon } from '@lucide/svelte'
   import TextInput from './GUI/TextInput.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { normalizePromptBlockRoleForType } from 'src/ts/process/promptTemplateNormalization'
   import { hasDragType, RISU_PROMPT_DRAG_TYPE } from 'src/ts/dragTypes'
 
@@ -51,6 +51,16 @@
   }: Props = $props()
 
   let interactionsDisabled = $derived(structuralDisabled || readOnly)
+  let promptSettingsOwner = $derived.by(() => {
+    if (
+      settingsResourceState.groupStatuses.prompt !== 'ready' ||
+      settingsResourceState.groupErrors.prompt !== undefined
+    ) {
+      return null
+    }
+    const value = settingsResourceState.value.promptSettings
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null
+  })
 
   let initializedPromptSnapshot = false
   let previousPromptSnapshot = ''
@@ -277,7 +287,7 @@
         <OptionInput value="chatML">{'chatML'}</OptionInput>
         <OptionInput value="cache">{language.cachePoint}</OptionInput>
 
-        {#if getDatabase().promptSettings.customChainOfThought}
+        {#if promptSettingsOwner?.customChainOfThought === true}
           <OptionInput value="cot">{language.cot}</OptionInput>
         {/if}
       </SelectInput>
@@ -339,7 +349,7 @@
                 }
               }} />
           {/if}
-          {#if getDatabase().promptSettings.sendChatAsSystem}
+          {#if promptSettingsOwner?.sendChatAsSystem === true}
             <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem} />
           {/if}
         {/if}

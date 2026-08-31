@@ -32,9 +32,22 @@
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
   import Help from './Help.svelte'
   import { getChatBranches } from 'src/ts/gui/branches'
-  import { getCurrentCharacter, getDatabase, type Database, type Message } from 'src/ts/storage/database.svelte'
+  import {
+    botPresetHasHydratedSettings,
+    ensureBotPresetHydratedById,
+    getCurrentCharacter,
+    getDatabase,
+    type botPreset,
+    type Database,
+    type Message,
+  } from 'src/ts/storage/database.svelte'
   import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
-  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { translateStackTrace } from '../../ts/sourcemap'
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
@@ -142,10 +155,51 @@
     return matches.length === 1 ? matches[0] : undefined
   }
 
+  function canonicalLegacyPresetOwners(): botPreset[] | null {
+    if (
+      collectionsResourceState.statuses.botPresets !== 'ready' ||
+      collectionsResourceState.errors.botPresets !== undefined
+    ) {
+      return null
+    }
+    const rows = collectionsResourceState.values.botPresets
+    if (!Array.isArray(rows)) return null
+
+    const ids = new Set<string>()
+    for (const row of rows) {
+      const id = row?.id
+      if (typeof id !== 'string' || id.trim().length === 0 || ids.has(id)) return null
+      ids.add(id)
+    }
+    return rows
+  }
+
+  function selectedLegacyPresetOwner(): botPreset | undefined {
+    if (
+      settingsResourceState.status !== 'ready' ||
+      settingsResourceState.error !== null ||
+      !Object.prototype.hasOwnProperty.call(settingsResourceState.value, 'botPresetsId')
+    ) {
+      return undefined
+    }
+    const selectedIndex = settingsResourceState.value.botPresetsId
+    if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return undefined
+    const presetId = canonicalLegacyPresetOwners()?.[selectedIndex as number]?.id
+    if (!presetId) return undefined
+    const matches = canonicalLegacyPresetOwners()?.filter((candidate) => candidate.id === presetId) ?? []
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
   const characterPickerRows = $derived.by(() => {
     return charactersResourceState.status === 'ready' ? (canonicalCharacterOwners() ?? []) : getPreReadyCharacters()
   })
   const selectedCharacterDisplay = $derived(characterPickerRows[$selectedCharID])
+  let selectedPresetHydrationVersion = $state(0)
+  const selectedPresetHasUnsupportedExportAssets = $derived.by(() => {
+    selectedPresetHydrationVersion
+    const owner = selectedLegacyPresetOwner()
+    return botPresetHasHydratedSettings(owner) && (!!owner.image || (owner.regex?.length ?? 0) > 0)
+  })
   const generationMessageTarget = $derived.by(() => {
     const info = $alertGenerationInfoStore
     if (!info) return undefined
@@ -285,6 +339,19 @@
       alertInputElement.focus()
       alertInputElement.select()
     }
+  })
+
+  $effect(() => {
+    if ($alertStore.type !== 'cardexport' || $alertStore.submsg !== 'preset') return
+    const owner = selectedLegacyPresetOwner()
+    if (!owner?.id || botPresetHasHydratedSettings(owner)) return
+    const presetId = owner.id
+    void ensureBotPresetHydratedById(presetId).then((hydrated) => {
+      if (!hydrated || $alertStore.type !== 'cardexport' || $alertStore.submsg !== 'preset') return
+      const currentOwner = selectedLegacyPresetOwner()
+      if (currentOwner?.id !== presetId || !botPresetHasHydratedSettings(currentOwner)) return
+      selectedPresetHydrationVersion += 1
+    })
   })
 
   $effect(() => {
@@ -1007,7 +1074,7 @@
           <span class="text-textcolor2 text-sm">{language.risuMDesc}</span>
         {:else if $alertStore.submsg === 'preset'}
           <span class="text-textcolor2 text-sm">{language.risupresetDesc}</span>
-          {#if cardExportType2 === 'preset' && (getDatabase().botPresets[getDatabase().botPresetsId].image || getDatabase().botPresets[getDatabase().botPresetsId].regex?.length > 0)}
+          {#if cardExportType2 === 'preset' && selectedPresetHasUnsupportedExportAssets}
             <span class="text-red-500 text-sm">Preset with image or regexes cannot be exported for now.</span>
           {/if}
         {:else}

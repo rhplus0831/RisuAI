@@ -5,14 +5,18 @@ vi.mock('./GUI/TextAreaInput.svelte', async () => ({
   default: (await import('./PromptDataItem.testStub.svelte')).default,
 }))
 
-vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => ({
+const settingsResourceState = vi.hoisted(() => ({
+  value: {
     promptSettings: {
       customChainOfThought: false,
       sendChatAsSystem: false,
     },
-  }),
+  },
+  groupStatuses: { prompt: 'ready' },
+  groupErrors: {} as Record<string, string>,
 }))
+
+vi.mock('src/ts/server/resourceState.svelte', () => ({ settingsResourceState }))
 
 import PromptDataItemTestHost from './PromptDataItem.testHost.svelte'
 import { language } from 'src/lang'
@@ -24,6 +28,12 @@ let component: MountedComponent | undefined
 let target: HTMLElement
 
 beforeEach(() => {
+  settingsResourceState.value.promptSettings = {
+    customChainOfThought: false,
+    sendChatAsSystem: false,
+  }
+  settingsResourceState.groupStatuses.prompt = 'ready'
+  settingsResourceState.groupErrors = {}
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -161,5 +171,38 @@ describe('PromptDataItem disclosure control', () => {
     }
     await tick()
     expect(target.querySelector('[data-testid="prompt-json"]')?.textContent).toContain('"role2":"bot"')
+  })
+
+  it('shows custom chain-of-thought only from a ready prompt-settings owner', async () => {
+    settingsResourceState.value.promptSettings.customChainOfThought = true
+    component = mount(PromptDataItemTestHost, {
+      target,
+      props: { initialPrompt: { type: 'plain', name: 'Main', text: '', role: 'system' } },
+    })
+    await tick()
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Main')
+      ?.click()
+    await tick()
+
+    const typeSelect = target.querySelector<HTMLSelectElement>(`select[aria-label="${language.type}"]`)
+    expect(Array.from(typeSelect?.options ?? [], (option) => option.value)).toContain('cot')
+  })
+
+  it('fails closed when the ready prompt-settings owner carries an error', async () => {
+    settingsResourceState.value.promptSettings.customChainOfThought = true
+    settingsResourceState.groupErrors.prompt = 'invalid prompt settings'
+    component = mount(PromptDataItemTestHost, {
+      target,
+      props: { initialPrompt: { type: 'plain', name: 'Main', text: '', role: 'system' } },
+    })
+    await tick()
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Main')
+      ?.click()
+    await tick()
+
+    const typeSelect = target.querySelector<HTMLSelectElement>(`select[aria-label="${language.type}"]`)
+    expect(Array.from(typeSelect?.options ?? [], (option) => option.value)).not.toContain('cot')
   })
 })
