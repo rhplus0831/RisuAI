@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const commandSpies = vi.hoisted(() => {
   const createDeferredCommandResult = () => {
@@ -282,9 +284,11 @@ import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
   applyCollectionsResource,
   applySettingsGroupResource,
+  collectionsResourceState,
   isCollectionAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
   resetServerResourceState,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import {
   setResourceWriteGuardEnabled,
@@ -300,7 +304,7 @@ import {
   resetPendingMutationOutboxForTests,
 } from 'src/ts/server/pendingMutationOutbox'
 import { dispatchDurableMutationReplay } from 'src/ts/server/durableMutationDispatch'
-import type { TranslatorPreset } from 'src/ts/translator/presets'
+import { normalizeTranslatorPreset, type TranslatorPreset } from 'src/ts/translator/presets'
 import { selectSingleFile } from 'src/ts/filePicker'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -309,13 +313,19 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 let nextProjectionRevision = 1_000
 
+function canonicalPreset(
+  preset: Omit<TranslatorPreset, 'steps'> & { steps?: TranslatorPreset['steps'] },
+): TranslatorPreset {
+  return normalizeTranslatorPreset(preset)
+}
+
 function seedTranslatorPresets(): void {
   setDatabaseLite({
     hotkeys: [],
     longPressToPopupEditor: false,
     translatorPresets: [
-      { id: 'preset-a', name: 'Preset A', prompt: 'old prompt A', maxResponse: 100 },
-      { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
+      canonicalPreset({ id: 'preset-a', name: 'Preset A', prompt: 'old prompt A', maxResponse: 100 }),
+      canonicalPreset({ id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 }),
     ],
     translatorPresetId: 'preset-a',
     translatorPrompt: 'old prompt A',
@@ -446,13 +456,12 @@ async function applyTranslatorPresetProjection(input: {
 }): Promise<void> {
   const revision = nextProjectionRevision++
   const selectedIndex = input.selectedIndex
-  const selectedId =
-    selectedIndex === undefined ? getDatabase().translatorPresetId : getDatabase().translatorPresets[selectedIndex]?.id
+  const selectedId = selectedIndex === undefined ? getDatabase().translatorPresetId : input.presets[selectedIndex]?.id
   withServerResourceApply(() => {
     applyCollectionsResource(
       {
         revision,
-        collections: { translatorPresets: input.presets.map((preset) => ({ ...preset })) as any },
+        collections: { translatorPresets: input.presets.map((preset) => canonicalPreset(preset)) as any },
       },
       'translatorPresets',
     )
@@ -474,7 +483,7 @@ async function appendPresetC(): Promise<void> {
   withTrustedResourceWrite(() => {
     getDatabase().translatorPresets = [
       ...getDatabase().translatorPresets,
-      { id: 'preset-c', name: 'Preset C', prompt: 'old prompt C', maxResponse: 300 } as any,
+      canonicalPreset({ id: 'preset-c', name: 'Preset C', prompt: 'old prompt C', maxResponse: 300 }),
     ]
   })
   await tick()
@@ -596,6 +605,21 @@ afterEach(async () => {
 })
 
 describe('TranslatorPresetSettings server-backed edits', () => {
+  it('uses the canonical collection/settings owners without aggregate or trusted component access', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte'),
+      'utf8',
+    )
+
+    expect(source).toContain('collectionsResourceState.values.translatorPresets')
+    expect(source).toContain('settingsResourceState.value.translatorPresetId')
+    expect(source).toContain("captureCollectionProjectionEpoch('translatorPresets')")
+    expect(source).toContain("captureSettingsGroupProjectionEpoch('language')")
+    expect(source).not.toMatch(/\bget(?:Resource)?Database\s*\(/)
+    expect(source).not.toContain('getServerResourceApplyEpoch')
+    expect(source).not.toContain('withTrustedResourceWrite')
+  })
+
   it('names the preset selector and editable fields from their visible settings', () => {
     expect(target.querySelector('select')?.getAttribute('aria-label')).toBe('Preset')
     expect(target.querySelector('input[type="number"]')?.getAttribute('aria-label')).toBe(
@@ -630,6 +654,21 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).slice(0, 5)
     expect(buttons[1].getAttribute('aria-label')).toBe(`${language.edit}: ${language.presets}`)
+    expect(target.querySelector(`[aria-label="${language.translationResponseSize}"]`)).toBeNull()
+  })
+
+  it('fails closed when either canonical translator owner is unavailable', async () => {
+    collectionsResourceState.statuses.translatorPresets = 'error'
+    await tick()
+
+    expect(target.querySelector<HTMLSelectElement>('select')?.options).toHaveLength(0)
+    expect(target.querySelector(`[aria-label="${language.translationResponseSize}"]`)).toBeNull()
+
+    collectionsResourceState.statuses.translatorPresets = 'ready'
+    settingsResourceState.groupStatuses.language = 'error'
+    await tick()
+
+    expect(target.querySelector<HTMLSelectElement>('select')?.options).toHaveLength(2)
     expect(target.querySelector(`[aria-label="${language.translationResponseSize}"]`)).toBeNull()
   })
 
@@ -735,7 +774,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
   it('optimistically updates canonical state without mirroring legacy scalar fields', async () => {
     await editPrompt('new prompt A')
 
-    expect(getDatabase().translatorPresets[0].prompt).toBe('new prompt A')
+    expect(collectionsResourceState.values.translatorPresets?.[0].prompt).toBe('new prompt A')
+    expect(settingsResourceState.value.translatorPresetId).toBe('preset-a')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
     expect(commandSpies.updateInputs).toHaveLength(0)
 
@@ -1232,7 +1272,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0], name: 'Preset A Edited', prompt: 'newer prompt A' },
         { ...getDatabase().translatorPresets[1] },
-        { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 } as any,
+        canonicalPreset({ id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 }),
       ]
       getDatabase().translatorPresetId = 'preset-c'
       getDatabase().translatorPrompt = 'new prompt C'
@@ -2256,7 +2296,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
           prompt: 'newer prompt B',
           maxResponse: 222,
         },
-        { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 } as any,
+        canonicalPreset({ id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 }),
       ]
       getDatabase().translatorPresetId = 'preset-c'
       getDatabase().translatorPrompt = 'new prompt C'
@@ -2353,13 +2393,13 @@ describe('TranslatorPresetSettings server-backed edits', () => {
             revision: 101,
             collections: {
               translatorPresets: [
-                {
+                canonicalPreset({
                   id: 'preset-a',
                   name: 'Server Preset A',
                   prompt: 'server prompt A',
                   maxResponse: 111,
-                },
-                { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
+                }),
+                canonicalPreset({ id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 }),
               ] as any,
             },
           },

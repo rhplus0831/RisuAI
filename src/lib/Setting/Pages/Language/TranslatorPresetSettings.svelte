@@ -18,7 +18,6 @@
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { alertConfirm, alertError, alertInput, alertNormal } from 'src/ts/alert'
   import { downloadFile } from 'src/ts/globalApi.svelte'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
   import {
     isModelProfileDividerSelectValue,
@@ -54,11 +53,12 @@
   import {
     captureCollectionProjectionEpoch,
     captureSettingsGroupProjectionEpoch,
+    collectionsResourceState,
     hasCollectionProjectionEpochChanged,
     markCollectionAcknowledgementTainted,
     markSettingsGroupAcknowledgementTainted,
+    settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
-  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
     TRANSLATOR_PRESET_SELECTION_MUTATION_KEY,
@@ -69,6 +69,7 @@
     decodeTranslatorPresetFile,
     defaultTranslatorPrompt,
     encodeTranslatorPresetFile,
+    getCanonicalTranslatorPresets,
     getTranslatorPresetDownloadName,
     isValidTranslatorPresetOutputKey,
     normalizeTranslatorPreset,
@@ -86,7 +87,7 @@
 
   interface TranslatorPresetStateSnapshot {
     translatorPresets: TranslatorPreset[]
-    translatorPresetId: string | number
+    translatorPresetId: string
   }
 
   interface PendingTranslatorPresetUpdate {
@@ -154,8 +155,20 @@
   let activeTranslatorPresetFeedbackOperationId = 0
   let translatorPresetPersistenceState = $state<TranslatorPresetPersistenceState>('idle')
   let stepOutputKeyDrafts = $state<Record<string, string>>({})
-  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
-  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
+  let modelProfiles = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' &&
+      Array.isArray(settingsResourceState.value.modelProfiles)
+      ? settingsResourceState.value.modelProfiles
+      : [],
+  )
+  let modelProfileItems = $derived(
+    modelProfileListItems(
+      modelProfiles,
+      settingsResourceState.groupStatuses.providers === 'ready'
+        ? settingsResourceState.value.modelProfileOrder
+        : undefined,
+    ),
+  )
 
   function handleTranslatorStepModelChange(
     preset: TranslatorPreset,
@@ -274,7 +287,6 @@
     return next
   }
   let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
   let previousTranslatorPresetCollectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
   let previousLanguageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
   let confirmedTranslatorPresetCollection: TranslatorPreset[] | undefined
@@ -289,11 +301,55 @@
     return snapshot === undefined ? '__undefined__' : snapshot
   }
 
-  function currentTranslatorPresetStateSnapshot(): TranslatorPresetStateSnapshot {
-    return {
-      translatorPresets: cloneJsonValue(getDatabase().translatorPresets ?? []),
-      translatorPresetId: getDatabase().translatorPresetId,
+  function currentTranslatorPresetCollectionOwner(): TranslatorPreset[] | null {
+    if (collectionsResourceState.statuses.translatorPresets !== 'ready') return null
+    return (
+      getCanonicalTranslatorPresets({
+        translatorPresets: collectionsResourceState.values.translatorPresets,
+      }) ?? null
+    )
+  }
+
+  function currentTranslatorPresetSelectionOwner(presets: readonly TranslatorPreset[]): string | null {
+    if (settingsResourceState.groupStatuses.language !== 'ready') return null
+    const selectedId = settingsResourceState.value.translatorPresetId
+    if (typeof selectedId !== 'string' || !selectedId.trim()) return null
+    return presets.filter((preset) => preset.id === selectedId).length === 1 ? selectedId : null
+  }
+
+  function currentTranslatorPresetOwnerState(): TranslatorPresetStateSnapshot | null {
+    const translatorPresets = currentTranslatorPresetCollectionOwner()
+    if (!translatorPresets) return null
+    const translatorPresetId = currentTranslatorPresetSelectionOwner(translatorPresets)
+    if (!translatorPresetId) return null
+    return { translatorPresets, translatorPresetId }
+  }
+
+  function updateTranslatorPresetOwnerState(
+    mutator: (draft: TranslatorPresetStateSnapshot) => boolean | void,
+  ): boolean {
+    const current = currentTranslatorPresetOwnerState()
+    if (!current) return false
+
+    const draft = cloneJsonValue(current)
+    if (mutator(draft) === false) return false
+    const canonicalPresets = getCanonicalTranslatorPresets(draft)
+    if (
+      !canonicalPresets ||
+      typeof draft.translatorPresetId !== 'string' ||
+      canonicalPresets.filter((preset) => preset.id === draft.translatorPresetId).length !== 1
+    ) {
+      return false
     }
+
+    collectionsResourceState.values.translatorPresets = canonicalPresets
+    settingsResourceState.value.translatorPresetId = draft.translatorPresetId
+    return true
+  }
+
+  function currentTranslatorPresetStateSnapshot(): TranslatorPresetStateSnapshot | null {
+    const current = currentTranslatorPresetOwnerState()
+    return current ? cloneJsonValue(current) : null
   }
 
   function translatorPresetFromSnapshot(
@@ -304,20 +360,21 @@
   }
 
   function currentTranslatorPresetById(presetId: string): TranslatorPreset | null {
-    return getDatabase().translatorPresets?.find((preset) => preset.id === presetId) ?? null
+    const presets = currentTranslatorPresetCollectionOwner()
+    if (!presets) return null
+    const matches = presets.filter((preset) => preset.id === presetId)
+    return matches.length === 1 ? matches[0] : null
   }
 
   function currentSelectedTranslatorPresetId(): string | null {
-    const selectedId = getDatabase().translatorPresetId
-    if (typeof selectedId !== 'string' || !selectedId.trim()) return null
-    const matches = getDatabase().translatorPresets?.filter((preset) => preset.id === selectedId) ?? []
-    return matches.length === 1 ? (matches[0].id ?? null) : null
+    const presets = currentTranslatorPresetCollectionOwner()
+    return presets ? currentTranslatorPresetSelectionOwner(presets) : null
   }
 
   function currentSelectedTranslatorPreset(): TranslatorPreset | null {
     const selectedId = currentSelectedTranslatorPresetId()
     if (!selectedId) return null
-    return getDatabase().translatorPresets.find((preset) => preset.id === selectedId) ?? null
+    return currentTranslatorPresetById(selectedId)
   }
 
   function translatorPresetOwnerDependencyKeys(...presetIds: Array<string | null | undefined>): string[] {
@@ -329,7 +386,7 @@
   }
 
   function projectedSelectedTranslatorPresetId(): string | null {
-    const selectedId = getDatabase().translatorPresetId
+    const selectedId = settingsResourceState.value.translatorPresetId
     if (typeof selectedId === 'string' && selectedId.trim()) {
       const projectedPresetId = confirmedTranslatorPresetCollection?.find((preset) => preset.id === selectedId)?.id
       if (projectedPresetId) return projectedPresetId
@@ -340,7 +397,7 @@
   function confirmedSelectedTranslatorPresetId(): string | null {
     if (confirmedTranslatorPresetSelectionId === undefined) {
       confirmedTranslatorPresetSelectionId = currentSelectedTranslatorPresetId()
-      confirmedTranslatorPresetCollection = cloneJsonValue(getDatabase().translatorPresets ?? [])
+      confirmedTranslatorPresetCollection = cloneJsonValue(currentTranslatorPresetCollectionOwner() ?? [])
     }
     return confirmedTranslatorPresetSelectionId
   }
@@ -349,7 +406,7 @@
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
     if (collectionProjectionEpoch !== previousTranslatorPresetCollectionProjectionEpoch) {
       previousTranslatorPresetCollectionProjectionEpoch = collectionProjectionEpoch
-      confirmedTranslatorPresetCollection = cloneJsonValue(getDatabase().translatorPresets ?? [])
+      confirmedTranslatorPresetCollection = cloneJsonValue(currentTranslatorPresetCollectionOwner() ?? [])
     }
 
     const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
@@ -360,7 +417,9 @@
   }
 
   function settleConfirmedTranslatorPresetCreate(attempt: TranslatorPresetCreateAttempt): void {
-    const presets = cloneJsonValue(confirmedTranslatorPresetCollection ?? getDatabase().translatorPresets ?? [])
+    const presets = cloneJsonValue(
+      confirmedTranslatorPresetCollection ?? currentTranslatorPresetCollectionOwner() ?? [],
+    )
     if (!presets.some((preset) => preset.id === attempt.attemptedPreset.id)) {
       presets.push(cloneJsonValue(attempt.attemptedPreset))
     }
@@ -370,7 +429,7 @@
 
   function settleConfirmedTranslatorPresetDelete(attempt: TranslatorPresetDeleteAttempt): void {
     confirmedTranslatorPresetCollection = cloneJsonValue(
-      (confirmedTranslatorPresetCollection ?? getDatabase().translatorPresets ?? []).filter(
+      (confirmedTranslatorPresetCollection ?? currentTranslatorPresetCollectionOwner() ?? []).filter(
         (preset) => preset.id !== attempt.deletedPreset.id,
       ),
     )
@@ -456,9 +515,9 @@
   function reassertPendingTranslatorPresetStructuralMutations(): void {
     if (pendingTranslatorPresetStructuralMutations.length === 0) return
 
-    withTrustedResourceWrite(() => {
-      const presets = cloneJsonValue(getDatabase().translatorPresets ?? [])
-      let selectedPresetId = currentSelectedTranslatorPresetId()
+    updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
+      let selectedPresetId: string | null = draft.translatorPresetId
 
       for (const mutation of pendingTranslatorPresetStructuralMutations) {
         if (mutation.kind === 'create') {
@@ -493,8 +552,10 @@
         }
       }
 
-      getDatabase().translatorPresets = presets
-      getDatabase().translatorPresetId = selectedPresetId ?? presets[0]?.id ?? ''
+      const fallbackPresetId = selectedPresetId ?? presets[0]?.id
+      if (!fallbackPresetId) return false
+      draft.translatorPresets = presets
+      draft.translatorPresetId = fallbackPresetId
     })
   }
 
@@ -648,8 +709,8 @@
   ): void {
     if (dirtyFields.size === 0) return
 
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
+    updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) {
         translatorPresetDirtyFieldsById.delete(presetId)
@@ -674,13 +735,14 @@
           Object.fromEntries(dirtyFields),
         ),
       )
+      draft.translatorPresets = presets
     })
   }
 
   function reconcileTranslatorPresetProjectionEpoch(authoritativePresetIds: ReadonlySet<string>): void {
     if (translatorPresetDirtyFieldsById.size === 0) return
 
-    const presets = getDatabase().translatorPresets ?? []
+    const presets = currentTranslatorPresetCollectionOwner() ?? []
     for (const [presetId, dirtyFields] of Array.from(translatorPresetDirtyFieldsById.entries())) {
       if (!authoritativePresetIds.has(presetId) && hasPendingTranslatorPresetCreate(presetId)) continue
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
@@ -724,11 +786,11 @@
       if (rollbackBaselines?.has(field)) rollbackPrevious[field] = cloneJsonValue(rollbackBaselines.get(field))
     }
 
-    withTrustedResourceWrite(() => {
-      const presetIndex = getDatabase().translatorPresets.findIndex((preset) => preset.id === presetId)
+    updateTranslatorPresetOwnerState((draft) => {
+      const presetIndex = draft.translatorPresets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
 
-      const nextPresets = [...getDatabase().translatorPresets]
+      const nextPresets = [...draft.translatorPresets]
       const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as unknown as Record<string, unknown>
       const rolledBackFields = applyAttemptedFieldRollback({
         target: nextPreset,
@@ -744,7 +806,7 @@
           Object.fromEntries(rolledBackFields.map((field) => [field, nextPreset[field]])),
         ),
       )
-      getDatabase().translatorPresets = nextPresets
+      draft.translatorPresets = nextPresets
 
       clearTranslatorPresetDirtyFieldsMatchingValues(presetId, attempted, rolledBackFields)
     })
@@ -755,10 +817,10 @@
   }
 
   function applyTranslatorPresetPatchToDatabase(presetId: string, patch: TranslatorPresetSnapshot): void {
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
+    const applied = updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
-      if (presetIndex === -1) return
+      if (presetIndex === -1) return false
 
       const nextPreset = translatorPresetFromRecord(
         applyTranslatorPresetFieldPatch(
@@ -768,9 +830,9 @@
       )
       const nextPresets = [...presets]
       nextPresets[presetIndex] = nextPreset
-      getDatabase().translatorPresets = nextPresets
-      updatePendingTranslatorPresetCreateDraft(presetId, patch)
+      draft.translatorPresets = nextPresets
     })
+    if (applied) updatePendingTranslatorPresetCreateDraft(presetId, patch)
   }
 
   function selectedTranslatorPresetId(): string | null {
@@ -834,6 +896,7 @@
     const attemptedPreset = cloneJsonValue(preset)
     const presetId = attemptedPreset.id
     if (!presetId || presetId.trim().length === 0) return null
+    if (!currentTranslatorPresetOwnerState()) return null
     const attemptedPresetWithId = attemptedPreset as TranslatorPreset & { id: string }
     const previousSelectedPresetId = currentSelectedTranslatorPresetId()
     confirmedSelectedTranslatorPresetId()
@@ -845,16 +908,13 @@
       previousSelectedPresetId,
       collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
     }
-    let applied = false
-
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
-      if (presets.some((existingPreset) => existingPreset.id === presetId)) return
+    const applied = updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
+      if (presets.some((existingPreset) => existingPreset.id === presetId)) return false
 
       const nextPresets = [...presets, cloneJsonValue(attemptedPresetWithId)]
-      getDatabase().translatorPresets = nextPresets
-      getDatabase().translatorPresetId = attemptedPresetWithId.id
-      applied = true
+      draft.translatorPresets = nextPresets
+      draft.translatorPresetId = attemptedPresetWithId.id
     })
 
     if (applied) {
@@ -871,9 +931,9 @@
     markCollectionAcknowledgementTainted('translatorPresets')
     markSettingsGroupAcknowledgementTainted('language')
 
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
-      const selectedPresetId = currentSelectedTranslatorPresetId()
+    updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
+      const selectedPresetId = draft.translatorPresetId
       const selectedAttemptedPreset = selectedPresetId === attempt.attemptedPreset.id
       const preserveAuthoritativePreset =
         hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch) &&
@@ -881,10 +941,11 @@
       const nextPresets = preserveAuthoritativePreset
         ? [...presets]
         : presets.filter((preset) => preset.id !== attempt.attemptedPreset.id)
-      getDatabase().translatorPresets = nextPresets
+      if (nextPresets.length === 0) return false
+      draft.translatorPresets = nextPresets
 
       if (nextPresets.some((translatorPreset) => translatorPreset.id === attempt.attemptedPreset.id)) {
-        getDatabase().translatorPresetId = attempt.attemptedPreset.id
+        draft.translatorPresetId = attempt.attemptedPreset.id
         return
       }
 
@@ -897,7 +958,7 @@
           : confirmedPresetId && nextPresets.some((translatorPreset) => translatorPreset.id === confirmedPresetId)
             ? confirmedPresetId
             : (nextPresets[0]?.id ?? '')
-        getDatabase().translatorPresetId = restoredSelection
+        draft.translatorPresetId = restoredSelection
         return
       }
 
@@ -906,7 +967,7 @@
           (translatorPreset) => translatorPreset.id === selectedPresetId,
         )
         if (preservedSelectedPresetIndex !== -1) {
-          getDatabase().translatorPresetId = selectedPresetId
+          draft.translatorPresetId = selectedPresetId
         }
       }
     })
@@ -1027,10 +1088,9 @@
   }
 
   function applyOptimisticTranslatorPresetSelection(presetId: string): TranslatorPresetSelectionAttempt | null {
-    const presets = getDatabase().translatorPresets ?? []
-    const presetIndex = presets.findIndex((preset) => preset.id === presetId)
-    if (presetIndex === -1) return null
+    if (!currentTranslatorPresetById(presetId)) return null
     const previousSelectedPresetId = currentSelectedTranslatorPresetId()
+    if (!previousSelectedPresetId) return null
     confirmedSelectedTranslatorPresetId()
 
     const attempt: TranslatorPresetSelectionAttempt = {
@@ -1038,14 +1098,10 @@
       previousSelectedPresetId,
       attemptedPresetId: presetId,
     }
-    let applied = false
-
-    withTrustedResourceWrite(() => {
-      const livePresetIndex = getDatabase().translatorPresets?.findIndex((preset) => preset.id === presetId) ?? -1
-      if (livePresetIndex === -1) return
-
-      getDatabase().translatorPresetId = presetId
-      applied = true
+    const applied = updateTranslatorPresetOwnerState((draft) => {
+      const matches = draft.translatorPresets.filter((preset) => preset.id === presetId)
+      if (matches.length !== 1) return false
+      draft.translatorPresetId = presetId
     })
 
     if (applied) registerPendingTranslatorPresetStructuralMutation({ kind: 'select', attempt })
@@ -1057,9 +1113,9 @@
     removePendingTranslatorPresetStructuralMutation(attempt.operationId)
     markSettingsGroupAcknowledgementTainted('language')
 
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
-      const selectedPresetId = currentSelectedTranslatorPresetId()
+    updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
+      const selectedPresetId = draft.translatorPresetId
       if (selectedPresetId !== attempt.attemptedPresetId) return
 
       const confirmedPresetId = confirmedSelectedTranslatorPresetId()
@@ -1069,7 +1125,7 @@
         : -1
       if (confirmedSelectedPresetIndex === -1) return
 
-      getDatabase().translatorPresetId = confirmedPresetId
+      draft.translatorPresetId = confirmedPresetId
     })
     reassertPendingTranslatorPresetStructuralMutations()
   }
@@ -1179,10 +1235,10 @@
     confirmedSelectedTranslatorPresetId()
     let attempt: TranslatorPresetDeleteAttempt | null = null
 
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
+    updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
       const previousIndex = presets.findIndex((preset) => preset.id === presetId)
-      const selectedPresetId = currentSelectedTranslatorPresetId() ?? undefined
+      const selectedPresetId = draft.translatorPresetId
       if (previousIndex === -1 || presets.length <= 1 || selectedPresetId !== presetId) return
 
       const currentPreset = presets[previousIndex]
@@ -1197,8 +1253,8 @@
       const attemptedSelectedPreset = nextPresets[0]
       if (!attemptedSelectedPreset?.id) return
 
-      getDatabase().translatorPresets = nextPresets
-      getDatabase().translatorPresetId = attemptedSelectedPreset.id
+      draft.translatorPresets = nextPresets
+      draft.translatorPresetId = attemptedSelectedPreset.id
       attempt = {
         operationId: nextTranslatorPresetStructuralOperationId++,
         deletedPreset: deletedPreset as TranslatorPreset & { id: string },
@@ -1243,9 +1299,9 @@
       : undefined
     const restoredPreset = cloneJsonValue(authoritativePreset ?? attempt.deletedPreset)
 
-    withTrustedResourceWrite(() => {
-      const presets = getDatabase().translatorPresets ?? []
-      const selectedPresetId = currentSelectedTranslatorPresetId()
+    updateTranslatorPresetOwnerState((draft) => {
+      const presets = draft.translatorPresets
+      const selectedPresetId = draft.translatorPresetId
       const selectedProjectionMatchesAttempt = selectedPresetId === attempt.attemptedSelectedPreset.id
 
       const nextPresets = [...presets]
@@ -1257,27 +1313,19 @@
         )
       }
 
-      getDatabase().translatorPresets = nextPresets
-      if (
-        !selectedPresetId &&
-        authoritativePreset?.id &&
-        nextPresets.some((preset) => preset.id === authoritativePreset.id)
-      ) {
-        getDatabase().translatorPresetId = authoritativePreset.id
-        return
-      }
+      draft.translatorPresets = nextPresets
       if (selectedProjectionMatchesAttempt) {
         const confirmedPresetId = confirmedSelectedTranslatorPresetId()
         const confirmedSelectedPresetIndex = confirmedPresetId
           ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
           : -1
-        getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? '' : confirmedPresetId
+        if (confirmedSelectedPresetIndex !== -1 && confirmedPresetId) draft.translatorPresetId = confirmedPresetId
         return
       }
 
       const preservedSelectedPresetIndex = nextPresets.findIndex((preset) => preset.id === selectedPresetId)
       if (preservedSelectedPresetIndex !== -1) {
-        getDatabase().translatorPresetId = selectedPresetId
+        draft.translatorPresetId = selectedPresetId
         return
       }
 
@@ -1285,7 +1333,9 @@
       const confirmedSelectedPresetIndex = confirmedPresetId
         ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
         : -1
-      getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? '' : confirmedPresetId
+      if (confirmedSelectedPresetIndex !== -1 && confirmedPresetId) draft.translatorPresetId = confirmedPresetId
+      else if (nextPresets[0]?.id) draft.translatorPresetId = nextPresets[0].id
+      else return false
     })
     if (!authoritativePreset) {
       const confirmedPreset = confirmedTranslatorPresetCollection?.find((preset) => preset.id === restoredPreset.id)
@@ -1301,12 +1351,12 @@
     }
     reassertPendingTranslatorPresetStructuralMutations()
     if (!currentSelectedTranslatorPresetId()) {
-      withTrustedResourceWrite(() => {
-        const presets = getDatabase().translatorPresets ?? []
+      updateTranslatorPresetOwnerState((draft) => {
+        const presets = draft.translatorPresets
         if (presets.some((preset) => preset.id === attempt.deletedPreset.id)) {
-          getDatabase().translatorPresetId = attempt.deletedPreset.id
+          draft.translatorPresetId = attempt.deletedPreset.id
         } else if (presets[0]?.id) {
-          getDatabase().translatorPresetId = presets[0].id
+          draft.translatorPresetId = presets[0].id
         }
       })
     }
@@ -1569,7 +1619,7 @@
   function queueTranslatorPresetUpdate(
     presetId: string,
     patch: TranslatorPresetSnapshot,
-    previous: TranslatorPresetStateSnapshot,
+    previous: TranslatorPresetStateSnapshot | null,
   ): void {
     if (!canUseServerCommands()) return
 
@@ -1752,8 +1802,7 @@
     }
 
     if (!canUseServerCommands()) {
-      Object.assign(currentPreset, cloneJsonValue(patch))
-      getDatabase().translatorPresets = [...getDatabase().translatorPresets]
+      applyTranslatorPresetPatchToDatabase(presetId, patch)
     } else {
       markTranslatorPresetDirtyFields(presetId, patch)
       applyTranslatorPresetPatchToDatabase(presetId, patch)
@@ -1824,10 +1873,10 @@
   }
 
   $effect(() => {
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    if (resourceApplyEpoch === previousResourceApplyEpoch) return
-
-    previousResourceApplyEpoch = resourceApplyEpoch
+    void collectionsResourceState.values.translatorPresets
+    void collectionsResourceState.statuses.translatorPresets
+    void settingsResourceState.value.translatorPresetId
+    void settingsResourceState.groupStatuses.language
     const translatorPresetCollectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
     const collectionProjectionChanged =
       translatorPresetCollectionProjectionEpoch !== previousTranslatorPresetCollectionProjectionEpoch
@@ -1838,10 +1887,10 @@
     untrack(() => {
       if (!collectionProjectionChanged && !languageProjectionChanged) return
       const authoritativePresetIds = collectionProjectionChanged
-        ? new Set((getDatabase().translatorPresets ?? []).flatMap((preset) => (preset.id ? [preset.id] : [])))
+        ? new Set((currentTranslatorPresetCollectionOwner() ?? []).map((preset) => preset.id!))
         : null
       if (collectionProjectionChanged) {
-        confirmedTranslatorPresetCollection = cloneJsonValue(getDatabase().translatorPresets ?? [])
+        confirmedTranslatorPresetCollection = cloneJsonValue(currentTranslatorPresetCollectionOwner() ?? [])
       }
       if (languageProjectionChanged) {
         confirmedTranslatorPresetSelectionId = projectedSelectedTranslatorPresetId()
@@ -1874,7 +1923,7 @@
   aria-busy={translatorPresetPersistenceState === 'saving'}
   class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
   bind:value={
-    () => getDatabase().translatorPresetId,
+    () => currentSelectedTranslatorPresetId() ?? '',
     (value) => {
       const presetId = typeof value === 'string' && value.trim() ? value : null
       if (!canUseServerCommands()) {
@@ -1892,7 +1941,7 @@
       }
     }
   }>
-  {#each getDatabase().translatorPresets as preset}
+  {#each currentTranslatorPresetCollectionOwner() ?? [] as preset (preset.id)}
     <option class="bg-darkbg appearance-none" value={preset.id}>{preset.name}</option>
   {/each}
 </select>
@@ -1908,11 +1957,12 @@
       newPreset.id = createClientTranslatorPresetId()
       if (!canUseServerCommands()) {
         await flushPendingTranslatorPresetUpdates()
-        const presets = getDatabase().translatorPresets
-        presets.push(newPreset)
-        getDatabase().translatorPresets = presets
-        getDatabase().translatorPresetId = newPreset.id!
-        dispatchCreateTranslatorPreset(newPreset, null)
+        const applied = updateTranslatorPresetOwnerState((draft) => {
+          if (!newPreset.id || draft.translatorPresets.some((preset) => preset.id === newPreset.id)) return false
+          draft.translatorPresets = [...draft.translatorPresets, newPreset]
+          draft.translatorPresetId = newPreset.id
+        })
+        if (applied) dispatchCreateTranslatorPreset(newPreset, null)
       } else {
         await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
           await flushPendingTranslatorPresetUpdates()
@@ -1928,7 +1978,7 @@
     aria-label={`${language.edit}: ${currentSelectedTranslatorPreset()?.name ?? language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
-      const presets = getDatabase().translatorPresets
+      const presets = currentTranslatorPresetCollectionOwner() ?? []
 
       if (presets.length === 0) {
         alertError('There must be at least one preset.')
@@ -1947,8 +1997,7 @@
       if (!targetPreset) return
       const previous = currentTranslatorPresetStateSnapshot()
       if (!canUseServerCommands()) {
-        targetPreset.name = newName
-        getDatabase().translatorPresets = [...getDatabase().translatorPresets]
+        applyTranslatorPresetPatchToDatabase(presetId, { name: newName })
       } else {
         markTranslatorPresetDirtyFields(presetId, { name: newName })
         applyTranslatorPresetPatchToDatabase(presetId, { name: newName })
@@ -1964,7 +2013,7 @@
     aria-busy={translatorPresetPersistenceState === 'saving'}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
-      const presets = getDatabase().translatorPresets
+      const presets = currentTranslatorPresetCollectionOwner() ?? []
 
       if (presets.length <= 1) {
         alertError('There must be at least one preset.')
@@ -1982,11 +2031,14 @@
       const latestOptimisticPreset = presetId ? cloneJsonValue(currentTranslatorPresetById(presetId) ?? preset) : null
       if (!canUseServerCommands()) {
         await flushPendingTranslatorPresetUpdates()
-        getDatabase().translatorPresetId = presets.find((candidate) => candidate.id !== presetId)?.id ?? ''
-        presets.splice(id, 1)
-        getDatabase().translatorPresets = presets
+        const nextSelectedPresetId = presets.find((candidate) => candidate.id !== presetId)?.id
+        const applied = updateTranslatorPresetOwnerState((draft) => {
+          if (!nextSelectedPresetId) return false
+          draft.translatorPresets.splice(id, 1)
+          draft.translatorPresetId = nextSelectedPresetId
+        })
         const selectPresetId = currentSelectedTranslatorPresetId()
-        if (presetId) {
+        if (applied && presetId) {
           dispatchDeleteTranslatorPreset(presetId, selectPresetId)
         }
       } else {
@@ -2013,7 +2065,7 @@
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       try {
-        const presets = getDatabase().translatorPresets
+        const presets = currentTranslatorPresetCollectionOwner() ?? []
 
         if (presets.length === 0) {
           alertError('There must be at least one preset.')
@@ -2022,7 +2074,13 @@
 
         const preset = currentSelectedTranslatorPreset()
         if (!preset) return
-        await downloadFile(getTranslatorPresetDownloadName(preset.name), await encodeTranslatorPresetFile(preset))
+        // `.risutl` is an explicit compatibility export snapshot, not a
+        // second runtime owner for the selected preset.
+        const compatibilityExportSnapshot = cloneJsonValue(preset)
+        await downloadFile(
+          getTranslatorPresetDownloadName(compatibilityExportSnapshot.name),
+          await encodeTranslatorPresetFile(compatibilityExportSnapshot),
+        )
         alertNormal(language.successExport)
       } catch (error) {
         alertError(`${error}`)
@@ -2042,15 +2100,18 @@
 
         if (!selectedFile) return
 
-        const newPreset = await decodeTranslatorPresetFile(selectedFile.data)
+        // File decoding is an explicit compatibility boundary: normalize v1
+        // scalar snapshots before admitting them to the canonical collection.
+        const newPreset = normalizeTranslatorPreset(await decodeTranslatorPresetFile(selectedFile.data))
         newPreset.id = createClientTranslatorPresetId()
         if (!canUseServerCommands()) {
           await flushPendingTranslatorPresetUpdates()
-          const presets = getDatabase().translatorPresets
-
-          presets.push(newPreset)
-          getDatabase().translatorPresets = presets
-          getDatabase().translatorPresetId = newPreset.id!
+          const applied = updateTranslatorPresetOwnerState((draft) => {
+            if (!newPreset.id || draft.translatorPresets.some((preset) => preset.id === newPreset.id)) return false
+            draft.translatorPresets = [...draft.translatorPresets, newPreset]
+            draft.translatorPresetId = newPreset.id
+          })
+          if (!applied) return
           dispatchCreateTranslatorPreset(newPreset, null)
         } else {
           const status = await runTranslatorPresetPersistenceAction(async (feedbackOperationId) => {
@@ -2186,9 +2247,8 @@
 
               const previous = currentTranslatorPresetStateSnapshot()
               const presetId = selectedTranslatorPresetId()
-              if (!canUseServerCommands()) {
-                if (Array.isArray(preset.steps) && preset.steps[0]) preset.steps[0].maxResponse = value
-                preset.maxResponse = value
+              if (!canUseServerCommands() && presetId) {
+                applyTranslatorPresetPatchToDatabase(presetId, { maxResponse: value })
               } else if (presetId) {
                 markTranslatorPresetDirtyFields(presetId, { maxResponse: value })
                 applyTranslatorPresetPatchToDatabase(presetId, { maxResponse: value })
@@ -2212,9 +2272,8 @@
 
               const previous = currentTranslatorPresetStateSnapshot()
               const presetId = selectedTranslatorPresetId()
-              if (!canUseServerCommands()) {
-                if (Array.isArray(preset.steps) && preset.steps[0]) preset.steps[0].prompt = value
-                preset.prompt = value
+              if (!canUseServerCommands() && presetId) {
+                applyTranslatorPresetPatchToDatabase(presetId, { prompt: value })
               } else if (presetId) {
                 markTranslatorPresetDirtyFields(presetId, { prompt: value })
                 applyTranslatorPresetPatchToDatabase(presetId, { prompt: value })
