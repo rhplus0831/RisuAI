@@ -63,6 +63,7 @@ describe('exportAsDataset', () => {
 
     expect(mocks.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
     expect(mocks.ensureAllCharacterLorebooksHydrated).toHaveBeenCalledWith({ strict: true })
+    expect(mocks.getDatabase).toHaveBeenCalledWith({ snapshot: true })
     expect(mocks.downloadFile).toHaveBeenCalledOnce()
     const [filename, contents] = mocks.downloadFile.mock.calls[0]
     expect(filename).toBe('dataset.json')

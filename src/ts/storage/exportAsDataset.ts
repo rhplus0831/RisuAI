@@ -10,7 +10,7 @@ export async function exportAsDataset(): Promise<boolean> {
     // stubbed character globalLore first.
     await ensureAllChatsHydrated({ strict: true })
     await ensureAllCharacterLorebooksHydrated({ strict: true })
-    const db = getDatabase()
+    const db = getDatabase({ snapshot: true })
 
     const dataset = []
     for (const char of db.characters) {
