@@ -281,7 +281,7 @@ describe('Agent Preset resource owners', () => {
     })
   })
 
-  it('uses character and loadout owners for delete references while retaining pre-readiness compatibility', async () => {
+  it('does not mutate compatibility references before owners are ready', async () => {
     seedAgentPresetDeleteReferences()
     settingsResourceState.groupStatuses.agents = 'loading'
     collectionsResourceState.statuses.loadouts = 'loading'
@@ -293,9 +293,8 @@ describe('Agent Preset resource owners', () => {
     )
 
     const resultPromise = deleteAgentPreset('ap_a')
-    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBeUndefined()
-    expect(getDatabase().loadouts[0].agentPresetId).toBeUndefined()
-    expect(getDatabase().loadouts[0].agentPresetName).toBeUndefined()
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(getDatabase().loadouts[0]).toMatchObject({ agentPresetId: 'ap_a', agentPresetName: 'Preset A' })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
 
     await expect(resultPromise).resolves.toMatchObject({ status: 'failed' })
@@ -305,7 +304,7 @@ describe('Agent Preset resource owners', () => {
 })
 
 describe('Agent Preset optimistic field rollback', () => {
-  it('emits exact local effects for response-confirmed optimistic reorder/default writes', async () => {
+  it('does not emit projection-epoch effects for response-confirmed reorder/default writes', async () => {
     setResourceWriteGuardEnabled(false)
     resetServerResourceState()
     setDatabaseLite(
@@ -359,22 +358,7 @@ describe('Agent Preset optimistic field rollback', () => {
     await reorderAgentPresets(['ap_b', 'ap_a'])
     await setAgentPresetDefault('ap_b')
 
-    expect(observedEffects).toEqual([
-      {
-        kind: 'agentPresetCollectionMutation',
-        operation: 'reorder',
-        settingsProjectionEpoch: expect.any(Number),
-        presetIds: ['ap_b', 'ap_a'],
-        agentPresetDefaultId: 'ap_a',
-      },
-      {
-        kind: 'agentPresetCollectionMutation',
-        operation: 'default',
-        settingsProjectionEpoch: expect.any(Number),
-        presetIds: ['ap_b', 'ap_a'],
-        agentPresetDefaultId: 'ap_b',
-      },
-    ])
+    expect(observedEffects).toEqual([])
     expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_b', 'ap_a'])
     expect(getDatabase().agentPresetDefaultId).toBe('ap_b')
     expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)))).toEqual([
@@ -448,20 +432,11 @@ describe('Agent Preset optimistic field rollback', () => {
 
     withTrustedResourceWrite(() => {
       const chat = getDatabase().characters[0].chats[0]
-      getDatabase().characters[0].chats[0] = {
-        ...chat,
-        name: 'Edited Chat A',
-        generationSettings: {
-          ...chat.generationSettings,
-          configured: true,
-        },
-      }
+      chat.name = 'Edited Chat A'
+      chat.generationSettings!.configured = true
       const loadout = getDatabase().loadouts[0]
-      getDatabase().loadouts[0] = {
-        ...loadout,
-        name: 'Edited Loadout A',
-        globalVariables: { ...loadout.globalVariables, mood: 'edited' },
-      }
+      loadout.name = 'Edited Loadout A'
+      loadout.globalVariables.mood = 'edited'
     })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
 
@@ -481,10 +456,10 @@ describe('Agent Preset optimistic field rollback', () => {
       agentPresetId: 'ap_a',
       agentPresetName: 'Preset A',
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
-  it('re-reads delete references whose projection epochs advance before rollback', async () => {
+  it('re-reads delete references whose owner identity changes before rollback', async () => {
     seedAgentPresetDeleteReferences()
     const authoritativeCharacter = clonePlain(getDatabase().characters[0])
     const authoritativeLoadout = clonePlain(getDatabase().loadouts[0])
@@ -562,7 +537,7 @@ describe('Agent Preset optimistic field rollback', () => {
       agentPresetId: 'ap_b',
       agentPresetName: 'Preset B',
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
   it('does not recreate or mutate delete-reference targets superseded by structural edits', async () => {
@@ -586,10 +561,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     expect(getDatabase().characters[0].chats).toEqual([])
     expect(getDatabase().loadouts).toEqual([])
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
-  it('taints before rolling back failed metadata fields and preserves a later edit', async () => {
+  it('rolls back failed metadata fields while preserving a later edit', async () => {
     const pendingResponse = deferred<Response>()
     vi.stubGlobal(
       'fetch',
@@ -611,7 +586,7 @@ describe('Agent Preset optimistic field rollback', () => {
       name: 'Newer local name',
       enabled: true,
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
   it('rolls back only matching failed step fields while retaining a later step edit', async () => {
@@ -642,7 +617,7 @@ describe('Agent Preset optimistic field rollback', () => {
       outputKey: 'step_a',
       instruction: 'Newer local instruction',
     })
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
   it.each([
@@ -651,7 +626,7 @@ describe('Agent Preset optimistic field rollback', () => {
     ['default selection', () => setAgentPresetDefault('ap_b')],
     ['step delete', () => deleteAgentPresetStep('ap_a', 'aps_a')],
     ['step reorder', () => reorderAgentPresetSteps('ap_a', ['aps_b', 'aps_a'])],
-  ])('taints the agents projection before a failed optimistic %s rollback', async (_label, runCommand) => {
+  ])('rolls back a failed optimistic %s without tainting the owner', async (_label, runCommand) => {
     setResourceWriteGuardEnabled(false)
     resetServerResourceState()
     setDatabaseLite(
@@ -675,10 +650,10 @@ describe('Agent Preset optimistic field rollback', () => {
       result: { status: 'error', error: 'rejected', reason: 'invalid-request' },
     })
 
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
   })
 
-  it('keeps a failed step reorder tainted when a later accepted field patch prevents whole-array rollback', async () => {
+  it('preserves a later accepted field patch without tainting a failed step reorder', async () => {
     setResourceWriteGuardEnabled(false)
     resetServerResourceState()
     setDatabaseLite(
@@ -744,9 +719,9 @@ describe('Agent Preset optimistic field rollback', () => {
     ])
     expect(getDatabase().agentPresets[0].steps.map((candidate) => candidate.id)).toEqual(['aps_b', 'aps_a'])
     expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Accepted instruction')
-    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
-    expect(authoritativeAgentsRead).toHaveBeenCalledOnce()
-    expect(localRevisionFence).not.toHaveBeenCalled()
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(false)
+    expect(authoritativeAgentsRead).not.toHaveBeenCalled()
+    expect(localRevisionFence).toHaveBeenCalledOnce()
   })
 })
 
