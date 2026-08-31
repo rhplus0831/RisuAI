@@ -31,6 +31,7 @@ import { createPromptInfoSnapshot } from '@risuai/shared-core/prompt-info-snapsh
 import { resolveEffectiveAgentPresetId } from '@risuai/shared-core/agent-preset-resolver'
 import { combineModuleIntegrations, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 
 type JsonRecord = Record<string, unknown>
 type EffectivePromptPresetRecord = PromptPresetRecord & { moduleIntergration?: unknown }
@@ -161,7 +162,8 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
     promptPresetRegex.present && Array.isArray(promptPresetRegex.value) ? promptPresetRegex.value : [],
   ) as Database['presetRegex']
 
-  effectiveDatabase.selectedPersona = effectivePersonaIndex
+  effectiveDatabase.selectedPersonaId = effectivePersona.id
+  effectiveDatabase.selectedPersona = selectedPersonaIndexFromStableId(effectiveDatabase)
   mirrorLegacyProfile(effectiveDatabase as unknown as JsonRecord, effectivePersona)
 
   effectiveDatabase.globalChatVariables = {

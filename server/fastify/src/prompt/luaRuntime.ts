@@ -33,6 +33,7 @@ import { activateLorebookAsync } from './lorebook.js'
 import { embedTextGroups, embedTexts } from '../memoryEmbeddingAdapter.js'
 import { resolveMemoryEmbeddingModel } from '../memoryEmbeddingModel.js'
 import { armMemoryProviderFetchDeadline, resolveMemoryProviderFetchDeadlineMs } from '../memoryProviderDeadline.js'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 import {
   executeImageGeneration,
   parseImageGenerationRequest,
@@ -861,13 +862,11 @@ function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
 }
 
 function selectedPersonaProfileField(database: Database, field: 'name' | 'personaPrompt'): string | undefined {
-  if (!Number.isInteger(database.selectedPersona)) return undefined
   const personas = Array.isArray(database.personas)
     ? (database.personas as Array<{ id?: unknown; name?: unknown; personaPrompt?: unknown }>)
     : []
-  const persona = personas[database.selectedPersona]
+  const persona = personas[selectedPersonaIndexFromStableId(database)]
   if (!persona || typeof persona.id !== 'string') return undefined
-  if (personas.filter((candidate) => candidate.id === persona.id).length !== 1) return undefined
   const value = persona[field]
   return typeof value === 'string' ? value : ''
 }

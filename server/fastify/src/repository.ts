@@ -40,7 +40,10 @@ import {
   setChatHypaV3,
   countChatMessages,
 } from './messageStore.js'
-import { repairPersonaSelectionIdentity } from '@risuai/shared-core/persona-selection-identity'
+import {
+  repairPersonaSelectionIdentity,
+  selectedPersonaIndexFromStableId,
+} from '@risuai/shared-core/persona-selection-identity'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -1546,7 +1549,14 @@ function loadPersistedDatabase(
     rec.characters = sqliteChars
   }
   database = loadCollectionsFromSqlite(db, rec)
+  projectSelectedPersonaCompatibilityIndex(database as Record<string, unknown>)
   return database
+}
+
+/** Normal reads derive the legacy numeric pointer without repairing or persisting rows. */
+function projectSelectedPersonaCompatibilityIndex(database: Record<string, unknown>): void {
+  if (!Array.isArray(database.personas)) return
+  database.selectedPersona = selectedPersonaIndexFromStableId(database)
 }
 
 export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
@@ -1823,6 +1833,11 @@ function loadDatabaseFieldsFromSqlite(
 
   if (fieldKeys.includes('promptPresets') && fieldKeys.includes('promptTemplate')) {
     projectSelectedPromptTemplate(fields, settings.promptPresetsId)
+  }
+  if (fieldKeys.includes('personas')) {
+    const projection = { ...settings, ...fields }
+    projectSelectedPersonaCompatibilityIndex(projection)
+    settings.selectedPersona = projection.selectedPersona
   }
 
   return { fields, settings }

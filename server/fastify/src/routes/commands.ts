@@ -89,6 +89,7 @@ import {
   readPersonaId,
   readPersonaPatch,
   requirePersonaIndex,
+  requireSelectedPersonaIndex,
   saveSelectedPersonaSnapshot,
   selectedPersonaId,
   validateFullPersonaIdList,
@@ -4752,22 +4753,20 @@ export function registerCommandRoutes(
           const target = ensurePersonaDatabaseObject(database)
           validateNormalModuleLinks(ensureModuleRecords(target), persona.modules ?? [], 'persona.modules')
           const personas = ensurePersonaCollection(target)
+          if (personas.length > 0) requireSelectedPersonaIndex(target, personas)
           if (findPersonaIndex(personas, persona.id) !== -1) {
             throw new ValidationError(`Duplicate persona id: ${persona.id}`)
           }
-          const beforeSelected = target.selectedPersona
           personas.push(persona)
           writeSingleCollectionTable(innerDb, 'personas', personas)
           // A newly created row becomes selected in the normal row-owner flow;
           // mirroring the legacy scalar aliases remains opt-in compatibility.
+          target.selectedPersonaId = persona.id
           target.selectedPersona = personas.length - 1
           if (mirror) {
             mirrorLegacyProfile(target, persona)
           }
-          const settingsWritten = mirror || target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaCreated, id: persona.id },
             extra: {
@@ -4777,7 +4776,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: true,
-                settingsWritten,
+                settingsWritten: true,
                 legacyProfileProjectionApplied: mirror,
               }),
             },
@@ -4825,6 +4824,7 @@ export function registerCommandRoutes(
           }
           const personas = ensurePersonaCollection(target)
           const index = requirePersonaIndex(personas, personaId)
+          const selectedIndex = requireSelectedPersonaIndex(target, personas)
           personas[index] = {
             ...personas[index],
             ...patch,
@@ -4833,7 +4833,7 @@ export function registerCommandRoutes(
           writeSingleCollectionRow(innerDb, 'personas', index, personas[index])
           // Editing the selected persona with mirroring refreshes the legacy
           // profile scalars; co-write settings only then.
-          const legacyProfileProjectionApplied = mirror && target.selectedPersona === index
+          const legacyProfileProjectionApplied = mirror && selectedIndex === index
           if (legacyProfileProjectionApplied) {
             mirrorLegacyProfile(target, personas[index])
             writeSettingsOnly(innerDb, extractSettings(target))
@@ -4883,6 +4883,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
+          requireSelectedPersonaIndex(target, personas)
           const deletedIndex = findPersonaIndex(personas, personaId)
           if (deletedIndex === -1) {
             const selectedId = selectedPersonaId(target, personas)
@@ -4912,7 +4913,6 @@ export function registerCommandRoutes(
           if (personas.length <= 1) {
             throw new ValidationError('Cannot delete the only persona')
           }
-          const beforeSelected = target.selectedPersona
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
@@ -4928,6 +4928,7 @@ export function registerCommandRoutes(
           }
 
           const selectedIndex = nextSelectedId ? requirePersonaIndex(personas, nextSelectedId) : -1
+          target.selectedPersonaId = nextSelectedId ?? null
           target.selectedPersona = selectedIndex
           let mirrored = false
           if (mirror && selectedIndex >= 0) {
@@ -4937,12 +4938,9 @@ export function registerCommandRoutes(
 
           // The splice shifts positions, so the persona table is always rewritten.
           writeSingleCollectionTable(innerDb, 'personas', personas)
-          // `selectedPersona` + the mirror scalars are settings; co-write settings
-          // when the pointer moved or mirroring rewrote the legacy profile.
-          const settingsWritten = mirrored || target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          // Stable identity is authoritative; the numeric field is persisted in
+          // the same transaction as a derived compatibility projection.
+          writeSettingsOnly(innerDb, extractSettings(target))
           const cascade = rehomeGenerationReferences(
             target,
             'persona',
@@ -4962,7 +4960,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: true,
-                settingsWritten,
+                settingsWritten: true,
                 legacyProfileProjectionApplied: mirrored,
               }),
             },
@@ -5001,11 +4999,12 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
-          const beforeSelected = target.selectedPersona
+          requireSelectedPersonaIndex(target, personas)
           if (saveCurrent) {
             saveSelectedPersonaSnapshot(target, personas)
           }
           const index = requirePersonaIndex(personas, personaId)
+          target.selectedPersonaId = personaId
           target.selectedPersona = index
           let mirrored = false
           if (mirror) {
@@ -5017,10 +5016,7 @@ export function registerCommandRoutes(
           if (saveCurrent) {
             writeSingleCollectionTable(innerDb, 'personas', personas)
           }
-          const settingsWritten = mirrored || target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaSelected, id: personaId },
             extra: {
@@ -5030,7 +5026,7 @@ export function registerCommandRoutes(
                 database: target,
                 personas,
                 collectionWritten: saveCurrent,
-                settingsWritten,
+                settingsWritten: true,
                 legacyProfileProjectionApplied: mirrored,
               }),
             },
@@ -5068,24 +5064,21 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           const personas = ensurePersonaCollection(target)
-          const beforeSelected = target.selectedPersona
           const currentSelectedId = selectedPersonaId(target, personas)
           validateFullPersonaIdList(personas, personaIds)
           const byId = new Map(personas.map((persona) => [persona.id, persona]))
           const reordered = personaIds.map((id) => byId.get(id)!)
           target.personas = reordered
+          target.selectedPersonaId = currentSelectedId
           target.selectedPersona = currentSelectedId
             ? requirePersonaIndex(reordered, currentSelectedId)
             : reordered.length > 0
               ? 0
               : -1
           writeSingleCollectionTable(innerDb, 'personas', reordered)
-          // `selectedPersona` is a settings scalar; co-write settings only when
-          // the reorder moved the selected persona to a new index.
-          const settingsWritten = target.selectedPersona !== beforeSelected
-          if (settingsWritten) {
-            writeSettingsOnly(innerDb, extractSettings(target))
-          }
+          // Co-persist the stable owner and numeric compatibility projection
+          // with the reordered rows even when the selected index is unchanged.
+          writeSettingsOnly(innerDb, extractSettings(target))
           return {
             event: COMMAND_EVENT_CATALOG.personaReordered,
             extra: buildPersonaMutationCertificate({
@@ -5093,7 +5086,7 @@ export function registerCommandRoutes(
               database: target,
               personas: reordered,
               collectionWritten: true,
-              settingsWritten,
+              settingsWritten: true,
               legacyProfileProjectionApplied: false,
             }),
           }

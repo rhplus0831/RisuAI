@@ -14,6 +14,7 @@ import {
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
 import { attachTriggerSource } from './triggerSource.js'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 
 /**
  * Server-side module helpers ported from `src/ts/process/modules.ts`. Resolves
@@ -75,7 +76,7 @@ function resolveServerPersonaModuleIds(database: Database, currentChat: Chat | u
   } else if (nonEmptyString(currentChat?.bindedPersona)) {
     personaId = currentChat.bindedPersona
   } else {
-    const selectedIndex = Number.isInteger(database.selectedPersona) ? database.selectedPersona : -1
+    const selectedIndex = selectedPersonaIndexFromStableId(database)
     const selectedPersonaId = selectedIndex >= 0 ? database.personas?.[selectedIndex]?.id : undefined
     personaId = nonEmptyString(selectedPersonaId) ? selectedPersonaId : null
   }

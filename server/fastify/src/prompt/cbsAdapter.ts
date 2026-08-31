@@ -14,6 +14,7 @@ import {
 } from './promptScope.js'
 import { getActiveModules, getModuleLorebooks } from './modules.js'
 import { pickHashRand } from '@risuai/shared-core/lore-hash'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 
 const calculationVariables = { getChatVar, getGlobalChatVar }
 
@@ -45,10 +46,9 @@ function getScopedModules() {
 
 function selectedPersonaProfileField(field: 'name' | 'personaPrompt'): string | undefined {
   const database = getActiveDatabase()
-  if (!database || !Number.isInteger(database.selectedPersona)) return undefined
-  const persona = database.personas?.[database.selectedPersona]
+  if (!database) return undefined
+  const persona = database.personas?.[selectedPersonaIndexFromStableId(database)]
   if (!persona || typeof persona.id !== 'string') return undefined
-  if (database.personas.filter((candidate: { id?: unknown }) => candidate?.id === persona.id).length !== 1) return undefined
   const value = persona[field]
   return typeof value === 'string' ? value : ''
 }

@@ -1862,6 +1862,7 @@ describe('resolveScope (via beginAssembly)', () => {
     expect(state.database.mainPrompt).toBe('CHAT MAIN {{toggle::mode::Mode}}')
     expect(state.database.jailbreak).toBe('CHAT JB')
     expect(state.database.globalNote).toBe('CHAT GLOBAL NOTE')
+    expect(state.database.selectedPersonaId).toBe('persona-chat')
     expect(state.database.selectedPersona).toBe(1)
     expect(state.database.username).toBe('Chat User')
     expect(state.database.userIcon).toBe('chat-icon')

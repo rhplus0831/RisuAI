@@ -1182,7 +1182,7 @@ describe('prompt-items collection range', () => {
 })
 
 describe('personas collection range', () => {
-  it('POST personas (no mirror) rewrites only the personas table', async () => {
+  it('POST personas (no mirror) atomically writes the stable selection projection', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1193,7 +1193,7 @@ describe('personas collection range', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['personas'])
+    expect(metric.writtenTables).toEqual(['personas', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual([
@@ -1201,9 +1201,11 @@ describe('personas collection range', () => {
       'persona-b',
       'persona-c',
     ])
-    // No mirror: pointer + legacy scalars untouched.
-    expect(readSettings().selectedPersona).toBe(0)
-    expect(readSettings().username).toBe('legacy-user')
+    const settings = readSettings()
+    expect(settings.selectedPersonaId).toBe('persona-c')
+    expect(settings.selectedPersona).toBe(2)
+    // No mirror: legacy profile aliases stay untouched.
+    expect(settings.username).toBe('legacy-user')
   })
 
   it('POST personas with mirror co-writes settings (pointer + legacy scalars)', async () => {
@@ -1225,6 +1227,7 @@ describe('personas collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
+    expect(settings.selectedPersonaId).toBe('persona-c')
     expect(settings.selectedPersona).toBe(2)
     expect(settings.username).toBe('Persona C')
     expect(settings.personaPrompt).toBe('pc-prompt')
@@ -1252,7 +1255,7 @@ describe('personas collection range', () => {
     expect(personas[0].name).toBe('Persona A')
   })
 
-  it('POST personas/select writes personas + settings (default mirror + save)', async () => {
+  it('POST personas/select writes only the stable selection settings by default', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1262,17 +1265,17 @@ describe('personas collection range', () => {
       payload: { baseRevision: revision, personaId: 'persona-b' },
     })
 
-    // Default saveCurrent snapshots the outgoing persona into the table; default
-    // mirror copies persona-b's profile into the legacy settings scalars.
+    // Ordinary selection does not snapshot or mirror legacy aliases.
     expect(metric.mutationPath).toBe('targeted-collection')
-    expect(metric.writtenTables).toEqual(['personas', 'settings'])
+    expect(metric.writtenTables).toEqual(['settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
+    expect(settings.selectedPersonaId).toBe('persona-b')
     expect(settings.selectedPersona).toBe(1)
-    expect(settings.username).toBe('Persona B')
-    expect(settings.personaPrompt).toBe('pb-prompt')
-    expect(settings.userNote).toBe('pb-note')
+    expect(settings.username).toBe('legacy-user')
+    expect(settings.personaPrompt).toBe('legacy-prompt')
+    expect(settings.userNote).toBe('legacy-note')
   })
 
   it('POST personas/select (no save, no mirror) writes only settings (pointer)', async () => {
@@ -1295,12 +1298,12 @@ describe('personas collection range', () => {
     expect(metric.writtenTables).toEqual(['settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readSettings().selectedPersona).toBe(1)
+    expect(readSettings()).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 1 })
     // Mirror off: legacy scalars unchanged.
     expect(readSettings().username).toBe('legacy-user')
   })
 
-  it('DELETE personas/:id writes personas + settings (default mirror)', async () => {
+  it('DELETE personas/:id writes personas + stable selection settings without mirroring', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
@@ -1315,10 +1318,9 @@ describe('personas collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual(['persona-b'])
-    expect(readSettings().selectedPersona).toBe(0)
+    expect(readSettings()).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 0 })
     expect(body.selectedPersonaId).toBe('persona-b')
-    // Default mirror refreshed the legacy scalars from the new selection.
-    expect(readSettings().username).toBe('Persona B')
+    expect(readSettings().username).toBe('legacy-user')
   })
 
   it('POST personas/reorder co-writes settings when the selected index moves', async () => {
@@ -1337,7 +1339,7 @@ describe('personas collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     expect((readCollection('personas') as Array<{ id: string }>).map((p) => p.id)).toEqual(['persona-b', 'persona-a'])
-    expect(readSettings().selectedPersona).toBe(1)
+    expect(readSettings()).toMatchObject({ selectedPersonaId: 'persona-a', selectedPersona: 1 })
   })
 })
 

@@ -34,6 +34,7 @@ const DEDICATED_COMMAND_DATABASE_FIELDS = [
   'personaPrompt',
   'promptPresetsId',
   'selectedPersona',
+  'selectedPersonaId',
   'translatorPresetId',
   'userIcon',
   'userNote',

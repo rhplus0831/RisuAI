@@ -8,6 +8,7 @@ import {
   serializePersonaProfileDigestInput,
   type PersonaProfileDigestValue,
 } from '@risuai/shared-core/mutation-certificates'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 
 type JsonRecord = Record<string, unknown>
 
@@ -83,36 +84,32 @@ export function ensureDatabaseObject(database: unknown): JsonRecord {
 
 export function ensurePersonaCollection(database: JsonRecord): PersonaRecord[] {
   if (!Array.isArray(database.personas)) {
-    database.personas = []
+    throw new ValidationError('personas must be an array')
   }
 
   const seen = new Set<string>()
-  const personas = (database.personas as unknown[]).map((raw) => {
-    const persona = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as JsonRecord) : {}
-    const rawId = typeof persona.id === 'string' && persona.id.trim() ? persona.id : randomUUID()
-    const id = seen.has(rawId) ? randomUUID() : rawId
+  const personas = database.personas as unknown[]
+  for (let index = 0; index < personas.length; index += 1) {
+    const persona = readJsonObject(personas[index], `personas[${index}]`) as PersonaRecord
+    const id = readPersonaId(persona.id, `personas[${index}].id`)
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate persona id: ${id}`)
+    }
     seen.add(id)
-    persona.id = id
-    return repairPersonaRecord(persona)
-  })
-  database.personas = personas
-
-  if (!Number.isInteger(database.selectedPersona as number)) {
-    database.selectedPersona = personas.length > 0 ? 0 : -1
-  }
-  if ((database.selectedPersona as number) >= personas.length) {
-    database.selectedPersona = personas.length > 0 ? personas.length - 1 : -1
-  }
-  if ((database.selectedPersona as number) < -1) {
-    database.selectedPersona = personas.length > 0 ? 0 : -1
+    if (Object.prototype.hasOwnProperty.call(persona, 'modules')) {
+      readPersonaModuleIds(persona.modules, `personas[${index}].modules`)
+    }
+    validatePersonaRecord(persona, `personas[${index}]`)
   }
 
-  return personas
+  return personas as PersonaRecord[]
 }
 
 export function normalizePersonaCollection(database: unknown): void {
   if (!database || typeof database !== 'object' || Array.isArray(database)) return
-  ensurePersonaCollection(database as JsonRecord)
+  const target = database as JsonRecord
+  if (!Array.isArray(target.personas)) target.personas = []
+  target.personas = (target.personas as unknown[]).map((persona) => repairPersonaRecord(persona))
 }
 
 export function createPersonaRecord(input: unknown, options: { assetDb?: DatabaseSync } = {}): PersonaRecord {
@@ -201,13 +198,25 @@ export function requirePersonaIndex(personas: readonly PersonaRecord[], personaI
 }
 
 export function selectedPersonaId(database: JsonRecord, personas: readonly PersonaRecord[]): string | null {
-  const index = Number.isInteger(database.selectedPersona as number) ? (database.selectedPersona as number) : -1
+  if (personas.length === 0 && database.selectedPersonaId === null) return null
+  const index = requireSelectedPersonaIndex(database, personas)
   return personas[index]?.id ?? null
 }
 
+export function requireSelectedPersonaIndex(
+  database: JsonRecord,
+  personas: readonly PersonaRecord[] = ensurePersonaCollection(database),
+): number {
+  const projection = database.personas === personas ? database : { ...database, personas }
+  const index = selectedPersonaIndexFromStableId(projection)
+  if (index === -1) {
+    throw new ValidationError('selectedPersonaId must reference exactly one existing persona')
+  }
+  return index
+}
+
 export function saveSelectedPersonaSnapshot(database: JsonRecord, personas: PersonaRecord[]): void {
-  const index = Number.isInteger(database.selectedPersona as number) ? (database.selectedPersona as number) : -1
-  if (index < 0 || index >= personas.length) return
+  const index = requireSelectedPersonaIndex(database, personas)
 
   personas[index] = {
     ...personas[index],

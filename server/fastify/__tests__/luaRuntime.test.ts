@@ -674,6 +674,7 @@ describe('server Lua runtime — persona description', () => {
   it('uses the selected persona row over stale legacy profile scalars', async () => {
     const { ctx } = makeRuntime({
       database: {
+        selectedPersonaId: 'persona-row',
         selectedPersona: 0,
         username: 'STALE NAME',
         personaPrompt: 'STALE PROMPT',
@@ -693,6 +694,29 @@ describe('server Lua runtime — persona description', () => {
 
     expect(result.error).toBeUndefined()
     expect((result.res as PromptMessage[])[0].content).toBe('Canonical Name|CANONICAL PROMPT')
+  })
+
+  it('falls back to explicit legacy profile aliases when stable selection is missing', async () => {
+    const { ctx } = makeRuntime({
+      database: {
+        selectedPersonaId: 'missing-row',
+        selectedPersona: 0,
+        username: 'LEGACY NAME',
+        personaPrompt: 'LEGACY PROMPT',
+        personas: [{ id: 'persona-row', name: 'Wrong Row', icon: '', personaPrompt: 'WRONG PROMPT', note: '' }],
+      },
+    })
+    const code = `
+      listenEdit('editRequest', function(id, data, meta)
+        data[1].content = getPersonaName(id) .. '|' .. getPersonaDescription(id)
+        return data
+      end)
+    `
+
+    const result = await runServerLua({ code, mode: 'editRequest', data: rows('orig') }, ctx)
+
+    expect(result.error).toBeUndefined()
+    expect((result.res as PromptMessage[])[0].content).toBe('LEGACY NAME|LEGACY PROMPT')
   })
 
   it('returns the effective persona prompt expanded in the current character CBS scope', async () => {

@@ -7135,6 +7135,84 @@ describe('persona commands', () => {
     ])
   })
 
+  it('fails closed on missing or duplicate stable persona ownership without repairing persisted rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'b prompt', note: '' },
+      ],
+      selectedPersonaId: 'persona-a',
+      selectedPersona: 0,
+    })
+    const databasePath = path.join(harness.dataDir, 'risu.db')
+
+    const corruptSettings = new DatabaseSync(databasePath)
+    try {
+      const row = corruptSettings.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      settings.selectedPersonaId = 'missing-persona'
+      settings.selectedPersona = 0
+      corruptSettings.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      corruptSettings.close()
+    }
+    expect((loadPersistedFromDir(harness.dataDir).database as Record<string, unknown>).selectedPersona).toBe(-1)
+
+    const missingSelection = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, personaId: 'persona-b' },
+    })
+    expect(missingSelection.statusCode).toBe(400)
+    expect(missingSelection.json().error).toBe('selectedPersonaId must reference exactly one existing persona')
+
+    const duplicateRows = new DatabaseSync(databasePath)
+    try {
+      const settingsRow = duplicateRows.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.selectedPersonaId = 'persona-a'
+      duplicateRows.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+
+      const personaRow = duplicateRows.prepare('SELECT data_json FROM personas WHERE position = 1').get() as {
+        data_json: string
+      }
+      const persona = JSON.parse(personaRow.data_json) as Record<string, unknown>
+      persona.id = 'persona-a'
+      duplicateRows.prepare('UPDATE personas SET data_json = ? WHERE position = 1').run(JSON.stringify(persona))
+    } finally {
+      duplicateRows.close()
+    }
+
+    const duplicateSelection = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, personaIds: ['persona-a', 'persona-b'] },
+    })
+    expect(duplicateSelection.statusCode).toBe(400)
+    expect(duplicateSelection.json().error).toBe('Duplicate persona id: persona-a')
+
+    const persisted = new DatabaseSync(databasePath)
+    try {
+      const rows = persisted.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      expect(rows.map((row) => (JSON.parse(row.data_json) as { id: string }).id)).toEqual(['persona-a', 'persona-a'])
+      const settingsRow = persisted.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      expect(JSON.parse(settingsRow.data_json)).toMatchObject({ selectedPersonaId: 'persona-a', selectedPersona: 0 })
+    } finally {
+      persisted.close()
+    }
+  })
+
   it('returns 404 and 409 for missing personas and stale revisions', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

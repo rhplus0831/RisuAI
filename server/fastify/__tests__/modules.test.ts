@@ -119,6 +119,27 @@ describe('getActiveModules', () => {
     expect(getActiveModules(db, undefined, currentChat)).toEqual([linked])
   })
 
+  it('uses stable global persona selection instead of the numeric compatibility pointer', () => {
+    const linked = makeModule({ id: 'persona-module' })
+    const db = makeDb({
+      modules: [linked],
+      selectedPersonaId: 'persona-stable',
+      selectedPersona: 0,
+      personas: [
+        { id: 'persona-numeric', name: 'Numeric', icon: '', personaPrompt: '', modules: [] },
+        {
+          id: 'persona-stable',
+          name: 'Stable',
+          icon: '',
+          personaPrompt: '',
+          modules: ['persona-module'],
+        },
+      ],
+    })
+
+    expect(getActiveModules(db, undefined, undefined)).toEqual([linked])
+  })
+
   it('parses db.moduleIntergration as a comma-separated list', () => {
     const a = makeModule({ id: 'a' })
     const b = makeModule({ id: 'b' })

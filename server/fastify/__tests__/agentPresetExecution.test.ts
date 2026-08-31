@@ -61,6 +61,7 @@ function db(overrides: Partial<Database> = {}): Database {
     openrouterProvider: { order: [], only: [], ignore: [] },
     username: 'Mira',
     personaPrompt: 'Writes careful field notes.',
+    selectedPersonaId: 'persona-a',
     selectedPersona: 0,
     personas: [{ id: 'persona-a', name: 'Mira', icon: '', personaPrompt: 'Writes careful field notes.' }],
     characters: [char()],
@@ -191,6 +192,29 @@ describe('Agent Preset prepared inputs', () => {
     expect(bounded.sections.map((section) => section.scope)).toEqual(['recentChatTail'])
     expect(bounded.totalChars).toBeLessThanOrEqual(90)
     expect(bounded.diagnostics.map((diagnostic) => diagnostic.reason)).toContain('max_input_exhausted')
+  })
+
+  it('builds persona summaries from stable selection instead of the numeric compatibility pointer', () => {
+    const database = db({
+      selectedPersonaId: 'persona-stable',
+      selectedPersona: 0,
+      username: 'Legacy User',
+      personaPrompt: 'Legacy prompt',
+      personas: [
+        { id: 'persona-numeric', name: 'Numeric User', icon: '', personaPrompt: 'Numeric prompt' },
+        { id: 'persona-stable', name: 'Stable User', icon: '', personaPrompt: 'Stable prompt' },
+      ],
+    })
+    const collection = collectAgentPresetPreparedInputs(step({ inputScopes: ['personaSummary'] }), {
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+    })
+
+    expect(collection.sections).toHaveLength(1)
+    expect(collection.sections[0].content).toContain('selectedPersona: Stable User')
+    expect(collection.sections[0].content).toContain('personaPrompt: Stable prompt')
+    expect(collection.sections[0].content).not.toContain('Numeric User')
   })
 
   it('builds text and JSON prompt shapes without tool declarations', () => {

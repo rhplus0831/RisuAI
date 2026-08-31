@@ -37,6 +37,7 @@ import { dispatchChatProvider, type ChatDispatchHistoryInput } from './chatDispa
 import { activateLorebook } from './lorebook.js'
 import { ensureTokenizerLoadedForDb } from './tokenizerConfig.js'
 import { expandVariables } from './variables.js'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 
 export {
   AgentPresetGenerationError,
@@ -1313,7 +1314,7 @@ function characterSummary(char: character): string {
 }
 
 function personaSummary(database: Database): string {
-  const selectedIndex = typeof database.selectedPersona === 'number' ? database.selectedPersona : -1
+  const selectedIndex = selectedPersonaIndexFromStableId(database)
   const selectedPersona = selectedIndex >= 0 ? database.personas?.[selectedIndex] : undefined
   return labeledFields([
     ['selectedPersona', selectedPersona?.name ?? selectedPersona?.displayName],

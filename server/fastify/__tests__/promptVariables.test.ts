@@ -126,6 +126,7 @@ describe('expandVariables — basic substitution', () => {
 
   it('uses the selected persona row when legacy profile scalars conflict', () => {
     const database = makeDatabase({
+      selectedPersonaId: 'persona-row',
       selectedPersona: 0,
       username: 'STALE SCALAR',
       personaPrompt: 'STALE PROMPT',
@@ -133,6 +134,18 @@ describe('expandVariables — basic substitution', () => {
     })
 
     expect(expandVariables('{{user}}|{{persona}}', { database }).text).toBe('Canonical Row|CANONICAL PROMPT')
+  })
+
+  it('does not use a numeric persona pointer when stable selection is missing', () => {
+    const database = makeDatabase({
+      selectedPersonaId: 'missing-row',
+      selectedPersona: 0,
+      username: 'Legacy Row',
+      personaPrompt: 'LEGACY PROMPT',
+      personas: [{ id: 'persona-row', name: 'Wrong Row', icon: '', personaPrompt: 'WRONG PROMPT', note: '' }],
+    })
+
+    expect(expandVariables('{{user}}|{{persona}}', { database }).text).toBe('Legacy Row|LEGACY PROMPT')
   })
 
   it('substitutes the <user> / <char> / <bot> shorthand', () => {

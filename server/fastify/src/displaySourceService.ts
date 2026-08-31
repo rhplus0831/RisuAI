@@ -10,6 +10,7 @@ import type {
 } from './prompt/serverTypes.js'
 import type { CbsConditions } from '@risuai/shared-core/risuchat-parser-helpers'
 import { resolvePromptPresetRegexField } from '@risuai/shared-core/preset-split'
+import { selectedPersonaIndexFromStableId } from '@risuai/shared-core/persona-selection-identity'
 import {
   DISPLAY_SOURCE_PROTOCOL_VERSION,
   DISPLAY_SOURCE_TRANSFORM_VERSION,
@@ -85,16 +86,18 @@ function activePromptPresetRegex(database: Database, chat: Chat): customscript[]
   return resolved.present && Array.isArray(resolved.value) ? (resolved.value as customscript[]) : []
 }
 
-function selectedPersonaProfile(database: Database): { id: string; name: string; personaPrompt: string } | null {
-  if (!Number.isInteger(database.selectedPersona)) return null
+function selectedPersonaProfile(
+  database: Database,
+): { id: string; index: number; name: string; personaPrompt: string } | null {
   const personas = Array.isArray(database.personas)
     ? (database.personas as Array<{ id?: unknown; name?: unknown; personaPrompt?: unknown }>)
     : []
-  const persona = personas[database.selectedPersona]
+  const index = selectedPersonaIndexFromStableId(database)
+  const persona = personas[index]
   if (!persona || typeof persona.id !== 'string') return null
-  if (personas.filter((candidate) => candidate.id === persona.id).length !== 1) return null
   return {
     id: persona.id,
+    index,
     name: typeof persona.name === 'string' ? persona.name : '',
     personaPrompt: typeof persona.personaPrompt === 'string' ? persona.personaPrompt : '',
   }
@@ -170,7 +173,7 @@ function sharedDependencyValue(
       moduleIntergration: scope.database.moduleIntergration,
       presetRegex: scope.database.presetRegex,
       personaPrompt: selectedPersona?.personaPrompt ?? scope.database.personaPrompt,
-      selectedPersona: scope.database.selectedPersona,
+      selectedPersona: selectedPersona?.index ?? -1,
       selectedPersonaId: selectedPersona?.id ?? null,
       templateDefaultVariables: scope.database.templateDefaultVariables,
       username: selectedPersona?.name ?? scope.database.username,
