@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { isServerCharacterShell, type character, type MessageGenerationInfo } from '../storage/database.svelte'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
 import { reportSendChatError } from './sendChatErrors'
 import { setupSendChatContext } from './sendChatContext'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
@@ -285,6 +285,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       refreshLegacyGenerationProjection()
     }
     const ctx = setupSendChatContext({
+      database: generationSettingsState.db,
       chatProcessIndex,
       chatAdditonalTokens: arg.chatAdditonalTokens,
       writeMaintenance: !attachesDurableGeneration,
@@ -386,6 +387,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     const assemblyRoute = attachesDurableGeneration
       ? ({ type: 'local' } as const)
       : resolveServerPromptAssembly({
+          database: generationSettingsState.db,
           currentChar,
           currentChat,
           preview: arg.preview,
@@ -403,6 +405,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       // the server.
       serverDurable =
         resolveDurableGeneration({
+          database: generationSettingsState.db,
           currentChar,
           currentChat,
           preview: arg.preview,
@@ -639,7 +642,8 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       // stable row; if the terminal cannot identify it safely, do not fall back
       // to whichever chat happens to be selected now.
       await runLedgeredGenerationEffect(effectLedger, 'igp', 'live_terminal', async () => {
-        const promptTemplate = getDatabase().igpPrompt ?? ''
+        const promptTemplate =
+          settingsResourceState.status === 'ready' ? String(settingsResourceState.value.igpPrompt ?? '') : ''
         if (!terminalResult.igpTarget || !promptTemplate.trim()) {
           return skippedGenerationEffect('not_configured')
         }

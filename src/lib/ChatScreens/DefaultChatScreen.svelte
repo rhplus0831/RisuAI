@@ -1871,6 +1871,7 @@
       }
 
       const preflight = preflightChatSendBeforeMutation({
+        database: generationSettingsGuard.state.db,
         currentChar: activeOwner.character,
         currentChat: currentChatRecord,
         continue: continueResponse,
@@ -1986,6 +1987,7 @@
         ...(translation ? { translation } : {}),
       }
       const preflight = preflightChatSendBeforeMutation({
+        database: generationSettingsGuard.state.db,
         currentChar: selectedCharacter,
         currentChat: liveChat,
         continue: false,

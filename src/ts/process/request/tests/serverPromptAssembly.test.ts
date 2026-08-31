@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mirrors serverCompletion.test.ts: the platform gate is a hoisted getter so a
-// case can flip Fastify mode, and `../../modules` is mocked so getModuleTriggers
-// is hermetic (no enabled-module state leaks into the content detector).
+// Mirrors serverCompletion.test.ts: the platform gate is a hoisted getter.
+// `../../modules` is still neutralized because the plugin/store import graph
+// initializes it, while the preflight itself resolves modules from its explicit
+// database snapshot.
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
@@ -15,8 +16,7 @@ vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
   // `moduleUpdate`/`getModuleToggles` are neutralized as in serverCompletion.test.ts
   // (a stores `$effect` calls moduleUpdate at import and otherwise races the db
-  // module's init); `getModuleTriggers` is emptied so module triggers don't leak
-  // into the content detector.
+  // module's init).
   return {
     ...actual,
     moduleUpdate: () => {},
@@ -25,7 +25,7 @@ vi.mock('../../modules', async (importActual) => {
   }
 })
 
-import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
+import { getDatabase, setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { LLMFlags } from '../../../model/modellist'
 import { MASKED_PROVIDER_SECRET } from '../../../providerSecretMask'
 import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
@@ -70,7 +70,7 @@ function makeChat(
 }
 
 function makeInput(overrides: Partial<ServerPromptAssemblyInput> = {}): ServerPromptAssemblyInput {
-  return { currentChar: makeChar(), currentChat: makeChat(), ...overrides }
+  return { database: getDatabase(), currentChar: makeChar(), currentChat: makeChat(), ...overrides }
 }
 
 function expectUnsupported(route: ServerPromptAssemblyRoute): string {
@@ -107,6 +107,13 @@ describe('resolveServerPromptAssembly', () => {
   describe('server — the supported pure-text-send subset', () => {
     it('routes a plain user-message send to server', () => {
       expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })
+    })
+
+    it('uses the supplied generation snapshot instead of ambient database state', () => {
+      const database = { ...getDatabase() } as Database
+      seedDb({ aiModel: 'novelai' })
+
+      expect(resolveServerPromptAssembly(makeInput({ database }))).toEqual({ type: 'server' })
     })
 
     it('uses the chat-selected model preset for provider preflight', () => {
@@ -314,6 +321,11 @@ describe('resolveServerPromptAssembly', () => {
       expectUnsupported(resolveServerPromptAssembly(input))
     })
 
+    it('fails closed when the generation settings snapshot is unavailable', () => {
+      const input = makeInput({ database: undefined as never })
+      expect(expectUnsupported(resolveServerPromptAssembly(input))).toMatch(/settings snapshot/i)
+    })
+
     it('rejects a group character (legacy; explicit unsupported signal)', () => {
       const input = makeInput({ currentChar: makeChar({ type: 'group' } as never) })
       expectUnsupported(resolveServerPromptAssembly(input))
@@ -456,6 +468,31 @@ describe('resolveServerPromptAssembly', () => {
       expect(reason).toMatch(/interactive|alertInput/i)
     })
 
+    it('resolves active module Lua triggers from the supplied generation snapshot', () => {
+      seedDb({
+        strictScriptCheck: true,
+        enabledModules: ['module-interactive'],
+        modules: [
+          {
+            id: 'module-interactive',
+            name: 'Interactive module',
+            trigger: [
+              {
+                effect: [
+                  {
+                    type: 'triggerlua',
+                    code: "listenEdit('editRequest', function(id, data) alertConfirm(id, 'pick') return data end)",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      } as never)
+
+      expect(expectUnsupported(resolveServerPromptAssembly(makeInput()))).toMatch(/interactive|alertConfirm/i)
+    })
+
     it('rejects a non-empty pluginV2 edit set with the plugin (permanent) reason', () => {
       pluginV2.editprocess.add((() => {}) as never)
       const reason = expectUnsupported(resolveServerPromptAssembly(makeInput()))
@@ -537,6 +574,7 @@ describe('preflightChatSendBeforeMutation', () => {
   it('classifies the prospective transcript without appending to the live chat', () => {
     const currentChat = makeChat([{ role: 'char', data: 'previous reply' }])
     const route = preflightChatSendBeforeMutation({
+      database: getDatabase(),
       currentChar: makeChar(),
       currentChat,
       pendingUserMessage: { role: 'user', data: 'prospective turn', name: null },
@@ -550,6 +588,7 @@ describe('preflightChatSendBeforeMutation', () => {
     const currentChat = makeChat([{ role: 'char', data: 'previous reply' }])
     const reason = expectUnsupported(
       preflightChatSendBeforeMutation({
+        database: getDatabase(),
         currentChar: makeChar({ type: 'group' } as never),
         currentChat,
         pendingUserMessage: { role: 'user', data: 'blocked group turn', name: null },

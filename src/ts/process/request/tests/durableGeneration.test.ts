@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Mirrors serverPromptAssembly.test.ts: the platform gate is a hoisted getter so
-// a case can flip Fastify mode, and `../../modules` is mocked so getModuleTriggers
-// is hermetic (no enabled-module state leaks into the content detector). The
-// durable gate delegates to `resolveServerPromptAssembly`, so it needs the same
-// hermetic environment.
+// Mirrors serverPromptAssembly.test.ts: the platform gate is a hoisted getter.
+// The plugin/store import graph still initializes `../../modules`, so its eager
+// effects are neutralized even though preflight resolves active modules from the
+// explicit database snapshot.
 vi.mock('../../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../../platform')>()
   return {
@@ -13,19 +12,17 @@ vi.mock('../../../platform', async (importActual) => {
   }
 })
 
-const moduleState = vi.hoisted(() => ({ triggers: [] as unknown[] }))
-
 vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
   return {
     ...actual,
     moduleUpdate: () => {},
     getModuleToggles: () => '',
-    getModuleTriggers: () => moduleState.triggers,
+    getModuleTriggers: () => [],
   }
 })
 
-import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
+import { getDatabase, setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import { resolveDurableGeneration, type DurableGenerationRoute } from '../durableGeneration'
 import type { ServerPromptAssemblyInput } from '../serverPromptAssembly'
@@ -62,7 +59,7 @@ function makeChat(
 }
 
 function makeInput(overrides: Partial<ServerPromptAssemblyInput> = {}): ServerPromptAssemblyInput {
-  return { currentChar: makeChar(), currentChat: makeChat(), ...overrides }
+  return { database: getDatabase(), currentChar: makeChar(), currentChat: makeChat(), ...overrides }
 }
 
 function expectNonDurable(route: DurableGenerationRoute): string {
@@ -74,7 +71,6 @@ function expectNonDurable(route: DurableGenerationRoute): string {
 
 beforeEach(() => {
   _setPluginRuntimePhaseForTesting('ready')
-  moduleState.triggers = []
   seedDb()
 })
 
@@ -116,7 +112,10 @@ describe('resolveDurableGeneration', () => {
     })
 
     it('routes a send to durable when a module carries an output trigger (decision #2)', () => {
-      moduleState.triggers = outputTriggerScript()
+      seedDb({
+        enabledModules: ['module-output'],
+        modules: [{ id: 'module-output', name: 'Output module', trigger: outputTriggerScript() }] as never,
+      })
       expect(resolveDurableGeneration(makeInput())).toEqual({ type: 'durable' })
     })
 

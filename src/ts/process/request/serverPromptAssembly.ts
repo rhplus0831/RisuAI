@@ -1,8 +1,7 @@
-import { getDatabase } from '../../storage/database.svelte'
 import type { character, Chat, Database, triggerscript } from '../../storage/database.svelte'
 import { LLMFlags } from '../../model/types'
-import { getModuleTriggers } from '../modules'
 import { isPluginRuntimeReady, pluginV2 } from '../../plugins/plugins.svelte'
+import { resolveActiveModuleStates } from '../../moduleActivation'
 import {
   applyEffectivePresetComposition,
   databaseKeyForModelPresetField,
@@ -27,6 +26,8 @@ import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-
 export type ServerPromptAssemblyRoute = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 
 export interface ServerPromptAssemblyInput {
+  /** Coherent generation-owner snapshot captured before this preflight runs. */
+  database: Database
   currentChar: character
   currentChat: Chat
   preview?: boolean
@@ -73,7 +74,7 @@ function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
 
 /** Whether the active resolved profile accepts inline image input. */
 function modelAcceptsImageInput(input: ServerPromptAssemblyInput): boolean {
-  return resolveProfileForChat(input.currentChat).modelInfo.flags.includes(LLMFlags.hasImageInput)
+  return resolveProfileForChat(input.database, input.currentChat).modelInfo.flags.includes(LLMFlags.hasImageInput)
 }
 
 // Interactive Lua dialog APIs. A `triggerlua` script that calls one of these
@@ -124,8 +125,11 @@ function hasPluginV2EditSet(): boolean {
  * Kept separate from `hasPluginV2EditSet` so the permanent pluginV2 hard-fail is
  * undisturbed.
  */
-function luaUsesInteractiveApi(currentChar: character): boolean {
-  return triggersUseInteractiveLua(currentChar.triggerscript) || triggersUseInteractiveLua(getModuleTriggers())
+function luaUsesInteractiveApi(input: ServerPromptAssemblyInput): boolean {
+  const moduleTriggers = resolveActiveModuleStates(input.database, input.currentChar, input.currentChat).flatMap(
+    ({ module }) => module.trigger ?? [],
+  )
+  return triggersUseInteractiveLua(input.currentChar.triggerscript) || triggersUseInteractiveLua(moduleTriggers)
 }
 
 const MODEL_RUNTIME_DATABASE_EXTRA_FIELDS = [
@@ -207,7 +211,7 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   // Lua scripts route to the server by default. With Strict Script Check enabled,
   // keep the old conservative behavior and block source that references a
   // browser-only interactive dialog API.
-  if (getDatabase().strictScriptCheck === true && luaUsesInteractiveApi(input.currentChar)) {
+  if (input.database.strictScriptCheck === true && luaUsesInteractiveApi(input)) {
     return 'Lua scripts using interactive dialogs (alertInput / alertSelect / alertConfirm) require the browser and are not supported by server prompt assembly.'
   }
   // pluginV2 edit hooks stay permanently `unsupported` (no-port list; deprecated
@@ -218,8 +222,7 @@ function sendHasUnsupportedContent(input: ServerPromptAssemblyInput): string | n
   return null
 }
 
-function effectiveModelDatabaseForChat(currentChat: Chat): Database {
-  const db = getDatabase()
+function effectiveModelDatabaseForChat(db: Database, currentChat: Chat): Database {
   const settings = currentChat.generationSettings
   const modelPreset = findPresetById(db.modelPresets, settings?.modelPresetId)
   const promptPreset = findUniquePromptPresetById(db.promptPresets, settings?.promptPresetId)
@@ -247,9 +250,9 @@ function findUniquePromptPresetById(collection: unknown, id: string | undefined)
   return resolveUniquePromptPreset(records, id)
 }
 
-function resolveProfileForChat(currentChat: Chat): ResolvedModelProfile {
-  const database = effectiveModelDatabaseForChat(currentChat)
-  const modelPreset = findPresetById(getDatabase().modelPresets, currentChat.generationSettings?.modelPresetId)
+function resolveProfileForChat(databaseSnapshot: Database, currentChat: Chat): ResolvedModelProfile {
+  const database = effectiveModelDatabaseForChat(databaseSnapshot, currentChat)
+  const modelPreset = findPresetById(databaseSnapshot.modelPresets, currentChat.generationSettings?.modelPresetId)
   const legacyBinding = normalizeModelRoleProfiles(database.modelRoleProfiles).chatMain.mode === 'legacy'
   return isLegacyModelPresetCompatibilityRecord(modelPreset) || legacyBinding
     ? resolveModelProfileWithLegacyCompatibility({ database })
@@ -260,8 +263,8 @@ function unsupportedServerGenerationReason(aiModel: string): string {
   return `Generation for ${aiModel} is not supported in Fastify server mode. Select a server-routed provider or change this model before retrying.`
 }
 
-function resolveServerProviderPreflight(currentChat: Chat): ServerPromptAssemblyRoute | null {
-  const profile = resolveProfileForChat(currentChat)
+function resolveServerProviderPreflight(input: ServerPromptAssemblyInput): ServerPromptAssemblyRoute | null {
+  const profile = resolveProfileForChat(input.database, input.currentChat)
   const profileBlockReason = modelProfileGenerationBlockReason(profile)
   if (profileBlockReason) {
     return {
@@ -302,6 +305,13 @@ function resolveServerProviderPreflight(currentChat: Chat): ServerPromptAssembly
  * fall-through.
  */
 export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): ServerPromptAssemblyRoute {
+  if (!input.database || typeof input.database !== 'object') {
+    return {
+      type: 'unsupported',
+      reason: 'Server prompt assembly requires a ready generation settings snapshot.',
+    }
+  }
+
   const mode = deriveMode(input)
   if (mode === 'send') {
     const lastMessage = input.currentChat.message.at(-1)
@@ -324,7 +334,7 @@ export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): S
     }
   }
 
-  const providerReason = resolveServerProviderPreflight(input.currentChat)
+  const providerReason = resolveServerProviderPreflight(input)
   if (providerReason !== null) return providerReason
 
   const contentReason = sendHasUnsupportedContent(input)
