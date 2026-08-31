@@ -480,8 +480,10 @@ describe('module imports', () => {
     expect(alertNormal).toHaveBeenCalled()
   })
 
-  it('updates the loaded file count for each module asset before the batch upload completes', async () => {
+  it('does not count decoded module assets before the batch upload completes', async () => {
     const assets = [new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])]
+    const save = createDeferred<string[]>()
+    saveAssets.mockReturnValueOnce(save.promise)
     selectedFileState.file = {
       name: 'module.risum',
       data: buildRisum(
@@ -495,12 +497,23 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    const importPromise = importModule()
+    await vi.waitFor(() => expect(saveAssets).toHaveBeenCalledOnce())
 
     expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
-      'Loading... (Adding Assets 1 / 3)',
-      'Loading... (Adding Assets 2 / 3)',
-      'Loading... (Adding Assets 3 / 3)',
+      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 0 / 3)',
+    ])
+    expect(createGlobalModule).not.toHaveBeenCalled()
+
+    save.resolve(['asset-0', 'asset-1', 'asset-2'])
+    await importPromise
+
+    expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
+      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 0 / 3)',
       'Loading... (Adding Assets 3 / 3)',
     ])
   })

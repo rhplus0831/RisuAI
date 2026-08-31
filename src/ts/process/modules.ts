@@ -446,8 +446,7 @@ export async function readModule(
         } catch (error) {
           throw new Error(`Failed to decode module asset ${task.index + 1}`, { cause: error })
         }
-        const loaded = completed + decodedTasks.length
-        alertWait(`Loading... (Adding Assets ${loaded} / ${totalAssets})`)
+        alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
       }
 
       try {
