@@ -16,16 +16,27 @@ vi.mock('../../modules', async (importActual) => {
 import { customV3ProviderMetaStore } from '../../../plugins/apiV3/v3.svelte'
 import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
+import { createDefaultModelRoleProfiles } from '../../../model/modelProfileRecords'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer } from '../../../model/types'
 import { requestChatData, requestChatDataMain } from '../request'
 
 const pluginModelId = 'pluginmodel:::provider-a'
 
 function seedDb(overrides: Partial<Database> = {}): void {
+  const aiModel = overrides.aiModel ?? pluginModelId
+  const modelProfiles = overrides.modelProfiles ?? [{ id: 'active-profile', name: 'Active', modelId: aiModel }]
+  const modelRoleProfiles =
+    overrides.modelRoleProfiles ??
+    ({
+      ...createDefaultModelRoleProfiles(),
+      chatMain: { mode: 'profile', profileId: 'active-profile' },
+    } as Database['modelRoleProfiles'])
   setDatabase({
-    aiModel: pluginModelId,
+    aiModel,
     subModel: pluginModelId,
     modelRoles: {},
+    modelProfiles,
+    modelRoleProfiles,
     characters: [],
     customModels: [],
     maxResponse: 64,
@@ -140,6 +151,14 @@ describe('V3 plugin provider response model ids', () => {
     seedDb({
       aiModel: 'echo_model',
       subModel: 'echo_model',
+      modelProfiles: [
+        {
+          id: 'active-profile',
+          name: 'Active',
+          modelId: 'echo_model',
+          fallbacks: [{ mode: 'model', modelId: pluginModelId }],
+        },
+      ],
       fallbackModels: {
         model: [pluginModelId],
         memory: [],

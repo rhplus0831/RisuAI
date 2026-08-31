@@ -11,13 +11,9 @@ import {
 import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { isPluginRuntimeReady, pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  type character,
-  type Database,
-} from '../../storage/database.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
+import { SETTINGS_GROUPS } from '../../server/settingsGroups'
+import { type character, type Database } from '../../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { tokenizeNum } from '../../tokenizer'
 import { simplifySchema, sleep } from '../../util'
@@ -80,6 +76,18 @@ interface requestDataArgument {
   toolRounds?: ServerToolRound[]
   rememberToolUsage?: boolean
   blockPlugins?: boolean
+}
+
+function requestSettingsOwner(explicit?: Database): Database | null {
+  if (explicit) return explicit
+  if (settingsResourceState.status !== 'ready') return null
+  if (SETTINGS_GROUPS.some((group) => settingsResourceState.groupStatuses[group] !== 'ready')) return null
+  return settingsResourceState.value as unknown as Database
+}
+
+function requestCurrentChat(arg: Pick<requestDataArgument, 'currentChar'>) {
+  const currentChar = arg.currentChar
+  return currentChar?.chats?.[currentChar.chatPage]
 }
 
 export interface RequestDataArgumentExtended extends requestDataArgument {
@@ -247,7 +255,7 @@ function ollamaCloudToolProxyUrl(arg: RequestDataArgumentExtended, protocol: Oll
   }
   if (arg.chatId) {
     url.searchParams.set('chatId', arg.chatId)
-    const currentChat = getCurrentChat()
+    const currentChat = requestCurrentChat(arg)
     const toggles = currentChat?.id === arg.chatId ? currentChat.generationSettings?.sidebarToggles : undefined
     if (toggles) {
       const encodedToggles = JSON.stringify(toggles)
@@ -644,10 +652,13 @@ export async function requestChatData(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  // Non-chat compatibility callers still enter through this public facade.
-  // The normal chat path supplies the active settings owner captured before
-  // prompt assembly, and every downstream shaper consumes this exact snapshot.
-  const db = arg.database ?? getDatabase()
+  const db = requestSettingsOwner(arg.database)
+  if (!db) {
+    return {
+      type: 'fail',
+      result: 'Request settings are not ready.',
+    }
+  }
   const resolvedProfile = resolveModelProfile({ database: db, role: model })
   const overrideProfile = arg.profileIdOverride
     ? resolveModelProfileByProfileId({ database: db, role: model, profileId: arg.profileIdOverride })
@@ -697,11 +708,11 @@ export async function requestChatData(
       }
 
       try {
-        const currentChar = getCurrentCharacter()
+        const currentChar = arg.currentChar
         if (currentChar) {
           const perf = performance.now()
           const d = await runTrigger(currentChar, 'request', {
-            chat: getCurrentChat(),
+            chat: requestCurrentChat(arg),
             displayMode: true,
             displayData: JSON.stringify(arg.formated),
           })
@@ -805,7 +816,7 @@ export async function requestChatData(
 }
 
 function resolveRequestFallbackAttempts(
-  database: ReturnType<typeof getDatabase>,
+  database: Database,
   model: ModelModeExtended,
   fallbacks: ModelProfileFallbackRef[],
 ): RequestFallbackAttempt[] {
@@ -910,10 +921,13 @@ export async function requestChatDataMain(
   model: ModelModeExtended,
   abortSignal: AbortSignal = null,
 ): Promise<requestDataResponse> {
-  // Direct plugin/test callers are the remaining compatibility seam. Once a
-  // request enters provider shaping, the snapshot is mandatory and no helper
-  // may fall back to the mutable aggregate.
-  const db = arg.database ?? getDatabase()
+  const db = requestSettingsOwner(arg.database)
+  if (!db) {
+    return {
+      type: 'fail',
+      result: 'Request settings are not ready.',
+    }
+  }
   const targ: RequestDataArgumentExtended = { ...arg, database: db }
   const resolvedProfile = arg.fallbackProfileId
     ? resolveModelProfileByProfileId({
@@ -1064,7 +1078,7 @@ async function requestNovelAI(arg: RequestDataArgumentExtended): Promise<request
   const temperature = arg.temperature
   const maxTokens = arg.maxTokens
   const biasString = arg.biasString
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const prompt = stringlizeNAIChat(formated, currentChar?.name ?? '', arg.continue)
   const abortSignal = arg.abortSignal
   let logit_bias_exp: {
@@ -1182,7 +1196,7 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
   const providerOptions = arg.resolvedProfile?.providerOptions
   const runtimeOptions = arg.resolvedProfile?.runtimeOptions
   const hasResolvedProfile = arg.resolvedProfile !== undefined
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const useStreaming = arg.useStreaming
   const abortSignal = arg.abortSignal
   const profileBaseUrl = providerOptions?.baseUrl?.trim() ?? ''
@@ -1712,7 +1726,7 @@ async function requestNovelList(arg: RequestDataArgumentExtended): Promise<reque
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
   const biasString = arg.biasString
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const aiModel = arg.aiModel
   const auth_key = db.novellistAPI
   const api_server_url = 'https://api.tringpt.com/'
@@ -2155,7 +2169,7 @@ async function requestHorde(arg: RequestDataArgumentExtended): Promise<requestDa
   const providerOptions = arg.resolvedProfile?.providerOptions
   const runtimeOptions = arg.resolvedProfile?.runtimeOptions
   const hasResolvedProfile = arg.resolvedProfile !== undefined
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const abortSignal = arg.abortSignal
 
   if (arg.previewBody) {
@@ -2279,7 +2293,7 @@ async function requestWebLLM(arg: RequestDataArgumentExtended): Promise<requestD
   const formated = arg.formated
   const db = arg.database
   const aiModel = arg.aiModel
-  const currentChar = getCurrentCharacter()
+  const currentChar = arg.currentChar
   const maxTokens = arg.maxTokens
   const temperature = arg.temperature
   const realModel = aiModel.split(':::')[1]

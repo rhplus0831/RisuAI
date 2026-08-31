@@ -19,6 +19,7 @@ vi.mock('../../../model/modelProfileResolver', async (importActual) => {
 
 import { resolveModelProfile } from '../../../model/modelProfileResolver'
 import { createDefaultModelRoleProfiles } from '../../../model/modelProfileRecords'
+import { settingsResourceState } from '../../../server/resourceState.svelte'
 import { language } from '../../../../lang'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestChatData, requestChatDataMain } from '../request'
@@ -85,6 +86,42 @@ afterEach(() => {
 })
 
 describe('requestChatDataMain model-role routing', () => {
+  it('fails closed while the implicit settings owner is incomplete', async () => {
+    settingsResourceState.groupStatuses.providers = 'loading'
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatDataMain(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'fail', result: 'Request settings are not ready.' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(vi.mocked(resolveModelProfile)).not.toHaveBeenCalled()
+  })
+
+  it('uses an explicit request snapshot while the live settings owner reloads', async () => {
+    const database = databaseOwner
+    settingsResourceState.groupStatuses.providers = 'loading'
+    const fetchSpy = installSuccessFetch()
+
+    const result = await requestChatDataMain(
+      {
+        database,
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+        staticModel: 'echo_model',
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'ok' })
+    expect(fetchSpy).toHaveBeenCalledOnce()
+  })
+
   it('resolves scriptAux through the profile resolver before plugin blocking', async () => {
     const database = seedDb({
       modelProfiles: [{ id: 'script-aux-profile', name: 'Script aux', modelId: 'pluginmodel:::blocked' }],

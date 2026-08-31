@@ -42,7 +42,7 @@ vi.mock('../../../storage/fastifyStorage', () => ({
 }))
 
 import { LLMFormat } from '../../../model/types'
-import { setDatabase, type Database } from '../../../storage/database.svelte'
+import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
 import { requestChatDataMain } from '../request'
 
@@ -102,6 +102,8 @@ function db(overrides: Partial<Database> = {}): Database {
 
 function makeRequest() {
   return {
+    // Ollama remains a named static compatibility format in this wire-level suite.
+    staticModel: getDatabase().aiModel,
     formated: [{ role: 'user' as const, content: 'hello ollama' }],
     bias: {},
     maxTokens: 96,
