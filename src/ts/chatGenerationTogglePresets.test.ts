@@ -162,6 +162,14 @@ describe('Saved Toggles domain helpers', () => {
     expect(getChatGenerationTogglePresets()).toEqual([saved])
   })
 
+  it.each(['idle', 'loading'] as const)('does not read retained presets while the sidebar owner is %s', (status) => {
+    const saved = preset('saved', 'Saved', { flag: '1' }, { flag: 'boolean' })
+    settingsResourceState.value.chatGenerationTogglePresets = [saved]
+    settingsResourceState.groupStatuses.sidebar = status
+
+    expect(getChatGenerationTogglePresets()).toEqual([])
+  })
+
   it('fails closed for duplicate preset ids or an errored ready owner', () => {
     const saved = preset('saved', 'Saved', { flag: '1' }, { flag: 'boolean' })
     settingsResourceState.value.chatGenerationTogglePresets = [saved, { ...saved, name: 'Duplicate' }]

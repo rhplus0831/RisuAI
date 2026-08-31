@@ -16,7 +16,6 @@ import {
 } from './chatGenerationTogglePresetPlanning'
 import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
 import { settingsResourceState } from './server/resourceState.svelte'
-import { getDatabase } from './storage/database.svelte'
 import { isActiveChatTargetFresh } from './chatCommands'
 import type { ChatGenerationSettingsSaveOperation } from './chatCommands'
 import { createNonSecurityUuid } from './nonSecurityUuid'
@@ -41,12 +40,6 @@ export function getChatGenerationTogglePresets(): ChatGenerationTogglePreset[] {
   if (settingsResourceState.status === 'error' || status === 'error') return []
   if (status === 'ready') {
     return normalizeStableTogglePresetOwner(settingsResourceState.value.chatGenerationTogglePresets)
-  }
-  if (
-    (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading') &&
-    (status === undefined || status === 'idle' || status === 'loading')
-  ) {
-    return normalizeStableTogglePresetOwner(getDatabase().chatGenerationTogglePresets)
   }
   return []
 }
