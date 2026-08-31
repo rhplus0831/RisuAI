@@ -11,6 +11,7 @@ import {
 import { resetWriterAccessLostForTests } from './activeWriterSession'
 import { displaySourceNamespaceJson } from '@risuai/protocol/display-source'
 import { reloadRegexDisplay, resetRegexDisplayReloadForTests } from '../process/regexDisplayReload'
+import { charactersResourceState, resetServerResourceState } from './resourceState.svelte'
 import {
   activateDisplaySourceChat,
   configureDisplaySourceProtocol,
@@ -70,9 +71,10 @@ async function successfulDisplayResponse(body: DisplayRequestBody, revision: num
   })
 }
 
-describe('browser display source batching bridge', () => {
+describe('browser display source batching client', () => {
   beforeEach(() => {
     pluginRuntime.ready = true
+    resetServerResourceState()
     resetWriterAccessLostForTests()
     resetDisplaySourceClientForTests()
     clearCachedServerCommandRevision()
@@ -88,6 +90,7 @@ describe('browser display source batching bridge', () => {
     resetDisplaySourceClientForTests()
     clearCachedServerCommandRevision()
     resetRegexDisplayReloadForTests()
+    resetServerResourceState()
   })
 
   it('batches same-chat transforms and validates the exact namespace/source response', async () => {
@@ -130,6 +133,18 @@ describe('browser display source batching bridge', () => {
   })
 
   it('deduplicates identical in-flight and completed targets until their regex owner activates', async () => {
+    charactersResourceState.characters = [
+      {
+        chaId: 'char-a',
+        name: 'Tess',
+        type: 'character',
+        chatPage: 0,
+        chats: [],
+      } as (typeof charactersResourceState.characters)[number],
+    ]
+    charactersResourceState.currentChar = 0
+    charactersResourceState.status = 'ready'
+
     const requests: DisplayRequestBody[] = []
     vi.stubGlobal('fetch', async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as DisplayRequestBody
