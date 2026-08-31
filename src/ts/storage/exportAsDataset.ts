@@ -1,8 +1,8 @@
-import { getDatabase } from './database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
 import { ensureAllCharacterLorebooksHydrated, ensureAllChatsHydrated } from '../server/chatMessageHydration.svelte'
+import { charactersResourceState } from '../server/resourceState.svelte'
 
 export async function exportAsDataset(): Promise<boolean> {
   try {
@@ -10,10 +10,8 @@ export async function exportAsDataset(): Promise<boolean> {
     // stubbed character globalLore first.
     await ensureAllChatsHydrated({ strict: true })
     await ensureAllCharacterLorebooksHydrated({ strict: true })
-    const db = getDatabase({ snapshot: true })
-
     const dataset = []
-    for (const char of db.characters) {
+    for (const char of charactersResourceState.characters) {
       for (const chat of char.chats) {
         dataset.push({
           name: char.name,

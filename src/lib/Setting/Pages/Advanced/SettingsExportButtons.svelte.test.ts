@@ -21,8 +21,12 @@ vi.mock('src/ts/globalApi.svelte', () => ({
   getRequestLog: exportMocks.getRequestLog,
 }))
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => exportMocks.database,
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: {
+    get value() {
+      return exportMocks.database
+    },
+  },
 }))
 
 import { language } from 'src/lang'

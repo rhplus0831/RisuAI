@@ -4,7 +4,7 @@
   import { alertError, alertMd, alertNormal } from 'src/ts/alert'
   import { downloadFile, getRequestLog } from 'src/ts/globalApi.svelte'
   import { maskRegisteredProviderSecretsInPlace } from 'src/ts/providerSecretMask'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   let bugReportExportBusy = $state(false)
 
@@ -13,11 +13,7 @@
     bugReportExportBusy = true
 
     try {
-      const db = safeStructuredClone(
-        getDatabase({
-          snapshot: true,
-        }),
-      )
+      const db = safeStructuredClone(settingsResourceState.value) as Record<string, unknown>
       maskRegisteredProviderSecretsInPlace(db)
 
       const keyToRemove = [
@@ -66,7 +62,6 @@
         }
       }
 
-      //@ts-expect-error meta is not defined in Database type, added for settings export report
       db.meta = {
         isFastifyServer: true,
         protocol: location.protocol,
