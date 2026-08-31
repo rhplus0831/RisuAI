@@ -4,6 +4,11 @@ const languageKoreanBase = {
     retry: '플러그인 다시 시도',
     retrying: '플러그인 다시 시도 중…',
   },
+  generationRecovery: {
+    failed: '앱이 이전 생성 복구를 완료하지 못했습니다. 새 메시지 전송은 일시 중지되며 작성 중인 초안은 유지됩니다.',
+    retry: '복구 다시 시도',
+    retrying: '복구 다시 시도 중…',
+  },
   characterCreationQueued:
     '새 캐릭터가 이 기기에 저장되어 대기열에 추가되었습니다. 서버에서 아직 승인되지 않았으며 자동으로 다시 시도합니다.',
   characterCreationFailed: '캐릭터를 생성할 수 없습니다. 임시 캐릭터를 제거했습니다.',

@@ -248,6 +248,34 @@ describe('changeLanguage same-code cache', () => {
     }
   })
 
+  it('defines generation recovery retry copy in every language pack', async () => {
+    const {
+      languageChinese,
+      languageChineseTraditional,
+      languageEnglish,
+      languageGerman,
+      languageKorean,
+      languageSpanish,
+      languageVietnamese,
+    } = await loadLanguageModule()
+
+    for (const pack of [
+      languageEnglish,
+      languageGerman,
+      languageSpanish,
+      languageVietnamese,
+      languageChinese,
+      languageChineseTraditional,
+      languageKorean,
+    ]) {
+      expect(pack.generationRecovery).toMatchObject({
+        failed: expect.any(String),
+        retry: expect.any(String),
+        retrying: expect.any(String),
+      })
+    }
+  })
+
   it('renders Vietnamese inlay counts without a stray template-literal dollar sign', async () => {
     const { languageVietnamese } = await loadLanguageModule()
 

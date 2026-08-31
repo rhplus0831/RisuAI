@@ -1,4 +1,10 @@
 export const languageGerman = {
+  generationRecovery: {
+    failed:
+      'Die App konnte die Wiederherstellung einer vorherigen Generierung nicht abschließen. Neue Nachrichten sind pausiert, aber deine Entwürfe bleiben erhalten.',
+    retry: 'Wiederherstellung erneut versuchen',
+    retrying: 'Wiederherstellung wird erneut versucht…',
+  },
   acceptedSendRecovery: {
     generationFailed:
       'Deine Nachricht wurde gespeichert, aber die Antwort konnte nicht gestartet werden. Versuche nur die Antwort erneut.',

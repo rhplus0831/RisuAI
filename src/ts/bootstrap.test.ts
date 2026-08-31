@@ -93,6 +93,10 @@ const runtimeApi = vi.hoisted(() => ({
   applyGenerationOperationBootstrap: vi.fn(),
   configureGenerationOperationProtocol: vi.fn(),
 }))
+const recoveredGenerationApi = vi.hoisted(() => ({
+  reconcilePendingRecoveredGenerationEffects: vi.fn(async () => undefined),
+  setPendingRecoveredGenerationEffects: vi.fn(),
+}))
 
 const ownerMutationLifecycleApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
 const pendingMutationApi = vi.hoisted(() => ({
@@ -255,6 +259,7 @@ vi.mock('./process/generationPersistenceState', () => ({
   startGenerationFinalizationPersistenceRefresh: runtimeApi.startGenerationFinalizationPersistenceRefresh,
   stopGenerationFinalizationPersistenceRefresh: runtimeApi.stopGenerationFinalizationPersistenceRefresh,
 }))
+vi.mock('./process/recoveredGenerationEffects', () => recoveredGenerationApi)
 vi.mock('./server/messageTranslationJobs', () => ({
   setActiveMessageTranslations: runtimeApi.setActiveMessageTranslations,
   startActiveMessageTranslationRefresh: runtimeApi.startActiveMessageTranslationRefresh,
@@ -332,6 +337,7 @@ import {
   currentGlobalPromptTemplateOwnerId,
   loadData,
   loadWebInitialDatabase,
+  retryGenerationRecoveryStartup,
   retryObserverWriterPromotion,
   retryPluginStartup,
   stopDeferredStartupRuntimes,
@@ -495,6 +501,8 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
+  recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects.mockReset().mockResolvedValue(undefined)
+  recoveredGenerationApi.setPendingRecoveredGenerationEffects.mockReset()
   activeWriterApi.adoptPendingOwner.mockClear()
   optionalRuntimeApi.installStoreEffects.mockReturnValue(optionalRuntimeApi.disposeStoreEffects)
   optionalRuntimeApi.startObserver.mockReturnValue(optionalRuntimeApi.stopObserver)
@@ -945,6 +953,59 @@ describe('API-backed client bootstrap', () => {
         'background-runtime',
         'background-readiness',
       ]),
+    })
+  })
+
+  it('retries a localized generation recovery failure without repeating successful startup steps', async () => {
+    const recoveryFailure = new Error('generation effects unavailable')
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects
+      .mockRejectedValueOnce(recoveryFailure)
+      .mockResolvedValueOnce(undefined)
+
+    await loadData()
+
+    expect(backgroundReady()).toBe(true)
+    expect(recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: true,
+        canGenerate: false,
+      },
+      failures: {
+        canGenerate: expect.objectContaining({ failureCode: 'generation-recovery-failed' }),
+      },
+    })
+    expect(consoleWarn).toHaveBeenCalledWith('Generation recovery initialization failed:', recoveryFailure)
+
+    await expect(retryGenerationRecoveryStartup()).resolves.toBe(true)
+
+    expect(recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledTimes(2)
+    expect(bootstrapApi.fetch).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(eventApi.subscribe).toHaveBeenCalledOnce()
+    expect(pushApi.initialize).toHaveBeenCalledOnce()
+    expect(loadPlugins).toHaveBeenCalledOnce()
+    expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
+    expect(getStartupReadinessSnapshot().attempts).toEqual([
+      expect.objectContaining({ attemptId: 1, completedAtMs: expect.any(Number) }),
+      expect.objectContaining({ attemptId: 2, completedAtMs: expect.any(Number) }),
+    ])
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: {
+        canRenderShell: true,
+        canApplyRoutes: true,
+        canMutate: true,
+        pluginsReady: true,
+        canGenerate: true,
+      },
+      failures: {},
+      completedSteps: expect.arrayContaining(['generation-recovery', 'chat-readiness', 'background-readiness']),
     })
   })
 

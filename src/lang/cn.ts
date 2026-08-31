@@ -1,4 +1,9 @@
 export const languageChinese = {
+  generationRecovery: {
+    failed: '应用无法完成先前生成的恢复。新消息已暂停，但你的草稿仍会保留。',
+    retry: '重试恢复',
+    retrying: '正在重试恢复…',
+  },
   acceptedSendRecovery: {
     generationFailed: '消息已保存，但无法开始生成回复。请只重试回复，不要再次发送消息。',
     generationInProgress: '消息已保存，但另一个设备或会话正在此聊天中生成回复。请在生成结束后重试。',

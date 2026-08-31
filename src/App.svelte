@@ -91,9 +91,13 @@
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
   let retryingPluginRuntime = $state(false)
+  let retryingGenerationRecovery = $state(false)
   let canApplyRoutes = $derived($startupCoordinatorStore.capabilities.canApplyRoutes)
   let pluginStartupFailed = $derived($startupCoordinatorStore.failures.pluginsReady !== undefined)
   let pluginRuntimeFailed = $derived($pluginRuntimeStateStore.phase === 'error')
+  let generationRecoveryStartupFailed = $derived(
+    $startupCoordinatorStore.failures.canGenerate?.failureCode === 'generation-recovery-failed',
+  )
   let preWriterObserverMode = $derived(
     $startupCoordinatorStore.observerShellEnabled &&
       $startupCoordinatorStore.capabilities.canRenderShell &&
@@ -155,6 +159,17 @@
       }
     } finally {
       retryingPluginRuntime = false
+    }
+  }
+
+  async function retryGenerationRecovery(): Promise<void> {
+    if (retryingGenerationRecovery) return
+    retryingGenerationRecovery = true
+    try {
+      const { retryGenerationRecoveryStartup } = await import('./ts/bootstrap')
+      await retryGenerationRecoveryStartup()
+    } finally {
+      retryingGenerationRecovery = false
     }
   }
 
@@ -357,6 +372,24 @@
           void retryPlugins()
         }}>
         {retryingPluginRuntime ? language.pluginRuntime.retrying : language.pluginRuntime.retry}
+      </button>
+    </div>
+  {:else if $startupCoordinatorStore.capabilities.canRenderShell && generationRecoveryStartupFailed}
+    <div
+      class="fixed top-3 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+      role="status"
+      aria-live="polite"
+      data-generation-recovery-status>
+      <span>{language.generationRecovery.failed}</span>
+      <button
+        type="button"
+        class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+        disabled={retryingGenerationRecovery}
+        onclick={(event) => {
+          event.stopPropagation()
+          void retryGenerationRecovery()
+        }}>
+        {retryingGenerationRecovery ? language.generationRecovery.retrying : language.generationRecovery.retry}
       </button>
     </div>
   {/if}

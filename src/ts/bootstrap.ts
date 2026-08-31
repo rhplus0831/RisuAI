@@ -513,6 +513,16 @@ async function settleStartupGenerationRecovery(startupAttemptId: number): Promis
   }
 }
 
+/** Targeted retry for a localized generation-recovery startup failure. */
+export function retryGenerationRecoveryStartup(): Promise<boolean> {
+  return retryStartupCapability('canGenerate', async () => {
+    const startupAttemptId = beginStartupAttempt()
+    const generationRecoveryReady = await settleStartupGenerationRecovery(startupAttemptId)
+    completeStartupAttempt(startupAttemptId)
+    return generationRecoveryReady
+  })
+}
+
 /** Localized retry used by the plugin-readiness status surface. */
 export function retryPluginStartup(): Promise<boolean> {
   return retryStartupCapability('pluginsReady', async () => {

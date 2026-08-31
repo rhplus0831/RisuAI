@@ -1,4 +1,10 @@
 export const languageSpanish = {
+  generationRecovery: {
+    failed:
+      'La aplicación no pudo terminar de recuperar una generación anterior. Los mensajes nuevos están pausados, pero tus borradores se conservan.',
+    retry: 'Reintentar recuperación',
+    retrying: 'Reintentando recuperación…',
+  },
   acceptedSendRecovery: {
     generationFailed:
       'Tu mensaje se guardó, pero no se pudo iniciar la respuesta. Reintenta la respuesta sin volver a enviar el mensaje.',

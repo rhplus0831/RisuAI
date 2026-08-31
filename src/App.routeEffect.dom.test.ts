@@ -11,6 +11,8 @@ import {
   recordStartupMilestone,
   resetStartupReadinessForTests,
   revokeStartupWriterCapabilities,
+  settleStartupChatReadiness,
+  settleStartupGenerationRecoveryReadiness,
 } from './ts/startupReadiness'
 
 const routePath = '/character/char-a/chat-a'
@@ -54,6 +56,7 @@ const appRouteDomMocks = vi.hoisted(() => {
     importCharacterProcess: vi.fn(),
     importPreset: vi.fn(),
     openGridRoute: vi.fn(),
+    retryGenerationRecoveryStartup: vi.fn(async () => true),
     state,
   }
 })
@@ -113,6 +116,12 @@ vi.mock('./lang', () => ({
       retry: 'Retry plugins',
       retrying: 'Retrying plugins…',
     },
+    generationRecovery: {
+      failed:
+        'The app could not finish recovering a previous generation. New messages are paused, but your drafts are preserved.',
+      retry: 'Retry recovery',
+      retrying: 'Retrying recovery…',
+    },
     playground: { playground: 'Playground' },
     retry: 'Retry',
     settings: 'Settings',
@@ -133,6 +142,12 @@ vi.mock('src/lang', () => ({
       retry: 'Retry plugins',
       retrying: 'Retrying plugins…',
     },
+    generationRecovery: {
+      failed:
+        'The app could not finish recovering a previous generation. New messages are paused, but your drafts are preserved.',
+      retry: 'Retry recovery',
+      retrying: 'Retrying recovery…',
+    },
     playground: { playground: 'Playground' },
     retry: 'Retry',
     settings: 'Settings',
@@ -152,6 +167,10 @@ vi.mock('src/ts/alert', () => ({
   alertNormal: appRouteDomMocks.alertNormal,
   alertSelect: vi.fn(async () => '0'),
   alertInput: vi.fn(async () => ''),
+}))
+
+vi.mock('./ts/bootstrap', () => ({
+  retryGenerationRecoveryStartup: appRouteDomMocks.retryGenerationRecoveryStartup,
 }))
 
 vi.mock('./ts/characterCards', () => ({
@@ -462,6 +481,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
       appRouteDomMocks.state.exports.currentRoute.set(characterRoute)
     }
     routeResourceLoadState.set({ error: null, routeKey: routePath, status: 'ready' })
+    appRouteDomMocks.retryGenerationRecoveryStartup.mockReset().mockResolvedValue(true)
     seedStores()
     await mountApp()
   })
@@ -550,6 +570,59 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(target.textContent).toContain('Plugins could not start')
     expect(target.querySelector('button')?.textContent).toContain('Retry plugins')
     expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+  })
+
+  it('retries generation recovery from a localized status without unmounting the shell', async () => {
+    recordStartupMilestone('plugins-ready')
+    settleStartupChatReadiness(true)
+    const attemptId = beginStartupAttempt()
+    recordStartupCapabilityFailure(attemptId, 'generation-recovery-failed', 'chat-ready')
+    const retry = deferred<void>()
+    appRouteDomMocks.retryGenerationRecoveryStartup.mockImplementationOnce(async () => {
+      await retry.promise
+      settleStartupGenerationRecoveryReadiness(true)
+      return true
+    })
+    await tick()
+
+    const status = target.querySelector<HTMLElement>('[data-generation-recovery-status]')
+    const button = status?.querySelector<HTMLButtonElement>('button')
+    expect(status).not.toBeNull()
+    expect(status?.getAttribute('role')).toBe('status')
+    expect(status?.textContent).toContain('could not finish recovering a previous generation')
+    expect(button?.textContent).toContain('Retry recovery')
+    expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+
+    button?.click()
+    await vi.waitFor(() => expect(appRouteDomMocks.retryGenerationRecoveryStartup).toHaveBeenCalledOnce())
+    await tick()
+
+    expect(button?.disabled).toBe(true)
+    expect(button?.textContent).toContain('Retrying recovery')
+
+    retry.resolve()
+    await vi.waitFor(() => expect(target.querySelector('[data-generation-recovery-status]')).toBeNull())
+    expect(target.querySelector('[data-testid="app-marker"]')).not.toBeNull()
+  })
+
+  it('keeps the generation recovery status retryable after another failed attempt', async () => {
+    recordStartupMilestone('plugins-ready')
+    settleStartupChatReadiness(true)
+    const attemptId = beginStartupAttempt()
+    recordStartupCapabilityFailure(attemptId, 'generation-recovery-failed', 'chat-ready')
+    appRouteDomMocks.retryGenerationRecoveryStartup.mockResolvedValueOnce(false)
+    await tick()
+
+    const status = target.querySelector<HTMLElement>('[data-generation-recovery-status]')
+    status?.querySelector<HTMLButtonElement>('button')?.click()
+
+    await vi.waitFor(() => expect(appRouteDomMocks.retryGenerationRecoveryStartup).toHaveBeenCalledOnce())
+    await tick()
+
+    const retryButton = target.querySelector<HTMLButtonElement>('[data-generation-recovery-status] button')
+    expect(retryButton).not.toBeNull()
+    expect(retryButton?.disabled).toBe(false)
+    expect(retryButton?.textContent).toContain('Retry recovery')
   })
 
   it('keeps route content mounted and suppresses the pending indicator for warm transitions', async () => {
