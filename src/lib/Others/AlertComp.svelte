@@ -25,7 +25,7 @@
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import { language } from 'src/lang'
   import { getFetchData } from 'src/ts/globalApi.svelte'
-  import { alertStore, selectedCharID } from 'src/ts/stores.svelte'
+  import { alertStore } from 'src/ts/stores.svelte'
   import { tokenize } from 'src/ts/tokenizer'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import ModuleChatMenu from '../Setting/Pages/Module/ModuleChatMenu.svelte'
@@ -35,8 +35,6 @@
   import {
     botPresetHasHydratedSettings,
     ensureBotPresetHydratedById,
-    getCurrentCharacter,
-    getDatabase,
     type botPreset,
     type Database,
     type Message,
@@ -89,28 +87,24 @@
   function resolveGenerationMessage(
     info: AlertGenerationInfoStoreData,
   ): { message: Message; index: number } | undefined {
-    const ready = charactersResourceState.status === 'ready'
-    const characters = ready ? canonicalCharacterOwners() : getPreReadyCharacters()
+    if (charactersResourceState.status !== 'ready') return undefined
+    const characters = canonicalCharacterOwners()
     if (!characters) return undefined
 
     const character = info.characterId
-      ? ready
-        ? getCharacterResourceOwner(info.characterId)
-        : characters.find((candidate) => candidate.chaId === info.characterId)
-      : characters[$selectedCharID]
+      ? getCharacterResourceOwner(info.characterId)
+      : characters[charactersResourceState.currentChar]
     if (!character) return undefined
 
     const chat = info.chatId
-      ? ready
-        ? uniqueChatOwner(character, info.chatId)
-        : character.chats?.find((candidate) => candidate.id === info.chatId)
+      ? uniqueChatOwner(character, info.chatId)
       : (() => {
           const candidate = character.chats?.[character.chatPage]
-          return ready && candidate?.id ? uniqueChatOwner(character, candidate.id) : candidate
+          return candidate?.id ? uniqueChatOwner(character, candidate.id) : undefined
         })()
     if (!chat?.id) return undefined
 
-    const messages = ready ? getChatMessageOwnerState(chat.id)?.messages : chat.message
+    const messages = getChatMessageOwnerState(chat.id)?.messages
     if (!messages) return undefined
     if (info.messageId) {
       const matches = messages
@@ -142,12 +136,6 @@
     return owners.every((owner): owner is Database['characters'][number] => !!owner)
       ? (owners as Database['characters'])
       : null
-  }
-
-  function getPreReadyCharacters(): Database['characters'] {
-    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-      ? (getDatabase().characters ?? [])
-      : []
   }
 
   function uniqueChatOwner(character: Database['characters'][number], chatId: string) {
@@ -191,9 +179,9 @@
   }
 
   const characterPickerRows = $derived.by(() => {
-    return charactersResourceState.status === 'ready' ? (canonicalCharacterOwners() ?? []) : getPreReadyCharacters()
+    return charactersResourceState.status === 'ready' ? (canonicalCharacterOwners() ?? []) : []
   })
-  const selectedCharacterDisplay = $derived(characterPickerRows[$selectedCharID])
+  const selectedCharacterDisplay = $derived(characterPickerRows[charactersResourceState.currentChar])
   let selectedPresetHydrationVersion = $state(0)
   const selectedPresetHasUnsupportedExportAssets = $derived.by(() => {
     selectedPresetHydrationVersion
@@ -240,7 +228,7 @@
   let branchFocusedDetails: BranchDetails | null = $state(null)
   let branchPointerFocusPending = false
   const branchGraph = $derived.by(() => {
-    if ($alertStore.type !== 'branches' || $selectedCharID < 0) return []
+    if ($alertStore.type !== 'branches' || charactersResourceState.currentChar < 0) return []
     return getChatBranches()
   })
   let expandedLogs: Set<number> = $state(new Set())
@@ -291,7 +279,8 @@
   }
 
   function getBranchDetails(obj: BranchNode, index: number): BranchDetails {
-    const char = getCurrentCharacter()
+    const candidate = charactersResourceState.characters[charactersResourceState.currentChar]
+    const char = candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
     const chat = char?.chats?.[obj.chatId]
     const content =
       obj.y === 0

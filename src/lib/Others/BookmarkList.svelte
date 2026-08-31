@@ -4,7 +4,7 @@
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characterImage'
   import { getUserDisplayName, getUserIcon } from 'src/ts/utilState'
-  import { bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
+  import { bookmarkListOpen } from 'src/ts/stores.svelte'
   import { createSimpleCharacter } from 'src/ts/simpleCharacter'
   import {
     RegexDisplayReloadPointer,
@@ -37,7 +37,7 @@
   import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import { navigateToCharacterChatMessage } from 'src/ts/router'
-  import { getDatabase, type Chat as ChatData, type character } from 'src/ts/storage/database.svelte'
+  import type { Chat as ChatData, character } from 'src/ts/storage/database.svelte'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(resolveBookmarkCharacter())
@@ -179,43 +179,23 @@
   }
 
   function readCharacterOwners(): readonly character[] {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return charactersResourceState.characters.length > 0
-        ? charactersResourceState.characters
-        : (getDatabase().characters ?? [])
-    }
-    return []
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   }
 
   function uniqueCharacterOwner(characterId: string): character | undefined {
-    if (charactersResourceState.status === 'ready') {
-      if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
-      return getCharacterResourceOwner(characterId)
-    }
-    let owner: character | undefined
-    for (const candidate of readCharacterOwners()) {
-      if (candidate?.chaId !== characterId) continue
-      if (owner) return undefined
-      owner = candidate
-    }
-    return owner
+    if (charactersResourceState.status !== 'ready') return undefined
+    if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+    return getCharacterResourceOwner(characterId)
   }
 
   function currentSelectedCharacterIndex(): number {
-    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1
   }
 
   function activeChatIdIsUnique(character: character): boolean {
     const chatId = character.chats?.[character.chatPage]?.id
     if (!chatId) return false
-    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)?.chatId === chatId
-    return (
-      readCharacterOwners().reduce(
-        (count, candidate) => count + (candidate.chats ?? []).filter((chat) => chat?.id === chatId).length,
-        0,
-      ) === 1
-    )
+    return charactersResourceState.status === 'ready' && getChatMetadataOwnerState(chatId)?.chatId === chatId
   }
 
   function resolveBookmarkCharacter(): character | undefined {
@@ -231,20 +211,11 @@
     const chatId = chat?.id
     if (!chatId) return undefined
 
-    let bookmarks: unknown
-    let bookmarkNames: unknown
-    if (charactersResourceState.status === 'ready') {
-      if (!character.chaId) return undefined
-      const snapshot = getChatMetadataOwnerSnapshot(character.chaId, chatId)
-      if (!snapshot) return undefined
-      bookmarks = snapshot.metadata.bookmarks
-      bookmarkNames = snapshot.metadata.bookmarkNames
-    } else if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      bookmarks = chat.bookmarks
-      bookmarkNames = chat.bookmarkNames
-    } else {
-      return undefined
-    }
+    if (charactersResourceState.status !== 'ready' || !character.chaId) return undefined
+    const snapshot = getChatMetadataOwnerSnapshot(character.chaId, chatId)
+    if (!snapshot) return undefined
+    const bookmarks: unknown = snapshot.metadata.bookmarks
+    const bookmarkNames: unknown = snapshot.metadata.bookmarkNames
 
     const stableBookmarkIds = bookmarks === undefined ? [] : bookmarks
     if (

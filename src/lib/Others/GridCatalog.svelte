@@ -1,6 +1,6 @@
 <script lang="ts" module>
   import { getCharacterDisplayInfo } from 'src/ts/characterDisplayName'
-  import { getDatabase, type Database } from '../../ts/storage/database.svelte'
+  import type { Database } from '../../ts/storage/database.svelte'
 
   export interface GridCatalogCharacter {
     chaId?: string
@@ -69,7 +69,6 @@
   } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
-  import { selectedCharID } from '../../ts/stores.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { language } from 'src/lang'
@@ -97,7 +96,7 @@
     formatGridCatalogCharacterListsFromCharacters(readCharacterOwners(), normalizedSearch),
   )
   let selectedCharacterIndex = $derived(
-    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID,
+    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1,
   )
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
@@ -198,11 +197,6 @@
       }
       return charactersResourceState.characters
     }
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return charactersResourceState.characters.length > 0
-        ? charactersResourceState.characters
-        : (getDatabase().characters ?? [])
-    }
     return []
   }
 
@@ -210,24 +204,14 @@
     if (settingsResourceState.status === 'error') return undefined
     const status = settingsResourceState.groupStatuses.language ?? 'idle'
     if (status === 'ready') return settingsResourceState.value.language as string | undefined
-    if (status === 'idle' || status === 'loading') return getDatabase().language
     return undefined
   }
 
   function uniqueCharacterOwner(characterId: string) {
-    if (charactersResourceState.status === 'ready') {
-      const character = getCharacterResourceOwner(characterId)
-      const index = character ? charactersResourceState.characters.indexOf(character) : -1
-      return character && index >= 0 ? { character, index } : undefined
-    }
-
-    let owner: { character: Database['characters'][number]; index: number } | undefined
-    for (const [index, character] of readCharacterOwners().entries()) {
-      if (character?.chaId !== characterId) continue
-      if (owner) return undefined
-      owner = { character, index }
-    }
-    return owner
+    if (charactersResourceState.status !== 'ready') return undefined
+    const character = getCharacterResourceOwner(characterId)
+    const index = character ? charactersResourceState.characters.indexOf(character) : -1
+    return character && index >= 0 ? { character, index } : undefined
   }
 
   function resolveCatalogCharacterOwner(char: GridCatalogCharacter) {

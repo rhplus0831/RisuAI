@@ -26,6 +26,7 @@ import {
 import { language } from 'src/lang'
 import { getDatabase, setDatabaseLite, type MessageGenerationInfo } from 'src/ts/storage/database.svelte'
 import { alertStore, selectedCharID } from 'src/ts/stores.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -481,6 +482,7 @@ describe('AlertComp branch graph accessibility', () => {
     expect(branchNodes()).toHaveLength(3)
 
     selectedCharID.set(-1)
+    charactersResourceState.currentChar = -1
     await tick()
 
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()

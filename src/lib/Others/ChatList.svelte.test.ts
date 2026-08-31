@@ -396,10 +396,6 @@ function selectedCharacter(): character {
   return getDatabase().characters[0]
 }
 
-function removeCharacterId(chara: character): void {
-  ;(chara as { chaId?: string }).chaId = undefined
-}
-
 function changeChatToLikeReal(idOrIndex: string | number): void {
   const previous = currentChatSelectionSnapshot()
   const chara = selectedCharacter()
@@ -893,42 +889,19 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-c', true)
   })
 
-  it('optimistically selects a modal row through command fallback and restores on failure', async () => {
-    const chara = seedModalDatabase()
-    chara.chatPage = 0
-    removeCharacterId(chara)
+  it('fails the modal closed while character owners are loading', async () => {
+    seedModalDatabase()
     charactersResourceState.status = 'loading'
     chatListMocks.setServerCommandsEnabled(true)
-    const command = chatListMocks.createDeferredSelectCommand()
     const close = vi.fn()
 
     component = mount(ChatList, { target, props: { close } })
     await tick()
 
-    expectRowSelected('chat-a', true)
-    expectRowSelected('chat-c', false)
-
-    rowActionButton(rowByChatId('chat-c'), 'open').click()
-    await tick()
-
+    expect(target.querySelector('[data-risu-chat-list-modal]')).toBeNull()
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
+    expect(chatListMocks.updateChatCommand).not.toHaveBeenCalled()
     expect(close).toHaveBeenCalledOnce()
-    expect(command.settled).toBe(false)
-    expect(command.input).toMatchObject({
-      chatId: 'chat-c',
-      patch: {},
-      select: true,
-    })
-    expect(chara.chatPage).toBe(2)
-    expectRowSelected('chat-a', false)
-    expectRowSelected('chat-c', true)
-
-    command.resolve({ error: 'select failed', status: 'error' })
-    await flushCommandWork()
-
-    expect(chara.chatPage).toBe(0)
-    expectRowSelected('chat-a', true)
-    expectRowSelected('chat-c', false)
   })
 
   it('shows a pending modal chat but waits for acceptance before navigating and closing', async () => {

@@ -5,8 +5,7 @@
   import { language } from '../../lang'
 
   import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
-  import { getDatabase, isServerCharacterShell } from 'src/ts/storage/database.svelte'
-  import { selectedCharID } from '../../ts/stores.svelte'
+  import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { exportChat, importChat } from '../../ts/characters'
@@ -42,28 +41,14 @@
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
   function readCharacterOwners() {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return charactersResourceState.characters.length > 0
-        ? charactersResourceState.characters
-        : (getDatabase().characters ?? [])
-    }
-    return []
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   }
 
   function uniqueCharacterOwner(characterId) {
     if (!characterId) return undefined
-    if (charactersResourceState.status === 'ready') {
-      if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
-      return getCharacterResourceOwner(characterId)
-    }
-    let owner
-    for (const candidate of readCharacterOwners()) {
-      if (candidate?.chaId !== characterId) continue
-      if (owner) return undefined
-      owner = candidate
-    }
-    return owner
+    if (charactersResourceState.status !== 'ready') return undefined
+    if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+    return getCharacterResourceOwner(characterId)
   }
 
   function selectedCharacterOwner() {
@@ -71,13 +56,11 @@
     const owners = readCharacterOwners()
     const candidate = owners[selectedIndex]
     if (candidate?.chaId) return uniqueCharacterOwner(candidate.chaId)
-    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-      ? candidate
-      : undefined
+    return undefined
   }
 
   function selectedCharacterIndex() {
-    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1
   }
 
   const ownerSelectedCharIndex = selectedCharacterIndex()
@@ -129,8 +112,8 @@
     )
   }
 
-  // The owner detail is authoritative when hydrated; shell rows intentionally
-  // fall back to the compatibility character for the existing lazy path.
+  // The hydrated owner detail is authoritative; a shell remains visible until
+  // its owner row is hydrated.
   let renderedCharacter = $derived.by(() => {
     const owner = ownerCharacterId ? uniqueCharacterOwner(ownerCharacterId) : undefined
     return owner && !isServerCharacterShell(owner) ? owner : modalCharacter

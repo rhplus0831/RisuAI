@@ -389,7 +389,7 @@ describe('GridCatalog derived lists', () => {
     })
   })
 
-  it('renders, selects, and navigates from the resident character owner instead of the fallback database', async () => {
+  it('waits for the character owner before rendering, selecting, and navigating', async () => {
     setDatabaseLite({
       language: 'en',
       currentChar: 0,
@@ -417,19 +417,20 @@ describe('GridCatalog derived lists', () => {
     mountCatalog()
     await clickCatalogTab('list')
 
+    expect(gridRows('list')).toEqual([])
+    expect(routerSpies.navigate).not.toHaveBeenCalled()
+
+    charactersResourceState.status = 'ready'
+    await tick()
     expect(listHeadings('list')).toEqual(['Owner Character'])
-    expect(rowForCharacterId('list', 'owner-character').dataset.risuSelected).toBe('false')
+    expect(rowForCharacterId('list', 'owner-character').dataset.risuSelected).toBe('true')
     gridAction('list', 'owner-character', 'open').click()
 
     expect(routerSpies.navigate).toHaveBeenCalledWith('/character/owner-character/owner-chat')
     expect(characterSpies.changeChar).not.toHaveBeenCalled()
-
-    charactersResourceState.status = 'ready'
-    await tick()
-    expect(rowForCharacterId('list', 'owner-character').dataset.risuSelected).toBe('true')
   })
 
-  it('uses the fallback database only while the character owner is empty and not ready', async () => {
+  it('does not render fallback or resident rows before owner readiness', async () => {
     resourceStateMocks.fallbackDatabase = {
       language: 'en',
       characters: [
@@ -446,9 +447,8 @@ describe('GridCatalog derived lists', () => {
     mountCatalog()
     await clickCatalogTab('list')
 
-    expect(listHeadings('list')).toEqual(['Fallback Character'])
-    gridAction('list', 'fallback-character', 'open').click()
-    expect(routerSpies.navigate).toHaveBeenCalledWith('/character/fallback-character/fallback-chat')
+    expect(gridRows('list')).toEqual([])
+    expect(routerSpies.navigate).not.toHaveBeenCalled()
 
     charactersResourceState.characters = [
       makeCharacter({ chaId: 'resident-character', name: 'Resident Character' }),
@@ -459,7 +459,7 @@ describe('GridCatalog derived lists', () => {
 
     charactersResourceState.status = 'loading'
     await tick()
-    expect(listHeadings('list')).toEqual(['Resident Character'])
+    expect(gridRows('list')).toEqual([])
 
     charactersResourceState.characters = []
     charactersResourceState.status = 'ready'
@@ -526,7 +526,7 @@ describe('GridCatalog derived lists', () => {
     expect(characterSpies.removeChar).toHaveBeenCalledWith(4, 'Trashed Alpha', 'permanent')
   })
 
-  it('keeps an id-less legacy character trashed when restore cannot be persisted', async () => {
+  it('does not expose an id-less legacy character before owner readiness', async () => {
     setDatabaseLite({
       language: 'en',
       characters: [makeCharacter({ name: 'Legacy Trash', trashTime: 20 })],
@@ -535,16 +535,10 @@ describe('GridCatalog derived lists', () => {
     mountCatalog()
     await clickCatalogTab('trash')
 
-    gridAction('trash', '', 'restore').click()
-    await tick()
-    await tick()
-
+    expect(gridRows('trash')).toEqual([])
     expect(getDatabase().characters[0].trashTime).toBe(20)
     expect(characterCommandSpies.currentCharacterRowSnapshot).not.toHaveBeenCalled()
     expect(characterCommandSpies.dispatchUpdateCharacterScopedWithOutcome).not.toHaveBeenCalled()
-    expect(target.querySelector('[data-risu-character-action-status="failed"]')?.textContent).toContain(
-      language.characterRestoreUnavailable('Legacy Trash'),
-    )
   })
 
   it('keeps a character action pending through durable classification and reports queued or failed outcomes', async () => {
