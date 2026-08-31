@@ -10,7 +10,7 @@
     normalizeModelRoleOverrides,
     MODEL_ROLES,
   } from '@risuai/shared-core/model-roles'
-  import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
+  import { normalizeModelRoleProfiles, type ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
   import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import {
@@ -23,7 +23,8 @@
     subscribePendingModelMutations,
   } from 'src/ts/model/modelProfileMutations'
   import type { ServerCommandResult } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { Database } from 'src/ts/storage/database.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
   import LegacyModelRoleList from './ModelRoleList.svelte'
   import ModelProfileList from './ModelProfileList.svelte'
@@ -41,9 +42,18 @@
   let initialCredentialType = $state<ProviderCredentialType | null>(null)
   let credentialTabKey = $state(0)
 
+  let modelProfileOwnersValid = $derived(hasUniqueModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let modelProfiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let modelSettingsOwner = $derived.by(
+    () =>
+      ({
+        ...settingsResourceState.value,
+        modelProfiles,
+      }) as Database,
+  )
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
-      database: getDatabase(),
+      database: modelSettingsOwner,
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
@@ -53,16 +63,16 @@
   let showConversionPrompt = $derived((legacyOnly || conversionQueued) && !conversionPromptDeclined)
   let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
   let selectedModelPresetButtonLabel = $derived.by(() => {
-    const database = getDatabase()
-    const index = database.modelPresetsId ?? -1
-    const preset = database.modelPresets?.[index]
+    const index = selectedOwnerIndex(settingsResourceState.value.modelPresetsId)
+    const presets = collectionsResourceState.values.modelPresets
+    const preset = Array.isArray(presets) ? presets[index] : undefined
     if (!preset) return language.modelPresets
 
     const name = typeof preset.name === 'string' ? preset.name.trim() : ''
     return name || language.modelProfiles.defaultPresetName(index + 1)
   })
-  let legacyMainModel = $derived(getDatabase().aiModel || language.none)
-  let legacyAuxModel = $derived(getDatabase().subModel || language.none)
+  let legacyMainModel = $derived(settingsResourceState.value.aiModel || language.none)
+  let legacyAuxModel = $derived(settingsResourceState.value.subModel || language.none)
 
   $effect(() => {
     return subscribePendingModelMutations('model-profiles', (pending) => {
@@ -81,7 +91,6 @@
   })
 
   $effect(() => {
-    const database = getDatabase()
     for (const pending of [...pendingMutations, ...pendingRuntimeMutations]) {
       if (pending.phase === 'discarded') {
         commandError = language.modelProfiles.commandReplayDiscarded
@@ -89,7 +98,7 @@
         continue
       }
       if (pending.phase === 'dispatching') continue
-      if (isPendingModelMutationProjectionApplied(pending.projection, database)) {
+      if (isPendingModelMutationProjectionApplied(pending.projection, settingsResourceState.value)) {
         finishPendingModelMutation(pending.token)
       }
     }
@@ -99,15 +108,19 @@
     return typeof value === 'string' && value.trim() !== ''
   }
 
-  function hasLegacyModelFields(): boolean {
-    const database = getDatabase()
-    if (nonBlank(database.aiModel) || nonBlank(database.subModel)) return true
+  function selectedOwnerIndex(value: unknown): number {
+    return Number.isInteger(value) ? (value as number) : -1
+  }
 
-    const roleOverrides = normalizeModelRoleOverrides(database.modelRoles)
+  function hasLegacyModelFields(): boolean {
+    const settings = settingsResourceState.value
+    if (nonBlank(settings.aiModel) || nonBlank(settings.subModel)) return true
+
+    const roleOverrides = normalizeModelRoleOverrides(settings.modelRoles)
     if (Object.values(roleOverrides).some(nonBlank)) return true
 
-    if (database.seperateModelsForAxModels) {
-      const separateModels = normalizeLegacySeperateModels(database.seperateModels)
+    if (settings.seperateModelsForAxModels) {
+      const separateModels = normalizeLegacySeperateModels(settings.seperateModels)
       if (Object.values(separateModels).some(nonBlank)) return true
     }
 
@@ -115,10 +128,10 @@
   }
 
   function isClearlyLegacyOnly(): boolean {
-    const database = getDatabase()
-    if ((database.modelProfiles ?? []).length > 0) return false
+    if (!modelProfileOwnersValid) return false
+    if (modelProfiles.length > 0) return false
 
-    const roleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
+    const roleProfiles = normalizeModelRoleProfiles(settingsResourceState.value.modelRoleProfiles)
     if (!MODEL_ROLES.every((role) => roleProfiles[role].mode === 'legacy')) return false
 
     return hasLegacyModelFields()
@@ -133,10 +146,10 @@
   }
 
   async function convertLegacyProfiles(): Promise<void> {
-    if (converting || modelMutationPending) return
+    if (converting || modelMutationPending || !modelProfileOwnersValid) return
     converting = true
     commandError = ''
-    const baselineIds = (getDatabase().modelProfiles ?? []).map((profile) => profile.id)
+    const baselineIds = modelProfiles.map((profile) => profile.id)
     const pendingToken = beginPendingModelMutation('model-profiles', {
       kind: 'legacy-conversion',
       baselineIds,
@@ -170,6 +183,23 @@
     initialCredentialType = type
     credentialTabKey += 1
     activeTab = 'credentials'
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!hasUniqueModelProfileOwners(value)) return []
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOwners(value: unknown): value is ModelProfileRecord[] {
+    if (!Array.isArray(value)) return false
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
   }
 </script>
 

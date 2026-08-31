@@ -50,6 +50,7 @@ import { language } from 'src/lang'
 import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -146,6 +147,27 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it.each([
+    ['a missing stable ID', [{ name: 'Missing ID', providerId: 'debug-echo', modelId: 'debug-echo' }]],
+    [
+      'duplicate stable IDs',
+      [
+        { id: 'duplicate-profile', name: 'First', providerId: 'debug-echo', modelId: 'debug-echo' },
+        { id: 'duplicate-profile', name: 'Second', providerId: 'debug-echo', modelId: 'debug-echo' },
+      ],
+    ],
+  ])('fails closed when the canonical profile owner contains %s', async (_case, profiles) => {
+    settingsResourceState.value.modelProfiles = profiles as never
+    settingsResourceState.value.modelProfileOrder = []
+
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    expect(target.querySelectorAll('[data-model-profile-row]')).toHaveLength(0)
+    expect(target.textContent).toContain(language.modelProfiles.noProfiles)
+    expect(buttonsByText(language.modelProfiles.createProfile)[0]?.disabled).toBe(true)
+  })
+
   it('shows a profile with a masked linked API credential as ready', async () => {
     getDatabase().providerCredentials = [
       {

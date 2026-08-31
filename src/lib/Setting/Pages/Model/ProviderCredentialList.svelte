@@ -20,9 +20,14 @@
     modelProfileSecretValueForSave,
     type ModelProfileSecretDraft,
   } from 'src/ts/model/modelProfileSecrets'
-  import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
+  import {
+    readProviderCredentials,
+    type ProviderCredentialRecord,
+    type ProviderCredentialType,
+  } from 'src/ts/model/providerCredentialRecords'
   import type { ProviderCredentialSnapshot, ServerCommandResult } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
   import SecretField from './SecretField.svelte'
 
   interface Props {
@@ -44,8 +49,9 @@
   let pendingMutations = $state(getPendingModelMutations('provider-credentials'))
   let initialCreateHandled = $state(false)
 
-  let credentials = $derived(getDatabase().providerCredentials ?? [])
-  let profiles = $derived(getDatabase().modelProfiles ?? [])
+  let credentials = $derived(readCredentialOwners(settingsResourceState.value.providerCredentials))
+  let modelProfileOwnersValid = $derived(hasUniqueModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
   let mutationPending = $derived(pendingMutations.length > 0)
   let editorOpen = $derived(creating || editingId !== null)
   let secretReady = $derived(
@@ -117,6 +123,31 @@
     creating = false
     editingId = null
     editingBaseline = null
+  }
+
+  function readCredentialOwners(value: unknown): ProviderCredentialRecord[] {
+    try {
+      return readProviderCredentials(value)
+    } catch {
+      return []
+    }
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!hasUniqueModelProfileOwners(value)) return []
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOwners(value: unknown): value is ModelProfileRecord[] {
+    if (!Array.isArray(value)) return false
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
   }
 
   function credentialForSave(): ProviderCredentialSnapshot | null {
@@ -191,7 +222,7 @@
   }
 
   async function deleteCredential(credential: ProviderCredentialRecord): Promise<void> {
-    if (busy || mutationPending) return
+    if (busy || mutationPending || !modelProfileOwnersValid) return
     const references = referencingProfiles(credential.id)
     if (references.length > 0) {
       commandError = language.modelProfiles.credentialInUse(
@@ -341,7 +372,7 @@
               <Button
                 size="sm"
                 styled="danger"
-                disabled={busy || mutationPending || references.length > 0}
+                disabled={busy || mutationPending || !modelProfileOwnersValid || references.length > 0}
                 onclick={() => deleteCredential(credential)}>
                 <span
                   class="inline-flex items-center gap-1"

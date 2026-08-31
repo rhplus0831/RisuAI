@@ -27,6 +27,7 @@ vi.mock('src/ts/process/modules', () => ({
 import { language } from 'src/lang'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ProviderCredentialList from './ProviderCredentialList.svelte'
 
@@ -98,6 +99,30 @@ afterEach(() => {
 })
 
 describe('ProviderCredentialList', () => {
+  it('fails closed on credential deletion when profile owner IDs are ambiguous', async () => {
+    settingsResourceState.value.modelProfiles = [
+      {
+        id: 'duplicate-profile',
+        name: 'First',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        providerOptions: { credentialId: 'credential-api' },
+      },
+      {
+        id: 'duplicate-profile',
+        name: 'Second',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+      },
+    ]
+
+    component = mount(ProviderCredentialList, { target })
+    await tick()
+
+    expect(button(language.modelProfiles.delete).disabled).toBe(true)
+    expect(mutationSpies.deleteProviderCredentialDurably).not.toHaveBeenCalled()
+  })
+
   it('renames a credential while preserving its masked secret and disables deletion while in use', async () => {
     component = mount(ProviderCredentialList, { target })
     await tick()

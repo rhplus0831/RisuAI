@@ -10,7 +10,6 @@
   import {
     createModelPreset,
     deleteModelPreset,
-    getDatabase,
     reorderModelPresets,
     selectModelPreset,
     updateModelPreset,
@@ -18,6 +17,8 @@
     type PresetMutationOutcome,
     type PromptPreset,
   } from 'src/ts/storage/database.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
 
   interface Props {
     embedded?: boolean
@@ -35,16 +36,22 @@
   let rowMutationErrors = $state<Record<string, string>>({})
   let latestRowMutationError = $derived(Object.values(rowMutationErrors).at(-1) ?? '')
 
-  let presets = $derived(getDatabase().modelPresets ?? [])
-  let selectedIndex = $derived(getDatabase().modelPresetsId ?? -1)
+  let presets = $derived(readModelPresetOwners(collectionsResourceState.values.modelPresets))
+  let selectedIndex = $derived(selectedOwnerIndex(settingsResourceState.value.modelPresetsId))
+  let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
   let selectedPromptPreset = $derived.by(() => {
-    const database = getDatabase()
-    return database.promptPresets?.[database.promptPresetsId]
+    const index = selectedOwnerIndex(settingsResourceState.value.promptPresetsId)
+    const promptPresets = collectionsResourceState.values.promptPresets
+    return Array.isArray(promptPresets) ? promptPresets[index] : undefined
   })
   let selectedPromptPresetOverridesRoles = $derived(hasPresetField(selectedPromptPreset, 'modelRoleProfiles'))
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function selectedOwnerIndex(value: unknown): number {
+    return Number.isInteger(value) ? (value as number) : -1
   }
 
   function presetName(preset: ModelPreset | undefined, index: number): string {
@@ -110,7 +117,7 @@
     const name = consumeNewPresetName()
     observePresetRowMutation(
       'model:create-current',
-      createModelPreset(createModelRoleBindingPresetSnapshot(getDatabase(), name)),
+      createModelPreset(createModelRoleBindingPresetSnapshot(settingsResourceState.value, name)),
     )
   }
 
@@ -225,7 +232,7 @@
   }
 
   function profileName(profileId: string): string {
-    return getDatabase().modelProfiles.find((profile) => profile.id === profileId)?.name ?? profileId
+    return profiles.find((profile) => profile.id === profileId)?.name ?? profileId
   }
 
   function bindingLabel(binding: ModelRoleProfileBinding): string {
@@ -253,7 +260,7 @@
     let inheritCount = 0
     let legacyCount = 0
     let missingCount = 0
-    const profileIds = new Set(getDatabase().modelProfiles.map((profile) => profile.id))
+    const profileIds = new Set(profiles.map((profile) => profile.id))
 
     for (const role of MODEL_ROLES) {
       const binding = bindings[role]
@@ -284,6 +291,22 @@
     if (legacyModelFieldCount(preset) > 0) badges.push(language.modelProfiles.modelPresetLegacyBadge)
     if (badges.length === 0) badges.push(language.modelProfiles.modelPresetEmptyBadge)
     return badges
+  }
+
+  function readModelPresetOwners(value: unknown): ModelPreset[] {
+    return Array.isArray(value) ? (value as ModelPreset[]) : []
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
   }
 </script>
 

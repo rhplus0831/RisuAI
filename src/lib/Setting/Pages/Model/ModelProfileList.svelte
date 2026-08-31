@@ -35,8 +35,9 @@
     type PendingModelMutationProjection,
   } from 'src/ts/model/modelProfileMutations'
   import type { ModelProfileSnapshot, ServerCommandResult } from 'src/ts/server/commands'
-  import type { ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import type { ProviderCredentialRecord, ProviderCredentialType } from 'src/ts/model/providerCredentialRecords'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { Database, ModelPreset } from 'src/ts/storage/database.svelte'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
   import { internalReorderSortableOptions } from 'src/ts/gui/internalReorderSortable'
   import Sortable, { type SortableEvent } from 'sortablejs'
@@ -65,11 +66,22 @@
   let profileListElement: HTMLDivElement | undefined = $state()
   let profileSortable: Sortable | null = null
 
-  let profiles = $derived(getDatabase().modelProfiles ?? [])
-  let profileOrder = $derived(normalizeModelProfileOrder(getDatabase().modelProfileOrder, profiles))
+  let modelProfileOwnersValid = $derived(hasUniqueModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let profileOrder = $derived(normalizeModelProfileOrder(settingsResourceState.value.modelProfileOrder, profiles))
   let profileItems = $derived(modelProfileListItems(profiles, profileOrder))
-  let credentials = $derived(getDatabase().providerCredentials ?? [])
-  let mutationQueued = $derived(pendingMutations.length > 0)
+  let credentials = $derived(readOwnerArray<ProviderCredentialRecord>(settingsResourceState.value.providerCredentials))
+  let modelPresets = $derived(readOwnerArray<ModelPreset>(collectionsResourceState.values.modelPresets))
+  let modelSettingsOwner = $derived.by(
+    () =>
+      ({
+        ...settingsResourceState.value,
+        modelProfiles: profiles,
+        modelProfileOrder: profileOrder,
+        providerCredentials: credentials,
+      }) as Database,
+  )
+  let mutationQueued = $derived(pendingMutations.length > 0 || !modelProfileOwnersValid)
   let editingProfile = $derived(
     editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined,
   )
@@ -144,7 +156,7 @@
 
   function statusLabel(profile: ModelProfileRecord): string {
     const resolved = resolveModelProfileByProfileId({
-      database: getDatabase(),
+      database: modelSettingsOwner,
       role: 'chatMain',
       profileId: profile.id,
       lookupModelInfo: (_database, id) => getModelInfo(id),
@@ -158,7 +170,7 @@
   }
 
   function rolesUsingProfile(profileId: string): ModelRole[] {
-    const bindings = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
+    const bindings = normalizeModelRoleProfiles(settingsResourceState.value.modelRoleProfiles)
     return MODEL_ROLES.filter((role) => {
       const binding = bindings[role]
       return binding.mode === 'profile' && binding.profileId === profileId
@@ -171,7 +183,7 @@
   }
 
   function modelPresetLabelsUsingProfile(profileId: string): string[] {
-    return (getDatabase().modelPresets ?? []).flatMap((preset, index) => {
+    return modelPresets.flatMap((preset, index) => {
       const bindings = normalizeModelRoleProfiles(preset.modelRoleProfiles)
       const referencesProfile = MODEL_ROLES.some((role) => {
         const binding = bindings[role]
@@ -209,6 +221,27 @@
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function readOwnerArray<T>(value: unknown): T[] {
+    return Array.isArray(value) ? (value as T[]) : []
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!hasUniqueModelProfileOwners(value)) return []
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOwners(value: unknown): value is ModelProfileRecord[] {
+    if (!Array.isArray(value)) return false
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
   }
 
   function isProfileListProjection(

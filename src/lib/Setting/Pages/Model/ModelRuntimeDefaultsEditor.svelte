@@ -16,7 +16,7 @@
     updateModelRuntimeDefaultsDurably,
   } from 'src/ts/model/modelProfileMutations'
   import type { ServerCommandResult } from 'src/ts/server/commands'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'
 
   let editing = $state(false)
@@ -27,7 +27,7 @@
   let editBaseline = $state<ModelProfileRecordRuntimeOptions>({})
   let lastServerSnapshot = $state('')
 
-  let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(getDatabase().modelRuntimeDefaults))
+  let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(settingsResourceState.value.modelRuntimeDefaults))
   let saveQueued = $derived(pendingMutations.length > 0)
   let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
   let draftRuntimeDefaultCount = $derived(Object.keys(normalizeModelRuntimeDefaults(draft)).length)

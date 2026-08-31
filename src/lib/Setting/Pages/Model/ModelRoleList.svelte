@@ -14,8 +14,10 @@
     type ModelRole,
     type NormalizedModelRoleOverrides,
   } from '@risuai/shared-core/model-roles'
+  import type { ModelProfileRecord } from 'src/ts/model/modelProfileRecords'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
-  import { getDatabase, type Database, type SeparateParameters } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { Database, SeparateParameters } from 'src/ts/storage/database.svelte'
   import ModelRoleEditor from './ModelRoleEditor.svelte'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
@@ -110,24 +112,29 @@
   let lastSyncedRoleMode: RoleModelMode = 'inherit'
   let suppressRoleModelModeWrite = false
 
+  let modelProfiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
   let selectedDefinition = $derived(roleDefinitions.find((definition) => definition.role === selectedRole))
   let selectedFallbackKey = $derived(selectedRole ? fallbackKeyByRole[selectedRole] : undefined)
   let selectedSupportsParameters = $derived(selectedRole ? parameterRoles.has(selectedRole) : false)
-  const resolverCompatibilityDatabase = $derived.by<Database>(() => ({
-    ...getDatabase(),
-    aiModel: aiModelDraft.value,
-    subModel: subModelDraft.value,
-    modelRoles: modelRolesDraft.value,
-    seperateModelsForAxModels: seperateModelsForAxModelsDraft.value,
-    doNotChangeSeperateModels: doNotChangeSeperateModelsDraft.value,
-    seperateModels: seperateModelsDraft.value,
-    fallbackModels: fallbackModelsDraft.value,
-    fallbackWhenBlankResponse: fallbackWhenBlankResponseDraft.value,
-    doNotChangeFallbackModels: doNotChangeFallbackModelsDraft.value,
-    seperateParametersEnabled: seperateParametersEnabledDraft.value,
-    seperateParametersByModel: seperateParametersByModelDraft.value,
-    seperateParameters: seperateParametersDraft.value,
-  }))
+  const resolverCompatibilityDatabase = $derived.by(
+    () =>
+      ({
+        ...settingsResourceState.value,
+        modelProfiles,
+        aiModel: aiModelDraft.value,
+        subModel: subModelDraft.value,
+        modelRoles: modelRolesDraft.value,
+        seperateModelsForAxModels: seperateModelsForAxModelsDraft.value,
+        doNotChangeSeperateModels: doNotChangeSeperateModelsDraft.value,
+        seperateModels: seperateModelsDraft.value,
+        fallbackModels: fallbackModelsDraft.value,
+        fallbackWhenBlankResponse: fallbackWhenBlankResponseDraft.value,
+        doNotChangeFallbackModels: doNotChangeFallbackModelsDraft.value,
+        seperateParametersEnabled: seperateParametersEnabledDraft.value,
+        seperateParametersByModel: seperateParametersByModelDraft.value,
+        seperateParameters: seperateParametersDraft.value,
+      }) as Database,
+  )
 
   $effect(() => {
     const role = selectedRole
@@ -159,6 +166,18 @@
 
   function labelForRole(role: ModelRole): string {
     return language.modelRoles.roles[role]
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
   }
 
   function descriptionForRole(role: ModelRole): string {

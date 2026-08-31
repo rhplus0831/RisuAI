@@ -8,6 +8,7 @@
     modelProfileDividerSelectValue,
     modelProfileListItems,
     normalizeModelRoleProfiles,
+    type ModelProfileRecord,
     type ModelRoleProfileBinding,
     type ModelRoleProfileMap,
   } from 'src/ts/model/modelProfileRecords'
@@ -24,7 +25,8 @@
     updateModelRoleProfilesDurably,
   } from 'src/ts/model/modelProfileMutations'
   import type { ServerCommandResult } from 'src/ts/server/commands'
-  import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import type { Database, ModelPreset } from 'src/ts/storage/database.svelte'
 
   type BindingMode = ModelRoleProfileBinding['mode']
 
@@ -36,13 +38,17 @@
   let pendingMutations = $state(getPendingModelMutations('model-profiles'))
   let commandError = $state('')
 
-  let profiles = $derived(getDatabase().modelProfiles ?? [])
-  let profileItems = $derived(modelProfileListItems(profiles, getDatabase().modelProfileOrder))
+  let profiles = $derived(readModelProfileOwners(settingsResourceState.value.modelProfiles))
+  let profileItems = $derived(modelProfileListItems(profiles, settingsResourceState.value.modelProfileOrder))
   let profileIdSet = $derived(new Set(profiles.map((profile) => profile.id)))
-  let resolverDatabase = $derived.by<Database>(() => ({
-    ...getDatabase(),
-    modelRoleProfiles: draftBindings,
-  }))
+  let resolverDatabase = $derived.by(
+    () =>
+      ({
+        ...settingsResourceState.value,
+        modelProfiles: profiles,
+        modelRoleProfiles: draftBindings,
+      }) as Database,
+  )
   let uiState = $derived.by(() =>
     resolveModelProfileUiState({
       database: resolverDatabase,
@@ -58,7 +64,7 @@
   })
 
   $effect(() => {
-    const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
+    const normalized = normalizeModelRoleProfiles(settingsResourceState.value.modelRoleProfiles)
     const snapshot = snapshotBindings(normalized)
     if (snapshot === lastServerSnapshot) return
 
@@ -79,7 +85,11 @@
         continue
       }
       if (pending.phase === 'dispatching' || pending.projection.kind !== 'role-bindings') continue
-      if (isPendingModelMutationProjectionApplied(pending.projection, getDatabase())) {
+      if (
+        isPendingModelMutationProjectionApplied(pending.projection, {
+          modelRoleProfiles: settingsResourceState.value.modelRoleProfiles,
+        })
+      ) {
         finishPendingModelMutation(pending.token)
       }
     }
@@ -87,6 +97,18 @@
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
   }
 
   function snapshotBinding(binding: ModelRoleProfileBinding): string {
@@ -256,8 +278,10 @@
   }
 
   function selectedModelPresetId(): string | null {
-    const database = getDatabase()
-    const preset = database.modelPresets?.[database.modelPresetsId]
+    const selectedIndex = settingsResourceState.value.modelPresetsId
+    const index = Number.isInteger(selectedIndex) ? (selectedIndex as number) : -1
+    const presets = collectionsResourceState.values.modelPresets
+    const preset = Array.isArray(presets) ? (presets[index] as ModelPreset | undefined) : undefined
     return typeof preset?.id === 'string' && preset.id.trim() ? preset.id : null
   }
 

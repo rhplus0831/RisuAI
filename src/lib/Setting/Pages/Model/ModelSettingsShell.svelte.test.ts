@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -54,6 +56,7 @@ import {
   retainPendingModelMutation,
 } from 'src/ts/model/modelProfileMutations'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ModelSettingsShell from './ModelSettingsShell.svelte'
 
@@ -113,6 +116,29 @@ afterEach(() => {
 })
 
 describe('ModelSettingsShell legacy conversion', () => {
+  it('keeps the model settings UI on explicit settings and collection owners', () => {
+    const ownerExpectations = new Map<string, readonly string[]>([
+      ['ModelSettingsShell', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelPresetList', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelProfileList', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelProfileRoleList', ['settingsResourceState', 'collectionsResourceState']],
+      ['ModelRoleList', ['settingsResourceState']],
+      ['ModelRuntimeDefaultsEditor', ['settingsResourceState']],
+      ['ProviderCredentialList', ['settingsResourceState']],
+    ])
+
+    for (const [componentName, expectedOwners] of ownerExpectations) {
+      const source = readFileSync(resolve(process.cwd(), `src/lib/Setting/Pages/Model/${componentName}.svelte`), 'utf8')
+      expect(source, componentName).not.toMatch(
+        /\b(?:getDatabase|getResourceDatabase|getResourceDatabaseFacadeEpoch|resourceDatabaseFacadeEpoch)\b/,
+      )
+      for (const expectedOwner of expectedOwners) expect(source, componentName).toContain(expectedOwner)
+      if (!['ModelRuntimeDefaultsEditor'].includes(componentName)) {
+        expect(source, componentName).toContain('readModelProfileOwners')
+      }
+    }
+  })
+
   it('opens the credential manager from the model settings tabs', async () => {
     component = mount(ModelSettingsShell, { target })
     await tick()
@@ -126,6 +152,19 @@ describe('ModelSettingsShell legacy conversion', () => {
 
     expect(target.textContent).toContain(language.modelProfiles.credentialsTabTitle)
     expect(target.textContent).toContain(language.modelProfiles.createApiCredential)
+  })
+
+  it('does not offer legacy conversion when profile owner IDs are ambiguous', async () => {
+    settingsResourceState.value.modelProfiles = [
+      { id: 'duplicate-profile', name: 'First', providerId: 'debug-echo', modelId: 'echo_model' },
+      { id: 'duplicate-profile', name: 'Second', providerId: 'debug-echo', modelId: 'echo_model' },
+    ]
+
+    component = mount(ModelSettingsShell, { target })
+    await tick()
+
+    expect(conversionButtons()).toHaveLength(0)
+    expect(mutationMocks.convertLegacyModelProfilesDurably).not.toHaveBeenCalled()
   })
 
   it('reports a terminal conversion failure and leaves conversion retryable', async () => {
