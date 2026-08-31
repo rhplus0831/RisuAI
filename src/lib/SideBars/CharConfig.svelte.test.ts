@@ -293,7 +293,12 @@ vi.mock('./Scripts/TriggerList.svelte', async () => {
 import CharConfig from './CharConfig.svelte'
 import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
-import { charactersResourceState, getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import {
+  applyChatMetadataOwnerPatch,
+  charactersResourceState,
+  getResourceDatabase,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import { language } from 'src/lang'
 import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
@@ -593,6 +598,69 @@ describe('CharConfig initial draft rendering', () => {
 
     expect(target.querySelector('[data-char-config-section="tts"]')).toBeNull()
     expect(target.querySelector('[data-char-config-section="manage"]')).toBeNull()
+  })
+
+  it('does not revive the aggregate character row after the owner reports an error', async () => {
+    setDatabaseLite({
+      characters: [makeCharacter({ name: 'Aggregate fallback' })],
+      currentChar: 0,
+    } as never)
+    charactersResourceState.status = 'error'
+    charactersResourceState.error = 'owner unavailable'
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(0)
+    MobileGUI.set(false)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    expect(target.querySelector('[data-char-config-section="tts"]')).toBeNull()
+    expect(target.querySelector('[data-char-config-section="manage"]')).toBeNull()
+  })
+})
+
+describe('CharConfig settings owners', () => {
+  it('reacts to exact advanced and memory owner values', async () => {
+    await mountCharConfig(2, { virtualscript: '', personality: '', scenario: '' })
+
+    expect(target.querySelector(`textarea[aria-label="${language.personality}"]`)).toBeNull()
+    expect(target.querySelector(`textarea[aria-label="${language.scenario}"]`)).toBeNull()
+    expect(buttons().some((button) => button.textContent?.trim() === language.hypaMemoryV3Modal)).toBe(false)
+
+    settingsResourceState.value.showUnrecommended = true
+    settingsResourceState.value.hypaV3 = true
+    await settleComponent()
+
+    expect(target.querySelector(`textarea[aria-label="${language.personality}"]`)).toBeTruthy()
+    expect(target.querySelector(`textarea[aria-label="${language.scenario}"]`)).toBeTruthy()
+    expect(buttonByText(language.hypaMemoryV3Modal)).toBeTruthy()
+  })
+
+  it('reacts to the display and media owners in the additional-assets editor', async () => {
+    await mountCharConfig(1, { additionalAssets: [['portrait', 'asset-1', 'png']] })
+    buttonByText(language.additionalAssets).click()
+    await settleComponent()
+
+    expect(target.querySelector(`input[aria-label="${language.insertAssetPrompt}"]`)).toBeNull()
+    expect(buttons().some((button) => button.getAttribute('aria-label') === `${language.image}: portrait`)).toBe(false)
+
+    settingsResourceState.value.newImageHandlingBeta = true
+    settingsResourceState.value.useAdditionalAssetsPreview = true
+    await settleComponent()
+
+    expect(target.querySelector(`input[aria-label="${language.insertAssetPrompt}"]`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.image}: portrait`)).toBeTruthy()
+  })
+
+  it('fails closed instead of rendering a stale setting after its owner errors', async () => {
+    await mountCharConfig(2, { personality: '' })
+    settingsResourceState.value.showUnrecommended = true
+    settingsResourceState.groupStatuses.advanced = 'error'
+    await settleComponent()
+
+    expect(target.querySelector(`textarea[aria-label="${language.personality}"]`)).toBeNull()
   })
 })
 
@@ -1115,6 +1183,79 @@ describe('CharConfig draft-type-less character actions', () => {
     ])
   })
 
+  it('updates the ready character and chat owners without mutating a stale aggregate row', async () => {
+    serverCommandState.enabled = true
+    setDatabaseLite({
+      characters: [
+        makeCharacter({
+          name: 'Aggregate stale',
+          alternateGreetings: ['Aggregate zero', 'Aggregate one'],
+          chats: [{ id: 'aggregate-chat', name: 'Aggregate', message: [], fmIndex: 1 }],
+        }),
+      ],
+      currentChar: 0,
+      hypaV3: false,
+      newImageHandlingBeta: false,
+      showUnrecommended: false,
+      useAdditionalAssetsPreview: false,
+    } as never)
+    const staleAggregate = getResourceDatabase().characters
+    charactersResourceState.characters = [
+      makeCharacter({
+        name: 'Owner current',
+        alternateGreetings: ['Owner zero', 'Owner one'],
+        chats: [
+          { id: 'owner-chat-zero', name: 'Zero', message: [], fmIndex: 0 },
+          { id: 'owner-chat-one', name: 'One', message: [], fmIndex: 1 },
+        ],
+      }),
+    ]
+    selectedCharID.set(0)
+    CharConfigSubMenu.set(2)
+    MobileGUI.set(true)
+
+    target = document.createElement('div')
+    document.body.appendChild(target)
+    component = mount(CharConfig, { target })
+    await settleComponent()
+
+    buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).click()
+    await settleComponent()
+
+    expect(staleAggregate[0].alternateGreetings).toEqual(['Aggregate zero', 'Aggregate one'])
+    expect(staleAggregate[0].chats[0].fmIndex).toBe(1)
+    expect(charactersResourceState.characters[0].alternateGreetings).toEqual(['Owner one'])
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([-1, 0])
+    expect(serverCommandState.alternateGreetingCalls).toEqual([
+      expect.objectContaining({
+        characterId: 'char-1',
+        alternateGreetings: ['Owner one'],
+        chatGreetingIndices: [
+          { chatId: 'owner-chat-zero', fmIndex: -1 },
+          { chatId: 'owner-chat-one', fmIndex: 0 },
+        ],
+      }),
+    ])
+  })
+
+  it('rejects a structural greeting mutation when chat ids are ambiguous', async () => {
+    serverCommandState.enabled = true
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One'],
+      chats: [
+        { id: 'duplicate-chat', name: 'First', message: [], fmIndex: 0 },
+        { id: 'duplicate-chat', name: 'Second', message: [], fmIndex: 1 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`).click()
+    await settleComponent()
+
+    expect(charactersResourceState.characters[0].alternateGreetings).toEqual(['Zero', 'One'])
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([0, 1])
+    expect(serverCommandState.alternateGreetingCalls).toHaveLength(0)
+  })
+
   it('keeps a retained alternate greeting cascade without rendering queued status text', async () => {
     serverCommandState.enabled = true
     alternateGreetingMutationState.outcomes.push('queued')
@@ -1154,6 +1295,30 @@ describe('CharConfig draft-type-less character actions', () => {
 
     expect(getDatabase().characters[0].alternateGreetings).toEqual(['Zero', 'One'])
     expect(getDatabase().characters[0].chats.map((chat) => chat.fmIndex)).toEqual([0, 1])
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe(language.alternateGreetingMutationFailed)
+  })
+
+  it('does not roll a discarded queued mutation over newer chat-owner metadata', async () => {
+    serverCommandState.enabled = true
+    alternateGreetingMutationState.outcomes.push('queued')
+    await mountCharConfig(2, {
+      alternateGreetings: ['Zero', 'One'],
+      chats: [
+        { id: 'chat-zero', name: 'Zero', message: [], fmIndex: 0 },
+        { id: 'chat-one', name: 'One', message: [], fmIndex: 1 },
+      ],
+    })
+
+    buttonByAccessibleName(`${language.moveUp}: ${language.altGreet} 2`).click()
+    await settleComponent()
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([1, 0])
+
+    expect(applyChatMetadataOwnerPatch('char-1', 'chat-zero', { fmIndex: 7 })).toBe(true)
+    alternateGreetingMutationState.settleQueued[0]?.('discarded')
+    await settleComponent()
+
+    expect(charactersResourceState.characters[0].alternateGreetings).toEqual(['Zero', 'One'])
+    expect(charactersResourceState.characters[0].chats.map((chat) => chat.fmIndex)).toEqual([7, 1])
     expect(target.querySelector('[role="alert"]')?.textContent).toBe(language.alternateGreetingMutationFailed)
   })
 

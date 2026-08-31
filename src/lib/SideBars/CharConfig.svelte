@@ -7,6 +7,7 @@
     isServerCharacterShell,
     type character,
     type customscript,
+    type Database,
     type triggerscript,
   } from '../../ts/storage/database.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
@@ -107,7 +108,6 @@
   import {
     flushPendingServerBackedChatPatches,
     syncServerBackedChatMetadataBaselines,
-    watchServerBackedChatMetadata,
   } from 'src/ts/server/chatBridge.svelte'
   import {
     clearDirtyScriptDefinitionFieldsMatchingAttempt,
@@ -116,14 +116,22 @@
     mergeScriptDefinitionProjectionRows,
     scheduleCharacterScriptDefinitionDraft,
     waitForPendingCharacterScriptDefinitionSave,
-    watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { canUseServerCommands, subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
-  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+  import {
+    applyChatMetadataOwnerPatch,
+    captureCharacterRowProjectionEpoch,
+    charactersResourceState,
+    getCharacterResourceOwner,
+    getChatMetadataOwnerSnapshot,
+    hasCharacterRowProjectionEpochChanged,
+    restoreChatMetadataOwnerSnapshot,
+    settingsResourceState,
+    type ChatMetadataOwnerFields,
+  } from 'src/ts/server/resourceState.svelte'
+  import type { SettingsGroup } from 'src/ts/server/settingsGroups'
   import { assetListRenderKey } from 'src/ts/media/assetList'
   import { mutateAlternateGreetings, type AlternateGreetingMutation } from 'src/ts/alternateGreetingMutation'
   import { dispatchDurableAlternateGreetingMutation } from 'src/ts/alternateGreetingCommands'
@@ -161,6 +169,25 @@
   const NOTIFICATION_IMAGE_EXTENSIONS = ['png', 'webp', 'gif', 'jpg', 'jpeg']
   type SelectedSingleFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
   type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
+
+  function readEditorSettingsGroup(group: SettingsGroup): Partial<Database> {
+    const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value as Partial<Database>
+    // Startup compatibility only. Once an owner reports an error, its missing
+    // value is authoritative and stale aggregate settings must stay hidden.
+    if (status === 'idle' || status === 'loading') return getDatabase()
+    return {}
+  }
+
+  let displaySettings = $derived(readEditorSettingsGroup('display'))
+  let mediaSettings = $derived(readEditorSettingsGroup('media'))
+  let advancedSettings = $derived(readEditorSettingsGroup('advanced'))
+  let memorySettings = $derived(readEditorSettingsGroup('memory'))
+  let useAdditionalAssetsPreview = $derived(displaySettings.useAdditionalAssetsPreview === true)
+  let newImageHandlingBeta = $derived(mediaSettings.newImageHandlingBeta === true)
+  let showUnrecommended = $derived(advancedSettings.showUnrecommended === true)
+  let hypaV3Enabled = $derived(memorySettings.hypaV3 === true)
+
   let tokens = $state({
     desc: 0,
     firstMsg: 0,
@@ -245,7 +272,8 @@
   let characterTriggersDraft = $state<triggerscript[]>([])
   let scriptDraftCharacterId = $state<string | null>(null)
   let scriptDraftSnapshot = ''
-  let previousScriptDraftResourceApplyEpoch = getServerResourceApplyEpoch()
+  let previousScriptDraftOwnerId: string | null = null
+  let previousScriptDraftOwnerProjectionEpoch: number | null = null
   let suppressScriptDraftDispatch = false
   let scriptDraftCompositionActive = $state(false)
   let previousCharacterConfigSubMenu = $CharConfigSubMenu
@@ -302,18 +330,11 @@
   })
 
   $effect(() => {
-    const { stopCharacter, stopChat, stopScripts } = untrack(() => ({
-      stopCharacter: watchServerBackedCharacterProfile(),
-      stopChat: watchServerBackedChatMetadata(),
-      // This panel only edits the selected character's scripts/triggers, so scope
-      // change detection to that one row (the watcher tracks selection switches).
-      stopScripts: watchServerBackedScriptDefinitions({ scope: { kind: 'character' } }),
-    }))
-    return () => {
-      stopCharacter()
-      stopChat()
-      stopScripts()
-    }
+    // The retained character draft still needs its persistence bridge. Chat
+    // metadata and script definitions below dispatch through their dedicated
+    // owner commands, so their aggregate watchers are no longer mounted here.
+    const stopCharacter = untrack(() => watchServerBackedCharacterProfile())
+    return stopCharacter
   })
 
   $effect(() =>
@@ -339,17 +360,21 @@
   )
 
   $effect(() => {
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    const resourceApplyChanged = resourceApplyEpoch !== previousScriptDraftResourceApplyEpoch
-    previousScriptDraftResourceApplyEpoch = resourceApplyEpoch
     const character = selectedCharacterOwner()
     const characterId = character?.chaId ?? null
+    const ownerProjectionEpoch = characterId ? captureCharacterRowProjectionEpoch(characterId) : null
+    const targetChanged = characterId !== scriptDraftCharacterId
+    const ownerProjectionChanged =
+      !targetChanged &&
+      characterId === previousScriptDraftOwnerId &&
+      ownerProjectionEpoch !== previousScriptDraftOwnerProjectionEpoch
+    previousScriptDraftOwnerId = characterId
+    previousScriptDraftOwnerProjectionEpoch = ownerProjectionEpoch
     const snapshot = snapshotJson({
       characterId,
       scripts: character?.customscript ?? [],
       triggers: character?.triggerscript ?? [],
     })
-    const targetChanged = characterId !== scriptDraftCharacterId
 
     if (targetChanged) {
       untrack(flushCurrentCharacterScriptDefinitionDraft)
@@ -360,7 +385,7 @@
       suppressScriptDraftDispatch = true
       scriptDraftCharacterId = characterId
 
-      if (!targetChanged && resourceApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
+      if (!targetChanged && ownerProjectionChanged && hasDirtyScriptDefinitionDraftFields()) {
         const nextScripts = reconcileScriptDefinitionDraftRows(
           characterScriptsDraft,
           character?.customscript ?? [],
@@ -387,7 +412,7 @@
           scriptDraftSnapshot = snapshot
         }
       } else {
-        if (!resourceApplyChanged) {
+        if (!ownerProjectionChanged) {
           clearScriptDraftDirtyState()
         }
         characterScriptsDraft = cloneJsonValue(character?.customscript ?? [])
@@ -476,7 +501,7 @@
   })
 
   const selectedCharacterAssetSourceKey = $derived(
-    currentRealCharacterDraftTarget() && getDatabase().useAdditionalAssetsPreview
+    currentRealCharacterDraftTarget() && useAdditionalAssetsPreview
       ? ((characterDraft.value as unknown as character).additionalAssets ?? [])
           .map((asset) => `${asset[1]}:${asset[2] ?? ''}`)
           .join('\n')
@@ -488,7 +513,7 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (currentRealCharacterDraftTarget() && getDatabase().useAdditionalAssetsPreview) {
+    if (currentRealCharacterDraftTarget() && useAdditionalAssetsPreview) {
       for (const asset of (characterDraft.value as unknown as character).additionalAssets ?? []) {
         const assetPath = asset[1]
         nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
@@ -589,17 +614,32 @@
     return { selectedIndex, character: selectedCharacter as character }
   }
 
+  function stableOwnerId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
   function characterOwnerAt(index: number): character | undefined {
     if (index < 0) return undefined
-    if (charactersResourceState.status !== 'ready') return getDatabase().characters?.[index]
-    return selectCharacterOwner(charactersResourceState.characters, index)
+    if (charactersResourceState.status === 'ready') {
+      const candidate = charactersResourceState.characters[index]
+      if (!stableOwnerId(candidate?.chaId) || charactersResourceState.rowStatuses[candidate.chaId] === 'error') {
+        return undefined
+      }
+      return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+    }
+    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+
+    // Pre-owner startup compatibility. Even here, authorize the positional row
+    // through its stable unique id before exposing it to the editor.
+    const characters = getDatabase().characters ?? []
+    const candidate = characters[index]
+    if (!stableOwnerId(candidate?.chaId)) return undefined
+    return characters.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
   }
 
   function selectedCharacterOwner(): character | undefined {
     const selectedIndex = $selectedCharID
-    if (charactersResourceState.status !== 'ready') return getDatabase().characters?.[selectedIndex]
-    if (charactersResourceState.currentChar === selectedIndex) return getSelectedCharacterOwner()
-    return selectCharacterOwner(charactersResourceState.characters, selectedIndex)
+    return characterOwnerAt(selectedIndex)
   }
 
   function currentRealCharacterDraftTarget(): { selectedIndex: number; character: character } | null {
@@ -633,17 +673,201 @@
     void applyAlternateGreetingMutation({ type: 'swap', firstIndex: index, secondIndex: index + 1 })
   }
 
+  interface AlternateGreetingChatOwnerSnapshot {
+    chatId: string
+    metadata: ChatMetadataOwnerFields
+  }
+
+  interface AlternateGreetingOwnerSnapshot {
+    characterId: string
+    selectedIndex: number
+    character: character
+    alternateGreetings: string[]
+    chats: AlternateGreetingChatOwnerSnapshot[]
+    projectionEpoch: number | null
+    readyOwner: boolean
+  }
+
+  function captureAlternateGreetingOwnerSnapshot(): AlternateGreetingOwnerSnapshot | null {
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return null
+    const characterId = target.character.chaId
+
+    if (charactersResourceState.status === 'ready') {
+      if (getCharacterResourceOwner(characterId) !== target.character) return null
+      const globalChatIdCounts = new Map<string, number>()
+      for (const character of charactersResourceState.characters) {
+        for (const chat of character.chats ?? []) {
+          if (!stableOwnerId(chat?.id)) continue
+          globalChatIdCounts.set(chat.id, (globalChatIdCounts.get(chat.id) ?? 0) + 1)
+        }
+      }
+
+      const chats: AlternateGreetingChatOwnerSnapshot[] = []
+      for (const chat of target.character.chats ?? []) {
+        if (!stableOwnerId(chat?.id) || globalChatIdCounts.get(chat.id) !== 1) return null
+        const owner = getChatMetadataOwnerSnapshot(characterId, chat.id)
+        if (!owner) return null
+        chats.push({ chatId: chat.id, metadata: cloneJsonValue(owner.metadata) })
+      }
+      return {
+        characterId,
+        selectedIndex: target.selectedIndex,
+        character: target.character,
+        alternateGreetings: cloneJsonValue(characterDraft.value.alternateGreetings),
+        chats,
+        projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+        readyOwner: true,
+      }
+    }
+
+    // Local-only startup compatibility cannot use the released chat owner yet.
+    // Server-backed structural writes wait for the ready owner instead of
+    // mutating the aggregate projection through a trusted component scope.
+    if (
+      canUseServerCommands() ||
+      (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading')
+    ) {
+      return null
+    }
+    const chatIds = new Set<string>()
+    const chats: AlternateGreetingChatOwnerSnapshot[] = []
+    for (const chat of target.character.chats ?? []) {
+      if (!stableOwnerId(chat?.id) || chatIds.has(chat.id)) return null
+      chatIds.add(chat.id)
+      chats.push({
+        chatId: chat.id,
+        metadata:
+          Object.prototype.hasOwnProperty.call(chat, 'fmIndex') && chat.fmIndex !== undefined
+            ? { fmIndex: cloneJsonValue(chat.fmIndex) }
+            : {},
+      })
+    }
+    return {
+      characterId,
+      selectedIndex: target.selectedIndex,
+      character: target.character,
+      alternateGreetings: cloneJsonValue(characterDraft.value.alternateGreetings),
+      chats,
+      projectionEpoch: null,
+      readyOwner: false,
+    }
+  }
+
+  function alternateGreetingOwnerSnapshotIsCurrent(snapshot: AlternateGreetingOwnerSnapshot): boolean {
+    const currentTarget = currentRealCharacterDraftTarget()
+    if (
+      !currentTarget ||
+      currentTarget.selectedIndex !== snapshot.selectedIndex ||
+      currentTarget.character.chaId !== snapshot.characterId ||
+      snapshotJson(characterDraft.value.alternateGreetings) !== snapshotJson(snapshot.alternateGreetings)
+    ) {
+      return false
+    }
+
+    if (snapshot.readyOwner) {
+      if (
+        charactersResourceState.status !== 'ready' ||
+        getCharacterResourceOwner(snapshot.characterId) !== snapshot.character ||
+        snapshot.projectionEpoch === null ||
+        hasCharacterRowProjectionEpochChanged(snapshot.characterId, snapshot.projectionEpoch) ||
+        snapshot.character.chats.length !== snapshot.chats.length
+      ) {
+        return false
+      }
+      const expectedChatIds = new Set(snapshot.chats.map((chat) => chat.chatId))
+      if (expectedChatIds.size !== snapshot.chats.length) return false
+      if (snapshot.character.chats.some((chat) => !stableOwnerId(chat?.id) || !expectedChatIds.has(chat.id)))
+        return false
+
+      return snapshot.chats.every((chat) => {
+        const current = getChatMetadataOwnerSnapshot(snapshot.characterId, chat.chatId)
+        return current && snapshotJson(current.metadata.fmIndex) === snapshotJson(chat.metadata.fmIndex)
+      })
+    }
+
+    return currentTarget.character === snapshot.character
+  }
+
+  function applyAlternateGreetingOwnerProjection(
+    snapshot: AlternateGreetingOwnerSnapshot,
+    alternateGreetings: string[],
+    chatGreetingIndices: Array<{ chatId: string; fmIndex: number }>,
+  ): boolean {
+    if (!alternateGreetingOwnerSnapshotIsCurrent(snapshot)) return false
+    const nextByChatId = new Map(chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
+    if (nextByChatId.size !== snapshot.chats.length || snapshot.chats.some((chat) => !nextByChatId.has(chat.chatId))) {
+      return false
+    }
+
+    snapshot.character.alternateGreetings = cloneJsonValue(alternateGreetings)
+    if (snapshot.readyOwner) {
+      for (const chat of snapshot.chats) {
+        const fmIndex = nextByChatId.get(chat.chatId)
+        if (fmIndex === undefined || !applyChatMetadataOwnerPatch(snapshot.characterId, chat.chatId, { fmIndex })) {
+          return false
+        }
+      }
+    } else {
+      for (const chat of snapshot.character.chats) {
+        const fmIndex = nextByChatId.get(chat.id)
+        if (fmIndex !== undefined) chat.fmIndex = fmIndex
+      }
+    }
+    return true
+  }
+
+  function rollbackAlternateGreetingOwnerProjection(
+    snapshot: AlternateGreetingOwnerSnapshot,
+    attemptedGreetings: string[],
+    attemptedChatGreetingIndices: Array<{ chatId: string; fmIndex: number }>,
+  ): void {
+    const character = snapshot.readyOwner
+      ? getCharacterResourceOwner(snapshot.characterId)
+      : currentRealCharacterDraftTarget()?.character
+    if (!character || character.chaId !== snapshot.characterId) return
+
+    if (snapshotJson(character.alternateGreetings) === snapshotJson(attemptedGreetings)) {
+      character.alternateGreetings = cloneJsonValue(snapshot.alternateGreetings)
+    }
+    const attemptedByChatId = new Map(attemptedChatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
+    if (snapshot.readyOwner && charactersResourceState.status === 'ready') {
+      for (const previous of snapshot.chats) {
+        const attempted = attemptedByChatId.get(previous.chatId)
+        if (attempted === undefined) continue
+        restoreChatMetadataOwnerSnapshot({
+          characterId: snapshot.characterId,
+          chatId: previous.chatId,
+          metadata: previous.metadata,
+          attempted: { fmIndex: attempted },
+        })
+      }
+    } else {
+      for (const previous of snapshot.chats) {
+        const chatMatches = character.chats.filter((candidate) => candidate.id === previous.chatId)
+        const attempted = attemptedByChatId.get(previous.chatId)
+        if (chatMatches.length !== 1 || attempted === undefined || chatMatches[0].fmIndex !== attempted) continue
+        if (Object.prototype.hasOwnProperty.call(previous.metadata, 'fmIndex')) {
+          chatMatches[0].fmIndex = previous.metadata.fmIndex as number
+        } else {
+          delete chatMatches[0].fmIndex
+        }
+      }
+    }
+    syncServerBackedCharacterProfileBaselines()
+    syncServerBackedChatMetadataBaselines()
+  }
+
   async function applyAlternateGreetingMutation(operation: AlternateGreetingMutation): Promise<void> {
     if (alternateGreetingMutationPending) return
-    const target = currentRealCharacterDraftTarget()
-    if (!target) return
-    const characterId = target.character.chaId
-    const previousGreetings = cloneJsonValue(characterDraft.value.alternateGreetings)
-    const previousGreetingIndices = target.character.chats.map((chat) => ({
-      chatId: chat.id,
-      fmIndex: chat.fmIndex ?? -1,
-    }))
-    const mutation = mutateAlternateGreetings(previousGreetings, target.character.chats, operation)
+    const ownerSnapshot = captureAlternateGreetingOwnerSnapshot()
+    if (!ownerSnapshot) return
+    const characterId = ownerSnapshot.characterId
+    const mutation = mutateAlternateGreetings(
+      ownerSnapshot.alternateGreetings,
+      ownerSnapshot.chats.map((chat) => ({ id: chat.chatId, fmIndex: chat.metadata.fmIndex as number | undefined })),
+      operation,
+    )
     if (!mutation) return
 
     const serverBacked = canUseServerCommands()
@@ -655,18 +879,13 @@
     }
 
     const applyOptimistic = () => {
+      if (
+        !applyAlternateGreetingOwnerProjection(ownerSnapshot, mutation.alternateGreetings, mutation.chatGreetingIndices)
+      ) {
+        return
+      }
       characterDraft.value.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
       characterDraft.value = { ...characterDraft.value }
-      withTrustedResourceWrite(() => {
-        const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
-        if (!character) return
-        character.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
-        const nextByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
-        for (const chat of character.chats) {
-          const fmIndex = nextByChatId.get(chat.id)
-          if (fmIndex !== undefined) chat.fmIndex = fmIndex
-        }
-      })
       syncServerBackedCharacterProfileBaselines()
       syncServerBackedChatMetadataBaselines()
     }
@@ -676,23 +895,10 @@
         characterDraft.characterId === characterId &&
         snapshotJson(characterDraft.value.alternateGreetings) === attemptedGreetings
       ) {
-        characterDraft.value.alternateGreetings = cloneJsonValue(previousGreetings)
+        characterDraft.value.alternateGreetings = cloneJsonValue(ownerSnapshot.alternateGreetings)
         characterDraft.value = { ...characterDraft.value }
       }
-      withTrustedResourceWrite(() => {
-        const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
-        if (!character) return
-        if (snapshotJson(character.alternateGreetings) === attemptedGreetings) {
-          character.alternateGreetings = cloneJsonValue(previousGreetings)
-        }
-        const attemptedByChatId = new Map(mutation.chatGreetingIndices.map((entry) => [entry.chatId, entry.fmIndex]))
-        for (const previous of previousGreetingIndices) {
-          const chat = character.chats.find((candidate) => candidate.id === previous.chatId)
-          if (chat && chat.fmIndex === attemptedByChatId.get(previous.chatId)) chat.fmIndex = previous.fmIndex
-        }
-      })
-      syncServerBackedCharacterProfileBaselines()
-      syncServerBackedChatMetadataBaselines()
+      rollbackAlternateGreetingOwnerProjection(ownerSnapshot, mutation.alternateGreetings, mutation.chatGreetingIndices)
     }
 
     if (!serverBacked) {
@@ -1672,7 +1878,7 @@
         }} />
     {/if}
   {:else if viewSubMenu === 2}
-    {#if getDatabase().newImageHandlingBeta}
+    {#if newImageHandlingBeta}
       <CheckInput bind:check={characterDraft.value.prebuiltAssetCommand} name={language.insertAssetPrompt} />
 
       {#if characterDraft.value.prebuiltAssetCommand}
@@ -1710,7 +1916,7 @@
             {#each characterDraft.value.additionalAssets as assets, i (assetListRenderKey(assets, i))}
               <tr>
                 <td class="font-medium truncate">
-                  {#if assetFilePath[assets[1]] && getDatabase().useAdditionalAssetsPreview}
+                  {#if assetFilePath[assets[1]] && useAdditionalAssetsPreview}
                     {#if assetFileExtensions[assets[1]] === 'mp4'}
                       <!-- svelte-ignore a11y_media_has_caption -->
                       <video controls class="mt-2 px-2 w-full m-1 rounded-md"
@@ -1744,7 +1950,7 @@
                     }}>
                     <TrashIcon />
                   </button>
-                  {#if getDatabase().useAdditionalAssetsPreview}
+                  {#if useAdditionalAssetsPreview}
                     <button
                       class="hover:text-blue-500"
                       class:text-textcolor2={characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
@@ -1831,7 +2037,7 @@
       ownerKey={scriptDraftCharacterId ?? ''}
       lowLevelAble={selectedCharacterOwner()?.lowLevelAccess ?? false} />
 
-    {#if characterDraft.value.virtualscript || getDatabase().showUnrecommended}
+    {#if characterDraft.value.virtualscript || showUnrecommended}
       <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended /></span>
       <TextAreaInput
         margin="both"
@@ -2355,7 +2561,7 @@
     </div>
   {/if}
 
-  {#if getDatabase().showUnrecommended || characterDraft.value.personality.length > 3}
+  {#if showUnrecommended || characterDraft.value.personality.length > 3}
     <span class="text-textcolor">{language.personality} <Help key="personality" unrecommended /></span>
     <TextAreaInput
       highlight
@@ -2364,7 +2570,7 @@
       ariaLabel={language.personality}
       bind:value={characterDraft.value.personality}></TextAreaInput>
   {/if}
-  {#if getDatabase().showUnrecommended || characterDraft.value.scenario.length > 3}
+  {#if showUnrecommended || characterDraft.value.scenario.length > 3}
     <span class="text-textcolor">{language.scenario} <Help key="scenario" unrecommended /></span>
     <TextAreaInput
       highlight
@@ -2514,7 +2720,7 @@
     <Check bind:check={characterDraft.value.escapeOutput} name={language.escapeOutput} />
   </div>
 
-  {#if getDatabase().hypaV3}
+  {#if hypaV3Enabled}
     <Button
       onclick={() => {
         $hypaV3ModalOpen = true
