@@ -8,6 +8,11 @@ import {
 } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from '../../server/resourceState.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 import { createStreamRenderCoalescer, type RenderFlushScheduler } from './streamCoalescer'
@@ -102,16 +107,31 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   const reader = req.result.getReader()
   const streamCharacterId = opts.targetCharacterId || currentChar.chaId
   const currentLiveCharacter = (): character | undefined => {
-    const characters = getDatabase().characters
+    const characters =
+      charactersResourceState.status === 'ready'
+        ? charactersResourceState.characters
+        : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+          ? getDatabase().characters
+          : null
     if (!Array.isArray(characters)) return undefined
+    if (charactersResourceState.status === 'ready') {
+      return streamCharacterId ? getCharacterResourceOwner(streamCharacterId) : undefined
+    }
     const indexedCharacter = characters[selectedChar]
     if (!streamCharacterId || indexedCharacter?.chaId === streamCharacterId) return indexedCharacter
     return characters.find((candidate) => candidate?.chaId === streamCharacterId)
   }
   let streamChatId: string | undefined = opts.targetChatId
   const currentLiveChat = (): Chat | undefined => {
-    const chats = currentLiveCharacter()?.chats
+    const character = currentLiveCharacter()
+    const chats = character?.chats
     if (!Array.isArray(chats)) return undefined
+    if (charactersResourceState.status === 'ready') {
+      const candidate = streamChatId ? chats.find((chat) => chat.id === streamChatId) : chats[selectedChat]
+      if (!candidate?.id) return undefined
+      const matches = chats.filter((chat) => chat.id === candidate.id)
+      return matches.length === 1 ? matches[0] : undefined
+    }
     const indexedChat = chats[selectedChat]
     if (!streamChatId || indexedChat?.id === streamChatId) return indexedChat
     return chats.find((chat) => chat.id === streamChatId)
@@ -435,7 +455,10 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
           recordHalfStreamingToken(halfStreamingTarget)
         }
         lastObservedResult = rawStreamedResult
-        if (getDatabase().removeIncompleteResponse) {
+        if (
+          settingsResourceState.status === 'ready' &&
+          (settingsResourceState.value as Record<string, unknown>).removeIncompleteResponse
+        ) {
           result = trimUntilPunctuation(result)
         }
         if (!halfStreaming) renderCoalescer.notify()

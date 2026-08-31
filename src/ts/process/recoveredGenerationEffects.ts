@@ -18,7 +18,11 @@ import {
 import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import type { ActiveChatTarget } from '../chatCommands'
 import { registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
-import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
 
 let bootstrapPendingEffects: PendingGenerationEffect[] = []
 
@@ -103,7 +107,10 @@ export async function reconcileRecoveredGenerationEffects(
 
   const igp = await runLedgeredGenerationEffect(ref, 'igp', 'late_recovery', async () => {
     const resolution = resolveGeneration(ref)
-    const promptTemplate = getDatabase().igpPrompt ?? ''
+    const promptTemplate =
+      settingsResourceState.status === 'ready'
+        ? String((settingsResourceState.value as Record<string, unknown>).igpPrompt ?? '')
+        : ''
     if (!resolution || !promptTemplate.trim()) return skippedGenerationEffect('not_configured')
     const updated = await evaluateIgp({
       promptTemplate,
@@ -129,7 +136,10 @@ export async function reconcileRecoveredGenerationEffects(
     }
     if (resolution.character.viewScreen === 'emotion') {
       const { tempEmotion, charemotions } = loadAndTrimCharEmotion(resolution.character.chaId)
-      if (getDatabase().emotionProcesser === 'embedding') {
+      if (
+        settingsResourceState.status === 'ready' &&
+        (settingsResourceState.value as Record<string, unknown>).emotionProcesser === 'embedding'
+      ) {
         await runEmotionEmbeddingFallback({
           result: completionText,
           currentChar: resolution.character,
@@ -142,7 +152,10 @@ export async function reconcileRecoveredGenerationEffects(
           currentChar: resolution.character,
           abortSignal: new AbortController().signal,
           throwError: (error) => console.error(error),
-          emotionPrompt2: getDatabase().emotionPrompt2,
+          emotionPrompt2:
+            settingsResourceState.status === 'ready'
+              ? ((settingsResourceState.value as Record<string, unknown>).emotionPrompt2 as string | undefined)
+              : undefined,
           tempEmotion,
           charemotions,
         })

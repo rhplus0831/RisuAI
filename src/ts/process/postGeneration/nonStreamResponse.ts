@@ -1,11 +1,7 @@
-import {
-  getDatabase,
-  type MessageGenerationInfo,
-  type MessagePresetInfo,
-  type character,
-} from '../../storage/database.svelte'
+import { type MessageGenerationInfo, type MessagePresetInfo, type character } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import type { requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
@@ -70,6 +66,8 @@ export async function applyNonStreamResponse(
   let emoChanged = false
   const mrerolls: string[] = []
   let outputMessageId: string | undefined
+  const settings =
+    settingsResourceState.status === 'ready' ? (settingsResourceState.value as Record<string, unknown>) : undefined
 
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
@@ -90,7 +88,7 @@ export async function applyNonStreamResponse(
       if (!liveMessage) break
       result2 = await runEditOutput(liveMessage.data + mess, msgIndex)
     }
-    if (getDatabase().removeIncompleteResponse) {
+    if (settings?.removeIncompleteResponse) {
       result2.data = trimUntilPunctuation(result2.data)
     }
     result = result2.data
@@ -152,7 +150,7 @@ export async function applyNonStreamResponse(
       const resolution = resolveStablePostGenerationChat(target)
       if (resolution) resolution.character.reloadKeys += 1
     })
-    if (getDatabase().ttsAutoSpeech) {
+    if (settings?.ttsAutoSpeech) {
       await sayTTS(currentChar, result)
     }
   }

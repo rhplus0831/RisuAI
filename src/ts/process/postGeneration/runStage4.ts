@@ -1,4 +1,5 @@
-import { getDatabase, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
+import { type character, type MessageGenerationInfo } from '../../storage/database.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import { loadAndTrimCharEmotion } from './charEmotionStore'
 import { applyEmotionFromResponse } from './emotionFromResponse'
 import { runEmotionEmbeddingFallback } from './emotionFallbackEmbedding'
@@ -94,7 +95,12 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     'notification',
     args.effectDelivery ?? 'live_terminal',
     async () => {
-      if (!getDatabase().notification) return skippedGenerationEffect('not_configured')
+      if (
+        settingsResourceState.status !== 'ready' ||
+        !(settingsResourceState.value as Record<string, unknown>).notification
+      ) {
+        return skippedGenerationEffect('not_configured')
+      }
       await fireDesktopNotification(chatCompletionNotificationInput(currentChar, result))
       return completedGenerationEffect(undefined)
     },
@@ -122,7 +128,10 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
       if (currentChar.viewScreen === 'emotion' && !emoChanged) {
         const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
 
-        if (getDatabase().emotionProcesser === 'embedding') {
+        if (
+          settingsResourceState.status === 'ready' &&
+          (settingsResourceState.value as Record<string, unknown>).emotionProcesser === 'embedding'
+        ) {
           await runEmotionEmbeddingFallback({
             result,
             currentChar,
@@ -137,7 +146,10 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
           currentChar,
           abortSignal,
           throwError,
-          emotionPrompt2: getDatabase().emotionPrompt2,
+          emotionPrompt2:
+            settingsResourceState.status === 'ready'
+              ? ((settingsResourceState.value as Record<string, unknown>).emotionPrompt2 as string | undefined)
+              : undefined,
           tempEmotion,
           charemotions,
         })

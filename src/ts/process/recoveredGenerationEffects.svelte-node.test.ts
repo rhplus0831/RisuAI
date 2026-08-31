@@ -90,7 +90,7 @@ import {
   reconcileRecoveredGenerationEffects,
   setPendingRecoveredGenerationEffects,
 } from './recoveredGenerationEffects'
-import { charactersResourceState } from '../server/resourceState.svelte'
+import { charactersResourceState, settingsResourceState } from '../server/resourceState.svelte'
 
 const ref: ServerGenerationEffectLedgerRef = {
   version: 1,
@@ -132,11 +132,18 @@ beforeEach(() => {
   hydration.hydrateChatMessages.mockResolvedValue(undefined)
   charactersResourceState.characters = []
   charactersResourceState.status = 'idle'
+  settingsResourceState.value = {
+    igpPrompt: state.db.igpPrompt,
+    emotionProcesser: state.db.emotionProcesser,
+  } as never
+  settingsResourceState.status = 'ready'
 })
 
 afterEach(() => {
   charactersResourceState.characters = []
   charactersResourceState.status = 'idle'
+  settingsResourceState.value = {}
+  settingsResourceState.status = 'idle'
 })
 
 describe('late recovered generation effects', () => {

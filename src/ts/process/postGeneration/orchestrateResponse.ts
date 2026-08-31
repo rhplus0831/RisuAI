@@ -8,12 +8,12 @@ import { consumeStreamResponse } from './streamResponse'
 import type { StreamMessageProjection } from './streamResponse'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import {
-  getDatabase,
   type Chat,
   type MessageGenerationInfo,
   type MessagePresetInfo,
   type character,
 } from '../../storage/database.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 import {
   resolveStablePostGenerationChat,
@@ -184,7 +184,11 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
           messageResolution.message.data = t
         })
       }
-      if (getDatabase().ttsAutoSpeech && !suppressStreamingTts) {
+      if (
+        settingsResourceState.status === 'ready' &&
+        (settingsResourceState.value as Record<string, unknown>).ttsAutoSpeech &&
+        !suppressStreamingTts
+      ) {
         await sayTTS(currentChar, result)
       }
     }
@@ -243,7 +247,10 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     const messageResolution = resolveStablePostGenerationMessage(messageTarget)
     if (messageResolution && messageTarget) {
       await evaluateIgp({
-        promptTemplate: getDatabase().igpPrompt ?? '',
+        promptTemplate:
+          settingsResourceState.status === 'ready'
+            ? String((settingsResourceState.value as Record<string, unknown>).igpPrompt ?? '')
+            : '',
         abortSignal,
         target: {
           ...messageTarget,
