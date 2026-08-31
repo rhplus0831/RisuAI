@@ -3,11 +3,10 @@
   import {
     charactersResourceState,
     collectionsResourceState,
-    getResourceDatabase as getDatabase,
+    getCharacterResourceOwner,
   } from 'src/ts/server/resourceState.svelte'
   import { loadoutModalStore } from 'src/ts/stores.svelte'
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
-  import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
@@ -72,24 +71,13 @@
     const ownerValue = collectionsResourceState.values.loadouts
     const ownerRows = uniqueLoadoutOwners(ownerValue)
     if (collectionsResourceState.statuses.loadouts === 'ready') return ownerRows ?? []
-    if (ownerRows && ownerRows.length > 0) return ownerRows
-    if (ownerValue !== undefined && !ownerRows) return undefined
-
-    return uniqueLoadoutOwners(getDatabase().loadouts)
+    return undefined
   }
 
   function readSelectedCharacterId(): string | undefined {
-    const characters = charactersResourceState.characters
-    if (charactersResourceState.status === 'ready' || characters.length > 0) {
-      const selected = characters[charactersResourceState.currentChar]
-      if (!selected?.chaId) return undefined
-      let matches = 0
-      for (const character of characters) {
-        if (character?.chaId === selected.chaId) matches += 1
-      }
-      return matches === 1 ? selected.chaId : undefined
-    }
-    return getCurrentCharacter()?.chaId
+    if (charactersResourceState.status !== 'ready') return undefined
+    const selected = charactersResourceState.characters[charactersResourceState.currentChar]
+    return selected?.chaId && getCharacterResourceOwner(selected.chaId) === selected ? selected.chaId : undefined
   }
 
   function getSortedLoadouts(): Loadout[] {

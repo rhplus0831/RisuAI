@@ -367,7 +367,10 @@ describe('static architecture gate: prompt-template dispatch boundaries', () => 
     expect(botSettings).toContain('function selectedPromptPresetOwner()')
     expect(botSettings).toContain('const preset = selectedPromptPresetOwner()')
     expect(otherBotSettings).toContain('resolveEffectivePromptTemplate(database)')
-    expect(devTool).toContain('resolveEffectivePromptTemplate(getDatabase()).promptTemplate')
+    expect(devTool).toContain("collectionsResourceState.statuses.promptPresets === 'ready'")
+    expect(devTool).toContain("settingsResourceState.standaloneStatuses.promptPresetsId === 'ready'")
+    expect(devTool).toContain("collectionsResourceState.statuses.promptTemplate === 'ready'")
+    expect(devTool).not.toContain('getDatabase')
   })
 
   it('routes PromptSettings fields through owner-backed drafts without aggregate projection writes', () => {
@@ -420,7 +423,9 @@ describe('static architecture gate: script-definition bridge boundaries', () => 
     expect(end).toBeGreaterThan(start)
     expect(scriptDraftSource).not.toContain('withTrustedResourceWrite')
     expect(source).toContain('scheduleCharacterScriptDefinitionDraft(')
-    expect(source).toContain('getServerResourceApplyEpoch')
+    expect(source).toContain('captureCharacterRowProjectionEpoch')
+    expect(source).toContain('hasCharacterRowProjectionEpochChanged')
+    expect(source).not.toContain('getServerResourceApplyEpoch')
     expect(source).toContain('markDirtyScriptDefinitionRowFields')
     expect(source).toContain('subscribeServerCommandLocalEffectApplied')
     expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
@@ -430,7 +435,7 @@ describe('static architecture gate: script-definition bridge boundaries', () => 
 
   it('does not settle script dirty fields from a broad resource apply', () => {
     const source = readSource('src/lib/SideBars/CharConfig.svelte')
-    const projectionChangedIndex = source.indexOf('const resourceApplyChanged')
+    const projectionChangedIndex = source.indexOf('const ownerProjectionChanged')
     const mismatchBranchIndex = source.indexOf(
       'if (targetChanged || snapshot !== scriptDraftSnapshot)',
       projectionChangedIndex,
@@ -438,7 +443,7 @@ describe('static architecture gate: script-definition bridge boundaries', () => 
     const preMismatchSource = source.slice(projectionChangedIndex, mismatchBranchIndex)
     expect(projectionChangedIndex).toBeGreaterThanOrEqual(0)
     expect(mismatchBranchIndex).toBeGreaterThan(projectionChangedIndex)
-    expect(preMismatchSource).toContain('resourceApplyChanged')
+    expect(preMismatchSource).toContain('ownerProjectionChanged')
     expect(preMismatchSource).not.toContain('clearDirtyScriptDefinitionFieldsMatchingAttempt')
   })
 

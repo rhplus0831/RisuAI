@@ -10,9 +10,14 @@
   import { tokenizePreset } from 'src/ts/process/prompt'
   import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
 
-  import { getDatabase, type Chat } from 'src/ts/storage/database.svelte'
+  import type { Chat, Database } from 'src/ts/storage/database.svelte'
   import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
-  import { charactersResourceState, getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getChatMetadataOwnerState,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import { getChatMessageOwnerState } from 'src/ts/server/chatMessageHydration.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
@@ -40,6 +45,21 @@
   let previewJoin = $state('yes')
   let instructType = $state('chatml')
   let instructCustom = $state('')
+  let promptTemplate = $derived.by(() => {
+    const settings = settingsResourceState.value as Partial<Database>
+    return resolveEffectivePromptTemplate({
+      promptPresets:
+        collectionsResourceState.statuses.promptPresets === 'ready'
+          ? collectionsResourceState.values.promptPresets
+          : [],
+      promptPresetsId:
+        settingsResourceState.standaloneStatuses.promptPresetsId === 'ready' ? settings.promptPresetsId : -1,
+      promptTemplate:
+        collectionsResourceState.statuses.promptTemplate === 'ready'
+          ? collectionsResourceState.values.promptTemplate
+          : undefined,
+    }).promptTemplate
+  })
 
   const preview = async () => {
     const target = captureActiveChatTarget()
@@ -190,7 +210,6 @@
 </Accordion>
 
 <Accordion styled name={'Tokens'}>
-  {@const promptTemplate = resolveEffectivePromptTemplate(getDatabase()).promptTemplate}
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
     {#await currentDevToolCharacterTokens()}
       <span>Character Persistant</span>

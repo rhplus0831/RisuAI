@@ -221,9 +221,9 @@ describe('Suggestion controls', () => {
     }
   })
 
-  it('retains the selected aggregate fallback only before character readiness', async () => {
+  it('waits for the selected character owner before rendering suggestions', async () => {
     seedSuggestionDatabase(['Bootstrap suggestion'])
-    charactersResourceState.currentChar = 99
+    charactersResourceState.currentChar = 0
     charactersResourceState.status = 'loading'
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -231,16 +231,12 @@ describe('Suggestion controls', () => {
 
     try {
       await settle()
-      const bootstrapSuggestion = target.querySelector<HTMLButtonElement>('button[aria-label="Bootstrap suggestion"]')
-      expect(bootstrapSuggestion).toBeTruthy()
-      bootstrapSuggestion!.click()
-      await settle()
+      expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeNull()
       expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
-      expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeTruthy()
 
       charactersResourceState.status = 'ready'
       await settle()
-      expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeNull()
+      expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeTruthy()
     } finally {
       unmount(component)
       target.remove()

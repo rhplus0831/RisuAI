@@ -94,14 +94,7 @@
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
   import type { OpenAIChat } from '../../ts/process/index.svelte'
-  import {
-    getDatabase as getStorageDatabase,
-    type Chat,
-    type Database,
-    type character,
-    type Message,
-  } from '../../ts/storage/database.svelte'
-  import { selectedCharID } from '../../ts/stores.svelte'
+  import type { Chat, Database, character, Message } from '../../ts/storage/database.svelte'
   import { translate } from 'src/ts/translator/translator'
   import { CopyIcon, LanguagesIcon, RefreshCcwIcon } from '@lucide/svelte'
   import { alertConfirm } from 'src/ts/alert'
@@ -129,7 +122,6 @@
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
   import { selectCharacterOwner } from 'src/ts/characterState'
-  import { projectChatMetadata } from 'src/ts/server/chatMetadataOwner'
   import { safeStructuredClone } from 'src/ts/safeStructuredClone'
 
   interface Props {
@@ -156,35 +148,23 @@
   let { send, messageInput, isGenerationActive }: Props = $props()
   function chatMetadataFor(chat: Chat | undefined) {
     if (!chat?.id) return undefined
-    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chat.id)
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return projectChatMetadata(chat.id, chat)
-    }
-    return undefined
+    return charactersResourceState.status === 'ready' ? getChatMetadataOwnerState(chat.id) : undefined
   }
 
   function suggestionMessagesFor(characterId: string | undefined, chat: Chat | undefined): string[] | undefined {
     const messages =
-      charactersResourceState.status === 'ready'
-        ? characterId && chat?.id
-          ? getChatMetadataOwnerSnapshot(characterId, chat.id)?.metadata.suggestMessages
-          : undefined
-        : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-          ? chat?.suggestMessages
-          : undefined
+      charactersResourceState.status === 'ready' && characterId && chat?.id
+        ? getChatMetadataOwnerSnapshot(characterId, chat.id)?.metadata.suggestMessages
+        : undefined
     return Array.isArray(messages) && messages.every((message) => typeof message === 'string') ? messages : undefined
   }
 
   function selectedCharacterIndex(): number {
-    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID
+    return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1
   }
 
   function suggestionCharacterOwners(): readonly character[] | undefined {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return getStorageDatabase().characters ?? []
-    }
-    return undefined
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : undefined
   }
 
   function selectedSuggestionCharacter(): character | undefined {
@@ -220,27 +200,18 @@
       if (!chat) return undefined
       return { character, chat, chatPage, selectedCharID: selectedCharacterIndex() }
     }
-    if (charactersResourceState.status === 'ready') return undefined
-    return { character, chat: candidate, chatPage, selectedCharID: selectedCharacterIndex() }
+    return undefined
   }
 
   function resolveSuggestionTarget(target: SuggestionTargetSnapshot): { character: character; chat: Chat } | undefined {
     const characterOwners = suggestionCharacterOwners()
     if (!characterOwners) return undefined
-    const character = target.characterId
-      ? charactersResourceState.status === 'ready'
-        ? getCharacterResourceOwner(target.characterId)
-        : characterOwners.filter((candidate) => candidate.chaId === target.characterId).length === 1
-          ? characterOwners.find((candidate) => candidate.chaId === target.characterId)
-          : undefined
-      : charactersResourceState.status === 'ready'
-        ? undefined
-        : selectCharacterOwner(characterOwners, target.selectedCharID)
+    const character = target.characterId ? getCharacterResourceOwner(target.characterId) : undefined
     if (!character) return undefined
     const chat = target.chatId
       ? uniqueChatOwner(character, target.chatId, characterOwners)
       : character.chats?.[target.chatPage]
-    if (!chat || (charactersResourceState.status === 'ready' && !target.chatId)) return undefined
+    if (!chat || !target.chatId) return undefined
     return { character, chat }
   }
 
@@ -731,7 +702,6 @@
   })
 
   $effect.pre(() => {
-    $selectedCharID
     // Reads chatPage so suggestions update when the selected chat changes.
     charactersResourceState.currentChar
     charactersResourceState.status
@@ -741,7 +711,7 @@
     const currentChat = selected?.chat
     const currentChatMetadata = chatMetadataFor(currentChat)
     const metadataOwner = currentChatMetadata
-      ? `${currentCharacter?.chaId ?? $selectedCharID}:${currentChatMetadata.chatId}`
+      ? `${currentCharacter?.chaId ?? charactersResourceState.currentChar}:${currentChatMetadata.chatId}`
       : undefined
     if (metadataOwner !== observedMetadataOwner) {
       observedMetadataOwner = metadataOwner
@@ -750,7 +720,7 @@
     const residentMessageCount = currentChat?.message?.length ?? 0
     const persistedSuggestionCount = suggestionMessagesFor(currentCharacter?.chaId, currentChat)?.length ?? 0
     const transcriptOwner = currentChat
-      ? JSON.stringify([currentCharacter?.chaId ?? $selectedCharID, currentChat.id ?? chatPage])
+      ? JSON.stringify([currentCharacter?.chaId ?? charactersResourceState.currentChar, currentChat.id ?? chatPage])
       : undefined
     const hydrationCompleted =
       transcriptOwner !== undefined &&

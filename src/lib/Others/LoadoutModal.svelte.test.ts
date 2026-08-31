@@ -24,9 +24,12 @@ vi.mock('src/ts/stores.svelte', () => ({
   loadoutModalStore: loadoutStore,
 }))
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: vi.fn(() => loadoutDatabase),
   collectionsResourceState: loadoutCollectionState,
   charactersResourceState: characterOwnerState,
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = characterOwnerState.characters.filter((character) => character.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  },
 }))
 vi.mock('src/ts/loadout', () => loadoutMocks)
 vi.mock('src/ts/storage/database.svelte', () => ({
@@ -56,11 +59,15 @@ async function settle(): Promise<void> {
   await tick()
 }
 
+function seedLoadoutOwners(loadouts: Array<Record<string, unknown>>): void {
+  loadoutDatabase.loadouts = loadouts
+  loadoutCollectionState.values = { loadouts }
+  loadoutCollectionState.statuses = { loadouts: 'ready' }
+}
+
 beforeEach(() => {
   loadoutStore.open = true
-  loadoutDatabase.loadouts = []
-  loadoutCollectionState.values = {}
-  loadoutCollectionState.statuses = {}
+  seedLoadoutOwners([])
   characterOwnerState.characters = []
   characterOwnerState.currentChar = -1
   characterOwnerState.status = 'idle'
@@ -147,7 +154,7 @@ describe('LoadoutModal operations', () => {
   })
 
   it('stays locked and open until a full apply is accepted, then closes', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     const application = deferred<'applied'>()
     loadoutMocks.applyLoadout.mockReturnValue(application.promise)
     component = mount(LoadoutModal, { target })
@@ -176,7 +183,7 @@ describe('LoadoutModal operations', () => {
   })
 
   it('stays open and reports a failed apply after command settlement', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     const application = deferred<'persistence-failed'>()
     loadoutMocks.applyLoadout.mockReturnValue(application.promise)
     component = mount(LoadoutModal, { target })
@@ -199,7 +206,7 @@ describe('LoadoutModal operations', () => {
   })
 
   it('closes with a no-retry notice when durable loadout work is queued locally', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     loadoutMocks.applyLoadout.mockResolvedValue('queued')
     component = mount(LoadoutModal, { target })
     await settle()
@@ -219,7 +226,7 @@ describe('LoadoutModal operations', () => {
   })
 
   it('stays open while applying and reports preset hydration failure', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     const application = deferred<'preset-hydration-failed'>()
     loadoutMocks.applyLoadout.mockReturnValue(application.promise)
     component = mount(LoadoutModal, { target })
@@ -337,12 +344,12 @@ describe('LoadoutModal operations', () => {
   })
 
   it('confirms removal once and disables repeated destructive actions while the prompt is open', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     const confirmation = deferred<boolean>()
     const deletion = deferred<'accepted'>()
     alertMocks.confirm.mockReturnValue(confirmation.promise)
     loadoutMocks.deleteLoadout.mockImplementation(() => {
-      loadoutDatabase.loadouts = []
+      seedLoadoutOwners([])
       return deletion.promise
     })
     component = mount(LoadoutModal, { target })
@@ -373,7 +380,7 @@ describe('LoadoutModal operations', () => {
   })
 
   it('keeps a favorite mutation pending and reports a terminal failure', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     const favorite = deferred<'failed'>()
     loadoutMocks.toggleLoadoutFavorite.mockReturnValue(favorite.promise)
     component = mount(LoadoutModal, { target })
@@ -398,9 +405,9 @@ describe('LoadoutModal operations', () => {
   })
 
   it('labels a retained delete as queued after settlement', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     loadoutMocks.deleteLoadout.mockImplementation(async () => {
-      loadoutDatabase.loadouts = []
+      seedLoadoutOwners([])
       return 'queued'
     })
     component = mount(LoadoutModal, { target })
@@ -444,7 +451,7 @@ describe('LoadoutModal operations', () => {
   })
 
   it('fails closed when the ready loadout owner has duplicate stable ids', async () => {
-    loadoutDatabase.loadouts = [savedLoadout]
+    seedLoadoutOwners([savedLoadout])
     loadoutCollectionState.values = { loadouts: [savedLoadout, { ...savedLoadout }] }
     loadoutCollectionState.statuses = { loadouts: 'ready' }
 
