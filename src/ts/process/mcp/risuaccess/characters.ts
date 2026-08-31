@@ -9,6 +9,7 @@ import {
 import { canUseServerCommands } from 'src/ts/server/commands'
 import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 import {
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
@@ -1152,8 +1153,14 @@ export class CharacterHandler extends MCPToolHandler {
     if (count < 1) count = 1
     if (offset < 0) offset = 0
 
-    const characters = getDatabase()
-      .characters.slice(offset, offset + count)
+    const characters = (
+      charactersResourceState.status === 'ready'
+        ? charactersResourceState.characters
+        : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+          ? getDatabase().characters
+          : []
+    )
+      .slice(offset, offset + count)
       .map((char) => ({
         id: char.chaId,
         name: char.name || 'Unnamed',
