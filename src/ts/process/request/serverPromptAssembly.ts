@@ -74,7 +74,11 @@ function sendHasMultimodalOrAsset(currentChat: Chat): boolean {
 
 /** Whether the active resolved profile accepts inline image input. */
 function modelAcceptsImageInput(input: ServerPromptAssemblyInput): boolean {
-  return resolveProfileForChat(input.database, input.currentChat).modelInfo.flags.includes(LLMFlags.hasImageInput)
+  const profile = resolveProfileForChat(input.database, input.currentChat)
+  const flags = profile.runtimeOptions.enableCustomFlags
+    ? (profile.runtimeOptions.customFlags ?? [])
+    : profile.modelInfo.flags
+  return flags.includes(LLMFlags.hasImageInput)
 }
 
 // Interactive Lua dialog APIs. A `triggerlua` script that calls one of these

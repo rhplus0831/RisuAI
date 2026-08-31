@@ -194,6 +194,24 @@ describe('resolveServerPromptAssembly', () => {
       expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
     })
 
+    it('honors durable profile custom flags during multimodal preflight', () => {
+      seedDb({
+        modelProfiles: [
+          {
+            id: 'vision-profile',
+            name: 'Vision Profile',
+            modelId: 'echo_model',
+            runtimeOptions: { enableCustomFlags: true, customFlags: [LLMFlags.hasImageInput] },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'vision-profile' } },
+      } as never)
+      const input = makeInput({
+        currentChat: makeChat([{ role: 'user', data: 'see {{inlayed::img1}}' }]),
+      })
+      expect(resolveServerPromptAssembly(input)).toEqual({ type: 'server' })
+    })
+
     it('uses image-input flags from the chat-selected model preset', () => {
       seedDb({
         enableCustomFlags: false,

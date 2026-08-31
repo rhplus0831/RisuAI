@@ -89,7 +89,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   }
 
   const multimodal: MultiModal[] = []
-  const modelinfo = getModelInfo(modelId)
+  const modelinfo = getModelInfo(modelId, database)
   if (inlays.length > 0) {
     for (const inlay of inlays) {
       const inlayName = inlay
