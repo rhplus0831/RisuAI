@@ -22,6 +22,7 @@ export default defineProject({
   test: {
     name: 'frontend-node',
     allowOnly: false,
+    fsModuleCache: true,
     pool: 'threads',
     environment: 'node',
     setupFiles: ['vitest.setup.ts'],

@@ -17,6 +17,7 @@ export default defineProject({
   test: {
     name: 'frontend-dom',
     allowOnly: false,
+    fsModuleCache: true,
     pool: 'threads',
     environment: 'happy-dom',
     setupFiles: ['vitest.setup.ts', 'vitest.dom.setup.ts'],

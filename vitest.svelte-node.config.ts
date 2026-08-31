@@ -14,6 +14,7 @@ export default defineProject({
   test: {
     name: 'frontend-svelte-node',
     allowOnly: false,
+    fsModuleCache: true,
     pool: 'threads',
     environment: './vitest.svelte-node.environment.ts',
     setupFiles: ['vitest.setup.ts'],
