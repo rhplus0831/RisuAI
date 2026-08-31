@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "source": {
-    "baseline": "docs/plan/client-resource-ownership/client-resource-baseline.json",
+    "baseline": ".archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json",
     "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
     "inventoryCursor": "244713c5e",
     "policyCount": 9,

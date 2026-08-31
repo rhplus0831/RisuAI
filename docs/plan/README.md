@@ -7,9 +7,7 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 ## Workstreams
 
-| Workstream | State | Current cursor | Dependency cursor |
-| --- | --- | --- | --- |
-| [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat ownership](client-resource-ownership/status.md) | The mobile character-summary consumer migrated at `3b74261c1`; the next family waits for its Workstream 1 contract. |
+There are no active multi-phase workstreams.
 
 The portfolio-level dependency model and the conditional fourth workstream are
 defined in the [Architecture Modernization Roadmap](../architecture-modernization/PLAN.md).
@@ -28,3 +26,6 @@ verification record intact.
 The completed [canonical state and compatibility workstream](../../.archived-docs/architecture-and-migration/canonical-state-and-compatibility/PLAN.md)
 is preserved there with its final 28-surface/63-probe disposition matrix,
 migration history, release cursors, and verification record intact.
+The completed [client resource ownership workstream](../../.archived-docs/architecture-and-migration/client-resource-ownership/PLAN.md)
+is preserved there with its zero-production-consumer baseline, closed owner-gap
+matrix, retained seam decisions, phase history, and verification record intact.

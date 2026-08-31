@@ -4,10 +4,8 @@ Date: 2026-08-31
 
 ## Closed Workstream
 
-Phases 0-7 are complete. There is no remaining resource-family or infrastructure
-slice. Preserve both JSON inventories beside this plan when archiving it under
-`.archived-docs/architecture-and-migration/`, then update their canonical paths
-and the matrix's embedded baseline path in the architecture gate.
+Phases 0-7 are complete and this plan is archived intact. Both JSON inventories
+remain beside it at the canonical paths consumed by the architecture gate.
 
 ## Retained Follow-Up Triggers
 

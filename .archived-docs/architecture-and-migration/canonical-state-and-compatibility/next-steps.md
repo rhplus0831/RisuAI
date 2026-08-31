@@ -4,10 +4,9 @@ Date: 2026-08-31
 
 ## Closed Workstream
 
-Phases 0-7 are complete. There is no remaining implementation slice. Preserve
-the compatibility baseline beside this plan when archiving it under
-`.archived-docs/architecture-and-migration/` and update the architecture
-inventory's canonical path in the archival commit.
+Phases 0-7 are complete and this plan is archived intact. The compatibility
+baseline remains beside it at the canonical path consumed by the architecture
+inventory.
 
 ## Retained Follow-Up Triggers
 

@@ -822,11 +822,11 @@ async function run(): Promise<void> {
   )
   const clientResourceBaselinePath = path.join(
     repoRoot,
-    'docs/plan/client-resource-ownership/client-resource-baseline.json',
+    '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json',
   )
   const clientResourceOwnerGapMatrixPath = path.join(
     repoRoot,
-    'docs/plan/client-resource-ownership/owner-api-gap-matrix.json',
+    '.archived-docs/architecture-and-migration/client-resource-ownership/owner-api-gap-matrix.json',
   )
   const observation = collectCrossRuntimeObservation(repoRoot)
   if (process.argv.includes('--print-cross-runtime')) {

@@ -12,7 +12,7 @@ Complete the browser's transition from an aggregate mutable `Database`
 compatibility view to explicit resource owners and command-backed mutations.
 
 This workstream activates Workstream 3 of the
-[Architecture Modernization Roadmap](../../architecture-modernization/PLAN.md).
+[Architecture Modernization Roadmap](../../../docs/architecture-modernization/PLAN.md).
 It deliberately preserves command-event invalidation and authenticated
 authoritative reads. Replay-safe event deltas are a separate, inactive
 workstream.

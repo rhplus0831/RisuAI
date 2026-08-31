@@ -220,12 +220,21 @@ describe('client resource ownership gate', () => {
   it('requires one owner capability row for every frozen policy without copying consumer observations', () => {
     const baseline = JSON.parse(
       fs.readFileSync(
-        path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/client-resource-baseline.json'),
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json',
+        ),
         'utf8',
       ),
     ) as ClientResourceBaseline
     const matrix = JSON.parse(
-      fs.readFileSync(path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/owner-api-gap-matrix.json'), 'utf8'),
+      fs.readFileSync(
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/client-resource-ownership/owner-api-gap-matrix.json',
+        ),
+        'utf8',
+      ),
     ) as ClientResourceOwnerGapMatrix
 
     expect(validateClientResourceOwnerGapMatrix(REPO_ROOT, baseline, matrix)).toEqual([])
@@ -241,12 +250,21 @@ describe('client resource ownership gate', () => {
   it('fails closed on a missing policy, widened capability shape, or missing owner API anchor', () => {
     const baseline = JSON.parse(
       fs.readFileSync(
-        path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/client-resource-baseline.json'),
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json',
+        ),
         'utf8',
       ),
     ) as ClientResourceBaseline
     const matrix = JSON.parse(
-      fs.readFileSync(path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/owner-api-gap-matrix.json'), 'utf8'),
+      fs.readFileSync(
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/client-resource-ownership/owner-api-gap-matrix.json',
+        ),
+        'utf8',
+      ),
     ) as ClientResourceOwnerGapMatrix
     delete matrix.policies['lorebook:test-fixture']
     matrix.owners.lorebook.capabilities.aggregateSnapshot = 'complete'
@@ -265,7 +283,10 @@ describe('client resource ownership gate', () => {
     const observation = collectClientResourceObservation(REPO_ROOT)
     const baseline = JSON.parse(
       fs.readFileSync(
-        path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/client-resource-baseline.json'),
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json',
+        ),
         'utf8',
       ),
     ) as ClientResourceBaseline

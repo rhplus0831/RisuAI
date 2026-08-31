@@ -652,7 +652,10 @@ export function validateClientResourceOwnerGapMatrix(
     errors.push('client resource owner gap matrix has unexpected top-level fields')
   }
   if (matrix.schemaVersion !== 1) errors.push('client resource owner gap matrix schemaVersion must be 1')
-  if (matrix.source?.baseline !== 'docs/plan/client-resource-ownership/client-resource-baseline.json') {
+  if (
+    matrix.source?.baseline !==
+    '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json'
+  ) {
     errors.push('client resource owner gap matrix must reference the frozen Phase 0 baseline')
   }
   if (matrix.source?.openingAnchor !== baseline.openingAnchor) {

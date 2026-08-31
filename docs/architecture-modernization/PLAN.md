@@ -1,10 +1,10 @@
 # Architecture Modernization Roadmap
 
-Date: 2026-08-30
+Date: 2026-08-31
 
-Status: portfolio proposal. This document defines a portfolio of future
-workstreams. It is not itself an active implementation workstream and does not
-change the current architecture.
+Status: core modernization workstreams 1-3 are complete and archived. The
+conditional replay-safe event-delta workstream remains inactive and requires a
+separate measured activation decision.
 
 ## Purpose
 
@@ -18,9 +18,8 @@ The work is divided into four independent phase-based plans:
 3. Client resource ownership.
 4. Replay-safe event deltas.
 
-Only the first three should be created as active workstreams initially. The
-fourth is conditional and should be created only after its prerequisites are
-substantially complete and measurements justify implementation.
+The first three workstreams were activated and completed. The fourth is
+conditional and should be created only when measurements justify implementation.
 
 This portfolio is intentionally not one umbrella implementation plan. Each
 workstream has a different invariant, failure boundary, completion condition,
@@ -403,7 +402,8 @@ migration.
 
 ## Workstream 3: Client Resource Ownership
 
-Suggested path: `docs/plan/client-resource-ownership/`
+Archived at:
+`.archived-docs/architecture-and-migration/client-resource-ownership/`
 
 ### Goal
 
