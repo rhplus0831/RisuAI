@@ -44,10 +44,9 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Test Workflow
 
-- The user and CI own periodic full-suite execution and result review. At
-  handoff, report the focused `pnpm test -- <file>` command that ran, or state
-  that no tests were run. Do not start broader verification on the user's
-  behalf.
+- While working, run only narrowly scoped tests using `pnpm test -- <test-or-source-file>`.
+- Once all work is complete, run `test:all` and check for bugs.
+  - “all work is complete” means there is nothing left to do except testing.
 
 # Language File
 
