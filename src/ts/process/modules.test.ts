@@ -8,6 +8,7 @@ const alertModuleSelect = vi.hoisted(() => vi.fn())
 const alertNormal = vi.hoisted(() => vi.fn())
 const alertError = vi.hoisted(() => vi.fn())
 const alertConfirm = vi.hoisted(() => vi.fn())
+const alertWait = vi.hoisted(() => vi.fn())
 const saveAsset = vi.hoisted(() => vi.fn())
 const saveAssets = vi.hoisted(() => vi.fn())
 const decodeRPack = vi.hoisted(() => vi.fn(async (data: Uint8Array) => data))
@@ -68,7 +69,7 @@ vi.mock('../alert', () => ({
   alertModuleSelect,
   alertNormal,
   alertStore: { set: vi.fn() },
-  alertWait: vi.fn(),
+  alertWait,
 }))
 
 vi.mock('../storage/database.svelte', () => ({
@@ -362,6 +363,7 @@ describe('module imports', () => {
     selectedFileState.file = null
     testDatabaseState.db = { modules: [], characters: [] }
     alertError.mockClear()
+    alertWait.mockClear()
     saveAsset.mockClear()
     saveAssets.mockReset()
     saveAssets.mockImplementation(async (assets: readonly unknown[]) => assets.map((_, index) => `asset-${index}`))
@@ -476,6 +478,31 @@ describe('module imports', () => {
       }),
     )
     expect(alertNormal).toHaveBeenCalled()
+  })
+
+  it('updates the loaded file count for each module asset before the batch upload completes', async () => {
+    const assets = [new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])]
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Imported module',
+          description: 'Imported',
+          assets: assets.map((_, index) => [`asset-${index}`, '', `asset-${index}.png`]),
+        },
+        assets,
+      ),
+    }
+
+    await importModule()
+
+    expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
+      'Loading... (Adding Assets 1 / 3)',
+      'Loading... (Adding Assets 2 / 3)',
+      'Loading... (Adding Assets 3 / 3)',
+      'Loading... (Adding Assets 3 / 3)',
+    ])
   })
 
   it('does not announce .risum import success when module creation fails', async () => {
