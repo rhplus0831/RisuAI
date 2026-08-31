@@ -1,16 +1,6 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const legacyConfiguration = vi.hoisted(() => ({
-  agents: [] as AgentRecord[],
-  agentPresets: [] as AgentPresetRecord[],
-}))
-
-vi.mock('./server/resourceState.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('./server/resourceState.svelte')>()),
-  getResourceDatabase: () => legacyConfiguration,
-}))
+import { beforeEach, describe, expect, it } from 'vitest'
 
 import { agentUsageCount, getAgentById, getAgents } from './agents'
 import type { AgentPresetRecord, AgentRecord } from './agentPresetRecords'
@@ -55,16 +45,11 @@ function installConfiguration(agents: AgentRecord[], agentPresets: AgentPresetRe
 
 beforeEach(() => {
   resetServerResourceState()
-  legacyConfiguration.agents = []
-  legacyConfiguration.agentPresets = []
 })
 
 describe('agent resource owner reads', () => {
-  it('uses the legacy aggregate only before the owner has resident rows or readiness', () => {
-    const legacyAgent = agent('legacy-agent')
-    legacyConfiguration.agents = [legacyAgent]
-
-    expect(getAgents()).toEqual([legacyAgent])
+  it('fails closed before the owner has resident rows or readiness', () => {
+    expect(getAgents()).toEqual([])
 
     const residentAgent = agent('resident-agent')
     settingsResourceState.value = { agents: [residentAgent] }
@@ -120,8 +105,6 @@ describe('agent resource owner reads', () => {
   it('fails closed for owner errors instead of falling back to stale compatibility data', () => {
     const ownedAgent = agent('agent-owned')
     installConfiguration([ownedAgent], [preset('preset-a', ['agent-owned'])])
-    legacyConfiguration.agents = [agent('legacy-agent')]
-    legacyConfiguration.agentPresets = [preset('legacy-preset', ['legacy-agent'])]
     settingsResourceState.groupStatuses.agents = 'error'
 
     expect(getAgents()).toEqual([])

@@ -316,7 +316,7 @@ describe('TTS resource ownership', () => {
     })
   })
 
-  it('uses compatibility settings only while a group is loading', async () => {
+  it('waits for the media settings owner while it is loading', async () => {
     testState.settingsResourceState.groupStatuses.media = 'loading'
     testState.settingsResourceState.value = { elevenLabKey: 'stale-owner-key' }
     testState.db.elevenLabKey = 'compatibility-key'
@@ -324,9 +324,7 @@ describe('TTS resource ownership', () => {
     const { getElevenTTSVoices } = await importTTS()
 
     await expect(getElevenTTSVoices()).resolves.toEqual([])
-    expect(testState.requestProviderOperation).toHaveBeenCalledWith('elevenlabs.voices', {
-      credential: { source: 'provided', apiKey: 'compatibility-key' },
-    })
+    expect(testState.requestProviderOperation).not.toHaveBeenCalled()
   })
 
   it('fails closed for settings and character owner errors', async () => {

@@ -1,9 +1,7 @@
 import { alertError } from '../alert'
-import { get } from 'svelte/store'
-import { getDatabase, type character, type Database } from '../storage/database.svelte'
-import { getSelectedCharacterOwner, selectCharacterOwner } from '../characterState'
+import type { character, Database } from '../storage/database.svelte'
+import { getSelectedCharacterOwner } from '../characterState'
 import { charactersResourceState, settingsResourceState } from '../server/resourceState.svelte'
-import { selectedCharID } from '../stores/coreStores.svelte'
 import { runTranslator, translateVox } from '../translator/translator'
 import { globalFetch, loadAsset } from '../globalApi.svelte'
 import { createKeyedRequestCache } from '../model/keyedRequestCache'
@@ -31,16 +29,12 @@ type TtsSettingsGroup = 'media' | 'providers'
 function ttsSettingsOwner(group: TtsSettingsGroup): Partial<Database> | undefined {
   const status = settingsResourceState.groupStatuses[group] ?? 'idle'
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 
 function selectedTtsCharacterOwner(): character | undefined {
   const status = charactersResourceState.status
   if (status === 'ready') return getSelectedCharacterOwner()
-  if (status === 'idle' || status === 'loading') {
-    return selectCharacterOwner(getDatabase().characters ?? [], get(selectedCharID))
-  }
   return undefined
 }
 

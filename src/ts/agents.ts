@@ -23,7 +23,6 @@ import {
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
 import { settingsResourceState } from './server/resourceState.svelte'
-import { getDatabase } from './storage/database.svelte'
 
 const AGENT_CONFIGURATION_MUTATION_KEY = 'agent-configuration'
 
@@ -58,9 +57,8 @@ export function agentUsageCount(agentId: string): number {
 /**
  * Agents are delivered in the read-only `agents` settings group today. Keep
  * this projection narrow so callers do not compose or mutate the Database
- * compatibility facade. During bootstrap, retain the legacy read only while
- * the owner has no resident rows; once the group is ready, malformed data
- * fails closed instead of falling back to stale aggregate state.
+ * compatibility facade. Resident owner rows remain visible during refresh;
+ * an empty owner before readiness fails closed.
  */
 function readAgentConfigurationOwner(): AgentConfigurationOwner {
   const owner = settingsResourceState.value as AgentConfigurationOwner
@@ -74,13 +72,7 @@ function readAgentConfigurationOwner(): AgentConfigurationOwner {
     (Array.isArray(owner.agentPresets) && owner.agentPresets.length > 0)
   if (ownerReady || hasResidentRows) return projectedOwner
 
-  return readLegacyAgentConfigurationBeforeReadiness()
-}
-
-/** Compatibility-only path for cold/offline callers before the owner projects rows. */
-function readLegacyAgentConfigurationBeforeReadiness(): AgentConfigurationOwner {
-  const database = getDatabase()
-  return projectAgentConfigurationOwner({ agents: database.agents, agentPresets: database.agentPresets })
+  return {}
 }
 
 function projectAgentConfigurationOwner(owner: AgentConfigurationOwner): AgentConfigurationOwner {
