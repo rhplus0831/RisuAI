@@ -25,6 +25,7 @@ import {
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
+  charactersResourceState,
   collectionsResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -300,7 +301,7 @@ describe('module command projection helpers', () => {
     expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
   })
 
-  it('falls back to the compatibility facade while a module owner is not ready or has ambiguous namespaces', () => {
+  it('does not fall back to the compatibility facade while the module owner is loading', async () => {
     setDatabaseLite({
       characters: [],
       characterOrder: [],
@@ -312,13 +313,14 @@ describe('module command projection helpers', () => {
     } as any)
     collectionsResourceState.statuses.modules = 'loading'
 
-    expect(currentGlobalModuleStateSnapshot()).toEqual({
-      modules: [
-        { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
-        { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
-      ],
-      enabledModules: ['mod-a'],
-    })
+    expect(currentGlobalModuleStateSnapshot()).toEqual({ modules: [], enabledModules: ['mod-a'] })
+    await expect(
+      updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' }),
+    ).resolves.toMatchObject({ status: 'error' })
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+    ])
   })
 
   it('fails closed for a ready module owner with duplicate ids', async () => {
@@ -413,6 +415,35 @@ describe('module command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('leaves a lazy selected-character shell untouched until its exact owner is hydrated', async () => {
+    const shell = {
+      __serverCharacterShell: true,
+      chaId: 'char-shell',
+      type: 'character',
+      name: 'Shell',
+      displayName: 'Shell',
+      image: '',
+      creatorNotes: '',
+      trashTime: null,
+      creation_date: null,
+      modification_date: null,
+      lastInteraction: null,
+      chatCount: 1,
+      activeChatId: 'chat-shell',
+      chatIds: ['chat-shell'],
+      pinnedChats: [],
+    } as any
+    charactersResourceState.characters = [shell]
+    charactersResourceState.status = 'ready'
+    selectedCharID.set(0)
+
+    await expect(toggleSelectedChatModule('mod-b')).resolves.toMatchObject({ status: 'failed' })
+    await expect(toggleSelectedCharacterModule('mod-b')).resolves.toMatchObject({ status: 'failed' })
+    expect(charactersResourceState.characters[0]).toEqual(shell)
+    expect(shell).not.toHaveProperty('modules')
+    expect(shell).not.toHaveProperty('chats')
   })
 
   it('prefills active sidebar toggle defaults when enabling a chat-scoped module', async () => {
