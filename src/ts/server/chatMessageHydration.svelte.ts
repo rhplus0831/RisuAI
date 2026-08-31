@@ -1,9 +1,6 @@
-import { get } from 'svelte/store'
 import { SvelteMap, SvelteSet } from 'svelte/reactivity'
-import { selectedCharID } from '../stores.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
 import {
-  getDatabase,
   hydrateServerCharacterLorebook,
   hydrateServerChatMessages,
   isServerChatMessagePlaceholder,
@@ -44,7 +41,7 @@ import {
   markChatBodyProjectionApplied,
   markChatBodyResourceRevision,
 } from './resourceState.svelte'
-import { charactersResourceState, getCharacterResourceOwner } from './resourceState.svelte'
+import { charactersResourceState, getCharacterResourceOwner, settingsResourceState } from './resourceState.svelte'
 import { reapplyRetainedChatBodyProjections } from './chatRetainedProjection'
 import { acknowledgeHydratedGenerationPersistences } from '../process/generationPersistenceState'
 import { transcriptHasReplyForAcceptedSend } from '../process/acceptedSendRecoveryState'
@@ -134,28 +131,12 @@ function finishCharacterLorebookHydrationState(characterId: string, generation: 
   }
 }
 
-/**
- * Resource rows are the canonical owner once the character collection is
- * ready. Before that point, retain the compatibility projection so startup
- * hydration can still observe the bootstrap shell while the collection loads.
- */
 function characterRowsForHydration(): readonly character[] {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 function uniqueCharacterForHydration(characterId: string): character | undefined {
-  if (!characterId) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
-
-  let owner: character | undefined
-  for (const character of characterRowsForHydration()) {
-    if (character.chaId !== characterId) continue
-    if (owner) return undefined
-    owner = character
-  }
-  return owner
+  return characterId && charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
 }
 
 function uniqueChatForHydration(chatId: string): HydrationChatOwner | undefined {
@@ -173,7 +154,8 @@ function uniqueChatForHydration(chatId: string): HydrationChatOwner | undefined 
 }
 
 function activeCharacterForHydration(): character | undefined {
-  const selectedIndex = get(selectedCharID)
+  if (charactersResourceState.status !== 'ready') return undefined
+  const selectedIndex = charactersResourceState.currentChar
   if (selectedIndex < 0) return undefined
   const candidate = characterRowsForHydration()[selectedIndex]
   return candidate?.chaId ? uniqueCharacterForHydration(candidate.chaId) : undefined
@@ -198,16 +180,7 @@ function activeChatMessageArray(): Message[] | undefined {
 
 function chatMessageArray(chatId: string): Message[] | undefined {
   const owner = uniqueChatForHydration(chatId)
-  if (!owner) return undefined
-  if (charactersResourceState.status !== 'ready') return owner.chat.message
-
-  // Keep the live compatibility-view identity for the pre-owner fallback
-  // exposed by getChatMessageOwnerState. All owner/race decisions above use
-  // the canonical resource row; this is only the resident body view callers
-  // already use for trusted local writes.
-  const characterIndex = charactersResourceState.characters.indexOf(owner.character)
-  const chatIndex = owner.character.chats?.indexOf(owner.chat) ?? -1
-  return getDatabase().characters?.[characterIndex]?.chats?.[chatIndex]?.message ?? owner.chat.message
+  return owner?.chat.message
 }
 
 export interface ChatMessageOwnerState {
@@ -686,7 +659,11 @@ function hydrationWarning(scope: string, message: string): void {
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
 export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<boolean> {
-  return hydrateActiveChatWindow(options.loadPages ?? getInitialChatLoadPages(getDatabase()), {
+  const displaySettings =
+    settingsResourceState.status !== 'error' && settingsResourceState.groupStatuses.display === 'ready'
+      ? settingsResourceState.value
+      : {}
+  return hydrateActiveChatWindow(options.loadPages ?? getInitialChatLoadPages(displaySettings), {
     force: options.force,
   })
 }
@@ -1402,11 +1379,6 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
 let wired = false
 let stopChatHydrationWiring: (() => void) | null = null
 let activeChatReadinessRefreshHook: ((options?: { force?: boolean }) => void) | null = null
-// Reactive mirror of the selected character index. `selectedCharID` is a store
-// (not $state), so the hydration effect can't track it directly; this mirror is
-// updated by a store subscription and read inside the effect, so the effect
-// re-runs — and re-tracks the *new* character's chatPage — on a character switch.
-let selectedCharMirror = $state(-1)
 
 /** Notify startup readiness when the reactive active-chat target changes. */
 export function setActiveChatReadinessRefreshHook(hook: ((options?: { force?: boolean }) => void) | null): void {
@@ -1420,21 +1392,18 @@ export function requestActiveChatReadinessRefresh(): void {
 
 /**
  * Wire the hydration trigger: a reactive effect on the active chat id. It re-runs
- * on a character switch (via the `selectedCharMirror` $state) and on a chat
- * switch within a character (via the resource database's chats/chatPage state). It reads the
+ * on a character switch (via the resource selection owner) and on a chat
+ * switch within a character (via the character owner's chats/chatPage state). It reads the
  * chat's id only — not `message` — so writing the hydrated messages does not
  * re-trigger it. Idempotent.
  */
 export function startChatMessageHydration(): void {
   if (wired || !canUseServerResourceReads()) return
   wired = true
-  const stopSelectedCharacterSubscription = selectedCharID.subscribe((value) => {
-    selectedCharMirror = value
-  })
   const stopHydrationEffect = $effect.root(() => {
     $effect(() => {
-      if (selectedCharMirror < 0) return
-      const character = characterRowsForHydration()[selectedCharMirror]
+      if (charactersResourceState.status !== 'ready' || charactersResourceState.currentChar < 0) return
+      const character = characterRowsForHydration()[charactersResourceState.currentChar]
       if (character && uniqueCharacterForHydration(character.chaId) !== character) return
       const chat = character?.chats?.[character?.chatPage ?? 0]
       const chatId = chat?.id
@@ -1450,7 +1419,6 @@ export function startChatMessageHydration(): void {
     })
   })
   stopChatHydrationWiring = () => {
-    stopSelectedCharacterSubscription()
     stopHydrationEffect()
   }
 }

@@ -29,6 +29,7 @@ import {
 
 function seedStubChat() {
   ;(testDatabaseState as { db: unknown }).db = {
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-1',
@@ -44,6 +45,7 @@ function seedStubChat() {
 
 function seedTwoResidentChats() {
   ;(testDatabaseState as { db: unknown }).db = {
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-1',
@@ -202,6 +204,7 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
     setResourceWriteGuardEnabled(false)
     ;(testDatabaseState as { db: unknown }).db = {
       enableLorebookStubs: true,
+      currentChar: 0,
       characters: [
         {
           chaId: 'char-1',

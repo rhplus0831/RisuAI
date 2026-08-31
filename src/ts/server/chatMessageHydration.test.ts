@@ -171,6 +171,7 @@ function okBulkLorebookResult(characterIds: string[]) {
 function seedTwoStubChats() {
   // Direct stub state: two chats with empty (stubbed) message arrays.
   ;(testDatabaseState as { db: unknown }).db = {
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-1',
@@ -187,6 +188,7 @@ function seedTwoStubChats() {
 
 function seedManyStubChats(count: number) {
   ;(testDatabaseState as { db: unknown }).db = {
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-1',
@@ -204,6 +206,7 @@ function seedManyStubChats(count: number) {
 function seedManyLorebookStubCharacters(count: number) {
   ;(testDatabaseState as { db: unknown }).db = {
     enableLorebookStubs: true,
+    currentChar: 0,
     characters: Array.from({ length: count }, (_, index) => ({
       chaId: `char-${index + 1}`,
       chatPage: 0,
@@ -276,18 +279,20 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchChat).not.toHaveBeenCalled()
   })
 
-  it('keeps bootstrap compatibility hydration available before the owner collection is ready', async () => {
-    charactersResourceState.status = 'loading'
-    projectionState.fetchChat.mockResolvedValue(
-      okResult('chat-1', [{ role: 'user', data: 'bootstrap', chatId: 'm-bootstrap' }]),
-    )
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not hydrate through retained character rows while the owner is %s',
+    async (status) => {
+      charactersResourceState.status = status
+      projectionState.fetchChat.mockResolvedValue(
+        okResult('chat-1', [{ role: 'user', data: 'bootstrap', chatId: 'm-bootstrap' }]),
+      )
 
-    await hydrateActiveChatFully()
+      await expect(hydrateActiveChatFully()).resolves.toBeUndefined()
 
-    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', {})
-    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'bootstrap', chatId: 'm-bootstrap' }])
-    charactersResourceState.status = 'ready'
-  })
+      expect(projectionState.fetchChat).not.toHaveBeenCalled()
+      expect(db().characters[0].chats[0].message).toEqual([])
+    },
+  )
 
   it('reapplies a retained transcript projection after authoritative hydration', async () => {
     projectionState.fetchChat.mockResolvedValue(
@@ -455,7 +460,7 @@ describe('chat message hydration bridge', () => {
 
   it('exposes the live owner array and advances its epoch after authoritative projection', async () => {
     const before = getChatMessageOwnerState('chat-1')
-    expect(before?.messages).toBe(db().characters[0].chats[0].message)
+    expect(before?.messages).toBe(charactersResourceState.characters[0].chats[0].message)
     const initialEpoch = before?.projectionEpoch
 
     projectionState.fetchChat.mockResolvedValue(
