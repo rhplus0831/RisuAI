@@ -148,17 +148,28 @@ describe('migration and recovery foundation', () => {
 
   it('adapts every Phase 0 historical fixture into an owning verification lane', () => {
     const adapters = loadCompatibilityMigrationFixtureAdapters(repositoryRoot)
-    expect(adapters).toHaveLength(19)
-    expect(new Set(adapters.map(({ surfaceId }) => surfaceId)).size).toBe(19)
+    expect(adapters).toHaveLength(28)
+    expect(new Set(adapters.map(({ surfaceId }) => surfaceId)).size).toBe(28)
     expect(
       Object.fromEntries(
-        ['model-configuration', 'prompt-template', 'translator', 'repair', 'interchange'].map((family) => [
-          family,
-          adapters.filter((adapter) => adapter.family === family).length,
-        ]),
+        [
+          'client-resource',
+          'loadout',
+          'memory',
+          'model-configuration',
+          'persona',
+          'prompt-template',
+          'translator',
+          'repair',
+          'interchange',
+        ].map((family) => [family, adapters.filter((adapter) => adapter.family === family).length]),
       ),
     ).toEqual({
+      'client-resource': 1,
+      loadout: 2,
+      memory: 3,
       'model-configuration': 4,
+      persona: 3,
       'prompt-template': 5,
       translator: 4,
       repair: 3,

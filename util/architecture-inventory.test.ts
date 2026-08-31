@@ -155,7 +155,10 @@ describe('compatibility disposition gate', () => {
   it('validates the reviewed repository matrix and fixture provenance', () => {
     const baseline = JSON.parse(
       fs.readFileSync(
-        path.join(REPO_ROOT, 'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json'),
+        path.join(
+          REPO_ROOT,
+          '.archived-docs/architecture-and-migration/canonical-state-and-compatibility/compatibility-baseline.json',
+        ),
         'utf8',
       ),
     ) as CompatibilityBaseline

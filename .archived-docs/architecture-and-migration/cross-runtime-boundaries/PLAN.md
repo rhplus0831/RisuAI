@@ -12,7 +12,7 @@ declarations and prevent equivalent coupling from returning through another
 import shape.
 
 This workstream activates Workstream 1 of the
-[Architecture Modernization Roadmap](../../architecture-modernization/PLAN.md).
+[Architecture Modernization Roadmap](../../../docs/architecture-modernization/PLAN.md).
 [`status.md`](status.md) is the mutable execution router. This plan owns stable
 scope, invariants, phase order, and closeout gates; it does not supersede
 [`STRUCTURE.md`](../../../STRUCTURE.md), current architecture guides, or shipped

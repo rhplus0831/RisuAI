@@ -9,7 +9,6 @@ plan, status, phase, slice, decision, and verification structure intact.
 
 | Workstream | State | Current cursor | Dependency cursor |
 | --- | --- | --- | --- |
-| [Canonical state and compatibility](canonical-state-and-compatibility/PLAN.md) | Active | [Phase 2 normal model consumer cutover](canonical-state-and-compatibility/status.md) | Profile-owned request/runtime identity is canonical through `841d0b65e`; character/chat row owners are released at `7cb62afa8`. |
 | [Client resource ownership](client-resource-ownership/PLAN.md) | Active | [Phase 3 character/chat ownership](client-resource-ownership/status.md) | The mobile character-summary consumer migrated at `3b74261c1`; the next family waits for its Workstream 1 contract. |
 
 The portfolio-level dependency model and the conditional fourth workstream are
@@ -26,3 +25,6 @@ final verification record intact.
 The completed [cross-runtime boundaries workstream](../../.archived-docs/architecture-and-migration/cross-runtime-boundaries/PLAN.md)
 is preserved there with its zero-edge baseline, phase/slice history, and final
 verification record intact.
+The completed [canonical state and compatibility workstream](../../.archived-docs/architecture-and-migration/canonical-state-and-compatibility/PLAN.md)
+is preserved there with its final 28-surface/63-probe disposition matrix,
+migration history, release cursors, and verification record intact.

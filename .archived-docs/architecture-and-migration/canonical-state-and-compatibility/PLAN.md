@@ -12,7 +12,7 @@ formats through explicit migration, import, export, or compatibility actions
 instead of normal-runtime mirrors, fallback precedence, or opportunistic repair.
 
 This workstream activates Workstream 2 of the
-[Architecture Modernization Roadmap](../../architecture-modernization/PLAN.md).
+[Architecture Modernization Roadmap](../../../docs/architecture-modernization/PLAN.md).
 [`status.md`](status.md) owns the moving execution and dependency cursors. This
 plan does not change current compatibility behavior until a resource-family
 slice is implemented and verified.

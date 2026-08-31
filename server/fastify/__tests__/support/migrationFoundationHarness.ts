@@ -3,7 +3,11 @@ import path from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 
 export type CompatibilityFixtureFamily =
+  | 'client-resource'
+  | 'loadout'
+  | 'memory'
   | 'model-configuration'
+  | 'persona'
   | 'prompt-template'
   | 'translator'
   | 'repair'
@@ -46,7 +50,7 @@ export function loadCompatibilityMigrationFixtureAdapters(
 ): CompatibilityMigrationFixtureAdapter[] {
   const baselinePath = path.join(
     repositoryRoot,
-    'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json',
+    '.archived-docs/architecture-and-migration/canonical-state-and-compatibility/compatibility-baseline.json',
   )
   const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')) as CompatibilityBaseline
   return baseline.surfaces.map(({ id, family, historicalFixture }) => {

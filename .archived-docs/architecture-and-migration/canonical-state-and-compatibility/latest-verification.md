@@ -42,6 +42,8 @@ Date: 2026-08-31
 ## Commands And Results
 
 - `pnpm test -- util/architecture-inventory.test.ts`: 10 passed.
+- `pnpm test -- server/fastify/__tests__/migrationFoundation.test.ts`: 4
+  passed against the final 28-surface fixture adapter inventory after archival.
 - `pnpm exec tsx util/architecture-inventory.ts`: passed with 0 cross-runtime
   edges, 28 compatibility surfaces/63 probes, 4,221 test-fixture references in
   30 groups, 0 bridge families, 20 reviewed rollout/endpoint markers, and 9

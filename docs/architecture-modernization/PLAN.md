@@ -279,7 +279,8 @@ consumer migration, and removal in one unreviewable change.
 
 ## Workstream 2: Canonical State and Compatibility Retirement
 
-Suggested path: `docs/plan/canonical-state-and-compatibility/`
+Archived at:
+`.archived-docs/architecture-and-migration/canonical-state-and-compatibility/`
 
 ### Goal
 

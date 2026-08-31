@@ -11,6 +11,7 @@ transfer of chat-process ownership from the browser to the server.
 | [`upstream-sync/`](upstream-sync/README.md) | Closed 2026-08-07 behavior-porting sweep, fork conventions, and disposition ledger. |
 | [`original-risu-behavioral-compatibility/`](original-risu-behavioral-compatibility/README.md) | Closed 2026-08-30 exhaustive fork-point and upstream behavioral audit, signed difference registry, remediation record, and permanent compatibility gates. |
 | [`cross-runtime-boundaries/`](cross-runtime-boundaries/PLAN.md) | Closed 2026-08-31 browser/protocol/shared-core/Fastify dependency-direction workstream, including the zero-edge inventory and declaration-independent server checks. |
+| [`canonical-state-and-compatibility/`](canonical-state-and-compatibility/PLAN.md) | Closed 2026-08-31 canonical persisted-owner, migration/repair-boundary, and interchange workstream, including the final compatibility disposition gate. |
 
 The `fastify-migration/client-thinning/` subtree and the later
 `client-thinning-closeout/` record overlap in subject but are not duplicates.

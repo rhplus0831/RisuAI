@@ -818,7 +818,7 @@ async function run(): Promise<void> {
   )
   const compatibilityBaselinePath = path.join(
     repoRoot,
-    'docs/plan/canonical-state-and-compatibility/compatibility-baseline.json',
+    '.archived-docs/architecture-and-migration/canonical-state-and-compatibility/compatibility-baseline.json',
   )
   const clientResourceBaselinePath = path.join(
     repoRoot,
