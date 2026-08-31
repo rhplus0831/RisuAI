@@ -386,7 +386,6 @@ import {
   resetServerResourceState,
   settingsResourceState,
 } from './server/resourceState.svelte'
-import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
 import { selectedCharID } from './stores.svelte'
 import { currentRoute } from './router'
@@ -2760,7 +2759,6 @@ describe('API-backed client bootstrap', () => {
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
     withTrustedResourceWrite(() => {
       getDatabase().personas[0].name = 'Newer local name'
       getDatabase().username = 'Newer local name'
@@ -2807,7 +2805,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().personas[0].name).toBe('Newer local name')
     expect(getDatabase().username).toBe('Newer local name')
     expect(collectionsResourceState.revisions.personas).toBe(6)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
@@ -2832,7 +2829,6 @@ describe('API-backed client bootstrap', () => {
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
     const patchEvent = {
       type: 'persona.updated',
       revision: 6,
@@ -2894,7 +2890,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().username).toBe('B')
     expect(collectionsResourceState.revisions.personas).toBe(7)
     expect(settingsResourceState.fullRevision).toBe(7)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
@@ -2999,7 +2994,6 @@ describe('API-backed client bootstrap', () => {
       })
       const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
       const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
       const event = {
         type: eventType,
         revision: 6,
@@ -3034,7 +3028,6 @@ describe('API-backed client bootstrap', () => {
         expect.objectContaining({ id: 'persona-b', name: 'Newer B' }),
       ])
       expect(getDatabase().username).toBe('Newer B')
-      expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
       expect(peekAppliedServerResourceRevision()).toBe(6)
     },
   )
@@ -3125,7 +3118,6 @@ describe('API-backed client bootstrap', () => {
       ]
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
     withTrustedResourceWrite(() => {
       getDatabase().agentPresets[0].name = 'newer local name'
     })
@@ -3164,7 +3156,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().agentPresets[0]).not.toHaveProperty('description')
     expect(settingsResourceState.groupRevisions.agents).toBe(6)
     expect(hasSettingsGroupProjectionEpochChanged('agents', settingsProjectionEpoch)).toBe(false)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(6)
     expect(appliedEffects).toEqual([localEffect])
   })
@@ -3247,7 +3238,6 @@ describe('API-backed client bootstrap', () => {
       getDatabase().agentPresetDefaultId = 'ap_a'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
     withTrustedResourceWrite(() => {
       getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
     })
@@ -3290,7 +3280,6 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().agentPresetDefaultId).toBe('ap_b')
     expect(settingsResourceState.groupRevisions.agents).toBe(7)
     expect(hasSettingsGroupProjectionEpochChanged('agents', settingsProjectionEpoch)).toBe(false)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
@@ -3379,7 +3368,6 @@ describe('API-backed client bootstrap', () => {
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
     const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
     withTrustedResourceWrite(() => {
       getDatabase().translatorPresets[1].prompt = 'newer local prompt'
     })
@@ -3420,7 +3408,6 @@ describe('API-backed client bootstrap', () => {
     expect(settingsResourceState.groupRevisions.language).toBe(6)
     expect(hasCollectionProjectionEpochChanged('translatorPresets', collectionProjectionEpoch)).toBe(false)
     expect(hasSettingsGroupProjectionEpochChanged('language', languageSettingsProjectionEpoch)).toBe(false)
-    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 

@@ -5,7 +5,6 @@ import {
 } from './resourceState.svelte'
 
 let serverResourceWriteGuardEnabled = false
-let serverResourceApplyEpoch = $state(0)
 let localCharacterProjectionMutationEpoch = $state(0)
 
 /**
@@ -29,21 +28,6 @@ export function isResourceWriteGuardEnabled(): boolean {
  */
 export function withTrustedResourceWrite<T>(callback: () => T): T {
   return withResourceDatabaseWrite(() => callback())
-}
-
-export function withServerResourceApply<T>(callback: () => T): T {
-  const result = withTrustedResourceWrite(callback)
-  if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
-    return Promise.resolve(result).finally(() => {
-      serverResourceApplyEpoch += 1
-    }) as T
-  }
-  serverResourceApplyEpoch += 1
-  return result
-}
-
-export function getServerResourceApplyEpoch(): number {
-  return serverResourceApplyEpoch
 }
 
 export function markLocalCharacterProjectionMutation(): void {

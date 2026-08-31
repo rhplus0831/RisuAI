@@ -22,10 +22,6 @@ const durableState = vi.hoisted(() => ({
   settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
 }))
 
-const resourceGuardState = vi.hoisted(() => ({
-  epoch: 0,
-}))
-
 const commandMocks = vi.hoisted(() => ({
   canUseServerCommands: () => true,
   patchPromptSettingsCommand: vi.fn(
@@ -253,21 +249,9 @@ vi.mock('./durableMutationDispatch', () => durableMutationDispatchMock)
 vi.mock('src/ts/server/durableMutationDispatch', () => durableMutationDispatchMock)
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
-  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
-  withServerResourceApply: (fn: () => unknown) => {
-    const result = fn()
-    resourceGuardState.epoch += 1
-    return result
-  },
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
-  withServerResourceApply: (fn: () => unknown) => {
-    const result = fn()
-    resourceGuardState.epoch += 1
-    return result
-  },
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -303,11 +287,14 @@ import type { Database } from '../storage/database.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   applyCollectionsResource,
+  applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
   getResourceDatabase,
+  isServerCollectionName,
   isSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
 } from './resourceState.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from './settingsGroups'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
 import { language } from 'src/lang'
 import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
@@ -571,12 +558,44 @@ async function editPromptSettingsTextInput(target: HTMLElement, value: string, i
 }
 
 async function applyPromptSettingsProjection(apply: () => void): Promise<void> {
+  const before = getResourceDatabase({ snapshot: true }) as unknown as Record<string, unknown>
   apply()
-  resourceGuardState.epoch += 1
+  const after = getResourceDatabase({ snapshot: true }) as unknown as Record<string, unknown>
+  const changedKeys = Array.from(new Set([...Object.keys(before), ...Object.keys(after)])).filter(
+    (key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+  )
+  const revision = ++promptSettingsProjectionRevision
+  let promptSettingsChanged = false
+
+  for (const key of changedKeys) {
+    if (isServerCollectionName(key)) {
+      applyCollectionsResource(
+        {
+          revision,
+          collections: Object.prototype.hasOwnProperty.call(after, key) ? ({ [key]: after[key] } as never) : {},
+        },
+        key,
+      )
+    } else if (SERVER_SETTINGS_GROUP_BY_KEY[key] === 'prompt') {
+      promptSettingsChanged = true
+    }
+  }
+  if (promptSettingsChanged) {
+    applySettingsGroupResource(
+      {
+        revision,
+        group: 'prompt',
+        settings: {},
+      },
+      [],
+    )
+  }
   await tick()
   await flushMicrotasks()
   await tick()
 }
+
+let promptSettingsProjectionRevision = 10_000
 
 beforeEach(() => {
   vi.useFakeTimers()
@@ -584,7 +603,6 @@ beforeEach(() => {
     'confirm',
     vi.fn(() => true),
   )
-  resourceGuardState.epoch = 0
   commandState.revision = 1
   commandState.commands.length = 0
   commandState.beforeBuild = null
@@ -2872,7 +2890,6 @@ describe('flushPendingPromptTemplatePatches', () => {
 
   it('PromptSettings keeps a dirty prompt setting through a stale projection before debounce flush', async () => {
     seedPromptSettings({ customPromptTemplateToggle: 'server old' })
-    const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -2886,6 +2903,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       await applyPromptSettingsProjection(() => {
         ;(getResourceDatabase() as unknown as Record<string, unknown>).customPromptTemplateToggle = 'stale server'
       })
+      const rebasedProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 
       expect(promptSettingsTextarea(target).value).toBe('local dirty')
       expect(getResourceDatabase().customPromptTemplateToggle).toBe('local dirty')
@@ -2898,7 +2916,7 @@ describe('flushPendingPromptTemplatePatches', () => {
         kind: 'patchServerBackedSettings',
         patch: { customPromptTemplateToggle: 'local dirty' },
         acknowledgeOptimistic: true,
-        optimisticProjectionEpochs: { prompt: projectionEpoch },
+        optimisticProjectionEpochs: { prompt: rebasedProjectionEpoch },
       })
     } finally {
       if (component) await unmount(component)

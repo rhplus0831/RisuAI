@@ -290,11 +290,7 @@ import {
   resetServerResourceState,
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
-import {
-  setResourceWriteGuardEnabled,
-  withServerResourceApply,
-  withTrustedResourceWrite,
-} from 'src/ts/server/resourceWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import {
   beginPendingMutationDispatch,
@@ -457,23 +453,21 @@ async function applyTranslatorPresetProjection(input: {
   const revision = nextProjectionRevision++
   const selectedIndex = input.selectedIndex
   const selectedId = selectedIndex === undefined ? getDatabase().translatorPresetId : input.presets[selectedIndex]?.id
-  withServerResourceApply(() => {
-    applyCollectionsResource(
-      {
-        revision,
-        collections: { translatorPresets: input.presets.map((preset) => canonicalPreset(preset)) as any },
-      },
-      'translatorPresets',
-    )
-    applySettingsGroupResource(
-      {
-        revision,
-        group: 'language',
-        settings: { translatorPresetId: selectedId },
-      },
-      ['translatorPresetId'],
-    )
-  })
+  applyCollectionsResource(
+    {
+      revision,
+      collections: { translatorPresets: input.presets.map((preset) => canonicalPreset(preset)) as any },
+    },
+    'translatorPresets',
+  )
+  applySettingsGroupResource(
+    {
+      revision,
+      group: 'language',
+      settings: { translatorPresetId: selectedId },
+    },
+    ['translatorPresetId'],
+  )
   await tick()
   await flushMicrotasks()
   await tick()
@@ -2387,24 +2381,22 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await clickDeletePreset()
 
     expect(
-      withServerResourceApply(() =>
-        applyCollectionsResource(
-          {
-            revision: 101,
-            collections: {
-              translatorPresets: [
-                canonicalPreset({
-                  id: 'preset-a',
-                  name: 'Server Preset A',
-                  prompt: 'server prompt A',
-                  maxResponse: 111,
-                }),
-                canonicalPreset({ id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 }),
-              ] as any,
-            },
+      applyCollectionsResource(
+        {
+          revision: 101,
+          collections: {
+            translatorPresets: [
+              canonicalPreset({
+                id: 'preset-a',
+                name: 'Server Preset A',
+                prompt: 'server prompt A',
+                maxResponse: 111,
+              }),
+              canonicalPreset({ id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 }),
+            ] as any,
           },
-          'translatorPresets',
-        ),
+        },
+        'translatorPresets',
       ),
     ).toBe(true)
     await tick()
@@ -2432,19 +2424,17 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await clickDeletePreset()
 
     expect(
-      withServerResourceApply(() =>
-        applySettingsGroupResource(
-          {
-            revision: 101,
-            group: 'language',
-            settings: {
-              translatorPresetId: 'preset-b',
-              translatorPrompt: 'old prompt B',
-              translatorMaxResponse: 200,
-            },
+      applySettingsGroupResource(
+        {
+          revision: 101,
+          group: 'language',
+          settings: {
+            translatorPresetId: 'preset-b',
+            translatorPrompt: 'old prompt B',
+            translatorMaxResponse: 200,
           },
-          ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
-        ),
+        },
+        ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
       ),
     ).toBe(true)
     await tick()
@@ -2610,8 +2600,6 @@ describe('TranslatorPresetSettings server-backed edits', () => {
   it('does not settle a dirty prompt when an unrelated resource apply completes', async () => {
     await editPrompt('dirty prompt A')
 
-    withServerResourceApply(() => undefined)
-    await tick()
     await applyTranslatorPresetProjection({
       presets: [
         { id: 'preset-a', name: 'Projected A', prompt: 'stale prompt A', maxResponse: 100 },

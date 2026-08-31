@@ -122,7 +122,6 @@ vi.mock('./commands', () => ({
   upsertModuleLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertModuleEntry', a }),
 }))
 vi.mock('./resourceWriteGuard.svelte', () => ({
-  withServerResourceApply: (fn: () => unknown) => fn(),
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 

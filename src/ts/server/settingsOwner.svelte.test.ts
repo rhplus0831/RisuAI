@@ -35,7 +35,6 @@ const durabilityMocks = vi.hoisted(() => ({
   settlementListeners: new Map<string, Set<(settlement: 'accepted' | 'discarded') => void>>(),
   staged: [] as Array<{ key: string; mutationId: string; intent: unknown }>,
 }))
-const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const presetMocks = vi.hoisted(() => ({
   OAI: {
     mainPrompt: 'default main prompt',
@@ -241,11 +240,6 @@ vi.mock('../alert', () => ({
 }))
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
-  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
-  withServerResourceApply: (fn: () => unknown) => {
-    resourceGuardState.epoch += 1
-    return fn()
-  },
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -391,7 +385,6 @@ beforeEach(() => {
   recorded.groupReads.length = 0
   recorded.onboardingInputs.length = 0
   recorded.onboardingResults.length = 0
-  resourceGuardState.epoch = 0
   projectionRevision = 1_000
   alertMocks.alertError.mockClear()
   alertMocks.alertNormal.mockClear()

@@ -16,8 +16,6 @@ const recorded = vi.hoisted(() => ({
     optimisticProjectionEpoch: number
   }>,
 }))
-const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
-
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   patchSettingsObjectFieldsCommand: vi.fn(
@@ -108,11 +106,6 @@ vi.mock('../alert', () => ({
 }))
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
-  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
-  withServerResourceApply: (fn: () => unknown) => {
-    resourceGuardState.epoch += 1
-    return fn()
-  },
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -227,7 +220,6 @@ beforeEach(async () => {
   recorded.patchResults.length = 0
   recorded.settlementListeners.clear()
   recorded.objectPatches.length = 0
-  resourceGuardState.epoch = 0
 })
 
 afterEach(async () => {
