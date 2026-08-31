@@ -88,6 +88,34 @@ describe('translator preset chat binding import normalization', () => {
   })
 })
 
+describe('loadout import normalization', () => {
+  it('repairs stable ids deterministically and preserves the explicit last-touch name', () => {
+    const decoded = decodeRisuSaveImportSnapshot(
+      encodeLegacyRisuSaveEnvelope(
+        {
+          characters: [],
+          loadouts: [
+            { name: 'Missing id' },
+            { id: 'loadout-1', name: 'Reserved later' },
+            { id: 'duplicate', name: 'Duplicate name' },
+            { id: 'duplicate', name: 'Duplicate name' },
+          ],
+          lastLoadedLoadoutName: 'Duplicate name',
+        },
+        'legacy-raw',
+      ),
+    )
+
+    expect((decoded.database.loadouts as Array<{ id: string }>).map((loadout) => loadout.id)).toEqual([
+      'loadout-1-2',
+      'loadout-1',
+      'duplicate',
+      'loadout-4',
+    ])
+    expect(decoded.database.lastLoadedLoadoutName).toBe('Duplicate name')
+  })
+})
+
 function makeDataDir(): string {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-risu-export-'))
   dataDirs.push(dataDir)

@@ -993,6 +993,7 @@ export function normalizeDatabaseDefaults(
   database.keepSessionAlive = normalizeKeepSessionAlive(database.keepSessionAlive)
   setDefault(database, 'chatGenerationTogglePresets', [])
   setDefault(database, 'loadouts', [])
+  setDefault(database, 'lastLoadedLoadoutName', '')
   setDefault(database, 'longPressToPopupEditor', false)
   setDefault(database, 'disableAutoPopupMessageEditor', false)
   setDefault(database, 'useMonacoEditorOnDesktop', false)

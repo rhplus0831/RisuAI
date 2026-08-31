@@ -7811,6 +7811,135 @@ describe('loadout commands', () => {
     ])
   })
 
+  it('touches duplicate-named loadouts by stable id without inferring the last-touch name on rename or delete', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'Shared name',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+        {
+          id: 'loadout-b',
+          name: 'Shared name',
+          lastUsed: 200,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      ],
+      lastLoadedLoadoutName: 'Before touch',
+    })
+
+    const touched = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-b/touch',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, lastUsed: 300 },
+    })
+    expect(touched.statusCode).toBe(200)
+
+    const afterTouch = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterTouch.resourceDatabase.loadouts).toEqual([
+      expect.objectContaining({ id: 'loadout-a', name: 'Shared name', lastUsed: 100 }),
+      expect.objectContaining({ id: 'loadout-b', name: 'Shared name', lastUsed: 300 }),
+    ])
+    expect(afterTouch.resourceDatabase.lastLoadedLoadoutName).toBe('Shared name')
+
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/loadouts/loadout-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: touched.json().revision, patch: { name: 'Renamed B' } },
+    })
+    expect(renamed.statusCode).toBe(200)
+
+    const afterRename = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterRename.resourceDatabase.loadouts[1]).toMatchObject({ id: 'loadout-b', name: 'Renamed B' })
+    expect(afterRename.resourceDatabase.lastLoadedLoadoutName).toBe('Shared name')
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/loadouts/loadout-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: renamed.json().revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+
+    const afterDelete = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(afterDelete.resourceDatabase.loadouts).toEqual([
+      expect.objectContaining({ id: 'loadout-a', name: 'Shared name', lastUsed: 100 }),
+    ])
+    expect(afterDelete.resourceDatabase.lastLoadedLoadoutName).toBe('Shared name')
+  })
+
+  it('fails closed on duplicate persisted loadout ids without repairing sibling rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        { id: 'loadout-a', name: 'A' },
+        { id: 'loadout-b', name: 'B' },
+      ],
+      lastLoadedLoadoutName: 'Before',
+    })
+    const databasePath = path.join(harness.dataDir, 'risu.db')
+    const corrupt = new DatabaseSync(databasePath)
+    try {
+      const sibling = corrupt.prepare('SELECT data_json FROM loadouts WHERE position = 1').get() as {
+        data_json: string
+      }
+      const row = JSON.parse(sibling.data_json) as Record<string, unknown>
+      row.id = 'loadout-a'
+      corrupt.prepare('UPDATE loadouts SET data_json = ? WHERE position = 1').run(JSON.stringify(row))
+    } finally {
+      corrupt.close()
+    }
+
+    const favorited = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-a/favorite',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, favorite: true },
+    })
+    expect(favorited.statusCode).toBe(400)
+    expect(favorited.json().error).toBe('Duplicate loadout id: loadout-a')
+
+    const persisted = new DatabaseSync(databasePath, { readOnly: true })
+    try {
+      const rows = persisted.prepare('SELECT data_json FROM loadouts ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([
+        expect.objectContaining({ id: 'loadout-a', favorite: false }),
+        expect.objectContaining({ id: 'loadout-a', favorite: false }),
+      ])
+    } finally {
+      persisted.close()
+    }
+  })
+
   it('does not duplicate an existing character membership when a loadout is touched', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

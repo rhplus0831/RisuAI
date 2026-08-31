@@ -1685,6 +1685,26 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
   })
 
+  it('keeps a newer last-touch name when an older touch fails', async () => {
+    const loadout = seedApplyLoadoutState()
+    const command = stubDeferredCommandFailure()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    const application = applyLoadout(loadout, [])
+    await waitForCallCount(command.calls, 2)
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
+
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.lastLoadedLoadoutName = 'Newer loaded name'
+    })
+    command.reject()
+
+    await expect(application).resolves.toBe('persistence-failed')
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Newer loaded name')
+  })
+
   it('omits the current character from a touch when the loadout already contains it', async () => {
     const loadout = seedApplyLoadoutState()
     loadout.characterIds.push('char-a')

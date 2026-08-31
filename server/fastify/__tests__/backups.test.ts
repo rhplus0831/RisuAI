@@ -470,7 +470,14 @@ describe('backups', () => {
 
   it('round-trips: import A, backup, import B, restore, bootstrap returns A', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    await importDb(harness.app, assertion, { tag: 'A' })
+    await importDb(harness.app, assertion, {
+      tag: 'A',
+      loadouts: [
+        { id: 'loadout-a', name: 'Shared name' },
+        { id: 'loadout-b', name: 'Shared name' },
+      ],
+      lastLoadedLoadoutName: 'Shared name',
+    })
     const backup = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/backups',
@@ -524,7 +531,11 @@ describe('backups', () => {
       characters: [],
       botPresets: [],
       modules: [],
-      loadouts: [],
+      loadouts: [
+        { id: 'loadout-a', name: 'Shared name' },
+        { id: 'loadout-b', name: 'Shared name' },
+      ],
+      lastLoadedLoadoutName: 'Shared name',
       plugins: [],
       pluginCustomStorage: {},
     })

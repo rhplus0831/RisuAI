@@ -371,6 +371,17 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('initializes the browser loadout name compatibility projection explicitly', () => {
+    seedPresetDatabase()
+    const database = clonePlain(getDatabase())
+    delete (database as Partial<Database>).lastLoadedLoadoutName
+
+    setDatabase(database)
+
+    expect(getDatabase().loadouts).toEqual([])
+    expect(getDatabase().lastLoadedLoadoutName).toBe('')
+  })
+
   it('derives a missing stable persona selection only from one unique row id', () => {
     seedPresetDatabase()
     const legacyData = clonePlain(getDatabase())

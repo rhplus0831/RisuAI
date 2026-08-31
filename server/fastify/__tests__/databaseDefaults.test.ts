@@ -95,6 +95,8 @@ describe('database defaults', () => {
     expect(database.personas).toEqual([expect.objectContaining({ id: 'default-persona', name: 'User' })])
     expect(database.selectedPersonaId).toBe('default-persona')
     expect(database.selectedPersona).toBe(0)
+    expect(database.loadouts).toEqual([])
+    expect(database.lastLoadedLoadoutName).toBe('')
     expect(database.inputHooks).toEqual([
       {
         id: 'default-translate',

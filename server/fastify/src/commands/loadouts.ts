@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 
 type JsonRecord = Record<string, unknown>
@@ -22,6 +21,24 @@ export interface LoadoutRecord extends JsonRecord {
   personaId: string
 }
 
+const REQUIRED_LOADOUT_KEYS = [
+  'id',
+  'name',
+  'lastUsed',
+  'favorite',
+  'characterIds',
+  'modules',
+  'globalVariables',
+  'presetName',
+  'modelPresetId',
+  'modelPresetName',
+  'promptPresetId',
+  'promptPresetName',
+  'personaId',
+] as const
+
+const LOADOUT_KEYS = new Set<string>([...REQUIRED_LOADOUT_KEYS, 'agentPresetId', 'agentPresetName', 'togglePresetId'])
+
 export function ensureDatabaseObject(database: unknown): JsonRecord {
   if (!database || typeof database !== 'object' || Array.isArray(database)) {
     throw new ValidationError('database must be an object before loadout commands can run')
@@ -31,26 +48,22 @@ export function ensureDatabaseObject(database: unknown): JsonRecord {
 
 export function ensureLoadoutCollection(database: JsonRecord): LoadoutRecord[] {
   if (!Array.isArray(database.loadouts)) {
-    database.loadouts = []
+    throw new ValidationError('loadouts must be an array')
   }
-
   const seen = new Set<string>()
-  const loadouts = (database.loadouts as unknown[]).map((raw, index) => {
-    const loadout = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
-    const record = repairLoadoutRecord({
-      name: `Loadout ${index + 1}`,
-      ...loadout,
-    })
+  const loadouts = database.loadouts.map((raw, index) => {
+    const label = `loadouts[${index}]`
+    const record = readJsonObject(raw, label) as LoadoutRecord
+    validateStoredLoadoutRecord(record, label)
     if (seen.has(record.id)) {
-      record.id = randomUUID()
+      throw new ValidationError(`Duplicate loadout id: ${record.id}`)
     }
     seen.add(record.id)
     return record
   })
-  database.loadouts = loadouts
 
   if (typeof database.lastLoadedLoadoutName !== 'string') {
-    database.lastLoadedLoadoutName = ''
+    throw new ValidationError('lastLoadedLoadoutName must be a string')
   }
 
   return loadouts
@@ -58,7 +71,38 @@ export function ensureLoadoutCollection(database: JsonRecord): LoadoutRecord[] {
 
 export function normalizeLoadoutCollection(database: unknown): void {
   if (!database || typeof database !== 'object' || Array.isArray(database)) return
-  ensureLoadoutCollection(database as JsonRecord)
+  const target = database as JsonRecord
+  const input = Array.isArray(target.loadouts) ? target.loadouts : []
+  const firstIndexById = new Map<string, number>()
+
+  for (let index = 0; index < input.length; index += 1) {
+    const id = stableLoadoutId(input[index])
+    if (id && !firstIndexById.has(id)) firstIndexById.set(id, index)
+  }
+
+  // Reserve retained ids before minting replacements so an early damaged row
+  // cannot steal the stable id of a later valid row.
+  const usedIds = new Set(firstIndexById.keys())
+  target.loadouts = input.map((raw, index) => {
+    const loadout = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}
+    const requestedId = stableLoadoutId(loadout)
+    const id =
+      requestedId && firstIndexById.get(requestedId) === index
+        ? requestedId
+        : mintDeterministicLoadoutId(index, usedIds)
+    usedIds.add(id)
+    return repairLoadoutRecord(
+      {
+        name: `Loadout ${index + 1}`,
+        ...loadout,
+      },
+      id,
+    )
+  })
+
+  if (typeof target.lastLoadedLoadoutName !== 'string') {
+    target.lastLoadedLoadoutName = ''
+  }
 }
 
 export function createLoadoutRecord(input: unknown): LoadoutRecord {
@@ -91,12 +135,12 @@ export function createLoadoutRecord(input: unknown): LoadoutRecord {
   return record
 }
 
-function repairLoadoutRecord(input: unknown): LoadoutRecord {
+function repairLoadoutRecord(input: unknown, id: string): LoadoutRecord {
   const loadout = readJsonObject(input, 'loadout')
   const record: LoadoutRecord = {
-    id: typeof loadout.id === 'string' && loadout.id.trim() ? loadout.id : randomUUID(),
+    id,
     name: typeof loadout.name === 'string' && loadout.name.trim() ? loadout.name : 'New Loadout',
-    lastUsed: numberValue(loadout.lastUsed, Date.now()),
+    lastUsed: numberValue(loadout.lastUsed, 0),
     favorite: booleanValue(loadout.favorite, false),
     characterIds: stringArrayValue(loadout.characterIds, 'loadout.characterIds'),
     modules: stringArrayValue(loadout.modules, 'loadout.modules'),
@@ -128,6 +172,21 @@ export function readLoadoutPatch(input: unknown): JsonRecord {
   }
   validateLoadoutRecord(patch, 'patch')
   return patch
+}
+
+/** Validate one persisted loadout exactly as stored without adding defaults. */
+export function validateStoredLoadoutRecord(record: JsonRecord, label = 'loadout'): asserts record is LoadoutRecord {
+  for (const key of Object.keys(record)) {
+    if (!LOADOUT_KEYS.has(key)) {
+      throw new ValidationError(`${label}.${key} is not a supported loadout field`)
+    }
+  }
+  for (const key of REQUIRED_LOADOUT_KEYS) {
+    if (!hasOwn(record, key)) {
+      throw new ValidationError(`${label}.${key} is required`)
+    }
+  }
+  validateLoadoutRecord(record, label)
 }
 
 export function readLoadoutId(value: unknown, label = 'loadoutId'): string {
@@ -182,11 +241,18 @@ export function requireLoadoutIndex(loadouts: readonly LoadoutRecord[], loadoutI
 }
 
 function validateLoadoutRecord(record: JsonRecord, label: string): void {
+  for (const key of Object.keys(record)) {
+    if (!LOADOUT_KEYS.has(key)) {
+      throw new ValidationError(`${label}.${key} is not a supported loadout field`)
+    }
+  }
   if ('id' in record && (typeof record.id !== 'string' || record.id.trim() === '')) {
     throw new ValidationError(`${label}.id must be a non-empty string`)
   }
+  if ('name' in record && (typeof record.name !== 'string' || record.name.trim() === '')) {
+    throw new ValidationError(`${label}.name must be a non-empty string`)
+  }
   for (const key of [
-    'name',
     'presetName',
     'modelPresetId',
     'modelPresetName',
@@ -253,6 +319,21 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
 
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function stableLoadoutId(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const id = (value as JsonRecord).id
+  return typeof id === 'string' && id.trim() ? id : null
+}
+
+function mintDeterministicLoadoutId(index: number, usedIds: ReadonlySet<string>): string {
+  const base = `loadout-${index + 1}`
+  if (!usedIds.has(base)) return base
+
+  let suffix = 2
+  while (usedIds.has(`${base}-${suffix}`)) suffix += 1
+  return `${base}-${suffix}`
 }
 
 function validateJsonValue(label: string, value: unknown): void {

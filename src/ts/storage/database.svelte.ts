@@ -3458,6 +3458,7 @@ export function setDatabase(data: Database) {
   data.keepSessionAlive = normalizeKeepSessionAlive(data.keepSessionAlive)
   data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
   data.loadouts ??= []
+  data.lastLoadedLoadoutName ??= ''
   data.longPressToPopupEditor ??= false
   data.disableAutoPopupMessageEditor ??= false
   data.useMonacoEditorOnDesktop ??= false
