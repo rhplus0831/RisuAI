@@ -40,6 +40,7 @@ import {
 } from '@risuai/protocol/standalone-settings'
 import { projectChatMetadata, type ChatMetadataOwnerState } from './chatMetadataOwner'
 import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
+import { invalidateModuleRenderRevision } from '../moduleRenderRevision'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -1361,6 +1362,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
+  invalidateModuleRenderRevision()
   return true
 }
 
@@ -1485,6 +1487,9 @@ export function applySettingsGroupResource(
     advanceSettingsGroupProjectionEpoch('providers', { preserveAcknowledgementTaint: true })
   }
   advanceSettingsProjectionEpoch()
+  if (payload.group === 'modules' || payload.group === 'advanced' || payload.group === 'agents') {
+    invalidateModuleRenderRevision()
+  }
   return true
 }
 
@@ -2070,6 +2075,9 @@ export function applyCollectionsResource(
   }
   if (applied) {
     collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  }
+  if (appliedNames.some((name) => name === 'modules' || name === 'personas' || name === 'promptPresets')) {
+    invalidateModuleRenderRevision()
   }
   return applied
 }
@@ -3038,6 +3046,7 @@ export function applyChatPatchLocalEffect(payload: ServerChatPatchLocalEffectPay
 }
 
 export function resetServerResourceState(): void {
+  invalidateModuleRenderRevision()
   settingsResourceState.value = {}
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
@@ -3095,6 +3104,7 @@ export function resetServerResourceState(): void {
  * the currently rendered database while its authoritative reads are in flight.
  */
 export function resetServerResourceRevisionFencesForDatabaseReplacement(): void {
+  invalidateModuleRenderRevision()
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
   settingsResourceState.shellRevision = null
@@ -3130,6 +3140,7 @@ export function resetServerResourceRevisionFencesForDatabaseReplacement(): void 
 }
 
 export function replaceResourceDatabase(database: Database, revision?: number): void {
+  invalidateModuleRenderRevision()
   resetCharacterBodyResourceRevisions()
   const nextRevision = normalizeOptionalRevision(revision)
   const databaseRecord = cloneJsonValue(database) as unknown as Record<string, unknown>

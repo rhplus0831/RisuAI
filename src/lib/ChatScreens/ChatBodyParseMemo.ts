@@ -17,6 +17,7 @@ import {
   settingsResourceState,
 } from '../../ts/server/resourceState.svelte'
 import { CurrentTriggerIdStore, ReloadGUIPointer, VariableReloadGUIPointer } from '../../ts/stores.svelte'
+import { captureModuleRenderRevision } from '../../ts/moduleRenderRevision'
 import { getLLMCache, getLLMCacheMutationEpoch } from '../../ts/translator/translator'
 import { getActivePromptPresetRegexScripts } from '../../ts/process/promptPresetRegex'
 import {
@@ -94,6 +95,8 @@ const LLM_DETECTION_MEMO_LIMIT = 180
 const SIGNATURE_MEMO_LIMIT = 48
 const LARGE_SIGNATURE_STRING_LIMIT = 512
 const SIGNATURE_STRING_HASH_MEMO_LIMIT = 256
+const PARSE_MEMO_KEY_BUDGET_BYTES = 16 * 1024 * 1024
+const LLM_DETECTION_MEMO_KEY_BUDGET_BYTES = 16 * 1024 * 1024
 
 const parseMemo = new Map<string, Promise<string>>()
 const llmDetectionMemo = new Map<string, Promise<boolean>>()
@@ -102,6 +105,9 @@ const activeChatSignatureMemo = new Map<string, string>()
 const moduleSignatureMemo = new Map<string, string>()
 const settingsSignatureMemo = new Map<string, string>()
 const signatureStringHashMemo = new Map<string, string>()
+let parseMemoKeyBytes = 0
+let llmDetectionMemoKeyBytes = 0
+let memoModuleRenderRevision = captureModuleRenderRevision()
 
 const debugStats = {
   parseKeyBuilds: 0,
@@ -124,6 +130,54 @@ function refresh<T>(memo: Map<string, T>, key: string, value: T) {
   memo.delete(key)
   memo.set(key, value)
   return value
+}
+
+function estimatedStringBytes(value: string): number {
+  return value.length * 2
+}
+
+function deleteParseMemoEntry(key: string): void {
+  if (!parseMemo.delete(key)) return
+  parseMemoKeyBytes = Math.max(0, parseMemoKeyBytes - estimatedStringBytes(key))
+}
+
+function rememberParseMemoEntry(key: string, value: Promise<string>): void {
+  parseMemo.set(key, value)
+  parseMemoKeyBytes += estimatedStringBytes(key)
+  while (parseMemo.size > PARSE_MEMO_LIMIT || parseMemoKeyBytes > PARSE_MEMO_KEY_BUDGET_BYTES) {
+    const oldest = parseMemo.keys().next().value
+    if (oldest === undefined) break
+    deleteParseMemoEntry(oldest)
+  }
+}
+
+function deleteLlmDetectionMemoEntry(key: string): void {
+  if (!llmDetectionMemo.delete(key)) return
+  llmDetectionMemoKeyBytes = Math.max(0, llmDetectionMemoKeyBytes - estimatedStringBytes(key))
+}
+
+function rememberLlmDetectionMemoEntry(key: string, value: Promise<boolean>): void {
+  llmDetectionMemo.set(key, value)
+  llmDetectionMemoKeyBytes += estimatedStringBytes(key)
+  while (
+    llmDetectionMemo.size > LLM_DETECTION_MEMO_LIMIT ||
+    llmDetectionMemoKeyBytes > LLM_DETECTION_MEMO_KEY_BUDGET_BYTES
+  ) {
+    const oldest = llmDetectionMemo.keys().next().value
+    if (oldest === undefined) break
+    deleteLlmDetectionMemoEntry(oldest)
+  }
+}
+
+function reconcileModuleRenderRevision(): void {
+  const revision = captureModuleRenderRevision()
+  if (revision === memoModuleRenderRevision) return
+  memoModuleRenderRevision = revision
+  parseMemo.clear()
+  llmDetectionMemo.clear()
+  moduleSignatureMemo.clear()
+  parseMemoKeyBytes = 0
+  llmDetectionMemoKeyBytes = 0
 }
 
 function stableFragment(value: unknown): string {
@@ -312,33 +366,16 @@ function safeGetActivePromptPresetRegexScripts(owners: ChatBodyParseOwnerReaders
 }
 
 function moduleSignature(modules: ReturnType<typeof getModules>) {
-  try {
-    return modules.map((module) => ({
-      id: module?.id,
-      namespace: module?.namespace,
-      regex: untrackedScriptListSignature(() => module?.regex),
-      assets: module?.assets ?? [],
-      trigger: triggerListSignature(module?.trigger),
-      lowLevelAccess: module?.lowLevelAccess,
-      customModuleToggle: module?.customModuleToggle,
-    }))
-  } catch {
-    return []
+  return {
+    activeModuleIds: modules.map((module) => module?.id),
+    renderRevision: captureModuleRenderRevision(),
   }
 }
 
 function moduleSignatureToken(modules: ReturnType<typeof getModules>) {
   return {
-    reloadEpoch: get(ReloadGUIPointer),
-    modules: modules.map((module) => ({
-      id: module?.id,
-      namespace: module?.namespace,
-      regex: untrackedScriptListSignature(() => module?.regex),
-      assets: tupleListSignature(module?.assets),
-      trigger: triggerListSignature(module?.trigger),
-      lowLevelAccess: module?.lowLevelAccess,
-      customModuleToggle: module?.customModuleToggle,
-    })),
+    activeModuleIds: modules.map((module) => module?.id),
+    renderRevision: captureModuleRenderRevision(),
   }
 }
 
@@ -387,23 +424,13 @@ function serializedActiveChatSignature(owners: ChatBodyParseOwnerReaders) {
   )
 }
 
-function moduleRegexSignature(modules: ReturnType<typeof getModules>) {
-  return modules.flatMap((module) => scriptListSignature(module?.regex))
-}
-
-function moduleAssetsSignature(modules: ReturnType<typeof getModules>) {
-  return modules.flatMap((module) => module?.assets ?? [])
-}
-
-function parseSettingsSignature(owners: ChatBodyParseOwnerReaders, modules: ReturnType<typeof getModules>) {
+function parseSettingsSignature(owners: ChatBodyParseOwnerReaders) {
   const db = owners.settingsOwner()
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
     globalRegex: untrackedScriptListSignature(() => db.globalscript),
     presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts(owners)),
-    moduleRegex: untrack(() => moduleRegexSignature(modules)),
-    moduleAssets: moduleAssetsSignature(modules),
     hideAllImages: db.hideAllImages,
     customQuotes: db.customQuotes,
     customQuotesData: db.customQuotesData,
@@ -420,15 +447,13 @@ function parseSettingsSignature(owners: ChatBodyParseOwnerReaders, modules: Retu
   }
 }
 
-function settingsSignatureToken(owners: ChatBodyParseOwnerReaders, modules: ReturnType<typeof getModules>) {
+function settingsSignatureToken(owners: ChatBodyParseOwnerReaders) {
   const db = owners.settingsOwner()
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
     globalRegex: untrackedScriptListSignature(() => db.globalscript),
     presetRegex: untrackedScriptListSignature(() => safeGetActivePromptPresetRegexScripts(owners)),
-    moduleRegex: untrack(() => moduleRegexSignature(modules)),
-    moduleAssets: tupleListSignature(moduleAssetsSignature(modules)),
     hideAllImages: db.hideAllImages,
     customQuotes: db.customQuotes,
     customQuotesData: db.customQuotesData ?? [],
@@ -445,17 +470,18 @@ function settingsSignatureToken(owners: ChatBodyParseOwnerReaders, modules: Retu
   }
 }
 
-function serializedSettingsSignature(owners: ChatBodyParseOwnerReaders, modules: ReturnType<typeof getModules>) {
+function serializedSettingsSignature(owners: ChatBodyParseOwnerReaders) {
   return cachedSerializedSignature(
     settingsSignatureMemo,
-    settingsSignatureToken(owners, modules),
-    () => parseSettingsSignature(owners, modules),
+    settingsSignatureToken(owners),
+    () => parseSettingsSignature(owners),
     'settingsSignatureBuilds',
   )
 }
 
 export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
   return untrack(() => {
+    reconcileModuleRenderRevision()
     debugStats.parseKeyBuilds += 1
     const modules = safeGetModules(input.owners)
     return `{"activeChat":${serializedActiveChatSignature(input.owners)},"cbsConditions":${stableFragment(
@@ -466,7 +492,7 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
       input.mode,
     )},"displayLayer":${stableFragment(input.displayLayer)},"messageId":${stableFragment(
       input.messageId,
-    )},"name":${stableFragment(input.name)},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(input.owners, modules)},"streaming":${stableFragment(
+    )},"name":${stableFragment(input.name)},"modules":${serializedModuleSignature(modules)},"settings":${serializedSettingsSignature(input.owners)},"streaming":${stableFragment(
       input.streaming,
     )},"variableReloadEpoch":${stableFragment(get(VariableReloadGUIPointer))}}`
   })
@@ -528,6 +554,7 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
 
 export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<string> {
   return untrack(() => {
+    reconcileModuleRenderRevision()
     const key = input.memoKey ?? getChatBodyParseMemoKey(input)
     const cached = parseMemo.get(key)
     if (cached) {
@@ -548,15 +575,16 @@ export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<st
         priority: input.displayPriority,
       },
     ).catch((error) => {
-      parseMemo.delete(key)
+      deleteParseMemoEntry(key)
       throw error
     })
-    remember(parseMemo, key, promise, PARSE_MEMO_LIMIT)
+    rememberParseMemoEntry(key, promise)
     return promise
   })
 }
 
 export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnlyInput): Promise<boolean> {
+  reconcileModuleRenderRevision()
   const key = input.detectionKey ?? getChatBodyCachedOnlyLlmDetectionKey(input)
   const cached = llmDetectionMemo.get(key)
   if (cached) {
@@ -583,17 +611,20 @@ export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnly
         })
     return (await getLLMCache(cacheKey)) !== null
   })().catch((error) => {
-    llmDetectionMemo.delete(key)
+    deleteLlmDetectionMemoEntry(key)
     throw error
   })
 
-  remember(llmDetectionMemo, key, promise, LLM_DETECTION_MEMO_LIMIT)
+  rememberLlmDetectionMemoEntry(key, promise)
   return promise
 }
 
 export function clearChatBodyParseMemo() {
   parseMemo.clear()
   llmDetectionMemo.clear()
+  parseMemoKeyBytes = 0
+  llmDetectionMemoKeyBytes = 0
+  memoModuleRenderRevision = captureModuleRenderRevision()
   characterSignatureMemo.clear()
   activeChatSignatureMemo.clear()
   moduleSignatureMemo.clear()
@@ -605,7 +636,9 @@ export function clearChatBodyParseMemo() {
 export function getChatBodyParseMemoStats() {
   return {
     parseEntries: parseMemo.size,
+    parseKeyBytes: parseMemoKeyBytes,
     llmDetectionEntries: llmDetectionMemo.size,
+    llmDetectionKeyBytes: llmDetectionMemoKeyBytes,
     characterSignatureEntries: characterSignatureMemo.size,
     activeChatSignatureEntries: activeChatSignatureMemo.size,
     moduleSignatureEntries: moduleSignatureMemo.size,

@@ -301,6 +301,34 @@ describe('ChatBody translation parse bounds', () => {
     expect(bodyRoot.querySelector('img')?.classList.contains('root-loaded-image-contain')).toBe(true)
   })
 
+  it('does not rescan module assets for an already resolved server asset URL', async () => {
+    setChatBodyDatabase({ newImageHandlingBeta: true })
+    const bodyRoot = document.createElement('span')
+    bodyRoot.innerHTML = '<img src="/api/v1/assets/already-resolved">'
+    target.appendChild(bodyRoot)
+
+    component = mount(ChatBody, {
+      target,
+      props: {
+        bodyRoot,
+        idx: 0,
+        modelShortName: '',
+        msgDisplay: 'resolved image body',
+        role: 'char',
+        translated: false,
+        translating: false,
+        retranslate: false,
+        allowClientTranslation: false,
+      },
+    })
+    flushSync()
+    await flushComponentPromises()
+
+    expect(chatBodyMocks.getModuleAssets).not.toHaveBeenCalled()
+    expect(chatBodyMocks.getFileSrc).not.toHaveBeenCalled()
+    expect(bodyRoot.querySelector('img')?.getAttribute('src')).toBe('/api/v1/assets/already-resolved')
+  })
+
   it('reports the first display parse as pending until its rendered body settles', async () => {
     let resolveParse!: (value: string) => void
     const pendingParse = new Promise<string>((resolve) => {

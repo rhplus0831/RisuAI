@@ -7,6 +7,7 @@ import {
 } from './persona'
 import { safeStructuredClone } from './polyfill'
 import { createNonSecurityUuid } from './nonSecurityUuid'
+import { invalidateModuleRenderRevision } from './moduleRenderRevision'
 import {
   canUseServerCommands,
   createLoadoutCommand,
@@ -204,6 +205,7 @@ function replaceSettingsOwnerFields(fields: Record<string, unknown>): boolean {
     if (value === undefined) delete settings[key]
     else settings[key] = cloneJsonValue(value)
   }
+  if (Object.prototype.hasOwnProperty.call(fields, 'enabledModules')) invalidateModuleRenderRevision()
   return true
 }
 
@@ -817,6 +819,7 @@ function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): vo
 
   if (!rollback.previousEnabled) {
     settings.enabledModules = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
+    invalidateModuleRenderRevision()
     return
   }
 
@@ -824,6 +827,7 @@ function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): vo
     const restored = cloneJsonValue(liveModules)
     insertModuleAtPreviousPosition(restored, rollback.moduleId, rollback.previousModules)
     settings.enabledModules = restored
+    invalidateModuleRenderRevision()
   }
 }
 
@@ -852,6 +856,7 @@ function reapplyModuleMembership(
     projectedIds.size === attemptedIds.size && Array.from(projectedIds).every((moduleId) => attemptedIds.has(moduleId))
       ? cloneJsonValue(rollback.attemptedModules)
       : projected
+  invalidateModuleRenderRevision()
 }
 
 function rollbackGlobalChatVariables(rollback: LoadoutGlobalVariablesRollback): void {

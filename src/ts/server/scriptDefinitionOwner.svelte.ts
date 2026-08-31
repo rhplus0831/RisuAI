@@ -46,6 +46,7 @@ import {
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
 import { characterOwnerMutationKey, moduleOwnerMutationKey } from './resourceOwnerMutationKeys'
+import { invalidateModuleRenderRevision } from '../moduleRenderRevision'
 
 function characterDefinitionOwners(): character[] {
   return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
@@ -64,7 +65,9 @@ function scriptSettingsOwner(): Record<string, unknown> | null {
 }
 
 function withScriptDefinitionOwnerWrite<T>(write: () => T): T {
-  return write()
+  const result = write()
+  invalidateModuleRenderRevision()
+  return result
 }
 
 export interface ScriptDefinitionStateSnapshot {

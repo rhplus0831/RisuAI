@@ -93,6 +93,13 @@ their ordinary greeting/composer layout.
 parser/LLM-detection memoization and dependency signatures for character, chat,
 modules, settings, CBS state, and reload epochs. Stale HTML or unexpectedly
 expensive rerenders often start at that memo boundary.
+Module-dependent signatures use a compact client render revision plus active
+module ids; they never embed module assets, regex definitions, or triggers in a
+per-message key. Parse and LLM-detection memo keys are bounded by both entry
+count and approximate retained bytes. The additional-asset parser likewise
+keeps only demand-resolved module names for each character/context: enabling an
+asset-heavy module without rendering an asset marker does not build a complete
+name index, and a repeated exact-name lookup reuses its prior corpus scan.
 
 Supported `ChatBody` parses negotiate server-owned intermediate display
 processing without moving HTML rendering. `Chat.svelte` supplies the stable

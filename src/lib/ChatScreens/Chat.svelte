@@ -86,6 +86,7 @@
   } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { HideIconStore, ReloadGUIPointer, VariableReloadGUIPointer } from '../../ts/stores.svelte'
+  import { moduleRenderRevision } from '../../ts/moduleRenderRevision'
   import AutoresizeArea from '../UI/GUI/TextAreaResizable.svelte'
   import ChatBody from './ChatBody.svelte'
   import PopupButton from '../UI/PopupButton.svelte'
@@ -1904,6 +1905,7 @@
 
   $effect.pre(() => {
     const reloadEpoch = $ReloadGUIPointer
+    const moduleRevision = $moduleRenderRevision
     const chatReloadEpoch = $ReloadChatPointer[idx] ?? 0
     const variableReloadEpoch = idx < 0 ? $VariableReloadGUIPointer : 0
     const chatScopeKey = idx < 0 ? currentChatId : ''
@@ -1915,6 +1917,7 @@
       firstMessage,
       chatScopeKey,
       reloadEpoch,
+      moduleRevision,
       chatReloadEpoch,
       variableReloadEpoch,
     ])
@@ -2386,7 +2389,7 @@
     </div>
   {:else}
     {@const variableReloadPointer = idx < 0 ? $VariableReloadGUIPointer : 0}
-    {@const chatReloadPointer = $ReloadGUIPointer + ($ReloadChatPointer[idx] ?? 0) + variableReloadPointer}
+    {@const chatReloadPointer = `${$ReloadGUIPointer}|${$moduleRenderRevision}|${$ReloadChatPointer[idx] ?? 0}|${variableReloadPointer}`}
     {@const chatScopePointer = idx < 0 ? currentChatId : ''}
     {@const totalLengthPointer = idx > totalLength - 6 ? totalLength : 0}
     <!-- svelte-ignore a11y_click_events_have_key_events -->

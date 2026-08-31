@@ -7,6 +7,7 @@ import { language } from 'src/lang'
 import { reencodeImage } from './process/files/inlays'
 import { PngChunk } from './pngChunk'
 import { v4 } from 'uuid'
+import { invalidateModuleRenderRevision } from './moduleRenderRevision'
 import {
   canUseServerCommands,
   createPersonaCommand,
@@ -1106,6 +1107,7 @@ export function reconcileSelectedPersonaProjectionEpoch(): void {
     return
   }
 
+  const restoresModuleLinks = dirtyFields.has('modules')
   withSuppressedPersonaSettingsWatcher(() => {
     updatePersonaOwnerState((draft) => {
       if (draft.selectedPersonaId !== personaId) return false
@@ -1133,6 +1135,7 @@ export function reconcileSelectedPersonaProjectionEpoch(): void {
       }
     })
   })
+  if (restoresModuleLinks) invalidateModuleRenderRevision()
 }
 
 function clearPendingSelectedPersonaUpdate(): void {
@@ -1738,7 +1741,10 @@ export function updateSelectedPersonaModules(moduleIds: readonly string[]): void
     if (!persona) return false
     persona.modules = cloneJsonValue(next)
   })
-  if (applied) markSelectedPersonaFieldDirty('modules', cloneJsonValue(next))
+  if (applied) {
+    invalidateModuleRenderRevision()
+    markSelectedPersonaFieldDirty('modules', cloneJsonValue(next))
+  }
 }
 
 export interface NewUserPersonaMutation {

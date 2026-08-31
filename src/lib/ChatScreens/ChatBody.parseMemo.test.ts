@@ -6,6 +6,7 @@ import { replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import { ReloadChatPointer, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
 import { RegexDisplayReloadPointer, reloadRegexDisplay } from '../../ts/process/regexDisplayReload'
 import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
+import { invalidateModuleRenderRevision } from '../../ts/moduleRenderRevision'
 
 const moduleMockState = vi.hoisted(() => ({
   modules: [] as any[],
@@ -366,6 +367,7 @@ describe('ChatBody content-keyed parse memo', () => {
     })
 
     moduleRegex[0].out = 'module two'
+    invalidateModuleRenderRevision()
     const moduleInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(moduleInvalidatedKey).not.toBe(characterAssetInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -373,7 +375,7 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 2,
-      settingsSignatureBuilds: 2,
+      settingsSignatureBuilds: 1,
     })
 
     getResourceDatabase().presetRegex[0].out = 'preset two'
@@ -384,10 +386,11 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 2,
-      settingsSignatureBuilds: 3,
+      settingsSignatureBuilds: 2,
     })
 
     moduleAssets[0][1] = 'asset-b'
+    invalidateModuleRenderRevision()
     const moduleAssetInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(moduleAssetInvalidatedKey).not.toBe(presetRegexInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -395,10 +398,11 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 3,
-      settingsSignatureBuilds: 4,
+      settingsSignatureBuilds: 2,
     })
 
     moduleTriggers[0].comment = 'module trigger two'
+    invalidateModuleRenderRevision()
     const moduleTriggerInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(moduleTriggerInvalidatedKey).not.toBe(moduleAssetInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -406,7 +410,7 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 4,
-      settingsSignatureBuilds: 4,
+      settingsSignatureBuilds: 2,
     })
 
     getResourceDatabase().customQuotes = true
@@ -417,9 +421,10 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 4,
       activeChatSignatureBuilds: 1,
       moduleSignatureBuilds: 4,
-      settingsSignatureBuilds: 5,
+      settingsSignatureBuilds: 3,
     })
 
+    invalidateModuleRenderRevision()
     ReloadGUIPointer.update((value) => value + 1)
     const reloadInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(reloadInvalidatedKey).not.toBe(settingsInvalidatedKey)
@@ -428,7 +433,7 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 5,
       activeChatSignatureBuilds: 2,
       moduleSignatureBuilds: 5,
-      settingsSignatureBuilds: 6,
+      settingsSignatureBuilds: 4,
     })
 
     VariableReloadGUIPointer.update((value) => value + 1)
@@ -439,8 +444,99 @@ describe('ChatBody content-keyed parse memo', () => {
       characterSignatureBuilds: 5,
       activeChatSignatureBuilds: 2,
       moduleSignatureBuilds: 5,
-      settingsSignatureBuilds: 6,
+      settingsSignatureBuilds: 4,
     })
+  })
+
+  it('keeps parse keys compact for an active module with 130,000 assets', async () => {
+    const char = seedDb()
+    const moduleAssets = Array.from({ length: 130_000 }, (_, index) => [
+      `asset-${index}`,
+      `server-asset-${index}`,
+      'png',
+    ]) as [string, string, string][]
+    moduleMockState.modules = [
+      {
+        id: 'asset-heavy-module',
+        assets: moduleAssets,
+      },
+    ]
+    moduleMockState.assets = moduleAssets
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'asset-heavy parse memo body',
+      charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const firstKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(firstKey).not.toContain('asset-129999')
+    expect(firstKey).not.toContain('server-asset-129999')
+    expect(firstKey.length).toBeLessThan(8_000)
+
+    moduleAssets[129_999][1] = 'changed-server-asset'
+    invalidateModuleRenderRevision()
+    const changedKey = memoModule.getChatBodyParseMemoKey(input)
+    expect(changedKey).not.toBe(firstKey)
+    expect(changedKey).not.toContain('changed-server-asset')
+    expect(changedKey.length).toBeLessThan(8_000)
+  })
+
+  it('retires prior parse entries when the module render revision advances', async () => {
+    const char = seedDb()
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    const parseSpy = vi.spyOn(parserModule, 'ParseMarkdown').mockResolvedValue('parsed')
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'module revision cache body',
+      charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    await memoModule.memoizedChatBodyParse(input)
+    expect(memoModule.getChatBodyParseMemoStats().parseEntries).toBe(1)
+
+    invalidateModuleRenderRevision()
+    await memoModule.memoizedChatBodyParse(input)
+
+    expect(parseSpy).toHaveBeenCalledTimes(2)
+    expect(memoModule.getChatBodyParseMemoStats().parseEntries).toBe(1)
+  })
+
+  it('bounds retained parse keys by approximate bytes as well as entry count', async () => {
+    const char = seedDb()
+    const parserModule = await import('../../ts/parser/parser.svelte')
+    vi.spyOn(parserModule, 'ParseMarkdown').mockResolvedValue('parsed')
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const repeatedBody = 'x'.repeat(600_000)
+    const owners = memoModule.createChatBodyParseOwnerReaders()
+
+    await Promise.all(
+      Array.from({ length: 16 }, (_, index) =>
+        memoModule.memoizedChatBodyParse({
+          data: `${index}:${repeatedBody}`,
+          charArg: char.chaId,
+          owners,
+          mode: 'notrim',
+          chatID: index,
+          cbsConditions: { firstmsg: false, chatRole: 'char' },
+        }),
+      ),
+    )
+
+    const stats = memoModule.getChatBodyParseMemoStats()
+    expect(stats.parseKeyBytes).toBeLessThanOrEqual(16 * 1024 * 1024)
+    expect(stats.parseEntries).toBeLessThan(16)
   })
 
   it('includes both sentence paragraph preferences in parser memo keys with legacy fallbacks', async () => {

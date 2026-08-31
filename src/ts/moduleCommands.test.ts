@@ -52,6 +52,7 @@ import {
   updateGlobalModule,
 } from './moduleCommands'
 import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
+import { captureModuleRenderRevision } from './moduleRenderRevision'
 
 interface CapturedFetch {
   url: string
@@ -282,6 +283,7 @@ describe('module command projection helpers', () => {
         { id: 'mod-b', name: 'Module B', description: '', namespace: 'module-b' },
       ],
     } as any)
+    const renderRevisionBefore = captureModuleRenderRevision()
 
     await setGlobalModuleEnabled('mod-a', true)
     await updateGlobalModule('mod-a', {
@@ -298,6 +300,7 @@ describe('module command projection helpers', () => {
     ])
     expect(calls.some((call) => call.url === '/api/v1/commands/modules/enable')).toBe(true)
     expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
+    expect(captureModuleRenderRevision()).toBeGreaterThan(renderRevisionBefore)
   })
 
   it('does not fall back to the compatibility facade while the module owner is loading', async () => {

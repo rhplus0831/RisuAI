@@ -25,6 +25,7 @@ import { pickHashRand, replaceAsync } from '../util'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { getInlayAssetBlob, type InlayAsset } from '../process/files/inlays'
 import type { RisuModule } from '../process/modules'
+import { captureModuleRenderRevision } from '../moduleRenderRevision'
 import { resolveActiveModuleStates } from '../moduleActivation'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
@@ -291,10 +292,10 @@ function parserModuleLorebooks(): loreBook[] {
   return parserModules().flatMap((moduleOwner) => moduleOwner.lorebook ?? [])
 }
 
-function parserModuleAssets(context: { character: character | undefined; chat: Chat | undefined }) {
+function parserModuleOwners(context: { character: character | undefined; chat: Chat | undefined }) {
   return parserModules(
     context.character ? { character: context.character, ...(context.chat ? { chat: context.chat } : {}) } : undefined,
-  ).flatMap((moduleOwner) => moduleOwner.assets ?? [])
+  )
 }
 
 registerRisuChatParserCBS({
@@ -678,75 +679,41 @@ async function renderHighlightableMarkdown(data: string) {
 }
 
 export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
-
-function getAssetSrc(assetArr: readonly (readonly string[])[], assetPaths: AssetPaths) {
-  for (const asset of assetArr) {
-    const key = asset[0].toLocaleLowerCase()
-    assetPaths[key] ??= {
-      srcPaths: [],
-      ext: asset[2],
-    }
-    if (assetPaths[key].ext === asset[2]) {
-      assetPaths[key].srcPaths.push(asset[1])
-    }
-  }
-}
-
-function getEmoSrc(emoArr: readonly (readonly string[])[], emoPaths: AssetPaths) {
-  for (const emo of emoArr) {
-    emoPaths[emo[0].toLocaleLowerCase()] = {
-      srcPaths: [emo[1]],
-    }
-  }
-}
-
-const fileSrcCache = new Map<string, string>()
+const assetMarkerPresenceRegex = /{{(?:raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::/m
 
 async function getFileSrcCached(path: string) {
-  let cached = fileSrcCache.get(path)
-  if (cached) {
-    return cached
-  }
-  const src = await getFileSrc(path)
-  fileSrcCache.set(path, src)
-  return src
+  return getFileSrc(path)
 }
 
-type AssetPaths = {
-  [key: string]: {
-    srcPaths: string[]
-    ext?: string
-  }
+interface AssetPathMatch {
+  srcPaths: string[]
+  ext?: string
 }
 
 interface AssetResolutionContext {
-  assetPaths: AssetPaths
-  emotionPaths: AssetPaths
+  characterAssets: readonly (readonly string[])[]
+  emotionAssets: readonly (readonly string[])[]
+  moduleOwners: readonly RisuModule[]
+  resolvedAssets: Map<string, AssetPathMatch | null>
+  resolvedEmotions: Map<string, string | null>
 }
 
 interface AssetResolutionCacheEntry extends AssetResolutionContext {
-  signature: string
+  activeModuleKey: string
+  characterSignature: string
+  moduleRenderRevision: number
 }
 
 const ASSET_RESOLUTION_CACHE_LIMIT = 32
 const assetResolutionCache = new Map<string, AssetResolutionCacheEntry>()
-
-function buildAssetResolutionContext(
-  charAssets: readonly (readonly string[])[],
-  emotionAssets: readonly (readonly string[])[],
-  moduleAssets: readonly (readonly string[])[],
-): AssetResolutionContext {
-  const assetPaths: AssetPaths = {}
-  const emotionPaths: AssetPaths = {}
-
-  getAssetSrc(charAssets, assetPaths)
-  getAssetSrc(moduleAssets, assetPaths)
-  getEmoSrc(emotionAssets, emotionPaths)
-
-  return { assetPaths, emotionPaths }
+let cachedModuleRenderRevision = captureModuleRenderRevision()
+const additionalAssetCacheStats = {
+  contextsBuilt: 0,
+  moduleAssetTuplesVisited: 0,
+  resolvedAssetNames: 0,
 }
 
-function moduleAssetsForCharacter(char: simpleCharacterArgument | character): [string, string, string][] {
+function moduleOwnersForCharacter(char: simpleCharacterArgument | character): RisuModule[] {
   const ownerCharacter = parserCharacterOwnerById(char.chaId)
   const contextCharacter = char.type === 'simple' ? ownerCharacter : char
   const rows = charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
@@ -757,29 +724,50 @@ function moduleAssetsForCharacter(char: simpleCharacterArgument | character): [s
         : selectedChatOwner(rows, contextCharacter)
       : selectedChatOwner([contextCharacter], contextCharacter)
     : undefined
-  return parserModuleAssets({ character: contextCharacter, chat: contextChat })
+  return parserModuleOwners({ character: contextCharacter, chat: contextChat })
 }
 
-function assetResolutionSignature(
-  char: simpleCharacterArgument | character,
-  moduleAssets: readonly [string, string, string][],
-): string {
-  return JSON.stringify([char.additionalAssets ?? [], char.emotionImages ?? [], moduleAssets])
+function characterAssetResolutionSignature(char: simpleCharacterArgument | character): string {
+  return JSON.stringify([char.additionalAssets ?? [], char.emotionImages ?? []])
+}
+
+function activeModuleAssetKey(moduleOwners: readonly RisuModule[]): string {
+  return JSON.stringify(moduleOwners.map((moduleOwner) => moduleOwner.id))
 }
 
 function getAssetResolutionContext(char: simpleCharacterArgument | character): AssetResolutionContext {
-  const moduleAssets = moduleAssetsForCharacter(char)
-  const signature = assetResolutionSignature(char, moduleAssets)
+  const moduleRenderRevision = captureModuleRenderRevision()
+  if (cachedModuleRenderRevision !== moduleRenderRevision) {
+    assetResolutionCache.clear()
+    cachedModuleRenderRevision = moduleRenderRevision
+  }
+
+  const moduleOwners = moduleOwnersForCharacter(char)
+  const activeModuleKey = activeModuleAssetKey(moduleOwners)
+  const characterSignature = characterAssetResolutionSignature(char)
   const ownerKey = `${char.type === 'simple' ? 'simple' : 'character'}:${char.chaId}`
   const cached = assetResolutionCache.get(ownerKey)
-  if (cached?.signature === signature) {
+  if (
+    cached?.moduleRenderRevision === moduleRenderRevision &&
+    cached.activeModuleKey === activeModuleKey &&
+    cached.characterSignature === characterSignature
+  ) {
     assetResolutionCache.delete(ownerKey)
     assetResolutionCache.set(ownerKey, cached)
     return cached
   }
 
-  const context = buildAssetResolutionContext(char.additionalAssets ?? [], char.emotionImages ?? [], moduleAssets)
-  const entry = { ...context, signature }
+  const entry: AssetResolutionCacheEntry = {
+    activeModuleKey,
+    characterAssets: char.additionalAssets ?? [],
+    characterSignature,
+    emotionAssets: char.emotionImages ?? [],
+    moduleOwners,
+    moduleRenderRevision,
+    resolvedAssets: new Map(),
+    resolvedEmotions: new Map(),
+  }
+  additionalAssetCacheStats.contextsBuilt += 1
   assetResolutionCache.delete(ownerKey)
   assetResolutionCache.set(ownerKey, entry)
   while (assetResolutionCache.size > ASSET_RESOLUTION_CACHE_LIMIT) {
@@ -790,9 +778,52 @@ function getAssetResolutionContext(char: simpleCharacterArgument | character): A
   return entry
 }
 
+function resolveAssetPaths(context: AssetResolutionContext, name: string): AssetPathMatch | null {
+  if (context.resolvedAssets.has(name)) return context.resolvedAssets.get(name) ?? null
+
+  let match: AssetPathMatch | null = null
+  const consider = (asset: readonly string[]) => {
+    if (asset[0].toLocaleLowerCase() !== name) return
+    match ??= { srcPaths: [], ext: asset[2] }
+    if (match.ext === asset[2]) match.srcPaths.push(asset[1])
+  }
+
+  for (const asset of context.characterAssets) consider(asset)
+  for (const moduleOwner of context.moduleOwners) {
+    for (const asset of moduleOwner.assets ?? []) {
+      additionalAssetCacheStats.moduleAssetTuplesVisited += 1
+      consider(asset)
+    }
+  }
+
+  additionalAssetCacheStats.resolvedAssetNames += 1
+  context.resolvedAssets.set(name, match)
+  return match
+}
+
+function resolveEmotionPath(context: AssetResolutionContext, name: string): string | null {
+  if (context.resolvedEmotions.has(name)) return context.resolvedEmotions.get(name) ?? null
+  let path: string | null = null
+  for (const emotion of context.emotionAssets) {
+    if (emotion[0].toLocaleLowerCase() === name) path = emotion[1]
+  }
+  context.resolvedEmotions.set(name, path)
+  return path
+}
+
 export function clearAdditionalAssetCachesForTests(): void {
   assetResolutionCache.clear()
-  fileSrcCache.clear()
+  cachedModuleRenderRevision = captureModuleRenderRevision()
+  additionalAssetCacheStats.contextsBuilt = 0
+  additionalAssetCacheStats.moduleAssetTuplesVisited = 0
+  additionalAssetCacheStats.resolvedAssetNames = 0
+}
+
+export function getAdditionalAssetCacheStatsForTests() {
+  return {
+    ...additionalAssetCacheStats,
+    entries: assetResolutionCache.size,
+  }
 }
 
 const imageCBS = ['img', 'image', 'emotion', 'asset', 'bg', 'raw', 'path']
@@ -810,8 +841,6 @@ async function parseAdditionalAssets(
   const legacyMediaFindings = parserSetting('legacyMediaFindings') === true
   const assetWidthString = (assetWidth && assetWidth !== -1) || assetWidth === 0 ? `max-width:${assetWidth}rem;` : ''
 
-  const { assetPaths, emotionPaths } = context
-
   let needsSourceAccess = false
   let cx: number | null = null
 
@@ -825,7 +854,7 @@ async function parseAdditionalAssets(
     }
 
     if (type === 'emotion') {
-      const srcPath = emotionPaths?.[name]?.srcPaths?.[0]
+      const srcPath = resolveEmotionPath(context, name)
       const path = srcPath ? await getFileSrcCached(srcPath) : null
       if (!path) {
         return ''
@@ -845,16 +874,14 @@ async function parseAdditionalAssets(
       }
     }
 
-    let match = assetPaths?.[name]
+    let match = resolveAssetPaths(context, name)
 
     if (!match) {
       if (legacyMediaFindings) {
         return ''
       }
 
-      if (assetPaths) {
-        match = getClosestMatch(char, name)
-      }
+      match = getClosestMatch(char, name)
 
       if (!match) {
         return ''
@@ -1198,11 +1225,13 @@ export async function ParseMarkdown(
   let firstParsed = ''
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
   let char = typeof charArg === 'string' ? parserCharacterOwnerById(charArg) : charArg
-  const assetResolutionContext = char ? getAssetResolutionContext(char) : null
+  let assetResolutionContext: AssetResolutionContext | null = null
 
-  if (char && assetResolutionContext) {
-    data = await parseAdditionalAssets(
-      data,
+  const parseAssetsIfPresent = async (source: string): Promise<string> => {
+    if (!char || !assetMarkerPresenceRegex.test(source)) return source
+    assetResolutionContext ??= getAssetResolutionContext(char)
+    return parseAdditionalAssets(
+      source,
       char,
       additionalAssetMode,
       {
@@ -1210,6 +1239,10 @@ export async function ParseMarkdown(
       },
       assetResolutionContext,
     )
+  }
+
+  if (char) {
+    data = await parseAssetsIfPresent(data)
     firstParsed = data
   }
 
@@ -1244,16 +1277,8 @@ export async function ParseMarkdown(
         : (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
   }
 
-  if (firstParsed !== data && char && assetResolutionContext) {
-    data = await parseAdditionalAssets(
-      data,
-      char,
-      additionalAssetMode,
-      {
-        ch: chatID,
-      },
-      assetResolutionContext,
-    )
+  if (firstParsed !== data && char) {
+    data = await parseAssetsIfPresent(data)
   }
 
   data = await parseInlayAssets(data ?? '')

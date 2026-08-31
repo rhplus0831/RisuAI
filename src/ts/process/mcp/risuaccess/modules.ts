@@ -20,6 +20,7 @@ import { currentGlobalModuleStateSnapshot, dispatchModuleInfoPatch, sanitizeModu
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+import { invalidateModuleRenderRevision } from 'src/ts/moduleRenderRevision'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
@@ -642,6 +643,7 @@ export class ModuleHandler extends MCPToolHandler {
         dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
       } else {
         module.lorebook = entries
+        invalidateModuleRenderRevision()
       }
       return [
         {
@@ -675,6 +677,7 @@ export class ModuleHandler extends MCPToolHandler {
       dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
     } else {
       module.lorebook = entries
+      invalidateModuleRenderRevision()
     }
 
     return [
@@ -729,6 +732,7 @@ export class ModuleHandler extends MCPToolHandler {
       dispatchReplaceModuleLorebooks(module.id, entries, previous, 0)
     } else {
       module.lorebook = entries
+      invalidateModuleRenderRevision()
     }
 
     return [
@@ -822,6 +826,7 @@ export class ModuleHandler extends MCPToolHandler {
         dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
       } else {
         module.regex = scripts
+        invalidateModuleRenderRevision()
       }
       return [
         {
@@ -845,6 +850,7 @@ export class ModuleHandler extends MCPToolHandler {
       dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
     } else {
       module.regex = scripts
+      invalidateModuleRenderRevision()
     }
 
     return [
@@ -903,6 +909,7 @@ export class ModuleHandler extends MCPToolHandler {
       dispatchReplaceModuleScripts(module.id, scripts, previous, 0)
     } else {
       module.regex = scripts
+      invalidateModuleRenderRevision()
     }
 
     return [
@@ -968,6 +975,7 @@ export class ModuleHandler extends MCPToolHandler {
         dispatchReplaceModuleTriggers(module.id, triggers, previous, 0)
       } else {
         module.trigger = triggers
+        invalidateModuleRenderRevision()
       }
       return [
         {
@@ -1022,6 +1030,7 @@ function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, 
     }
     setEnabledModuleIdsOwner(Array.from(enabledModules))
   }
+  invalidateModuleRenderRevision()
 }
 
 const MODULE_INFO_DELETABLE_FIELDS = new Set(['lowLevelAccess', 'backgroundEmbedding', 'customModuleToggle'])
@@ -1038,17 +1047,26 @@ function applyModuleInfoFields(target: Record<string, unknown>, patch: ModuleSna
 
 function replaceModuleLorebooksOptimistically(moduleId: string, entries: loreBook[]): void {
   const target = findModuleOwner(moduleId)
-  if (target) target.lorebook = entries
+  if (target) {
+    target.lorebook = entries
+    invalidateModuleRenderRevision()
+  }
 }
 
 function replaceModuleRegexScriptsOptimistically(moduleId: string, scripts: customscript[]): void {
   const target = findModuleOwner(moduleId)
-  if (target) target.regex = scripts
+  if (target) {
+    target.regex = scripts
+    invalidateModuleRenderRevision()
+  }
 }
 
 function replaceModuleTriggersOptimistically(moduleId: string, triggers: triggerscript[]): void {
   const target = findModuleOwner(moduleId)
-  if (target) target.trigger = triggers
+  if (target) {
+    target.trigger = triggers
+    invalidateModuleRenderRevision()
+  }
 }
 
 function moduleCollectionOwner(): RisuModule[] {
@@ -1074,4 +1092,5 @@ function enabledModuleIdsOwner(): string[] {
 
 function setEnabledModuleIdsOwner(enabledModules: string[]): void {
   ;(settingsResourceState.value as Record<string, unknown>).enabledModules = enabledModules
+  invalidateModuleRenderRevision()
 }

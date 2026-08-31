@@ -10,6 +10,7 @@
     selIdState,
     VariableReloadGUIPointer,
   } from 'src/ts/stores.svelte'
+  import { moduleRenderRevision } from 'src/ts/moduleRenderRevision'
   import {
     RegexDisplayReloadPointer,
     RegexDisplayReloadScope,
@@ -96,7 +97,9 @@
       chatId: selectedChatId,
     }),
   )
-  let backgroundReloadKey = $derived(`${$ReloadGUIPointer}|${$VariableReloadGUIPointer}|${regexDisplayReloadToken}`)
+  let backgroundReloadKey = $derived(
+    `${$ReloadGUIPointer}|${$moduleRenderRevision}|${$VariableReloadGUIPointer}|${regexDisplayReloadToken}`,
+  )
   let backgroundOwner = $derived(selectedCharacter?.chaId ?? '')
   let backgroundParseInput: BackgroundParseInput = $derived({
     characterId: selectedCharacter?.chaId ?? '',

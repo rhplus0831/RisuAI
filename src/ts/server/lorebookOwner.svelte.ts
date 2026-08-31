@@ -4,6 +4,7 @@ import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
 import type { character, Chat, Database, loreBook } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
+import { invalidateModuleRenderRevision } from '../moduleRenderRevision'
 import {
   canUseServerCommands,
   createGlobalLorebookCommand,
@@ -3323,6 +3324,7 @@ function assignScopedLorebookCollection(scope: DiscreteLorebookEditScope, entrie
       const module = findModule(scope.moduleId)
       if (!module) return false
       module.lorebook = entries as typeof module.lorebook
+      invalidateModuleRenderRevision()
       return true
     }
   }
@@ -3444,6 +3446,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
       )
       if (module && Array.isArray(snapshot.scopedValue)) {
         module.lorebook = cloneJsonValue(snapshot.scopedValue) as typeof module.lorebook
+        invalidateModuleRenderRevision()
       }
     }
   })

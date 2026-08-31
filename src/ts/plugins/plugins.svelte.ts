@@ -6,6 +6,7 @@ import { selectSingleFile } from '../filePicker'
 import type { OpenAIChat } from '../process/index.svelte'
 import { pluginFetchNative, pluginGlobalFetch, readImage, saveAsset } from '../globalApi.svelte'
 import { hotReloading, selectedCharID } from '../stores.svelte'
+import { invalidateModuleRenderRevision } from '../moduleRenderRevision'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { safeStructuredClone } from '../polyfill'
@@ -995,9 +996,11 @@ async function applyPluginDatabasePatch(newDb: Record<string, unknown>, options:
         collectionsResourceState.values.modules = cloneJsonValue(
           value,
         ) as typeof collectionsResourceState.values.modules
+        invalidateModuleRenderRevision()
       }
       if (key === 'enabledModules' && Array.isArray(value)) {
         ;(settingsResourceState.value as Record<string, unknown>).enabledModules = cloneJsonValue(value)
+        invalidateModuleRenderRevision()
       }
       if (key === 'plugins' && Array.isArray(value)) {
         replacePluginCollectionOwner(value as RisuPlugin[])

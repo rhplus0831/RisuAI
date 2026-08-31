@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store'
 import { resetRegisteredScriptCaches } from './process/scriptCacheInvalidation'
+import { invalidateModuleRenderRevision } from './moduleRenderRevision'
 import type { ActiveChatTarget } from './types/activeChatTarget'
 import type { hubType } from './types/risuHub'
 
@@ -224,6 +225,7 @@ export const customSideBarConfigDialogStore = $state({
 export const hotReloading = $state<string[]>([])
 
 export function reloadGuiAfterDefinitionChange() {
+  invalidateModuleRenderRevision()
   ReloadChatPointer.set({})
   resetRegisteredScriptCaches()
   ReloadGUIPointer.update((value) => value + 1)

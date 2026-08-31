@@ -1,12 +1,18 @@
 import { writable } from 'svelte/store'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LLMModel } from '../../model/modellist'
-import { clearAdditionalAssetCachesForTests, ParseMarkdown, type simpleCharacterArgument } from '../parser.svelte'
+import {
+  clearAdditionalAssetCachesForTests,
+  getAdditionalAssetCacheStatsForTests,
+  ParseMarkdown,
+  type simpleCharacterArgument,
+} from '../parser.svelte'
 import {
   charactersResourceState,
   collectionsResourceState,
   settingsResourceState,
 } from '../../server/resourceState.svelte'
+import { invalidateModuleRenderRevision } from '../../moduleRenderRevision'
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -145,7 +151,7 @@ describe('additional asset resolution cache', () => {
     expect(hanielOutput).not.toContain('/resolved/lucy-background')
   })
 
-  it('invalidates character and module asset entries after in-place tuple changes', async () => {
+  it('invalidates character tuples structurally and module tuples through the render revision', async () => {
     const character = simpleCharacter('mutable-character', [['portrait', 'character-old', 'png']])
     mocks.moduleAssets = [['frame', 'module-old', 'png']]
     mocks.db.modules = [
@@ -163,13 +169,64 @@ describe('additional asset resolution cache', () => {
     )
 
     character.additionalAssets![0][1] = 'character-new'
-    collectionsResourceState.values.modules![0].assets![0][1] = 'module-new'
-    const updated = await ParseMarkdown('{{raw::portrait}} {{raw::frame}}', character, 'back')
+    const characterUpdated = await ParseMarkdown('{{raw::portrait}}', character, 'back')
+    expect(characterUpdated).toContain('/resolved/character-new')
+    expect(characterUpdated).not.toContain('/resolved/character-old')
 
-    expect(updated).toContain('/resolved/character-new')
-    expect(updated).toContain('/resolved/module-new')
-    expect(updated).not.toContain('/resolved/character-old')
-    expect(updated).not.toContain('/resolved/module-old')
+    collectionsResourceState.values.modules![0].assets![0][1] = 'module-new'
+    invalidateModuleRenderRevision()
+    const moduleUpdated = await ParseMarkdown('{{raw::frame}}', character, 'back')
+
+    expect(moduleUpdated).toContain('/resolved/module-new')
+    expect(moduleUpdated).not.toContain('/resolved/module-old')
+  })
+
+  it('does not index 130,000 active module assets until an exact marker needs one', async () => {
+    const moduleAssets = Array.from({ length: 130_000 }, (_, index) => [
+      `asset-${index}`,
+      `module-path-${index}`,
+      'png',
+    ]) as [string, string, string][]
+    mocks.db.modules = [
+      {
+        id: 'module-owner',
+        name: 'Asset-heavy module',
+        description: '',
+        assets: moduleAssets,
+      },
+    ]
+    collectionsResourceState.values.modules = mocks.db.modules as never
+    const character = simpleCharacter('asset-heavy-character')
+
+    await expect(ParseMarkdown('No asset marker in this message.', character, 'back')).resolves.toContain(
+      'No asset marker in this message.',
+    )
+    expect(getAdditionalAssetCacheStatsForTests()).toMatchObject({
+      contextsBuilt: 0,
+      moduleAssetTuplesVisited: 0,
+      resolvedAssetNames: 0,
+    })
+    expect(mocks.getFileSrc).not.toHaveBeenCalled()
+
+    await expect(ParseMarkdown('{{raw::asset-129999}}', character, 'back')).resolves.toContain(
+      '/resolved/module-path-129999',
+    )
+    expect(getAdditionalAssetCacheStatsForTests()).toMatchObject({
+      contextsBuilt: 1,
+      moduleAssetTuplesVisited: 130_000,
+      resolvedAssetNames: 1,
+    })
+    expect(mocks.getFileSrc).toHaveBeenCalledTimes(1)
+
+    await expect(ParseMarkdown('{{raw::asset-129999}}', character, 'back')).resolves.toContain(
+      '/resolved/module-path-129999',
+    )
+    expect(getAdditionalAssetCacheStatsForTests()).toMatchObject({
+      contextsBuilt: 1,
+      moduleAssetTuplesVisited: 130_000,
+      resolvedAssetNames: 1,
+    })
+    expect(mocks.getFileSrc).toHaveBeenCalledTimes(2)
   })
 
   it('keeps concurrent character parses isolated when asset reads finish out of order', async () => {
