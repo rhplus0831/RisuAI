@@ -6,9 +6,6 @@ import {
   type Chat,
   defaultSdDataFunc,
   type loreBook,
-  getDatabase,
-  getCharacterByIndex,
-  setCharacterByIndex,
   isServerCharacterShell,
 } from './storage/database.svelte'
 import { alertAddCharacter, alertConfirm, alertError, alertNormal, alertSelect, alertStore, alertWait } from './alert'
@@ -1009,12 +1006,6 @@ function importCollectionHasId(collectionName: ChatImportCollectionName, id: str
     return Array.isArray(projection) && projection.some((entry) => isRecord(entry) && entry.id === id)
   }
 
-  // Explicit pre-bootstrap import compatibility: imports can still be parsed
-  // before split collection owners have loaded. Resource errors fail closed.
-  if (collectionsResourceState.status === 'idle' || collectionsResourceState.status === 'loading') {
-    const fallback = getDatabase()[collectionName]
-    return Array.isArray(fallback) && fallback.some((entry) => isRecord(entry) && entry.id === id)
-  }
   return false
 }
 
@@ -1126,12 +1117,12 @@ function formatTavernChat(chat: string, charName: string) {
 }
 
 export function characterFormatUpdate(
-  indexOrCharacter: number | character,
+  characterOwner: character,
   arg: {
     updateInteraction?: boolean
   } = {},
 ) {
-  let cha = typeof indexOrCharacter === 'number' ? getCharacterByIndex(indexOrCharacter) : indexOrCharacter
+  let cha = characterOwner
   if (cha.chats.length === 0) {
     cha.chats = [
       {
@@ -1216,11 +1207,6 @@ export function characterFormatUpdate(
     cha.customscript = []
   }
   cha.lastInteraction = Date.now()
-  if (typeof indexOrCharacter === 'number') {
-    // Explicit pre-owner compatibility overload for legacy cold-start callers.
-    // Normal ready-state edits use applyCharacterRowMutationScoped instead.
-    setCharacterByIndex(indexOrCharacter, cha)
-  }
   for (let i = 0; i < cha.chats.length; i++) {
     const chat = cha.chats[i]
     chat.fmIndex ??= cha.firstMsgIndex ?? -1
@@ -1428,12 +1414,13 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
 }
 
 function findLiveCharacterIndex(characterId: string): number {
+  if (charactersResourceState.status !== 'ready') return -1
   const rows = characterRowsOwner()
   const matches = rows.reduce<number[]>((indices, character, index) => {
     if (character?.chaId === characterId) indices.push(index)
     return indices
   }, [])
-  return charactersResourceState.status === 'ready' ? (matches.length === 1 ? matches[0] : -1) : (matches[0] ?? -1)
+  return matches.length === 1 ? matches[0] : -1
 }
 
 function characterIdAtIndex(index: number | undefined): string | undefined {
@@ -1441,37 +1428,21 @@ function characterIdAtIndex(index: number | undefined): string | undefined {
 }
 
 function characterRowsOwner(): character[] {
-  if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-  // Explicit pre-bootstrap compatibility for import/export and legacy format
-  // callers. Error states never fall back to the aggregate facade.
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-    return getDatabase().characters ?? []
-  }
-  return []
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 function currentCharacterIndexOwner(): number | undefined {
-  if (charactersResourceState.status === 'ready') return charactersResourceState.currentChar
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-    return (getDatabase() as unknown as { currentChar?: number }).currentChar
-  }
-  return undefined
+  return charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : undefined
 }
 
 function characterOwnerAt(index: number): character | undefined {
   if (index < 0) return undefined
-  const candidate = characterRowsOwner()[index]
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') return candidate
   if (charactersResourceState.status !== 'ready') return undefined
+  const candidate = characterRowsOwner()[index]
   if (!candidate?.chaId) return undefined
   return getCharacterResourceOwner(candidate.chaId)
 }
 
 function characterOwnerById(characterId: string): character | undefined {
-  if (!characterId) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-    return characterRowsOwner().find((candidate) => candidate?.chaId === characterId)
-  }
-  return undefined
+  return characterId && charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
 }

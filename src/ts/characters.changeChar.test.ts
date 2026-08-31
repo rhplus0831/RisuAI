@@ -195,26 +195,25 @@ describe('changeChar shell selection freshness', () => {
     expect(selectedCharacterCommandIds(calls)).toEqual([])
   })
 
-  it('uses the compatibility character owner until the resource projection is ready', async () => {
-    testDatabaseState.db = {
-      currentChar: -1,
-      characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
-      characterOrder: ['char-a', 'char-b'],
-    } as any
-    const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
-    charactersResourceState.status = 'loading'
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not select retained character rows while the owner is %s',
+    async (status) => {
+      testDatabaseState.db = {
+        currentChar: -1,
+        characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
+        characterOrder: ['char-a', 'char-b'],
+      } as any
+      const calls = stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+      charactersResourceState.status = status
 
-    try {
       await changeChar(1)
 
-      expect(get(selectedCharID)).toBe(1)
-      expect(charactersResourceState.currentChar).toBe(1)
+      expect(get(selectedCharID)).toBe(-1)
+      expect(charactersResourceState.currentChar).toBe(-1)
       await drainServerCommandExecutionForTests()
-      expect(selectedCharacterCommandIds(calls)).toEqual(['char-b'])
-    } finally {
-      charactersResourceState.status = 'ready'
-    }
-  })
+      expect(selectedCharacterCommandIds(calls)).toEqual([])
+    },
+  )
 
   it('allows selecting another character while a generation is active', async () => {
     testDatabaseState.db = {
