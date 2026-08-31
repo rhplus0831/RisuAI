@@ -9,10 +9,12 @@ import {
   completeStartupAttempt,
   configureStartupObserverShell,
   failStartupAttempt,
+  getGenerationReadinessDiagnostic,
   getStartupCoordinatorSnapshot,
   getStartupReadinessSnapshot,
   pluginsReady,
   recordStartupMilestone,
+  recordStartupCapabilityFailure,
   resetStartupReadinessForTests,
   restoreStartupWriterCapabilities,
   revokeStartupWriterCapabilities,
@@ -126,6 +128,38 @@ describe('startup readiness instrumentation', () => {
     expect(backgroundReady()).toBe(false)
     recordStartupMilestone('background-ready', 7)
     expect(backgroundReady()).toBe(true)
+  })
+
+  it('reports the exact privacy-safe blockers behind generation readiness', () => {
+    expect(getGenerationReadinessDiagnostic()).toEqual({
+      ready: false,
+      blockers: ['writer-startup', 'plugin-runtime', 'generation-recovery', 'chat-dependencies'],
+      phase: null,
+    })
+
+    for (const milestone of ['entry', 'shell-mounted', 'observer-ready', 'writer-ready', 'plugins-ready'] as const) {
+      recordStartupMilestone(milestone)
+    }
+    settleStartupGenerationRecoveryReadiness(true)
+    const attemptId = beginStartupAttempt()
+    recordStartupCapabilityFailure(attemptId, 'selected-chat-hydration-failed', 'chat-ready')
+
+    expect(getGenerationReadinessDiagnostic()).toEqual({
+      ready: false,
+      blockers: ['chat-dependencies'],
+      phase: 'plugins-ready',
+      failureCode: 'selected-chat-hydration-failed',
+    })
+
+    settleStartupChatReadiness(true)
+    expect(getGenerationReadinessDiagnostic()).toEqual({ ready: true, blockers: [], phase: 'chat-ready' })
+
+    revokeStartupWriterCapabilities()
+    expect(getGenerationReadinessDiagnostic()).toEqual({
+      ready: false,
+      blockers: ['writer-capabilities-revoked'],
+      phase: 'chat-ready',
+    })
   })
 
   it('renders at observer readiness only when the rollout is enabled', () => {

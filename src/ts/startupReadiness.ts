@@ -37,6 +37,23 @@ export type StartupReadinessSnapshot = ProtocolStartupReadinessSnapshot
 export type StartupCapabilityFailureSnapshot = ProtocolStartupCapabilityFailureSnapshot
 export type StartupCoordinatorSnapshot = ProtocolStartupCoordinatorSnapshot
 
+export const GENERATION_READINESS_BLOCKERS = [
+  'writer-startup',
+  'plugin-runtime',
+  'generation-recovery',
+  'chat-dependencies',
+  'writer-capabilities-revoked',
+] as const
+
+export type GenerationReadinessBlocker = (typeof GENERATION_READINESS_BLOCKERS)[number]
+
+export interface GenerationReadinessDiagnostic {
+  ready: boolean
+  blockers: GenerationReadinessBlocker[]
+  phase: StartupMilestone | null
+  failureCode?: StartupAttemptFailureCode
+}
+
 export interface StartupCoordinatorReadable {
   subscribe(run: (snapshot: StartupCoordinatorSnapshot) => void): () => void
 }
@@ -179,6 +196,24 @@ export function canGenerate(): boolean {
     chatGenerationReady &&
     !writerCapabilitiesRevoked
   )
+}
+
+/** Privacy-safe reasons for a failed generation capability check. */
+export function getGenerationReadinessDiagnostic(): GenerationReadinessDiagnostic {
+  const blockers: GenerationReadinessBlocker[] = []
+  if (!hasTransitioned('writer-ready')) blockers.push('writer-startup')
+  if (!pluginsReady()) blockers.push('plugin-runtime')
+  if (!generationRecoveryReady) blockers.push('generation-recovery')
+  if (!hasTransitioned('chat-ready') || !chatGenerationReady) blockers.push('chat-dependencies')
+  if (writerCapabilitiesRevoked) blockers.push('writer-capabilities-revoked')
+
+  const failure = capabilityFailures.get('canGenerate') ?? capabilityFailures.get('pluginsReady')
+  return {
+    ready: blockers.length === 0,
+    blockers,
+    phase: currentMilestone(),
+    ...(failure ? { failureCode: failure.failureCode } : {}),
+  }
 }
 
 /** Generation recovery is a separate dependency from selected-chat hydration. */

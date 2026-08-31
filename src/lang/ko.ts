@@ -1990,6 +1990,8 @@ export const languageKorean = {
     sendFailed: (detail: string) =>
       `메시지를 보내지 못했습니다. ${detail} 다시 시도할 수 있도록 입력창 초안을 유지했습니다.`,
     sendFailureDetails: {
+      generationNotReady: (blockers: string, phase: string, failure: string) =>
+        `생성을 시작할 준비가 되지 않았습니다 (차단 요인: ${blockers}; 시작 단계: ${phase}; 마지막 실패: ${failure}).`,
       chatGenerationSettings: '채팅 생성 설정을 저장할 수 없습니다.',
       personaSettings: '페르소나 설정을 저장할 수 없습니다.',
       characterDefinitions: '캐릭터의 정규식 또는 트리거 변경 사항을 저장할 수 없습니다.',

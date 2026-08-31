@@ -99,6 +99,8 @@ export const languageEnglish = {
     sendFailed: (detail: string) =>
       `Your message was not sent. ${detail} Your composer draft was kept so you can retry.`,
     sendFailureDetails: {
+      generationNotReady: (blockers: string, phase: string, failure: string) =>
+        `Generation is not ready (blockers: ${blockers}; startup phase: ${phase}; last failure: ${failure}).`,
       chatGenerationSettings: 'Chat generation settings could not be saved.',
       personaSettings: 'Persona settings could not be saved.',
       characterDefinitions: "The character's regex and trigger changes could not be saved.",

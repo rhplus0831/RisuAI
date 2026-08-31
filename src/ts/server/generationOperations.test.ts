@@ -11,6 +11,7 @@ const operationMocks = vi.hoisted(() => ({
   beginDispatch: vi.fn(),
   discard: vi.fn(),
   getBaseRevision: vi.fn(),
+  isWriterAccessLost: vi.fn(),
   peekRevision: vi.fn(),
   reconcileDirectEvent: vi.fn(),
   setRevision: vi.fn(),
@@ -41,7 +42,7 @@ vi.mock('../process/reattach', () => ({
 vi.mock('./activeWriterSession', () => ({
   activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-a' }),
   handleActiveWriterStaleResponse: vi.fn(),
-  isWriterAccessLost: () => false,
+  isWriterAccessLost: operationMocks.isWriterAccessLost,
 }))
 vi.mock('./commands', () => ({
   activeWriterSessionHeader: () => ({ 'risu-writer-session': 'writer-a' }),
@@ -185,6 +186,7 @@ beforeEach(() => {
     randomUUID: vi.fn(() => [operationId, messageId][uuidIndex++] ?? operationId),
   })
   operationMocks.peekRevision.mockReturnValue(7)
+  operationMocks.isWriterAccessLost.mockReturnValue(false)
   operationMocks.getBaseRevision.mockResolvedValue(7)
   operationMocks.beginDispatch.mockResolvedValue('persisted')
   operationMocks.discard.mockResolvedValue('deleted')
@@ -214,6 +216,28 @@ afterEach(() => {
 })
 
 describe('generation operation client', () => {
+  it('identifies writer ownership loss in a readiness failure', async () => {
+    operationMocks.isWriterAccessLost.mockReturnValue(true)
+
+    await expect(
+      stageAcceptedSendGenerationOperation({
+        target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
+        message: 'hello',
+        generation: {
+          syntheticSayNothing: false,
+          resetMessages: false,
+          inlayAssetRefs: [],
+          clientContext: {},
+          clientCapabilities: {},
+        },
+      }),
+    ).resolves.toEqual({
+      status: 'error',
+      error: 'Generation is not ready (blockers: writer-access-lost; startup phase: chat-ready; last failure: none).',
+    })
+    expect(operationMocks.stage).not.toHaveBeenCalled()
+  })
+
   it('blocks ordinary staging and dispatch before chat readiness while allowing exact pending replay', async () => {
     const staged = await stageAcceptedSendGenerationOperation({
       target: { selectedCharID: 0, chatPage: 0, characterId: 'character-a', chatId: 'chat-a' },
@@ -233,7 +257,8 @@ describe('generation operation client', () => {
 
     await expect(submitStagedAcceptedSendOperation(staged)).resolves.toEqual({
       status: 'retained',
-      error: 'Generation is not ready.',
+      error:
+        'Generation is not ready (blockers: writer-startup, plugin-runtime, generation-recovery, chat-dependencies; startup phase: not-started; last failure: none).',
     })
     expect(fetchMock).not.toHaveBeenCalled()
     await expect(dispatchGenerationOperationPendingReplay(staged.handle, staged.intent)).resolves.toMatchObject({
@@ -256,7 +281,11 @@ describe('generation operation client', () => {
           clientCapabilities: {},
         },
       }),
-    ).resolves.toEqual({ status: 'error', error: 'Generation is not ready.' })
+    ).resolves.toEqual({
+      status: 'error',
+      error:
+        'Generation is not ready (blockers: writer-startup, plugin-runtime, generation-recovery, chat-dependencies; startup phase: not-started; last failure: none).',
+    })
     expect(operationMocks.stage).not.toHaveBeenCalled()
   })
 
