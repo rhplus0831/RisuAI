@@ -286,6 +286,7 @@ function queuePersonaPromptSave(prompt: string): string {
   testDatabaseState.db.selectedPersona = selectedPersona
   const persona = testDatabaseState.db.personas[selectedPersona]
   if (!persona?.id) throw new Error('Fixture did not seed a selected persona')
+  testDatabaseState.db.selectedPersonaId = persona.id
   const previous = currentPersonaStateSnapshot()
   updateSelectedPersonaField('personaPrompt', prompt)
   const attempted = currentPersonaStateSnapshot()
@@ -926,7 +927,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     expect(personaPatchCalls).toHaveLength(1)
     expect(personaPatchCalls[0].body).toMatchObject({
       patch: { personaPrompt: 'fresh persona prompt for generation' },
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
     })
     expect(requestOrder).toEqual(['persona', 'chat'])
     expect(getServerChatCalls()).toHaveLength(1)

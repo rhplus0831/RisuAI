@@ -4,14 +4,7 @@ import { getChatVar, getGlobalChatVar, setChatVar } from '../parser/chatVar.svel
 import { hasher, type simpleCharacterArgument, risuChatParser } from '../parser/parser.svelte'
 import { LuaEngine, LuaFactory } from 'wasmoon'
 import { get } from 'svelte/store'
-import {
-  getCharacterByIndex,
-  setCharacterByIndex,
-  setDatabase,
-  type Chat,
-  type character,
-  type triggerscript,
-} from '../storage/database.svelte'
+import { type Chat, type character, type triggerscript } from '../storage/database.svelte'
 import { reloadChatAt, reloadGuiDisplay, selectedCharID } from '../stores.svelte'
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from '../alert'
 import { HypaProcesser } from './memory/hypamemory'
@@ -45,19 +38,32 @@ import {
   type ChatScopedSnapshot,
 } from '../chatCommands'
 import { canUseServerCommands } from '../server/commands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   dispatchReplaceChatLorebooks,
   ensureClientLorebookEntryIds,
   scopedLorebookStateSnapshot,
 } from '../server/lorebookBridge.svelte'
-import { getCharacterResourceOwner, settingsResourceState } from '../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
+import { applyCharacterRowMutationScoped } from '../characterCommands'
+import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
 let luaFactory: LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
 
 function scriptingSettings() {
   return settingsResourceState.status === 'error' ? {} : settingsResourceState.value
+}
+
+function applySelectedCharacterScriptingMutation(mutate: (owner: character) => void): boolean {
+  if (charactersResourceState.status !== 'ready') return false
+  const index = get(selectedCharID)
+  const candidate = charactersResourceState.characters[index]
+  if (!candidate?.chaId) return false
+  return applyCharacterRowMutationScoped(index, candidate.chaId, mutate)
 }
 let ScriptingLowLevelIds = new Set<string>()
 let lastRequestResetTime = 0
@@ -798,13 +804,12 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
         if (typeof name !== 'string') {
           throw 'Invalid data type'
         }
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
-        char.name = name
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.name = name
+        })
       })
 
       declareAPI('getDescription', (id: string) => {
@@ -819,13 +824,12 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
         if (typeof desc !== 'string') {
           throw 'Invalid data type'
         }
-        char.desc = desc
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.desc = desc
+        })
       })
 
       declareAPI('getCharacterFirstMessage', (id: string) => {
@@ -837,13 +841,12 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
         if (typeof data !== 'string') {
           return false
         }
-        char.firstMessage = data
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.firstMessage = data
+        })
         return true
       })
 
@@ -872,13 +875,12 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
         if (typeof data !== 'string') {
           return false
         }
-        const char = getCharacterByIndex(selectedChar, { snapshot: true })
-        char.backgroundHTML = data
-        setCharacterByIndex(selectedChar, char)
+        applySelectedCharacterScriptingMutation((owner) => {
+          owner.backgroundHTML = data
+        })
         return true
       })
 
@@ -892,7 +894,10 @@ export async function runScripted(
         const loreSources = [
           selectedChar.chats[selectedChar.chatPage]?.localLore ?? [],
           selectedChar.globalLore,
-          getModuleLorebooks(),
+          getModuleLorebooks({
+            character: selectedChar,
+            chat: selectedChar.chats[selectedChar.chatPage],
+          }),
         ]
 
         const found = []
@@ -955,10 +960,21 @@ export async function runScripted(
           return
         }
 
-        const fullLoreBooks = (await loadLoreBookV3Prompt()).actives
+        const generation = resolveActiveChatGenerationSettings()
+        const selectedChat = selectedChar.chats[selectedChar.chatPage]
+        if (
+          generation.character?.chaId !== selectedChar.chaId ||
+          !selectedChat?.id ||
+          generation.chat?.id !== selectedChat.id
+        ) {
+          return
+        }
+        const fullLoreBooks = (
+          await loadLoreBookV3Prompt({ database: generation.db, character: selectedChar, chat: selectedChat })
+        ).actives
         // This is a low-level scripting API, so its budget follows the scriptMain
         // execution role (the same owner as LLM/simpleLLM), not chatMain.
-        const scriptProfile = resolveModelProfile({ database: scriptingSettings(), role: 'scriptMain' })
+        const scriptProfile = resolveModelProfile({ database: generation.db, role: 'scriptMain' })
         const maxContext = (scriptProfile.runtimeOptions.maxContext ?? 0) - reserve
         if (maxContext < 0) {
           return JSON.stringify([])
@@ -1770,7 +1786,9 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
         lowLevelAccess: false,
       }),
     )
-    const triggers: triggerscript[] = ownTriggers.concat(getModuleTriggers())
+    const triggers: triggerscript[] = ownTriggers.concat(
+      getModuleTriggers(char.type === 'character' ? { character: char, chat: char.chats?.[char.chatPage] } : undefined),
+    )
     const luaTriggerEffects = triggers
       .map((trigger) => trigger?.effect?.[0])
       .filter((effect): effect is { type: 'triggerlua'; code: string } => effect?.type === 'triggerlua')
@@ -1929,7 +1947,7 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
     ? scopedLorebookStateSnapshot(`chat:${reconciliation.target.chatId}`, reconciliation.localLoreSnapshot)
     : null
 
-  const applied = withTrustedResourceWrite(() => {
+  const applied = (() => {
     if (!isActiveChatTargetFresh(reconciliation.target)) return false
 
     const selectedCharacter = getCharacterResourceOwner(reconciliation.target.characterId)
@@ -1957,7 +1975,7 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
     if (scriptstateChanged) liveChat.scriptstate = safeStructuredClone(nextChat.scriptstate)
     if (nextLocalLore) liveChat.localLore = nextLocalLore
     return true
-  })
+  })()
   if (!applied) return
 
   preparation.dispatch()
@@ -1998,7 +2016,9 @@ export async function runLuaButtonTrigger(
         lowLevelAccess: char.type === 'simple' ? false : (char.lowLevelAccess ?? false),
       }),
     )
-    const triggers = ownTriggers.concat(getModuleTriggers())
+    const triggers = ownTriggers.concat(
+      getModuleTriggers(char.type === 'character' ? { character: char, chat: workingChat } : undefined),
+    )
 
     for (let trigger of triggers) {
       if (!isFresh()) {

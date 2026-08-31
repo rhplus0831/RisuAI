@@ -10,7 +10,6 @@ import { sleep } from '../util'
 import { clearActiveGenerationAbortController, createActiveGenerationAbortController, sendChat } from './index.svelte'
 import { chatGenerationTargetKey } from './generationActivity.svelte'
 import type { Message } from '../storage/database.svelte'
-import { getDatabase } from '../storage/database.svelte'
 import { flushPendingSelectedPersonaUpdate } from '../persona'
 import { alertConfirm, alertError } from '../alert'
 import { language } from '../../lang'
@@ -286,15 +285,6 @@ async function startAcceptedGeneration(request: AcceptedGenerationRequest): Prom
   return { status: 'generation_failed', cause: attempt.cause }
 }
 
-function chatForTarget(target: ActiveChatTarget) {
-  const character = target.characterId
-    ? getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
-    : getDatabase().characters?.[target.selectedCharID]
-  return target.chatId
-    ? character?.chats?.find((candidate) => candidate.id === target.chatId)
-    : character?.chats?.[target.chatPage]
-}
-
 async function prepareAtomicSendGenerationIntent(input: CoordinateAcceptedChatSendInput) {
   const readiness = guardActiveChatGenerationSettingsForSend(
     resolveActiveChatGenerationSettings({ target: input.target }),
@@ -319,7 +309,15 @@ async function prepareAtomicSendGenerationIntent(input: CoordinateAcceptedChatSe
   if (scripts === 'queued' || scripts === 'failed') {
     return { status: 'error' as const, failure: { kind: 'known' as const, reason: 'characterDefinitions' as const } }
   }
-  const chat = chatForTarget(input.target)
+  // The waits above may hydrate or replace owner projections. Re-resolve the
+  // exact generation target so staging uses one fresh, coherent owner snapshot.
+  const finalReadiness = guardActiveChatGenerationSettingsForSend(
+    resolveActiveChatGenerationSettings({ target: input.target }),
+  )
+  if (finalReadiness.status === 'error') {
+    return { status: 'error' as const, failure: { kind: 'message' as const, message: finalReadiness.error } }
+  }
+  const chat = finalReadiness.state.chat
   if (!chat) {
     return { status: 'error' as const, failure: { kind: 'known' as const, reason: 'activeChatMissing' as const } }
   }

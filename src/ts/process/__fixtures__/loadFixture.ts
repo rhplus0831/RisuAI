@@ -233,6 +233,7 @@ export function markFixtureActiveChatGenerationSettingsReady(): void {
   if (!isNonEmptyString(persona.id)) {
     persona.id = `fixture-persona-${personaIndex}`
   }
+  db.selectedPersonaId = persona.id
   mirrorFixturePersonaIntoDatabase(db, persona)
 
   const modelPresetIndex = Math.min(Math.max(getInteger(db.modelPresetsId, 0), 0), db.modelPresets.length)

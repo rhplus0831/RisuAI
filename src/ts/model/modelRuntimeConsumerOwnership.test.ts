@@ -116,7 +116,7 @@ describe('browser model-runtime consumer ownership', () => {
   it('budgets low-level lore loading through the scriptMain profile', () => {
     const scriptings = source('src/ts/process/scriptings.ts')
 
-    expect(scriptings).toContain("resolveModelProfile({ database: scriptingSettings(), role: 'scriptMain' })")
+    expect(scriptings).toContain("resolveModelProfile({ database: generation.db, role: 'scriptMain' })")
     expect(scriptings).toContain('scriptProfile.runtimeOptions.maxContext')
     expect(scriptings).not.toContain('db.maxContext')
     expect(scriptings).not.toContain('const maxContext = db.maxContext - reserve')

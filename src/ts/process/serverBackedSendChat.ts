@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import {
-  getDatabase,
+  type Database,
   type character,
   type Chat,
   type Message,
@@ -9,7 +9,6 @@ import {
 } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { safeStructuredClone } from '../polyfill'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
 import { applyServerChatRestoration, applyServerMessagePatch } from './request/serverMessagePatch'
@@ -26,11 +25,19 @@ import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import type { OpenAIChat } from './index.svelte'
 import { seedRerollBufferFromAlternates } from './rerollNavigation.svelte'
 import { sayTTS } from './tts'
-import { captureChatBodyProjectionEpoch, hasChatBodyProjectionEpochChanged } from '../server/resourceState.svelte'
+import {
+  applyChatMetadataOwnerPatch,
+  captureChatBodyProjectionEpoch,
+  charactersResourceState,
+  getCharacterResourceOwner,
+  hasChatBodyProjectionEpochChanged,
+  hasNewerChatBodyResourceRevision,
+  restoreChatMetadataOwnerSnapshot,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
 import { captureChatMessageMutationIntentEpoch } from '../server/chatMessageMutationIntent'
 import { finalizeServerBackedInlayMessage } from './inlayFinalization'
 import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
-import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
 import type { StreamMessageProjection } from './postGeneration/streamResponse'
 import type { IgpMessageTarget } from './postGeneration/igp'
 import { clearGenerationPersistence, markGenerationPersistenceQueued } from './generationPersistenceState'
@@ -38,7 +45,7 @@ import { yieldBeforeCompletionEffect } from './completionEffectScheduling'
 import { chatOutputListeners, runChatOutputListeners } from '../plugins/chatOutputListeners'
 import { alertConfirm } from '../alert'
 import { language } from '../../lang'
-import { currentChatStateSnapshot, dispatchUpdateChatWithOutcome } from '../chatCommands'
+import { currentChatScopedSnapshot, dispatchUpdateChatScopedWithOutcome } from '../chatCommands'
 import { HYPA_CONTEXT_TRUNCATION_CONFIRMATION_REQUIRED } from './request/hypaContextTruncation'
 import { sendChatFailureFromServerCode, type SendChatFailure } from './sendChatFailure'
 import type { GenerationReattachOutcomeStatus } from './generationReattachOutcome'
@@ -54,7 +61,6 @@ import {
   stageTargetedGenerationOperation,
   submitStagedTargetedGenerationOperation,
 } from '../server/generationOperations'
-import { peekAppliedServerResourceRevision } from '../server/commands'
 import {
   beginGenerationDisplayProjection,
   finishGenerationDisplayProjection,
@@ -151,9 +157,10 @@ function numberFrom(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-/** Compatibility fallback for servers predating the response-budget field. */
+/** @legacy-compatibility Older servers omit the response-budget field. */
 export function olderServerResponseBudgetFallback(): number {
-  return getDatabase().maxResponse
+  const ownerValue = numberFrom((settingsResourceState.value as Partial<Database>).maxResponse)
+  return settingsResourceState.status === 'ready' && ownerValue !== undefined ? ownerValue : 500
 }
 
 function isServerChatGenerationOk(
@@ -190,34 +197,23 @@ async function acknowledgeHypaContextTruncation(args: {
   chatId: string
   currentChat: Chat
 }): Promise<{ status: 'ok'; currentChat: Chat } | { status: 'failed'; currentChat: Chat }> {
-  const previous = currentChatStateSnapshot()
+  const previous = currentChatScopedSnapshot({ selectedChar: args.selectedChar, selectedChat: args.selectedChat })
   const previousAcknowledgement = args.currentChat.hypaContextTruncationAcknowledged
-  let updated = false
-  withTrustedResourceWrite(() => {
-    const resolution = resolveServerBackedLiveChat({
-      selectedChar: args.selectedChar,
-      selectedChat: args.selectedChat,
+  if (!applyChatMetadataOwnerPatch(args.characterId, args.chatId, { hypaContextTruncationAcknowledged: true })) {
+    return { status: 'failed', currentChat: args.currentChat }
+  }
+
+  const pending = dispatchUpdateChatScopedWithOutcome(
+    args.chatId,
+    { hypaContextTruncationAcknowledged: true },
+    previous,
+  )
+  if (!pending) {
+    restoreChatMetadataOwnerSnapshot({
       characterId: args.characterId,
       chatId: args.chatId,
-    })
-    if (!resolution) return
-    resolution.chat.hypaContextTruncationAcknowledged = true
-    updated = true
-  })
-  if (!updated) return { status: 'failed', currentChat: args.currentChat }
-
-  const pending = dispatchUpdateChatWithOutcome(args.chatId, { hypaContextTruncationAcknowledged: true }, previous)
-  if (!pending) {
-    withTrustedResourceWrite(() => {
-      const resolution = resolveServerBackedLiveChat({
-        selectedChar: args.selectedChar,
-        selectedChat: args.selectedChat,
-        characterId: args.characterId,
-        chatId: args.chatId,
-      })
-      if (!resolution) return
-      if (previousAcknowledgement === undefined) delete resolution.chat.hypaContextTruncationAcknowledged
-      else resolution.chat.hypaContextTruncationAcknowledged = previousAcknowledgement
+      metadata: { hypaContextTruncationAcknowledged: previousAcknowledgement },
+      attempted: { hypaContextTruncationAcknowledged: true },
     })
     return { status: 'failed', currentChat: args.currentChat }
   }
@@ -295,27 +291,23 @@ function hasStableChatTarget(target: ServerBackedStableChatTarget | undefined): 
 
 /**
  * The character collection is the generation target owner once it is ready.
- * Keep the aggregate only as a startup compatibility projection; stable ids
- * still have to identify exactly one row before a terminal effect may write.
+ * Stable ids have to identify exactly one ready owner row before a terminal
+ * effect may write.
  */
 function characterOwnerAt(index: number): character | undefined {
   const characters = characterRowsForGeneration()
   const candidate = characters[index]
   if (!candidate?.chaId) return undefined
-  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(candidate.chaId) : candidate
+  return getCharacterResourceOwner(candidate.chaId)
 }
 
 function characterRowsForGeneration(): readonly character[] {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 function characterOwnerById(characterId: string): character | undefined {
   if (!characterId) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
-  const matches = characterRowsForGeneration().filter((candidate) => candidate?.chaId === characterId)
-  return matches.length === 1 ? matches[0] : undefined
+  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(characterId) : undefined
 }
 
 function uniqueChatOwner(character: character | undefined, chatId: string): Chat | undefined {
@@ -364,28 +356,25 @@ async function reconcileRejectedGenerationProjection(args: {
   const chatId = args.target.chatId
   const projection = args.streamProjection
   if (chatId && projection?.chatId === chatId) {
-    withTrustedResourceWrite(() => {
-      const resolution = resolveServerBackedLiveChat({
-        selectedChar: args.selectedChar,
-        selectedChat: args.selectedChat,
-        characterId: args.target.characterId,
-        chatId,
-      })
-      const messages = resolution?.chat.message
-      if (!messages) return
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: args.target.characterId,
+      chatId,
+    })
+    const messages = resolution?.chat.message
+    if (messages) {
       const messageId = projection.messageId || projection.generationId
       const index = messages.findIndex(
         (message) =>
           message.chatId === messageId ||
           (message.role === 'char' && message.generationInfo?.generationId === projection.generationId),
       )
-      if (index < 0 || messages[index]?.data !== projection.ownedData) return
-      if (projection.appended) {
-        messages.splice(index, 1)
-      } else {
-        messages[index].data = projection.previousData
+      if (index >= 0 && messages[index]?.data === projection.ownedData) {
+        if (projection.appended) messages.splice(index, 1)
+        else messages[index].data = projection.previousData
       }
-    })
+    }
   }
   if (chatId) {
     await hydrateChatMessages(chatId, { force: true, strict: true }).catch(() => {})
@@ -407,47 +396,44 @@ function applyInterruptedTerminalSnapshot(args: {
     return
   }
 
-  withTrustedResourceWrite(() => {
-    const resolution = resolveServerBackedLiveChat({
-      selectedChar: args.selectedChar,
-      selectedChat: args.selectedChat,
-      characterId: args.target.characterId,
-      chatId: args.target.chatId,
-    })
-    if (!resolution) return
-    const assistant =
-      (args.postGeneration?.messageId
-        ? resolution.chat.message.find(
-            (message) => message.chatId === args.postGeneration?.messageId && message.role === 'char',
-          )
-        : undefined) ?? findGeneratedAssistantMessage(resolution.chat, args.generationId)
-    // Reconcile only the row still owned by this stream. A user edit that landed
-    // after the last token must win over the cancelled terminal snapshot.
-    if (assistant) {
-      if (assistant.data !== projection.ownedData) return
-      assistant.data = finalText
-      return
-    }
-    // Half-streaming Stop can remove its still-empty generated placeholder
-    // before the cancelled terminal arrives. Recreate only that known-owned
-    // append; detached/user-mutated streams must never resurrect a row.
-    if (!projection.appended || projection.detached) return
-    const messageId = args.postGeneration?.messageId ?? projection.messageId ?? args.generationId
-    if (!messageId || resolution.chat.message.some((message) => message.chatId === messageId)) return
-    const restored: Message = {
-      role: 'char',
-      data: finalText,
-      chatId: messageId,
-      saying: resolution.character.chaId,
-      time: Date.now(),
-      generationInfo: args.generationInfo,
-    }
-    const index = Math.min(
-      Math.max(projection.messageIndex ?? resolution.chat.message.length, 0),
-      resolution.chat.message.length,
-    )
-    resolution.chat.message.splice(index, 0, restored)
+  const resolution = resolveServerBackedLiveChat({
+    selectedChar: args.selectedChar,
+    selectedChat: args.selectedChat,
+    characterId: args.target.characterId,
+    chatId: args.target.chatId,
   })
+  if (!resolution) return
+  const assistant =
+    (args.postGeneration?.messageId
+      ? resolution.chat.message.find(
+          (message) => message.chatId === args.postGeneration?.messageId && message.role === 'char',
+        )
+      : undefined) ?? findGeneratedAssistantMessage(resolution.chat, args.generationId)
+  // Reconcile only the row still owned by this stream. A user edit that landed
+  // after the last token must win over the cancelled terminal snapshot.
+  if (assistant) {
+    if (assistant.data === projection.ownedData) assistant.data = finalText
+    return
+  }
+  // Half-streaming Stop can remove its still-empty generated placeholder
+  // before the cancelled terminal arrives. Recreate only that known-owned
+  // append; detached/user-mutated streams must never resurrect a row.
+  if (!projection.appended || projection.detached) return
+  const messageId = args.postGeneration?.messageId ?? projection.messageId ?? args.generationId
+  if (!messageId || resolution.chat.message.some((message) => message.chatId === messageId)) return
+  const restored: Message = {
+    role: 'char',
+    data: finalText,
+    chatId: messageId,
+    saying: resolution.character.chaId,
+    time: Date.now(),
+    generationInfo: args.generationInfo,
+  }
+  const index = Math.min(
+    Math.max(projection.messageIndex ?? resolution.chat.message.length, 0),
+    resolution.chat.message.length,
+  )
+  resolution.chat.message.splice(index, 0, restored)
 }
 
 // Apply the server's `message_patch` to the local projection only. `/generate/chat`
@@ -467,16 +453,13 @@ function applyServerMessagePatches(args: {
   const contextTarget = { characterId: args.targetCharacterId, chatId: args.targetChatId }
   for (const patch of patches) {
     const target = targetFromPayloadOrContext(patch, contextTarget)
-    withTrustedResourceWrite(() => {
-      const resolution = resolveServerBackedLiveChat({
-        selectedChar,
-        selectedChat,
-        characterId: target.characterId,
-        chatId: target.chatId,
-      })
-      if (!resolution) return
-      applyServerMessagePatch(resolution.chat, patch, resolution.character)
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar,
+      selectedChat,
+      characterId: target.characterId,
+      chatId: target.chatId,
     })
+    if (resolution) applyServerMessagePatch(resolution.chat, patch, resolution.character)
   }
   return resolveServerBackedCurrentChat({
     selectedChar,
@@ -997,17 +980,13 @@ export async function applyServerBackedTerminal(args: {
         streamProjection: args.streamProjection,
       })
     } else if (args.terminal.restoration && restorationIsFresh) {
-      withTrustedResourceWrite(() => {
-        const resolution = resolveServerBackedLiveChat({
-          selectedChar: args.selectedChar,
-          selectedChat: args.selectedChat,
-          characterId: target.characterId,
-          chatId: target.chatId,
-        })
-        if (resolution) {
-          applyServerChatRestoration(resolution.chat, args.terminal.restoration!)
-        }
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: target.characterId,
+        chatId: target.chatId,
       })
+      if (resolution) applyServerChatRestoration(resolution.chat, args.terminal.restoration!)
     }
     if (displayProjection && (!retainedPartial || displayAuthorityObserved)) {
       finishGenerationDisplayProjection(displayProjection)
@@ -1133,7 +1112,8 @@ export async function applyServerBackedTerminal(args: {
     if (
       typeof postGenerationRevision === 'number' &&
       Number.isInteger(postGenerationRevision) &&
-      (peekAppliedServerResourceRevision() ?? -1) > postGenerationRevision
+      terminalTarget.chatId &&
+      hasNewerChatBodyResourceRevision(terminalTarget.chatId, postGenerationRevision)
     ) {
       return false
     }
@@ -1166,14 +1146,13 @@ export async function applyServerBackedTerminal(args: {
   let pendingInlay: (InlayFinalizationState & { promise: Promise<string> }) | undefined
   let processedPrimaryTtsText: string | undefined
   if (terminalProjectionIsFresh) {
-    withTrustedResourceWrite(() => {
-      const resolution = resolveServerBackedLiveChat({
-        selectedChar: args.selectedChar,
-        selectedChat: args.selectedChat,
-        characterId: terminalTarget.characterId,
-        chatId: terminalTarget.chatId,
-      })
-      if (!resolution) return
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: terminalTarget.characterId,
+      chatId: terminalTarget.chatId,
+    })
+    if (resolution) {
       const liveChat = resolution.chat
       if (postGen?.messagePatch) {
         applyServerMessagePatch(liveChat, postGen.messagePatch, resolution.character)
@@ -1214,7 +1193,7 @@ export async function applyServerBackedTerminal(args: {
           }
         }
       }
-    })
+    }
   }
 
   // A fresh terminal patch is already durable on the server. Mirror it before
@@ -1237,23 +1216,19 @@ export async function applyServerBackedTerminal(args: {
   })
 
   const settleInlayProjection = (finalization: InlayFinalizationState, finalData: string, persisted: boolean): void => {
-    withTrustedResourceWrite(() => {
-      if (captureChatMessageMutationIntentEpoch(terminalTarget.chatId) !== finalization.mutationIntentEpoch) {
-        return
-      }
-      const resolution = resolveServerBackedLiveChat({
-        selectedChar: args.selectedChar,
-        selectedChat: args.selectedChat,
-        characterId: terminalTarget.characterId,
-        chatId: terminalTarget.chatId,
-      })
-      const assistant = resolution?.chat.message.find(
-        (message) => message.chatId === finalization.messageId && message.role === 'char',
-      )
-      if (!assistant) return
-      if (assistant.data !== finalization.expectedProjectionData && assistant.data !== finalData) return
-      assistant.data = persisted ? finalData : finalization.expectedServerData
+    if (captureChatMessageMutationIntentEpoch(terminalTarget.chatId) !== finalization.mutationIntentEpoch) return
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: terminalTarget.characterId,
+      chatId: terminalTarget.chatId,
     })
+    const assistant = resolution?.chat.message.find(
+      (message) => message.chatId === finalization.messageId && message.role === 'char',
+    )
+    if (!assistant) return
+    if (assistant.data !== finalization.expectedProjectionData && assistant.data !== finalData) return
+    assistant.data = persisted ? finalData : finalization.expectedServerData
   }
 
   if (immediateInlay) {
@@ -1277,14 +1252,12 @@ export async function applyServerBackedTerminal(args: {
       promiseFailed = true
     }
     let canFinalize = !promiseFailed
-    withTrustedResourceWrite(() => {
-      if (
-        captureChatMessageMutationIntentEpoch(terminalTarget.chatId) !== pendingInlay!.mutationIntentEpoch ||
-        hasChatBodyProjectionEpochChanged(terminalTarget.chatId, pendingInlay!.projectionEpoch)
-      ) {
-        canFinalize = false
-        return
-      }
+    if (
+      captureChatMessageMutationIntentEpoch(terminalTarget.chatId) !== pendingInlay.mutationIntentEpoch ||
+      hasChatBodyProjectionEpochChanged(terminalTarget.chatId, pendingInlay.projectionEpoch)
+    ) {
+      canFinalize = false
+    } else {
       const resolution = resolveServerBackedLiveChat({
         selectedChar: args.selectedChar,
         selectedChat: args.selectedChat,
@@ -1293,10 +1266,10 @@ export async function applyServerBackedTerminal(args: {
       })
       const liveChat = resolution?.chat
       const assistant = liveChat
-        ? liveChat.message.find((message) => message.chatId === pendingInlay!.messageId && message.role === 'char')
+        ? liveChat.message.find((message) => message.chatId === pendingInlay.messageId && message.role === 'char')
         : undefined
       if (!assistant || assistant.data !== pendingInlay!.expectedProjectionData) canFinalize = false
-    })
+    }
     if (canFinalize) {
       const persisted = await finalizeServerBackedInlayMessage({
         chatId: terminalTarget.chatId,
@@ -1311,15 +1284,14 @@ export async function applyServerBackedTerminal(args: {
 
   const providerAlternates = args.terminal.done?.alternates
   if (terminalProjectionIsFresh && Array.isArray(providerAlternates) && providerAlternates.length > 0) {
-    withTrustedResourceWrite(() => {
-      const resolution = resolveServerBackedLiveChat({
-        selectedChar: args.selectedChar,
-        selectedChat: args.selectedChat,
-        characterId: terminalTarget.characterId,
-        chatId: terminalTarget.chatId,
-      })
-      const liveChat = resolution?.chat
-      if (!liveChat) return
+    const resolution = resolveServerBackedLiveChat({
+      selectedChar: args.selectedChar,
+      selectedChat: args.selectedChat,
+      characterId: terminalTarget.characterId,
+      chatId: terminalTarget.chatId,
+    })
+    const liveChat = resolution?.chat
+    if (liveChat && resolution) {
       const assistant =
         findGeneratedAssistantMessage(liveChat, generationId) ??
         (args.targetMessageId
@@ -1327,21 +1299,22 @@ export async function applyServerBackedTerminal(args: {
           : undefined)
       if (assistant) {
         const alternates = buildServerBackedAlternateMessages(assistant, providerAlternates, generationId)
-        if (alternates.length === 0) return
-        seedRerollBufferFromAlternates(
-          liveChat.message,
-          // Match persisted alternate-row ordering (newest-added first), including
-          // the active primary candidate so it remains swipe index zero.
-          [...alternates.reverse(), assistant],
-          {
-            selectedCharID: characterRowsForGeneration().indexOf(resolution.character),
-            chatPage: resolution.character.chats.indexOf(liveChat),
-            characterId: resolution.character.chaId,
-            chatId: liveChat.id,
-          },
-        )
+        if (alternates.length > 0) {
+          seedRerollBufferFromAlternates(
+            liveChat.message,
+            // Match persisted alternate-row ordering (newest-added first), including
+            // the active primary candidate so it remains swipe index zero.
+            [...alternates.reverse(), assistant],
+            {
+              selectedCharID: characterRowsForGeneration().indexOf(resolution.character),
+              chatPage: resolution.character.chats.indexOf(liveChat),
+              characterId: resolution.character.chaId,
+              chatId: liveChat.id,
+            },
+          )
+        }
       }
-    })
+    }
   }
 
   const finalResolution = resolveServerBackedLiveChat({

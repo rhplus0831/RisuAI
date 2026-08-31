@@ -52,7 +52,6 @@ const dispatchCharacterOwnedDurableBatch = vi.hoisted(() => vi.fn())
 const characterRowEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const characterLorebookEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const moduleCollectionEpochState = vi.hoisted(() => ({ epoch: 0 }))
-const destructiveRefreshEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const ensureCharacterLorebookHydrated = vi.hoisted(() => vi.fn(async () => true))
 const testDatabaseState: { db: Record<string, any> } = {
   db: { modules: [], characters: [] },
@@ -88,6 +87,20 @@ vi.mock('../server/resourceState.svelte', () => ({
     characterLorebookEpochState.epoch !== epoch,
   hasCharacterRowProjectionEpochChanged: (_characterId: string, epoch: number) =>
     characterRowEpochState.epoch !== epoch,
+  getCharacterResourceOwner: (characterId: string) =>
+    (getDatabase().characters ?? []).find((candidate: any) => candidate?.chaId === characterId),
+}))
+
+vi.mock('../activeChatGenerationSettings', () => ({
+  resolveActiveChatGenerationSettings: () => {
+    const db = getDatabase()
+    const character = getCurrentCharacter()
+    return {
+      db,
+      character,
+      chat: getCurrentChatMock() ?? character?.chats?.[character.chatPage],
+    }
+  },
 }))
 
 vi.mock('../globalApi.svelte', () => ({
@@ -165,11 +178,6 @@ vi.mock('../server/pendingMutationOutbox', () => ({
   pendingMutationCharacterLorebooksProjectionTarget: (characterId: string) => `character-lorebooks:${characterId}`,
   pendingMutationCharacterScriptsProjectionTarget: (characterId: string) => `character-scripts:${characterId}`,
   pendingMutationCharacterTriggersProjectionTarget: (characterId: string) => `character-triggers:${characterId}`,
-}))
-
-vi.mock('../server/staleStateGuards', () => ({
-  captureDestructiveRefreshEpoch: () => destructiveRefreshEpochState.epoch,
-  hasDestructiveRefreshEpochChanged: (epoch: number) => destructiveRefreshEpochState.epoch !== epoch,
 }))
 
 vi.mock('../server/chatMessageHydration.svelte', () => ({
@@ -353,7 +361,6 @@ describe('module imports', () => {
     characterRowEpochState.epoch = 0
     characterLorebookEpochState.epoch = 0
     moduleCollectionEpochState.epoch = 0
-    destructiveRefreshEpochState.epoch = 0
     ensureCharacterLorebookHydrated.mockReset()
     ensureCharacterLorebookHydrated.mockResolvedValue(true)
     selectedFileState.file = null
@@ -1110,14 +1117,14 @@ describe('module imports', () => {
     expect(alertNormal).toHaveBeenCalledWith(language.moduleApply.queued)
   })
 
-  it('does not reassert a retained suffix after a destructive authoritative refresh', async () => {
+  it('does not reassert a retained suffix after a newer character-owner projection', async () => {
     const currentCharacter = installCompleteModuleApplyFixture()
     const previousLorebooks = [{ comment: 'Existing lore', content: 'old' }] as loreBook[]
     dispatchCharacterOwnedDurableBatch.mockImplementationOnce(
       async (_characterId: string, steps: TestModuleApplyStep[]) => {
         await Promise.resolve()
         currentCharacter.globalLore = cloneJsonValue(previousLorebooks)
-        destructiveRefreshEpochState.epoch += 1
+        characterRowEpochState.epoch += 1
         steps[0].reapply?.(() => true)
         return {
           status: 'retained',

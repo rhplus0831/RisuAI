@@ -54,7 +54,12 @@ import {
   findGeneratedAssistantMessage,
 } from './serverBackedSendChat'
 import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
-import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  markChatBodyResourceRevision,
+  replaceResourceDatabase,
+} from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from '@risuai/protocol/generation-sse'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
@@ -66,7 +71,7 @@ import {
   generationDisplayProjections,
   resetGenerationDisplayProjectionsForTests,
 } from './generationDisplayProjection.svelte'
-import { clearAppliedServerResourceRevision, setAppliedServerResourceRevision } from '../server/commands'
+import { clearAppliedServerResourceRevision } from '../server/commands'
 
 const testDatabaseState = {
   get db() {
@@ -884,7 +889,7 @@ describe('server-backed terminal stable chat target', () => {
   it('does not apply a terminal patch older than the projected server revision', async () => {
     const { char, target } = seedReorderedTerminalChats()
     target.scriptstate = { $mood: 'newer server value' }
-    setAppliedServerResourceRevision(9)
+    markChatBodyResourceRevision('chat-target', 9)
 
     const result = await applyServerBackedTerminal({
       terminal: {

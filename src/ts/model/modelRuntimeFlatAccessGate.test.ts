@@ -310,13 +310,6 @@ const inventory: readonly InventoryEntry[] = [
     reason: 'request parameter fallback without runtime options',
   },
   {
-    path: 'src/ts/process/sendChatPromptAssembly.ts',
-    marker: 'getDatabase().maxResponse',
-    classification: 'context-free-fallback',
-    expectedCount: 1,
-    reason: 'prompt assembly fallback for incomplete profile data',
-  },
-  {
     path: 'src/ts/process/sendChatContext.ts',
     marker: 'database.maxContext',
     classification: 'context-free-fallback',

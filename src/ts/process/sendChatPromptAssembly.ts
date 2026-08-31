@@ -1,6 +1,7 @@
 import { language } from '../../lang'
 import { type character, type Chat, type Database, type MessagePresetInfo } from '../storage/database.svelte'
 import type { ChatTokenizer } from '../tokenizer'
+import { safeStructuredClone } from '../polyfill'
 import { findCharacterbyId } from '../characterState'
 import { risuChatParser } from './scripts'
 import { buildDescription } from './promptAssembly/buildDescription'
@@ -18,7 +19,6 @@ import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   currentPromptTemplateOwnerId,
   ensurePromptTemplateHydrated,
@@ -89,13 +89,10 @@ export async function assembleLocalSendChatPrompt(args: {
   setProcessStage: (stage: number) => void
 }): Promise<LocalSendChatPromptResult> {
   const database = args.database
-  let currentChat = args.currentChat
-  withTrustedResourceWrite(() => {
-    const liveChat = database.characters[args.selectedChar].chats[args.selectedChat]
-    currentChat = runSendChatMessageVariables(liveChat, args.currentChar)
-    database.characters[args.selectedChar].chats[args.selectedChat] = currentChat
-  })
-  currentChat = database.characters[args.selectedChar].chats[args.selectedChat]
+  // Prompt-variable expansion is request-local. The explicit generation
+  // snapshot remains unchanged so retries and concurrent owner projections do
+  // not observe partially parsed transcript rows.
+  let currentChat = runSendChatMessageVariables(safeStructuredClone(args.currentChat), args.currentChar)
 
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()

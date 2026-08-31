@@ -142,6 +142,7 @@ function seedDatabase(): void {
     characterOrder: [],
     templateDefaultVariables: '',
     selectedPersona: 0,
+    selectedPersonaId: 'persona-a',
     personas: [{ id: 'persona-a', name: 'Persona', personaPrompt: '', icon: '', note: '' }],
     personaPrompt: '',
     username: 'Persona',
@@ -279,7 +280,7 @@ describe('trigger durable writes under the resource guard', () => {
       (call) => call.url === '/api/v1/commands/personas/persona-a' && call.method === 'PATCH',
     )
     expect(patch.body.patch.personaPrompt).toBe('persona prompt')
-    expect(patch.body.mirrorLegacyProfile).toBe(true)
+    expect(patch.body.mirrorLegacyProfile).toBe(false)
   })
 
   it('rolls back v2SetPersonaDesc optimism when the persona command fails', async () => {
@@ -312,7 +313,7 @@ describe('trigger durable writes under the resource guard', () => {
       (call) => call.url === '/api/v1/commands/personas/persona-a' && call.method === 'PATCH',
     )
     expect(patch.body.patch.personaPrompt).toBe('trigger prompt')
-    expect(patch.body.mirrorLegacyProfile).toBe(true)
+    expect(patch.body.mirrorLegacyProfile).toBe(false)
 
     await waitFor(
       () =>

@@ -25,13 +25,9 @@ vi.mock('../chatCommands', () => ({
 }))
 
 vi.mock('../activeChatGenerationSettings', () => ({
-  guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
-  resolveActiveChatGenerationSettings: vi.fn(() => ({})),
-}))
-
-vi.mock('../storage/database.svelte', () => ({
-  getDatabase: vi.fn(() => ({
-    characters: [{ chaId: 'character-a', chats: [{ id: 'chat-a', message: [] }] }],
+  guardActiveChatGenerationSettingsForSend: vi.fn((state) => ({ status: 'ok', state })),
+  resolveActiveChatGenerationSettings: vi.fn(() => ({
+    chat: { id: 'chat-a', message: [] },
   })),
 }))
 
