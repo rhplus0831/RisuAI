@@ -53,8 +53,9 @@ vi.mock('src/ts/alert', async (importActual) => ({
 }))
 
 import ModelPresetList from './ModelPresetList.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { isServerCharacterShell, type character } from '../storage/database.svelte'
 import type { AgentPresetStepRecord } from '../agentPresetRecords'
 import type { TranslatorPresetStep } from '../translator/presets'
@@ -54,7 +54,6 @@ import {
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getPersonaOwnerStateSnapshot,
-  getResourceDatabase,
   getChatFolderMetadataOwnerSnapshot,
   getChatMetadataOwnerState,
   getChatMetadataOwnerSnapshot,
@@ -81,12 +80,11 @@ import {
   restoreChatMetadataOwnerSnapshot,
   resetServerResourceRevisionFencesForDatabaseReplacement,
   resetServerResourceState,
-  setResourceDatabaseWriteGuardEnabled,
   settingsResourceState,
   updatePersonaOwnerState,
-  withResourceDatabaseWrite,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function metadataCharacter(chaId: string, name: string): character {
   return {
@@ -180,13 +178,7 @@ function canonicalTranslatorPresetStep(
 }
 
 beforeEach(() => {
-  setResourceDatabaseWriteGuardEnabled(false)
   resetServerResourceState()
-  setResourceDatabaseWriteGuardEnabled(true)
-})
-
-afterEach(() => {
-  setResourceDatabaseWriteGuardEnabled(false)
 })
 
 describe('resource-scoped database state', () => {
@@ -379,7 +371,7 @@ describe('resource-scoped database state', () => {
     expect(composeResourceDatabaseSnapshot()).toMatchObject({ currentChar: 0, characterOrder: ['char-a'] })
   })
 
-  it('exposes a reactive read-through compatibility view and detached snapshots', () => {
+  it('materializes detached snapshots from explicit resource owners', () => {
     applySettingsResource({ revision: 1, settings: { language: 'en' } })
     applyCollectionsResource({ revision: 1, collections: completeCollections() })
     applyCharactersResource({
@@ -390,36 +382,19 @@ describe('resource-scoped database state', () => {
       currentChar: 0,
     })
 
-    const compatibility = getResourceDatabase()
-    expect(compatibility.language).toBe('en')
-    expect(Object.keys(compatibility)).toContain('characters')
-    expect(() => {
-      compatibility.language = 'ko'
-    }).toThrow('outside withResourceDatabaseWrite')
-
-    let capturedCharacters: character[] | undefined
-    withResourceDatabaseWrite((database) => {
-      database.language = 'ko'
-      capturedCharacters = database.characters
-      database.characters.push(metadataCharacter('char-b', 'Bea'))
-      Object.defineProperty(database, 'globalNote', { configurable: true, value: 'note' })
-    })
-    expect(compatibility.language).toBe('ko')
-    expect(compatibility.characters.map((character) => character.chaId)).toEqual(['char-a', 'char-b'])
-    expect(compatibility.globalNote).toBe('note')
-    expect(() => capturedCharacters?.push(metadataCharacter('char-c', 'Cee'))).toThrow(
-      'outside withResourceDatabaseWrite',
-    )
-
-    const snapshot = getResourceDatabase({ snapshot: true })
+    const snapshot = composeResourceDatabaseSnapshot()
+    expect(snapshot.language).toBe('en')
+    expect(Object.keys(snapshot)).toContain('characters')
     snapshot.language = 'fr'
-    expect(getResourceDatabase().language).toBe('ko')
+    snapshot.characters.push(metadataCharacter('char-b', 'Bea'))
+    expect(composeResourceDatabaseSnapshot()).toMatchObject({ language: 'en', characters: [{ chaId: 'char-a' }] })
 
     applySettingsResource({ revision: 2, settings: { language: 'ja' } })
-    expect(compatibility.language).toBe('ja')
+    expect(snapshot.language).toBe('fr')
+    expect(composeResourceDatabaseSnapshot().language).toBe('ja')
   })
 
-  it('seeds every resource slice from a compatibility database', () => {
+  it('seeds every resource slice from an explicit database replacement', () => {
     replaceResourceDatabase(
       {
         language: 'en',
@@ -479,7 +454,7 @@ describe('resource-scoped database state', () => {
     })
     const baseline = captureLegacyPresetResourceBaseline(['preset-a'])
     const epoch = captureCollectionProjectionEpoch('botPresets')
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().botPresets[0].temperature = 99
     })
 
@@ -1405,7 +1380,7 @@ describe('resource-scoped database state', () => {
     )
     const epoch = captureSettingsGroupProjectionEpoch('agents')
     markSettingsGroupAcknowledgementTainted('agents')
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.agentPresets[0].name = 'newer local name'
     })
 
@@ -1638,7 +1613,7 @@ describe('resource-scoped database state', () => {
 
   it('acknowledges optimistic plugin storage without replacing the live map', () => {
     applyCollectionsResource({ revision: 3, collections: completeCollections() })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().pluginCustomStorage = {
         counter: 2,
         largePluginValue: { nested: ['already', 'local'] },
@@ -1805,7 +1780,7 @@ describe('resource-scoped database state', () => {
       revision: 3,
       settings: { theme: 'LIGHT', zoomsize: 88 },
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().zoomsize = 120
     })
 
@@ -1865,7 +1840,7 @@ describe('resource-scoped database state', () => {
     applySettingsResource({ revision: 1, settings: { hypaV3: false } })
     applyCollectionsResource({ revision: 1, collections: completeCollections() })
     const presets = [{ name: 'Compact', settings: { summarizationPrompt: 'Summarize' } }]
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().hypaV3Presets = presets as never
     })
 
@@ -2036,7 +2011,7 @@ describe('resource-scoped database state', () => {
     expect(hasCollectionProjectionEpochChanged('promptTemplate', rootEpoch)).toBe(false)
     expect(hasCollectionProjectionEpochChanged('promptPresets', presetEpoch)).toBe(false)
 
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       delete (database as unknown as Record<string, unknown>).promptTemplate
     })
     expect(
@@ -2278,7 +2253,7 @@ describe('resource-scoped database state', () => {
         ] as never,
       },
     })
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.loreBookPage = 1
     })
     const pageEpoch = captureLorebookPageProjectionEpoch()
@@ -2383,7 +2358,7 @@ describe('resource-scoped database state', () => {
 
   it('fences enabled modules as one settings slice and preserves it across an older full read', () => {
     applySettingsResource({ revision: 3, settings: { enabledModules: ['mod-a'], language: 'en' } })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().enabledModules = ['mod-b']
     })
 
@@ -2439,7 +2414,7 @@ describe('resource-scoped database state', () => {
     })
     const collectionEpoch = captureCollectionProjectionEpoch('loadouts')
     const settingsEpoch = captureSettingsGroupProjectionEpoch('sidebar')
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       const loadout = getResourceDatabase().loadouts[0]
       loadout.favorite = true
       loadout.lastUsed = 300
@@ -2484,11 +2459,11 @@ describe('resource-scoped database state', () => {
     })
 
     expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'create', loadoutId: 'loadout-b' })).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().loadouts = [canonicalLoadout(), canonicalLoadout()] as never
     })
     expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'delete', loadoutId: 'loadout-a' })).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().loadouts = [canonicalLoadout()] as never
       delete (getResourceDatabase() as unknown as Record<string, unknown>).lastLoadedLoadoutName
     })
@@ -2547,7 +2522,7 @@ describe('resource-scoped database state', () => {
 
     expect(applyCharacterResource({ revision: 4, character: metadataCharacter('char-missing', 'Missing') })).toBe(false)
 
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-a', 'Duplicate'))
     })
     expect(applyCharacterResource({ revision: 5, character: metadataCharacter('char-a', 'Ambiguous') })).toBe(false)
@@ -2631,7 +2606,7 @@ describe('resource-scoped database state', () => {
       characterOrder: ['char-a', 'char-b'],
       currentChar: 0,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].name = 'Newer queued edit'
     })
 
@@ -2656,7 +2631,7 @@ describe('resource-scoped database state', () => {
       characterOrder: ['char-a', 'char-b'],
       currentChar: 1,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-c', 'Cora'))
       getResourceDatabase().characters.push(metadataCharacter('char-d', 'Dara'))
       getResourceDatabase().characters.splice(1, 1)
@@ -2711,7 +2686,7 @@ describe('resource-scoped database state', () => {
       characterOrder: [],
       currentChar: -1,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-first', 'First'))
       getResourceDatabase().characterOrder = ['char-first']
     })
@@ -2737,7 +2712,7 @@ describe('resource-scoped database state', () => {
       characterOrder: ['char-a'],
       currentChar: 0,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.push(metadataCharacter('char-b', 'Bea'))
     })
     const effect = {
@@ -2748,12 +2723,12 @@ describe('resource-scoped database state', () => {
     }
 
     expect(applyCharacterCollectionMutationLocalEffect(effect)).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characterOrder = ['char-a', 'char-b']
       ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 9
     })
     expect(applyCharacterCollectionMutationLocalEffect(effect)).toBe(false)
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 0
     })
     expect(
@@ -2779,7 +2754,7 @@ describe('resource-scoped database state', () => {
       characterOrder: ['char-a'],
       currentChar: 0,
     })
-    withResourceDatabaseWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters.splice(0, 1)
     })
 

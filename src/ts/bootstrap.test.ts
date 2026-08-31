@@ -359,7 +359,7 @@ import {
   recordStartupMilestone,
   resetStartupReadinessForTests,
 } from './startupReadiness'
-import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
+
 import {
   applyCollectionsResource,
   applyCharacterResource,
@@ -394,6 +394,7 @@ import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
 import { __observerShellFlagTestHooks } from './observerShellFlag'
 import { observerShellLifecycleStore, resetObserverShellLifecycleForTests } from './observerShellLifecycle.svelte'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
   return {
@@ -486,7 +487,6 @@ beforeEach(() => {
   recordStartupMilestone('shell-mounted', 1)
   stopDeferredStartupRuntimes()
   stopServerResourceEvents()
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   seedResourceDatabase()
   selectedCharID.set(-1)
@@ -1158,7 +1158,7 @@ describe('API-backed client bootstrap', () => {
           releaseOlderChat = resolve
         }),
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const character = getDatabase().characters[1]
       character.chats.push({ id: 'chat-b-new', message: [] } as never)
       character.chatPage = 1
@@ -1168,7 +1168,7 @@ describe('API-backed client bootstrap', () => {
     expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
     await vi.waitFor(() => expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledOnce())
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].chatPage = 0
     })
     hydrationApi.readinessRefreshHook?.()
@@ -1192,7 +1192,7 @@ describe('API-backed client bootstrap', () => {
           releaseOlderPrompt = resolve
         }),
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].chats[0].generationSettings = { promptPresetId: 'prompt-older' }
     })
     hydrationApi.readinessRefreshHook?.()
@@ -1206,7 +1206,7 @@ describe('API-backed client bootstrap', () => {
       }),
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].chats[0].generationSettings = { promptPresetId: 'prompt-newer' }
     })
     hydrationApi.readinessRefreshHook?.()
@@ -1883,7 +1883,7 @@ describe('API-backed client bootstrap', () => {
       jailbreakToggle: true,
       sidebarToggles: { mode: '1' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = attemptedB
     })
 
@@ -1940,7 +1940,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous settings patch without re-reading its group', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().theme = 'LIGHT'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('display')
@@ -1976,7 +1976,7 @@ describe('API-backed client bootstrap', () => {
   it('falls back when an authoritative settings apply supersedes an optimistic intent', async () => {
     await loadWebInitialDatabase()
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('display')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().theme = 'optimistic'
     })
     applySettingsGroupResource(
@@ -2021,7 +2021,7 @@ describe('API-backed client bootstrap', () => {
   it('falls back when a models read supersedes an optimistic provider-owned model profile intent', async () => {
     await loadWebInitialDatabase()
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('providers')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelProfiles = [{ id: 'profile-optimistic', name: 'Optimistic Profile' }] as never
     })
     applySettingsGroupResource(
@@ -2071,7 +2071,7 @@ describe('API-backed client bootstrap', () => {
 
   it('authoritatively reconciles an accepted settings patch without an optimistic effect', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().theme = 'old-local-value'
     })
     const event = {
@@ -2104,7 +2104,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges an exact prompt settings patch only against its unchanged untainted projection', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().mainPrompt = 'optimistic'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
@@ -2146,7 +2146,7 @@ describe('API-backed client bootstrap', () => {
     ['parent-scoped event', { parentId: 'unexpected' }],
   ])('falls back when a prompt settings acknowledgement has a %s', async (_label, eventOverride) => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().mainPrompt = 'optimistic'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
@@ -2198,7 +2198,7 @@ describe('API-backed client bootstrap', () => {
       } else if (failure === 'tainted projection') {
         markSettingsGroupAcknowledgementTainted('prompt')
       }
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().mainPrompt = 'optimistic'
       })
       const event = {
@@ -2226,7 +2226,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous optimistic plugin storage without fetching the full map', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage = { local: { nested: true } }
     })
     const event = {
@@ -2249,7 +2249,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous plugin mutations without fetching scripts or provider settings', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins = [
         { name: 'plugin-b', script: 'newer-b' },
         { name: 'plugin-a', script: 'newer-a' },
@@ -2295,7 +2295,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous optimistic module definitions and enablement without resource reads', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules = [
         { id: 'mod-b', name: 'Newer B', description: '', cjs: 'newer-b' },
         { id: 'mod-a', name: 'Newer A', description: '', cjs: 'newer-a' },
@@ -2370,7 +2370,7 @@ describe('API-backed client bootstrap', () => {
     const legacyCollectionEpoch = captureCollectionProjectionEpoch('botPresets')
     const modelCollectionEpoch = captureCollectionProjectionEpoch('modelPresets')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().botPresets = [getDatabase().botPresets[1], getDatabase().botPresets[0]]
       getDatabase().botPresetsId = 1
       getDatabase().modelPresets = [
@@ -2450,7 +2450,7 @@ describe('API-backed client bootstrap', () => {
     const staleSettingsProjectionEpoch = captureSettingsProjectionEpoch()
     applySettingsResource({ revision: 5, settings: { modelPresetsId: 1 } })
     markSettingsAcknowledgementTainted()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelPresets = [
         getDatabase().modelPresets[2],
         getDatabase().modelPresets[1],
@@ -2513,12 +2513,12 @@ describe('API-backed client bootstrap', () => {
     } else if (failure === 'settings taint') {
       markSettingsAcknowledgementTainted()
     } else if (failure === 'selection mismatch') {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().botPresetsId = 0
       })
     } else if (failure === 'noncanonical pointer') {
       selectedPresetId = null
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().botPresetsId = -1
       })
     } else {
@@ -2567,7 +2567,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never } },
       'promptPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelPresetsId = 0
       getDatabase().promptPresetsId = 0
       getDatabase().modelPresets[0].temperature = 0.6
@@ -2635,7 +2635,7 @@ describe('API-backed client bootstrap', () => {
       'botPresets',
     )
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().botPresets[0].name = 'Newer local edit'
     })
     const event = {
@@ -2749,7 +2749,7 @@ describe('API-backed client bootstrap', () => {
       },
       'personas',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().selectedPersona = 0
       getDatabase().selectedPersonaId = 'persona-a'
       getDatabase().username = 'Attempted name'
@@ -2759,7 +2759,7 @@ describe('API-backed client bootstrap', () => {
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().personas[0].name = 'Newer local name'
       getDatabase().username = 'Newer local name'
     })
@@ -2819,7 +2819,7 @@ describe('API-backed client bootstrap', () => {
       },
       'personas',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().selectedPersona = 0
       getDatabase().selectedPersonaId = 'persona-b'
       getDatabase().username = 'B'
@@ -2905,7 +2905,7 @@ describe('API-backed client bootstrap', () => {
         note: '',
       }
       applyCollectionsResource({ revision: 5, collections: { personas: [persona] as never } }, 'personas')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().selectedPersona = 0
         getDatabase().selectedPersonaId = 'persona-a'
         getDatabase().username = 'Attempted'
@@ -2984,7 +2984,7 @@ describe('API-backed client bootstrap', () => {
         },
         'personas',
       )
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().selectedPersona = 1
         getDatabase().selectedPersonaId = 'persona-b'
         getDatabase().username = 'Newer B'
@@ -3041,7 +3041,7 @@ describe('API-backed client bootstrap', () => {
         { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' },
       ]
       applyCollectionsResource({ revision: 5, collections: { personas: personas as never } }, 'personas')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().selectedPersona = 1
         getDatabase().selectedPersonaId = 'persona-b'
         getDatabase().username = 'B'
@@ -3105,7 +3105,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges Agent Preset fields locally and notifies settlement only after the effect applies', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets = [
         {
           id: 'ap_a',
@@ -3118,7 +3118,7 @@ describe('API-backed client bootstrap', () => {
       ]
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets[0].name = 'newer local name'
     })
     const event = {
@@ -3164,7 +3164,7 @@ describe('API-backed client bootstrap', () => {
     '%s forces an Agent Preset PATCH authoritative fallback without settling its local effect',
     async (failure) => {
       await loadWebInitialDatabase()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().agentPresets = [{ id: 'ap_a', name: 'Attempted', enabled: true, version: 1, steps: [] }]
       })
       const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
@@ -3230,7 +3230,7 @@ describe('API-backed client bootstrap', () => {
 
   it('fences contiguous optimistic Agent Preset reorder/default writes without an agents read', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets = [
         { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
         { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
@@ -3238,7 +3238,7 @@ describe('API-backed client bootstrap', () => {
       getDatabase().agentPresetDefaultId = 'ap_a'
     })
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
     })
     const reorderEvent = {
@@ -3256,7 +3256,7 @@ describe('API-backed client bootstrap', () => {
 
     await commandApi.reconciler?.(reorderEvent, [reorderEvent], new Map([[6, reorderEffect]]))
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().agentPresetDefaultId = 'ap_b'
     })
     const defaultEvent = {
@@ -3287,7 +3287,7 @@ describe('API-backed client bootstrap', () => {
     '%s forces Agent Preset reorder acknowledgement through authoritative reconciliation',
     async (failure) => {
       await loadWebInitialDatabase()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().agentPresets = [
           { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
           { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
@@ -3313,7 +3313,7 @@ describe('API-backed client bootstrap', () => {
       } else if (failure === 'agents taint') {
         markSettingsGroupAcknowledgementTainted('agents')
       } else {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
         })
       }
@@ -3361,14 +3361,14 @@ describe('API-backed client bootstrap', () => {
       },
       'translatorPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresetId = 'translator-a'
       getDatabase().translatorPrompt = 'a prompt'
       getDatabase().translatorMaxResponse = 100
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
     const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets[1].prompt = 'newer local prompt'
     })
     const event = {
@@ -3427,7 +3427,7 @@ describe('API-backed client bootstrap', () => {
       { id: 'translator-b', name: 'B', prompt: 'attempted prompt', maxResponse: 200 },
     ]
     applyCollectionsResource({ revision: 5, collections: { translatorPresets: presets as never } }, 'translatorPresets')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresetId = 'translator-a'
       getDatabase().translatorPrompt = 'a prompt'
       getDatabase().translatorMaxResponse = 100
@@ -3459,7 +3459,7 @@ describe('API-backed client bootstrap', () => {
     } else if (failure === 'global settings taint') {
       markSettingsAcknowledgementTainted()
     } else if (failure === 'selection mismatch') {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().translatorPresetId = 'translator-b'
         getDatabase().translatorPrompt = 'attempted prompt'
         getDatabase().translatorMaxResponse = 200
@@ -3507,7 +3507,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never } },
       'promptPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresetsId = 0
       getDatabase().promptPresets[0].name = 'Prompt renamed'
     })
@@ -3568,7 +3568,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { promptTemplate: attemptedTemplate as never } },
       'promptTemplate',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresetsId = 0
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
@@ -3619,7 +3619,7 @@ describe('API-backed client bootstrap', () => {
       { revision: 5, collections: { modelPresets: [{ id: 'model-a', name: 'Model A' }] as never } },
       'modelPresets',
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelPresetsId = 0
       getDatabase().modelPresets[0].name = 'Model renamed'
     })
@@ -3666,7 +3666,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges a contiguous exact preset-owned prompt item without fetching its owner', async () => {
     await loadWebInitialDatabase()
     const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never
       getDatabase().promptTemplate = ownerItems as never
     })
@@ -3712,7 +3712,7 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const firstOwnerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'first accepted edit', role: 'system' }]
     const finalOwnerItems = [{ ...firstOwnerItems[0], role: 'user' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: finalOwnerItems }] as never
       getDatabase().promptTemplate = finalOwnerItems as never
     })
@@ -3780,7 +3780,7 @@ describe('API-backed client bootstrap', () => {
   ])('falls back for a prompt acknowledgement with an invalid %s', async (failure) => {
     await loadWebInitialDatabase()
     const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
@@ -3840,7 +3840,7 @@ describe('API-backed client bootstrap', () => {
   it('keeps gapped and foreign prompt events on authoritative owner reconciliation', async () => {
     await loadWebInitialDatabase()
     const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().promptTemplate = ownerItems as never
     })
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptTemplate')
@@ -3896,7 +3896,7 @@ describe('API-backed client bootstrap', () => {
       alwaysActive: false,
       selective: false,
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [
         { id: 'book-a', name: 'Book A', data: [entry('global-entry', 'global newer')] },
       ] as never
@@ -3974,7 +3974,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous top-level lorebook mutations without re-reading collection or settings', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [
         { id: 'book-b', name: 'Newer B', data: [] },
         { id: 'book-c', name: 'Newer C', data: [] },
@@ -4060,7 +4060,7 @@ describe('API-backed client bootstrap', () => {
 
   it('falls back when an authoritative lorebook collection supersedes a top-level local effect', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [{ id: 'book-a', name: 'Book A', data: [] }] as never
       getDatabase().loreBookPage = 0
     })
@@ -4098,7 +4098,7 @@ describe('API-backed client bootstrap', () => {
 
   it('falls back when authoritative settings supersede a top-level lorebook page effect', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook = [
         { id: 'book-a', name: 'Book A', data: [] },
         { id: 'book-b', name: 'Book B', data: [] },
@@ -4171,7 +4171,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges contiguous optimistic loadout create and delete without resource reads', async () => {
     await loadWebInitialDatabase()
     const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loadouts = [
         {
           ...getDatabase().loadouts[0],
@@ -4274,7 +4274,7 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
     const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const loadout = getDatabase().loadouts[0]
       loadout.favorite = false
       loadout.lastUsed = 300
@@ -4387,7 +4387,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges contiguous optimistic character definitions without reading the row', async () => {
     await loadWebInitialDatabase()
     const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].customscript = [{ id: 'script-newer', out: 'newer' }] as never
       getDatabase().characters[0].triggerscript = [{ id: 'trigger-newer', comment: 'newer' }] as never
     })
@@ -4473,7 +4473,7 @@ describe('API-backed client bootstrap', () => {
   it('acknowledges exact module definition writes while their collection projection is current', async () => {
     await loadWebInitialDatabase()
     const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules = [
         {
           id: 'mod-a',
@@ -4754,7 +4754,7 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
     const optimisticEpoch = captureDestructiveRefreshEpoch()
     const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(
         { id: 'chat-created', message: [{ role: 'user', data: 'created', chatId: 'message-created' }] } as never,
         { id: 'chat-forked', message: [] } as never,
@@ -5039,7 +5039,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous character patch without a resource read and preserves a newer edit', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].name = 'Newer queued edit'
     })
     const event = {
@@ -5071,7 +5071,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges contiguous optimistic character collection mutations without a collection read', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
       getDatabase().characters.push({ chaId: 'char-d', name: 'Dara', chats: [] } as never)
       getDatabase().characters.splice(1, 1)
@@ -5142,7 +5142,7 @@ describe('API-backed client bootstrap', () => {
 
   it('keeps unsafe character collection effects on authoritative reconciliation', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
     })
     const event = {
@@ -5193,7 +5193,7 @@ describe('API-backed client bootstrap', () => {
 
   it('does not apply a character collection effect across a revision gap', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
       getDatabase().characterOrder = ['char-a', 'char-b', 'char-c']
     })
@@ -5264,7 +5264,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous character selection without replacing a newer selection', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].lastInteraction = 200
     })
     const event = {
@@ -5297,7 +5297,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous chat selection without replacing a newer selection', async () => {
     await loadWebInitialDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.push({ id: 'chat-newer', message: [] } as never)
       getDatabase().characters[0].chatPage = 1
     })

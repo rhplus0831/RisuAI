@@ -105,10 +105,6 @@ vi.mock('../alert', () => ({
   alertNormal: vi.fn(),
 }))
 
-vi.mock('./resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => unknown) => fn(),
-}))
-
 vi.mock('../process/templates/templates', () => ({
   prebuiltPresets: {
     OAI: {
@@ -127,7 +123,7 @@ vi.mock('../process/templates/templates', () => ({
 
 import type { Database } from '../storage/database.svelte'
 import '../stores.svelte'
-import { applySettingsResource, getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import { applySettingsResource, replaceResourceDatabase } from './resourceState.svelte'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -146,6 +142,7 @@ import {
   flushPendingSettingsOwnerMutations,
   type ServerBackedSettingDraft,
 } from './settingsOwner.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const LONG_DELAY = 60_000
 

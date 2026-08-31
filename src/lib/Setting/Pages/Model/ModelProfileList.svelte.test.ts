@@ -51,7 +51,8 @@ import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
 import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
-import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

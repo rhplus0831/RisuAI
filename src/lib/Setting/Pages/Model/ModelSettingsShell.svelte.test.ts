@@ -57,8 +57,9 @@ import {
 } from 'src/ts/model/modelProfileMutations'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ModelSettingsShell from './ModelSettingsShell.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

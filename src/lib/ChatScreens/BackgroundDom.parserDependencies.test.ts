@@ -47,11 +47,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import BackgroundDom from './BackgroundDom.svelte'
-import {
-  charactersResourceState,
-  getResourceDatabase,
-  replaceResourceDatabase,
-} from '../../ts/server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
   ReloadGUIPointer,
   VariableReloadGUIPointer,
@@ -60,7 +56,7 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -119,7 +115,6 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
     moduleIntergration: '',
     modules: [],
   } as unknown as Database)
-  setResourceWriteGuardEnabled(true)
 }
 
 async function settle() {
@@ -151,7 +146,6 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
@@ -207,13 +201,13 @@ describe('BackgroundDom parser dependencies', () => {
     expect(target.textContent).toBe('')
   })
 
-  it('does not re-run background parsing on unrelated guarded projection writes', async () => {
+  it('does not re-run background parsing on unrelated owner writes', async () => {
     seedDatabase()
     component = mount(BackgroundDom, { target })
     await waitForParserCalls(1)
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame'
     })
     await settle()
@@ -234,7 +228,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].personality = 'updated background personality'
     })
     await waitForParserCalls(1)
@@ -248,7 +242,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame after signature'
     })
     await settle()
@@ -264,7 +258,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].backgroundHTML = '<section>background two</section>'
     })
     await waitForParserCalls(1)
@@ -300,7 +294,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].customscript = [
         {
           id: 'background-display-script',

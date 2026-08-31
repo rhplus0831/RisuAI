@@ -430,7 +430,6 @@ import {
 import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
 import {
   charactersResourceState,
-  getResourceDatabase,
   replaceResourceDatabase,
   settingsResourceState,
 } from '../../ts/server/resourceState.svelte'
@@ -450,8 +449,9 @@ import {
   clearMessageTranslationJob,
   setActiveMessageTranslations,
 } from 'src/ts/server/messageTranslationJobs'
-import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+
 import { BILINGUAL_PAIR_CLASS } from '../../ts/translator/bilingualInterleave'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -1416,13 +1416,13 @@ describe('message action target freshness', () => {
     vi.mocked(dispatchForkChatWithOutcome).mockImplementationOnce((_sourceChatId, _previous, input) => {
       const character = testDatabaseState.db.characters[0]
       const provisionalChat = JSON.parse(JSON.stringify(input.chat)) as (typeof character.chats)[number]
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         character.chats.unshift(provisionalChat)
         character.chatPage = 0
       })
       const settlement = finalSettlement.promise.then((outcome) => {
         if (outcome.status === 'failed') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             character.chats = character.chats.filter((chat) => chat.id !== provisionalChat.id)
             character.chatPage = character.chats.findIndex((chat) => chat.id === 'custom-html-chat')
           })
@@ -2269,7 +2269,7 @@ describe('server raw translation controls', () => {
     const renderedPairCount = () => (target.textContent ?? '').split(BILINGUAL_PAIR_CLASS).length - 1
     expect(renderedPairCount()).toBe(1)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.paragraphBreakBySentences = true
       testDatabaseState.db.paragraphBreakSentenceCount = 3
     })

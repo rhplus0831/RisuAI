@@ -11,7 +11,7 @@ vi.mock('./modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../server/resourceState.svelte'
 import {
   activeMessageTranslations,
   clearActiveMessageTranslation,
@@ -28,6 +28,7 @@ import {
   applyEmbeddedGeneratedMessageTranslation,
   handleServerGeneratedMessageTranslation,
 } from './serverGeneratedMessageTranslation'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const translation = {
   source: 'raw' as const,

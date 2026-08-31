@@ -13,11 +13,10 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import {
   charactersResourceState,
   collectionsResourceState,
-  getResourceDatabase,
   replaceResourceDatabase,
 } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
@@ -39,6 +38,7 @@ import {
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
 import { captureActiveChatTarget } from './chatCommands'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -198,12 +198,10 @@ function seedDb(): void {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -471,8 +469,6 @@ describe('active chat generation settings helper', () => {
       customModuleToggle: 'persona=Persona module',
     } as never)
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-a',
       promptPresetId: 'preset-b',
@@ -546,8 +542,6 @@ describe('active chat generation settings helper', () => {
       toggle_global: '1',
     } as any
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       promptPresetId: 'preset-a',
     })
@@ -685,8 +679,6 @@ describe('active chat generation settings helper', () => {
       'newMemo=New memo=textarea',
     ].join('\n')
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const state = resolveActiveChatGenerationSettings()
     expect(state.readiness.missing.map((reason) => reason.code)).toContain('sidebar_toggle_missing')
     expect(guardActiveChatGenerationSettingsForSend(state).status).toBe('ok')
@@ -749,8 +741,6 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsDefaultValuesPatch()
     expect(nextSettings).toEqual({
       configured: true,
@@ -790,8 +780,6 @@ describe('active chat generation settings helper', () => {
 
   it('normalizes direct full saves with an explicit jailbreak toggle off', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(
       saveActiveChatGenerationSettings({
         personaId: 'persona-a',
@@ -836,8 +824,6 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-b',
       promptPresetId: 'preset-a',
@@ -906,8 +892,6 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const before = resolveActiveChatGenerationSettings()
     expect(before.staleSidebarToggleKeys).toEqual(['stale'])
 
@@ -1116,8 +1100,6 @@ describe('active chat generation settings helper', () => {
   it('does not dispatch or save when the active chat has no id', () => {
     delete testDatabaseState.db.characters[0].chats[0].id
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(
       saveActiveChatGenerationSettingsPatch({
         personaId: 'persona-a',
@@ -1159,8 +1141,6 @@ describe('active chat generation settings helper', () => {
     const calls = stubCommandFetch()
 
     testDatabaseState.db.characters[0].chatPage = 1
-    setResourceWriteGuardEnabled(true)
-
     expect(
       saveActiveChatGenerationSettingsSelection(
         {

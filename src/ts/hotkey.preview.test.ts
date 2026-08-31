@@ -27,8 +27,9 @@ vi.mock('./process/modules', async (importActual) => {
 import { initHotkey } from './hotkey'
 import { alertStore } from './alert'
 import { selectedCharID } from './stores.svelte'
-import { getDatabase, setDatabaseLite, type Database } from './storage/database.svelte'
+import { setDatabaseLite, type Database } from './storage/database.svelte'
 import { beginChatGenerationActivity, resetChatGenerationActivitiesForTests } from './process/generationActivity.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const targetA = {
   selectedCharID: 0,

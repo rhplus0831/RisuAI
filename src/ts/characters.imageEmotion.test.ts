@@ -157,8 +157,8 @@ vi.mock('./filePicker', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+
+import { charactersResourceState, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
 import type { character, Database } from './storage/database.svelte'
@@ -166,6 +166,7 @@ import type { character, Database } from './storage/database.svelte'
 // `stores`/`database` finishes initializing before the reactive `moduleUpdate`
 // effect can run (matches the working characters.importChat test ordering).
 import { addCharEmotion, changeChar, rmCharEmotion, selectCharImg } from './characters'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db(): Database {
@@ -322,7 +323,6 @@ function baseCharacter(overrides: Partial<character> = {}): character {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   selectedFileState.singleQueue.length = 0
   selectedFileState.multipleQueue.length = 0
@@ -333,7 +333,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

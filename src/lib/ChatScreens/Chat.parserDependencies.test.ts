@@ -196,7 +196,7 @@ vi.mock('src/ts/utilState', () => ({
 }))
 
 import ChatParserDependenciesHarness, { type ParserDependencyRow } from './Chat.parserDependenciesHarness.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
   HideIconStore,
   ReloadChatPointer,
@@ -206,8 +206,9 @@ import {
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+
 import { dispatchDeleteMessageScoped, dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 chatParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
@@ -356,7 +357,6 @@ function seedDatabase(rows: ParserDependencyRow[]) {
     useChatCopy: false,
     zoomsize: 100,
   } as unknown as Database)
-  setResourceWriteGuardEnabled(true)
 }
 
 async function settle() {
@@ -390,7 +390,6 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
@@ -425,7 +424,7 @@ describe('Chat parser dependencies', () => {
     expect(target.textContent).not.toContain('previous response')
   })
 
-  it('does not re-run every visible row parser on unrelated guarded projection writes', async () => {
+  it('does not re-run every visible row parser on unrelated owner writes', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)
     mountHarness(rows)
@@ -434,8 +433,8 @@ describe('Chat parser dependencies', () => {
     expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(rows.map((row) => row.data))
     const callsAfterMount = chatParserMocks.risuChatParser.mock.calls.length
 
-    withTrustedResourceWrite(() => {
-      getResourceDatabase().characters[0].chats[0].note = 'unrelated guarded projection write'
+    withTestDatabaseWrite(() => {
+      getResourceDatabase().characters[0].chats[0].note = 'unrelated owner write'
     })
     await settle()
 
@@ -518,7 +517,7 @@ describe('Chat parser dependencies', () => {
   it('re-runs only synthetic greeting display parsing when the active chat changes', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats.push({
         id: 'parser-dependency-other-chat',
         name: 'Other Parser Dependency Chat',
@@ -536,7 +535,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     chatParserMocks.risuChatParser.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chatPage = 1
     })
     await settle()
@@ -637,7 +636,7 @@ describe('Chat parser dependencies', () => {
   it('keeps interactive message content out of click-to-edit mode', async () => {
     const rows = makeRows(1)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().clickToEdit = true
     })
     mountHarness(rows)
@@ -665,7 +664,7 @@ describe('Chat parser dependencies', () => {
     seedDatabase(rows)
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
     chatParserMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().askRemoval = true
     })
     mountHarness(rows)
@@ -676,7 +675,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     expect(chatParserMocks.alertConfirm).toHaveBeenCalledWith(languageMocks.language.removeChat)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message.unshift({
         chatId: 'newer-row',
         data: 'newer message',
@@ -738,7 +737,7 @@ describe('Chat parser dependencies', () => {
     seedDatabase(rows)
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
     chatParserMocks.alertConfirm.mockResolvedValueOnce(true).mockReturnValueOnce(instantConfirmation.promise)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().askRemoval = true
       getResourceDatabase().instantRemove = true
     })
@@ -750,7 +749,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     expect(chatParserMocks.alertConfirm).toHaveBeenCalledTimes(2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message.splice(0, 1)
     })
     instantConfirmation.resolve(true)
@@ -766,7 +765,7 @@ describe('Chat parser dependencies', () => {
     seedDatabase(rows)
     chatParserMocks.canUseServerCommands.mockReturnValue(true)
     chatParserMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().askRemoval = true
     })
     mountHarness(rows)
@@ -776,7 +775,7 @@ describe('Chat parser dependencies', () => {
     removeButtons[1]?.click()
     await settle()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message.splice(1, 1)
     })
     confirmation.resolve(true)
@@ -800,7 +799,7 @@ describe('Chat parser dependencies', () => {
     const rows = makeRows(1)
     chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().enableBlockPartialEdit = true
     })
     mountHarness(rows)
@@ -832,7 +831,7 @@ describe('Chat parser dependencies', () => {
     await tick()
 
     vi.mocked(dispatchUpdateMessageScoped).mockClear()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'newer live data'
     })
 
@@ -900,7 +899,7 @@ describe('Chat parser dependencies', () => {
     const rows = makeRows(1)
     chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const db = getResourceDatabase()
       db.enableBlockPartialEdit = true
       db.translator = 'ko'
@@ -942,7 +941,7 @@ describe('Chat parser dependencies', () => {
     const rows = makeRows(1)
     chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
     seedDatabase(rows)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const db = getResourceDatabase()
       db.enableBlockPartialEdit = true
       db.characters[0].chats[0].message[0].translation = makeRawTranslation('translated body line')

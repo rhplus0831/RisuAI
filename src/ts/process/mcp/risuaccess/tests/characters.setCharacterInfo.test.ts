@@ -19,16 +19,14 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { resetLorebookHydration } from 'src/ts/server/lorebookOwner.svelte'
 import { SERVER_CHARACTER_SHELL_MARKER, type character } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { seedCloneCostDb } from 'src/ts/__tests__/cloneCostHarness'
 import { CharacterHandler } from '../characters'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -196,21 +194,18 @@ beforeEach(() => {
   alertConfirmSpy.mockResolvedValue(true)
   clearCachedServerCommandRevision()
   resetLorebookHydration()
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
   selectedCharID.set(0)
 })
 
 afterEach(() => {
   resetLorebookHydration()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
   vi.unstubAllGlobals()
 })
 
 describe('MCP character writes optimistic projection', () => {
   it('does not mutate after its owner aborts while access confirmation is pending', async () => {
-    setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const controller = new AbortController()
     const handler = new CharacterHandler(controller.signal)
@@ -238,7 +233,6 @@ describe('MCP character writes optimistic projection', () => {
   })
 
   it('rejects setCharacterInfo when the character is deleted while access is pending', async () => {
-    setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     let acceptPrompt!: (accepted: boolean) => void
@@ -255,7 +249,7 @@ describe('MCP character writes optimistic projection', () => {
     })
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters = getDatabase().characters.filter((candidate) => candidate.chaId !== 'char-1')
     })
     acceptPrompt(true)
@@ -266,7 +260,6 @@ describe('MCP character writes optimistic projection', () => {
   })
 
   it('rejects setCharacterInfo when the character row is replaced while access is pending', async () => {
-    setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     const replacement = { ...getDatabase().characters[1], name: 'Replacement character' }
@@ -284,7 +277,7 @@ describe('MCP character writes optimistic projection', () => {
     })
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1] = replacement
     })
     acceptPrompt(true)
@@ -323,7 +316,6 @@ describe('MCP character writes optimistic projection', () => {
     },
   ])('rejects a $family write when the character row is replaced while access is pending', async (testCase) => {
     testCase.prepare()
-    setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     const replacement = JSON.parse(JSON.stringify(getDatabase().characters[1])) as character
@@ -340,7 +332,7 @@ describe('MCP character writes optimistic projection', () => {
     const pending = handler.handle(testCase.tool, testCase.args)
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1] = replacement
     })
     acceptPrompt(true)
@@ -353,7 +345,6 @@ describe('MCP character writes optimistic projection', () => {
   })
 
   it('setCharacterInfo patches resource state and read-tool output before the command resolves', async () => {
-    setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
 
@@ -383,7 +374,6 @@ describe('MCP character writes optimistic projection', () => {
 
   it('setCharacterInfo patches displayName and uses it for visible MCP text', async () => {
     getDatabase().characters[1].displayName = '표시 캐릭터'
-    setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
 
@@ -416,8 +406,6 @@ describe('MCP character writes optimistic projection', () => {
   })
 
   it('a failed patch rolls back only the target row, preserving sibling edits', async () => {
-    // Regression target: CharacterHandler setCharacterInfo routes through dispatchUpdateCharacterScoped.
-    setResourceWriteGuardEnabled(true)
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failureStatusByUrl: { '/api/v1/commands/characters/char-1': 500 },
       holdUrls: ['/api/v1/commands/characters/char-1'],
@@ -430,7 +418,7 @@ describe('MCP character writes optimistic projection', () => {
     })
 
     expect(getDatabase().characters[1].name).toBe('Renamed via MCP')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].name = 'Concurrent sibling edit'
     })
 
@@ -446,8 +434,6 @@ describe('MCP character writes optimistic projection', () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     getDatabase().characters[1].globalLore = []
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-set-character-lorebook', {
       id: 'char-1',
       name: 'Created',
@@ -512,8 +498,6 @@ describe('MCP character writes optimistic projection', () => {
     const existing = makeLorebook('Existing', 'old content')
     getDatabase().characters[1].globalLore = [existing]
     ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
-    setResourceWriteGuardEnabled(true)
-
     const updateResult = await handler.handle('risu-set-character-lorebook', {
       id: 'char-1',
       name: 'Existing',
@@ -632,8 +616,6 @@ describe('MCP character writes optimistic projection', () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     getDatabase().characters[1].customscript = []
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-set-character-regex-scripts', {
       id: 'char-1',
       name: 'Created script',
@@ -716,8 +698,6 @@ describe('MCP character writes optimistic projection', () => {
     seedSiblingAndModuleScripts()
     delete (getDatabase().characters[1] as { customscript?: unknown }).customscript
     getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-set-character-regex-scripts', {
       id: 'char-1',
       name: 'Created script',
@@ -733,7 +713,7 @@ describe('MCP character writes optimistic projection', () => {
     })
     await waitForCallCount(calls, 2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].triggerscript = [
         makeLuaTrigger('print("target trigger concurrent")', 'target-trigger-concurrent-id') as any,
       ]
@@ -774,8 +754,6 @@ describe('MCP character writes optimistic projection', () => {
     seedSiblingAndModuleScripts()
     getDatabase().characters[1].customscript = [makeRegexScript('Delete me', 'delete-old-in', 'delete-old-out')]
     getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-delete-character-regex-scripts', {
       id: 'char-1',
       name: 'Delete me',
@@ -784,7 +762,7 @@ describe('MCP character writes optimistic projection', () => {
     expect(getDatabase().characters[1].customscript).toEqual([])
     await waitForCallCount(calls, 2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].customscript = [
         makeRegexScript('Concurrent target regex', 'target-new-in', 'target-new-out'),
       ]
@@ -824,8 +802,6 @@ describe('MCP character writes optimistic projection', () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("old")') as any]
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-set-character-lua-script', {
       id: 'char-1',
       code: 'print("new")',
@@ -861,8 +837,6 @@ describe('MCP character writes optimistic projection', () => {
     seedSiblingAndModuleScripts()
     getDatabase().characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
     getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-set-character-lua-script', {
       id: 'char-1',
       code: 'print("target attempted")',
@@ -871,7 +845,7 @@ describe('MCP character writes optimistic projection', () => {
     expect(firstTriggerCode(1)).toBe('print("target attempted")')
     await waitForCallCount(calls, 2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].customscript = [
         makeRegexScript('Target regex concurrent', 'target-new-in', 'target-new-out'),
       ]
@@ -912,8 +886,6 @@ describe('MCP character writes optimistic projection', () => {
     seedSiblingAndModuleScripts()
     getDatabase().characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
     getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
-    setResourceWriteGuardEnabled(true)
-
     await handler.handle('risu-set-character-lua-script', {
       id: 'char-1',
       code: 'print("target attempted")',
@@ -922,7 +894,7 @@ describe('MCP character writes optimistic projection', () => {
     expect(firstTriggerCode(1)).toBe('print("target attempted")')
     await waitForCallCount(calls, 2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[1].triggerscript = [
         makeLuaTrigger('print("target concurrent")', 'target-trigger-concurrent-id') as any,
       ]

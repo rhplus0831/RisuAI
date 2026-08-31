@@ -27,7 +27,7 @@ vi.mock('../scriptings', () => ({
 }))
 
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
 import {
@@ -36,6 +36,7 @@ import {
   type RenderFinalPromptArgs,
   type UnformatedPromptSlots,
 } from '../promptAssembly/renderFinalPrompt'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

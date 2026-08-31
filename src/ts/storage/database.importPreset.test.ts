@@ -15,7 +15,7 @@ vi.mock('../rpack/rpack_js', () => ({
 
 // Resource-state effects fire moduleUpdate when the database is seeded;
 // neutralize it so the import-order TDZ between modules.ts and this module
-// graph cannot crash the run (same pattern as command.resourceGuard.test.ts).
+// graph cannot crash the run (same pattern as command.owner.test.ts).
 vi.mock('../process/modules', async (importActual) => {
   const actual = await importActual<typeof import('../process/modules')>()
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
@@ -39,11 +39,12 @@ import {
   resetPendingMutationOutboxForTests,
 } from '../server/pendingMutationOutbox'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+import { replaceResourceDatabase } from '../server/resourceState.svelte'
+
 import { alertStore } from '../stores.svelte'
 import { resolveAlertSelection } from '../alert'
 import { language } from '../../lang'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -183,7 +184,6 @@ beforeEach(() => {
   resetPendingPresetMutationsForTests()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({
     modelPresets: [],
     modelPresetsId: -1,

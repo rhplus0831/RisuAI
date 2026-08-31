@@ -66,12 +66,8 @@ import BookmarkList from './BookmarkList.svelte'
 import { language } from 'src/lang'
 import { bookmarkListOpen, selectedCharID } from 'src/ts/stores.svelte'
 import type { ChatMutationFinalOutcome, ChatMutationOutcome } from 'src/ts/chatCommands'
-import {
-  charactersResourceState,
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+import { charactersResourceState, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -165,7 +161,7 @@ function installOwnerHydration(suffix: 'a' | 'b', ownerIndex: number, hydration:
   bookmarkMocks.hydrateChatMessages.mockImplementation(async (chatId: string) => {
     if (chatId !== `chat-${suffix}`) return
     await hydration.promise
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[ownerIndex].chats[0].message = [
         {
           chatId: `message-${suffix}-old`,
@@ -211,7 +207,7 @@ describe('BookmarkList hydration and navigation', () => {
     seedBookmarkDatabase(false)
     bookmarkMocks.hydrateChatMessages.mockImplementationOnce(async () => {
       await hydration.promise
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { chatId: 'message-old', role: 'user', data: 'Older bookmarked message' },
           { chatId: 'message-tail', role: 'char', data: 'Resident tail message' },
@@ -236,12 +232,12 @@ describe('BookmarkList hydration and navigation', () => {
   it('hydrates bookmarked metadata when no resident transcript owner exists', async () => {
     const hydration = deferred()
     seedBookmarkDatabase(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message = undefined as never
     })
     bookmarkMocks.hydrateChatMessages.mockImplementationOnce(async () => {
       await hydration.promise
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { chatId: 'message-old', role: 'user', data: 'Older bookmarked message' },
         ]
@@ -328,7 +324,7 @@ describe('BookmarkList hydration and navigation', () => {
       expect(bookmarkMocks.alertNormal).toHaveBeenCalledWith(language.bookmarkRemoveQueued('Renamed bookmark')),
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const chat = getDatabase().characters[0].chats[0]
       chat.bookmarks = ['message-old']
       chat.bookmarkNames = { 'message-old': 'Renamed bookmark' }
@@ -430,7 +426,7 @@ describe('BookmarkList hydration and navigation', () => {
       const ownerIndex = suffix === 'a' ? 0 : 1
       const hydration = suffix === 'a' ? aHydration : bHydration
       await hydration.promise
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[ownerIndex].chats[0].message = [
           {
             chatId: `message-${suffix}-old`,
@@ -486,7 +482,7 @@ describe('BookmarkList hydration and navigation', () => {
 
   it('fails closed when the selected character stable id is duplicated', async () => {
     seedBookmarkDatabase(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push(JSON.parse(JSON.stringify(getDatabase().characters[0])))
     })
 
@@ -499,7 +495,7 @@ describe('BookmarkList hydration and navigation', () => {
 
   it('fails closed on character owner errors and duplicate active chat ids', async () => {
     seedBookmarkDatabase(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({
         ...bookmarkOwner('b', true),
         chats: [{ ...bookmarkOwner('b', true).chats[0], id: 'chat-a' }],
@@ -530,7 +526,7 @@ describe('BookmarkList hydration and navigation', () => {
 
   it('fails closed on duplicate bookmark and message stable ids', async () => {
     seedBookmarkDatabase(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = ['message-old', 'message-old']
     })
 
@@ -542,7 +538,7 @@ describe('BookmarkList hydration and navigation', () => {
     unmount(component)
     component = undefined
     seedBookmarkDatabase(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message.push({
         chatId: 'message-old',
         role: 'char',

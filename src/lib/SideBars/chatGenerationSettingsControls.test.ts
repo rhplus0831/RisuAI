@@ -73,8 +73,9 @@ import {
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { currentRoute, navigate } from 'src/ts/router'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { mergeServerResourceCharacterRow } from 'src/ts/storage/database.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

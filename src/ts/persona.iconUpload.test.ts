@@ -89,10 +89,10 @@ vi.mock('./filePicker', () => ({
 vi.mock('./characterState', () => ({ findCharacterbyId: vi.fn(() => ({ name: 'Character' })) }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import { language } from 'src/lang'
 import './stores.svelte'
-import { getDatabase, setDatabaseLite } from './storage/database.svelte'
+import { setDatabaseLite } from './storage/database.svelte'
 import {
   importUserPersona,
   reconcileSelectedPersonaProjectionEpoch,
@@ -110,6 +110,7 @@ import {
   resetPendingMutationOutboxForTests,
 } from './server/pendingMutationOutbox'
 import { applyCollectionsResource, applySettingsResource } from './server/resourceState.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -272,14 +273,12 @@ let authoritativeRevision = 10_000
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedFileState.queue.length = 0
   selectedFileState.requestedExtensions.length = 0
   personaAlertState.current = { type: 'none', msg: '' }
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

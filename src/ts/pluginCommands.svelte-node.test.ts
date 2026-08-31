@@ -5,11 +5,8 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type PluginSnapshot } from './server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from './server/resourceState.svelte'
+
+import { replaceResourceDatabase as setDatabaseLite } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import {
   currentPluginSettingsPatchRollbackSnapshot,
@@ -32,6 +29,7 @@ import {
   togglePluginEnabled,
 } from './pluginCommands'
 import type { RisuPlugin } from './plugins/plugins.svelte'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -191,20 +189,18 @@ async function flushCommandEffects(): Promise<void> {
 }
 
 function writePluginStorage(storage: Record<string, unknown>): void {
-  withTrustedResourceWrite(() => {
+  withTestDatabaseWrite(() => {
     getDatabase().pluginCustomStorage = cloneJsonValue(storage)
   })
 }
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   seedPluginState()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -213,12 +209,6 @@ describe('plugin projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     const previousPlugins = cloneJsonValue(getDatabase().plugins)
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().plugins[0].realArg.mode = 'raw'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBeTruthy()
     expect(getDatabase().plugins[0].realArg).toEqual({ mode: 'slow', token: 'abc' })
 
@@ -251,10 +241,8 @@ describe('plugin projection command helpers', () => {
 
   it('failed setPluginArgument preserves newer storage keys and sibling plugin edits', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-
     expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBeTruthy()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[1] = {
         ...getDatabase().plugins[1],
         realArg: { mode: 'newer-sibling-edit' },
@@ -286,8 +274,6 @@ describe('plugin projection command helpers', () => {
 
   it('serialized same-argument failures preserve the newer queued edit before rolling back', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(setPluginArgument('plugin-a', 'mode', 'first')).toBeTruthy()
     await waitForCallCount(calls, 2)
 
@@ -330,8 +316,6 @@ describe('plugin projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     const previousPlugins = cloneJsonValue(getDatabase().plugins)
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
-    setResourceWriteGuardEnabled(true)
-
     expect(togglePluginEnabled('plugin-a')).toBeTruthy()
     expect(getDatabase().plugins[0].enabled).toBe(false)
 
@@ -362,10 +346,8 @@ describe('plugin projection command helpers', () => {
 
   it('failed togglePluginEnabled rolls back only enabled and preserves newer same-row fields', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-
     expect(togglePluginEnabled('plugin-a')).toBeTruthy()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = {
         ...getDatabase().plugins[0],
         script: 'Risuai.log("newer same-row edit")',
@@ -403,8 +385,6 @@ describe('plugin projection command helpers', () => {
     const previousPlugins = cloneJsonValue(getDatabase().plugins)
     const previousProvider = getDatabase().currentPluginProvider
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
-    setResourceWriteGuardEnabled(true)
-
     expect(deletePlugin('plugin-a')).toBeTruthy()
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b'])
     expect(getDatabase().currentPluginProvider).toBe('')
@@ -435,10 +415,8 @@ describe('plugin projection command helpers', () => {
 
   it('failed active-provider deletePlugin restores only the missing plugin and preserves newer siblings and provider', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-
     expect(deletePlugin('plugin-a')).toBeTruthy()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-c', {
           realArg: { mode: 'newer-plugin' },
@@ -477,14 +455,12 @@ describe('plugin projection command helpers', () => {
   it('failed dispatchSelectPluginProvider skips rollback after newer provider selection and preserves plugins and storage', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     const previous = currentPluginStateSnapshot()
-    setResourceWriteGuardEnabled(true)
-
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().currentPluginProvider = 'plugin-b'
     })
     dispatchSelectPluginProvider('plugin-b', previous)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().currentPluginProvider = 'plugin-c'
       getDatabase().plugins.push(
         seedPlugin('plugin-c', {
@@ -515,18 +491,17 @@ describe('plugin projection command helpers', () => {
 
   it('failed dispatchCreatePlugin removes only the attempted new plugin and preserves newer siblings, provider, and storage', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
     const previous = currentPluginStateSnapshot()
     const attemptedPlugin = seedPlugin('plugin-created', {
       displayName: 'Attempted Create',
       realArg: { mode: 'created' },
     })
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(attemptedPlugin)
     })
     dispatchCreatePlugin(attemptedPlugin, previous)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer' },
@@ -573,7 +548,6 @@ describe('plugin projection command helpers', () => {
 
   it('dispatchCreatePlugin sends the original attempted plugin after delayed bootstrap', async () => {
     const { calls, resolveBootstrap } = stubDelayedBootstrapCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const previous = currentPluginStateSnapshot()
     const attemptedPlugin = seedPlugin('plugin-created', {
       displayName: 'Attempted Create',
@@ -581,7 +555,7 @@ describe('plugin projection command helpers', () => {
       realArg: { mode: 'created' },
     })
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(attemptedPlugin)
     })
     dispatchCreatePlugin(attemptedPlugin, previous)
@@ -610,21 +584,20 @@ describe('plugin projection command helpers', () => {
 
   it('failed create followed by queued failed update removes the never-persisted plugin', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const createPrevious = currentPluginStateSnapshot()
     const attemptedPlugin = seedPlugin('plugin-created', {
       displayName: 'Attempted Create',
       realArg: { mode: 'created' },
     })
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(attemptedPlugin)
     })
     dispatchCreatePlugin(attemptedPlugin, createPrevious)
     await waitForCallCount(calls, 2)
 
     const updatePrevious = currentPluginStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const index = getDatabase().plugins.findIndex((plugin) => plugin.name === 'plugin-created')
       getDatabase().plugins[index] = {
         ...getDatabase().plugins[index],
@@ -661,7 +634,6 @@ describe('plugin projection command helpers', () => {
 
   it('failed full plugin update restores only fields still equal to attempted values', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
     const previous = currentPluginStateSnapshot()
     const attemptedPlugin = seedPlugin('plugin-a', {
       script: 'Risuai.log("attempted full update")',
@@ -671,11 +643,11 @@ describe('plugin projection command helpers', () => {
       enabled: false,
     })
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = attemptedPlugin
     })
     dispatchUpdatePlugin('plugin-a', attemptedPlugin as unknown as PluginSnapshot, previous)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = {
         ...getDatabase().plugins[0],
         script: 'Risuai.log("newer same-row script")',
@@ -728,8 +700,7 @@ describe('plugin projection command helpers', () => {
 
   it('dispatchUpdatePlugin omits unchanged nested fields and large scripts after delayed bootstrap', async () => {
     const { calls, resolveBootstrap } = stubDelayedBootstrapCommandFetch()
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0].script = 'x'.repeat(10_000)
     })
     const previous = currentPluginStateSnapshot()
@@ -739,7 +710,7 @@ describe('plugin projection command helpers', () => {
       realArg: { mode: 'attempted', token: 'abc' },
     }
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = {
         ...getDatabase().plugins[0],
         ...patch,
@@ -767,8 +738,7 @@ describe('plugin projection command helpers', () => {
 
   it('encodes optional-field deletion and restores it when the command fails', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = seedPlugin('plugin-a', {
         displayName: 'Old display name',
         allowedIPC: ['old-channel'],
@@ -779,7 +749,7 @@ describe('plugin projection command helpers', () => {
     const fullSnapshot = toPluginSnapshot(seedPlugin('plugin-a', patch))
     expect(Object.keys(fullSnapshot)).toEqual(expect.arrayContaining(['displayName', 'allowedIPC']))
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       delete getDatabase().plugins[0].displayName
       delete getDatabase().plugins[0].allowedIPC
     })
@@ -804,11 +774,10 @@ describe('plugin projection command helpers', () => {
 
   it('failed delete followed by queued failed same-name create restores the original plugin', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const originalPlugins = cloneJsonValue(getDatabase().plugins)
     const deletePrevious = currentPluginStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins = getDatabase().plugins.filter((plugin) => plugin.name !== 'plugin-a')
       getDatabase().currentPluginProvider = ''
     })
@@ -820,7 +789,7 @@ describe('plugin projection command helpers', () => {
       displayName: 'Replacement A',
       realArg: { mode: 'replacement' },
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(newPlugin)
     })
     dispatchCreatePlugin(newPlugin, createPrevious)
@@ -842,17 +811,16 @@ describe('plugin projection command helpers', () => {
 
   it('failed dispatchReorderPlugins preserves a newer reorder and uses the captured attempted order', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
     })
     const previous = currentPluginStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins = [seedPlugin('plugin-c'), seedPlugin('plugin-b'), seedPlugin('plugin-a')]
     })
     dispatchReorderPlugins(previous)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins = [seedPlugin('plugin-b'), seedPlugin('plugin-c'), seedPlugin('plugin-a')]
       getDatabase().currentPluginProvider = 'plugin-c'
       getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
@@ -882,8 +850,6 @@ describe('plugin projection command helpers', () => {
     const previousPlugins = cloneJsonValue(getDatabase().plugins)
     const previousProvider = getDatabase().currentPluginProvider
     const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
-    setResourceWriteGuardEnabled(true)
-
     expect(setPluginArgument('missing-plugin', 'mode', 'slow')).toBeNull()
     expect(togglePluginEnabled('missing-plugin')).toBeNull()
     expect(deletePlugin('missing-plugin')).toBeNull()
@@ -896,8 +862,7 @@ describe('plugin projection command helpers', () => {
 
   it('failed settings patch restores only attempted settings keys and preserves newer plugin state', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().pluginDevelopMode = false
     })
@@ -907,12 +872,12 @@ describe('plugin projection command helpers', () => {
     }
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = patch.moduleIntergration
       getDatabase().pluginDevelopMode = patch.pluginDevelopMode
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-c', {
           realArg: { mode: 'newer-plugin' },
@@ -960,10 +925,9 @@ describe('plugin projection command helpers', () => {
 
   it('failed later settings group preserves an accepted earlier settings group', async () => {
     const calls = stubCommandFetch({ failCommandUrls: ['/api/v1/commands/settings/advanced'] })
-    setResourceWriteGuardEnabled(true)
     const oldCustomModels = customModelRows([{ id: 'old-model', name: 'Old Model' }])
     const attemptedCustomModels = customModelRows([{ id: 'attempted-model', name: 'Attempted Model' }])
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().customModels = oldCustomModels
       getDatabase().moduleIntergration = 'old-modules'
     })
@@ -973,7 +937,7 @@ describe('plugin projection command helpers', () => {
     }
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().customModels = cloneJsonValue(patch.customModels)
       getDatabase().moduleIntergration = patch.moduleIntergration
     })
@@ -1008,10 +972,9 @@ describe('plugin projection command helpers', () => {
 
   it('failed first settings group rolls back later unaccepted attempted settings keys', async () => {
     const calls = stubCommandFetch({ failCommandUrls: ['/api/v1/commands/settings/providers'] })
-    setResourceWriteGuardEnabled(true)
     const oldCustomModels = customModelRows([{ id: 'old-model', name: 'Old Model' }])
     const attemptedCustomModels = customModelRows([{ id: 'attempted-model', name: 'Attempted Model' }])
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().customModels = oldCustomModels
       getDatabase().moduleIntergration = 'old-modules'
     })
@@ -1021,7 +984,7 @@ describe('plugin projection command helpers', () => {
     }
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().customModels = cloneJsonValue(patch.customModels)
       getDatabase().moduleIntergration = patch.moduleIntergration
     })
@@ -1047,8 +1010,7 @@ describe('plugin projection command helpers', () => {
 
   it('failed settings patch skips rollback when the same settings key changed again', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = 'old-modules'
     })
     const patch = {
@@ -1056,11 +1018,11 @@ describe('plugin projection command helpers', () => {
     }
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = patch.moduleIntergration
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = 'newer-modules'
     })
 
@@ -1072,8 +1034,7 @@ describe('plugin projection command helpers', () => {
 
   it('failed settings patch ignores unsupported and undefined keys for command dispatch and rollback', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = 'old-modules'
       dbRecord().notServerBackedSetting = 'old-unsupported'
       dbRecord().maxContext = 4096
@@ -1085,7 +1046,7 @@ describe('plugin projection command helpers', () => {
     }
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = patch.moduleIntergration
       dbRecord().notServerBackedSetting = patch.notServerBackedSetting
       dbRecord().maxContext = undefined
@@ -1112,18 +1073,17 @@ describe('plugin projection command helpers', () => {
 
   it('failed PUT restores only the attempted key and preserves newer sibling keys', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
     })
     const previous = currentPluginStorageSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'attempted' }
     })
     dispatchPutPluginStorage('attempted', { value: 'attempted' }, previous)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.newerSibling = { value: 'newer' }
     })
 
@@ -1147,11 +1107,10 @@ describe('plugin projection command helpers', () => {
 
   it('overlays pending storage intent until successful command reconciliation settles', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({ attempted: { value: 'old' }, localSibling: true })
     const previous = currentPluginStorageSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'newer local' }
     })
     dispatchPutPluginStorage('attempted', { value: 'newer local' }, previous)
@@ -1188,11 +1147,10 @@ describe('plugin projection command helpers', () => {
 
   it('keeps a pending delete absent from an older whole-map projection', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({ deleted: { value: 'old' }, sibling: true })
     const previous = currentPluginStorageSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       delete getDatabase().pluginCustomStorage.deleted
     })
     dispatchDeletePluginStorage('deleted', previous)
@@ -1209,18 +1167,17 @@ describe('plugin projection command helpers', () => {
 
   it('failed PUT skips rollback if the same key changed again', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
     })
     const previous = currentPluginStorageSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'attempted' }
     })
     dispatchPutPluginStorage('attempted', { value: 'attempted' }, previous)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'newer' }
     })
 
@@ -1235,14 +1192,13 @@ describe('plugin projection command helpers', () => {
 
   it('serialized failed same-key PUTs preserve the queued value before rolling back to the original', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
     })
 
     const firstPrevious = currentPluginStorageSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'A' }
     })
     dispatchPutPluginStorage('attempted', { value: 'A' }, firstPrevious)
@@ -1250,7 +1206,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 2)
 
     const secondPrevious = currentPluginStorageSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'B' }
     })
     dispatchPutPluginStorage('attempted', { value: 'B' }, secondPrevious)
@@ -1292,14 +1248,13 @@ describe('plugin projection command helpers', () => {
 
   it('a failed queued PUT rolls back to the value accepted by the preceding PUT', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
     })
 
     const firstPrevious = currentPluginStorageSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'A' }
     })
     dispatchPutPluginStorage('attempted', { value: 'A' }, firstPrevious)
@@ -1307,7 +1262,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 2)
 
     const secondPrevious = currentPluginStorageSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.attempted = { value: 'B' }
     })
     dispatchPutPluginStorage('attempted', { value: 'B' }, secondPrevious)
@@ -1346,18 +1301,17 @@ describe('plugin projection command helpers', () => {
 
   it('failed DELETE restores only the deleted key and preserves newer sibling keys', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({
       deleted: { value: 'old' },
       sibling: { value: 'kept' },
     })
     const previous = currentPluginStorageSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       delete getDatabase().pluginCustomStorage.deleted
     })
     dispatchDeletePluginStorage('deleted', previous)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.newerSibling = { value: 'newer' }
     })
 
@@ -1380,7 +1334,6 @@ describe('plugin projection command helpers', () => {
 
   it('failed bulk clear/replace restores only keys still matching the attempted bulk state', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({
       restoreCleared: { value: 'old-cleared' },
       changedAfterClear: { value: 'old-changed' },
@@ -1390,7 +1343,7 @@ describe('plugin projection command helpers', () => {
     })
     const previous = currentPluginStorageSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage = {
         restoreReplaced: { value: 'bulk-replaced' },
         changedAfterReplace: { value: 'bulk-replaced-again' },
@@ -1408,7 +1361,7 @@ describe('plugin projection command helpers', () => {
       },
       previous,
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage.changedAfterClear = { value: 'newer-same-key' }
       getDatabase().pluginCustomStorage.changedAfterReplace = { value: 'newer-replacement' }
       getDatabase().pluginCustomStorage.laterAdded = { value: 'newer-sibling' }
@@ -1442,7 +1395,6 @@ describe('plugin projection command helpers', () => {
 
   it('skips an unchanged full plugin-storage replacement', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     writePluginStorage({ large: { script: 'x'.repeat(10_000) } })
     const previous = currentPluginStorageSnapshot()
 

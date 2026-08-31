@@ -178,7 +178,7 @@ const chatListMocks = vi.hoisted(() => {
     }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
-    withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
+    withTestDatabaseWrite: vi.fn((callback: () => void) => callback()),
   }
 })
 
@@ -268,20 +268,13 @@ vi.mock('src/ts/server/commands', () => ({
   updateMessageCommand: chatListMocks.updateMessageCommand,
 }))
 
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: chatListMocks.withTrustedResourceWrite,
-}))
-
 import ChatList from './ChatList.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { currentChatSelectionSnapshot, dispatchSelectChat, restoreChatRowMetadata } from 'src/ts/chatCommands'
-import {
-  charactersResourceState,
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+import { charactersResourceState, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+
 import type { Chat, character } from 'src/ts/storage/database.svelte'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -450,7 +443,7 @@ describe('ChatList DOM contract harness', () => {
 
   it('fails closed when the modal character stable id is duplicated', async () => {
     const chara = seedModalDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({ ...chara, chats: chara.chats.map((chat) => ({ ...chat })) })
     })
 
@@ -463,7 +456,7 @@ describe('ChatList DOM contract harness', () => {
 
   it('fails closed on character owner errors and duplicate or missing chat ids', async () => {
     const chara = seedModalDatabase()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({
         ...chara,
         chaId: 'char-b',
@@ -659,7 +652,7 @@ describe('ChatList DOM contract harness', () => {
     await tick()
 
     expect(chatListMocks.canUseServerCommands).toHaveBeenCalled()
-    expect(chatListMocks.withTrustedResourceWrite).not.toHaveBeenCalled()
+    expect(chatListMocks.withTestDatabaseWrite).not.toHaveBeenCalled()
     expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledOnce()
     const [chatId, patch, previous] = chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0]
     expect(chatId).toBe('chat-b')

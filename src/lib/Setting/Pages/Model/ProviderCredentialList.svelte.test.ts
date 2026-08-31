@@ -28,8 +28,9 @@ import { language } from 'src/lang'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
 import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
 import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import ProviderCredentialList from './ProviderCredentialList.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

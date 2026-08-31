@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage: the global lorebook add / folder / import helpers
-// captured a `lorebook`/`lore` alias from the read-only projection before the
-// trusted write swapped the resource-backed database to a mutable clone, then pushed into that
-// stale alias and threw. The writes must run against the freshly-cloned mutable
-// projection and still dispatch the matching global-lorebook command.
+// Regression coverage: global lorebook add, folder, and import helpers must
+// mutate the current collection owner and dispatch the matching durable command.
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -50,10 +47,11 @@ import { safeStructuredClone } from '../../polyfill'
 import { addLorebook, addLorebookFolder, exportLoreBook, importLoreBook } from '../lorebook.svelte'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import { resetLorebookHydration } from '../../server/lorebookOwner.svelte'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
-import { getDatabase, setDatabaseLite } from '../../storage/database.svelte'
+
+import { setDatabaseLite } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { lorebookPageOwner } from '../../server/lorebookPageOwner.svelte'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -194,31 +192,20 @@ beforeEach(() => {
   downloadFile.mockClear()
   clearCachedServerCommandRevision()
   resetLorebookHydration()
-  setResourceWriteGuardEnabled(false)
   seedDatabase()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('global lorebook durable writes under the resource guard', () => {
-  it('baseline: a raw global lorebook write throws while the guard is active', () => {
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      ;(getDatabase().loreBook[0] as { data: unknown[] }).data.push({ id: 'raw' })
-    }).toThrow(/resource database compatibility view is read-only/)
-  })
-
+describe('global lorebook durable owner writes', () => {
   it('does not mutate, import into, or export an unhydrated character lorebook stub', async () => {
     const calls = stubCommandFetch()
     fileSelection.data = selectedRisuLore('Must Not Appear')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().enableLorebookStubs = true
     })
-    setResourceWriteGuardEnabled(true)
-
     addLorebook(0)
     addLorebookFolder(0)
     await importLoreBook('global')
@@ -231,8 +218,6 @@ describe('global lorebook durable writes under the resource guard', () => {
 
   it('addLorebook(-1) appends a global entry and dispatches the entries command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => addLorebook(-1)).not.toThrow()
     expect((getDatabase().loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
 
@@ -242,8 +227,6 @@ describe('global lorebook durable writes under the resource guard', () => {
 
   it('addLorebookFolder(-1) appends a global folder and dispatches the entries command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => addLorebookFolder(-1)).not.toThrow()
     const entries = (getDatabase().loreBook[0] as { data: { mode?: string }[] }).data
     expect(entries).toHaveLength(1)
@@ -260,11 +243,9 @@ describe('global lorebook durable writes under the resource guard', () => {
       setting: 'loreBookPage',
       state: { present: true, value: 1 },
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBookPage = 0
     })
-    setResourceWriteGuardEnabled(true)
-
     expect(() => addLorebook(-1)).not.toThrow()
     expect((getDatabase().loreBook[0] as { data: unknown[] }).data).toHaveLength(0)
     expect((getDatabase().loreBook[1] as { data: unknown[] }).data).toHaveLength(1)
@@ -279,8 +260,6 @@ describe('global lorebook durable writes under the resource guard', () => {
     const imported = { type: 'risu', data: [{ key: 'imported', comment: 'Imported', content: 'x' }] }
     fileSelection.data = new TextEncoder().encode(JSON.stringify(imported))
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(importLoreBook('sglobal')).resolves.not.toThrow()
     expect((getDatabase().loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
 
@@ -292,12 +271,10 @@ describe('global lorebook durable writes under the resource guard', () => {
     fileSelection.data = selectedRisuLore('Original Global Import')
     const calls = stubCommandFetch()
     const picker = delayPicker()
-    setResourceWriteGuardEnabled(true)
-
     const importPromise = importLoreBook('sglobal')
     await waitForPicker()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBookPage = 1
     })
     picker.resolve()
@@ -319,13 +296,11 @@ describe('global lorebook durable writes under the resource guard', () => {
     fileSelection.data = selectedRisuLore('Original Character Import')
     const calls = stubCommandFetch()
     const picker = delayPicker()
-    setResourceWriteGuardEnabled(true)
-
     const importPromise = importLoreBook('global')
     await waitForPicker()
 
     selectedCharID.set(1)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const database = getDatabase()
       const [charA, charB] = database.characters
       database.characters = [charB, charA] as typeof database.characters
@@ -352,12 +327,10 @@ describe('global lorebook durable writes under the resource guard', () => {
     fileSelection.data = selectedRisuLore('Original Chat Import')
     const calls = stubCommandFetch()
     const picker = delayPicker()
-    setResourceWriteGuardEnabled(true)
-
     const importPromise = importLoreBook('local')
     await waitForPicker()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatPage = 1
     })
     picker.resolve()
@@ -381,12 +354,10 @@ describe('global lorebook durable writes under the resource guard', () => {
     fileSelection.data = selectedRisuLore('Failed Import')
     const calls = stubCommandFetch({ failCommands: true })
     const picker = delayPicker()
-    setResourceWriteGuardEnabled(true)
-
     const importPromise = importLoreBook('global')
     await waitForPicker()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].globalLore.push({
         id: 'during-picker-entry',
         key: 'during',
@@ -416,7 +387,7 @@ describe('global lorebook durable writes under the resource guard', () => {
   })
 
   it('exports standalone Agent-only lorebook entries as inert without mutating stored entries', async () => {
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBook[0].data = [
         {
           id: 'agent-only-export',

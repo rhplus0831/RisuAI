@@ -17,7 +17,7 @@ vi.mock('../process/modules', async (importActual) => {
   return { ...actual, moduleUpdate: vi.fn() }
 })
 
-import { mergeServerResourceFields, setResourceWriteGuardEnabled } from '../storage/database.svelte'
+import { mergeServerResourceFields } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
   peekCachedServerCommandRevision,
@@ -39,7 +39,6 @@ import {
   promptTemplateOwnerUsesSelectedFallback,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
-
 function item(id: string, text: string): PromptItem {
   return { id, type: 'plain', type2: 'normal', role: 'system', text } as PromptItem
 }
@@ -53,7 +52,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 beforeEach(() => {
-  setResourceWriteGuardEnabled(false)
   ;(testDatabaseState as { db: unknown }).db = { characters: [], modules: [], enabledModules: [] }
   clearCachedServerCommandRevision()
   resetPromptTemplateHydration()
@@ -63,7 +61,6 @@ beforeEach(() => {
 
 afterEach(() => {
   const database = JSON.parse(JSON.stringify(testDatabaseState.db))
-  setResourceWriteGuardEnabled(false)
   testDatabaseState.db = database
 })
 
@@ -214,7 +211,6 @@ describe('promptTemplate hydration', () => {
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
     setCachedServerCommandRevision(5)
-    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -279,7 +275,6 @@ describe('promptTemplate hydration', () => {
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
-    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -645,22 +640,10 @@ describe('promptTemplate hydration', () => {
       promptPresetId: 'preset-a',
       promptTemplate: null,
     })
+    await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
 
-    setResourceWriteGuardEnabled(true)
-    try {
-      await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
-
-      expect(testDatabaseState.db.promptTemplate).toEqual([item('stale', 'stale compatibility body')])
-      expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
-      expect(isPromptTemplateHydrated()).toBe(true)
-      expect(() => {
-        testDatabaseState.db.promptTemplate = []
-      }).toThrow('The resource database compatibility view is read-only')
-      expect(() => {
-        delete testDatabaseState.db.promptTemplate
-      }).toThrow('The resource database compatibility view is read-only')
-    } finally {
-      setResourceWriteGuardEnabled(false)
-    }
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('stale', 'stale compatibility body')])
+    expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(isPromptTemplateHydrated()).toBe(true)
   })
 })

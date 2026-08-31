@@ -29,11 +29,10 @@ import { selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setClientRegexWorkerFactoryForTesting } from './clientRegexWorker'
 import { CLIENT_REGEX_LIMITS, executeRegexWorkerRequest, type RegexWorkerRequest } from './regexWorkerRuntime'
-
 interface CapturedFetch {
   url: string
   method: string
@@ -145,14 +144,12 @@ beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
   resetScriptCache()
-  setResourceWriteGuardEnabled(false)
   setClientRegexWorkerFactoryForTesting(null)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   setClientRegexWorkerFactoryForTesting(null)
   selectedCharID.set(-1)
 })
@@ -306,7 +303,7 @@ describe('editdisplay render path logging', () => {
     }
   })
 
-  it('@@inject display action runs under the resource guard without durable persistence', async () => {
+  it('@@inject display action stays transient without durable persistence', async () => {
     const char = seedDb()
     char.customscript = [
       {
@@ -318,11 +315,6 @@ describe('editdisplay render path logging', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].message[0].data = 'raw'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editdisplay', 0)
 
     expect(result.data).toBe('keep  after')
@@ -392,8 +384,6 @@ describe('editdisplay render path logging', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
 
     expect(result.data).toBe('keep  after')
@@ -423,8 +413,6 @@ describe('editdisplay render path logging', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
 
     expect(result.data).toBe('keep  after')
@@ -447,8 +435,6 @@ describe('editdisplay render path logging', () => {
         ableFlag: true,
       },
     ] as any
-    setResourceWriteGuardEnabled(true)
-
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
     await new Promise((resolve) => setTimeout(resolve, 0))
 

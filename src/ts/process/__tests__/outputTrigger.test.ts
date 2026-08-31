@@ -15,8 +15,9 @@ vi.mock('../modules', async (importActual) => {
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { applyOutputTrigger } from '../postGeneration/outputTrigger'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

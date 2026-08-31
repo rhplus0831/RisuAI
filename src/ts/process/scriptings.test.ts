@@ -242,9 +242,10 @@ import {
   clearCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
 } from '../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+
+import { replaceResourceDatabase } from '../server/resourceState.svelte'
 import { selectedCharID } from '../stores.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function makeChat(): Chat {
   return {
@@ -392,7 +393,6 @@ function stubLuaEditTriggerCommandFetch(): CapturedCommandFetch[] {
 
 function seedLuaEditTriggerDatabase(): character {
   selectedCharID.set(0)
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({
     characters: [
       {
@@ -961,7 +961,6 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     selectedCharID.set(-1)
     clearAppliedServerResourceRevision()
     clearCachedServerCommandRevision()
@@ -971,7 +970,6 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   it('applies a Lua host chat mutation through the scoped message command', async () => {
     const calls = stubLuaEditTriggerCommandFetch()
     const char = seedLuaEditTriggerDatabase()
-    setResourceWriteGuardEnabled(true)
     luaMock.setCallListenAction((engine, accessKey) => {
       engine.hostFns.get('addChat')?.(accessKey, 'char', 'from Lua')
     })
@@ -1000,10 +998,9 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   it('discards detached Lua chat changes when the active chat changes during the trigger', async () => {
     const calls = stubLuaEditTriggerCommandFetch()
     const char = seedLuaEditTriggerDatabase()
-    setResourceWriteGuardEnabled(true)
     luaMock.setCallListenAction((engine, accessKey) => {
       engine.hostFns.get('addChat')?.(accessKey, 'char', 'stale Lua mutation')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getResourceDatabase().characters[0].chatPage = 1
       })
     })
@@ -1024,7 +1021,6 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
   it('persists Lua edit-display chat variables through the scriptstate command', async () => {
     const calls = stubLuaEditTriggerCommandFetch()
     const char = seedLuaEditTriggerDatabase()
-    setResourceWriteGuardEnabled(true)
     luaMock.setCallListenAction((engine, accessKey) => {
       engine.hostFns.get('setChatVar')?.(accessKey, 'choice', 'updated')
     })
@@ -1054,7 +1050,6 @@ describe('client scripting description host API', () => {
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     selectedCharID.set(-1)
     clearAppliedServerResourceRevision()
     clearCachedServerCommandRevision()

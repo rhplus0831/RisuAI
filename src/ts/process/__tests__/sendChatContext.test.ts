@@ -33,11 +33,7 @@ import {
 } from '../../server/commands'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import {
-  charactersResourceState,
-  getResourceDatabase,
-  replaceResourceDatabase,
-} from '../../server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { setupSendChatContext } from '../sendChatContext'
 import { seedCloneCostDb, withCloneInstrumentation } from '../../__tests__/cloneCostHarness'
 import {
@@ -46,6 +42,7 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from '../../server/pendingMutationOutbox'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

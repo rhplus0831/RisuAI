@@ -22,8 +22,6 @@ import {
   isServerCharacterShell,
   mergeServerResourceCharacterRow,
   mergeServerResourceFields,
-  setResourceWriteGuardEnabled,
-  withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
@@ -38,6 +36,7 @@ import {
   retryCharacterShellHydration,
   startSelectedCharacterShellHydration,
 } from './characterShellHydration.svelte'
+import { withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -74,7 +73,6 @@ function hydratedCharacter(name = 'Hydrated') {
 }
 
 beforeEach(() => {
-  setResourceWriteGuardEnabled(false)
   clearCachedServerCommandRevision()
   resetCharacterShellHydrationStateForTests()
   selectedCharID.set(0)
@@ -90,7 +88,6 @@ beforeEach(() => {
 afterEach(() => {
   resetCharacterShellHydrationStateForTests()
   const database = JSON.parse(JSON.stringify(testDatabaseState.db))
-  setResourceWriteGuardEnabled(false)
   testDatabaseState.db = database
 })
 
@@ -115,7 +112,6 @@ describe('character shell hydration', () => {
 
   it('accepts a character row response after an unrelated projection advances the known revision', async () => {
     setCachedServerCommandRevision(5)
-    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -146,7 +142,6 @@ describe('character shell hydration', () => {
 
   it('accepts detail after scoped transcript hydration mutates the same shell', async () => {
     setCachedServerCommandRevision(5)
-    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -157,7 +152,7 @@ describe('character shell hydration', () => {
     projectionState.fetchResource.mockReturnValue(response.promise)
 
     const pending = hydrateCharacterShell('char-1')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const shell = testDatabaseState.db.characters[0]
       shell.chats[0].message = [{ role: 'user', data: 'Hydrated transcript' }] as any
     })
@@ -178,7 +173,6 @@ describe('character shell hydration', () => {
 
   it('rejects a response after the target character row changes during hydration', async () => {
     setCachedServerCommandRevision(5)
-    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number

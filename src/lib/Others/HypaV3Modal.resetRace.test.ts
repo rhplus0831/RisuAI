@@ -57,7 +57,8 @@ vi.mock('src/ts/translator/translator', async (importActual) => {
 import HypaV3Modal from './HypaV3Modal.svelte'
 import { language } from 'src/lang'
 import { hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = ReturnType<typeof mount>
 

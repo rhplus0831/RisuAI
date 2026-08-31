@@ -20,11 +20,8 @@ import {
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
 } from './server/pendingMutationOutbox'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from './server/resourceState.svelte'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from './server/resourceState.svelte'
+
 import type { Database } from './storage/database.svelte'
 import {
   acceptedPluginRuntimeProjection,
@@ -35,6 +32,7 @@ import {
   togglePluginEnabled,
 } from './pluginCommands'
 import type { RisuPlugin } from './plugins/plugins.svelte'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -232,19 +230,19 @@ describe('plugin durable replay settlement', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage = { 'key-a': 'old-a', 'key-b': 'old-b' }
     })
 
     const previousA = currentPluginStorageSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage['key-a'] = 'accepted-a'
     })
     const first = await dispatchPutPluginStorage('key-a', 'accepted-a', previousA)!
     if (first.status !== 'queued') throw new Error('Expected storage A to remain queued')
 
     const previousB = currentPluginStorageSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().pluginCustomStorage['key-b'] = 'queued-b'
     })
     const second = await dispatchPutPluginStorage('key-b', 'queued-b', previousB)!

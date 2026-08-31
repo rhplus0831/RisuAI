@@ -45,11 +45,8 @@ vi.mock('src/ts/alert', () => ({
 
 import CustomBackgroundToggle from './CustomBackgroundToggle.svelte'
 import { language } from 'src/lang'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-  withResourceDatabaseWrite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -91,7 +88,7 @@ beforeEach(() => {
   backgroundMocks.selectSingleFile.mockReset()
   backgroundMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
     if (key === 'customBackground') {
-      withResourceDatabaseWrite((database) => {
+      withTestDatabaseWrite((database) => {
         database.customBackground = value as string
       })
     }
@@ -204,7 +201,7 @@ describe('CustomBackgroundToggle local upload state', () => {
 
     expect(getDatabase().customBackground).toBe('')
 
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.customBackground = 'newer-background'
     })
     picker.resolve(undefined)
@@ -223,7 +220,7 @@ describe('CustomBackgroundToggle local upload state', () => {
     checkbox().click()
     await vi.waitFor(() => expect(backgroundMocks.selectSingleFile).toHaveBeenCalledOnce())
 
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.customBackground = 'newer-background'
     })
     picker.resolve({ data: new Uint8Array([1, 2, 3]), name: 'chosen.png' })
@@ -251,7 +248,7 @@ describe('CustomBackgroundToggle local upload state', () => {
 
     expect(getDatabase().customBackground).toBe('')
 
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.customBackground = 'newer-background'
     })
     upload.reject(new Error('upload failed'))
@@ -284,7 +281,7 @@ describe('CustomBackgroundToggle local upload state', () => {
   })
 
   it('durably clears the placeholder left by an older client', async () => {
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.customBackground = '-'
     })
 

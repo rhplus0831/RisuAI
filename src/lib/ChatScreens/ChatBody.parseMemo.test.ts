@@ -2,10 +2,10 @@ import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { character, Database } from '../../ts/storage/database.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import { ReloadChatPointer, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
 import { RegexDisplayReloadPointer, reloadRegexDisplay } from '../../ts/process/regexDisplayReload'
-import { withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const moduleMockState = vi.hoisted(() => ({
   modules: [] as any[],
@@ -766,7 +766,7 @@ describe('ChatBody content-keyed parse memo', () => {
 
   it('defers projected regex edits until the display activation epoch advances', async () => {
     const char = seedDb()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].customscript = [
         {
           id: 'deferred-display-script',
@@ -789,7 +789,7 @@ describe('ChatBody content-keyed parse memo', () => {
     await waitForText(target, 'initial body')
     parseSpy.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].customscript![0].out = 'activated'
     })
     await settleRenderWork()
@@ -819,7 +819,7 @@ describe('ChatBody content-keyed parse memo', () => {
 
     await waitForParagraphCount(target, 1)
     parseSpy.mockClear()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getResourceDatabase().paragraphBreakBySentences = true
     })
     reloadRegexDisplay()

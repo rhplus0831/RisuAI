@@ -29,7 +29,8 @@ import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 import { language } from 'src/lang'
 import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
 import { finishPendingModelMutation, getPendingModelMutations } from 'src/ts/model/modelProfileMutations'
-import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

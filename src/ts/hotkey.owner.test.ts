@@ -3,8 +3,7 @@ import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
 // Regression coverage: ordinary keydown matching must not mutate
 // `testDatabaseState.db.hotkeys`, and hotkey settings edits must route through a
-// server-backed settings patch instead of a raw resource write. Both throw
-// under the read-only server resource guard otherwise.
+// server-backed settings patch instead of mutating an aggregate database.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const changeCharMock = vi.hoisted(() => vi.fn(async () => {}))
@@ -48,11 +47,10 @@ vi.mock('./process/modules', async (importActual) => {
 import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotkeyMatches, initHotkey } from './hotkey'
 import { applyServerBackedSetting } from './server/settingsOwner.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import { charactersResourceState } from './server/resourceState.svelte'
 import { alertStore, selectedCharID } from './stores.svelte'
 import { language } from 'src/lang'
-
 interface CapturedFetch {
   url: string
   method: string
@@ -171,16 +169,14 @@ beforeEach(() => {
   alertStore.set({ type: 'none', msg: '' })
   selectedCharID.set(-1)
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDatabase()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('hotkey handling under the resource guard', () => {
+describe('hotkey handling through explicit resource owners', () => {
   it('finds adjacent characters at both ends of the alphabetized list', () => {
     const characters = [{ name: 'Charlie' }, { name: 'Alpha' }, { name: 'Bravo' }] as any
 
@@ -309,14 +305,7 @@ describe('hotkey handling under the resource guard', () => {
     expect(settingsGroupForKey('hotkeys')).toBe('sidebar')
   })
 
-  it('matches hotkeys without mutating the read-only projection', () => {
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw resource write throws.
-    expect(() => {
-      ;(testDatabaseState.db.hotkeys[0] as any).ctrl = true
-    }).toThrow()
-
+  it('matches hotkeys without mutating the settings owner', () => {
     const hotkey = testDatabaseState.db.hotkeys[0]
     const event = new KeyboardEvent('keydown', { key: 'a' })
 
@@ -355,8 +344,6 @@ describe('hotkey handling under the resource guard', () => {
   })
 
   it('rejects mismatched modifiers without mutation', () => {
-    setResourceWriteGuardEnabled(true)
-
     const hotkey = testDatabaseState.db.hotkeys[0]
     const event = new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })
 
@@ -474,8 +461,6 @@ describe('hotkey handling under the resource guard', () => {
 
   it('routes a hotkey settings edit through a sidebar settings patch', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     // Mirror HotkeySettings.svelte: build a fresh array and apply it.
     const next = testDatabaseState.db.hotkeys.map((hotkey, i) => (i === 0 ? { ...hotkey, ctrl: true } : { ...hotkey }))
 
@@ -493,7 +478,7 @@ describe('hotkey handling under the resource guard', () => {
     expect(patch.body.patch.hotkeys[0].action).toBe('home')
   })
 
-  it('dispatches a configured document hotkey without mutating the guarded projection', async () => {
+  it('dispatches a configured document hotkey without mutating the settings owner', async () => {
     testDatabaseState.db.hotkeys = [{ key: 'a', action: 'send' }] as any
     const configuredHotkey = testDatabaseState.db.hotkeys[0]
     const sendButton = document.createElement('button')
@@ -504,13 +489,7 @@ describe('hotkey handling under the resource guard', () => {
     document.body.appendChild(sendButton)
     window.addEventListener('keydown', bubbledToWindow)
     initHotkey()
-    setResourceWriteGuardEnabled(true)
-
     try {
-      expect(() => {
-        ;(configuredHotkey as any).ctrl = true
-      }).toThrow()
-
       const event = new KeyboardEvent('keydown', {
         bubbles: true,
         cancelable: true,

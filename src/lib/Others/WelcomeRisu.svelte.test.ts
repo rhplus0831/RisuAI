@@ -83,10 +83,8 @@ vi.mock('src/ts/server/settingsOwner.svelte', () => ({
 }))
 
 import WelcomeRisu from './WelcomeRisu.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

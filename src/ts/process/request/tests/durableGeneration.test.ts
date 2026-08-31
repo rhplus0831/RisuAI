@@ -22,10 +22,11 @@ vi.mock('../../modules', async (importActual) => {
   }
 })
 
-import { getDatabase, setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
 import { resolveDurableGeneration, type DurableGenerationRoute } from '../durableGeneration'
 import type { ServerPromptAssemblyInput } from '../serverPromptAssembly'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function seedDb(overrides: Partial<Database> = {}): void {
   setDatabase({

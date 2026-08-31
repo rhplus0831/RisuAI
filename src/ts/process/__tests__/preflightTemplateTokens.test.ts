@@ -5,13 +5,14 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { getDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
 import {
   preflightTemplateTokens as preflightTemplateTokensWithDatabase,
   type PromptUnformatedSlots,
 } from '../promptBudget/preflightTemplateTokens'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function preflightTemplateTokens(
   promptTemplate: Parameters<typeof preflightTemplateTokensWithDatabase>[0],

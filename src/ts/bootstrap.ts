@@ -1,5 +1,4 @@
 import { get } from 'svelte/store'
-import { setResourceWriteGuardEnabled } from './storage/database.svelte'
 import { botMakerMode } from './stores.svelte'
 import { LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
 import { currentRoute } from './router'
@@ -396,8 +395,7 @@ async function loadPreWriterObserverShell(): Promise<boolean> {
   }
 
   // The observer projection is authenticated server state, not a recovered or
-  // optimistic mutation. Install the guard before any part of it can render.
-  setResourceWriteGuardEnabled(true)
+  // optimistic mutation. Load it into the explicit owners before rendering.
   const resources = await loadInitialServerResources()
   if (resources.status !== 'ok') {
     if (resources.status === 'error') console.warn(`Observer shell load failed: ${resources.error}`)
@@ -815,10 +813,8 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
   })
 
   const resources = await runWriterStep('writer-resource-hydration', async () => {
-    // From this point on the resource database is an authoritative projection.
-    // Hydration and reconciliation use trusted apply scopes; raw compatibility
-    // writes must never be exposed, even during the initial projection.
-    setResourceWriteGuardEnabled(true)
+    // From this point on the explicit resource owners are authoritative.
+    // Hydration and reconciliation apply only through those owner boundaries.
     const result = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
     if (result.status !== 'ok') {
       throw new Error(

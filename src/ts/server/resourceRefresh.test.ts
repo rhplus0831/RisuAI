@@ -99,14 +99,10 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
 } from './commands'
-import {
-  charactersResourceState,
-  getResourceDatabase,
-  replaceResourceDatabase,
-  resetServerResourceState,
-} from './resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../storage/database.svelte'
+import { charactersResourceState, replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
+
 import { selectedCharID } from '../stores.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function database(characters: Array<{ chaId: string; name: string }>, currentChar = 0) {
   return {
@@ -126,7 +122,6 @@ function database(characters: Array<{ chaId: string; name: string }>, currentCha
 
 beforeEach(() => {
   vi.clearAllMocks()
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   replaceResourceDatabase(
     database(

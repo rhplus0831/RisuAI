@@ -53,12 +53,11 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { safeStructuredClone } from '../polyfill'
 import { resetServerChatState } from '../process/__fixtures__/mocks/serverChatFetch'
 import { abortChat, chatProcessStage, doingChat } from '../process/index.svelte'
 import { runSendCloneCountProbe } from './sendCloneCountProbe'
-
 function resetProbeState(): void {
   uuidState.counter = 0
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
@@ -67,7 +66,6 @@ function resetProbeState(): void {
   doingChat.set(false)
   abortChat.set(false)
   chatProcessStage.set(0)
-  setResourceWriteGuardEnabled(false)
 }
 
 beforeEach(() => {

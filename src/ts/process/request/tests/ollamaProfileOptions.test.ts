@@ -42,9 +42,10 @@ vi.mock('../../../storage/fastifyStorage', () => ({
 }))
 
 import { LLMFormat } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
 import { requestChatDataMain } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string

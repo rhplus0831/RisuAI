@@ -108,7 +108,7 @@ import {
   resetServerCompletionCalls,
   serverCompletionFetch,
 } from '../__fixtures__/mocks/serverCompletionFetch'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { abortChat, activeGenerationTarget, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
 import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
@@ -123,6 +123,7 @@ import {
   resetPendingMutationOutboxForTests,
 } from '../../server/pendingMutationOutbox'
 import { resetChatUnreadForTests, setVisibleChat, unreadChatIds } from '../chatUnread.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

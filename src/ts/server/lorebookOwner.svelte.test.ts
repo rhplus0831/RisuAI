@@ -121,10 +121,6 @@ vi.mock('./commands', () => ({
   upsertGlobalLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertGlobalEntry', a }),
   upsertModuleLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertModuleEntry', a }),
 }))
-vi.mock('./resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => unknown) => fn(),
-}))
-
 import { selectedCharID } from '../stores.svelte'
 import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY } from './lorebookMutationKeys'
 import {
@@ -133,7 +129,6 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
-  getResourceDatabase as getDatabase,
   markCharacterLorebookProjectionApplied,
   replaceResourceDatabase as setDatabaseLite,
 } from './resourceState.svelte'
@@ -181,6 +176,7 @@ import {
   subscribeLorebookEntryDraftRollbacks,
 } from './lorebookOwner.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type Entry = {
   key?: string

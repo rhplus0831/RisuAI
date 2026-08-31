@@ -11,8 +11,8 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import { selectedCharID } from '../stores.svelte'
-import { getDatabase, setDatabaseLite } from '../storage/database.svelte'
-import { setResourceWriteGuardEnabled } from './resourceWriteGuard.svelte'
+import { setDatabaseLite } from '../storage/database.svelte'
+
 import {
   applyLorebookEntryDraftEdit,
   currentGlobalLorebookStateSnapshot,
@@ -51,7 +51,7 @@ import {
   seedCloneCostDb,
   withCloneInstrumentation,
 } from '../__tests__/cloneCostHarness'
-
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 interface CapturedFetch {
   url: string
   method: string
@@ -75,7 +75,6 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite(seedCloneCostDb() as any)
   getDatabase().loreBook = [{ id: 'g1', name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
@@ -90,7 +89,6 @@ beforeEach(() => {
 
 afterEach(() => {
   resetLorebookOwnerForTests()
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -267,7 +265,6 @@ describe('discrete-editor scoped snapshot', () => {
     getDatabase().loreBook = [
       { id: 'book-1', name: 'Global', data: [{ id: 'entry-1', key: 'k', content: 'c' }] },
     ] as any
-    setResourceWriteGuardEnabled(true)
     const before = getDatabase()
 
     expect(globalLorebookListIdsNeedNormalization()).toBe(false)
@@ -278,7 +275,6 @@ describe('discrete-editor scoped snapshot', () => {
 
   it('normalizes missing global lorebook ids through the stable resource facade', () => {
     getDatabase().loreBook = [{ name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
-    setResourceWriteGuardEnabled(true)
     const before = getDatabase()
 
     expect(globalLorebookListIdsNeedNormalization()).toBe(true)

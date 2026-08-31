@@ -72,12 +72,10 @@ import { SUPPORTER_ENDPOINT } from './Pages/supporters'
 import Settings from './Settings.svelte'
 import { language } from 'src/lang'
 import { additionalSettingsMenu, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { isLite } from 'src/ts/lite'
 import { applyRouteToStores, currentRoute, navigate } from 'src/ts/router'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

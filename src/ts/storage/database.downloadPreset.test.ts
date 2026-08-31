@@ -32,8 +32,6 @@ vi.mock('../process/modules', async (importActual) => {
 
 import { downloadPreset } from './database.svelte'
 import { replaceResourceDatabase } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
-
 function promptItem(id: string, text: string): Record<string, unknown> {
   return { id, type: 'plain', type2: 'normal', role: 'system', text }
 }
@@ -41,7 +39,6 @@ function promptItem(id: string, text: string): Record<string, unknown> {
 beforeEach(() => {
   vi.clearAllMocks()
   exportApi.ensureHydrated.mockResolvedValue(true)
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({
     characters: [],
     promptPresetsId: 0,

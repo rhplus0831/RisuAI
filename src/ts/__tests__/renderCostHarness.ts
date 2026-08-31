@@ -2,8 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { vi } from 'vitest'
 import type { character, customscript, Database, Message } from '../storage/database.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { getResourceDatabase, testDatabaseState, withTestDatabaseWrite } from './resourceDatabaseState'
 import { applyServerChatMessagesResource } from '../server/chatMessageHydration.svelte'
 import {
   resetGenerationFinalizationPersistencesForTests,
@@ -21,15 +20,6 @@ import {
   reloadGuiDisplay,
   selectedCharID,
 } from '../stores.svelte'
-
-const testDatabaseState = {
-  get db() {
-    return getResourceDatabase()
-  },
-  set db(value: Database) {
-    replaceResourceDatabase(value)
-  },
-}
 
 export interface RenderParseCounts {
   parseMarkdown: number
@@ -413,7 +403,7 @@ export async function runBackgroundCompletionRenderCostHarness(
       data: `Background message ${index}`,
       chatId: `background-message-${index}`,
     }))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       currentCharacter.chats.push({
         id: 'render-cost-background-chat',
         name: 'Background Chat',
@@ -486,7 +476,7 @@ export async function runBackgroundCompletionRenderCostHarness(
       additionalSystemPrompt: [],
     }
     const applyTerminal = () => {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         applyServerMessagePatch(currentCharacter.chats[1], terminalPatch)
       })
     }

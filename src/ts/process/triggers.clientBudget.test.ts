@@ -8,12 +8,11 @@ vi.mock('./modules', async (importActual) => {
 
 import '../stores.svelte'
 import { safeStructuredClone } from '../polyfill'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { CurrentTriggerIdStore, selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 import { createTriggerExecutionBudget, runTrigger } from './triggers'
-
 function seedDb(): void {
   selectedCharID.set(0)
   testDatabaseState.db = {
@@ -41,7 +40,6 @@ function characterWithTriggers(triggerscript: unknown[]): character {
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
-  setResourceWriteGuardEnabled(false)
   CurrentTriggerIdStore.set(null)
   seedDb()
 })

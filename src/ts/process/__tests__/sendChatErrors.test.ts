@@ -20,10 +20,10 @@ vi.mock('../../storage/fastifyStorage', () => ({
 
 import { applyServerResourceDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { reportSendChatError, type SendChatErrorContext } from '../sendChatErrors'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -123,7 +123,6 @@ const baseCtx: SendChatErrorContext = {
 describe('reportSendChatError', () => {
   beforeEach(() => {
     clearCachedServerCommandRevision()
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
     stubCommandFetch()
     alertErrorSpy.mockReset()
@@ -133,7 +132,6 @@ describe('reportSendChatError', () => {
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
   })
 
@@ -228,16 +226,11 @@ describe('reportSendChatError', () => {
     expect(alertErrorSpy).toHaveBeenCalledWith('boom')
   })
 
-  it('writes and persists the inlay bubble under the enabled resource guard', async () => {
+  it('writes and persists the inlay bubble through the chat owner', async () => {
     const calls = stubCommandFetch()
     const char = makeChar()
     char.chats[0].message = [{ role: 'user', data: 'hi', time: 0, chatId: 'm-user' }]
     seed({ inlayErrorResponse: true, char })
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'raw' })
-    }).toThrow(/read-only (server projection|outside withResourceDatabaseWrite)/)
-
     reportSendChatError('boom', baseCtx)
 
     const messages = testDatabaseState.db.characters[0].chats[0].message
@@ -257,7 +250,7 @@ describe('reportSendChatError', () => {
     })
     const projectedMessages = [{ role: 'user', data: 'hi', time: 0, chatId: 'm-user' }, command.body.message]
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message = [{ role: 'user', data: 'stale' }]
     })
     applyServerResourceDatabase({
@@ -279,8 +272,6 @@ describe('reportSendChatError', () => {
 
   it('keeps modal fallback for invalid targets while the guard is enabled', () => {
     seed({ inlayErrorResponse: true, char: null })
-    setResourceWriteGuardEnabled(true)
-
     reportSendChatError('boom', {
       ...baseCtx,
       target: { characterId: 'missing-character', chatId: 'chat-1' },

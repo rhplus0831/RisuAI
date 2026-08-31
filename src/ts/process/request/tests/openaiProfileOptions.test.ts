@@ -23,9 +23,10 @@ vi.mock('../../../server/providerOperations', () => ({
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
 import type { ModelProfileRecord } from '../../../model/modelProfileRecords'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestOpenAI } from '../openAI/requests'
 import type { RequestDataArgumentExtended } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string

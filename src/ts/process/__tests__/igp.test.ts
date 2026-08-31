@@ -21,10 +21,10 @@ vi.mock('../../storage/fastifyStorage', () => ({
 
 import { applyServerResourceDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { evaluateIgp } from '../postGeneration/igp'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -139,14 +139,12 @@ const baseOpts = {
 describe('evaluateIgp', () => {
   beforeEach(() => {
     clearCachedServerCommandRevision()
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
     requestChatDataSpy.mockReset()
     requestChatDataSpy.mockResolvedValue({ type: 'success', result: 'IGP-RESULT' })
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
   })
 
@@ -224,21 +222,16 @@ describe('evaluateIgp', () => {
     expect(messages[2].data).toBe('thirdIGP-RESULT')
   })
 
-  it('appends and persists under the enabled resource guard', async () => {
+  it('appends and persists through the message owner', async () => {
     const calls = stubCommandFetch()
     seed(makeChar())
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].message[0].data += 'raw'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
 
     expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
     const command = await waitForTargetedMessageCommand(calls)
     expect(command.body.patch.data).toBe('helloIGP-RESULT')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'stale'
     })
     applyServerResourceDatabase({
@@ -330,7 +323,7 @@ describe('evaluateIgp', () => {
         expectedGenerationId: 'generation-1',
       },
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'newer user edit'
     })
     resolveProvider({ type: 'success', result: 'IGP-RESULT' })

@@ -465,10 +465,8 @@ export function normalizeClientLorebookEntryIds(entries: loreBook[]): boolean {
   const seen = new Set<string>()
   let changed = false
   for (const entry of entries ?? []) {
-    // Only write when an id is missing or repeats an earlier row. An
-    // unconditional assignment would trip the read-only resource guard's set
-    // trap even when the value is unchanged, which breaks dispatch paths that
-    // pass projection-owned entry arrays.
+    // Only write when an id is missing or repeats an earlier row so callers
+    // that already hold canonical owner rows do not create needless updates.
     let id = typeof entry.id === 'string' && entry.id.trim() ? entry.id : ''
     if (!id || seen.has(id)) {
       do {
@@ -497,8 +495,8 @@ function lorebookEntryIdsNeedNormalization(entries: loreBook[] | undefined): boo
   return false
 }
 
-// Shared by the whole-DB ensure above and the global-list-only ensure below.
-// Must run inside a trusted write scope (it re-reads the resource-backed database itself).
+// Shared by the complete-owner ensure above and the global-list-only ensure below.
+// Re-read the collection owner so assignments always target the canonical rows.
 function assignGlobalLorebookListIds(): void {
   for (const lorebook of (collectionsResourceState.values.loreBook ?? []) as GlobalLorebook[]) {
     const hadStableBookId = typeof lorebook.id === 'string' && lorebook.id.trim()
@@ -935,9 +933,8 @@ function assignLorebookCollection(scope: ReplaceableLorebookCollectionScope, ent
   }
 }
 
-// Assign missing ids on the edited collection only. The target is re-read inside
-// the trusted write scope — a reference captured outside it would still be the
-// read-only projection and throw on assignment.
+// Assign missing ids on the edited collection only. Re-read the target inside
+// the owner mutation so the current canonical row is always updated.
 function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
   if (!scopedClientLorebookIdsNeedNormalization(scope)) return
 

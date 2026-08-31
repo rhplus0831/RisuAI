@@ -38,7 +38,7 @@ vi.mock('src/ts/setting/utils', () => ({ getFullSettingsData: () => [] }))
 
 import Toggles from '../SideBars/Toggles.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { waitForPendingChatGenerationSettingsSave } from 'src/ts/chatCommands'
@@ -49,6 +49,7 @@ import {
   readToggleGroupLabels,
   readToggleSelected,
 } from './domStateOracle'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

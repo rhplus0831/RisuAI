@@ -64,12 +64,12 @@ import {
 import {
   applyCharactersResource,
   applySettingsGroupResource,
-  getResourceDatabase,
   resetServerResourceState,
   settingsResourceState,
 } from './resourceState.svelte'
-import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+
 import { lorebookPageOwner } from './lorebookPageOwner.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function requirement<T extends ResourceRequirement>(value: T): T {
   return value
@@ -86,7 +86,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 beforeEach(() => {
   stopRouteResourceLoader()
   lorebookPageOwner.reset()
-  withTrustedResourceWrite(resetServerResourceState)
+  withTestDatabaseWrite(resetServerResourceState)
   clearAppliedServerResourceRevision()
   setAppliedServerResourceRevision(4)
   loaderMocks.requirements = []
@@ -207,7 +207,7 @@ describe('route resource loader', () => {
   it('reuses a ready resident route requirement on later navigation', async () => {
     loaderMocks.requirements = [requirement({ kind: 'settings-group', group: 'display', purposes: ['render'] })]
     loaderMocks.refresh.mockImplementationOnce(async () => {
-      withTrustedResourceWrite(() =>
+      withTestDatabaseWrite(() =>
         applySettingsGroupResource({ revision: 5, group: 'display', settings: { theme: 'dark' } }, ['theme']),
       )
       return { status: 'ok', revision: 5, scope: 'targeted' as const }
@@ -271,7 +271,7 @@ describe('route resource loader', () => {
   it('hydrates a chat-owned prompt template without replacing the global compatibility owner', async () => {
     loaderMocks.requirements = []
     loaderMocks.promptOwner.mockReturnValue('prompt-a')
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applyCharactersResource({
         version: 1,
         revision: 4,
@@ -313,7 +313,7 @@ describe('route resource loader', () => {
     const route = { kind: 'grid', path: '/grid' } as const
     await prepareRouteResources(route)
     await finishRouteResources(route)
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applyCharactersResource({
         version: 1,
         revision: 4,
@@ -362,7 +362,7 @@ describe('route resource loader', () => {
     const gridRoute = { kind: 'grid', path: '/grid' } as const
     await prepareRouteResources(gridRoute)
     await finishRouteResources(gridRoute)
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applyCharactersResource({
         version: 1,
         revision: 4,
@@ -439,7 +439,7 @@ describe('route resource loader', () => {
     const route = { kind: 'grid', path: '/grid' } as const
     await prepareRouteResources(route)
     await finishRouteResources(route)
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applyCharactersResource({
         version: 1,
         revision: 4,
@@ -524,7 +524,7 @@ describe('route resource loader', () => {
     const route = { kind: 'character', path: '/character/char-a', chaId: 'char-a' } as const
     const loading = prepareRouteResources(route)
 
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applySettingsGroupResource({ revision: 7, group: 'display', settings: { theme: 'newer' } }, ['theme']),
     )
     read.resolve({
@@ -553,7 +553,7 @@ describe('route resource loader', () => {
       chaId: 'char-a',
       chatId: 'chat-a',
     } as const
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applyCharactersResource({
         version: 1,
         revision: 4,

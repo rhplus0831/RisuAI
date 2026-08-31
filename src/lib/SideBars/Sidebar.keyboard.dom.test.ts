@@ -70,12 +70,13 @@ import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
-import { charactersResourceState, getResourceDatabase, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
 } from 'src/ts/process/generationActivity.svelte'
 import { markChatUnread, resetChatUnreadForTests } from 'src/ts/process/chatUnread.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

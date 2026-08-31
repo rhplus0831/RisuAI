@@ -20,9 +20,10 @@ vi.mock('../../modules', async (importActual) => {
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
 import type { ModelProfileRecord } from '../../../model/modelProfileRecords'
 import { ClaudeParameters, LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestClaude } from '../anthropic'
 import type { RequestDataArgumentExtended } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string

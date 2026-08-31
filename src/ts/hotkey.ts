@@ -413,9 +413,7 @@ export function hotkeyMatches(hotkey: Database['hotkeys'][number], ev: KeyboardE
     return false
   }
 
-  // Treat missing modifier fields as `false` without mutating the hotkey.
-  // The resource-backed hotkey list is read-only outside trusted write scopes, so
-  // writing defaults back here would throw on ordinary keydown handling.
+  // Treat missing modifier fields as `false` without mutating the settings owner.
   const ctrl = hotkey.ctrl ?? false
   const alt = hotkey.alt ?? false
   const shift = hotkey.shift ?? false

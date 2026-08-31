@@ -96,7 +96,7 @@ vi.mock('../../ts/alert', async (importActual) => {
 import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
-import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
+
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import {
   clearPendingMutationOutbox,
@@ -106,7 +106,6 @@ import {
 } from 'src/ts/server/pendingMutationOutbox'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
 import {
-  getDatabase,
   reapplyPendingPresetProjections,
   resetPendingPresetMutationsForTests,
   setDatabaseLite,
@@ -117,6 +116,7 @@ import {
   collectionsResourceState,
   type ServerCollectionName,
 } from 'src/ts/server/resourceState.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -518,7 +518,6 @@ beforeEach(() => {
     option: sortableSpies.option,
   })
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
@@ -529,7 +528,6 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

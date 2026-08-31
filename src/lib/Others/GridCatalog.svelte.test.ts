@@ -27,10 +27,6 @@ const alertSpies = vi.hoisted(() => ({
   alertNormal: vi.fn(),
 }))
 
-const resourceStateMocks = vi.hoisted(() => ({
-  fallbackDatabase: undefined as Record<string, unknown> | undefined,
-}))
-
 const routerSpies = vi.hoisted(() => ({
   navigate: vi.fn(),
 }))
@@ -47,24 +43,6 @@ vi.mock('src/ts/alert', async (importOriginal) => ({
   ...(await importOriginal<typeof import('src/ts/alert')>()),
   ...alertSpies,
 }))
-vi.mock('src/ts/server/resourceState.svelte', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('src/ts/server/resourceState.svelte')>()
-  return {
-    ...actual,
-    getResourceDatabase: vi.fn((options?: { snapshot?: boolean }) =>
-      resourceStateMocks.fallbackDatabase ? resourceStateMocks.fallbackDatabase : actual.getResourceDatabase(options),
-    ),
-  }
-})
-vi.mock('../../ts/storage/database.svelte', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../ts/storage/database.svelte')>()
-  return {
-    ...actual,
-    getDatabase: vi.fn((options?: { snapshot?: boolean }) =>
-      resourceStateMocks.fallbackDatabase ? resourceStateMocks.fallbackDatabase : actual.getDatabase(options),
-    ),
-  }
-})
 vi.mock('../../ts/router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../ts/router')>()),
   navigate: routerSpies.navigate,
@@ -100,10 +78,10 @@ import { languageSpanish } from 'src/lang/es'
 import { MobileSearch, selectedCharID } from 'src/ts/stores.svelte'
 import {
   charactersResourceState,
-  getResourceDatabase as getDatabase,
   settingsResourceState,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -272,7 +250,6 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
-  resourceStateMocks.fallbackDatabase = undefined
   MobileSearch.set('')
   selectedCharID.set(-1)
   changeLanguage('en')
@@ -288,7 +265,6 @@ afterEach(() => {
   document.body.innerHTML = ''
   MobileSearch.set('')
   selectedCharID.set(-1)
-  resourceStateMocks.fallbackDatabase = undefined
   changeLanguage('en')
 })
 
@@ -402,16 +378,6 @@ describe('GridCatalog derived lists', () => {
       ],
     } as any)
     charactersResourceState.status = 'idle'
-    resourceStateMocks.fallbackDatabase = {
-      language: 'en',
-      characters: [
-        {
-          ...makeCharacter({ chaId: 'fallback-character', name: 'Fallback Character' }),
-          chatPage: 0,
-          chats: [{ id: 'fallback-chat' }],
-        },
-      ],
-    }
     selectedCharID.set(99)
 
     mountCatalog()
@@ -431,16 +397,6 @@ describe('GridCatalog derived lists', () => {
   })
 
   it('does not render fallback or resident rows before owner readiness', async () => {
-    resourceStateMocks.fallbackDatabase = {
-      language: 'en',
-      characters: [
-        {
-          ...makeCharacter({ chaId: 'fallback-character', name: 'Fallback Character' }),
-          chatPage: 0,
-          chats: [{ id: 'fallback-chat' }],
-        },
-      ],
-    }
     charactersResourceState.characters = []
     charactersResourceState.status = 'idle'
 

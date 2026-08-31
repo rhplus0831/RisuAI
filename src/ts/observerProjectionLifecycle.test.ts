@@ -38,9 +38,10 @@ import {
 } from './server/resourceCache'
 import { isCharacterLorebookHydrated, markCharacterLorebookHydrated } from './server/lorebookOwner.svelte'
 import { isPromptTemplateHydrated, markPromptTemplateProjectionApplied } from './server/promptTemplateHydration'
-import { getResourceDatabase, replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
-import { setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
+import { replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
+import { type Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function seedObserverProjection(): void {
   replaceResourceDatabase({
@@ -67,7 +68,6 @@ function seedObserverProjection(): void {
 describe('observer projection lifecycle', () => {
   beforeEach(() => {
     vi.stubGlobal('indexedDB', new IDBFactory())
-    setResourceWriteGuardEnabled(false)
     resetServerResourceState()
     resetObserverRouteIntentForTests()
     resetObserverShellLifecycleForTests()

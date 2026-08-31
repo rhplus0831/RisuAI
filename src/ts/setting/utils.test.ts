@@ -107,11 +107,10 @@ import {
   applySettingsGroupResource,
   applySettingsPatchLocalEffect,
   captureSettingsGroupProjectionEpoch,
-  getResourceDatabase,
   hasSettingsGroupProjectionEpochChanged,
   replaceResourceDatabase,
 } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { notifyServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { language } from 'src/lang'
@@ -140,6 +139,7 @@ import {
   setSettingValue,
 } from './utils'
 import SettingInputDraftHarness from 'src/lib/Setting/testHarness/SettingInputDraftHarness.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -256,7 +256,6 @@ beforeEach(() => {
   writerAccessMocks.report.mockClear()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({ notification: false } as any)
 })
 
@@ -265,7 +264,6 @@ afterEach(() => {
   setServerCommandSuccessReconciler(null)
   vi.unstubAllGlobals()
   vi.useRealTimers()
-  setResourceWriteGuardEnabled(false)
 })
 
 describe('server-backed data-driven settings', () => {

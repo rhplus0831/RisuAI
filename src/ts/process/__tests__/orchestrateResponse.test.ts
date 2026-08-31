@@ -73,9 +73,10 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { getDatabase, setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { orchestrateResponse, type OrchestrateResponseResult } from '../postGeneration/orchestrateResponse'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {

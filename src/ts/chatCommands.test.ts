@@ -36,13 +36,12 @@ import {
 import { SERVER_UNLOADED_CHAT_MESSAGE_MARKER } from './server/chatMessagePlaceholders'
 import { resetWriterAccessLostForTests } from './server/activeWriterSession'
 import { createDestructiveRefreshToken } from './server/staleStateGuards'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+
 import { setChatVar } from './parser/chatVar.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
   applyCharacterResource,
   applyCharactersResource,
-  getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from './server/resourceState.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
@@ -153,6 +152,7 @@ import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
 import { acknowledgeCreatedChatTranscriptLocalEffect, resetChatHydration } from './server/chatMessageHydration.svelte'
 import { language } from '../lang'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -642,7 +642,7 @@ function orderedChatMetadata(values: Record<string, unknown>): Chat {
 }
 
 function seedReadyActiveChatGenerationSettings(): void {
-  withTrustedResourceWrite(() => {
+  withTestDatabaseWrite(() => {
     getDatabase().personas = [
       {
         id: 'persona-a',
@@ -673,7 +673,6 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   resetChatHydration()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite({
     enabledModules: [],
@@ -704,14 +703,12 @@ beforeEach(() => {
 afterEach(() => {
   clearAppliedServerResourceRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   resetChatHydration()
 })
 
 describe('chat command projection helpers', () => {
   it('rolls back and fails loudly when a latched translation setting write is attempted', async () => {
-    setResourceWriteGuardEnabled(true)
     writerAccessMocks.lost = true
 
     const persistence = setCurrentChatTranslationSettingWithOutcome('autoTranslate', true)
@@ -725,7 +722,6 @@ describe('chat command projection helpers', () => {
   })
 
   it('does not apply chat generation settings locally after writer access is lost', async () => {
-    setResourceWriteGuardEnabled(true)
     writerAccessMocks.lost = true
 
     const operation = dispatchSaveChatGenerationSettingsWithOutcome('chat-a', {
@@ -744,8 +740,6 @@ describe('chat command projection helpers', () => {
 
   it('patches the selected draft hook through the chat-scoped command path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(setCurrentChatSelectedDraftHookId('draft-hook-a')).toBe(true)
     expect(getDatabase().characters[0].chats[0].selectedDraftHookId).toBe('draft-hook-a')
 
@@ -765,8 +759,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].fmIndex = 4
       getDatabase().characters[0].chats[1] = {
         id: 'chat-b',
@@ -793,7 +786,6 @@ describe('chat command projection helpers', () => {
 
   it('fails closed when a folder owner is not unique in the captured character rows', () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
     previous.characters[0].chatFolders.push({ id: 'folder-a', name: 'Duplicate folder', folded: false } as any)
 
@@ -804,8 +796,6 @@ describe('chat command projection helpers', () => {
   it('clears the selected draft hook with a nullable chat patch', async () => {
     setCurrentChatSelectedDraftHookId('draft-hook-a', { dispatch: false })
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(setCurrentChatSelectedDraftHookId(null)).toBe(true)
     expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('selectedDraftHookId')
 
@@ -823,8 +813,6 @@ describe('chat command projection helpers', () => {
 
   it('patches sparse per-chat translation settings through the guarded chat-scoped path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const persistence = setCurrentChatTranslationSettingWithOutcome('autoTranslate', true)
     expect(getDatabase().characters[0].chats[0].autoTranslate).toBe(true)
     await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
@@ -858,8 +846,6 @@ describe('chat command projection helpers', () => {
 
   it('sets and clears a stable chat translator preset binding', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const selected = setCurrentChatTranslationSettingWithOutcome('translatorPresetId', 'translator-preset-a')
     expect(getDatabase().characters[0].chats[0].translatorPresetId).toBe('translator-preset-a')
     await expect(selected).resolves.toMatchObject({ status: 'accepted' })
@@ -891,8 +877,6 @@ describe('chat command projection helpers', () => {
 
   it('persists the selected chat pin through the guarded chat-scoped path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const persistence = setCurrentChatPinnedWithOutcome(true)
     expect(getDatabase().characters[0].chats[0].pinned).toBe(true)
     await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
@@ -911,8 +895,6 @@ describe('chat command projection helpers', () => {
 
   it('patches the string-valued bilingual emphasis through the guarded chat-scoped path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const persistence = setCurrentChatTranslationSettingWithOutcome('bilingualEmphasis', 'translation')
     expect(getDatabase().characters[0].chats[0].bilingualEmphasis).toBe('translation')
     await expect(persistence).resolves.toMatchObject({ status: 'accepted' })
@@ -929,8 +911,7 @@ describe('chat command projection helpers', () => {
     })
   })
 
-  it('optimistically inserts and selects a command-created chat under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically inserts and selects a command-created chat through its owner', () => {
     const previous = currentChatStateSnapshot()
     const chat = {
       id: 'chat-c',
@@ -950,8 +931,7 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
-  it('optimistically replaces every chat with one empty Chat 1 under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically replaces every chat with one empty Chat 1 through its owner', () => {
     const previous = currentChatStateSnapshot()
     const chat = {
       id: 'chat-new',
@@ -970,8 +950,7 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
-  it('optimistically inserts a command-created chat folder under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically inserts a command-created chat folder through its owner', () => {
     const previous = currentChatStateSnapshot()
     const folder = {
       id: 'folder-b',
@@ -987,8 +966,7 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-a'])
   })
 
-  it('optimistically removes a command-deleted chat under the resource guard', () => {
-    setResourceWriteGuardEnabled(true)
+  it('optimistically removes a command-deleted chat through its owner', () => {
     const previous = currentChatStateSnapshot()
 
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
@@ -1007,8 +985,6 @@ describe('chat command projection helpers', () => {
     getDatabase().characters[0].chats.push({ id: 'chat-c', name: 'Chat C', message: [] } as Chat)
     getDatabase().characters[0].chatPage = 1
     const previous = currentChatStateSnapshot()
-    setResourceWriteGuardEnabled(true)
-
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
       applied: true,
       selectedChatId: 'chat-b',
@@ -1018,14 +994,8 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
-  it('routes SideChatList chat and folder flows through commands under the resource guard', async () => {
+  it('routes SideChatList chat and folder flows through owner commands', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
-    }).toThrow()
-
     const createChat: ChatSnapshot = {
       id: 'chat-c',
       name: 'Chat C',
@@ -1061,9 +1031,6 @@ describe('chat command projection helpers', () => {
     dispatchDeleteChat('chat-a', previous)
 
     await waitForCallCount(calls, 7)
-    expect(() => {
-      getDatabase().characters[0].chatFolders.push({ id: 'direct-folder', name: 'Direct' } as any)
-    }).toThrow()
     expect(calls).toEqual([
       {
         url: '/api/v1/bootstrap',
@@ -1166,16 +1133,14 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = getDatabase().characters[0].chatFolders[0]
           folder.name = 'Newer folder name'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const folder = getDatabase().characters[0].chatFolders[0]
       folder.name = 'Attempted folder name'
       folder.folded = true
@@ -1197,7 +1162,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chatFolders.push({
             id: 'folder-c',
             name: 'Newer sibling folder',
@@ -1206,15 +1171,13 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedFolder = {
       id: 'folder-b',
       name: 'Attempted Folder',
       folded: false,
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
     })
 
@@ -1234,20 +1197,18 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].folderId = 'folder-b'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedFolder = {
       id: 'folder-b',
       name: 'Attempted Folder',
       folded: false,
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
     })
 
@@ -1273,7 +1234,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'DELETE',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].name = 'Newer unrelated chat name'
           getDatabase().characters[0].chats[1].name = 'Newer affected chat name'
           getDatabase().characters[0].chats[2].name = 'Moved affected chat'
@@ -1281,8 +1242,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchDeleteChatFolder('folder-a', previous)
 
@@ -1317,8 +1276,6 @@ describe('chat command projection helpers', () => {
           url === '/api/v1/commands/characters/char-a/chat-folders/reorder') &&
         init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchReorderChatsByIds('char-a', ['chat-a', 'chat-a'], {}, previous)
     await waitForCallCount(calls, 2)
@@ -1332,7 +1289,7 @@ describe('chat command projection helpers', () => {
   })
 
   it('keeps an unchanged omitted folder assignment omitted during optimistic reorder', async () => {
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const omittedFolderChat = { ...getDatabase().characters[0].chats[0] }
       delete omittedFolderChat.folderId
       getDatabase().characters[0].chats[0] = omittedFolderChat
@@ -1341,8 +1298,6 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchReorderChatsByIds(
       'char-a',
@@ -1370,17 +1325,15 @@ describe('chat command projection helpers', () => {
       matches: (url, init) =>
         url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
           if (folder) folder.name = 'Newer Folder C'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
       getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
     })
@@ -1409,17 +1362,15 @@ describe('chat command projection helpers', () => {
       matches: (url, init) =>
         url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
           getDatabase().characters[0].chatFolders = newerIds.map((id) => foldersById.get(id)!)
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
       getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
     })
@@ -1446,7 +1397,7 @@ describe('chat command projection helpers', () => {
     const calls = stubCombinedReorderCommandFetch({
       fail: 'chats',
       onChatCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
           const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (folder) folder.name = 'Newer Folder C'
@@ -1454,8 +1405,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
     const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
@@ -1464,7 +1413,7 @@ describe('chat command projection helpers', () => {
       'chat-b': null,
       'chat-c': 'folder-a',
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
       const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
       getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
@@ -1541,7 +1490,7 @@ describe('chat command projection helpers', () => {
     const calls = stubCombinedReorderCommandFetch({
       fail: 'folders',
       onFolderCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
           const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (folder) folder.name = 'Newer Folder C'
@@ -1549,8 +1498,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedFolderIds = ['folder-c', 'folder-a', 'folder-b']
     const attemptedChatIds = ['chat-c', 'chat-a', 'chat-b']
@@ -1559,7 +1506,7 @@ describe('chat command projection helpers', () => {
       'chat-b': null,
       'chat-c': 'folder-a',
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
       const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
       getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
@@ -1605,8 +1552,6 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedChat = jsonClone(getDatabase().characters[0].chats[1])
 
@@ -1631,7 +1576,6 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'PUT',
     })
-    setResourceWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
     const attemptedChat = {
       id: 'chat-new',
@@ -1670,7 +1614,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[2].name = 'Newer sibling name'
           getDatabase().characters[0].chats.push({
             id: 'chat-d',
@@ -1683,8 +1627,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedChat = {
       id: 'chat-c',
@@ -1695,7 +1637,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       fmIndex: -1,
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(attemptedChat)
       getDatabase().characters[0].chatPage = 0
     })
@@ -1715,14 +1657,12 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].name = 'Newer attempted chat name'
           getDatabase().characters[0].chats[2].name = 'Newer sibling name'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedChat = {
       id: 'chat-c',
@@ -1733,7 +1673,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       fmIndex: -1,
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(attemptedChat)
       getDatabase().characters[0].chatPage = 0
     })
@@ -1752,7 +1692,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const authoritativeCharacter = jsonClone(getDatabase().characters[0])
           const createdChat = authoritativeCharacter.chats.find((chat) => chat.id === 'chat-c')
           if (createdChat) createdChat.name = 'Canonical created chat'
@@ -1760,8 +1700,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedChat = {
       id: 'chat-c',
@@ -1772,7 +1710,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       fmIndex: -1,
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(attemptedChat)
       getDatabase().characters[0].chatPage = 0
     })
@@ -1791,7 +1729,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const attemptedFork = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-c')
           const sibling = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-b')
           if (attemptedFork) attemptedFork.name = 'Newer dependent fork edit'
@@ -1799,8 +1737,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const forkedChat = {
       id: 'chat-c',
@@ -1825,14 +1761,12 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[2].name = 'Newer sibling name'
           getDatabase().characters[0].chatFolders[1].name = 'Newer folder name'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const branchFolder = {
       id: 'folder-branch',
@@ -1845,7 +1779,7 @@ describe('chat command projection helpers', () => {
       folderId: branchFolder.id,
       message: [],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.unshift(branchFolder)
       getDatabase().characters[0].chats[0].folderId = branchFolder.id
       getDatabase().characters[0].chats.unshift(forkedChat)
@@ -1882,13 +1816,11 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].name = 'Newer forked chat name'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const forkedChat = {
       id: 'chat-branch',
@@ -1896,7 +1828,7 @@ describe('chat command projection helpers', () => {
       folderId: null,
       message: [],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(forkedChat)
       getDatabase().characters[0].chatPage = 0
     })
@@ -1914,7 +1846,7 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].name = 'Newer sibling name'
           getDatabase().characters[0].chats.push({
             id: 'chat-c',
@@ -1927,8 +1859,6 @@ describe('chat command projection helpers', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     expect(applyChatNoteValueLocally('chat-a', 'latest optimistic note')).toMatchObject({ note: '' })
     const previous = currentChatStateSnapshot()
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
@@ -1958,13 +1888,11 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chatPage = 1
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
       applied: true,
@@ -1993,14 +1921,12 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (chat) chat.name = 'Newer Chat C'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
     const attemptedFolderByChatId = {
@@ -2008,7 +1934,7 @@ describe('chat command projection helpers', () => {
       'chat-b': null,
       'chat-c': 'folder-a',
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
       getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
       for (const chat of getDatabase().characters[0].chats) {
@@ -2051,14 +1977,12 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
           getDatabase().characters[0].chats = newerIds.map((id) => chatsById.get(id)!)
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
     const attemptedFolderByChatId = {
@@ -2066,7 +1990,7 @@ describe('chat command projection helpers', () => {
       'chat-b': 'folder-a',
       'chat-c': null,
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
       getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
     })
@@ -2093,14 +2017,12 @@ describe('chat command projection helpers', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (chat) chat.folderId = 'folder-b'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['chat-c', 'chat-a', 'chat-b']
     const attemptedFolderByChatId = {
@@ -2108,7 +2030,7 @@ describe('chat command projection helpers', () => {
       'chat-b': 'folder-a',
       'chat-c': null,
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
       getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
     })
@@ -2127,7 +2049,6 @@ describe('chat command projection helpers', () => {
 
   it('saves chat generation settings through the dedicated command helper', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const generationSettings = {
       configured: true,
       personaId: 'persona-a',
@@ -2167,7 +2088,6 @@ describe('chat command projection helpers', () => {
   })
 
   it('reserves a generation-settings save before a synchronously dispatched structural command', async () => {
-    setResourceWriteGuardEnabled(true)
     const settingsResponse = createDeferred<Response>()
     const commandUrls: string[] = []
     vi.stubGlobal(
@@ -2224,7 +2144,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-a',
@@ -2235,7 +2154,7 @@ describe('chat command projection helpers', () => {
       ...initial,
       sidebarToggles: { notes: 'durable' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const response = createDeferred<Response>()
@@ -2314,7 +2233,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-queue',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2326,7 +2244,7 @@ describe('chat command projection helpers', () => {
       ...firstTarget,
       sidebarToggles: { notes: 'queued' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const firstResponse = createDeferred<Response>()
@@ -2389,8 +2307,6 @@ describe('chat command projection helpers', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(10)
-    setResourceWriteGuardEnabled(true)
-
     const initial = {
       configured: true,
       personaId: 'persona-survivor',
@@ -2405,7 +2321,7 @@ describe('chat command projection helpers', () => {
       modelPresetId: 'model-doomed',
       promptPresetId: 'prompt-doomed',
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -2498,7 +2414,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-predecessor',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2507,7 +2422,7 @@ describe('chat command projection helpers', () => {
     }
     const firstTarget = { ...initial, personaId: 'persona-first' }
     const correctiveTarget = { ...initial, sidebarToggles: { notes: 'corrective' } }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const olderCharacter = jsonClone(getDatabase().characters[0])
@@ -2590,7 +2505,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-retained-head',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2599,7 +2513,7 @@ describe('chat command projection helpers', () => {
     }
     const firstTarget = { ...initial, personaId: 'persona-first' }
     const secondTarget = { ...firstTarget, sidebarToggles: { notes: 'second' } }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const predecessor = stagePendingMutation('character-owner:char-a', {
@@ -2680,7 +2594,6 @@ describe('chat command projection helpers', () => {
 
   it('sends a full idempotent correction when a queued edit rebases to a no-op', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2688,7 +2601,7 @@ describe('chat command projection helpers', () => {
       sidebarToggles: {},
     }
     const attempted = { ...initial, personaId: 'persona-attempted' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -2716,7 +2629,6 @@ describe('chat command projection helpers', () => {
       databaseLineage: 'lineage-chat-generation-marker',
       requestedWriterWasActive: true,
     })
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -2740,7 +2652,7 @@ describe('chat command projection helpers', () => {
       ...canonicalFirst,
       sidebarToggles: { notes: 'queued' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
     const firstResponse = createDeferred<Response>()
@@ -2833,8 +2745,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     const nextGenerationSettings = {
       configured: true,
       personaId: 'persona-a',
@@ -2851,7 +2761,7 @@ describe('chat command projection helpers', () => {
     expect(operation).not.toBeNull()
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(nextGenerationSettings)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: 'concurrent same-chat message',
@@ -2918,8 +2828,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     expect(
       dispatchSaveChatGenerationSettings('chat-a', {
         configured: true,
@@ -2939,7 +2847,6 @@ describe('chat command projection helpers', () => {
 
   it('keeps newer generation settings through an older successful character-row projection', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const generationSettingsA = {
       configured: true,
       personaId: 'persona-a',
@@ -3061,8 +2968,6 @@ describe('chat command projection helpers', () => {
       // active global batch before the sparse command promise resumed.
       setAppliedServerResourceRevision(12)
     })
-    setResourceWriteGuardEnabled(true)
-
     expect(dispatchSaveChatGenerationSettings('chat-a', sparseTarget)).toBe(true)
     await waitForCallCount(calls, 2)
     sparseResponse.resolve(successfulChatGenerationSettingsResponse(11, sparseTarget))
@@ -3115,8 +3020,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     expect(
       dispatchSaveChatGenerationSettings('chat-a', {
         configured: true,
@@ -3126,7 +3029,7 @@ describe('chat command projection helpers', () => {
       }),
     ).toBe(true)
     await waitForCallCount(calls, 2)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(newerFullTarget)
     })
     setAppliedServerResourceRevision(12)
@@ -3139,7 +3042,6 @@ describe('chat command projection helpers', () => {
 
   it('preserves a newer generation settings save when an older save fails from no initial settings', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const generationSettingsA = {
       configured: false,
       personaId: 'persona-a',
@@ -3197,7 +3099,6 @@ describe('chat command projection helpers', () => {
 
   it('preserves a newer generation settings save when an older save fails from configured settings', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initialGenerationSettings = {
       configured: true,
       personaId: 'persona-initial',
@@ -3228,7 +3129,7 @@ describe('chat command projection helpers', () => {
         mode: 'b',
       },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initialGenerationSettings)
     })
 
@@ -3263,7 +3164,6 @@ describe('chat command projection helpers', () => {
 
   it('drops only a failed older field intent before sending a disjoint queued edit', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -3281,7 +3181,7 @@ describe('chat command projection helpers', () => {
       ...initial,
       sidebarToggles: { notes: 'queued' },
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -3306,7 +3206,6 @@ describe('chat command projection helpers', () => {
 
   it('keeps an accepted value when a newer queued edit to the same field fails', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
@@ -3315,7 +3214,7 @@ describe('chat command projection helpers', () => {
     }
     const firstTarget = { ...initial, personaId: 'persona-a' }
     const secondTarget = { ...initial, personaId: 'persona-b' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -3332,14 +3231,13 @@ describe('chat command projection helpers', () => {
 
   it('restores the original value when overlapping queued edits both fail', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
-    setResourceWriteGuardEnabled(true)
     const initial = {
       configured: true,
       personaId: 'persona-initial',
       jailbreakToggle: false,
       sidebarToggles: {},
     }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
     })
 
@@ -3356,12 +3254,6 @@ describe('chat command projection helpers', () => {
 
   it('sets DevTool-style scriptstate values through the chat scriptstate command helper', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].scriptstate!.$score = 'direct'
-    }).toThrow()
-
     expect(setChatScriptstateValue('chat-a', '$score', '9')).toBe(true)
     expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
 
@@ -3387,14 +3279,8 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
   })
 
-  it('sets parser chat variables through the resource guard for Lua edit-display hooks', async () => {
+  it('sets parser chat variables through the chat owner for Lua edit-display hooks', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].scriptstate!.$outfit = 'direct'
-    }).toThrow()
-
     setChatVar('outfit', 'date_a')
     expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $outfit: 'date_a' })
 
@@ -3413,8 +3299,6 @@ describe('chat command projection helpers', () => {
 
   it('creates scriptstate when setting a value on a chat without one', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(getDatabase().characters[0].chats[1]).not.toHaveProperty('scriptstate')
 
     expect(setChatScriptstateValue('chat-b', '$enabled', true)).toBe(true)
@@ -3435,7 +3319,6 @@ describe('chat command projection helpers', () => {
 
   it('rejects missing or invalid DevTool-style scriptstate targets without mutating or dispatching', () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const before = jsonClone(getDatabase().characters[0].chats[0].scriptstate)
 
     expect(setChatScriptstateValue(undefined, '$score', '2')).toBe(false)
@@ -3452,12 +3335,6 @@ describe('chat command projection helpers', () => {
   it('appends DevTool Autopilot user messages through an awaited message command', async () => {
     const calls = stubCommandFetch()
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].message.push({ role: 'user', data: 'direct' })
-    }).toThrow()
-
     const result = await appendCurrentChatUserMessageForSend('autopilot row')
 
     expect(result.status).toBe('ok')
@@ -3496,13 +3373,12 @@ describe('chat command projection helpers', () => {
   it('rejects a captured active-chat target after chatPage changes without mutating or dispatching', async () => {
     const calls = stubCommandFetch()
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
     const target = captureActiveChatTarget()
 
     expect(target).toMatchObject({ characterId: 'char-a', chatId: 'chat-a' })
     expect(isActiveChatTargetFresh(target)).toBe(true)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatPage = 1
     })
 
@@ -3522,7 +3398,7 @@ describe('chat command projection helpers', () => {
 
   it('rejects a captured active-chat target after selectedCharID changes without mutating or dispatching', async () => {
     const calls = stubCommandFetch()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters.push({
         chaId: 'char-b',
         name: 'Character B',
@@ -3530,7 +3406,6 @@ describe('chat command projection helpers', () => {
         chats: [{ id: 'chat-c', name: 'Chat C', message: [] }],
       } as any)
     })
-    setResourceWriteGuardEnabled(true)
     const target = captureActiveChatTarget()
 
     expect(target).toMatchObject({ characterId: 'char-a', chatId: 'chat-a' })
@@ -3552,8 +3427,6 @@ describe('chat command projection helpers', () => {
 
   it('blocks direct send appends when active-chat generation settings are incomplete', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const result = await appendCurrentChatUserMessageForSend('autopilot row')
 
     expect(result).toEqual({
@@ -3568,7 +3441,6 @@ describe('chat command projection helpers', () => {
   it('appends prepared plain-send user messages through one-message POST bodies', async () => {
     const calls = stubCommandFetch()
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
     const prepared: Message = {
       role: 'user',
       data: 'prepared plain send',
@@ -3617,7 +3489,6 @@ describe('chat command projection helpers', () => {
     })
     setCachedServerCommandRevision(10)
     seedReadyActiveChatGenerationSettings()
-    setResourceWriteGuardEnabled(true)
     let liveBody: Record<string, unknown> | undefined
 
     vi.stubGlobal(
@@ -3696,7 +3567,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       message: [{ role: 'user', data: 'imported row', chatId: 'message-imported' }],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(importedChat)
       getDatabase().characters[0].chatPage = 0
     })
@@ -3766,7 +3637,7 @@ describe('chat command projection helpers', () => {
         message: [{ role: 'user', data: 'batch row', chatId: 'message-batch' }],
       },
     ] as Chat[]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push(folder)
       getDatabase().characters[0].chats.unshift(...chats)
     })
@@ -3865,7 +3736,7 @@ describe('chat command projection helpers', () => {
       folderId: folder.id,
       message: [],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push(folder)
       getDatabase().characters[0].chats.unshift(importedChat)
     })
@@ -3966,7 +3837,7 @@ describe('chat command projection helpers', () => {
       localLore: [],
       message: [],
     })) as Chat[]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(...chats)
     })
     let createCalls = 0
@@ -4024,7 +3895,7 @@ describe('chat command projection helpers', () => {
         { role: 'char', data: 'b'.repeat(messageSize), chatId: 'message-terminal-b' },
       ],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(chunkedChat)
     })
 
@@ -4157,7 +4028,7 @@ describe('chat command projection helpers', () => {
         },
       ],
     } as Chat
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats.unshift(oversizedChat)
     })
     let mutationIdHeader: string | undefined
@@ -4276,7 +4147,7 @@ describe('chat command projection helpers', () => {
         chatId: 'message-after-create',
         time: 555,
       } as Message
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message.push(message)
       })
       dispatchAppendMessage('chat-created-queued', message, appendPrevious)
@@ -4331,7 +4202,7 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             getDatabase().characters[0].chats[0].message.push({
               role: 'char',
               data: 'concurrent same-chat message',
@@ -4344,8 +4215,6 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     expect(setChatScriptstateValue('chat-a', '$score', 'failed')).toBe(true)
     expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'failed', $old: 'gone' })
 
@@ -4379,7 +4248,7 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             getDatabase().characters[0].chats[0].message.push({
               role: 'char',
               data: 'later projection message',
@@ -4391,9 +4260,8 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
     seedReadyActiveChatGenerationSettings()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: 'pre-existing',
@@ -4432,7 +4300,7 @@ describe('chat command projection helpers', () => {
 
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
-          withTrustedResourceWrite(() => {
+          withTestDatabaseWrite(() => {
             const character = getDatabase().characters[0]
             const siblingChat = character.chats.find((chat: Chat) => chat.id === 'chat-b')
             if (!siblingChat) throw new Error('missing sibling chat')
@@ -4444,9 +4312,8 @@ describe('chat command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
     seedReadyActiveChatGenerationSettings()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[1].message.push({
         role: 'char',
         data: 'same id on active sibling',
@@ -4703,8 +4570,6 @@ describe('chat-selection snapshot', () => {
 
   it('dispatchSelectChat sends the empty-patch select command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-a', currentChatSelectionSnapshot())
     await waitForCallCount(calls, 2)
 
@@ -4743,13 +4608,12 @@ describe('chat-selection snapshot', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bindedPersona = 'persona-old'
     })
 
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bindedPersona = ''
     })
 
@@ -4766,8 +4630,6 @@ describe('chat-selection snapshot', () => {
 
   it('dispatchSelectChat optimistically updates chatPage before the PATCH resolves', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
     expect(getDatabase().characters[0].chatPage).toBe(1)
@@ -4803,8 +4665,6 @@ describe('chat-selection snapshot', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
     expect(getDatabase().characters[0].chatPage).toBe(1)
@@ -4819,13 +4679,11 @@ describe('chat-selection snapshot', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-b' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chatPage = 2
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
     expect(getDatabase().characters[0].chatPage).toBe(1)
@@ -4841,16 +4699,14 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].name = 'First folder rename'
     })
     dispatchUpdateChatFolder('folder-a', { name: 'First folder rename' }, firstPrevious)
 
     const secondPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].name = 'Second folder rename'
     })
     dispatchUpdateChatFolder('folder-a', { name: 'Second folder rename' }, secondPrevious)
@@ -4865,9 +4721,7 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].color = 'blue'
     })
     dispatchUpdateChatFolderRow(
@@ -4881,7 +4735,7 @@ describe('chat metadata dispatch rollback', () => {
       },
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders[0].color = 'red'
     })
     dispatchUpdateChatFolderRow(
@@ -4905,16 +4759,14 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'First rename'
     })
     dispatchUpdateChat('chat-a', { name: 'First rename' }, firstPrevious)
 
     const secondPrevious = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'Second rename'
     })
     dispatchUpdateChat('chat-a', { name: 'Second rename' }, secondPrevious)
@@ -4930,9 +4782,7 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].suggestMessages = []
     })
     dispatchUpdateChatRow(
@@ -4946,7 +4796,7 @@ describe('chat metadata dispatch rollback', () => {
       },
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].suggestMessages = ['New suggestion']
     })
     dispatchUpdateChatRow(
@@ -4972,17 +4822,15 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
     })
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatScopedSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = ['msg-one']
       getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-one': 'One' }
     })
     dispatchUpdateChatScoped('chat-a', { bookmarks: ['msg-one'], bookmarkNames: { 'msg-one': 'One' } }, firstPrevious)
 
     const secondPrevious = currentChatScopedSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = ['msg-one', 'msg-two']
       getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-one': 'One', 'msg-two': 'Two' }
     })
@@ -5009,7 +4857,7 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const chat = getDatabase().characters[0].chats[0]
           chat.bookmarkNames = { 'msg-newer': 'Newer bookmark' }
           chat.note = 'newer note'
@@ -5018,11 +4866,10 @@ describe('chat metadata dispatch rollback', () => {
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
     const previous = currentChatScopedSnapshot()
     const attemptedBookmarks = ['msg-attempted']
     const attemptedBookmarkNames = { 'msg-attempted': 'Attempted bookmark' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
       getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
@@ -5050,17 +4897,15 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[1].name = 'Newer sibling name'
           getDatabase().characters[0].chatFolders[0].name = 'Newer folder name'
           getDatabase().characters[0].chatPage = 1
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'Attempted rename'
     })
 
@@ -5079,15 +4924,13 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].name = 'Newer live rename'
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].name = 'Attempted rename'
     })
 
@@ -5106,17 +4949,15 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-newer': 'Newer bookmark' }
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     const attemptedBookmarks = ['msg-new']
     const attemptedBookmarkNames: Record<string, string> = { 'msg-new': 'New bookmark' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
       getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
@@ -5149,14 +4990,12 @@ describe('chat metadata dispatch rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           getDatabase().characters[0].chats[1].name = 'Newer sibling name'
           getDatabase().characters[0].chatPage = 1
         })
       },
     })
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentChatStateSnapshot()
     dispatchUpdateChat('chat-a', {}, previous, true)
 
@@ -5959,8 +5798,6 @@ describe('chat-scoped message attempt rollback', () => {
       matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
     })
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped('m-1', { data: 'first edit' }, firstPrevious)
     const secondPrevious = currentChatScopedSnapshot()
@@ -5976,8 +5813,6 @@ describe('chat-scoped message attempt rollback', () => {
   it('keeps a duplicate stale-snapshot patch when the first request succeeds and the second fails', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     const stalePrevious = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
@@ -6000,8 +5835,6 @@ describe('chat-scoped message attempt rollback', () => {
   it('repaints a duplicate stale-snapshot patch when the first request fails and the second succeeds', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     const stalePrevious = currentChatScopedSnapshot()
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
     dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
@@ -6020,14 +5853,12 @@ describe('chat-scoped message attempt rollback', () => {
   it('retains an optimistic edit while its transport is still queued', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    setResourceWriteGuardEnabled(true)
-
     dispatchUpdateMessageScoped('m-1', { data: 'first edit' }, currentChatScopedSnapshot())
     await waitForCallCount(calls, 2)
     dispatchUpdateMessageScoped('m-1', { data: 'queued edit' }, currentChatScopedSnapshot())
 
     expect(calls).toHaveLength(2)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message = [{ role: 'char', data: 'before', chatId: 'm-1' }]
     })
     reapplyRetainedChatBodyProjections('chat-a')
@@ -6048,8 +5879,7 @@ describe('chat-scoped message attempt rollback', () => {
     })
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message[0].data = 'pre-applied'
     })
 
@@ -6071,8 +5901,6 @@ describe('chat-scoped message attempt rollback', () => {
       { role: 'user', data: 'three', chatId: 'm-3' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     const firstPrevious = currentChatScopedSnapshot()
     dispatchDeleteMessageScoped('m-1', firstPrevious)
     const secondPrevious = currentChatScopedSnapshot()
@@ -6092,8 +5920,6 @@ describe('chat-scoped message attempt rollback', () => {
     })
     const previousMessages: Message[] = [{ role: 'char', data: 'before', chatId: 'm-1' }]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     dispatchUpdateMessageScoped('m-1', { data: 'after' }, currentChatScopedSnapshot())
     dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
 
@@ -6114,8 +5940,6 @@ describe('chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'two', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
     dispatchUpdateMessageScoped('m-2', { data: 'changed' }, currentChatScopedSnapshot())
 
@@ -6136,10 +5960,8 @@ describe('chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'two', chatId: 'm-2' },
     ]
     seedActiveMessages(initialMessages)
-    setResourceWriteGuardEnabled(true)
-
     const stalePatchSnapshot = currentChatScopedSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].message[0].data = 'newer'
     })
     dispatchUpdateMessageScoped('m-1', { disabled: true }, stalePatchSnapshot)
@@ -6154,7 +5976,7 @@ describe('chat-scoped message attempt rollback', () => {
     })
   })
 
-  it('keeps an accepted scoped delete optimistically applied under the resource guard', async () => {
+  it('keeps an accepted scoped delete optimistically applied in its owner', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousMessages: Message[] = [
       { role: 'user', data: 'one', chatId: 'm-1' },
@@ -6164,8 +5986,6 @@ describe('chat-scoped message attempt rollback', () => {
     getDatabase().characters[0].chats[0].bookmarks = ['m-1', 'm-2']
     getDatabase().characters[0].chats[0].bookmarkNames = { 'm-1': 'One', 'm-2': 'Two' }
     const previous = currentChatScopedSnapshot()
-    setResourceWriteGuardEnabled(true)
-
     const deletion = dispatchDeleteMessageScoped('m-1', previous)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
@@ -6204,8 +6024,6 @@ describe('chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'reply', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     const deletion = dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
     expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
 
@@ -6243,8 +6061,6 @@ describe('chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'reply', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     try {
       const queued = await dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
       expect(queued).toMatchObject({ status: 'queued', mutationId: expect.any(String) })
@@ -6293,8 +6109,6 @@ describe('chat-scoped message attempt rollback', () => {
       { role: 'char', data: 'reply', chatId: 'm-2' },
     ]
     seedActiveMessages(previousMessages)
-    setResourceWriteGuardEnabled(true)
-
     try {
       const queued = await dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
       expect(queued.status).toBe('queued')
@@ -6312,12 +6126,10 @@ describe('chat-scoped message attempt rollback', () => {
     }
   })
 
-  it('keeps an accepted scoped message update optimistically applied under the resource guard', async () => {
+  it('keeps an accepted scoped message update optimistically applied in its owner', async () => {
     const calls = stubMessagePersistenceFetch()
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
-    setResourceWriteGuardEnabled(true)
-
     dispatchUpdateMessageScoped('m-1', { role: 'user', data: 'after', disabled: true }, previous)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([
@@ -6741,7 +6553,7 @@ describe('scriptstate-scoped var dispatch', () => {
     expect(getDatabase().characters[0].chats[0].scriptstate!.$score).toBe('newer score')
   })
 
-  it('setChatNoteValue applies the author note under the resource guard and rolls back on failure', async () => {
+  it('setChatNoteValue applies the author note through its owner and rolls back on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
       'fetch',
@@ -6759,12 +6571,6 @@ describe('scriptstate-scoped var dispatch', () => {
       }) as unknown as typeof fetch,
     )
     delete (getDatabase().characters[0].chats[0] as { note?: string }).note
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      getDatabase().characters[0].chats[0].note = 'direct note'
-    }).toThrow()
-
     expect(setChatNoteValue('chat-a', 'draft note')).toBe(true)
     expect(getDatabase().characters[0].chats[0].note).toBe('draft note')
 
@@ -6820,7 +6626,7 @@ describe('scriptstate-scoped var dispatch', () => {
       requestedWriterWasActive: true,
     })
     setCachedServerCommandRevision(10)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0].note = 'initial note'
     })
 
@@ -6977,8 +6783,6 @@ describe('scriptstate-scoped var dispatch', () => {
   it('flushes an owned note PATCH before DELETE without walking unrelated flushers', async () => {
     resetPendingMutationOutboxForTests()
     setCachedServerCommandRevision(30)
-    setResourceWriteGuardEnabled(true)
-
     const noteRollback = applyChatNoteValueLocally('chat-a', 'fallback note')
     expect(noteRollback).not.toBeNull()
     const noteMutation = stageChatNoteMutation({
@@ -7230,7 +7034,6 @@ describe('durable chat and folder structure dispatch', () => {
     stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
     })
-    setResourceWriteGuardEnabled(true)
     const previous = currentChatStateSnapshot()
     const attemptedChat = {
       id: 'chat-created',
@@ -7356,7 +7159,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatScopedSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].bookmarks = ['message-a']
         getDatabase().characters[0].chats[0].bookmarkNames = { 'message-a': 'Queued bookmark' }
       })
@@ -7571,7 +7374,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].name = 'Durable rename'
       })
       const mutation = dispatchUpdateChatWithOutcome('chat-a', { name: 'Durable rename' }, previous)
@@ -7634,7 +7437,7 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { role: 'char', data: 'persisted', chatId: 'message-a' } as Message,
         ]
@@ -7644,7 +7447,7 @@ describe('durable chat and folder structure dispatch', () => {
       dispatchUpdateMessageScoped('message-a', { data: 'newest retained edit' }, currentChatScopedSnapshot())
       await vi.waitFor(() => expect(commandCalls).toBe(2))
 
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].message = [
           { role: 'char', data: 'persisted', chatId: 'message-a' } as Message,
         ]
@@ -7676,7 +7479,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].name = 'Rejected rename'
       })
       const result = dispatchUpdateChatAsync('chat-a', { name: 'Rejected rename' }, previous)
@@ -7750,7 +7553,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatStateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chatFolders[0].name = 'Durable folder rename'
       })
       const mutation = dispatchUpdateChatFolderWithOutcome('folder-a', { name: 'Durable folder rename' }, previous)
@@ -7797,7 +7600,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatScriptstateSnapshot()
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].scriptstate = { $score: 'durable' }
       })
       dispatchPatchChatScriptstateScoped('chat-a', { $score: 'durable' }, ['$old'], previous)
@@ -7841,7 +7644,7 @@ describe('durable chat and folder structure dispatch', () => {
 
     try {
       const previous = currentChatScriptstateSnapshot(true)
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].note = 'Durable trigger note'
       })
       const result = dispatchUpdateChatNoteScoped('chat-a', 'Durable trigger note', previous)
@@ -7910,7 +7713,7 @@ describe('durable chat and folder structure dispatch', () => {
     )
 
     try {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().characters[0].chats[0].suggestMessages = ['durable suggestion']
       })
       const rollback = {
@@ -7937,7 +7740,7 @@ describe('durable chat and folder structure dispatch', () => {
 
   it('pre-stages combined folder and chat reorders and replays them in owner order', async () => {
     await prepareDurableOutbox('combined-reorder')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push({ id: 'folder-b', name: 'Folder B', folded: false })
     })
     const previous = currentChatStateSnapshot()
@@ -8023,7 +7826,7 @@ describe('durable chat and folder structure dispatch', () => {
 
   it('keeps an accepted folder reorder when the later chat reorder is terminally rejected', async () => {
     await prepareDurableOutbox('combined-terminal')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chatFolders.push({ id: 'folder-b', name: 'Folder B', folded: false })
     })
     const previous = currentChatStateSnapshot()
@@ -8086,7 +7889,7 @@ describe('durable chat and folder structure dispatch', () => {
     nextChat.name = 'Compatible durable rename'
     nextChat.message = [{ role: 'user', data: 'compatible append', chatId: 'message-compatible' }]
     nextChat.scriptstate = { $score: 'compatible', $old: 'gone' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0] = jsonClone(nextChat)
     })
 
@@ -8148,7 +7951,7 @@ describe('durable chat and folder structure dispatch', () => {
     nextChat.name = 'Accepted compatible rename'
     nextChat.message = [{ role: 'user', data: 'rejected append', chatId: 'message-rejected' }]
     nextChat.scriptstate = { $score: 'unaccepted scriptstate', $old: 'gone' }
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().characters[0].chats[0] = jsonClone(nextChat)
     })
 

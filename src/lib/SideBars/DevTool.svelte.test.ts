@@ -84,12 +84,13 @@ vi.mock('src/ts/filePicker', () => ({
 import DevTool from './DevTool.svelte'
 import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite, type Database } from 'src/ts/storage/database.svelte'
 import { applyServerChatMessagesResource, resetChatHydration } from 'src/ts/server/chatMessageHydration.svelte'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
 } from 'src/ts/process/generationActivity.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

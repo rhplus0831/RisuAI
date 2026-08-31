@@ -292,15 +292,15 @@ vi.mock('./Scripts/TriggerList.svelte', async () => {
 
 import CharConfig from './CharConfig.svelte'
 import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
 import {
   applyChatMetadataOwnerPatch,
   charactersResourceState,
-  getResourceDatabase,
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import { language } from 'src/lang'
 import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionOwner.svelte'
+import { getDatabase, getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

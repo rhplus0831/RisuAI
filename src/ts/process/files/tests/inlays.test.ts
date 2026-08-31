@@ -16,7 +16,7 @@ import {
 import { getImageType } from 'src/ts/media'
 import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
 import { uploadServerAssetBytes } from 'src/ts/server/assets'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const settingsOwnerState = vi.hoisted(() => ({
   value: {} as Record<string, unknown>,

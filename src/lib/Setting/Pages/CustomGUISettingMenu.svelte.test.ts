@@ -26,9 +26,10 @@ vi.mock('src/ts/process/modules', () => ({
 
 import CustomGUISettingMenu from './CustomGUISettingMenu.svelte'
 import { flushPendingSettingsOwnerMutations } from 'src/ts/server/settingsOwner.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { CustomGUISettingMenuStore } from 'src/ts/stores.svelte'
 import { language } from 'src/lang'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

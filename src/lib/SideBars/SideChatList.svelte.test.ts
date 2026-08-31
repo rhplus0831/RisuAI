@@ -487,17 +487,14 @@ vi.mock('./Toggles.svelte', async () => {
 
 import SideChatListHarness from './SideChatList.testHarness.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import {
-  charactersResourceState,
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+
+import { charactersResourceState, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
 import { generationJobLifecycles } from 'src/ts/process/reattach'
 import { markChatUnread, resetChatUnreadForTests, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
 import { get } from 'svelte/store'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -737,11 +734,11 @@ describe('SideChatList DOM contract harness', () => {
       const hadGenerationSettings = Object.prototype.hasOwnProperty.call(chat ?? {}, 'generationSettings')
       const previous =
         chat?.generationSettings === undefined ? undefined : JSON.parse(JSON.stringify(chat.generationSettings))
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         if (chat) chat.generationSettings = JSON.parse(JSON.stringify(generationSettings)) as never
       })
       return () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           if (!chat) return
           if (hadGenerationSettings) chat.generationSettings = previous as never
           else delete chat.generationSettings
@@ -754,7 +751,6 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     if (component) {
       unmount(component)
       component = undefined
@@ -1481,7 +1477,7 @@ describe('SideChatList DOM contract harness', () => {
     sidebarMocks.setServerCommandsEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(0)
     sidebarMocks.hydrateChatMessages.mockImplementationOnce(async () => {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         chara.chats[0].message = [
           { chatId: 'server-message-0', data: 'loaded from server', role: 'user' },
           { chatId: 'server-message-1', data: 'complete history', role: 'char' },
@@ -1767,8 +1763,6 @@ describe('SideChatList DOM contract harness', () => {
   it('keeps rapid chat and folder name input as drafts until their exact changes settle', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
-
     component = mount(SideChatListHarness, { target })
     await tick()
 
@@ -1814,7 +1808,6 @@ describe('SideChatList DOM contract harness', () => {
   it('keeps folder, foldered-chat, and unfiled-chat rename inputs enabled while saves are pending', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const folderedRename = sidebarMocks.createDeferredUpdateCommand()
     const unfiledRename = sidebarMocks.createDeferredUpdateCommand()
     const folderRename = sidebarMocks.createDeferredUpdateCommand()
@@ -1856,7 +1849,6 @@ describe('SideChatList DOM contract harness', () => {
   it('supersedes pending chat and folder renames while preserving the latest draft on an older failure', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const firstChatRename = sidebarMocks.createDeferredUpdateCommand()
     const finalChatRename = sidebarMocks.createDeferredUpdateCommand()
     const firstFolderRename = sidebarMocks.createDeferredUpdateCommand()
@@ -1939,7 +1931,6 @@ describe('SideChatList DOM contract harness', () => {
   it('clears failed chat and folder rename entries when later retries succeed', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const failedChatRename = sidebarMocks.createDeferredUpdateCommand()
     const failedFolderRename = sidebarMocks.createDeferredUpdateCommand()
     sidebarMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => failedChatRename.promise as Promise<any>)
@@ -1981,7 +1972,6 @@ describe('SideChatList DOM contract harness', () => {
   it('does not clear a newer pending rename when an older attempt succeeds', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const firstRename = sidebarMocks.createDeferredUpdateCommand()
     const secondRename = sidebarMocks.createDeferredUpdateCommand()
     sidebarMocks.dispatchUpdateChatWithOutcome
@@ -2019,7 +2009,6 @@ describe('SideChatList DOM contract harness', () => {
   it('allows folder creation and organizing chat B while a rename of chat A is pending', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const rename = sidebarMocks.createDeferredUpdateCommand()
     const createFolder = sidebarMocks.createDeferredCreateFolderCommand()
     sidebarMocks.dispatchUpdateChatWithOutcome.mockImplementationOnce(() => rename.promise as Promise<any>)
@@ -2054,7 +2043,6 @@ describe('SideChatList DOM contract harness', () => {
   it('paints folder folded toggles before dispatching with the folder stable id', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(async () => {
       expect(selectedCharacter().chatFolders[0].folded).toBe(true)
       return { status: 'accepted', result: { revision: 1, status: 'ok' } }
@@ -2087,7 +2075,6 @@ describe('SideChatList DOM contract harness', () => {
   it('routes a failed direct folder toggle through the owner-scoped rollback callback', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(
       async (folderId, patch, _previous, rollback) => {
         rollback({
@@ -2115,7 +2102,6 @@ describe('SideChatList DOM contract harness', () => {
   it('paints a selected folder color before dispatch', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertSelect.mockResolvedValueOnce('0').mockResolvedValueOnce('0')
     sidebarMocks.dispatchUpdateChatFolderWithOutcome.mockImplementationOnce(async () => {
       expect(selectedCharacter().chatFolders[0].color).toBe('red')
@@ -2141,7 +2127,6 @@ describe('SideChatList DOM contract harness', () => {
   it('does not change a folder color when the action selection is cancelled', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertSelect.mockResolvedValueOnce(null)
 
     component = mount(SideChatListHarness, { target })
@@ -2172,7 +2157,6 @@ describe('SideChatList DOM contract harness', () => {
       { id: 'legacy-persona', name: 'Legacy Persona' },
     ] as never
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
     const command = sidebarMocks.createDeferredGenerationSettingsCommand()
@@ -2218,7 +2202,6 @@ describe('SideChatList DOM contract harness', () => {
     seedSidebarDatabase()
     getDatabase().personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
     const command = sidebarMocks.createDeferredGenerationSettingsCommand()
@@ -2256,7 +2239,6 @@ describe('SideChatList DOM contract harness', () => {
     seedSidebarDatabase()
     getDatabase().personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
     const command = sidebarMocks.createDeferredGenerationSettingsCommand()
@@ -2465,7 +2447,6 @@ describe('SideChatList DOM contract harness', () => {
   it('shows a newly created sidebar folder before the command resolves', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const command = sidebarMocks.createDeferredCreateFolderCommand()
 
     component = mount(SideChatListHarness, { target })
@@ -2498,7 +2479,6 @@ describe('SideChatList DOM contract harness', () => {
   it('rolls back a failed optimistic sidebar folder create in state and DOM', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setResourceWriteGuardEnabled(true)
     const command = sidebarMocks.createDeferredCreateFolderCommand()
 
     component = mount(SideChatListHarness, { target })

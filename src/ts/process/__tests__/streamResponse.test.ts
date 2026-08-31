@@ -34,7 +34,7 @@ import {
   type character,
 } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
 import { markChatMessageMutationIntent } from '../../server/chatMessageMutationIntent'
@@ -45,6 +45,7 @@ import {
   generationDisplayProjections,
   resetGenerationDisplayProjectionsForTests,
 } from '../generationDisplayProjection.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

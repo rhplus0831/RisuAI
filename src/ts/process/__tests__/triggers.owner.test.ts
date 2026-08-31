@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Regression coverage: trigger data effects that mutate durable character/persona
-// state must route through typed commands instead of writing `testDatabaseState.db`
-// directly, so they do not throw under the server-backed read-only projection
-// guard.
+// Regression coverage: trigger data effects that mutate durable character,
+// persona, chat, and lorebook state must route through explicit owners and
+// typed commands instead of an aggregate database.
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -35,10 +34,9 @@ import { safeStructuredClone } from '../../polyfill'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { runTrigger } from '../triggers'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
+
 import { selectedCharID } from '../../stores.svelte'
 import type { character } from '../../storage/database.svelte'
-
 interface CapturedFetch {
   url: string
   method: string
@@ -160,22 +158,19 @@ beforeEach(() => {
   // vi.unstubAllGlobals() clears it between tests.
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   coordinateAcceptedChatSendMock.mockReset().mockResolvedValue({ status: 'generated' })
   seedDatabase()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('trigger durable writes under the resource guard', () => {
+describe('trigger durable writes through explicit owners', () => {
   it('awaits the accepted-send outcome for STScript /multisend', async () => {
     const calls = stubCommandFetch()
     const generation = deferred<{ status: 'generated' }>()
     coordinateAcceptedChatSendMock.mockReturnValueOnce(generation.promise)
-    setResourceWriteGuardEnabled(true)
     const char = characterWithTriggers([
       {
         comment: 'scripted multisend',
@@ -229,15 +224,8 @@ describe('trigger durable writes under the resource guard', () => {
     expect('lowLevelAccess' in trigger).toBe(false)
   })
 
-  it('routes v2SetCharacterDesc through a character command instead of a guarded direct write', async () => {
+  it('routes v2SetCharacterDesc through its character owner command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw resource write throws.
-    expect(() => {
-      testDatabaseState.db.characters[0].desc = 'raw'
-    }).toThrow()
-
     const char = characterWithTriggers([
       {
         comment: 'desc',
@@ -258,10 +246,8 @@ describe('trigger durable writes under the resource guard', () => {
     expect(patch.body.patch.desc).toBe('updated desc')
   })
 
-  it('routes v2SetPersonaDesc through a persona command instead of a guarded direct write', async () => {
+  it('routes v2SetPersonaDesc through its persona owner command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'persona',
@@ -288,13 +274,6 @@ describe('trigger durable writes under the resource guard', () => {
     testDatabaseState.db.personas[0].personaPrompt = 'saved prompt before trigger'
     const selectedPersona = testDatabaseState.db.selectedPersona
     const calls = stubCommandFetch({ failPersonaPatch: true })
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw legacy prompt write throws.
-    expect(() => {
-      testDatabaseState.db.personaPrompt = 'raw prompt'
-    }).toThrow()
-
     const char = characterWithTriggers([
       {
         comment: 'persona-fail',
@@ -325,11 +304,9 @@ describe('trigger durable writes under the resource guard', () => {
     expect(testDatabaseState.db.personas[selectedPersona]?.personaPrompt).toBe('saved prompt before trigger')
   })
 
-  it('routes v2ModifyLorebook through a lorebook command instead of a guarded direct write', async () => {
+  it('routes v2ModifyLorebook through its lorebook owner command', async () => {
     testDatabaseState.db.characters[0].globalLore = [['lore-key', 'old content']] as any
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'lore',
@@ -359,10 +336,8 @@ describe('trigger durable writes under the resource guard', () => {
     expect(cmd.body.entries).toBeDefined()
   })
 
-  it('routes v2CreateLorebook through a lorebook command instead of a guarded direct write', async () => {
+  it('routes v2CreateLorebook through its lorebook owner command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'create-lore',
@@ -400,13 +375,11 @@ describe('trigger durable writes under the resource guard', () => {
     })
   })
 
-  it('routes v2DeleteLorebookByIndex through a lorebook command instead of a guarded direct write', async () => {
+  it('routes v2DeleteLorebookByIndex through its lorebook owner command', async () => {
     testDatabaseState.db.characters[0].globalLore = [
       { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 },
     ] as any
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'delete-lore',
@@ -435,13 +408,11 @@ describe('trigger durable writes under the resource guard', () => {
     expect(cmd.body.entries.length).toBe(0)
   })
 
-  it('routes v2SetLorebookAlwaysActive through a lorebook command instead of a guarded direct write', async () => {
+  it('routes v2SetLorebookAlwaysActive through its lorebook owner command', async () => {
     testDatabaseState.db.characters[0].globalLore = [
       { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100, alwaysActive: false },
     ] as any
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'always-active',
@@ -475,10 +446,8 @@ describe('trigger durable writes under the resource guard', () => {
     expect(cmd.body.entries).toBeDefined()
   })
 
-  it('routes v2SetAuthorNote through a chat command instead of a guarded direct write', async () => {
+  it('routes v2SetAuthorNote through its chat owner command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'note',
@@ -499,15 +468,8 @@ describe('trigger durable writes under the resource guard', () => {
     expect(cmd.body.patch.note).toBe('author note text')
   })
 
-  it('routes v2SetVar scriptstate through a chat command instead of a guarded direct write', async () => {
+  it('routes v2SetVar scriptstate through its chat owner and command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw scriptstate resource write throws.
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].scriptstate = { $raw: '1' } as never
-    }).toThrow()
-
     const char = characterWithTriggers([
       {
         comment: 'set',
@@ -517,8 +479,7 @@ describe('trigger durable writes under the resource guard', () => {
       },
     ])
 
-    // The fix: setVar's optimistic live write goes through the resource guard, so
-    // the pass resolves instead of throwing on the read-only projection.
+    // The optimistic live write targets the chat owner before durable dispatch.
     await expect(
       runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'set' }),
     ).resolves.not.toThrow()
@@ -537,7 +498,6 @@ describe('trigger durable writes under the resource guard', () => {
   it('skips an identical v2SetVar without dispatching a scriptstate command', async () => {
     const calls = stubCommandFetch()
     testDatabaseState.db.characters[0].chats[0].scriptstate = { $score: '7' }
-    setResourceWriteGuardEnabled(true)
     const char = characterWithTriggers([
       {
         comment: 'set-same',
@@ -558,8 +518,6 @@ describe('trigger durable writes under the resource guard', () => {
 
   it('keeps guarded deferred var and author-note side effects on the returned chat', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'deferred',
@@ -588,8 +546,6 @@ describe('trigger durable writes under the resource guard', () => {
 
   it('stops guarded trigger effects once the target is stale', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'stale',
@@ -659,8 +615,6 @@ describe('trigger lorebook scoped rollback', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     const char = characterWithTriggers([
       {
         comment: 'lore',

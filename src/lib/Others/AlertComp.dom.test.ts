@@ -24,9 +24,10 @@ import {
   resolveAlertWorkflow,
 } from 'src/ts/alert'
 import { language } from 'src/lang'
-import { getDatabase, setDatabaseLite, type MessageGenerationInfo } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite, type MessageGenerationInfo } from 'src/ts/storage/database.svelte'
 import { alertStore, selectedCharID } from 'src/ts/stores.svelte'
 import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

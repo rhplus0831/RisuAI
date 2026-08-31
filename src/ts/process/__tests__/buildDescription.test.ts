@@ -11,9 +11,10 @@ vi.mock('../embedding/addinfo', () => ({
   additionalInformations: additionalInformationMock,
 }))
 
-import { getDatabase, setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
+import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { buildDescription as buildDescriptionWithDatabase } from '../promptAssembly/buildDescription'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function buildDescription(currentChar: character, currentChat: Chat) {
   return buildDescriptionWithDatabase(currentChar, currentChat, getDatabase())

@@ -42,9 +42,10 @@ import {
   type character,
 } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { requestDataResponse } from '../request/request'
 import { applyNonStreamResponse } from '../postGeneration/nonStreamResponse'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

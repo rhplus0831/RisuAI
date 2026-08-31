@@ -121,9 +121,9 @@ import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/token
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { getProviderCalls, installProviderScript, resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { Chat } from '../../storage/database.svelte'
-import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
+
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
 import { abortChat, chatProcessStage, doingChat, previewBody, previewFormated, sendChat } from '../index.svelte'
 import { addChatOutputListener, chatOutputListeners } from '../../plugins/chatOutputListeners'
@@ -140,6 +140,7 @@ import {
   getServerCommandBaseRevision,
   setCachedServerCommandRevision,
 } from '../../server/commands'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -493,13 +494,11 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
-    setResourceWriteGuardEnabled(false)
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
     _setPluginRuntimePhaseForTesting('idle')
-    setResourceWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
     vi.unstubAllGlobals()
   })
@@ -529,7 +528,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       const stageRecorder = recordStages()
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, args)
       const stages = stageRecorder.stop()
       const captured = captureSnapshot(stages)
@@ -598,8 +596,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // so a later command POSTing baseRevision 2 proves the reconcile happened.
       clearCachedServerCommandRevision()
       setCachedServerCommandRevision(1)
-
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
 
@@ -663,7 +659,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // bumped revision is the SSE reconcile on the post-gen `done` frame.
       clearCachedServerCommandRevision()
       setCachedServerCommandRevision(1)
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
@@ -714,7 +709,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('route-backed reply')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
@@ -761,7 +755,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('route-backed reply')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
 
@@ -853,7 +846,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('I see a small image.')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
@@ -953,7 +945,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         harness.setDispatchText('Hello there!')
 
         clearCachedServerCommandRevision()
-        setResourceWriteGuardEnabled(true)
         const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
         expect(ok).toBe(true)
 
@@ -1008,7 +999,6 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('reply')
 
       clearCachedServerCommandRevision()
-      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
@@ -1117,7 +1107,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     chatProcessStage.set(0)
     uuidState.counter = 0
     contextCommandRevision = 1
-    setResourceWriteGuardEnabled(false)
     _setPluginRuntimePhaseForTesting('ready')
     chatOutputListeners.clear()
     terminalEffectMocks.notify.mockClear()
@@ -1127,7 +1116,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
-    setResourceWriteGuardEnabled(false)
     _setPluginRuntimePhaseForTesting('idle')
     chatOutputListeners.clear()
     while (cleanups.length > 0) cleanups.pop()!()
@@ -1187,7 +1175,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     ])
 
     const stageRecorder = recordStages()
-    setResourceWriteGuardEnabled(true)
     await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)
@@ -1258,8 +1245,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     )
     testDatabaseState.db.igpPrompt = '<|im_start|>system<|im_sep|>Append a marker.<|im_end|>'
     installProviderScript([{ type: 'success', result: '::SHOULD-NOT-RUN' }])
-
-    setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
 
     expect(result).toBe(false)
@@ -1281,7 +1266,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     testDatabaseState.db.characters[0].chats[0].message.at(-1)!.data = '*says nothing*'
 
     setServerChatDispatchResult('Hello there!', { model: 'gpt-4o' }, 'uuid-0')
-    setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, { syntheticSayNothing: true })
 
     expect(result).toBe(true)
@@ -1317,8 +1301,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
         streamedResult: 'retained suffix',
         ...(changed ? { postGeneration: { finalText } } : {}),
       })
-
-      setResourceWriteGuardEnabled(true)
       const result = await sendChat(-1, {})
 
       expect(result).toBe(true)
@@ -1404,8 +1386,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
             }
           : {}),
       })
-
-      setResourceWriteGuardEnabled(true)
       const result = await sendChat(-1, args)
 
       expect(result).toBe(true)
@@ -1442,8 +1422,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
         finalText: '*says nothing*complete partial reply',
       },
     })
-
-    setResourceWriteGuardEnabled(true)
     const onReattachOutcome = vi.fn()
     const result = await sendChat(-1, { reattachJobId: 'job-cancelled', onReattachOutcome })
 
@@ -1482,8 +1460,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
         'reattached-generation',
         { postGeneration: { finalText: 'derived reattached reply' } },
       )
-
-      setResourceWriteGuardEnabled(true)
       const result = await sendChat(-1, { reattachJobId: 'job-reattach' })
 
       expect(result).toBe(true)
@@ -1526,8 +1502,6 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       { kind: 'tts', payload: { text: 'derived primary', characterId: 'char-tess' } },
       { kind: 'tts', payload: { text: 'derived alternate', characterId: 'char-tess' } },
     ])
-
-    setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
 
     expect(result).toBe(true)

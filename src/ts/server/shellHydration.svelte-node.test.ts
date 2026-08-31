@@ -11,13 +11,12 @@ import {
   applyCharactersResource,
   applySettingsGroupResource,
   charactersResourceState,
-  getResourceDatabase,
   resetServerResourceState,
   settingsResourceState,
 } from './resourceState.svelte'
 import { applyServerShellResource } from './shellHydration'
 import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from '@risuai/protocol/shell-resource'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 function shellSettings(language = 'en'): ServerShellSettings {
   return {
@@ -92,9 +91,8 @@ function shellResource(revision: number, language = 'en') {
 }
 
 beforeEach(() => {
-  withTrustedResourceWrite(resetServerResourceState)
+  withTestDatabaseWrite(resetServerResourceState)
   clearAppliedServerResourceRevision()
-  setResourceWriteGuardEnabled(true)
   languageSideEffects.change.mockClear()
 })
 
@@ -124,14 +122,12 @@ describe('coherent shell hydration', () => {
     })
     expect(languageSideEffects.change).toHaveBeenCalledWith('ko')
     expect(peekAppliedServerResourceRevision()).toBe(5)
-    expect(() => {
-      getResourceDatabase().language = 'ja'
-    }).toThrow(/read-only outside withResourceDatabaseWrite/u)
+    expect(getResourceDatabase().language).toBe('ko')
   })
 
   it('rejects a stale shell atomically when a newer character projection is resident', () => {
     expect(applyServerShellResource(shellResource(5, 'en'))).toBe(true)
-    withTrustedResourceWrite(() =>
+    withTestDatabaseWrite(() =>
       applyCharactersResource({
         version: 1,
         revision: 7,
@@ -154,7 +150,7 @@ describe('coherent shell hydration', () => {
   it('replaces observer-era detail with the authoritative promotion shell', () => {
     expect(applyServerShellResource(shellResource(5, 'en'))).toBe(true)
     expect(
-      withTrustedResourceWrite(() =>
+      withTestDatabaseWrite(() =>
         applyCharacterResource({
           revision: 5,
           character: {
@@ -187,12 +183,12 @@ describe('coherent shell hydration', () => {
     expect(applyServerShellResource(shellResource(5))).toBe(true)
 
     expect(
-      withTrustedResourceWrite(() =>
+      withTestDatabaseWrite(() =>
         applySettingsGroupResource({ revision: 4, group: 'display', settings: { theme: 'old' } }, ['theme']),
       ),
     ).toBe(false)
     expect(
-      withTrustedResourceWrite(() =>
+      withTestDatabaseWrite(() =>
         applySettingsGroupResource({ revision: 5, group: 'display', settings: { theme: 'current' } }, ['theme']),
       ),
     ).toBe(true)

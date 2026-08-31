@@ -5,8 +5,9 @@ vi.mock('../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {} }
 })
 
-import { getDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
+import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { buildPlainPromptSections as buildPlainPromptSectionsWithDatabase } from '../promptAssembly/buildPlainPromptSections'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function buildPlainPromptSections(currentChar: character) {
   return buildPlainPromptSectionsWithDatabase(currentChar, getDatabase())

@@ -25,7 +25,7 @@ vi.mock('../../modules', async (importActual) => {
   }
 })
 
-import { getDatabase, setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { LLMFlags } from '../../../model/modellist'
 import { MASKED_PROVIDER_SECRET } from '../../../providerSecretMask'
 import { _setPluginRuntimePhaseForTesting, pluginV2 } from '../../../plugins/plugins.svelte'
@@ -35,6 +35,7 @@ import {
   type ServerPromptAssemblyRoute,
 } from '../serverPromptAssembly'
 import { preflightChatSendBeforeMutation } from '../../sendChatPreflight'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function seedDb(overrides: Partial<Database> = {}): void {
   setDatabase({

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { replaceResourceDatabase } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import { optimisticallyRehomeGenerationReferences } from './generationReferenceCascade'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function seedDatabase(input: { characters?: unknown[]; loadouts?: unknown[]; promptPresets?: unknown[] }): void {
   replaceResourceDatabase({

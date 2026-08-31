@@ -31,10 +31,10 @@ import type { customscript, loreBook, triggerscript } from 'src/ts/storage/datab
 import { resetLorebookOwnerForTests } from 'src/ts/server/lorebookOwner.svelte'
 import {
   collectionsResourceState,
-  getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 let liveModule: RisuModule
 let draftModule: RisuModule

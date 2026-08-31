@@ -15,7 +15,7 @@ vi.mock('src/ts/server/settingsOwner.svelte', () => ({
 }))
 
 vi.mock('src/ts/storage/database.svelte', async () => {
-  const { getResourceDatabase } = await import('src/ts/server/resourceState.svelte')
+  const { getResourceDatabase } = await import('src/ts/__tests__/resourceDatabaseState')
   return { getDatabase: getResourceDatabase }
 })
 
@@ -34,12 +34,9 @@ vi.mock('src/ts/server/pushNotificationSetting', async () => {
 import { language } from 'src/lang'
 import NotificationToggle from './NotificationToggle.svelte'
 import { initialNotificationCoordinatorState, notificationCoordinatorState } from './NotificationToggle.testState'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-  withResourceDatabaseWrite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import type { EnablePushNotificationsResult } from 'src/ts/server/pushNotifications'
+import { getResourceDatabase as getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -74,7 +71,7 @@ beforeEach(() => {
   notificationMocks.retryStorage.mockReset()
   notificationMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
     if (key !== 'notification') return
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.notification = value as boolean
     })
   })
@@ -145,7 +142,7 @@ describe('NotificationToggle shared push acknowledgement', () => {
 
   it.each(failedEnablements)('renders the shared compensation for $name', async ({ result, message }) => {
     notificationMocks.reconcile.mockImplementationOnce(async () => {
-      withResourceDatabaseWrite((database) => {
+      withTestDatabaseWrite((database) => {
         database.notification = false
       })
       await tick()
@@ -216,7 +213,7 @@ describe('NotificationToggle shared push acknowledgement', () => {
   })
 
   it('routes the checkbox through exact compensation retry after a failed false patch', async () => {
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.notification = true
     })
     notificationCoordinatorState.set({
@@ -292,7 +289,7 @@ describe('NotificationToggle shared push acknowledgement', () => {
   })
 
   it('retries a device-ledger failure without requiring notifications to be off', async () => {
-    withResourceDatabaseWrite((database) => {
+    withTestDatabaseWrite((database) => {
       database.notification = true
     })
     notificationCoordinatorState.set({

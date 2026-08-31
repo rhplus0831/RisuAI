@@ -56,7 +56,6 @@ import {
 import { markChatMessageMutationIntent } from '../server/chatMessageMutationIntent'
 import {
   charactersResourceState,
-  getResourceDatabase,
   markChatBodyResourceRevision,
   replaceResourceDatabase,
 } from '../server/resourceState.svelte'
@@ -72,6 +71,7 @@ import {
   resetGenerationDisplayProjectionsForTests,
 } from './generationDisplayProjection.svelte'
 import { clearAppliedServerResourceRevision } from '../server/commands'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

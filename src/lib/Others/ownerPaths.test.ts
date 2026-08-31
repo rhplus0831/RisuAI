@@ -15,7 +15,7 @@ vi.mock('src/ts/platform', async (importActual) => {
 })
 
 vi.mock('src/ts/storage/fastifyStorage', () => ({
-  getNodeServerProxyAuth: async () => 'resource-guard-ui-token',
+  getNodeServerProxyAuth: async () => 'resource-owner-ui-token',
 }))
 
 vi.mock('src/ts/process/modules', async (importActual) => {
@@ -42,10 +42,11 @@ import BookmarkList from './BookmarkList.svelte'
 import HypaV3Modal from './HypaV3Modal.svelte'
 import { alertError, alertInput } from 'src/ts/alert'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
-import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
+
 import { listServerMemorySummaries, patchServerMemorySummary } from 'src/ts/process/request/serverMemory'
 import { bookmarkListOpen, hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -161,6 +162,8 @@ function bookmarkAction(target: HTMLElement, bookmarkId: string, action: 'rename
 function seedDatabase(): void {
   selectedCharID.set(0)
   setDatabaseLite({
+    currentChar: 0,
+    characterOrder: ['char-a'],
     hypaV3PresetId: 0,
     hypaV3Presets: [{ name: 'Default', settings: { processRegexScript: false } }],
     characters: [
@@ -185,14 +188,13 @@ function seedDatabase(): void {
   } as any)
 }
 
-describe('server resource guarded UI paths', () => {
+describe('server resource owner UI paths', () => {
   let target: HTMLElement
   let component: Record<string, never> | undefined
 
   beforeEach(() => {
     platformState.isFastifyServer = true
     clearCachedServerCommandRevision()
-    setResourceWriteGuardEnabled(false)
     seedDatabase()
     vi.mocked(alertError).mockReset()
     vi.mocked(listServerMemorySummaries).mockResolvedValue({ status: 'ok', summaries: [] })
@@ -206,15 +208,12 @@ describe('server resource guarded UI paths', () => {
       unmount(component)
       component = undefined
     }
-    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
   })
 
-  it('mounts Hypa V3 server memory without initializing guarded chat state', async () => {
+  it('mounts Hypa V3 server memory without initializing chat state', async () => {
     hypaV3ModalOpen.set(true)
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       component = mount(HypaV3Modal, { target })
     }).not.toThrow()
@@ -249,8 +248,6 @@ describe('server resource guarded UI paths', () => {
       summaryId: 'server-summary-1',
     })
     hypaV3ModalOpen.set(true)
-    setResourceWriteGuardEnabled(true)
-
     component = mount(HypaV3Modal, { target })
     let summaryTextarea: HTMLTextAreaElement | undefined
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -287,8 +284,6 @@ describe('server resource guarded UI paths', () => {
     const calls = stubCommandFetch()
     vi.mocked(alertInput).mockResolvedValue('New name')
     bookmarkListOpen.set(true)
-    setResourceWriteGuardEnabled(true)
-
     component = mount(BookmarkList, { target })
     await tick()
 
@@ -345,8 +340,6 @@ describe('server resource guarded UI paths', () => {
   it('removes bookmarks immediately while the command patch is pending', async () => {
     const calls = stubCommandFetch()
     bookmarkListOpen.set(true)
-    setResourceWriteGuardEnabled(true)
-
     component = mount(BookmarkList, { target })
     await tick()
 
@@ -374,8 +367,6 @@ describe('server resource guarded UI paths', () => {
       }),
     )
     bookmarkListOpen.set(true)
-    setResourceWriteGuardEnabled(true)
-
     component = mount(BookmarkList, { target })
     await tick()
 
@@ -405,8 +396,6 @@ describe('server resource guarded UI paths', () => {
     chat.bookmarks = ['msg-1', 'msg-2']
     chat.bookmarkNames = { 'msg-1': 'Old name', 'msg-2': 'Second name' }
     bookmarkListOpen.set(true)
-    setResourceWriteGuardEnabled(true)
-
     component = mount(BookmarkList, { target })
     await tick()
 

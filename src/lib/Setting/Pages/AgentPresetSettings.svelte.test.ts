@@ -55,9 +55,10 @@ vi.mock('src/ts/process/modules', () => ({
 import AgentPresetSettings from './AgentPresetSettings.svelte'
 import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
 import { language } from 'src/lang'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import type { AgentPresetRecord, AgentRecord } from 'src/ts/agentPresetRecords'
 import { resetServerResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 let target: HTMLElement
 let component: Parameters<typeof unmount>[0] | undefined

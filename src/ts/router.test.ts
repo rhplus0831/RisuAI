@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
+import { getResourceDatabase, withTestDatabaseWrite } from './__tests__/resourceDatabaseState'
 
 const routerMocks = vi.hoisted(() => ({
   changeChar: vi.fn<(...args: any[]) => Promise<void> | void>(),
@@ -146,7 +147,7 @@ describe('router initial application', () => {
   it('opens a direct route for a bot left in retired Mood Light metadata', async () => {
     const router = await importRouterAt('/character/char-private/chat-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
       characters: [
         {
@@ -553,7 +554,7 @@ describe('router character route freshness', () => {
   it('delivers a queued message jump once after applying its chat route', async () => {
     const router = await importRouterAt('/character/char-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
       characters: [
         {
@@ -586,7 +587,7 @@ describe('router character route freshness', () => {
   it('restores a same-entry character sidebar view without carrying it into same-character route navigation', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
       characters: [
         {
@@ -701,7 +702,7 @@ describe('router character route freshness', () => {
     const router = await importRouterAt('/settings/model')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
       characters: [
@@ -851,7 +852,7 @@ describe('router character route freshness', () => {
   it('canonicalizes a deep or history route when character selection is refused', async () => {
     const router = await importRouterAt('/character/char-b/chat-b')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
       characters: [
@@ -951,7 +952,7 @@ describe('router character route freshness', () => {
     const router = await importRouterAt('/character/char-a/chat-owner')
     const stores = await import('./stores.svelte')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     replaceResourceDatabase({
       characters: [
         {
@@ -1033,7 +1034,7 @@ describe('router character route freshness', () => {
   it('does not let a stale character route clear a newer pending character route', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
       characters: [
@@ -1113,7 +1114,7 @@ describe('router character route freshness', () => {
   it('does not let a stale delayed character route select a chat after a newer settings route wins', async () => {
     const router = await importRouterAt('/character/char-a/chat-target')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { PlaygroundStore, SettingsMenuIndex, selectedCharID, settingsOpen } = stores
     replaceResourceDatabase({
       characters: [
@@ -1177,8 +1178,7 @@ describe('router character route freshness', () => {
   it('re-resolves the live character index after character selection before selecting the routed chat', async () => {
     const router = await importRouterAt('/')
     const stores = await import('./stores.svelte')
-    const { getResourceDatabase, replaceResourceDatabase, withResourceDatabaseWrite } =
-      await import('./server/resourceState.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     const charA = {
       chaId: 'char-a',
@@ -1202,7 +1202,7 @@ describe('router character route freshness', () => {
         getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     routerMocks.changeChar.mockImplementation(async (_index: number) => {
-      withResourceDatabaseWrite((database) => {
+      withTestDatabaseWrite((database) => {
         database.characters = [charB, charA] as any
       })
       selectedCharID.set(1)

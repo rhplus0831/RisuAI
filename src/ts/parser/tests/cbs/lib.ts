@@ -1,5 +1,5 @@
 import fc from 'fast-check'
-import { withResourceDatabaseWrite } from 'src/ts/server/resourceState.svelte'
+import { withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 export const cbs = (op: string, ...args: string[]): string =>
   `{{${op}${args.length > 0 ? '::' : ''}${args.join('::')}}}`
@@ -9,7 +9,7 @@ export const cbs = (op: string, ...args: string[]): string =>
  * as well as each character's all scriptstates and their default values.
  */
 export const resetChatVariables = (): void => {
-  withResourceDatabaseWrite((database) => {
+  withTestDatabaseWrite((database) => {
     for (const char of database.characters) {
       for (const chat of char.chats) {
         chat.scriptstate = {}

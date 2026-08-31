@@ -280,7 +280,7 @@ vi.mock('src/ts/translator/presets', async (importActual) => {
 import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { language } from 'src/lang'
 import { alertConfirm, alertError, alertInput, alertNormal } from 'src/ts/alert'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
   applyCollectionsResource,
   applySettingsGroupResource,
@@ -290,7 +290,7 @@ import {
   resetServerResourceState,
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import {
   beginPendingMutationDispatch,
@@ -302,6 +302,7 @@ import {
 import { dispatchDurableMutationReplay } from 'src/ts/server/durableMutationDispatch'
 import { normalizeTranslatorPreset, type TranslatorPreset } from 'src/ts/translator/presets'
 import { selectSingleFile } from 'src/ts/filePicker'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -440,7 +441,7 @@ async function selectTranslatorPreset(index: number): Promise<void> {
 }
 
 async function switchProjectedPreset(index: number): Promise<void> {
-  withTrustedResourceWrite(() => {
+  withTestDatabaseWrite(() => {
     getDatabase().translatorPresetId = getDatabase().translatorPresets[index].id
   })
   await tick()
@@ -474,7 +475,7 @@ async function applyTranslatorPresetProjection(input: {
 }
 
 async function appendPresetC(): Promise<void> {
-  withTrustedResourceWrite(() => {
+  withTestDatabaseWrite(() => {
     getDatabase().translatorPresets = [
       ...getDatabase().translatorPresets,
       canonicalPreset({ id: 'preset-c', name: 'Preset C', prompt: 'old prompt C', maxResponse: 300 }),
@@ -573,12 +574,8 @@ beforeEach(() => {
   vi.mocked(alertNormal).mockClear()
   vi.mocked(selectSingleFile).mockReset()
   vi.mocked(selectSingleFile).mockResolvedValue(null)
-
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   seedTranslatorPresets()
-  setResourceWriteGuardEnabled(true)
-
   target = document.createElement('div')
   document.body.appendChild(target)
   component = mount(TranslatorPresetSettings, { target })
@@ -590,7 +587,6 @@ afterEach(async () => {
     unmount(component)
     component = undefined
   }
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite({} as any)
   target.remove()
   document.body.innerHTML = ''
@@ -638,7 +634,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
   })
 
   it('fails closed when the selected stable preset owner is duplicated', async () => {
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0] },
         { ...getDatabase().translatorPresets[0], name: 'Duplicate Preset A' },
@@ -704,7 +700,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
   })
 
   it('validates output keys inline and persists a per-step model profile selection', async () => {
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modelProfiles = [{ id: 'translator-profile', name: 'Translator Profile', modelId: 'echo_model' }]
       getDatabase().modelProfileOrder = [
         { kind: 'divider', id: 'translator-divider' },
@@ -1262,7 +1258,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(promptTextarea().value).toBe('')
     expect(maxResponseInput().value).toBe('1000')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0], name: 'Preset A Edited', prompt: 'newer prompt A' },
         { ...getDatabase().translatorPresets[1] },
@@ -1825,7 +1821,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(promptTextarea().value).toBe('old prompt B')
     expect(maxResponseInput().value).toBe('200')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0] },
         {
@@ -2282,7 +2278,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(promptTextarea().value).toBe('old prompt B')
     expect(maxResponseInput().value).toBe('200')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets = [
         {
           ...getDatabase().translatorPresets[0],
@@ -2343,7 +2339,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     await clickDeletePreset()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().translatorPresets = [
         {
           ...getDatabase().translatorPresets[0],

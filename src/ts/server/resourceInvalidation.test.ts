@@ -125,7 +125,6 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   charactersResourceState,
-  getResourceDatabase,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
   markCharacterLorebookProjectionApplied,
@@ -134,7 +133,7 @@ import {
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
-import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+
 import { SERVER_SHELL_PROTOCOL_VERSION, type ServerShellSettings } from '@risuai/protocol/shell-resource'
 import {
   applyServerInlayCatalogResource,
@@ -149,6 +148,7 @@ import {
   resetBardWikiResource,
 } from './bardWikiResource'
 import { BARDWIKI_PROTOCOL_VERSION, DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const hooks: ServerResourceInvalidationHooks = {
   reapplyPendingPresetProjections: sideEffects.reapplyPendingPresets,
@@ -678,7 +678,7 @@ describe('API-backed resource invalidation', () => {
     })
     expect(api.character).toHaveBeenCalledWith('char-a', undefined)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const liveCharacter = getResourceDatabase().characters.find((candidate) => candidate.chaId === 'char-a')
       if (!liveCharacter) throw new Error('Missing optimistic character')
       liveCharacter.customscript = [{ id: 'script-a', out: 'newer optimistic edit' }] as never
@@ -708,7 +708,7 @@ describe('API-backed resource invalidation', () => {
     })
     expect(api.collection).toHaveBeenCalledWith('modules', undefined)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const live = getResourceDatabase()
       live.modules = [{ id: 'module-a', name: 'Optimistic', regex: [] }] as never
     })
@@ -751,7 +751,7 @@ describe('API-backed resource invalidation', () => {
     expect(api.collections).toHaveBeenCalledOnce()
     expect(api.characters).toHaveBeenCalledOnce()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const liveCharacter = getResourceDatabase().characters.find((candidate) => candidate.chaId === 'char-a')
       if (!liveCharacter) throw new Error('Missing optimistic character')
       liveCharacter.customscript = [{ id: 'script-a', out: 'optimistic during refresh' }] as never

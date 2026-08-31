@@ -67,12 +67,13 @@ vi.mock('../characterCommands', async (importActual) => {
 
 import { selectedCharID } from '../stores.svelte'
 import { mergeServerResourceCharacterRow, setDatabaseLite, type Database } from '../storage/database.svelte'
-import { charactersResourceState, getResourceDatabase } from './resourceState.svelte'
+import { charactersResourceState } from './resourceState.svelte'
 import {
   createCharacterOwnerDraft,
   flushPendingCharacterDraftPatches,
   type CharacterOwnerDraft,
 } from './characterDraft.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface Deferred<T> {
   promise: Promise<T>

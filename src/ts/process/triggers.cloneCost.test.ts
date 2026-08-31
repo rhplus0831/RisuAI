@@ -19,12 +19,11 @@ vi.mock('./modules', async (importActual) => {
 import { safeStructuredClone } from '../polyfill'
 import { runTrigger } from './triggers'
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
-
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -93,12 +92,10 @@ function characterWithTriggers(triggerscript: unknown[]): character {
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
 })
@@ -107,7 +104,6 @@ describe('runTrigger clone cost', () => {
   it('a zero-trigger character pays no char/chat clone (early return)', () => {
     const { siblingSize } = seedDb()
     expect(siblingSize).toBeGreaterThan(50_000)
-    setResourceWriteGuardEnabled(true)
     const char = characterWithTriggers([])
 
     const instrumented = withCloneInstrumentation(() => runTrigger(char, 'manual', { chat: char.chats[char.chatPage] }))
@@ -122,13 +118,6 @@ describe('runTrigger clone cost', () => {
     const { siblingSize } = seedDb()
     expect(siblingSize).toBeGreaterThan(50_000)
     stubCommandFetch()
-    // Runs under the resource guard: this path must not trip runTrigger's
-    // lazy whole-character `materializeChar` helper. `setVar` writes the optimistic
-    // scriptstate through `withTrustedResourceWrite`, so a trigger-bearing
-    // pass clones only the active chat (the large sibling transcript a whole-char
-    // clone would serialize is never cloned) and does not throw on the read-only
-    // projection.
-    setResourceWriteGuardEnabled(true)
     const char = characterWithTriggers([
       {
         comment: 'set',

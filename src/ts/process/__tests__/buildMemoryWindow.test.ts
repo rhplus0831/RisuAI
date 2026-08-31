@@ -38,7 +38,7 @@ vi.mock('../memory/hypav3', async (importActual) => {
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
 import {
@@ -47,6 +47,7 @@ import {
   type BuildMemoryWindowResult,
 } from '../promptAssembly/buildMemoryWindow'
 import type { PromptItem } from '../prompt'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {

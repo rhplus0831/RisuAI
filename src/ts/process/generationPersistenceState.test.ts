@@ -21,10 +21,6 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => persistenceStateMocks.database,
 }))
 
-vi.mock('../server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (run: () => void) => run(),
-}))
-
 vi.mock('../server/bootstrap', () => ({
   fetchServerBootstrapReadOnly: persistenceStateMocks.fetchBootstrap,
 }))

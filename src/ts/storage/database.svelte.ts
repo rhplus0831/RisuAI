@@ -97,19 +97,12 @@ import {
 } from '../server/commands'
 import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from '../characterCommands'
 import { currentChatScopedSnapshot, dispatchCompatibleChatUpdateScoped } from '../chatCommands'
-import {
-  isResourceWriteGuardEnabled,
-  markLocalCharacterProjectionMutation,
-  setResourceWriteGuardEnabled,
-  withTrustedResourceWrite,
-} from '../server/resourceWriteGuard.svelte'
 import { mergeChatMessageRange, sameStructuredValue } from '../server/chatMessageRangeMerge'
 import {
   captureCollectionProjectionEpoch,
   captureSettingsProjectionEpoch,
   charactersResourceState,
   collectionsResourceState,
-  getResourceDatabase,
   hasCollectionProjectionEpochChanged,
   hasSettingsProjectionEpochChanged,
   isServerCollectionName,
@@ -3747,9 +3740,8 @@ export function applyServerCharacterSelectionResource(input: {
 }
 
 /**
- * Apply full, tail, or ranged server message hydration to the target chat across
- * all characters. Runs as a trusted resource write so it passes the read-only
- * guard. Returns true if found and hydrated.
+ * Apply full, tail, or ranged server message hydration to the target chat owner.
+ * Returns true if the owner was found and hydrated.
  */
 export interface ServerChatMessagesHydrationRange {
   start: number
@@ -3815,9 +3807,8 @@ export function hydrateServerChatMessages(
 }
 
 /**
- * Fill a stubbed character's `globalLore` with entries hydrated from the server
- * on character-open. Targets by `chaId`; a trusted resource write so it passes
- * the read-only guard. Returns true if found and hydrated.
+ * Fill a stubbed character owner's `globalLore` with entries hydrated from the
+ * server on character-open. Targets by `chaId` and returns true if found.
  */
 export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
   return writeServerCharacterLorebook(characterId, globalLore)
@@ -3833,21 +3824,15 @@ function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]
   return false
 }
 
-export { isResourceWriteGuardEnabled, setResourceWriteGuardEnabled, withTrustedResourceWrite }
-
 export function setDatabaseLite(data: Database, revision?: number) {
   replaceResourceDatabase(data, revision)
 }
 
-interface getDatabaseOptions {
+interface CharacterSnapshotOptions {
   snapshot?: boolean
 }
 
-export function getDatabase(options: getDatabaseOptions = {}): Database {
-  return getResourceDatabase(options)
-}
-
-export function getCurrentCharacter(options: getDatabaseOptions = {}): character {
+export function getCurrentCharacter(options: CharacterSnapshotOptions = {}): character {
   const character = charactersResourceState.characters[get(selectedCharID)]
   return options.snapshot ? safeStructuredClone(character) : character
 }
@@ -3859,13 +3844,12 @@ export function setCurrentCharacter(char: character, options: { dispatchServerCo
   const previousCharacter = previousState ? $state.snapshot(charactersResourceState.characters[index]) : undefined
 
   charactersResourceState.characters[index] = char
-  markLocalCharacterProjectionMutation()
   if (previousState) {
     dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
   }
 }
 
-export function getCharacterByIndex(index: number, options: getDatabaseOptions = {}): character {
+export function getCharacterByIndex(index: number, options: CharacterSnapshotOptions = {}): character {
   const character = charactersResourceState.characters[index]
   return options.snapshot ? safeStructuredClone(character) : character
 }
@@ -3875,7 +3859,6 @@ export function setCharacterByIndex(index: number, char: character) {
   const previousCharacter = previousState ? $state.snapshot(charactersResourceState.characters[index]) : undefined
 
   charactersResourceState.characters[index] = char
-  markLocalCharacterProjectionMutation()
   if (previousState) {
     dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
   }

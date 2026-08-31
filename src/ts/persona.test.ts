@@ -15,7 +15,7 @@ import {
   type ServerCommandLocalEffect,
 } from './server/commands'
 import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInput } from './personaMutationCertificate'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
 import {
   beginPendingMutationDispatch,
@@ -36,7 +36,7 @@ import {
   isSettingsAcknowledgementTainted,
 } from './server/resourceState.svelte'
 import './stores.svelte'
-import { getDatabase, setDatabaseLite } from './storage/database.svelte'
+import { setDatabaseLite } from './storage/database.svelte'
 import {
   beginPersonaReorder,
   changeUserPersona,
@@ -62,6 +62,7 @@ import {
   updateSelectedPersonaLargePortrait,
   updateSelectedPersonaModules,
 } from './persona'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
@@ -168,7 +169,6 @@ function mockNextDeferredCommandFailure(error = 'persona command failed') {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => {
@@ -181,7 +181,6 @@ beforeEach(() => {
 
 afterEach(() => {
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

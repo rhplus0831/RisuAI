@@ -261,7 +261,7 @@ import BotSettings from './BotSettings.svelte'
 import { language } from 'src/lang'
 import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
 import { dispatchSelectPluginProvider } from 'src/ts/pluginCommands'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
 import { resetServerResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import {
@@ -278,6 +278,7 @@ import {
   resetPendingPromptTemplateStructuralMutationsForTests,
 } from 'src/ts/server/promptTemplateMutations.svelte'
 import type { PromptItem } from 'src/ts/process/prompt'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

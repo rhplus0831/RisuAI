@@ -38,11 +38,9 @@ vi.mock('src/ts/setting/settingRegistry', async () => {
 })
 
 import SettingRenderer from './SettingRenderer.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import type { SettingItem } from 'src/ts/setting/types'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

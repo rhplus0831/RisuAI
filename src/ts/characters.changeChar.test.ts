@@ -33,12 +33,13 @@ vi.mock('./characterCards', () => ({
 import { alertAddCharacter } from './alert'
 import { clearCachedServerCommandRevision, drainServerCommandExecutionForTests } from './server/commands'
 import { stopSelectedCharacterShellHydration } from './server/characterShellHydration.svelte'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
-import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+
+import { charactersResourceState, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type character, type Database } from './storage/database.svelte'
 import { addCharacter, changeChar } from './characters'
 import { activeGenerationTarget, doingChat } from './process/index.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db(): Database {
@@ -159,7 +160,6 @@ beforeEach(() => {
   characterCardsState.importCharacter.mockReset()
   clearCachedServerCommandRevision()
   stopSelectedCharacterShellHydration()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
   activeGenerationTarget.set(null)
   doingChat.set(false)
@@ -172,7 +172,6 @@ beforeEach(() => {
 
 afterEach(() => {
   stopSelectedCharacterShellHydration()
-  setResourceWriteGuardEnabled(false)
   activeGenerationTarget.set(null)
   doingChat.set(false)
   vi.unstubAllGlobals()

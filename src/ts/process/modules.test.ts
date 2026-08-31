@@ -190,10 +190,6 @@ vi.mock('../server/commands', () => ({
   replaceCharacterTriggersCommand,
 }))
 
-vi.mock('../server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => void) => fn(),
-}))
-
 import {
   applyModule,
   getModuleAssets,

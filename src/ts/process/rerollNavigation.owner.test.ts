@@ -1,9 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Prove the extracted swipe machine is safe under the Fastify read-only
-// resource guard. `isFastifyServer` is forced on so the real
-// `withTrustedResourceWrite` actually freezes/snapshots (the unit suite
-// otherwise runs off-Fastify, where it is a pass-through).
+// Prove the extracted swipe machine mutates the explicit chat-message owner
+// while preserving the command boundary used by the Fastify runtime.
 
 vi.mock('../platform', async (importActual) => ({
   ...(await (importActual() as Promise<object>)),
@@ -29,7 +27,7 @@ vi.mock('./prereroll', () => prerollSpies)
 import { selectedCharID } from '../stores.svelte'
 import { get } from 'svelte/store'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { charactersResourceState } from '../server/resourceState.svelte'
 import {
   getRerollId,
@@ -38,7 +36,6 @@ import {
   seedRerollBufferFromAlternates,
   unReroll,
 } from './rerollNavigation.svelte'
-
 type Msg = { role: 'user' | 'char'; data: string; chatId: string }
 
 function tailUid(): string {
@@ -84,12 +81,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
 })
 
-describe('reroll swipe under the read-only resource guard', () => {
-  function seedAndFreeze(): void {
+describe('reroll swipe through the chat message owner', () => {
+  function seedActiveTranscript(): void {
     const active: Msg[] = [
       { role: 'user', data: 'hi', chatId: 'u1' },
       { role: 'char', data: 'c3', chatId: 'g3' },
@@ -100,12 +96,10 @@ describe('reroll swipe under the read-only resource guard', () => {
       { role: 'char', data: 'c2', chatId: 'g2' },
       { role: 'char', data: 'c1', chatId: 'g1' },
     ])
-    // Freeze the projection AFTER seeding (mirrors the live order: hydrate → guard).
-    setResourceWriteGuardEnabled(true)
   }
 
-  it('unReroll swaps the active tail without throwing on the frozen projection', async () => {
-    seedAndFreeze()
+  it('unReroll swaps the active owner tail', async () => {
+    seedActiveTranscript()
     await expect(unReroll()).resolves.toBeUndefined()
     expect(tailUid()).toBe('g2')
     expect(getRerollId()).toBe(1)
@@ -113,16 +107,16 @@ describe('reroll swipe under the read-only resource guard', () => {
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
-  it('reroll navigates forward on the frozen projection', async () => {
-    seedAndFreeze()
+  it('reroll navigates forward through the active owner', async () => {
+    seedActiveTranscript()
     await unReroll() // → g2
     await expect(reroll({ sendChatMain: vi.fn(), closeMenu: vi.fn() })).resolves.toBeUndefined()
     expect(tailUid()).toBe('g3')
     expect(getRerollId()).toBe(2)
   })
 
-  it('reroll regenerate submits the frozen target without mutating it', async () => {
-    seedAndFreeze() // active = [u1, g3], positioned at the end of the buffer
+  it('reroll regenerate submits the active target without mutating it', async () => {
+    seedActiveTranscript() // active = [u1, g3], positioned at the end of the buffer
     const sendChatMain = vi.fn(async () => true)
     await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).resolves.toBeUndefined()
     expect(tailUid()).toBe('g3')
@@ -131,20 +125,13 @@ describe('reroll swipe under the read-only resource guard', () => {
     expect(commandSpies.dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
-  it('leaves a failed regenerate target untouched under the resource guard', async () => {
-    seedAndFreeze()
+  it('leaves a failed regenerate target untouched in its owner', async () => {
+    seedActiveTranscript()
     const sendChatMain = vi.fn(async () => false)
 
     await expect(reroll({ sendChatMain, closeMenu: vi.fn() })).resolves.toBeUndefined()
 
     expect(tailUid()).toBe('g3')
     expect(commandSpies.dispatchReplaceTailMessagesScoped).not.toHaveBeenCalled()
-  })
-
-  it('a direct projection write still throws (the guard is genuinely active)', () => {
-    seedAndFreeze()
-    expect(() => {
-      ;(testDatabaseState.db.characters[0].chats[0].message[0] as Msg).data = 'mutated'
-    }).toThrow()
   })
 })

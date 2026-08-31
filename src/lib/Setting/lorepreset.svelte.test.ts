@@ -90,9 +90,9 @@ import Lorepreset from './lorepreset.svelte'
 import { language } from '../../lang'
 import {
   collectionsResourceState,
-  getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LorebookFixture = { id: string; name: string; data: never[] }

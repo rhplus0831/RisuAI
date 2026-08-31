@@ -2,9 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Regression coverage: slash-command handlers (`/send`, `/setvar`, `/cut`, ...)
 // apply an optimistic local update before dispatching a command. That update
-// must run inside a trusted write scope so it does not throw against the
-// server-backed read-only resource guard, and it must still dispatch the
-// matching chat command.
+// must target the explicit chat owner and still dispatch the matching command.
 
 vi.mock('../../platform', async (importActual) => {
   const actual = await importActual<typeof import('../../platform')>()
@@ -36,7 +34,7 @@ vi.mock('src/ts/activeChatGenerationSettings', () => ({
 
 // Spy: count setDatabase normalizer runs without changing its behavior.
 // `/setvar`/`/addvar` and send-family message mutations must not reach it: the
-// trusted in-place write plus scoped dispatch persist the change without the
+// owner-local write plus scoped dispatch persist the change without the
 // whole-database normalizer and language refresh churn.
 const setDatabaseSpy = vi.hoisted(() => ({ count: 0 }))
 vi.mock('../../storage/database.svelte', async (importActual) => {
@@ -54,8 +52,9 @@ import { safeStructuredClone } from '../../polyfill'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { processMultiCommand } from '../command'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+
 import { selectedCharID } from '../../stores.svelte'
+import { withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -191,8 +190,6 @@ async function runMessageCommand(
 ): Promise<MessageCommandRun> {
   seedDatabase(messages)
   const calls = stubCommandFetch()
-  setResourceWriteGuardEnabled(true)
-
   await expect(processMultiCommand(command)).resolves.not.toBe(false)
 
   const dispatched = await waitForCommand(calls, (call) => call.url === expected.url && call.method === expected.method)
@@ -334,31 +331,20 @@ function seedLargeSiblingDatabase(): void {
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   seedDatabase()
   setDatabaseSpy.count = 0
   coordinateAcceptedChatSendMock.mockReset().mockResolvedValue({ status: 'generated' })
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('slash-command durable writes under the resource guard', () => {
-  it('baseline: a raw resource write throws while the guard is active', () => {
-    setResourceWriteGuardEnabled(true)
-    expect(() => {
-      testDatabaseState.db.characters[0].chats[0].message.push({ role: 'user', data: 'raw' })
-    }).toThrow(/resource database compatibility view is read-only/)
-  })
-
+describe('slash-command durable owner writes', () => {
   it('/send appends a user message without setDatabase or whole-db clone churn', async () => {
     seedLargeSiblingDatabase()
     const wholeCharactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const instrumented = await withAsyncCloneInstrumentation(() => processMultiCommand('/send hello world'))
 
     expect(instrumented.result).toBe('')
@@ -379,8 +365,6 @@ describe('slash-command durable writes under the resource guard', () => {
 
   it('/send preserves pipe return behavior while appending the piped text', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/pass piped text|/send {{pipe}}')).resolves.toBe('piped text')
 
     const cmd = await waitForCommand(
@@ -513,8 +497,6 @@ describe('slash-command durable writes under the resource guard', () => {
   it('/multisend appends each segment in order and sends after each one', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/multisend first|||second')).resolves.toBe('')
 
     const messageCommands = await waitForMatchingCalls(
@@ -545,8 +527,6 @@ describe('slash-command durable writes under the resource guard', () => {
     const calls = stubCommandFetch()
     const firstGeneration = deferred<{ status: 'generated' }>()
     coordinateAcceptedChatSendMock.mockReturnValueOnce(firstGeneration.promise)
-    setResourceWriteGuardEnabled(true)
-
     const command = processMultiCommand('/multisend first|||second')
     await waitForMatchingCalls(
       calls,
@@ -576,8 +556,6 @@ describe('slash-command durable writes under the resource guard', () => {
       status: 'generation_failed',
       cause: 'generation_failed',
     })
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/multisend first|||do not append')).resolves.toBe('')
 
     expect(
@@ -589,9 +567,8 @@ describe('slash-command durable writes under the resource guard', () => {
   it('/multisend stops after the active chat changes during the first send', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     coordinateAcceptedChatSendMock.mockImplementationOnce(async () => {
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[0].chatPage = 1
       })
       return { status: 'generated' }
@@ -628,8 +605,6 @@ describe('slash-command durable writes under the resource guard', () => {
   it('/multisend clear resets before each segment and still sends each segment', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/multisend clear|||first|||second')).resolves.toBe('')
 
     const messageCommands = await waitForMatchingCalls(
@@ -685,8 +660,6 @@ describe('slash-command durable writes under the resource guard', () => {
       }) as unknown as typeof fetch,
     )
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
-    setResourceWriteGuardEnabled(true)
-
     const command = processMultiCommand('/multisend clear|||first')
     await waitForCommand(
       calls,
@@ -730,8 +703,6 @@ describe('slash-command durable writes under the resource guard', () => {
       }) as unknown as typeof fetch,
     )
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/send optimistic')).resolves.toBe('')
     await waitForCommand(
       calls,
@@ -742,7 +713,7 @@ describe('slash-command durable writes under the resource guard', () => {
       'optimistic',
     ])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chats[1].name = 'active sibling edit'
       testDatabaseState.db.characters[1].name = 'sibling character edit'
       testDatabaseState.db.characters[1].chats[0].message.push({
@@ -774,8 +745,6 @@ describe('slash-command durable writes under the resource guard', () => {
 
   it('/setvar updates chat scriptstate via the scriptstate command', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/setvar key=hp 100')).resolves.not.toThrow()
 
     const cmd = await waitForCommand(
@@ -787,8 +756,6 @@ describe('slash-command durable writes under the resource guard', () => {
 
   it('/setvar persists scriptstate without re-running the setDatabase normalizer', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/setvar key=hp 100')).resolves.not.toThrow()
 
     // The in-place write landed and the scoped command dispatched...
@@ -807,8 +774,6 @@ describe('slash-command durable writes under the resource guard', () => {
     seedDatabase()
     testDatabaseState.db.characters[0].chats[0].scriptstate = { $damage: '5' }
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/addvar key=damage 10')).resolves.not.toThrow()
 
     expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.['$damage']).toBe('15')
@@ -826,8 +791,6 @@ describe('slash-command durable writes under the resource guard', () => {
       { role: 'char', data: 'two', chatId: 'm2' },
     ])
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     await expect(processMultiCommand('/del 1')).resolves.not.toThrow()
 
     const cmd = await waitForCommand(
@@ -841,7 +804,6 @@ describe('slash-command durable writes under the resource guard', () => {
 
   it('command processing logs nothing to console.log on the warm path', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
     const logSpy = vi.spyOn(console, 'log')
 
     try {

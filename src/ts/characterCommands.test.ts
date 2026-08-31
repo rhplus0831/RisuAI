@@ -76,10 +76,9 @@ import {
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import * as pendingMutationOutboxModule from './server/pendingMutationOutbox'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+
 import {
   charactersResourceState,
-  getResourceDatabase,
   replaceResourceDatabase,
   resetServerResourceState,
 } from './server/resourceState.svelte'
@@ -95,6 +94,7 @@ import {
   withAsyncCloneInstrumentation,
   withCloneInstrumentation,
 } from './__tests__/cloneCostHarness'
+import { getResourceDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -338,7 +338,6 @@ async function withMockedNow<T>(now: number, fn: () => Promise<T>): Promise<T> {
 beforeEach(() => {
   resetServerResourceState()
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   alertConfirmState.messages = []
   alertConfirmState.responses = [true, true]
@@ -349,7 +348,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -478,7 +476,6 @@ describe('character list create/delete rollback', () => {
       characterOrder: ['char-a'],
       currentChar: 0,
     } as any
-    setResourceWriteGuardEnabled(true)
     const previous = {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: ['char-a'],
@@ -496,7 +493,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
       onCreate: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           testDatabaseState.db.characters[0].name = 'Sibling newer edit'
           selectedCharID.set(0)
         })
@@ -513,11 +510,10 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-created', name: 'Created', chats: [] } as any
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
     })
     repairCharacterOrderOptimistically({ dispatchReorder: false })
@@ -543,11 +539,10 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-selected', name: 'Selected', chats: [], lastInteraction: 1234 } as any
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
       selectedCharID.set(1)
     })
@@ -572,7 +567,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const response = deferredResponse()
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -591,7 +585,7 @@ describe('character list create/delete rollback', () => {
     )
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-playground', name: 'Playground', chats: [], lastInteraction: 1234 } as any
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
       selectedCharID.set(1)
     })
@@ -601,7 +595,7 @@ describe('character list create/delete rollback', () => {
       shouldRestoreSelection: () => false,
     })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push({ chaId: 'char-later', name: 'Later', chats: [] } as any)
       selectedCharID.set(2)
     })
@@ -626,7 +620,7 @@ describe('character list create/delete rollback', () => {
     selectedCharID.set(0)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-playground', name: 'Playground', chats: [], lastInteraction: 1234 } as any
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(attempted)
       selectedCharID.set(1)
     })
@@ -652,7 +646,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
       onCreate: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           testDatabaseState.db.characters[0].name = 'Local edit after import dispatch'
           selectedCharID.set(0)
         })
@@ -667,7 +661,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const imported = { chaId: 'char-imported', name: 'Imported', chats: [] } as any
 
@@ -688,7 +681,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failDelete: true,
       onDelete: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           testDatabaseState.db.characters[0].name = 'A newer edit'
           testDatabaseState.db.characters.push({ chaId: 'char-d', name: 'D appended', chats: [] } as any)
           const folder = charactersResourceState.characterOrder.find(
@@ -712,10 +705,9 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
@@ -758,10 +750,9 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
@@ -783,10 +774,9 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(0, 1)
     })
     dispatchDeleteCharacter('char-trash', previous)
@@ -815,10 +805,9 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
@@ -848,15 +837,14 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push({ chaId: 'char-b', name: 'Replacement B', chats: [] } as any)
     })
     charactersResourceState.characterOrder.push('char-b')
@@ -887,11 +875,9 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     const previous = currentCharacterStateSnapshot()
     const created = { chaId: 'char-new', name: 'New', chats: [], lastInteraction: 2_000 } as any
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.push(created)
       charactersResourceState.characterOrder.push(created.chaId)
       charactersResourceState.currentChar = 2
@@ -949,7 +935,7 @@ describe('character list create/delete rollback', () => {
       await vi.waitFor(() => expect(commands).toHaveLength(1))
 
       const previousB = currentCharacterSelectionSnapshot('char-b')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[1].lastInteraction = 3_000
         charactersResourceState.currentChar = 1
         selectedCharID.set(1)
@@ -1004,8 +990,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     const patchIntent: DurableMutationIntent = {
       version: 1,
       requests: [
@@ -1019,7 +1003,7 @@ describe('character list create/delete rollback', () => {
     const predecessor = stagePendingMutation('character-owner:char-b', patchIntent)
     await expect(predecessor.ready).resolves.toBe('persisted')
     const previous = currentCharacterStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
 
@@ -1102,8 +1086,6 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     let recover = false
     let revision = 20
     let serverHasCharacter = true
@@ -1143,7 +1125,7 @@ describe('character list create/delete rollback', () => {
     )
 
     const beforeDelete = currentCharacterStateSnapshot()
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
 
@@ -1154,7 +1136,7 @@ describe('character list create/delete rollback', () => {
 
       // Simulate an authoritative row refresh racing the retained DELETE. The
       // restore PATCH must remain behind that predecessor and cannot send early.
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters.push({
           chaId: 'char-trash',
           name: 'Trashed',
@@ -1165,7 +1147,7 @@ describe('character list create/delete rollback', () => {
 
       const trashIndex = testDatabaseState.db.characters.findIndex((character) => character.chaId === 'char-trash')
       const beforeRestore = currentCharacterRowSnapshot(trashIndex)
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[trashIndex].trashTime = null
       })
       dispatchUpdateCharacterScoped('char-trash', { trashTime: null }, beforeRestore)
@@ -1250,7 +1232,6 @@ describe('character select command rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
   })
 
   it('rolls back the exact selection owner when durable staging fails', async () => {
@@ -1362,7 +1343,7 @@ describe('character select command rollback', () => {
     )
 
     const previous = currentCharacterSelectionSnapshot('char-b')
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2_000
       charactersResourceState.currentChar = 1
       selectedCharID.set(1)
@@ -1447,7 +1428,7 @@ describe('character select command rollback', () => {
 
     try {
       const previousB = currentCharacterSelectionSnapshot('char-b')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[1].lastInteraction = 2_000
         selectedCharID.set(1)
       })
@@ -1456,7 +1437,7 @@ describe('character select command rollback', () => {
       await vi.waitFor(() => expect(commands).toHaveLength(1))
 
       const previousC = currentCharacterSelectionSnapshot('char-c')
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         testDatabaseState.db.characters[2].lastInteraction = 3_000
         selectedCharID.set(2)
       })
@@ -1486,7 +1467,7 @@ describe('character select command rollback', () => {
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
     const previous = currentCharacterSelectionSnapshot('char-b')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2000
       selectedCharID.set(1)
     })
@@ -1519,7 +1500,7 @@ describe('character select command rollback', () => {
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
     const previous = currentCharacterSelectionSnapshot('char-b')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2000
       selectedCharID.set(1)
     })
@@ -1527,7 +1508,7 @@ describe('character select command rollback', () => {
     dispatchSelectCharacter('char-b', previous, 2000)
     await waitForCallCount(calls, 2)
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[2].lastInteraction = 3000
       selectedCharID.set(2)
     })
@@ -1599,8 +1580,6 @@ describe('character order command helpers', () => {
       '§playground',
       'char-c',
     ]
-    setResourceWriteGuardEnabled(true)
-
     expect(repairCharacterOrderOptimistically()).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
@@ -1625,8 +1604,6 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a'],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(repairCharacterOrderOptimistically({ dispatchReorder: false })).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual(['char-a', 'char-b'])
@@ -1652,8 +1629,6 @@ describe('character order command helpers', () => {
       'char-c',
       'char-d',
     ]
-    setResourceWriteGuardEnabled(true)
-
     const mutation = moveCharacterOrderItemWithOutcome({ index: 0 }, { folder: 'folder-1', index: 1 })
     expect(mutation.applied).toBe(true)
 
@@ -1678,7 +1653,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           charactersResourceState.currentChar = 1
           selectedCharID.set(1)
         })
@@ -1701,8 +1676,6 @@ describe('character order command helpers', () => {
       'char-c',
       'char-d',
     ]
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual(attemptedOrder)
@@ -1729,8 +1702,6 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
     const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
@@ -1749,7 +1720,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           charactersResourceState.characterOrder = cloneForExpect(newerOrder)
         })
       },
@@ -1762,8 +1733,6 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
@@ -1780,7 +1749,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = charactersResourceState.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-1',
           )
@@ -1805,8 +1774,6 @@ describe('character order command helpers', () => {
         'char-c',
       ],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 1 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
     await waitForCallCount(calls, 2)
@@ -1839,8 +1806,6 @@ describe('character order command helpers', () => {
       ],
     } as any
     const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-b', index: 0 })).toBe(false)
 
     await flushAsyncWork()
@@ -1864,8 +1829,6 @@ describe('character order command helpers', () => {
       { id: 'folder-new', name: 'Localized Folder', color: '', data: ['char-a', 'char-b'] },
       'char-c',
     ]
-    setResourceWriteGuardEnabled(true)
-
     expect(createCharacterOrderFolder({ index: 0 }, { index: 1 }, () => 'folder-new', 'Localized Folder')).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
@@ -1894,8 +1857,6 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
     expect(moveCharacterOrderItem({ index: 0 }, { index: 0 })).toBe(false)
     expect(createCharacterOrderFolder({ index: 0 }, { index: 0 }, () => 'unused')).toBe(false)
 
@@ -1962,8 +1923,6 @@ describe('character order command helpers', () => {
       } as any
       const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
       const expectedOrder = [previousOrder[0], expectedFolder]
-      setResourceWriteGuardEnabled(true)
-
       expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, patch)).toBe(true)
 
       expect(charactersResourceState.characterOrder).toEqual(expectedOrder)
@@ -1987,7 +1946,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           const folder = charactersResourceState.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-b',
           )
@@ -2005,8 +1964,6 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'] },
       ],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Attempted Folder B' })).toBe(true)
 
     expect(charactersResourceState.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Attempted Folder B' })
@@ -2026,7 +1983,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedResourceWrite(() => {
+        withTestDatabaseWrite(() => {
           charactersResourceState.currentChar = 1
           selectedCharID.set(1)
         })
@@ -2041,8 +1998,6 @@ describe('character order command helpers', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { color: 'PURPLE' })).toBe(true)
 
     expect(charactersResourceState.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'purple' })
@@ -2061,8 +2016,6 @@ describe('character order command helpers', () => {
       characterOrder: [{ id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] }],
     } as any
     const previousOrder = cloneForExpect(charactersResourceState.characterOrder)
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'missing-folder', index: 0 }, { name: 'Wrong' })).toBe(false)
     expect(updateCharacterOrderFolder({}, { name: 'Wrong' })).toBe(false)
 
@@ -2083,8 +2036,6 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: '', data: ['char-b'] },
       ],
     } as any
-    setResourceWriteGuardEnabled(true)
-
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Updated B' })).toBe(true)
 
     expect(charactersResourceState.characterOrder).toEqual([
@@ -2128,7 +2079,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: ['char-a', 'char-b', 'char-c'],
       } as any
-      setResourceWriteGuardEnabled(true)
       const reorderRequests: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
       vi.stubGlobal(
         'fetch',
@@ -2178,7 +2128,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: cloneForExpect(previousOrder),
       } as any
-      setResourceWriteGuardEnabled(true)
       let recover = false
       let reorderRequests = 0
       vi.stubGlobal(
@@ -2191,7 +2140,7 @@ describe('character order command helpers', () => {
           }
           reorderRequests += 1
           if (!recover) {
-            withTrustedResourceWrite(() => {
+            withTestDatabaseWrite(() => {
               charactersResourceState.characterOrder = cloneForExpect(previousOrder)
             })
             return jsonResponse({ error: 'temporarily unavailable' }, 500)
@@ -2243,7 +2192,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: cloneForExpect(previousOrder),
       } as any
-      setResourceWriteGuardEnabled(true)
       let reorderRequests = 0
       vi.stubGlobal(
         'fetch',
@@ -2275,7 +2223,6 @@ describe('character order command helpers', () => {
         ],
         characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b'] }, 'char-c'],
       } as any
-      setResourceWriteGuardEnabled(true)
       let revision = 30
       const reorderRequests: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
       vi.stubGlobal(
@@ -2329,12 +2276,6 @@ describe('character order command helpers', () => {
 describe('character command projection helpers', () => {
   it('setCharacterSupaMemory applies one-field optimistic command patch', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    expect(() => {
-      testDatabaseState.db.characters[0].supaMemory = true
-    }).toThrow()
-
     const mutation = setCharacterSupaMemoryWithOutcome('char-a', true)
 
     expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
@@ -3502,7 +3443,7 @@ describe('removeChar trashTime field rollback', () => {
 
     const removal = withMockedNow(444444, () => removeChar(1, 'B', 'normal'))
     await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(1))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters.splice(0, 1)
       charactersResourceState.characterOrder = ['char-b', 'char-c']
       charactersResourceState.currentChar = 0
@@ -3533,7 +3474,7 @@ describe('removeChar trashTime field rollback', () => {
 
     const removal = removeChar(1, 'B', 'permanent')
     await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(2))
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters = [
         testDatabaseState.db.characters[2],
         testDatabaseState.db.characters[0],

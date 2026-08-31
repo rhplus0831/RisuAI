@@ -57,11 +57,8 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
-import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
-import {
-  getResourceDatabase as getDatabase,
-  replaceResourceDatabase as setDatabaseLite,
-} from '../../server/resourceState.svelte'
+
+import { replaceResourceDatabase as setDatabaseLite } from '../../server/resourceState.svelte'
 import {
   callMCPTool,
   callMCPToolFrom,
@@ -80,6 +77,7 @@ import { MCPClient, type MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule, unregisterMCPModule } from './pluginmcp'
 import { requestChatData } from '../request/request'
 import { language } from 'src/lang'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -290,7 +288,6 @@ beforeEach(() => {
   moduleCommandMocks.createGlobalModule.mockResolvedValue(null)
   mcpOAuthMocks.requestStoredMcpOAuthRefresh.mockClear()
   clearMCPRuntimeState()
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     authRefreshes: [],
   } as any)
@@ -298,7 +295,6 @@ beforeEach(() => {
 
 afterEach(() => {
   clearMCPRuntimeState()
-  setResourceWriteGuardEnabled(false)
 })
 
 describe('MCP remembered tool calls', () => {
@@ -589,15 +585,8 @@ describe('MCP runtime persistence', () => {
     })
   })
 
-  it('does not throw and still dispatches the command when the resource guard is active', async () => {
+  it('dispatches the owner command when persistence is active', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw projection write throws.
-    expect(() => {
-      getDatabase().authRefreshes.push({ url: 'raw' } as any)
-    }).toThrow(/resource database compatibility view is read-only/)
-
     expect(() =>
       persistMCPRefreshToken('https://mcp.example', {
         clientId: 'client-id',

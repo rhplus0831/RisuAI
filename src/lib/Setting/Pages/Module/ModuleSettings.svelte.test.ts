@@ -124,12 +124,12 @@ import { language } from 'src/lang'
 import type { RisuModule } from 'src/ts/process/modules'
 import {
   collectionsResourceState,
-  getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { requestActiveModuleEditorLeave } from 'src/ts/moduleEditorLeaveGuard'
+import { getResourceDatabase as getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

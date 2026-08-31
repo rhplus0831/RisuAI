@@ -2,15 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 
-// Real resource write guard (so we exercise the real read-only proxy and
-// resource-backed reassignment that drives re-render), but force reads on.
+// Exercise resource-backed reassignment that drives re-render, with reads on.
 vi.mock('./resourceReads', () => ({
   canUseServerResourceReads: () => true,
 }))
 
 import { selectedCharID } from '../stores.svelte'
-import { hydrateServerChatMessages, withTrustedResourceWrite } from '../storage/database.svelte'
-import { setResourceWriteGuardEnabled } from './resourceWriteGuard.svelte'
+import { hydrateServerChatMessages } from '../storage/database.svelte'
+
 import {
   isCharacterLorebookHydrationPending,
   isChatMessageHydrationPending,
@@ -26,7 +25,7 @@ import {
   resetGenerationFinalizationPersistencesForTests,
   setGenerationFinalizationPersistences,
 } from '../process/generationPersistenceState'
-
+import { withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 function seedStubChat() {
   ;(testDatabaseState as { db: unknown }).db = {
     currentChar: 0,
@@ -39,8 +38,6 @@ function seedStubChat() {
     ],
   }
   selectedCharID.set(0)
-  // Mirror bootstrap: wrap testDatabaseState.db in the read-only server projection.
-  setResourceWriteGuardEnabled(true)
 }
 
 function seedTwoResidentChats() {
@@ -58,7 +55,6 @@ function seedTwoResidentChats() {
     ],
   }
   selectedCharID.set(0)
-  setResourceWriteGuardEnabled(true)
 }
 
 beforeEach(() => {
@@ -74,14 +70,12 @@ afterEach(() => {
   stopChatMessageHydration()
   setActiveChatReadinessRefreshHook(null)
   resetGenerationFinalizationPersistencesForTests()
-  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
   ;(testDatabaseState as { db: unknown }).db = {}
 })
 
-describe('active-chat loading flag reactivity (real resource guard)', () => {
+describe('active-chat loading flag owner reactivity', () => {
   it('notifies readiness when chatPage changes within the selected character', () => {
-    setResourceWriteGuardEnabled(false)
     seedTwoResidentChats()
     const refreshReadiness = vi.fn()
     setActiveChatReadinessRefreshHook(refreshReadiness)
@@ -89,7 +83,7 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
     flushSync()
     refreshReadiness.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chatPage = 1
     })
     flushSync()
@@ -98,7 +92,6 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
   })
 
   it('notifies readiness when the active chat prompt-template owner changes', () => {
-    setResourceWriteGuardEnabled(false)
     seedTwoResidentChats()
     const refreshReadiness = vi.fn()
     setActiveChatReadinessRefreshHook(refreshReadiness)
@@ -106,7 +99,7 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
     flushSync()
     refreshReadiness.mockClear()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       testDatabaseState.db.characters[0].chats[0].generationSettings = { promptPresetId: 'prompt-b' }
     })
     flushSync()
@@ -144,7 +137,6 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
   })
 
   it('does not invalidate a foreground chat dependency when a background transcript hydrates', () => {
-    setResourceWriteGuardEnabled(false)
     seedTwoResidentChats()
     const foregroundSeen: string[] = []
     const backgroundSeen: string[] = []
@@ -201,7 +193,6 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
   })
 
   it('notifies the lorebook loading predicate when a full refresh clears both hydration registries', () => {
-    setResourceWriteGuardEnabled(false)
     ;(testDatabaseState as { db: unknown }).db = {
       enableLorebookStubs: true,
       currentChar: 0,
@@ -216,8 +207,6 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
     }
     selectedCharID.set(0)
     markCharacterLorebookHydrated('char-1')
-    setResourceWriteGuardEnabled(true)
-
     const seen: boolean[] = []
     const stop = $effect.root(() => {
       $effect(() => {

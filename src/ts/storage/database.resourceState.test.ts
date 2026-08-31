@@ -8,19 +8,13 @@ vi.mock('../process/modules', async (importActual) => {
 import {
   collectionsResourceState,
   charactersResourceState,
-  getResourceDatabase,
   resetServerResourceState,
   replaceResourceDatabase,
   settingsResourceState,
 } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
-import {
-  applyServerResourceDatabase,
-  getDatabase,
-  setDatabase,
-  setDatabaseLite,
-  type Database,
-} from './database.svelte'
+
+import { applyServerResourceDatabase, setDatabase, setDatabaseLite, type Database } from './database.svelte'
+import { getDatabase, getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function databaseFixture(name = 'Ada'): Database {
   return {
@@ -47,17 +41,15 @@ function databaseFixture(name = 'Ada'): Database {
 }
 
 beforeEach(() => {
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
 })
 
-describe('database compatibility accessors over resource state', () => {
-  it('routes getDatabase through resource slices', () => {
+describe('test database adapter over resource state', () => {
+  it('routes the test adapter through resource slices', () => {
     replaceResourceDatabase(databaseFixture())
 
     expect(getDatabase()).toBe(getResourceDatabase())

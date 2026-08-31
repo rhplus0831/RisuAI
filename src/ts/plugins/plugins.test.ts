@@ -110,9 +110,9 @@ import {
   resetPendingMutationOutboxForTests,
 } from '../server/pendingMutationOutbox'
 import { replayPendingMutations } from '../server/pendingMutationReplay'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+
 import { selectedCharID } from '../stores.svelte'
-import { getDatabase, setDatabaseLite, updateModelPreset, type Database } from '../storage/database.svelte'
+import { setDatabaseLite, updateModelPreset, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import {
@@ -131,6 +131,7 @@ import {
   type RisuPlugin,
 } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -407,7 +408,6 @@ beforeEach(() => {
   pluginPermissionMocks.getPluginPermission.mockReset()
   pluginPermissionMocks.getPluginPermission.mockResolvedValue(true)
   vi.mocked(loadV3Plugins).mockClear()
-  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     currentPluginProvider: 'old-provider',
     pluginCustomStorage: {},
@@ -421,7 +421,6 @@ beforeEach(() => {
 afterEach(() => {
   stopPluginRuntimeSync()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
 })
 
 describe('plugin runtime synchronization', () => {
@@ -447,7 +446,7 @@ describe('plugin runtime synchronization', () => {
     await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledOnce())
     expect(getPluginRuntimeState()).toMatchObject({ phase: 'loading' })
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(seedPlugin('plugin-late'))
     })
     initialLoad.resolve(undefined)
@@ -466,7 +465,7 @@ describe('plugin runtime synchronization', () => {
     startPluginRuntimeSync()
     flushSync()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const plugin = getDatabase().plugins[0]
       getDatabase().plugins[0] = {
         ...plugin,
@@ -487,7 +486,7 @@ describe('plugin runtime synchronization', () => {
       ]),
     )
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = {
         ...getDatabase().plugins[0],
         script: 'Risuai.log("authoritative update")',
@@ -503,7 +502,7 @@ describe('plugin runtime synchronization', () => {
       }),
     ])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(seedPlugin('plugin-external'))
     })
     flushSync()
@@ -525,7 +524,7 @@ describe('plugin runtime synchronization', () => {
     startPluginRuntimeSync()
     flushSync()
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = { ...getDatabase().plugins[0], enabled: true }
     })
     flushSync()
@@ -535,7 +534,7 @@ describe('plugin runtime synchronization', () => {
 
     // Simulate runServerCommand's failure rollback while plugin-a is still
     // being started. The final queued pass must unload the rejected runtime.
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins[0] = { ...getDatabase().plugins[0], enabled: false }
     })
     flushSync()
@@ -1123,16 +1122,9 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().currentPluginProvider).toBe('provider-a')
   })
 
-  it('setArg updates plugin realArg through a command without throwing under the resource write guard', async () => {
+  it('setArg updates plugin realArg through its owner command', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
-    setResourceWriteGuardEnabled(true)
-
-    // Baseline: the guard is active, so a raw projection write throws.
-    expect(() => {
-      getDatabase().plugins[0].realArg['raw'] = 'x'
-    }).toThrow(/resource database compatibility view is read-only/)
-
     let persistence: ReturnType<typeof apis.setArg> | undefined
     expect(() => {
       persistence = apis.setArg('plugin-a::myarg', 'myvalue')
@@ -1460,8 +1452,7 @@ describe('plugin database command bridge', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().plugins = [seedPlugin('plugin-a')]
       getDatabase().currentPluginProvider = 'plugin-a'
@@ -1478,7 +1469,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
@@ -1542,10 +1533,9 @@ describe('plugin database command bridge', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
     const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }] as unknown as Database['customModels']
     const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().customModels = oldCustomModels
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().plugins = [seedPlugin('plugin-a')]
@@ -1568,7 +1558,7 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().customModels).toEqual(attemptedCustomModels)
     expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
@@ -1787,7 +1777,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().modules[0].description).toBe('attempted description')
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().modules[0] = {
         ...getDatabase().modules[0],
         description: 'newer description',
@@ -2043,7 +2033,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-d', 'plugin-a'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       const pluginDIndex = getDatabase().plugins.findIndex((plugin) => plugin.name === 'plugin-d')
       getDatabase().plugins[pluginDIndex] = {
         ...getDatabase().plugins[pluginDIndex],
@@ -2135,7 +2125,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d', 'plugin-b'])
 
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().currentPluginProvider = 'plugin-d'
       getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })

@@ -239,10 +239,6 @@ vi.mock('../alert', () => ({
   alertNormal: alertMocks.alertNormal,
 }))
 
-vi.mock('./resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => unknown) => fn(),
-}))
-
 vi.mock('../process/templates/templates', () => ({
   prebuiltPresets: {
     OAI: presetMocks.OAI,
@@ -257,7 +253,6 @@ import {
   applySettingsResource,
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
-  getResourceDatabase,
   hasSettingsGroupProjectionEpochChanged,
   replaceResourceDatabase,
   settingsResourceState,
@@ -277,6 +272,7 @@ import {
   resetSettingsOwnerForDatabaseReplacement,
   type ServerBackedSettingDraft,
 } from './settingsOwner.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const DELAY = 50
 let projectionRevision = 1_000

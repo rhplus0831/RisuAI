@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -27,6 +27,20 @@ function localFunctionSource(source: string, name: string): string {
   const next = source.indexOf('\nfunction ', start + 1)
   return source.slice(start, next === -1 ? source.length : next)
 }
+
+describe('static architecture gate: explicit resource owners', () => {
+  it('does not expose the aggregate database facade or its write guard', () => {
+    const storage = readSource('src/ts/storage/database.svelte.ts')
+    const resources = readSource('src/ts/server/resourceState.svelte.ts')
+    const bootstrap = readSource('src/ts/bootstrap.ts')
+
+    expect(storage).not.toContain('export function getDatabase')
+    expect(resources).not.toContain('export function getResourceDatabase')
+    expect(resources).not.toContain('withResourceDatabaseWrite')
+    expect(bootstrap).not.toContain('setResourceWriteGuardEnabled')
+    expect(existsSync(resolve(process.cwd(), 'src/ts/server/resourceWriteGuard.svelte.ts'))).toBe(false)
+  })
+})
 
 describe('static architecture gate: responsive partial-edit dialogs', () => {
   it('caps every dialog to the padded viewport instead of enforcing a 400px mobile minimum', () => {

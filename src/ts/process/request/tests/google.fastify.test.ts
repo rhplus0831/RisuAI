@@ -27,9 +27,10 @@ vi.mock('../../modules', async (importActual) => {
 
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from '../../../model/types'
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import type { RequestDataArgumentExtended } from '../request'
 import { requestGoogleCloudVertex } from '../google'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const originalWindowCrypto = window.crypto
 

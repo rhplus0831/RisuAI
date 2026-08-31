@@ -248,13 +248,6 @@ vi.mock('src/ts/server/pendingMutationOutbox', () => pendingMutationOutboxMock)
 vi.mock('./durableMutationDispatch', () => durableMutationDispatchMock)
 vi.mock('src/ts/server/durableMutationDispatch', () => durableMutationDispatchMock)
 
-vi.mock('./resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => unknown) => fn(),
-}))
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => unknown) => fn(),
-}))
-
 vi.mock('./promptTemplateHydration', () => ({
   capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
   clonePromptTemplateSelectedFallback: hydrationState.cloneSelectedFallback,
@@ -289,7 +282,6 @@ import {
   applyCollectionsResource,
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
-  getResourceDatabase,
   isServerCollectionName,
   isSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
@@ -329,6 +321,7 @@ import {
   stagePromptItemDeleteMutation,
   type PromptTemplateDraftBinding,
 } from './promptTemplateMutations.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const BIG = 'x'.repeat(5000)
 type MountedComponent = Parameters<typeof unmount>[0]

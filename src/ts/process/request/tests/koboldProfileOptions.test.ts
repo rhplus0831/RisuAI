@@ -24,9 +24,10 @@ vi.mock('../../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
 })
 
-import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
+import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { selectedCharID } from '../../../stores.svelte'
 import { requestChatDataMain } from '../request'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface PreviewPayload {
   url: string

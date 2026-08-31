@@ -322,10 +322,6 @@ vi.mock('src/ts/server/settingsOwner.svelte', () => ({
   applyServerBackedSetting: vi.fn(),
 }))
 
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (callback: () => void) => callback(),
-}))
-
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(),
   getChatMessageOwnerState: loadPageMocks.getChatMessageOwnerState,
@@ -368,11 +364,7 @@ import {
 } from './DefaultChatScreen.composerDrafts'
 import { initializeDraftRecoveryScope, resetDraftRecoveryScopeForTests } from 'src/ts/server/draftRecoveryScope'
 import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
-import {
-  charactersResourceState,
-  getResourceDatabase,
-  replaceResourceDatabase,
-} from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import {
   additionalChatMenu,
   additionalFloatingActionButtons,
@@ -429,6 +421,7 @@ import {
   resetGenerationDisplayProjectionsForTests,
   updateGenerationDisplayProjection,
 } from 'src/ts/process/generationDisplayProjection.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

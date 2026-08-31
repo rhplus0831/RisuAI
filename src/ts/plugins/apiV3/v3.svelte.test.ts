@@ -429,10 +429,6 @@ vi.mock('src/ts/process/ttsHooks', () => ({
   unregisterTTSPostprocessor: vi.fn(),
 }))
 
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (fn: () => void) => fn(),
-}))
-
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
 import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'

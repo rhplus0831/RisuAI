@@ -23,7 +23,7 @@ vi.mock('./process/coldstorage.svelte', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
-import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
+
 import {
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
@@ -38,13 +38,14 @@ import {
 } from './chatCommands'
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
-import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type Chat, type character, type Database } from './storage/database.svelte'
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
 import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookOwner.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -150,7 +151,6 @@ function seedCharacter(): character {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   resetLorebookHydration()
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(0)
   testDatabaseState.db = {
@@ -160,9 +160,7 @@ beforeEach(() => {
   } as any
 })
 
-afterEach(() => {
-  setResourceWriteGuardEnabled(false)
-})
+afterEach(() => {})
 
 describe('compatibility adapters', () => {
   it('routes whole-character compatibility setters through character scalar commands', async () => {
@@ -372,8 +370,6 @@ describe('compatibility adapters', () => {
 
   it('keeps character asset helper writes behind trusted projection updates', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       testDatabaseState.db.characters[0].image = 'direct'
     }).toThrow()
@@ -395,8 +391,6 @@ describe('compatibility adapters', () => {
   it('creates characters through trusted optimistic projection writes under the guard', async () => {
     const calls = stubCommandFetch()
     ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       testDatabaseState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
     }).toThrow()
@@ -426,8 +420,6 @@ describe('compatibility adapters', () => {
 
   it('creates and selects scratch characters with one server command under the guard', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const outcome = await createNewCharacter({ select: true })
 
     expect(outcome).toMatchObject({ status: 'accepted', index: 1 })
@@ -476,8 +468,6 @@ describe('compatibility adapters', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     const creating = createNewCharacter({ select: true })
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/create-and-select')).toBe(true)
@@ -513,8 +503,6 @@ describe('compatibility adapters', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setResourceWriteGuardEnabled(true)
-
     const outcome = await createNewCharacter({ select: true })
 
     expect(outcome).toMatchObject({
@@ -534,8 +522,6 @@ describe('compatibility adapters', () => {
       ...testDatabaseState.db.characters[0],
       triggerscript: undefined,
     } as character
-    setResourceWriteGuardEnabled(true)
-
     await changeChar(0)
 
     expect(get(selectedCharID)).toBe(0)
@@ -605,8 +591,6 @@ describe('compatibility adapters', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     await changeChar(1)
 
     expect(get(selectedCharID)).toBe(1)
@@ -662,8 +646,6 @@ describe('compatibility adapters', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     selectedCharID.set(0)
-    setResourceWriteGuardEnabled(true)
-
     await changeChar(1)
 
     // Optimistic selection lands immediately, before the command resolves.
@@ -683,7 +665,6 @@ describe('compatibility adapters', () => {
     const calls = stubCommandFetch()
     testDatabaseState.db.characters[0].coldstorage = 'cold-char-a'
     selectedCharID.set(-1)
-    setResourceWriteGuardEnabled(true)
     vi.mocked(recoverColdStorageCharacter).mockResolvedValueOnce(true)
 
     await changeChar(0)
@@ -699,8 +680,6 @@ describe('compatibility adapters', () => {
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     const handler = new CharacterHandler()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       testDatabaseState.db.characters[0].globalLore = []
     }).toThrow()
@@ -740,8 +719,6 @@ describe('compatibility adapters', () => {
       },
     ]
     const handler = new CharacterHandler()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       testDatabaseState.db.characters[0].customscript = []
     }).toThrow()
@@ -814,8 +791,6 @@ describe('compatibility adapters', () => {
       },
     ]
     const handler = new ModuleHandler()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       testDatabaseState.db.modules[0].regex = []
     }).toThrow()
@@ -874,8 +849,6 @@ describe('compatibility adapters', () => {
     testDatabaseState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
     testDatabaseState.db.enabledModules = []
     const handler = new ModuleHandler()
-    setResourceWriteGuardEnabled(true)
-
     expect(() => {
       testDatabaseState.db.enabledModules.push('mod-a')
     }).toThrow()

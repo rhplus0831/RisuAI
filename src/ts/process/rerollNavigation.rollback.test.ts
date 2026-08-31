@@ -26,7 +26,7 @@ const prerollSpies = vi.hoisted(() => ({
 vi.mock('./prereroll', () => prerollSpies)
 
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+
 import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
@@ -37,7 +37,6 @@ import {
   seedRerollBufferFromAlternates,
   unReroll,
 } from './rerollNavigation.svelte'
-
 type Msg = { role: string; data: string; chatId: string }
 
 interface CapturedFetch {
@@ -113,12 +112,10 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 beforeEach(() => {
   resetRerollNavigation()
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   vi.clearAllMocks()
 })
 
 afterEach(() => {
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
 })

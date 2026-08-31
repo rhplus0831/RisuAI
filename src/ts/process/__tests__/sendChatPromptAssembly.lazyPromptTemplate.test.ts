@@ -82,12 +82,13 @@ vi.mock('../promptBudget/finalizeRequestBudget', () => ({
 }))
 
 import { language } from 'src/lang'
-import { getDatabase, setDatabaseLite, setResourceWriteGuardEnabled } from '../../storage/database.svelte'
+import { setDatabaseLite } from '../../storage/database.svelte'
 import type { Chat, character } from '../../storage/database.svelte'
 import { assembleLocalSendChatPrompt, type SendChatPromptStageTimings } from '../sendChatPromptAssembly'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../../server/commands'
 import { resetPromptTemplateHydration } from '../../server/promptTemplateHydration'
 import type { PromptItem } from '../prompt'
+import { getDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const testDatabaseState = {
   get db() {
@@ -139,7 +140,6 @@ function stageTimings(): SendChatPromptStageTimings {
 
 describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
   beforeEach(() => {
-    setResourceWriteGuardEnabled(false)
     ;(testDatabaseState as { db: unknown }).db = {}
     clearCachedServerCommandRevision()
     resetPromptTemplateHydration()

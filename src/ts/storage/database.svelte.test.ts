@@ -37,7 +37,6 @@ import {
   extractLegacyBotPresetByIndex,
   flushPendingSplitPresetPatch,
   flushPendingSplitPresetPatches,
-  getDatabase,
   mergeServerResourceCharacterRow,
   mergeServerResourceFields,
   normalizePromptTemplateIds,
@@ -51,13 +50,11 @@ import {
   setDatabase,
   setDatabaseLite,
   setPreset,
-  setResourceWriteGuardEnabled,
   selectModelPreset,
   selectPromptPreset,
   updatePreset,
   updateModelPreset,
   updatePromptPreset,
-  withTrustedResourceWrite,
   type botPreset,
   type Database,
   type ModelPreset,
@@ -85,6 +82,7 @@ import { changeLanguage, language as activeLanguage } from '../../lang'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 import { defaultColorScheme } from '../gui/colorscheme'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 interface CapturedFetch {
   url: string
@@ -1171,13 +1169,11 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
-  setResourceWriteGuardEnabled(false)
   resetPendingPresetMutationsForTests()
 })
 
 afterEach(() => {
   resetPendingPresetMutationsForTests()
-  setResourceWriteGuardEnabled(false)
   setServerCommandSuccessReconciler(null)
   setDatabaseLite({
     characters: [],
@@ -1454,7 +1450,6 @@ describe('preset command rollback', () => {
       botPresets: [preset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     const before = getDatabase()
 
     expect(botPresetIdsNeedNormalization(getDatabase())).toBe(false)
@@ -1483,7 +1478,6 @@ describe('preset command rollback', () => {
         botPresets: scenario.botPresets,
         botPresetsId: 0,
       })
-      setResourceWriteGuardEnabled(true)
       const fetchSpy = vi.fn(async () => {
         throw new Error(`unexpected preset hydration fetch for ${scenario.name}`)
       })
@@ -1497,8 +1491,6 @@ describe('preset command rollback', () => {
       expect(fetchSpy).not.toHaveBeenCalled()
       expect(getDatabase()).toBe(before)
       expect(JSON.stringify(getDatabase())).toBe(beforeJson)
-
-      setResourceWriteGuardEnabled(false)
       vi.unstubAllGlobals()
     }
   })
@@ -1508,7 +1500,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     const fetchSpy = vi.fn(async () => {
       throw new Error('unexpected preset hydration fetch for invalid index')
     })
@@ -1528,7 +1519,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -1557,7 +1547,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-minimal', name: 'Minimal', image: 'minimal.png' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     const fetchSpy = vi.fn(async () =>
       jsonResponse({
         revision: 7,
@@ -1573,7 +1562,7 @@ describe('preset command rollback', () => {
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().botPresets[0] = clonePlain(getDatabase().botPresets[0])
     })
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
@@ -1593,7 +1582,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
@@ -1613,7 +1601,6 @@ describe('preset command rollback', () => {
     const betaShell = { id: 'preset-b', name: 'Beta', image: 'beta.png' } as botPreset
     seedPresetDatabase({ botPresets: [alpha, betaShell], botPresetsId: 0 })
     setCachedServerCommandRevision(100)
-    setResourceWriteGuardEnabled(true)
     const hydration = deferred<Response>()
     const command = deferred<Response>()
     const calls: CapturedFetch[] = []
@@ -1660,7 +1647,6 @@ describe('preset command rollback', () => {
     const betaShell = { id: 'preset-b', name: 'Beta', image: 'beta.png' } as botPreset
     seedPresetDatabase({ botPresets: [alpha, betaShell], botPresetsId: 0 })
     setCachedServerCommandRevision(100)
-    setResourceWriteGuardEnabled(true)
     const hydration = deferred<Response>()
     const command = deferred<Response>()
     const calls: CapturedFetch[] = []
@@ -1706,7 +1692,6 @@ describe('preset command rollback', () => {
       promptPresets: [],
     })
     setCachedServerCommandRevision(100)
-    setResourceWriteGuardEnabled(true)
     const hydration = deferred<Response>()
     const command = deferred<Response>()
     const calls: CapturedFetch[] = []
@@ -1748,7 +1733,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(5)
     const response = deferred<Response>()
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
@@ -1783,7 +1767,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(5)
     const response = deferred<Response>()
     const fetchSpy = vi.fn(() => response.promise)
@@ -2120,7 +2103,6 @@ describe('preset command rollback', () => {
       botPresetsId: 0,
     })
     delete (getDatabase() as unknown as { promptTemplate?: unknown }).promptTemplate
-    setResourceWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
     saveCurrentPreset()
@@ -2138,7 +2120,6 @@ describe('preset command rollback', () => {
       promptTemplate: [{ id: 'live-only-prompt', type: 'plain', text: 'live only prompt row' }] as any,
     })
     const beforePresetTemplate = clonePlain(getDatabase().botPresets[0].promptTemplate)
-    setResourceWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
     saveCurrentPreset()
@@ -2153,7 +2134,6 @@ describe('preset command rollback', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(9)
     vi.stubGlobal(
       'fetch',
@@ -2935,7 +2915,7 @@ describe('preset command rollback', () => {
         promptPresetsId: 0,
         promptTemplate: clonePlain(promptA.promptTemplate),
       })
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().promptPresets[0].promptTemplate = clonePlain(draftItems)
       })
       markPromptTemplateProjectionApplied('prompt-a', 100)
@@ -3559,7 +3539,7 @@ describe('preset command rollback', () => {
         promptPresetsId: 0,
         promptTemplate: clonePlain(promptA.promptTemplate),
       })
-      withTrustedResourceWrite(() => {
+      withTestDatabaseWrite(() => {
         getDatabase().promptPresets[0].promptTemplate = clonePlain(draftItems)
       })
       markPromptTemplateProjectionApplied('prompt-a', 100)

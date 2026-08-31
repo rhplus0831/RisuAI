@@ -195,9 +195,6 @@ vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
 })
 
 vi.mock('src/ts/server/settingsOwner.svelte', () => ({ applyServerBackedSetting: vi.fn() }))
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: (callback: () => void) => callback(),
-}))
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(),
   getChatMessageOwnerState: () => undefined,
@@ -232,12 +229,9 @@ vi.mock('html-to-image', () => ({ toCanvas: shellMocks.toCanvas }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
 import { PlaygroundStore, ScrollToMessageStore, selectedCharID } from 'src/ts/stores.svelte'
-import {
-  charactersResourceState,
-  getResourceDatabase,
-  replaceResourceDatabase,
-} from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type Database } from 'src/ts/storage/database.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

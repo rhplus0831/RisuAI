@@ -160,7 +160,7 @@ vi.mock('./ts/characterCards', () => ({
 }))
 
 async function createDatabaseMock() {
-  const { getResourceDatabase } = await import('./ts/server/resourceState.svelte')
+  const { getResourceDatabase } = await import('src/ts/__tests__/resourceDatabaseState')
   return {
     getDatabase: getResourceDatabase,
     importPreset: appRouteDomMocks.importPreset,
@@ -320,12 +320,13 @@ import {
   sideBarClosing,
   sideBarStore,
 } from './ts/stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './ts/server/resourceState.svelte'
+import { replaceResourceDatabase } from './ts/server/resourceState.svelte'
 import {
   peekObserverRouteIntent,
   recordObserverRouteIntent,
   resetObserverRouteIntentForTests,
 } from './ts/observerRouteIntent'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 const { default: App } = await import('./App.svelte')
 const { routeResourceLoadState } = await import('./ts/server/routeResourceLoader')

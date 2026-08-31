@@ -48,7 +48,6 @@ import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import {
   charactersResourceState,
-  getResourceDatabase,
   replaceResourceDatabase,
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
@@ -61,6 +60,7 @@ import {
   finishChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
 } from 'src/ts/process/generationActivity.svelte'
+import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
 function deferred<T>() {
   let resolve!: (value: T) => void

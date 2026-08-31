@@ -69,13 +69,9 @@ vi.mock('src/ts/storage/database.svelte', () => ({
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   captureChatBodyProjectionEpoch: () => 0,
-  getResourceDatabase: () => testState.databaseState.db,
-  isResourceDatabaseWriteActive: () => false,
   replaceResourceDatabase: (value: typeof testState.databaseState.db) => {
     testState.databaseState.db = value
   },
-  setResourceDatabaseWriteGuardEnabled: vi.fn(),
-  withResourceDatabaseWrite: <T>(callback: () => T): T => callback(),
   charactersResourceState: testState.charactersResourceState,
   getCharacterResourceOwner: (characterId: string) => {
     const matches = testState.databaseState.db.characters.filter((candidate) => candidate.chaId === characterId)
@@ -162,7 +158,6 @@ vi.mock('pdfjs-dist/build/pdf.worker?worker&url', () => ({
 
 import { postChatFile } from './multisend'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>
 
@@ -291,10 +286,9 @@ function mockPdfDocument(pageTexts: string[] = ['pdf extracted text']) {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   stubCommandFetch()
-  testState.setRunTrustedWrite(withTrustedResourceWrite)
+  testState.setRunTrustedWrite((callback) => callback())
   testState.setAppendCurrentChatUserMessageOverride(undefined)
   resetChatState()
   testState.charactersResourceState.status = 'ready'
@@ -314,7 +308,6 @@ beforeEach(() => {
 
 afterEach(() => {
   consoleLogSpy.mockRestore()
-  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -590,8 +583,6 @@ describe('postChatFile file-send handling', () => {
 
   it('.po transcript writes persist through scoped commands under the guard', async () => {
     const calls = stubCommandFetch()
-    setResourceWriteGuardEnabled(true)
-
     const results = await postChatFile({
       name: 'dialogue.po',
       data: textBytes(makePoFile(2)),

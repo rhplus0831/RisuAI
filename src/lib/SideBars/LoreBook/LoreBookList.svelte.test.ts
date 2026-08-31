@@ -2,9 +2,9 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database, loreBook } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { lorebookPageOwner } from 'src/ts/server/lorebookPageOwner.svelte'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+
 import { charactersResourceState, collectionsResourceState } from 'src/ts/server/resourceState.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
@@ -217,6 +217,7 @@ vi.mock('src/ts/tokenizer', () => ({
 import LoreBookListHarness from './LoreBookList.testHarness.svelte'
 import LoreBookList from './LoreBookList.svelte'
 import { resetScopedLorebookMutationUiStateForTests } from 'src/ts/server/scopedLorebookMutationUiState'
+import { getDatabase, withTestDatabaseWrite } from 'src/ts/__tests__/resourceDatabaseState'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LoreBookListHarnessComponent = MountedComponent & {
@@ -1072,7 +1073,7 @@ describe('LoreBookList', () => {
       setting: 'loreBookPage',
       state: { present: true, value: 1 },
     })
-    withTrustedResourceWrite(() => {
+    withTestDatabaseWrite(() => {
       getDatabase().loreBookPage = 0
     })
 
