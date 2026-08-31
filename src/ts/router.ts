@@ -1,6 +1,5 @@
 import { tick } from 'svelte'
 import { get, writable } from 'svelte/store'
-import { getDatabase } from './storage/database.svelte'
 import {
   CharEmotion,
   CustomGUISettingMenuStore,
@@ -414,9 +413,6 @@ function selectedCharacterForSidebarRestore() {
       ? candidate
       : undefined
   }
-  // Explicit bootstrap compatibility only. A resource error fails closed
-  // instead of restoring sidebar state from a stale aggregate projection.
-  if (status === 'idle' || status === 'loading') return getDatabase().characters?.[get(selectedCharID)]
   return undefined
 }
 

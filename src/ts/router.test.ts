@@ -624,7 +624,7 @@ describe('router character route freshness', () => {
   })
 
   it.each(['idle', 'loading'] as const)(
-    'uses the explicit aggregate compatibility seam while character owners are %s',
+    'does not restore the sidebar while character owners are %s',
     async (status) => {
       const router = await importRouterAt('/character/char-a/chat-a')
       const stores = await import('./stores.svelte')
@@ -646,7 +646,7 @@ describe('router character route freshness', () => {
 
       await router.applyRouteToStores(get(router.currentRoute))
 
-      expect(get(stores.botMakerMode)).toBe(true)
+      expect(get(stores.botMakerMode)).toBe(false)
     },
   )
 
