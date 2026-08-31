@@ -152,6 +152,7 @@ function seedApplyLoadoutState(): Loadout {
         note: 'persona-b note',
       },
     ],
+    selectedPersonaId: 'persona-a',
     selectedPersona: 0,
     username: 'Live User',
     userIcon: 'live-icon',
@@ -248,6 +249,7 @@ function seedSplitPresetLoadoutState(): Loadout {
         note: 'persona-a note',
       },
     ],
+    selectedPersonaId: 'persona-a',
     selectedPersona: 0,
     username: 'Persona A',
     userIcon: 'icon-a',
@@ -624,10 +626,11 @@ afterEach(() => {
 })
 
 describe('loadout projection command helpers', () => {
-  it('canonicalizes blank create fields and acknowledges the exact optimistic row', async () => {
+  it('canonicalizes blank create fields without aggregate optimistic acknowledgements', async () => {
     seedApplyLoadoutState()
     testDatabaseState.db.personas = []
-    testDatabaseState.db.selectedPersona = 0
+    testDatabaseState.db.selectedPersonaId = null
+    testDatabaseState.db.selectedPersona = -1
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _events, localEffects) => {
       observedEffects.push(...localEffects.values())
@@ -650,14 +653,7 @@ describe('loadout projection command helpers', () => {
       authHeader: 'loadout-command-token',
       body: { baseRevision: 10, loadout: created },
     })
-    expect(observedEffects).toEqual([
-      {
-        kind: 'loadoutMutation',
-        operation: 'create',
-        loadoutId: created.id,
-        loadoutsProjectionEpoch: expect.any(Number),
-      },
-    ])
+    expect(observedEffects).toEqual([])
   })
 
   it('keeps create pending with its optimistic row until the server accepts it', async () => {
@@ -1016,7 +1012,7 @@ describe('loadout projection command helpers', () => {
     }
   })
 
-  it('keeps a split prompt selection behind a transient flushed edit from the outgoing owner', async () => {
+  it('keeps a split prompt selection behind the outgoing owner durable edit', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -1226,6 +1222,26 @@ describe('loadout projection command helpers', () => {
 
     try {
       const loadout = seedApplyLoadoutState()
+      applyCollectionsResource(
+        {
+          revision: 20,
+          collections: {
+            modules: ['module-a', 'module-stay', 'module-z', 'module-b'].map((id) => ({
+              id,
+              name: id,
+            })),
+          },
+        },
+        'modules',
+      )
+      applySettingsGroupResource(
+        {
+          revision: 20,
+          group: 'modules',
+          settings: { enabledModules: ['module-stay', 'module-z'] },
+        },
+        ['enabledModules'],
+      )
       const encryptionGate = deferred<void>()
       const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
       const encryptSpy = vi
@@ -1935,69 +1951,23 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.globalChatVariables).toEqual(previousGlobalVariables)
   })
 
-  it('restores the previously selected legacy preset row after normalizing missing ids on failed preset select', async () => {
+  it('rejects malformed legacy preset owners without repairing their ids', async () => {
     const loadout = seedApplyLoadoutState()
     delete testDatabaseState.db.botPresets[0].id
     delete testDatabaseState.db.botPresets[1].id
-    const calls = stubApplyLoadoutFetch({ failCommandNumber: 1 })
+    const previousPresets = cloneJsonValue(testDatabaseState.db.botPresets)
+    const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setResourceWriteGuardEnabled(true)
 
-    applyLoadout(loadout, ['preset'])
+    await expect(applyLoadout(loadout, ['preset'])).resolves.toBe('preset-hydration-failed')
 
-    const previousPresetId = testDatabaseState.db.botPresets[0].id
-    const attemptedPresetId = testDatabaseState.db.botPresets[1].id
-    expect(previousPresetId).toEqual(expect.any(String))
-    expect(attemptedPresetId).toEqual(expect.any(String))
-    expect(previousPresetId).not.toBe(attemptedPresetId)
-    expect(testDatabaseState.db.botPresetsId).toBe(1)
-    expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
-    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
-
-    withTrustedResourceWrite(() => {
-      testDatabaseState.db.botPresets.push({
-        id: 'preset-later',
-        name: 'Later Preset',
-        mainPrompt: 'later main',
-        jailbreak: 'later jailbreak',
-        globalNote: 'later global',
-        temperature: 1,
-        maxContext: 2,
-        maxResponse: 3,
-        frequencyPenalty: 4,
-        PresensePenalty: 5,
-        formatingOrder: [],
-        promptPreprocess: false,
-        bias: [],
-        ooba: {} as never,
-        ainconfig: {} as never,
-        promptTemplate: [],
-      })
-      testDatabaseState.db.enabledModules = ['module-later']
-    })
-
-    await waitForCallCount(calls, 2)
-    await flushCommandEffects()
-
-    expect(calls.map((call) => call.url)).toEqual(['/api/v1/bootstrap', '/api/v1/commands/presets/select'])
-    expect(calls[1]).toMatchObject({
-      method: 'POST',
-      body: {
-        baseRevision: 10,
-        presetId: attemptedPresetId,
-        apply: true,
-        saveCurrent: true,
-      },
-    })
+    expect(calls).toEqual([])
+    expect(testDatabaseState.db.botPresets).toEqual(previousPresets)
     expect(testDatabaseState.db.botPresetsId).toBe(0)
-    expect(testDatabaseState.db.botPresets[0]).toMatchObject({
-      id: previousPresetId,
-      name: 'Preset A',
-      mainPrompt: 'preset-a main',
-    })
     expect(testDatabaseState.db.mainPrompt).toBe('live main')
-    expect(testDatabaseState.db.enabledModules).toEqual(['module-later'])
-    expect(testDatabaseState.db.botPresets.map((preset) => preset.name)).toContain('Later Preset')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
   })
 
   it('applies a subset of facets without mutating or commanding skipped facets', async () => {
@@ -2170,8 +2140,9 @@ describe('loadout projection command helpers', () => {
     await expect(application).resolves.toBe('applied')
     expect(testDatabaseState.db.characters[0].chats[0].generationSettings?.agentPresetId).toBe('agent-preset-target')
     expect(testDatabaseState.db.characters[1].chats[0].generationSettings?.agentPresetId).toBe('agent-preset-old-b')
-    expect(loadout.characterIds).toContain('char-a')
-    expect(loadout.characterIds).not.toContain('char-b')
+    const appliedLoadout = testDatabaseState.db.loadouts.find((candidate) => candidate.id === loadout.id)!
+    expect(appliedLoadout.characterIds).toContain('char-a')
+    expect(appliedLoadout.characterIds).not.toContain('char-b')
     await waitForUrl(calls, '/api/v1/commands/chats/chat-a/generation-settings')
     expect(calls.map((call) => call.url)).not.toContain('/api/v1/commands/chats/chat-b/generation-settings')
   })
@@ -2678,7 +2649,7 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
-  it('does not acknowledge delete when the pre-mutation collection is malformed', async () => {
+  it('rejects delete when the pre-mutation collection is malformed', async () => {
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _events, localEffects) => {
       observedEffects.push(...localEffects.values())
@@ -2690,16 +2661,10 @@ describe('loadout projection command helpers', () => {
     })
 
     const deleteMutation = deleteLoadout('loadout-b')
-    await waitForCallCount(calls, 2)
-    await flushCommandEffects()
-    await expect(deleteMutation).resolves.toBe('accepted')
+    await expect(deleteMutation).resolves.toBe('failed')
 
-    expect(calls[1]).toEqual({
-      url: '/api/v1/commands/loadouts/loadout-b',
-      method: 'DELETE',
-      authHeader: 'loadout-command-token',
-      body: { baseRevision: 10 },
-    })
+    expect(calls).toEqual([])
+    expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b'])
     expect(observedEffects).toEqual([])
   })
 

@@ -845,6 +845,16 @@ export function flushPendingPromptTemplatePatches(options: ServerCommandTranspor
   runPendingPromptSettingsPatch(options)
 }
 
+/** Stage only prompt-item drafts owned by the explicitly named presets. */
+export function flushPendingPromptTemplateOwnerPatches(
+  ownerIds: ReadonlySet<string | null>,
+  options: ServerCommandTransportOptions = {},
+): void {
+  for (const [pendingKey, pending] of Array.from(pendingPromptItemUpdates.entries())) {
+    if (ownerIds.has(pending.ownerId)) runPendingPromptItemUpdate(pendingKey, options)
+  }
+}
+
 export function resetPromptTemplateSelectionDirtyState(): void {
   for (const pending of pendingPromptItemUpdates.values()) {
     if (pending.timer) clearTimeout(pending.timer)

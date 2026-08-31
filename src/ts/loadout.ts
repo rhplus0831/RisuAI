@@ -1,7 +1,7 @@
 import {
+  applyPersonaStateSnapshotLocally,
   currentPersonaStateSnapshot,
   flushPendingSelectedPersonaUpdate,
-  personaMutationOptimisticAcknowledgement,
   selectUserPersonaLocally,
   type PersonaStateSnapshot,
 } from './persona'
@@ -24,21 +24,18 @@ import {
   settingsGroupForKey,
   touchLoadoutCommand,
   type LoadoutSnapshot,
-  type PersonaMutationOptimisticAcknowledgement,
   type ServerCommandExecutionWrapper,
   type ServerCommandResult,
   type ServerCommandSequenceEntry,
 } from './server/commands'
 import { isCanonicalLoadout, isCanonicalLoadoutCollection } from './server/loadoutCanonical'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
-  captureCollectionProjectionEpoch,
-  captureSettingsGroupProjectionEpoch,
-  hasCollectionProjectionEpochChanged,
-  hasSettingsGroupProjectionEpochChanged,
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
-import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import { resolveEffectiveAgentPresetId } from './agentPresetResolver'
 import {
@@ -47,9 +44,7 @@ import {
   beginLegacyPresetSelectionIntent,
   botPresetHasHydratedSettings,
   ensureBotPresetHydratedById,
-  flushPendingSplitPresetPatches,
-  getCurrentCharacter,
-  getDatabase,
+  flushPendingSplitPresetPatch,
   isLegacyPresetSelectionIntentCurrent,
   setPreset,
   splitPresetMutationKey,
@@ -83,8 +78,10 @@ import {
   type PendingMutationProjectionFence,
 } from './server/pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './server/settingsMutationKey'
-import { flushRegisteredPendingBridgePatch } from './server/pendingBridgeFlushRegistry'
-import { flushPendingPromptTemplatePatches, promptTemplateOwnerMutationKey } from './server/promptTemplateBridge.svelte'
+import {
+  flushPendingPromptTemplateOwnerPatches,
+  promptTemplateOwnerMutationKey,
+} from './server/promptTemplateBridge.svelte'
 import {
   chatResourceOwnerMutationKey,
   loadoutOwnerMutationKey,
@@ -92,6 +89,8 @@ import {
 } from './server/resourceOwnerMutationKeys'
 import { PERSONA_SELECTION_MUTATION_KEY, personaOwnerMutationKey } from './server/personaMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
+import { selectedCharID } from './stores.svelte'
+import { get } from 'svelte/store'
 
 export type Loadout = {
   name: string
@@ -112,27 +111,126 @@ export type Loadout = {
   personaId: string
 }
 
+type SettingsOwnerSnapshot = Record<string, unknown>
+
+function ownerStatusUsable(status: string | undefined): boolean {
+  return status === 'ready'
+}
+
+/** Read the canonical settings owner without materializing the aggregate database facade. */
+function currentSettingsOwnerSnapshot(): SettingsOwnerSnapshot | null {
+  if (!ownerStatusUsable(settingsResourceState.status)) return null
+  return cloneJsonValue(settingsResourceState.value as Record<string, unknown>)
+}
+
+function currentSettingsOwner(): Record<string, unknown> | null {
+  return ownerStatusUsable(settingsResourceState.status)
+    ? (settingsResourceState.value as Record<string, unknown>)
+    : null
+}
+
+function uniquePresetCollectionOwner<T extends { id?: string }>(
+  name: 'botPresets' | 'modelPresets' | 'promptPresets',
+): T[] | null {
+  if (
+    !ownerStatusUsable(collectionsResourceState.status) ||
+    !ownerStatusUsable(collectionsResourceState.statuses[name])
+  ) {
+    return null
+  }
+  const value = collectionsResourceState.values[name]
+  if (!Array.isArray(value)) return null
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    const id = nonBlankId(candidate?.id)
+    if (!id || ids.has(id)) return null
+    ids.add(id)
+  }
+  return value as T[]
+}
+
+function replacePresetCollectionOwner<T extends { id?: string }>(
+  name: 'botPresets' | 'modelPresets' | 'promptPresets',
+  presets: T[],
+): boolean {
+  if (!uniquePresetCollectionOwner(name)) return false
+  const ids = presets.map((preset) => nonBlankId(preset?.id))
+  if (ids.some((id) => !id) || new Set(ids).size !== ids.length) return false
+  collectionsResourceState.values[name] = cloneJsonValue(presets) as never
+  return true
+}
+
+function currentLoadoutCollectionOwner(): Loadout[] | null {
+  if (
+    !ownerStatusUsable(collectionsResourceState.status) ||
+    !ownerStatusUsable(collectionsResourceState.statuses.loadouts)
+  ) {
+    return null
+  }
+  const loadouts = collectionsResourceState.values.loadouts
+  return isCanonicalLoadoutCollection(loadouts) ? (loadouts as Loadout[]) : null
+}
+
+function replaceLoadoutCollectionOwner(loadouts: Loadout[]): boolean {
+  if (!isCanonicalLoadoutCollection(loadouts) || !currentLoadoutCollectionOwner()) return false
+  collectionsResourceState.values.loadouts = cloneJsonValue(loadouts)
+  return true
+}
+
+function currentCharacterOwner() {
+  if (!ownerStatusUsable(charactersResourceState.status)) return undefined
+  const candidate = charactersResourceState.characters[get(selectedCharID)]
+  const characterId = nonBlankId(candidate?.chaId)
+  if (!characterId) return undefined
+  const owner = getCharacterResourceOwner(characterId)
+  return owner === candidate ? owner : undefined
+}
+
+function settingsOwnerSelectionIndex(key: 'botPresetsId' | 'modelPresetsId' | 'promptPresetsId'): number | null {
+  if (!ownerStatusUsable(settingsResourceState.standaloneStatuses[key])) return null
+  const value = (settingsResourceState.value as Record<string, unknown>)[key]
+  return Number.isInteger(value) ? (value as number) : null
+}
+
+function currentLoadoutSettingsField<T>(key: string, fallback: T): T {
+  const value = currentSettingsOwner()?.[key]
+  return value === undefined ? fallback : (value as T)
+}
+
+function replaceSettingsOwnerFields(fields: Record<string, unknown>): boolean {
+  const settings = currentSettingsOwner()
+  if (!settings) return false
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === undefined) delete settings[key]
+    else settings[key] = cloneJsonValue(value)
+  }
+  return true
+}
+
 export function makeLoadout(options: { name: string }): Loadout {
-  const character = getCurrentCharacter()
+  const character = currentCharacterOwner()
   const id = createNonSecurityUuid()
-  const legacyPreset = getDatabase().botPresets?.[getDatabase().botPresetsId]
-  const modelPreset = getDatabase().modelPresets?.[getDatabase().modelPresetsId]
-  const promptPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
+  const legacyPreset =
+    uniquePresetCollectionOwner<botPreset>('botPresets')?.[settingsOwnerSelectionIndex('botPresetsId') ?? -1]
+  const modelPreset =
+    uniquePresetCollectionOwner<ModelPreset>('modelPresets')?.[settingsOwnerSelectionIndex('modelPresetsId') ?? -1]
+  const promptPreset =
+    uniquePresetCollectionOwner<PromptPreset>('promptPresets')?.[settingsOwnerSelectionIndex('promptPresetsId') ?? -1]
   const agentPreset = currentChatAgentPreset()
   const togglePresetId = currentActiveChatRecord()?.chat.generationSettings?.togglePresetId
   const legacyPresetName = readablePresetName(legacyPreset)
   const modelPresetName = readablePresetName(modelPreset)
   const promptPresetName = readablePresetName(promptPreset)
   const agentPresetName = readablePresetName(agentPreset)
-  const selectedPersonaId = getDatabase().personas[getDatabase().selectedPersona]?.id
+  const selectedPersonaId = currentPersonaStateSnapshot().selectedPersonaId
   return safeStructuredClone({
     name: options.name.trim() ? options.name : 'New Loadout',
     id: id,
     lastUsed: Date.now(),
     favorite: false,
     characterIds: character ? [character.chaId] : [],
-    modules: getDatabase().enabledModules,
-    globalVariables: getDatabase().globalChatVariables,
+    modules: currentLoadoutSettingsField<string[]>('enabledModules', []),
+    globalVariables: currentLoadoutSettingsField<Record<string, string>>('globalChatVariables', {}),
     presetName: legacyPresetName || [modelPresetName, promptPresetName].filter(Boolean).join(' / '),
     modelPresetId: nonBlankId(modelPreset?.id) ?? '',
     modelPresetName,
@@ -167,23 +265,22 @@ interface LoadoutListRollbackEntry {
 
 interface LoadoutFavoriteRollback {
   loadoutId: string
+  ownerRevision: number | null
   previousFavorite: boolean
   attemptedFavorite: boolean
   attemptedRow: Loadout
   previousIndex: number
-  loadoutsProjectionEpoch: number
 }
 
 interface LoadoutTouchRollback {
   loadoutId: string
+  ownerRevision: number | null
   previous: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
   attempted: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
   attemptedRow?: Loadout
   previousIndex?: number
   previousLastLoadedLoadoutName: string
   attemptedLastLoadedLoadoutName: string
-  loadoutsProjectionEpoch: number
-  settingsProjectionEpoch: number
 }
 
 interface LoadoutModuleMembershipRollback {
@@ -192,7 +289,6 @@ interface LoadoutModuleMembershipRollback {
   attemptedEnabled: boolean
   previousModules: string[]
   attemptedModules: string[]
-  settingsProjectionEpoch: number
 }
 
 interface LoadoutGlobalVariablesRollback {
@@ -297,8 +393,10 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'subModel',
   'modelRoles',
   'modelProfiles',
+  'modelProfileOrder',
   'modelRoleProfiles',
   'modelRuntimeDefaults',
+  'agents',
   'agentPresets',
   'agentPresetDefaultId',
   'currentPluginProvider',
@@ -317,7 +415,6 @@ const SET_PRESET_ROLLBACK_KEYS = [
   'autoSuggestPrompt',
   'autoSuggestPrefix',
   'autoSuggestClean',
-  'promptTemplate',
   'NAIadventure',
   'NAIappendName',
   'localStopStrings',
@@ -372,6 +469,7 @@ const PRESET_SNAPSHOT_KEY_PAIRS: Array<[string, string]> = [
   ['openAIKey', 'openAIKey'],
   ['localNetworkMode', 'localNetworkMode'],
   ['localNetworkTimeoutSec', 'localNetworkTimeoutSec'],
+  ['additionalParams', 'additionalParams'],
   ['mainPrompt', 'mainPrompt'],
   ['jailbreak', 'jailbreak'],
   ['globalNote', 'globalNote'],
@@ -385,8 +483,10 @@ const PRESET_SNAPSHOT_KEY_PAIRS: Array<[string, string]> = [
   ['subModel', 'subModel'],
   ['modelRoles', 'modelRoles'],
   ['modelProfiles', 'modelProfiles'],
+  ['modelProfileOrder', 'modelProfileOrder'],
   ['modelRoleProfiles', 'modelRoleProfiles'],
   ['modelRuntimeDefaults', 'modelRuntimeDefaults'],
+  ['agents', 'agents'],
   ['agentPresets', 'agentPresets'],
   ['agentPresetDefaultId', 'agentPresetDefaultId'],
   ['currentPluginProvider', 'currentPluginProvider'],
@@ -488,8 +588,9 @@ function applyRetainedAttemptedFields(input: {
 }
 
 function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>> {
-  const dbRecord = getDatabase() as unknown as Record<SetPresetRollbackKey, unknown>
+  const dbRecord = currentSettingsOwner() as Record<SetPresetRollbackKey, unknown> | null
   const setPresetSettings: Partial<Record<SetPresetRollbackKey, unknown>> = {}
+  if (!dbRecord) return setPresetSettings
   for (const key of SET_PRESET_ROLLBACK_KEYS) {
     setPresetSettings[key] = cloneJsonValue(dbRecord[key])
   }
@@ -503,6 +604,37 @@ function changedPresetSettingsKeys(
   return SET_PRESET_ROLLBACK_KEYS.filter((key) => snapshotJson(previous[key]) !== snapshotJson(attempted[key]))
 }
 
+/**
+ * Materialize only the detached compatibility shape needed by the established
+ * preset projection helpers. This is not a resident aggregate owner and is
+ * never written back wholesale: projection below copies only explicit
+ * settings-owned fields.
+ */
+function materializePresetProjectionDatabase(input: {
+  settings: SettingsOwnerSnapshot
+  botPresets?: botPreset[]
+  modelPresets?: ModelPreset[]
+  promptPresets?: PromptPreset[]
+}): Database {
+  return {
+    ...cloneJsonValue(input.settings),
+    botPresets: cloneJsonValue(input.botPresets ?? []),
+    modelPresets: cloneJsonValue(input.modelPresets ?? []),
+    promptPresets: cloneJsonValue(input.promptPresets ?? []),
+  } as unknown as Database
+}
+
+function projectPresetSettingsOwner(draft: Database): boolean {
+  const settings = currentSettingsOwner()
+  if (!settings) return false
+  const draftRecord = draft as unknown as Record<string, unknown>
+  for (const key of SET_PRESET_ROLLBACK_KEYS) {
+    if (Object.hasOwn(draftRecord, key)) settings[key] = cloneJsonValue(draftRecord[key])
+    else delete settings[key]
+  }
+  return true
+}
+
 function registerPreparedLoadoutProjectionTargets(
   prepared: PreparedLoadoutDurableStep | null,
   targets: readonly string[],
@@ -513,21 +645,18 @@ function registerPreparedLoadoutProjectionTargets(
 }
 
 function rollbackLoadoutListEntry(entry: LoadoutListRollbackEntry): void {
-  withTrustedResourceWrite(() => {
-    const list = getDatabase().loadouts ?? []
-    const rolledBack = applyAttemptedKeyedListRollback<Loadout, string>({
-      list,
-      entries: [entry],
-      getKey: (loadout) => loadout?.id,
-    })
-    if (rolledBack.length > 0) {
-      getDatabase().loadouts = list
-    }
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner) return
+  const list = cloneJsonValue(owner)
+  const rolledBack = applyAttemptedKeyedListRollback<Loadout, string>({
+    list,
+    entries: [entry],
+    getKey: (loadout) => loadout?.id,
   })
+  if (rolledBack.length > 0) replaceLoadoutCollectionOwner(list)
 }
 
-function rollbackCreatedLoadout(attemptedLoadout: Loadout, loadoutsProjectionEpoch: number): void {
-  if (hasCollectionProjectionEpochChanged('loadouts', loadoutsProjectionEpoch)) return
+function rollbackCreatedLoadout(attemptedLoadout: Loadout): void {
   rollbackLoadoutListEntry({
     key: attemptedLoadout.id,
     previous: null,
@@ -541,42 +670,39 @@ function isPendingLoadoutProjectionCurrent(handle: PendingMutationHandle, loadou
 }
 
 function reapplyRetainedCreatedLoadout(attemptedLoadout: Loadout, attemptedIndex: number): void {
-  withTrustedResourceWrite(() => {
-    const list = getDatabase().loadouts ?? []
-    if (list.some((candidate) => candidate.id === attemptedLoadout.id)) return
-    list.splice(Math.min(Math.max(attemptedIndex, 0), list.length), 0, cloneJsonValue(attemptedLoadout))
-    getDatabase().loadouts = list
-  })
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner || owner.some((candidate) => candidate.id === attemptedLoadout.id)) return
+  const list = cloneJsonValue(owner)
+  list.splice(Math.min(Math.max(attemptedIndex, 0), list.length), 0, cloneJsonValue(attemptedLoadout))
+  replaceLoadoutCollectionOwner(list)
 }
 
 function reapplyRetainedFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
-  withTrustedResourceWrite(() => {
-    const list = getDatabase().loadouts ?? []
-    let loadout = list.find((candidate) => candidate.id === rollback.loadoutId)
-    if (!loadout) {
-      const index = Math.min(Math.max(rollback.previousIndex, 0), list.length)
-      list.splice(index, 0, cloneJsonValue(rollback.attemptedRow))
-      getDatabase().loadouts = list
-      loadout = list[index]
-    }
-    if (loadout) loadout.favorite = rollback.attemptedFavorite
-  })
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner) return
+  const list = cloneJsonValue(owner)
+  let loadout = list.find((candidate) => candidate.id === rollback.loadoutId)
+  if (!loadout) {
+    const index = Math.min(Math.max(rollback.previousIndex, 0), list.length)
+    list.splice(index, 0, cloneJsonValue(rollback.attemptedRow))
+    loadout = list[index]
+  }
+  if (loadout) loadout.favorite = rollback.attemptedFavorite
+  replaceLoadoutCollectionOwner(list)
 }
 
 function reapplyRetainedDeletedLoadout(loadoutId: string): void {
-  withTrustedResourceWrite(() => {
-    const list = getDatabase().loadouts ?? []
-    const index = list.findIndex((candidate) => candidate.id === loadoutId)
-    if (index !== -1) list.splice(index, 1)
-  })
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner) return
+  const list = cloneJsonValue(owner)
+  const index = list.findIndex((candidate) => candidate.id === loadoutId)
+  if (index !== -1) {
+    list.splice(index, 1)
+    replaceLoadoutCollectionOwner(list)
+  }
 }
 
-function rollbackDeletedLoadout(
-  previousLoadout: Loadout,
-  previousIndex: number,
-  loadoutsProjectionEpoch: number,
-): void {
-  if (hasCollectionProjectionEpochChanged('loadouts', loadoutsProjectionEpoch)) return
+function rollbackDeletedLoadout(previousLoadout: Loadout, previousIndex: number): void {
   rollbackLoadoutListEntry({
     key: previousLoadout.id,
     previous: cloneJsonValue(previousLoadout),
@@ -586,54 +712,52 @@ function rollbackDeletedLoadout(
 }
 
 function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
-  if (hasCollectionProjectionEpochChanged('loadouts', rollback.loadoutsProjectionEpoch)) return
-  withTrustedResourceWrite(() => {
-    const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
-    if (!loadout) return
-    applyAttemptedFieldRollback({
-      target: loadout as unknown as Record<string, unknown>,
-      previous: { favorite: rollback.previousFavorite },
-      attempted: { favorite: rollback.attemptedFavorite },
-      keys: ['favorite'],
-    })
+  if (collectionsResourceState.revision !== rollback.ownerRevision) return
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner) return
+  const list = cloneJsonValue(owner)
+  const loadout = list.find((item) => item.id === rollback.loadoutId)
+  if (!loadout) return
+  applyAttemptedFieldRollback({
+    target: loadout as unknown as Record<string, unknown>,
+    previous: { favorite: rollback.previousFavorite },
+    attempted: { favorite: rollback.attemptedFavorite },
+    keys: ['favorite'],
   })
+  replaceLoadoutCollectionOwner(list)
 }
 
 function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
-  const rollbackCollection = !hasCollectionProjectionEpochChanged('loadouts', rollback.loadoutsProjectionEpoch)
-  const rollbackSettings = !hasSettingsGroupProjectionEpochChanged('sidebar', rollback.settingsProjectionEpoch)
-  if (!rollbackCollection && !rollbackSettings) return
-  withTrustedResourceWrite(() => {
-    const loadout = rollbackCollection
-      ? getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
-      : undefined
-    if (loadout && rollbackCollection) {
+  const owner = collectionsResourceState.revision === rollback.ownerRevision ? currentLoadoutCollectionOwner() : null
+  if (owner) {
+    const list = cloneJsonValue(owner)
+    const loadout = list.find((item) => item.id === rollback.loadoutId)
+    if (loadout) {
       applyAttemptedFieldRollback({
         target: loadout as unknown as Record<string, unknown>,
         previous: rollback.previous as Record<string, unknown>,
         attempted: rollback.attempted as Record<string, unknown>,
         keys: Object.keys(rollback.attempted),
       })
+      replaceLoadoutCollectionOwner(list)
     }
+  }
 
-    if (
-      rollbackSettings &&
-      snapshotJson(getDatabase().lastLoadedLoadoutName) === snapshotJson(rollback.attemptedLastLoadedLoadoutName)
-    ) {
-      getDatabase().lastLoadedLoadoutName = rollback.previousLastLoadedLoadoutName
-    }
-  })
+  const settings = currentSettingsOwner()
+  if (settings?.lastLoadedLoadoutName === rollback.attemptedLastLoadedLoadoutName) {
+    settings.lastLoadedLoadoutName = rollback.previousLastLoadedLoadoutName
+  }
 }
 
 function reapplyLoadoutTouch(rollback: LoadoutTouchRollback, isTargetCurrent: (target: string) => boolean): void {
-  withTrustedResourceWrite(() => {
-    if (isTargetCurrent(pendingMutationLoadoutRowProjectionTarget(rollback.loadoutId))) {
-      let loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
+  if (isTargetCurrent(pendingMutationLoadoutRowProjectionTarget(rollback.loadoutId))) {
+    const owner = currentLoadoutCollectionOwner()
+    if (owner) {
+      const list = cloneJsonValue(owner)
+      let loadout = list.find((item) => item.id === rollback.loadoutId)
       if (!loadout && rollback.attemptedRow) {
-        const list = getDatabase().loadouts ?? []
         const index = Math.min(Math.max(rollback.previousIndex ?? list.length, 0), list.length)
         list.splice(index, 0, cloneJsonValue(rollback.attemptedRow))
-        getDatabase().loadouts = list
         loadout = list[index]
       }
       if (loadout) {
@@ -644,15 +768,18 @@ function reapplyLoadoutTouch(rollback: LoadoutTouchRollback, isTargetCurrent: (t
           keys: Object.keys(rollback.attempted),
         })
       }
+      replaceLoadoutCollectionOwner(list)
     }
-    if (
-      isTargetCurrent(pendingMutationSettingsFieldProjectionTarget('lastLoadedLoadoutName')) &&
-      (getDatabase().lastLoadedLoadoutName === rollback.previousLastLoadedLoadoutName ||
-        getDatabase().lastLoadedLoadoutName === rollback.attemptedLastLoadedLoadoutName)
-    ) {
-      getDatabase().lastLoadedLoadoutName = rollback.attemptedLastLoadedLoadoutName
-    }
-  })
+  }
+  const settings = currentSettingsOwner()
+  if (
+    settings &&
+    isTargetCurrent(pendingMutationSettingsFieldProjectionTarget('lastLoadedLoadoutName')) &&
+    (settings.lastLoadedLoadoutName === rollback.previousLastLoadedLoadoutName ||
+      settings.lastLoadedLoadoutName === rollback.attemptedLastLoadedLoadoutName)
+  ) {
+    settings.lastLoadedLoadoutName = rollback.attemptedLastLoadedLoadoutName
+  }
 }
 
 function insertModuleAtPreviousPosition(liveModules: string[], moduleId: string, previousModules: string[]): void {
@@ -682,21 +809,22 @@ function insertModuleAtPreviousPosition(liveModules: string[], moduleId: string,
 }
 
 function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): void {
-  withTrustedResourceWrite(() => {
-    const liveModules = Array.isArray(getDatabase().enabledModules) ? getDatabase().enabledModules : []
-    const liveEnabled = liveModules.includes(rollback.moduleId)
-    if (liveEnabled !== rollback.attemptedEnabled) return
+  const settings = currentSettingsOwner()
+  const liveModules = settings?.enabledModules
+  if (!settings || !Array.isArray(liveModules) || !liveModules.every((moduleId) => typeof moduleId === 'string')) return
+  const liveEnabled = liveModules.includes(rollback.moduleId)
+  if (liveEnabled !== rollback.attemptedEnabled) return
 
-    if (!rollback.previousEnabled) {
-      getDatabase().enabledModules = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
-      return
-    }
+  if (!rollback.previousEnabled) {
+    settings.enabledModules = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
+    return
+  }
 
-    if (!liveEnabled) {
-      insertModuleAtPreviousPosition(liveModules, rollback.moduleId, rollback.previousModules)
-      getDatabase().enabledModules = liveModules
-    }
-  })
+  if (!liveEnabled) {
+    const restored = cloneJsonValue(liveModules)
+    insertModuleAtPreviousPosition(restored, rollback.moduleId, rollback.previousModules)
+    settings.enabledModules = restored
+  }
 }
 
 function reapplyModuleMembership(
@@ -704,43 +832,36 @@ function reapplyModuleMembership(
   isTargetCurrent: (target: string) => boolean,
 ): void {
   if (!isTargetCurrent(pendingMutationModuleEnabledProjectionTarget(rollback.moduleId))) return
-  withTrustedResourceWrite(() => {
-    const liveModules = Array.isArray(getDatabase().enabledModules) ? getDatabase().enabledModules : []
-    if (snapshotJson(liveModules) === snapshotJson(rollback.attemptedModules)) return
-    const liveEnabled = liveModules.includes(rollback.moduleId)
-    if (liveEnabled !== rollback.previousEnabled && liveEnabled !== rollback.attemptedEnabled) return
-    if (
-      liveEnabled !== rollback.attemptedEnabled &&
-      !hasSettingsGroupProjectionEpochChanged('modules', rollback.settingsProjectionEpoch)
-    ) {
-      return
-    }
+  const settings = currentSettingsOwner()
+  const liveModules = settings?.enabledModules
+  if (!settings || !Array.isArray(liveModules) || !liveModules.every((moduleId) => typeof moduleId === 'string')) return
+  if (snapshotJson(liveModules) === snapshotJson(rollback.attemptedModules)) return
+  const liveEnabled = liveModules.includes(rollback.moduleId)
+  if (liveEnabled !== rollback.previousEnabled && liveEnabled !== rollback.attemptedEnabled) return
 
-    let projected = liveModules
-    if (rollback.attemptedEnabled && !liveEnabled) {
-      projected = [...liveModules, rollback.moduleId]
-    } else if (!rollback.attemptedEnabled && liveEnabled) {
-      projected = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
-    }
+  let projected = liveModules
+  if (rollback.attemptedEnabled && !liveEnabled) {
+    projected = [...liveModules, rollback.moduleId]
+  } else if (!rollback.attemptedEnabled && liveEnabled) {
+    projected = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
+  }
 
-    const projectedIds = new Set(projected)
-    const attemptedIds = new Set(rollback.attemptedModules)
-    getDatabase().enabledModules =
-      projectedIds.size === attemptedIds.size &&
-      Array.from(projectedIds).every((moduleId) => attemptedIds.has(moduleId))
-        ? cloneJsonValue(rollback.attemptedModules)
-        : projected
-  })
+  const projectedIds = new Set(projected)
+  const attemptedIds = new Set(rollback.attemptedModules)
+  settings.enabledModules =
+    projectedIds.size === attemptedIds.size && Array.from(projectedIds).every((moduleId) => attemptedIds.has(moduleId))
+      ? cloneJsonValue(rollback.attemptedModules)
+      : projected
 }
 
 function rollbackGlobalChatVariables(rollback: LoadoutGlobalVariablesRollback): void {
-  withTrustedResourceWrite(() => {
-    applyAttemptedFieldRollback({
-      target: getDatabase() as unknown as Record<string, unknown>,
-      previous: { globalChatVariables: rollback.previous },
-      attempted: { globalChatVariables: rollback.attempted },
-      keys: ['globalChatVariables'],
-    })
+  const settings = currentSettingsOwner()
+  if (!settings) return
+  applyAttemptedFieldRollback({
+    target: settings,
+    previous: { globalChatVariables: rollback.previous },
+    attempted: { globalChatVariables: rollback.attempted },
+    keys: ['globalChatVariables'],
   })
 }
 
@@ -749,13 +870,13 @@ function reapplyGlobalChatVariables(
   isTargetCurrent: (target: string) => boolean,
 ): void {
   if (!isTargetCurrent(pendingMutationSettingsFieldProjectionTarget('globalChatVariables'))) return
-  withTrustedResourceWrite(() => {
-    applyRetainedAttemptedFields({
-      target: getDatabase() as unknown as Record<string, unknown>,
-      previous: { globalChatVariables: rollback.previous },
-      attempted: { globalChatVariables: rollback.attempted },
-      keys: ['globalChatVariables'],
-    })
+  const settings = currentSettingsOwner()
+  if (!settings) return
+  applyRetainedAttemptedFields({
+    target: settings,
+    previous: { globalChatVariables: rollback.previous },
+    attempted: { globalChatVariables: rollback.attempted },
+    keys: ['globalChatVariables'],
   })
 }
 
@@ -800,8 +921,8 @@ function personaSelectionRollback(
 
   return {
     rows,
-    previousSelectedPersonaId: nonBlankId(previous.personas?.[previous.selectedPersona]?.id),
-    attemptedSelectedPersonaId: nonBlankId(attempted.personas?.[attempted.selectedPersona]?.id),
+    previousSelectedPersonaId: nonBlankId(previous.selectedPersonaId),
+    attemptedSelectedPersonaId: nonBlankId(attempted.selectedPersonaId),
     previousMirror: personaMirrorSnapshot(previous),
     attemptedMirror: personaMirrorSnapshot(attempted),
   }
@@ -811,85 +932,104 @@ function reapplyPersonaSelection(
   rollback: LoadoutPersonaSelectionRollback,
   isTargetCurrent: (target: string) => boolean,
 ): void {
-  withTrustedResourceWrite(() => {
-    const personas = getDatabase().personas ?? []
-    const currentSelectedId = nonBlankId(personas[getDatabase().selectedPersona]?.id)
-    const attemptedIndex = rollback.attemptedSelectedPersonaId
-      ? personas.findIndex((persona) => persona?.id === rollback.attemptedSelectedPersonaId)
-      : -1
+  const next = currentPersonaStateSnapshot()
+  const currentSelectedId = nonBlankId(next.selectedPersonaId)
+  let changed = false
 
-    for (const row of rollback.rows) {
-      if (!isTargetCurrent(pendingMutationPersonaRowProjectionTarget(row.personaId))) continue
-      const persona = personas.find((item) => item?.id === row.personaId)
-      if (!persona) continue
-      applyRetainedAttemptedFields({
-        target: persona as unknown as Record<string, unknown>,
-        previous: row.previous,
-        attempted: row.attempted,
-      })
-    }
-    if (
-      attemptedIndex >= 0 &&
-      isTargetCurrent(pendingMutationSelectionProjectionTarget('persona')) &&
-      (currentSelectedId === rollback.previousSelectedPersonaId ||
-        currentSelectedId === rollback.attemptedSelectedPersonaId) &&
-      getDatabase().selectedPersona !== attemptedIndex
-    ) {
-      getDatabase().selectedPersona = attemptedIndex
-    }
-  })
+  for (const row of rollback.rows) {
+    if (!isTargetCurrent(pendingMutationPersonaRowProjectionTarget(row.personaId))) continue
+    const persona = next.personas.find((item) => item?.id === row.personaId)
+    if (!persona) continue
+    const before = snapshotJson(persona)
+    applyRetainedAttemptedFields({
+      target: persona as unknown as Record<string, unknown>,
+      previous: row.previous,
+      attempted: row.attempted,
+    })
+    changed ||= snapshotJson(persona) !== before
+  }
+  if (
+    rollback.attemptedSelectedPersonaId &&
+    next.personas.some((persona) => persona?.id === rollback.attemptedSelectedPersonaId) &&
+    isTargetCurrent(pendingMutationSelectionProjectionTarget('persona')) &&
+    (currentSelectedId === rollback.previousSelectedPersonaId ||
+      currentSelectedId === rollback.attemptedSelectedPersonaId) &&
+    currentSelectedId !== rollback.attemptedSelectedPersonaId
+  ) {
+    next.selectedPersonaId = rollback.attemptedSelectedPersonaId
+    changed = true
+  }
+  if (changed) {
+    next.selectedPersona = next.personas.findIndex((persona) => persona?.id === next.selectedPersonaId)
+    applyPersonaStateSnapshotLocally(next)
+  }
 }
 
 function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): void {
-  withTrustedResourceWrite(() => {
-    for (const row of rollback.rows) {
-      const persona = getDatabase().personas?.find((item) => item?.id === row.personaId)
-      if (!persona) continue
-      applyAttemptedFieldRollback({
-        target: persona as unknown as Record<string, unknown>,
-        previous: row.previous,
-        attempted: row.attempted,
-        deleteMissingPrevious: true,
-      })
-    }
+  const next = currentPersonaStateSnapshot()
+  let changed = false
+  for (const row of rollback.rows) {
+    const persona = next.personas.find((item) => item?.id === row.personaId)
+    if (!persona) continue
+    const before = snapshotJson(persona)
+    applyAttemptedFieldRollback({
+      target: persona as unknown as Record<string, unknown>,
+      previous: row.previous,
+      attempted: row.attempted,
+      deleteMissingPrevious: true,
+    })
+    changed ||= snapshotJson(persona) !== before
+  }
 
-    if (rollback.previousSelectedPersonaId) {
-      const previousIndex = (getDatabase().personas ?? []).findIndex(
-        (persona) => persona?.id === rollback.previousSelectedPersonaId,
-      )
-      if (previousIndex >= 0) getDatabase().selectedPersona = previousIndex
-    }
-  })
+  if (
+    rollback.previousSelectedPersonaId &&
+    next.selectedPersonaId === rollback.attemptedSelectedPersonaId &&
+    next.personas.some((persona) => persona?.id === rollback.previousSelectedPersonaId)
+  ) {
+    next.selectedPersonaId = rollback.previousSelectedPersonaId
+    changed = true
+  }
+  if (changed) {
+    next.selectedPersona = next.personas.findIndex((persona) => persona?.id === next.selectedPersonaId)
+    applyPersonaStateSnapshotLocally(next)
+  }
 }
 
 function currentBotPresetSelectedId(): string | null {
-  const index = getDatabase().botPresetsId
-  if (!Number.isInteger(index) || index < 0 || !Array.isArray(getDatabase().botPresets)) return null
-  return getDatabase().botPresets[index]?.id ?? null
+  const index = settingsOwnerSelectionIndex('botPresetsId')
+  const presets = uniquePresetCollectionOwner<botPreset>('botPresets')
+  if (index === null || index < 0 || !presets) return null
+  return nonBlankId(presets[index]?.id)
 }
 
 function restoreBotPresetSelectionToId(presetId: string | null): void {
-  const list = getDatabase().botPresets ?? []
+  const list = uniquePresetCollectionOwner<botPreset>('botPresets')
+  const settings = currentSettingsOwner()
+  if (!list || !settings) return
   const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
-  getDatabase().botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
+  settings.botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
 }
 
 function splitPresetList(kind: SplitPresetKind): Array<ModelPreset | PromptPreset> {
-  return (kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets) ?? []
+  return kind === 'model'
+    ? (uniquePresetCollectionOwner<ModelPreset>('modelPresets') ?? [])
+    : (uniquePresetCollectionOwner<PromptPreset>('promptPresets') ?? [])
 }
 
 function currentSplitPresetSelectedId(kind: SplitPresetKind): string | null {
   const list = splitPresetList(kind)
-  const index = kind === 'model' ? getDatabase().modelPresetsId : getDatabase().promptPresetsId
-  if (!Number.isInteger(index) || index < 0) return null
-  return list[index]?.id ?? null
+  const index = settingsOwnerSelectionIndex(kind === 'model' ? 'modelPresetsId' : 'promptPresetsId')
+  if (index === null || index < 0) return null
+  return nonBlankId(list[index]?.id)
 }
 
 function setSplitPresetSelectedIndex(kind: SplitPresetKind, index: number): void {
+  const settings = currentSettingsOwner()
+  if (!settings) return
   if (kind === 'model') {
-    getDatabase().modelPresetsId = index
+    settings.modelPresetsId = index
   } else {
-    getDatabase().promptPresetsId = index
+    settings.promptPresetsId = index
   }
 }
 
@@ -926,33 +1066,41 @@ function presetFieldRollbackFromPatch(
 
 function rollbackPresetFields(rollback: PresetFieldRollback | null): void {
   if (!rollback) return
-  withTrustedResourceWrite(() => {
-    const preset = getDatabase().botPresets?.find((item) => item?.id === rollback.presetId)
-    if (!preset) return
-    applyAttemptedFieldRollback({
-      target: preset as unknown as Record<string, unknown>,
-      previous: rollback.previous,
-      attempted: rollback.attempted,
-      deleteMissingPrevious: true,
-    })
+  const owner = uniquePresetCollectionOwner<botPreset>('botPresets')
+  if (!owner) return
+  const presets = cloneJsonValue(owner)
+  const preset = presets.find((item) => item?.id === rollback.presetId)
+  if (!preset) return
+  applyAttemptedFieldRollback({
+    target: preset as unknown as Record<string, unknown>,
+    previous: rollback.previous,
+    attempted: rollback.attempted,
+    deleteMissingPrevious: true,
   })
+  replacePresetCollectionOwner('botPresets', presets)
 }
 
 function reapplyPresetFields(rollback: PresetFieldRollback | null, isTargetCurrent: (target: string) => boolean): void {
   if (!rollback) return
   if (!isTargetCurrent(pendingMutationPresetRowProjectionTarget('legacy', rollback.presetId))) return
-  const preset = getDatabase().botPresets?.find((item) => item?.id === rollback.presetId)
+  const owner = uniquePresetCollectionOwner<botPreset>('botPresets')
+  if (!owner) return
+  const presets = cloneJsonValue(owner)
+  const preset = presets.find((item) => item?.id === rollback.presetId)
   if (!preset) return
   applyRetainedAttemptedFields({
     target: preset as unknown as Record<string, unknown>,
     previous: rollback.previous,
     attempted: rollback.attempted,
   })
+  replacePresetCollectionOwner('botPresets', presets)
 }
 
 function rollbackPresetSettings(rollback: PresetSettingsRollback): void {
+  const settings = currentSettingsOwner()
+  if (!settings) return
   applyAttemptedFieldRollback({
-    target: getDatabase() as unknown as Record<string, unknown>,
+    target: settings,
     previous: rollback.previous as Record<string, unknown>,
     attempted: rollback.attempted as Record<string, unknown>,
     keys: SET_PRESET_ROLLBACK_KEYS,
@@ -960,100 +1108,94 @@ function rollbackPresetSettings(rollback: PresetSettingsRollback): void {
 }
 
 function rollbackLegacyPresetSelection(rollback: LegacyPresetSelectionRollback): void {
-  withTrustedResourceWrite(() => {
-    rollbackPresetFields(rollback.saveCurrentRollback)
-    if (!rollback.attemptedSelectedId || currentBotPresetSelectedId() !== rollback.attemptedSelectedId) return
-    rollbackPresetSettings(rollback)
-    restoreBotPresetSelectionToId(rollback.previousSelectedId)
-  })
+  rollbackPresetFields(rollback.saveCurrentRollback)
+  if (!rollback.attemptedSelectedId || currentBotPresetSelectedId() !== rollback.attemptedSelectedId) return
+  rollbackPresetSettings(rollback)
+  restoreBotPresetSelectionToId(rollback.previousSelectedId)
 }
 
 function reapplyLegacyPresetSelection(
   rollback: LegacyPresetSelectionRollback,
   isTargetCurrent: (target: string) => boolean,
 ): void {
-  withTrustedResourceWrite(() => {
-    const currentSelectedId = currentBotPresetSelectedId()
-    if (currentSelectedId !== rollback.previousSelectedId && currentSelectedId !== rollback.attemptedSelectedId) return
-    const attemptedIndex = rollback.attemptedSelectedId
-      ? (getDatabase().botPresets?.findIndex((preset) => preset?.id === rollback.attemptedSelectedId) ?? -1)
-      : -1
-    if (attemptedIndex < 0) return
+  const currentSelectedId = currentBotPresetSelectedId()
+  if (currentSelectedId !== rollback.previousSelectedId && currentSelectedId !== rollback.attemptedSelectedId) return
+  const presets = uniquePresetCollectionOwner<botPreset>('botPresets')
+  const settings = currentSettingsOwner()
+  if (!presets || !settings) return
+  const attemptedIndex = rollback.attemptedSelectedId
+    ? presets.findIndex((preset) => preset?.id === rollback.attemptedSelectedId)
+    : -1
+  if (attemptedIndex < 0) return
 
-    reapplyPresetFields(rollback.saveCurrentRollback, isTargetCurrent)
-    const currentKeys = rollback.changedKeys.filter((key) =>
-      isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key)),
-    )
-    applyRetainedAttemptedFields({
-      target: getDatabase() as unknown as Record<string, unknown>,
-      previous: (rollback.retainedPrevious ?? rollback.previous) as Record<string, unknown>,
-      attempted: rollback.attempted as Record<string, unknown>,
-      keys: currentKeys,
-    })
-    if (
-      isTargetCurrent(pendingMutationSelectionProjectionTarget('legacyPreset')) &&
-      getDatabase().botPresetsId !== attemptedIndex
-    ) {
-      getDatabase().botPresetsId = attemptedIndex
-    }
+  reapplyPresetFields(rollback.saveCurrentRollback, isTargetCurrent)
+  const currentKeys = rollback.changedKeys.filter((key) =>
+    isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key)),
+  )
+  applyRetainedAttemptedFields({
+    target: settings,
+    previous: (rollback.retainedPrevious ?? rollback.previous) as Record<string, unknown>,
+    attempted: rollback.attempted as Record<string, unknown>,
+    keys: currentKeys,
   })
+  if (
+    isTargetCurrent(pendingMutationSelectionProjectionTarget('legacyPreset')) &&
+    settings.botPresetsId !== attemptedIndex
+  ) {
+    settings.botPresetsId = attemptedIndex
+  }
 }
 
 function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): void {
-  withTrustedResourceWrite(() => {
-    if (!rollback.attemptedSelectedId || currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) {
-      return
-    }
-    rollbackPresetSettings(rollback)
-    restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
-  })
+  if (!rollback.attemptedSelectedId || currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) {
+    return
+  }
+  rollbackPresetSettings(rollback)
+  restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
 }
 
 function reapplySplitPresetSelection(
   rollback: SplitPresetSelectionRollback,
   isTargetCurrent: (target: string) => boolean,
 ): void {
-  withTrustedResourceWrite(() => {
-    const currentSelectedId = currentSplitPresetSelectedId(rollback.kind)
-    if (currentSelectedId !== rollback.previousSelectedId && currentSelectedId !== rollback.attemptedSelectedId) return
-    const attemptedIndex = rollback.attemptedSelectedId
-      ? splitPresetList(rollback.kind).findIndex((preset) => preset?.id === rollback.attemptedSelectedId)
-      : -1
-    if (attemptedIndex < 0) return
+  const currentSelectedId = currentSplitPresetSelectedId(rollback.kind)
+  if (currentSelectedId !== rollback.previousSelectedId && currentSelectedId !== rollback.attemptedSelectedId) return
+  const settings = currentSettingsOwner()
+  if (!settings) return
+  const attemptedIndex = rollback.attemptedSelectedId
+    ? splitPresetList(rollback.kind).findIndex((preset) => preset?.id === rollback.attemptedSelectedId)
+    : -1
+  if (attemptedIndex < 0) return
 
-    const currentKeys = rollback.changedKeys.filter((key) =>
-      isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key)),
-    )
-    applyRetainedAttemptedFields({
-      target: getDatabase() as unknown as Record<string, unknown>,
-      previous: (rollback.retainedPrevious ?? rollback.previous) as Record<string, unknown>,
-      attempted: rollback.attempted as Record<string, unknown>,
-      keys: currentKeys,
-    })
-    if (
-      isTargetCurrent(
-        pendingMutationSelectionProjectionTarget(rollback.kind === 'model' ? 'modelPreset' : 'promptPreset'),
-      ) &&
-      currentSelectedId !== rollback.attemptedSelectedId
-    ) {
-      setSplitPresetSelectedIndex(rollback.kind, attemptedIndex)
-    }
+  const currentKeys = rollback.changedKeys.filter((key) =>
+    isTargetCurrent(pendingMutationSettingsFieldProjectionTarget(key)),
+  )
+  applyRetainedAttemptedFields({
+    target: settings,
+    previous: (rollback.retainedPrevious ?? rollback.previous) as Record<string, unknown>,
+    attempted: rollback.attempted as Record<string, unknown>,
+    keys: currentKeys,
   })
+  if (
+    isTargetCurrent(
+      pendingMutationSelectionProjectionTarget(rollback.kind === 'model' ? 'modelPreset' : 'promptPreset'),
+    ) &&
+    currentSelectedId !== rollback.attemptedSelectedId
+  ) {
+    setSplitPresetSelectedIndex(rollback.kind, attemptedIndex)
+  }
 }
 
 function rollbackAgentPresetSelection(rollback: AgentPresetSelectionRollback): void {
-  withTrustedResourceWrite(() => {
-    const chat = findChatById(rollback.chatId, rollback.characterId)
-    if (!chat) return
-    const target = chat as { generationSettings?: ChatGenerationSettings }
-    const current = target.generationSettings
-    if (snapshotJson(current) !== snapshotJson(rollback.attemptedGenerationSettings)) return
-    if (rollback.hadGenerationSettings) {
-      target.generationSettings = cloneJsonValue(rollback.previousGenerationSettings)
-    } else {
-      delete target.generationSettings
-    }
-  })
+  const chat = findChatById(rollback.chatId, rollback.characterId)
+  if (!chat) return
+  const current = chat.generationSettings
+  if (snapshotJson(current) !== snapshotJson(rollback.attemptedGenerationSettings)) return
+  if (rollback.hadGenerationSettings) {
+    chat.generationSettings = cloneJsonValue(rollback.previousGenerationSettings)
+  } else {
+    delete chat.generationSettings
+  }
 }
 
 function reapplyAgentPresetSelection(
@@ -1061,20 +1203,18 @@ function reapplyAgentPresetSelection(
   isTargetCurrent: (target: string) => boolean,
 ): void {
   if (!isTargetCurrent(pendingMutationChatGenerationSettingsProjectionTarget(rollback.chatId))) return
-  withTrustedResourceWrite(() => {
-    const chat = findChatById(rollback.chatId, rollback.characterId)
-    if (!chat) return
-    const current = chat.generationSettings
-    const previous = rollback.hadGenerationSettings ? rollback.previousGenerationSettings : undefined
-    if (snapshotJson(current) === snapshotJson(rollback.attemptedGenerationSettings)) return
-    if (
-      snapshotJson(current) !== snapshotJson(previous) &&
-      snapshotJson(current) !== snapshotJson(rollback.attemptedGenerationSettings)
-    ) {
-      return
-    }
-    chat.generationSettings = cloneJsonValue(rollback.attemptedGenerationSettings)
-  })
+  const chat = findChatById(rollback.chatId, rollback.characterId)
+  if (!chat) return
+  const current = chat.generationSettings
+  const previous = rollback.hadGenerationSettings ? rollback.previousGenerationSettings : undefined
+  if (snapshotJson(current) === snapshotJson(rollback.attemptedGenerationSettings)) return
+  if (
+    snapshotJson(current) !== snapshotJson(previous) &&
+    snapshotJson(current) !== snapshotJson(rollback.attemptedGenerationSettings)
+  ) {
+    return
+  }
+  chat.generationSettings = cloneJsonValue(rollback.attemptedGenerationSettings)
 }
 
 function prepareLoadoutDurableStep(key: string, intent: DurableMutationIntent): PreparedLoadoutDurableStep | null {
@@ -1276,22 +1416,19 @@ function readablePresetName(preset: { name?: unknown } | undefined): string {
   return typeof preset?.name === 'string' ? preset.name : ''
 }
 
-function dispatchCreateLoadout(
-  loadout: Loadout,
-  acknowledgeOptimistic: boolean,
-  loadoutsProjectionEpoch: number,
-): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
+function dispatchCreateLoadout(loadout: Loadout): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
   if (!canUseServerCommands()) return Promise.resolve('accepted')
   const attemptedLoadout = cloneJsonValue(loadout)
   const attemptedIndex = Math.max(
     0,
-    getDatabase().loadouts.findIndex((candidate) => candidate.id === attemptedLoadout.id),
+    currentLoadoutCollectionOwner()?.findIndex((candidate) => candidate.id === attemptedLoadout.id) ?? -1,
   )
   const intent: DurableMutationIntent = {
     version: 1,
     requests: [{ method: 'POST', path: '/loadouts', body: { loadout: toLoadoutSnapshot(attemptedLoadout) } }],
   }
   const handle = stagePendingMutation(loadoutOwnerMutationKey(loadout.id), intent)
+  const ownerRevision = collectionsResourceState.revision
   return settleLoadoutMutation(
     handle,
     loadout.id,
@@ -1302,12 +1439,12 @@ function dispatchCreateLoadout(
             {
               baseRevision,
               loadout: toLoadoutSnapshot(attemptedLoadout),
-              acknowledgeOptimistic,
-              loadoutsProjectionEpoch,
             },
             transport.signal,
           ),
-        rollback: () => rollbackCreatedLoadout(attemptedLoadout, loadoutsProjectionEpoch),
+        rollback: () => {
+          if (collectionsResourceState.revision === ownerRevision) rollbackCreatedLoadout(attemptedLoadout)
+        },
         ...transport,
       }),
     ),
@@ -1319,8 +1456,7 @@ function dispatchDeleteLoadout(
   loadoutId: string,
   previousLoadout: Loadout,
   previousIndex: number,
-  acknowledgeOptimistic: boolean,
-  loadoutsProjectionEpoch: number,
+  ownerRevision: number | null,
 ): Promise<Exclude<LoadoutMutationStatus, 'not-found'>> {
   if (!canUseServerCommands()) return Promise.resolve('accepted')
   const intent: DurableMutationIntent = {
@@ -1338,12 +1474,13 @@ function dispatchDeleteLoadout(
             {
               baseRevision,
               loadoutId,
-              acknowledgeOptimistic,
-              loadoutsProjectionEpoch,
             },
             transport.signal,
           ),
-        rollback: () => rollbackDeletedLoadout(previousLoadout, previousIndex, loadoutsProjectionEpoch),
+        rollback: () => {
+          if (collectionsResourceState.revision === ownerRevision)
+            rollbackDeletedLoadout(previousLoadout, previousIndex)
+        },
         ...transport,
       }),
     ),
@@ -1377,8 +1514,6 @@ function dispatchFavoriteLoadout(
               baseRevision,
               loadoutId: rollback.loadoutId,
               favorite: rollback.attemptedFavorite,
-              acknowledgeOptimistic: true,
-              loadoutsProjectionEpoch: rollback.loadoutsProjectionEpoch,
             },
             transport.signal,
           ),
@@ -1417,42 +1552,38 @@ async function settleLoadoutMutation(
 }
 
 export function toggleLoadoutFavorite(loadoutId: string): Promise<LoadoutMutationStatus> {
-  const previousIndex = getDatabase().loadouts?.findIndex((item) => item.id === loadoutId) ?? -1
-  const loadout = previousIndex === -1 ? undefined : getDatabase().loadouts[previousIndex]
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner) return Promise.resolve('failed')
+  const previousIndex = owner.findIndex((item) => item.id === loadoutId)
+  const loadout = previousIndex === -1 ? undefined : owner[previousIndex]
   if (!loadout) return Promise.resolve('not-found')
 
   const previousFavorite = loadout.favorite
   const favorite = !loadout.favorite
-  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
-  withTrustedResourceWrite(() => {
-    const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadoutId)
-    if (!targetLoadout) return
-    targetLoadout.favorite = favorite
-  })
+  const attempted = cloneJsonValue(owner)
+  attempted[previousIndex].favorite = favorite
+  if (!replaceLoadoutCollectionOwner(attempted)) return Promise.resolve('failed')
   return dispatchFavoriteLoadout({
     loadoutId,
+    ownerRevision: collectionsResourceState.revision,
     previousFavorite,
     attemptedFavorite: favorite,
-    attemptedRow: cloneJsonValue(getDatabase().loadouts[previousIndex]),
+    attemptedRow: cloneJsonValue(attempted[previousIndex]),
     previousIndex,
-    loadoutsProjectionEpoch,
   })
 }
 
 export function deleteLoadout(loadoutId: string): Promise<LoadoutMutationStatus> {
-  const index = getDatabase().loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner) return Promise.resolve('failed')
+  const index = owner.findIndex((loadout) => loadout.id === loadoutId)
   if (index === -1) return Promise.resolve('not-found')
 
-  const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts)
-  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
-  const previousLoadout = cloneJsonValue(getDatabase().loadouts[index])
-  withTrustedResourceWrite(() => {
-    const targetIndex = getDatabase().loadouts.findIndex((loadout) => loadout.id === loadoutId)
-    if (targetIndex !== -1) {
-      getDatabase().loadouts.splice(targetIndex, 1)
-    }
-  })
-  return dispatchDeleteLoadout(loadoutId, previousLoadout, index, acknowledgeOptimistic, loadoutsProjectionEpoch)
+  const previousLoadout = cloneJsonValue(owner[index])
+  const attempted = cloneJsonValue(owner)
+  attempted.splice(index, 1)
+  if (!replaceLoadoutCollectionOwner(attempted)) return Promise.resolve('failed')
+  return dispatchDeleteLoadout(loadoutId, previousLoadout, index, collectionsResourceState.revision)
 }
 
 function nonBlankId(value: unknown): string | null {
@@ -1463,19 +1594,16 @@ function findChatById(
   chatId: string,
   preferredCharacterId?: string,
 ): { id?: string; generationSettings?: ChatGenerationSettings } | null {
-  const characters = Array.isArray(getDatabase().characters) ? getDatabase().characters : []
-  const orderedCharacters = preferredCharacterId
-    ? [
-        ...characters.filter((character) => character?.chaId === preferredCharacterId),
-        ...characters.filter((character) => character?.chaId !== preferredCharacterId),
-      ]
-    : characters
-  for (const character of orderedCharacters) {
-    const chats = Array.isArray(character?.chats) ? character.chats : []
-    const chat = chats.find((candidate) => candidate?.id === chatId)
-    if (chat) return chat as unknown as { id?: string; generationSettings?: ChatGenerationSettings }
-  }
-  return null
+  if (!nonBlankId(chatId) || !ownerStatusUsable(charactersResourceState.status)) return null
+  const characters = preferredCharacterId
+    ? [getCharacterResourceOwner(preferredCharacterId)].filter((character) => character !== undefined)
+    : charactersResourceState.characters
+  const matches = characters.flatMap((character) =>
+    (character?.chats ?? []).filter((candidate) => candidate?.id === chatId),
+  )
+  return matches.length === 1
+    ? (matches[0] as unknown as { id?: string; generationSettings?: ChatGenerationSettings })
+    : null
 }
 
 function currentActiveChatRecord(): {
@@ -1483,7 +1611,7 @@ function currentActiveChatRecord(): {
   chatId: string
   chat: { id?: string; generationSettings?: ChatGenerationSettings }
 } | null {
-  const character = getCurrentCharacter()
+  const character = currentCharacterOwner()
   const chatIndex = Number.isInteger(character?.chatPage) ? (character.chatPage as number) : -1
   const chat = chatIndex >= 0 && Array.isArray(character?.chats) ? character.chats[chatIndex] : undefined
   const chatId = nonBlankId(chat?.id)
@@ -1495,22 +1623,51 @@ function currentActiveChatRecord(): {
   }
 }
 
+function uniqueAgentPresetSettingsOwner(
+  settings: Record<string, unknown> | null,
+): Array<{ id: string; name?: string }> | null {
+  const agentPresets = settings?.agentPresets
+  if (!Array.isArray(agentPresets)) return null
+  const ids = new Set<string>()
+  const result: Array<{ id: string; name?: string }> = []
+  for (const candidate of agentPresets) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+    const preset = candidate as { id?: unknown; name?: unknown }
+    const id = nonBlankId(preset.id)
+    if (!id || ids.has(id) || (preset.name !== undefined && typeof preset.name !== 'string')) return null
+    ids.add(id)
+    result.push({ id, ...(typeof preset.name === 'string' ? { name: preset.name } : {}) })
+  }
+  return result
+}
+
 function currentChatAgentPreset(): { id?: string; name?: string } | undefined {
-  const agentPresetId = resolveEffectiveAgentPresetId(getDatabase(), currentActiveChatRecord()?.chat.generationSettings)
+  const settings = currentSettingsOwnerSnapshot()
+  if (!settings) return undefined
+  const agentPresetId = resolveEffectiveAgentPresetId(
+    settings as unknown as Database,
+    currentActiveChatRecord()?.chat.generationSettings,
+  )
   if (!agentPresetId) return undefined
-  return getDatabase().agentPresets?.find((preset) => preset.id === agentPresetId)
+  const presets = uniqueAgentPresetSettingsOwner(settings)
+  if (!presets) return undefined
+  const matches = presets.filter((preset) => preset.id === agentPresetId)
+  return matches.length === 1 ? matches[0] : undefined
 }
 
 function loadoutHasAgentPresetReference(loadout: Loadout): boolean {
   return Object.hasOwn(loadout, 'agentPresetId') || Object.hasOwn(loadout, 'agentPresetName')
 }
 
-function resolveLoadoutAgentPresetId(loadout: Loadout): string | undefined {
-  if (!loadoutHasAgentPresetReference(loadout)) return undefined
+function resolveLoadoutAgentPresetId(loadout: Loadout): { value: string | undefined } | null {
+  if (!loadoutHasAgentPresetReference(loadout)) return { value: undefined }
+  const settings = currentSettingsOwner()
+  const stablePresets = uniqueAgentPresetSettingsOwner(settings)
+  if (!stablePresets) return null
 
   const requestedId = nonBlankId(loadout.agentPresetId)
-  if (requestedId && getDatabase().agentPresets?.some((preset) => preset.id === requestedId)) {
-    return requestedId
+  if (requestedId) {
+    return stablePresets.some((preset) => preset.id === requestedId) ? { value: requestedId } : null
   }
 
   const requestedName =
@@ -1518,13 +1675,12 @@ function resolveLoadoutAgentPresetId(loadout: Loadout): string | undefined {
       ? loadout.agentPresetName
       : null
   if (requestedName) {
-    const preset = getDatabase().agentPresets?.find((candidate) => candidate.name === requestedName)
-    const presetId = nonBlankId(preset?.id)
-    if (presetId) return presetId
-    return undefined
+    const matches = stablePresets.filter((candidate) => candidate.name === requestedName)
+    const presetId = matches.length === 1 ? nonBlankId(matches[0]?.id) : null
+    return presetId ? { value: presetId } : null
   }
 
-  return requestedId ? undefined : ''
+  return { value: '' }
 }
 
 function createGenerationSettingsWithPresetSelections(
@@ -1549,7 +1705,8 @@ function createGenerationSettingsWithPresetSelections(
 }
 
 function resolvePersonaSelection(personaId: string): { index: number; personaId: string } | null {
-  const personas = getDatabase().personas ?? []
+  const owner = currentPersonaStateSnapshot()
+  const personas = owner.personas
   const seen = new Set<string>()
   for (const persona of personas) {
     const id = nonBlankId(persona?.id)
@@ -1557,8 +1714,10 @@ function resolvePersonaSelection(personaId: string): { index: number; personaId:
     seen.add(id)
   }
 
-  const index = personas.findIndex((persona) => persona.id === personaId)
-  return index >= 0 ? { index, personaId } : null
+  const requestedId = nonBlankId(personaId)
+  if (!requestedId) return null
+  const index = personas.findIndex((persona) => persona.id === requestedId)
+  return index >= 0 ? { index, personaId: requestedId } : null
 }
 
 function resolveSplitPresetSelection<T extends { id?: string; name?: string }>(
@@ -1570,16 +1729,21 @@ function resolveSplitPresetSelection<T extends { id?: string; name?: string }>(
 
   const requestedId = nonBlankId(presetId)
   if (requestedId) {
-    const index = presets.findIndex((preset) => preset?.id === requestedId)
-    if (index >= 0) return { index, presetId: requestedId }
+    const matches = presets
+      .map((preset, index) => ({ preset, index }))
+      .filter(({ preset }) => preset?.id === requestedId)
+    if (matches.length === 1) return { index: matches[0].index, presetId: requestedId }
+    if (matches.length > 1) return null
   }
 
   const requestedName = typeof presetName === 'string' && presetName.trim().length > 0 ? presetName : null
   if (!requestedName) return null
 
-  const index = presets.findIndex((preset) => preset?.name === requestedName)
-  const resolvedId = index >= 0 ? nonBlankId(presets[index]?.id) : null
-  return index >= 0 && resolvedId ? { index, presetId: resolvedId } : null
+  const matches = presets
+    .map((preset, index) => ({ preset, index }))
+    .filter(({ preset }) => preset?.name === requestedName)
+  const resolvedId = matches.length === 1 ? nonBlankId(matches[0].preset?.id) : null
+  return matches.length === 1 && resolvedId ? { index: matches[0].index, presetId: resolvedId } : null
 }
 
 function loadoutHasSplitPresetReference(loadout: Loadout): boolean {
@@ -1589,26 +1753,6 @@ function loadoutHasSplitPresetReference(loadout: Loadout): boolean {
     (typeof loadout.modelPresetName === 'string' && loadout.modelPresetName.trim().length > 0) ||
     (typeof loadout.promptPresetName === 'string' && loadout.promptPresetName.trim().length > 0)
   )
-}
-
-function ensureBotPresetCommandIds(): void {
-  const presets = getDatabase().botPresets
-  if (!Array.isArray(presets)) {
-    getDatabase().botPresets = []
-    getDatabase().botPresetsId = -1
-    return
-  }
-
-  const seen = new Set<string>()
-  for (const preset of presets) {
-    if (!preset) continue
-    const currentId = nonBlankId(preset.id) ?? createNonSecurityUuid()
-    const nextId = seen.has(currentId) ? createNonSecurityUuid() : currentId
-    preset.id = nextId
-    seen.add(nextId)
-  }
-
-  getDatabase().botPresetsId = normalizedBotPresetsId(presets.length, getDatabase().botPresetsId)
 }
 
 function normalizedBotPresetsId(presetCount: number, selected: unknown): number {
@@ -1621,10 +1765,11 @@ function normalizedBotPresetsId(presetCount: number, selected: unknown): number 
 }
 
 function saveCurrentPresetSnapshotLocal(): PresetFieldRollback | null {
-  const db = getDatabase()
-  const index = db.botPresetsId
-  const presets = db.botPresets
-  if (!Array.isArray(presets) || index < 0 || index >= presets.length) return null
+  const settings = currentSettingsOwnerSnapshot()
+  const owner = uniquePresetCollectionOwner<botPreset>('botPresets')
+  const index = settingsOwnerSelectionIndex('botPresetsId')
+  if (!settings || !owner || index === null || index < 0 || index >= owner.length) return null
+  const presets = cloneJsonValue(owner)
 
   const current = presets[index]
   const previousPreset = cloneJsonValue(current) as unknown as Record<string, unknown>
@@ -1632,7 +1777,7 @@ function saveCurrentPresetSnapshotLocal(): PresetFieldRollback | null {
     id: current.id,
     name: typeof current.name === 'string' ? current.name : 'New Preset',
   }
-  const dbRecord = db as unknown as Record<string, unknown>
+  const dbRecord = settings
   for (const [presetKey, databaseKey] of PRESET_SNAPSHOT_KEY_PAIRS) {
     if (presetKey === 'name') continue
     if (Object.prototype.hasOwnProperty.call(dbRecord, databaseKey)) {
@@ -1640,11 +1785,14 @@ function saveCurrentPresetSnapshotLocal(): PresetFieldRollback | null {
     }
   }
   snapshot.image = current.image ?? ''
-  snapshot.seperateModelsForAxModels = db.doNotChangeSeperateModels ? false : (db.seperateModelsForAxModels ?? false)
-  snapshot.seperateModels = db.doNotChangeSeperateModels ? null : cloneJsonValue(db.seperateModels)
-  snapshot.fallbackWhenBlankResponse = db.fallbackWhenBlankResponse ?? false
+  snapshot.seperateModelsForAxModels = settings.doNotChangeSeperateModels
+    ? false
+    : (settings.seperateModelsForAxModels ?? false)
+  snapshot.seperateModels = settings.doNotChangeSeperateModels ? null : cloneJsonValue(settings.seperateModels)
+  snapshot.fallbackWhenBlankResponse = settings.fallbackWhenBlankResponse ?? false
   presets[index] = snapshot as unknown as botPreset
   const presetId = nonBlankId(snapshot.id)
+  if (!presetId || !replacePresetCollectionOwner('botPresets', presets)) return null
   return presetId ? presetFieldRollbackFromPatch(presetId, previousPreset, snapshot) : null
 }
 
@@ -1684,7 +1832,6 @@ function changedModulePlans(previousModules: string[], nextModules: string[]): L
 function changedModuleSteps(
   previousModules: string[],
   attemptedModules: string[],
-  settingsProjectionEpoch: number,
   plans: readonly LoadoutModulePlan[],
 ): LoadoutApplyStep[] {
   const previousSet = new Set(previousModules)
@@ -1695,7 +1842,6 @@ function changedModuleSteps(
       attemptedEnabled: enabled,
       previousModules,
       attemptedModules,
-      settingsProjectionEpoch,
     }
     return createLoadoutApplyStep(
       (baseRevision) =>
@@ -1759,16 +1905,15 @@ export async function applyLoadout(
   const intent = ++loadoutApplyIntent
   const requested = new Set(apply)
   const activeChatAgentPresetTarget = requested.has('preset') ? currentActiveChatRecord() : null
-  const currentCharacterId = getCurrentCharacter()?.chaId
+  const currentCharacterId = currentCharacterOwner()?.chaId
   const legacySelectionIntent = requested.has('preset') ? beginLegacyPresetSelectionIntent() : null
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
-  const legacyPreset =
-    requested.has('preset') && !useSplitPresetSelection
-      ? withTrustedResourceWrite(() => {
-          ensureBotPresetCommandIds()
-          return getDatabase().botPresets?.find((preset) => preset.name === loadout.presetName)
-        })
-      : undefined
+  const legacyPresets =
+    requested.has('preset') && !useSplitPresetSelection ? uniquePresetCollectionOwner<botPreset>('botPresets') : null
+  if (requested.has('preset') && !useSplitPresetSelection && !legacyPresets) return 'preset-hydration-failed'
+  const legacyMatches = legacyPresets?.filter((preset) => preset.name === loadout.presetName) ?? []
+  if (legacyMatches.length > 1) return 'preset-hydration-failed'
+  const legacyPreset = legacyMatches[0]
   const legacyPresetId = nonBlankId(legacyPreset?.id)
   if (legacyPreset && !legacyPresetId) return 'preset-hydration-failed'
   if (legacyPresetId && !presetHasHydratedSettings(legacyPreset)) {
@@ -1839,46 +1984,62 @@ async function applyLoadoutNowExclusive(
   if (legacySelectionIntent !== null && !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent))
     return 'superseded'
   const requested = new Set(apply)
+  const settingsSnapshot = currentSettingsOwnerSnapshot()
+  const loadoutOwner = currentLoadoutCollectionOwner()
+  if (!settingsSnapshot || !loadoutOwner) return 'persistence-failed'
   const personaSelection = requested.has('persona') ? resolvePersonaSelection(loadout.personaId) : null
+  if (requested.has('persona') && nonBlankId(loadout.personaId) && !personaSelection) return 'persistence-failed'
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
+  const legacyPresets =
+    requested.has('preset') && !useSplitPresetSelection ? uniquePresetCollectionOwner<botPreset>('botPresets') : []
+  const modelPresets = useSplitPresetSelection ? uniquePresetCollectionOwner<ModelPreset>('modelPresets') : []
+  const promptPresets = useSplitPresetSelection ? uniquePresetCollectionOwner<PromptPreset>('promptPresets') : []
+  if (!legacyPresets || !modelPresets || !promptPresets) return 'preset-hydration-failed'
   const modelPresetSelection = useSplitPresetSelection
-    ? resolveSplitPresetSelection(getDatabase().modelPresets, loadout.modelPresetId, loadout.modelPresetName)
+    ? resolveSplitPresetSelection(modelPresets, loadout.modelPresetId, loadout.modelPresetName)
     : null
   const promptPresetSelection = useSplitPresetSelection
-    ? resolveSplitPresetSelection(getDatabase().promptPresets, loadout.promptPresetId, loadout.promptPresetName)
+    ? resolveSplitPresetSelection(promptPresets, loadout.promptPresetId, loadout.promptPresetName)
     : null
-  const resolvedAgentPresetId = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : undefined
+  const hasModelReference = !!nonBlankId(loadout.modelPresetId) || !!nonBlankId(loadout.modelPresetName)
+  const hasPromptReference = !!nonBlankId(loadout.promptPresetId) || !!nonBlankId(loadout.promptPresetName)
+  if ((hasModelReference && !modelPresetSelection) || (hasPromptReference && !promptPresetSelection)) {
+    return 'preset-hydration-failed'
+  }
+  const agentPresetResolution = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : { value: undefined }
+  if (!agentPresetResolution) return 'preset-hydration-failed'
+  const resolvedAgentPresetId = agentPresetResolution.value
   const resolvedTogglePresetId =
     requested.has('preset') && Object.hasOwn(loadout, 'togglePresetId') && typeof loadout.togglePresetId === 'string'
       ? loadout.togglePresetId
       : undefined
   const presetIndex =
     requested.has('preset') && !useSplitPresetSelection
-      ? (getDatabase().botPresets?.findIndex((preset) =>
+      ? (legacyPresets?.findIndex((preset) =>
           legacyPresetId ? preset.id === legacyPresetId : preset.name === loadout.presetName,
         ) ?? -1)
       : -1
-  if (legacyPresetId && (presetIndex < 0 || !presetHasHydratedSettings(getDatabase().botPresets[presetIndex]))) {
+  if (legacyPresetId && (presetIndex < 0 || !presetHasHydratedSettings(legacyPresets[presetIndex]))) {
     return 'superseded'
   }
-  const previousModules = cloneJsonValue(getDatabase().enabledModules ?? [])
+  const previousModules = cloneJsonValue((settingsSnapshot.enabledModules as string[] | undefined) ?? [])
   const nextModules = cloneJsonValue(loadout.modules ?? [])
-  const previousGlobalChatVariables = cloneJsonValue(getDatabase().globalChatVariables ?? {})
+  const previousGlobalChatVariables = cloneJsonValue(
+    (settingsSnapshot.globalChatVariables as Record<string, string> | undefined) ?? {},
+  )
   const nextGlobalChatVariables = cloneJsonValue(loadout.globalVariables ?? {})
   const globalVariablesChanged = snapshotJson(previousGlobalChatVariables) !== snapshotJson(nextGlobalChatVariables)
   const resolvedLegacyPresetId =
-    presetIndex >= 0 && presetHasHydratedSettings(getDatabase().botPresets[presetIndex])
-      ? nonBlankId(getDatabase().botPresets[presetIndex]?.id)
+    presetIndex >= 0 && presetHasHydratedSettings(legacyPresets[presetIndex])
+      ? nonBlankId(legacyPresets[presetIndex]?.id)
       : null
   const previousPersona = personaSelection ? currentPersonaStateSnapshot() : null
-  const previousPersonaId = previousPersona
-    ? nonBlankId(previousPersona.personas?.[previousPersona.selectedPersona]?.id)
-    : null
+  const previousPersonaId = previousPersona ? nonBlankId(previousPersona.selectedPersonaId) : null
   const previousModelPresetId = modelPresetSelection
-    ? nonBlankId(getDatabase().modelPresets?.[getDatabase().modelPresetsId]?.id)
+    ? nonBlankId(modelPresets[settingsOwnerSelectionIndex('modelPresetsId') ?? -1]?.id)
     : null
   const previousPromptPresetId = promptPresetSelection
-    ? nonBlankId(getDatabase().promptPresets?.[getDatabase().promptPresetsId]?.id)
+    ? nonBlankId(promptPresets[settingsOwnerSelectionIndex('promptPresetsId') ?? -1]?.id)
     : null
   const preparedAgentGenerationSettings =
     activeChatAgentPresetTarget && (resolvedAgentPresetId !== undefined || resolvedTogglePresetId !== undefined)
@@ -1893,19 +2054,21 @@ async function applyLoadoutNowExclusive(
     !!preparedAgentGenerationSettings &&
     snapshotJson(activeChatAgentPresetTarget.chat.generationSettings) !== snapshotJson(preparedAgentGenerationSettings)
 
-  // Flush projection-owned timers while their outgoing owner is still live,
-  // then reserve every exact structural correction before optimistic state
-  // changes can make a later apply appear to be a no-op.
+  // Drain only the exact outgoing/target owner patches before reserving the
+  // selection commands. Same-lane settings writes are ordered by their
+  // durable mutation key and require no broad prompt/settings registry flush.
   if (personaSelection) void flushPendingSelectedPersonaUpdate()
-  if (promptPresetSelection) flushPendingPromptTemplatePatches()
-  if (modelPresetSelection || promptPresetSelection) flushPendingSplitPresetPatches()
-  if (
-    resolvedLegacyPresetId ||
-    modelPresetSelection ||
-    promptPresetSelection ||
-    (requested.has('globalVariables') && globalVariablesChanged)
-  ) {
-    flushRegisteredPendingBridgePatch('settings', {})
+  if (modelPresetSelection) {
+    for (const presetId of new Set([previousModelPresetId, modelPresetSelection.presetId])) {
+      if (presetId) flushPendingSplitPresetPatch('model', presetId)
+    }
+  }
+  if (promptPresetSelection) {
+    const promptPresetOwnerIds = new Set([previousPromptPresetId, promptPresetSelection.presetId])
+    flushPendingPromptTemplateOwnerPatches(promptPresetOwnerIds)
+    for (const presetId of promptPresetOwnerIds) {
+      if (presetId) flushPendingSplitPresetPatch('prompt', presetId)
+    }
   }
 
   const personaDurability = personaSelection
@@ -2013,8 +2176,8 @@ async function applyLoadoutNowExclusive(
         })
       : null
   const lastUsed = Date.now()
-  const previousLoadoutIndex = getDatabase().loadouts?.findIndex((item) => item.id === loadout.id) ?? -1
-  const previousLoadout = previousLoadoutIndex === -1 ? undefined : getDatabase().loadouts[previousLoadoutIndex]
+  const previousLoadoutIndex = loadoutOwner.findIndex((item) => item.id === loadout.id)
+  const previousLoadout = previousLoadoutIndex === -1 ? undefined : loadoutOwner[previousLoadoutIndex]
   const shouldAddCurrentCharacter =
     !!currentCharacterId && !(previousLoadout?.characterIds ?? loadout.characterIds ?? []).includes(currentCharacterId)
   const touchCharacterId = shouldAddCurrentCharacter ? currentCharacterId : undefined
@@ -2032,11 +2195,9 @@ async function applyLoadoutNowExclusive(
       },
     ],
   })
-  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
-  const modulesProjectionEpoch = captureSettingsGroupProjectionEpoch('modules')
-  const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
   const touchRollback: LoadoutTouchRollback = {
     loadoutId: loadout.id,
+    ownerRevision: collectionsResourceState.revision,
     previous: previousLoadout
       ? {
           lastUsed: previousLoadout.lastUsed,
@@ -2044,17 +2205,15 @@ async function applyLoadoutNowExclusive(
         }
       : {},
     attempted: {},
-    previousLastLoadedLoadoutName: getDatabase().lastLoadedLoadoutName,
+    previousLastLoadedLoadoutName:
+      typeof settingsSnapshot.lastLoadedLoadoutName === 'string' ? settingsSnapshot.lastLoadedLoadoutName : '',
     attemptedLastLoadedLoadoutName: previousLoadout?.name ?? loadout.name,
-    loadoutsProjectionEpoch,
-    settingsProjectionEpoch,
   }
   let touchedLiveLoadoutName: string | null = null
   let selectedLegacyPresetId: string | null = null
   let selectedModelPresetId: string | null = null
   let selectedPromptPresetId: string | null = null
   let personaRollback: LoadoutPersonaSelectionRollback | null = null
-  let personaOptimisticAcknowledgement: PersonaMutationOptimisticAcknowledgement | undefined
   let legacyPresetRollback: LegacyPresetSelectionRollback | null = null
   let modelPresetRollback: SplitPresetSelectionRollback | null = null
   let promptPresetRollback: SplitPresetSelectionRollback | null = null
@@ -2064,126 +2223,134 @@ async function applyLoadoutNowExclusive(
     selectUserPersonaLocally(personaSelection.index, 'save')
     const attemptedPersona = currentPersonaStateSnapshot()
     personaRollback = personaSelectionRollback(previousPersona, attemptedPersona)
-    personaOptimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
-      operation: 'select',
-      previous: previousPersona,
-      attempted: attemptedPersona,
-      mirrorLegacyProfile: false,
-      saveCurrent: false,
-    })
   }
 
-  withTrustedResourceWrite(() => {
-    const liveTargetLoadout = getDatabase().loadouts.find((item) => item.id === loadout.id)
-    const targetLoadout = liveTargetLoadout ?? loadout
-    targetLoadout.lastUsed = lastUsed
-    if (touchCharacterId && !targetLoadout.characterIds.includes(touchCharacterId)) {
-      targetLoadout.characterIds.push(touchCharacterId)
+  const projectedLoadouts = cloneJsonValue(loadoutOwner)
+  const liveTargetLoadout = projectedLoadouts.find((item) => item.id === loadout.id)
+  if (liveTargetLoadout) {
+    liveTargetLoadout.lastUsed = lastUsed
+    if (touchCharacterId && !liveTargetLoadout.characterIds.includes(touchCharacterId)) {
+      liveTargetLoadout.characterIds.push(touchCharacterId)
     }
-    if (previousLoadout) {
-      touchRollback.attempted = {
-        lastUsed: targetLoadout.lastUsed,
-        characterIds: cloneJsonValue(targetLoadout.characterIds ?? []),
-      }
-      touchRollback.attemptedRow = cloneJsonValue(targetLoadout)
-      touchRollback.previousIndex = previousLoadoutIndex
+    touchRollback.attempted = {
+      lastUsed: liveTargetLoadout.lastUsed,
+      characterIds: cloneJsonValue(liveTargetLoadout.characterIds ?? []),
     }
-    if (liveTargetLoadout && nonBlankId(liveTargetLoadout.name)) {
+    touchRollback.attemptedRow = cloneJsonValue(liveTargetLoadout)
+    touchRollback.previousIndex = previousLoadoutIndex
+    if (nonBlankId(liveTargetLoadout.name)) {
       touchedLiveLoadoutName = liveTargetLoadout.name
       touchRollback.attemptedLastLoadedLoadoutName = liveTargetLoadout.name
     }
+    replaceLoadoutCollectionOwner(projectedLoadouts)
+  }
 
-    if (presetIndex >= 0) {
-      ensureBotPresetCommandIds()
-      const resolvedPresetIndex = legacyPresetId
-        ? getDatabase().botPresets.findIndex((preset) => preset?.id === legacyPresetId)
-        : presetIndex
-      const targetPreset = resolvedPresetIndex >= 0 ? getDatabase().botPresets[resolvedPresetIndex] : undefined
-      if (presetHasHydratedSettings(targetPreset)) {
-        const previousSettings = snapshotPresetSettings()
-        const previousSelectedId = currentBotPresetSelectedId()
-        const saveCurrentRollback = saveCurrentPresetSnapshotLocal()
-        selectedLegacyPresetId = nonBlankId(targetPreset.id)
-        getDatabase().botPresetsId = resolvedPresetIndex
-        setPreset(getDatabase(), targetPreset)
-        const attemptedSettings = snapshotPresetSettings()
-        legacyPresetRollback = {
-          previousSelectedId,
-          attemptedSelectedId: currentBotPresetSelectedId(),
-          previous: previousSettings,
-          attempted: attemptedSettings,
-          changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
-          saveCurrentRollback,
-        }
-      }
-    }
-
-    if (modelPresetSelection) {
-      const previousSelectedId = currentSplitPresetSelectedId('model')
+  if (presetIndex >= 0) {
+    const targetPreset = legacyPresets[presetIndex]
+    if (presetHasHydratedSettings(targetPreset)) {
       const previousSettings = snapshotPresetSettings()
-      selectedModelPresetId = modelPresetSelection.presetId
-      getDatabase().modelPresetsId = modelPresetSelection.index
-      applyModelPresetFieldsToDatabase(getDatabase(), getDatabase().modelPresets[modelPresetSelection.index])
+      const previousSelectedId = currentBotPresetSelectedId()
+      const saveCurrentRollback = saveCurrentPresetSnapshotLocal()
+      const currentBotPresets = uniquePresetCollectionOwner<botPreset>('botPresets')
+      const settings = currentSettingsOwnerSnapshot()
+      if (!currentBotPresets || !settings) return 'persistence-failed'
+      const resolvedPresetIndex = currentBotPresets.findIndex((preset) => preset.id === targetPreset.id)
+      if (resolvedPresetIndex < 0) return 'superseded'
+      const draft = materializePresetProjectionDatabase({ settings, botPresets: currentBotPresets })
+      draft.botPresetsId = resolvedPresetIndex
+      setPreset(draft, currentBotPresets[resolvedPresetIndex])
+      if (!projectPresetSettingsOwner(draft) || !replaceSettingsOwnerFields({ botPresetsId: resolvedPresetIndex })) {
+        return 'persistence-failed'
+      }
+      selectedLegacyPresetId = nonBlankId(targetPreset.id)
       const attemptedSettings = snapshotPresetSettings()
-      modelPresetRollback = {
-        kind: 'model',
+      legacyPresetRollback = {
         previousSelectedId,
-        attemptedSelectedId: currentSplitPresetSelectedId('model'),
+        attemptedSelectedId: currentBotPresetSelectedId(),
         previous: previousSettings,
         attempted: attemptedSettings,
         changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
+        saveCurrentRollback,
       }
     }
+  }
 
-    if (promptPresetSelection) {
-      const previousSelectedId = currentSplitPresetSelectedId('prompt')
-      const previousSettings = snapshotPresetSettings()
-      selectedPromptPresetId = promptPresetSelection.presetId
-      getDatabase().promptPresetsId = promptPresetSelection.index
-      applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[promptPresetSelection.index])
-      const attemptedSettings = snapshotPresetSettings()
-      promptPresetRollback = {
-        kind: 'prompt',
-        previousSelectedId,
-        attemptedSelectedId: currentSplitPresetSelectedId('prompt'),
-        previous: previousSettings,
-        attempted: attemptedSettings,
-        changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
-      }
+  if (modelPresetSelection) {
+    const previousSelectedId = currentSplitPresetSelectedId('model')
+    const previousSettings = snapshotPresetSettings()
+    const settings = currentSettingsOwnerSnapshot()
+    if (!settings) return 'persistence-failed'
+    const draft = materializePresetProjectionDatabase({ settings, modelPresets, promptPresets })
+    draft.modelPresetsId = modelPresetSelection.index
+    applyModelPresetFieldsToDatabase(draft, modelPresets[modelPresetSelection.index])
+    if (
+      !projectPresetSettingsOwner(draft) ||
+      !replaceSettingsOwnerFields({ modelPresetsId: modelPresetSelection.index })
+    ) {
+      return 'persistence-failed'
     }
+    selectedModelPresetId = modelPresetSelection.presetId
+    const attemptedSettings = snapshotPresetSettings()
+    modelPresetRollback = {
+      kind: 'model',
+      previousSelectedId,
+      attemptedSelectedId: currentSplitPresetSelectedId('model'),
+      previous: previousSettings,
+      attempted: attemptedSettings,
+      changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
+    }
+  }
 
-    if (activeChatAgentPresetTarget && resolvedAgentPresetId !== undefined) {
-      const targetChat = findChatById(activeChatAgentPresetTarget.chatId, activeChatAgentPresetTarget.characterId)
-      if (targetChat) {
-        const hadGenerationSettings = Object.hasOwn(targetChat, 'generationSettings')
-        const previousGenerationSettings = cloneJsonValue(targetChat.generationSettings)
-        const nextGenerationSettings = preparedAgentGenerationSettings
-        if (
-          nextGenerationSettings &&
-          snapshotJson(previousGenerationSettings) !== snapshotJson(nextGenerationSettings)
-        ) {
-          targetChat.generationSettings = cloneJsonValue(nextGenerationSettings)
-          agentPresetRollback = {
-            characterId: activeChatAgentPresetTarget.characterId,
-            chatId: activeChatAgentPresetTarget.chatId,
-            hadGenerationSettings,
-            previousGenerationSettings,
-            attemptedGenerationSettings: cloneJsonValue(nextGenerationSettings),
-          }
+  if (promptPresetSelection) {
+    const previousSelectedId = currentSplitPresetSelectedId('prompt')
+    const previousSettings = snapshotPresetSettings()
+    const settings = currentSettingsOwnerSnapshot()
+    if (!settings) return 'persistence-failed'
+    const draft = materializePresetProjectionDatabase({ settings, modelPresets, promptPresets })
+    draft.promptPresetsId = promptPresetSelection.index
+    applyPromptPresetFieldsToDatabase(draft, promptPresets[promptPresetSelection.index])
+    if (
+      !projectPresetSettingsOwner(draft) ||
+      !replaceSettingsOwnerFields({ promptPresetsId: promptPresetSelection.index })
+    ) {
+      return 'persistence-failed'
+    }
+    selectedPromptPresetId = promptPresetSelection.presetId
+    const attemptedSettings = snapshotPresetSettings()
+    promptPresetRollback = {
+      kind: 'prompt',
+      previousSelectedId,
+      attemptedSelectedId: currentSplitPresetSelectedId('prompt'),
+      previous: previousSettings,
+      attempted: attemptedSettings,
+      changedKeys: changedPresetSettingsKeys(previousSettings, attemptedSettings),
+    }
+  }
+
+  if (activeChatAgentPresetTarget && resolvedAgentPresetId !== undefined) {
+    const targetChat = findChatById(activeChatAgentPresetTarget.chatId, activeChatAgentPresetTarget.characterId)
+    if (targetChat) {
+      const hadGenerationSettings = Object.hasOwn(targetChat, 'generationSettings')
+      const previousGenerationSettings = cloneJsonValue(targetChat.generationSettings)
+      const nextGenerationSettings = preparedAgentGenerationSettings
+      if (nextGenerationSettings && snapshotJson(previousGenerationSettings) !== snapshotJson(nextGenerationSettings)) {
+        targetChat.generationSettings = cloneJsonValue(nextGenerationSettings)
+        agentPresetRollback = {
+          characterId: activeChatAgentPresetTarget.characterId,
+          chatId: activeChatAgentPresetTarget.chatId,
+          hadGenerationSettings,
+          previousGenerationSettings,
+          attemptedGenerationSettings: cloneJsonValue(nextGenerationSettings),
         }
       }
     }
+  }
 
-    if (requested.has('modules')) {
-      getDatabase().enabledModules = cloneJsonValue(nextModules)
-    }
-
-    if (requested.has('globalVariables')) {
-      getDatabase().globalChatVariables = cloneJsonValue(nextGlobalChatVariables)
-    }
-
-    getDatabase().lastLoadedLoadoutName = touchedLiveLoadoutName ?? loadout.name
-  })
+  if (requested.has('modules')) replaceSettingsOwnerFields({ enabledModules: nextModules })
+  if (requested.has('globalVariables')) {
+    replaceSettingsOwnerFields({ globalChatVariables: nextGlobalChatVariables })
+  }
+  replaceSettingsOwnerFields({ lastLoadedLoadoutName: touchedLiveLoadoutName ?? loadout.name })
 
   if (personaRollback) {
     registerPreparedLoadoutProjectionTargets(personaDurability, [
@@ -2227,7 +2394,6 @@ async function applyLoadoutNowExclusive(
             personaId: personaSelection.personaId,
             mirrorLegacyProfile: false,
             saveCurrent: false,
-            optimisticAcknowledgement: personaOptimisticAcknowledgement,
           }),
         () => rollbackPersonaSelection(personaRollback),
         personaDurability,
@@ -2299,7 +2465,7 @@ async function applyLoadoutNowExclusive(
     )
   }
   if (requested.has('modules')) {
-    steps.push(...changedModuleSteps(previousModules, nextModules, modulesProjectionEpoch, modulePlans))
+    steps.push(...changedModuleSteps(previousModules, nextModules, modulePlans))
   }
   if (requested.has('globalVariables') && globalVariablesChanged) {
     const group = settingsGroupForKey('globalChatVariables')
@@ -2317,8 +2483,6 @@ async function applyLoadoutNowExclusive(
               patch: {
                 globalChatVariables: nextGlobalChatVariables,
               },
-              acknowledgeOptimistic: true,
-              optimisticProjectionEpoch: settingsProjectionEpoch,
             }),
           () => rollbackGlobalChatVariables(rollback),
           globalVariablesDurability,
@@ -2335,10 +2499,6 @@ async function applyLoadoutNowExclusive(
           loadoutId: loadout.id,
           lastUsed,
           characterId: touchCharacterId,
-          acknowledgeOptimistic: touchedLiveLoadoutName !== null,
-          loadoutsProjectionEpoch,
-          settingsProjectionEpoch,
-          loadedName: touchedLiveLoadoutName ?? undefined,
         }),
       () => rollbackLoadoutTouch(touchRollback),
       touchDurability,
@@ -2350,7 +2510,6 @@ async function applyLoadoutNowExclusive(
   // projection. The first queued step waits for every prepared row, so a
   // later user action can neither overtake this sequence nor make its first
   // request start before the retained tail is durable.
-  const rollbackEpoch = captureDestructiveRefreshEpoch()
   const durabilityReady = awaitPreparedLoadoutDurability(steps)
   const sequenceEntries: ServerCommandSequenceEntry[] = steps.map((step, index) => {
     if (index !== 0) {
@@ -2367,9 +2526,7 @@ async function applyLoadoutNowExclusive(
   const failure = await runServerCommandSequence(sequenceEntries, (rollbackIsCurrent) =>
     settleFailedLoadoutApplySteps(steps, rollbackIsCurrent),
   )
-  if (failure !== null && !hasDestructiveRefreshEpochChanged(rollbackEpoch)) {
-    reapplyRetainedLoadoutApplySteps(steps)
-  }
+  if (failure !== null) reapplyRetainedLoadoutApplySteps(steps)
   if (failure === null) return 'applied'
   return steps.some((step) => !step.succeeded && step.durability && retainsDurableLoadoutProjection(step.durability))
     ? 'queued'
@@ -2378,11 +2535,13 @@ async function applyLoadoutNowExclusive(
 
 export async function saveCurrentLoadout(name: string): Promise<LoadoutCreateResult> {
   const loadout = makeLoadout({ name })
-  const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts) && isCanonicalLoadout(loadout)
-  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
-  withTrustedResourceWrite(() => {
-    getDatabase().loadouts.push(loadout)
-  })
-  const status = await dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
+  const owner = currentLoadoutCollectionOwner()
+  if (!owner || !isCanonicalLoadout(loadout) || owner.some((candidate) => candidate.id === loadout.id)) {
+    return { status: 'failed', loadout }
+  }
+  const projected = cloneJsonValue(owner)
+  projected.push(loadout)
+  if (!replaceLoadoutCollectionOwner(projected)) return { status: 'failed', loadout }
+  const status = await dispatchCreateLoadout(loadout)
   return { status, loadout }
 }
