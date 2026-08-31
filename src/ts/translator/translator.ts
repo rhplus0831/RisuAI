@@ -1,5 +1,4 @@
-import { get } from 'svelte/store'
-import { getDatabase, type character, type customscript } from '../storage/database.svelte'
+import type { character, customscript } from '../storage/database.svelte'
 import type { Database } from '../storage/databaseTypes'
 import { safeStructuredClone } from '../safeStructuredClone'
 import { getTranslatorPresetFromState, type TranslatorPreset } from './presets'
@@ -7,7 +6,6 @@ import { globalFetch } from '../globalApi.svelte'
 import { alertError } from '../alert'
 import { requestChatData } from '../process/request/request'
 import { applyMarkdownToNode, type simpleCharacterArgument } from '../parser/parser.svelte'
-import { selectedCharID } from '../stores.svelte'
 import { getModuleRegexScripts } from '../process/modules'
 import { getActivePromptPresetRegexScripts } from '../process/promptPresetRegex'
 import { getNodetextToSentence, sleep } from '../util'
@@ -56,24 +54,13 @@ let activeTranslateCacheScope: string | null = null
 let llmCacheIndex: string[] | null = null
 let llmCacheIndexLoad: Promise<string[]> | null = null
 
-type TranslatorResourceMode = 'ready' | 'compatibility' | 'unavailable'
-
-function getTranslatorResourceMode(): TranslatorResourceMode {
+function hasReadyTranslatorResources(): boolean {
   const statuses = [settingsResourceState.status, collectionsResourceState.status, charactersResourceState.status]
-  if (statuses.every((status) => status === 'ready')) return 'ready'
-  if (statuses.every((status) => status === 'idle' || status === 'loading')) return 'compatibility'
-  return 'unavailable'
+  return statuses.every((status) => status === 'ready')
 }
 
-/**
- * Translator reads are owner-backed once resources are ready. During bootstrap,
- * the compatibility facade remains usable while all resources are idle/loading;
- * a resource error never falls back to stale aggregate database state.
- */
 function getTranslatorDatabase(snapshot = false): Database | null {
-  const mode = getTranslatorResourceMode()
-  if (mode === 'unavailable') return null
-  if (mode === 'compatibility') return getDatabase({ snapshot })
+  if (!hasReadyTranslatorResources()) return null
   const database = {
     ...settingsResourceState.value,
     ...collectionsResourceState.values,
@@ -85,21 +72,13 @@ function getTranslatorDatabase(snapshot = false): Database | null {
 }
 
 function getSelectedTranslatorCharacter(db: Database | null): character | undefined {
-  const mode = getTranslatorResourceMode()
-  if (mode === 'ready') {
-    const row = charactersResourceState.characters[charactersResourceState.currentChar]
-    return row?.chaId ? getCharacterResourceOwner(row.chaId) : undefined
-  }
-  if (mode !== 'compatibility' || !db) return undefined
-  const index = get(selectedCharID)
-  const row = db.characters?.[index]
-  if (!row?.chaId) return undefined
-  const matches = db.characters.filter((candidate) => candidate?.chaId === row.chaId)
-  return matches.length === 1 ? row : undefined
+  if (!db || !hasReadyTranslatorResources()) return undefined
+  const row = charactersResourceState.characters[charactersResourceState.currentChar]
+  return row?.chaId ? getCharacterResourceOwner(row.chaId) : undefined
 }
 
 function getSelectedTranslatorCharacterIndex(): number {
-  return getTranslatorResourceMode() === 'ready' ? charactersResourceState.currentChar : get(selectedCharID)
+  return hasReadyTranslatorResources() ? charactersResourceState.currentChar : -1
 }
 
 function getSelectedTranslatorChat(db: Database | null): character['chats'][number] | undefined {

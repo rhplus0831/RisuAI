@@ -44,6 +44,11 @@ const testState = vi.hoisted(() => {
 
   return {
     db: {} as any,
+    resourceStatus: {
+      settings: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+      collections: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+      characters: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+    },
     selectedCharID: makeStore(0),
     globalFetch: vi.fn(),
     requestProviderOperation: vi.fn(),
@@ -78,9 +83,34 @@ vi.mock('../stores.svelte', () => ({
 }))
 
 vi.mock('../server/resourceState.svelte', () => ({
-  settingsResourceState: { status: 'idle' },
-  collectionsResourceState: { status: 'idle' },
-  charactersResourceState: { status: 'idle', characters: [], currentChar: -1 },
+  settingsResourceState: {
+    get status() {
+      return testState.resourceStatus.settings
+    },
+    get value() {
+      return testState.db
+    },
+  },
+  collectionsResourceState: {
+    get status() {
+      return testState.resourceStatus.collections
+    },
+    get values() {
+      return testState.db
+    },
+  },
+  charactersResourceState: {
+    get status() {
+      return testState.resourceStatus.characters
+    },
+    get characters() {
+      return testState.db.characters ?? []
+    },
+    get characterOrder() {
+      return testState.db.characterOrder ?? []
+    },
+    currentChar: 0,
+  },
   getResourceDatabase: (options: { snapshot?: boolean } = {}) =>
     options.snapshot ? JSON.parse(JSON.stringify(testState.db)) : testState.db,
   getCharacterResourceOwner: (characterId: string) => {
@@ -88,6 +118,12 @@ vi.mock('../server/resourceState.svelte', () => ({
       (character: { chaId?: string }) => character.chaId === characterId,
     )
     return matches.length === 1 ? matches[0] : undefined
+  },
+  getChatMetadataOwnerState: (chatId: string) => {
+    const matches = (testState.db.characters ?? []).flatMap((character: { chats?: Array<{ id?: string }> }) =>
+      (character.chats ?? []).filter((chat) => chat.id === chatId),
+    )
+    return matches.length === 1 ? { chatId } : undefined
   },
 }))
 
@@ -246,6 +282,9 @@ function beginGenerationForChat(chatPage: number) {
 describe('translateHTML streaming guards', () => {
   beforeEach(() => {
     resetDatabase()
+    testState.resourceStatus.settings = 'ready'
+    testState.resourceStatus.collections = 'ready'
+    testState.resourceStatus.characters = 'ready'
     testState.selectedCharID.set(0)
     resetChatGenerationActivitiesForTests()
     testState.llmCache.clear()
