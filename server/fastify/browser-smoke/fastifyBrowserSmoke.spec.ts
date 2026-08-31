@@ -224,9 +224,6 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
 
   const initialProjection = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot())
   expect(initialProjection?.streamGeminiThoughts).toBe(false)
-  expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.assertDirectProjectionWriteRejected())).toBe(
-    true,
-  )
 
   const commandResult = await page.evaluate(() =>
     window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({

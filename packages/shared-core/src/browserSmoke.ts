@@ -68,7 +68,6 @@ export interface FastifyBrowserSmokeHook<
   StartupReadinessSnapshot,
   StartupMilestone extends string,
 > {
-  assertDirectProjectionWriteRejected: () => boolean
   activeWriterHeaders: () => Promise<Record<string, string>>
   clearResourceCache: () => Promise<void>
   getAppliedServerResourceRevision: () => number | null

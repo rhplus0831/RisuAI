@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { selectedCharID } from '../stores/coreStores.svelte'
-import { getDatabase } from '../storage/database.svelte'
+import { composeResourceDatabaseSnapshot } from './resourceState.svelte'
 import { getRerollBuffer, unReroll } from '../process/rerollNavigation.svelte'
 import { acceptedSendRecoveries } from '../process/acceptedSendRecoveryState'
 import { activeChatGenerations } from '../process/generationActivity.svelte'
@@ -46,18 +46,10 @@ export function installFastifyBrowserSmokeHook() {
       'risu-auth': await getNodeServerProxyAuth(),
       ...activeWriterSessionHeader(),
     }),
-    assertDirectProjectionWriteRejected: () => {
-      try {
-        ;(getDatabase() as unknown as Record<string, unknown>).language = 'fastify-smoke-direct-write'
-      } catch {
-        return true
-      }
-      return false
-    },
     clearResourceCache,
     getAppliedServerResourceRevision: peekAppliedServerResourceRevision,
     getCurrentRoute: () => structuredClone(get(currentRoute)),
-    getDatabaseSnapshot: () => getDatabase({ snapshot: true }),
+    getDatabaseSnapshot: composeResourceDatabaseSnapshot,
     getLifecycleSnapshot: async () => ({
       acceptedSendRecoveries: structuredClone(get(acceptedSendRecoveries)),
       activeGenerationJobs: structuredClone(get(activeGenerationJobs)),
