@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
-import { getResourceDatabaseFacadeEpoch } from './resourceState.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 beforeEach(() => {
@@ -50,24 +49,20 @@ describe('resource-backed write compatibility guard', () => {
     expect(testDatabaseState.db.characters[0].name).toBe('Renamed')
   })
 
-  it('keeps a stable testDatabaseState.db facade and advances its reactive resource epoch', () => {
+  it('keeps a stable testDatabaseState.db facade across scoped writes', () => {
     setResourceWriteGuardEnabled(true)
 
     const before = testDatabaseState.db
-    const beforeEpoch = getResourceDatabaseFacadeEpoch()
     withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'One'
     })
     const afterFirst = testDatabaseState.db
     expect(afterFirst).toBe(before)
-    expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeEpoch)
 
-    const afterFirstEpoch = getResourceDatabaseFacadeEpoch()
     withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'Two'
     })
     expect(testDatabaseState.db).toBe(afterFirst)
-    expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(afterFirstEpoch)
     expect(testDatabaseState.db.characters[0].name).toBe('Two')
   })
 

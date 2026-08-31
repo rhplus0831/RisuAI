@@ -163,13 +163,11 @@ owns endpoint, cache, and hydration contracts. Event reconciliation, the
 mutation queue, and durable outbox behavior belong in
 [Durable Mutations And Recovery](../../docs/structure/durable-mutations-and-recovery.md).
 
-The compatibility facade keeps a stable proxy identity, but `getDatabase()` no
-longer subscribes callers to an implicit whole-database epoch. Reactive callers
-track the settings, collection, character, chat, and message fields they
-actually read. The explicit `getResourceDatabaseFacadeEpoch()` accessor remains
-available for diagnostics or compatibility observers that intentionally need
-an any-resource signal. A trusted write to one background chat must therefore
-not wake a mounted transcript for another chat.
+The compatibility facade keeps a stable proxy identity, but `getDatabase()` has
+no whole-database epoch. Reactive callers track the settings, collection,
+character, chat, and message fields they actually read. A scoped compatibility
+write to one background chat must therefore not wake a mounted transcript for
+another chat.
 
 The main client boundaries are:
 

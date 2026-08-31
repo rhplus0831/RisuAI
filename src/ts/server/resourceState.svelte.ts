@@ -774,7 +774,6 @@ export function updateHypaV3PresetOwnerState(mutator: (draft: HypaV3PresetOwnerS
   const settings = settingsResourceState.value as Record<string, unknown>
   settings.selectedHypaV3PresetId = draft.selectedHypaV3PresetId
   settings.hypaV3PresetId = hypaV3PresetId
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -877,7 +876,6 @@ export function updatePersonaOwnerState(mutator: (draft: PersonaOwnerStateDraft)
   settings.userIcon = draft.userIcon
   settings.personaPrompt = draft.personaPrompt
   settings.userNote = draft.userNote
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -911,7 +909,6 @@ export function reassertPendingPersonaOwnerRow(persona: Database['personas'][num
 
   collectionsResourceState.values.personas = nextPersonas as Database['personas']
   settings.selectedPersona = selectedPersona
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1081,7 +1078,6 @@ export function applyChatScriptstateOwnerValue(
   chat.scriptstate ??= {}
   chat.scriptstate[key] = value
   advanceCharacterRowProjectionEpoch(characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1096,7 +1092,6 @@ export function applyChatMetadataOwnerPatch(
   if (!character || !chat || !hasOnlyOwnerFields(patch, CHAT_METADATA_OWNER_KEYS)) return false
   applyOwnerFields(chat as unknown as Record<string, unknown>, patch, CHAT_METADATA_OWNER_KEYS)
   advanceCharacterRowProjectionEpoch(characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1130,7 +1125,6 @@ export function restoreChatMetadataOwnerSnapshot(snapshot: {
     applyOwnerFields(target, snapshot.metadata, CHAT_METADATA_OWNER_KEYS, true)
   }
   advanceCharacterRowProjectionEpoch(snapshot.characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1145,7 +1139,6 @@ export function applyChatFolderMetadataOwnerPatch(
   if (!character || !folder || !hasOnlyOwnerFields(patch, CHAT_FOLDER_METADATA_OWNER_KEYS)) return false
   applyOwnerFields(folder as unknown as Record<string, unknown>, patch, CHAT_FOLDER_METADATA_OWNER_KEYS)
   advanceCharacterRowProjectionEpoch(characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1179,7 +1172,6 @@ export function restoreChatFolderMetadataOwnerSnapshot(snapshot: {
     applyOwnerFields(target, snapshot.metadata, CHAT_FOLDER_METADATA_OWNER_KEYS, true)
   }
   advanceCharacterRowProjectionEpoch(snapshot.characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1277,8 +1269,6 @@ const collectionNameSet = new Set<string>(SERVER_COLLECTION_NAMES)
 const guardedResourceValueMemo = new WeakMap<object, object>()
 let resourceDatabaseWriteDepth = 0
 let resourceDatabaseWriteGuardEnabled = false
-let resourceDatabaseWriteChanged = false
-let resourceDatabaseFacadeEpoch = $state(0)
 
 export function setResourceDatabaseWriteGuardEnabled(enabled: boolean): void {
   resourceDatabaseWriteGuardEnabled = enabled
@@ -1286,10 +1276,6 @@ export function setResourceDatabaseWriteGuardEnabled(enabled: boolean): void {
 
 export function isResourceDatabaseWriteActive(): boolean {
   return resourceDatabaseWriteDepth > 0
-}
-
-export function getResourceDatabaseFacadeEpoch(): number {
-  return resourceDatabaseFacadeEpoch
 }
 
 export function isServerCollectionName(value: string): value is ServerCollectionName {
@@ -1380,7 +1366,6 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1422,7 +1407,6 @@ export function applyShellSettingsResource(payload: ServerShellSettingsResourceP
     advanceSettingsGroupProjectionEpoch(settingsGroup)
   }
   advanceSettingsProjectionEpoch()
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1459,7 +1443,6 @@ export function applyStandaloneSettingResource(payload: ServerStandaloneSettingP
     advanceLorebookPageProjectionEpoch()
   }
   advanceSettingsProjectionEpoch()
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1507,7 +1490,6 @@ export function applySettingsGroupResource(
     advanceSettingsGroupProjectionEpoch('providers', { preserveAcknowledgementTaint: true })
   }
   advanceSettingsProjectionEpoch()
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1565,7 +1547,6 @@ export function applySettingsPatchLocalEffect(payload: ServerSettingsPatchLocalE
     collectionsResourceState.statuses.hypaV3Presets = 'ready'
     delete collectionsResourceState.errors.hypaV3Presets
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1589,7 +1570,6 @@ export function applyPluginStorageLocalEffect(payload: ServerPluginStorageLocalE
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.pluginCustomStorage = 'ready'
   delete collectionsResourceState.errors.pluginCustomStorage
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1620,7 +1600,6 @@ export function applyPluginCollectionMutationLocalEffect(
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.plugins = 'ready'
   delete collectionsResourceState.errors.plugins
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1643,7 +1622,6 @@ export function applyPluginProviderLocalEffect(payload: ServerPluginProviderLoca
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1671,7 +1649,6 @@ export function applyModuleCollectionMutationLocalEffect(
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.modules = 'ready'
   delete collectionsResourceState.errors.modules
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1731,7 +1708,6 @@ export function applyGlobalLorebookMutationLocalEffect(
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1761,7 +1737,6 @@ export function applyLorebookMutationLocalEffect(payload: ServerLorebookMutation
     collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
     collectionsResourceState.statuses.loreBook = 'ready'
     delete collectionsResourceState.errors.loreBook
-    markResourceDatabaseChanged()
     return true
   }
 
@@ -1787,7 +1762,6 @@ export function applyLorebookMutationLocalEffect(payload: ServerLorebookMutation
     markCharacterLorebookBodyResourceRevision(payload.characterId, payload.revision)
     markCharacterLorebookProjectionApplied(payload.characterId)
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1809,7 +1783,6 @@ export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalE
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1851,7 +1824,6 @@ export function applyPromptItemMutationLocalEffect(payload: ServerPromptItemMuta
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses[collectionName] = 'ready'
   delete collectionsResourceState.errors[collectionName]
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -1925,7 +1897,6 @@ export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatch
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses[collectionName] = 'ready'
   delete collectionsResourceState.errors[collectionName]
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2002,7 +1973,6 @@ export function applyPresetReorderLocalEffect(payload: ServerPresetReorderLocalE
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2046,7 +2016,6 @@ export function applyLoadoutMutationLocalEffect(payload: ServerLoadoutMutationLo
     settingsResourceState.error = null
     changed = true
   }
-  if (changed) markResourceDatabaseChanged()
   return true
 }
 
@@ -2106,7 +2075,6 @@ export function applyCollectionsResource(
   }
   if (applied) {
     collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
-    markResourceDatabaseChanged()
   }
   return applied
 }
@@ -2207,7 +2175,6 @@ export function applyLegacyPresetPatchLocalEffect(payload: ServerLegacyPresetPat
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.botPresets = 'ready'
   delete collectionsResourceState.errors.botPresets
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2302,8 +2269,6 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2373,7 +2338,6 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
     settingsResourceState.error = null
     changed = true
   }
-  if (changed) markResourceDatabaseChanged()
   return true
 }
 
@@ -2446,7 +2410,6 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2498,7 +2461,6 @@ export function applyAgentPresetCollectionMutationLocalEffect(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2617,7 +2579,6 @@ function applyAgentPresetFieldPatchLocalEffect(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2685,7 +2646,6 @@ function markLegacyPresetCollectionApplied(revision: number): void {
   collectionsResourceState.statuses.botPresets = 'ready'
   delete collectionsResourceState.errors.botPresets
   advanceCollectionProjectionEpoch('botPresets')
-  markResourceDatabaseChanged()
 }
 
 function uniqueLegacyPresetRowsById(rows: readonly unknown[]): Map<string, Record<string, unknown>> | null {
@@ -2802,7 +2762,6 @@ export function applyCharactersResource(
   if (!preserveResidentChatBodies) advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
   reapplyRetainedCharacterProjections()
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2855,7 +2814,6 @@ export function applyCharacterCollectionMutationLocalEffect(
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2894,7 +2852,6 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   advanceCharacterRowProjectionEpoch(characterId)
   advanceCharacterLorebookProjectionEpoch(characterId)
   reapplyRetainedCharacterProjections(characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2908,7 +2865,6 @@ export function getCharacterResourceOwner(characterId: string): character | unde
 export function markCharacterResourceOwnerChanged(characterId: string): boolean {
   if (!getCharacterResourceOwner(characterId)) return false
   advanceCharacterRowProjectionEpoch(characterId)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2929,7 +2885,6 @@ export function applyCharacterOrderResource(payload: ServerCharacterOrderResourc
   charactersResourceState.characterOrder = cloneJsonValue(payload.characterOrder)
   charactersResourceState.orderRevision = payload.revision
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2944,7 +2899,6 @@ export function applyCharacterOrderLocalEffect(payload: ServerCharacterOrderLoca
 
   charactersResourceState.orderRevision = payload.revision
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -2971,7 +2925,6 @@ export function applyCharacterSelectionResource(payload: ServerCharacterSelectio
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -3002,7 +2955,6 @@ export function applyChatGenerationSettingsLocalEffect(
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -3026,7 +2978,6 @@ export function applyCharacterPatchLocalEffect(payload: ServerCharacterPatchLoca
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -3047,7 +2998,6 @@ export function applyCharacterRowMutationLocalEffect(payload: ServerCharacterRow
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -3069,7 +3019,6 @@ export function applyCharacterSelectionLocalEffect(payload: ServerCharacterSelec
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -3090,7 +3039,6 @@ export function applyChatPatchLocalEffect(payload: ServerChatPatchLocalEffectPay
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
-  markResourceDatabaseChanged()
   return true
 }
 
@@ -3145,7 +3093,6 @@ export function resetServerResourceState(): void {
   advanceAllChatBodyProjectionEpochs()
   advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
-  markResourceDatabaseChanged()
 }
 
 /**
@@ -3185,7 +3132,6 @@ export function resetServerResourceRevisionFencesForDatabaseReplacement(): void 
   advanceAllChatBodyProjectionEpochs()
   advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
-  markResourceDatabaseChanged()
 }
 
 export function replaceResourceDatabase(database: Database, revision?: number): void {
@@ -3278,7 +3224,6 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   advanceAllChatBodyProjectionEpochs()
   advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
-  markResourceDatabaseChanged()
 }
 
 export function areServerDatabaseResourcesReady(): boolean {
@@ -3298,17 +3243,11 @@ export function getResourceDatabase(options: { snapshot?: boolean } = {}): Datab
 }
 
 export function withResourceDatabaseWrite<T>(callback: (database: Database) => T): T {
-  const outermost = resourceDatabaseWriteDepth === 0
-  if (outermost) resourceDatabaseWriteChanged = false
   resourceDatabaseWriteDepth += 1
   let finished = false
   const finish = () => {
     if (finished) return
     resourceDatabaseWriteDepth -= 1
-    if (resourceDatabaseWriteDepth === 0 && resourceDatabaseWriteChanged) {
-      resourceDatabaseFacadeEpoch += 1
-      resourceDatabaseWriteChanged = false
-    }
     finished = true
   }
   try {
@@ -3350,21 +3289,18 @@ export const resourceDatabaseCompatibilityProxy = new Proxy({} as Database, {
     assertResourceDatabaseWriteAllowed()
     if (typeof property !== 'string') return false
     setResourceDatabaseField(property, value)
-    markResourceDatabaseChanged()
     return true
   },
   deleteProperty(_target, property) {
     assertResourceDatabaseWriteAllowed()
     if (typeof property !== 'string') return false
     deleteResourceDatabaseField(property)
-    markResourceDatabaseChanged()
     return true
   },
   defineProperty(_target, property, descriptor) {
     assertResourceDatabaseWriteAllowed()
     if (typeof property !== 'string' || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return false
     setResourceDatabaseField(property, descriptor.value)
-    markResourceDatabaseChanged()
     return true
   },
 })
@@ -3484,19 +3420,16 @@ function guardResourceDatabaseValue<T>(value: T): T {
     set(target, property, nextValue, receiver) {
       assertResourceDatabaseWriteAllowed()
       const applied = Reflect.set(target, property, nextValue, receiver)
-      if (applied) markResourceDatabaseChanged()
       return applied
     },
     deleteProperty(target, property) {
       assertResourceDatabaseWriteAllowed()
       const applied = Reflect.deleteProperty(target, property)
-      if (applied) markResourceDatabaseChanged()
       return applied
     },
     defineProperty(target, property, descriptor) {
       assertResourceDatabaseWriteAllowed()
       const applied = Reflect.defineProperty(target, property, descriptor)
-      if (applied) markResourceDatabaseChanged()
       return applied
     },
   })
@@ -3508,14 +3441,6 @@ function assertResourceDatabaseWriteAllowed(): void {
   if (resourceDatabaseWriteGuardEnabled && resourceDatabaseWriteDepth === 0) {
     throw new TypeError('The resource database compatibility view is read-only outside withResourceDatabaseWrite')
   }
-}
-
-function markResourceDatabaseChanged(): void {
-  if (resourceDatabaseWriteDepth > 0) {
-    resourceDatabaseWriteChanged = true
-    return
-  }
-  resourceDatabaseFacadeEpoch += 1
 }
 
 function isCharacterSummaryShell(value: unknown): boolean {

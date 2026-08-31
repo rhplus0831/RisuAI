@@ -9,7 +9,6 @@ import {
   collectionsResourceState,
   charactersResourceState,
   getResourceDatabase,
-  getResourceDatabaseFacadeEpoch,
   resetServerResourceState,
   replaceResourceDatabase,
   settingsResourceState,
@@ -85,7 +84,6 @@ describe('database compatibility accessors over resource state', () => {
   })
 
   it('seeds resource revisions and apply epochs on an authoritative replacement', () => {
-    const beforeFacadeEpoch = getResourceDatabaseFacadeEpoch()
     const beforeApplyEpoch = getServerResourceApplyEpoch()
 
     applyServerResourceDatabase(databaseFixture('Projected'), 17)
@@ -94,7 +92,6 @@ describe('database compatibility accessors over resource state', () => {
     expect(settingsResourceState.revision).toBe(17)
     expect(collectionsResourceState.fullRevision).toBe(17)
     expect(charactersResourceState.listRevision).toBe(17)
-    expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeFacadeEpoch)
     expect(getServerResourceApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
   })
 
