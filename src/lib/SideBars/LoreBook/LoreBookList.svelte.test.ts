@@ -5,7 +5,7 @@ import { selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { lorebookPageOwner } from 'src/ts/server/lorebookPageOwner.svelte'
 import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, collectionsResourceState } from 'src/ts/server/resourceState.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
   type Deferred<T> = {
@@ -312,6 +312,7 @@ describe('LoreBookList', () => {
       loreBook: [],
       loreBookPage: 0,
     } as Database)
+    lorebookPageOwner.projectStructuralSelection(0)
   })
 
   afterEach(() => {
@@ -440,6 +441,31 @@ describe('LoreBookList', () => {
     await flushAsyncWork()
 
     expect(component.getEntries().map((entry) => entry.comment)).toEqual(['Legacy A', 'Legacy C'])
+  })
+
+  it('fails closed when a captured stable entry id is duplicated before deletion settles', async () => {
+    const initialEntries = [
+      makeLoreBook({ id: 'entry-a', comment: 'Entry A' }),
+      makeLoreBook({ id: 'entry-b', comment: 'Entry B' }),
+    ]
+    const confirm = lorebookListMocks.createDeferred<boolean>()
+    lorebookListMocks.queueConfirm(confirm)
+
+    component = mountHarness(initialEntries)
+    await tick()
+    deleteButtonForRow(rowByEntryId('entry-b')).click()
+    await tick()
+
+    const duplicatedEntries = [
+      makeLoreBook({ id: 'entry-b', comment: 'Inserted Duplicate' }),
+      ...cloneEntries(initialEntries),
+    ]
+    component.setEntries(duplicatedEntries)
+    await tick()
+    confirm.resolve(true)
+    await flushAsyncWork()
+
+    expect(component.getEntries()).toEqual(duplicatedEntries)
   })
 
   it('does not poison detail tracking when a closed row is deleted', async () => {
@@ -1078,6 +1104,28 @@ describe('LoreBookList', () => {
       setting: 'loreBookPage',
       state: { present: true, value: 0 },
     })
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows()).toHaveLength(0)
+    expect(target.textContent).toContain('No Lorebook')
+    expect(lorebookListMocks.replaceGlobalLorebookEntryCollection).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the global lorebook collection owner is in error', async () => {
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'unsafe-book',
+          name: 'Unsafe Book',
+          data: [makeLoreBook({ id: 'unsafe-entry', comment: 'Unsafe Entry' })],
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    collectionsResourceState.statuses.loreBook = 'error'
 
     resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
     await tick()

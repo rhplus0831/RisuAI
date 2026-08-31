@@ -293,9 +293,10 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
     expect(source).not.toContain('currentGlobalLorebookStateSnapshot')
     expect(source).not.toContain('dispatchCreateGlobalLorebook')
     expect(source).not.toContain('dispatchDeleteGlobalLorebook')
+    expect(source).not.toContain('getResourceDatabase')
     expect(source).toContain('createGlobalLorebook()')
     expect(source).toContain('renameGlobalLorebookById(lorebookId, value)')
-    expect(source).toContain('deleteGlobalLorebookByIdWithOutcome(lorebookId)')
+    expect(source).toContain('deleteGlobalLorebookByIdWithOutcome(targetLorebookId)')
   })
 
   it('wires external ModuleMenu LoreBookList typing through draft handlers', () => {
@@ -325,7 +326,10 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
       expect(source).not.toContain('dispatchReplaceChatLorebooks')
       expect(source).not.toContain('dispatchReplaceGlobalLorebookEntries')
     }
-    expect(setting).toContain("import { getDatabase } from 'src/ts/storage/database.svelte'")
+    expect(setting).not.toContain('getDatabase')
+    expect(list).not.toContain('getDatabase')
+    expect(setting).toContain('charactersResourceState')
+    expect(list).toContain('collectionsResourceState')
     expect(setting).toContain('replaceCharacterLorebookCollection')
     expect(setting).toContain('replaceChatLorebookCollection')
     expect(list).toContain('replaceGlobalLorebookEntryCollection')
@@ -336,6 +340,11 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
     expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
     expect(source).not.toContain('dispatchReplaceChatLorebooks')
+    expect(source).not.toContain('getCurrentCharacter')
+    expect(source).not.toContain('getCurrentChat')
+    expect(source).not.toContain('getDatabase')
+    expect(source).toContain('charactersResourceState')
+    expect(source).toContain('settingsResourceState')
     expect(source).toContain('setActiveChatLorebookLocalActivation')
   })
 

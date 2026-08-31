@@ -2,15 +2,13 @@
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState } from 'src/ts/server/resourceState.svelte'
   import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     createGlobalLorebook,
     deleteGlobalLorebookByIdWithOutcome,
-    deleteGlobalLorebookWithOutcome,
-    renameGlobalLorebook,
     renameGlobalLorebookById,
     subscribeGlobalLorebookDeleteStates,
     watchServerBackedLorebooks,
@@ -25,6 +23,14 @@
   let globalLorebookDeleteStates = $state(new Map())
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
+
+  function globalLorebookOwners() {
+    if (collectionsResourceState.statuses.loreBook !== 'ready') return []
+    const lorebooks = collectionsResourceState.values.loreBook
+    return Array.isArray(lorebooks) ? lorebooks : []
+  }
+
+  let globalLorebooks = $derived(globalLorebookOwners())
 
   /** @param {unknown} value */
   function stableLorebookId(value) {
@@ -44,7 +50,7 @@
   function selectableLorebookId(lorebook) {
     const lorebookId = stableLorebookId(lorebook.id)
     if (!lorebookId) return null
-    return getDatabase().loreBook.filter((candidate) => candidate.id === lorebookId).length === 1 ? lorebookId : null
+    return globalLorebookOwners().filter((candidate) => candidate.id === lorebookId).length === 1 ? lorebookId : null
   }
 
   /** @param {{id?: unknown}} lorebook @param {number} index */
@@ -134,8 +140,8 @@
         </button>
       </div>
     </div>
-    {#each getDatabase().loreBook as lore, ind (lorebookRenderKey(lore))}
-      {@const lorebookId = stableLorebookId(lore.id)}
+    {#each globalLorebooks as lore, ind (lorebookRenderKey(lore))}
+      {@const lorebookId = selectableLorebookId(lore)}
       {@const deleteState = lorebookId ? globalLorebookDeleteStates.get(lorebookId) : undefined}
       {@const deletePending = isDeletePending(deleteState)}
       {@const pageSelectionStatus = lorebookId ? selectionStatus(lorebookId) : undefined}
@@ -148,15 +154,13 @@
         data-risu-global-lorebook-delete-status={deleteState?.status}
         data-risu-global-lorebook-selection-status={pageSelectionStatus}>
         <div class="flex items-center gap-2">
-          {#if editMode && !deletePending}
+          {#if editMode && lorebookId && !deletePending}
             <TextInput
               bind:value={
                 () => lore.name,
                 (value) => {
                   if (lorebookId) {
                     renameGlobalLorebookById(lorebookId, value)
-                  } else if (getDatabase().loreBook[ind] === lore) {
-                    renameGlobalLorebook(ind, value)
                   }
                 }
               }
@@ -173,19 +177,15 @@
               type="button"
               class="text-textcolor2 hover:text-green-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
               aria-label={`${language.remove}: ${lore.name}`}
-              disabled={deletePending}
+              disabled={deletePending || !lorebookId || globalLorebooks.length === 1}
               onclick={async () => {
-                if (deletePending || getDatabase().loreBook.length === 1) {
+                if (deletePending || !lorebookId || globalLorebooks.length === 1) {
                   return
                 }
-                const lorebookReference = lore
+                const targetLorebookId = lorebookId
                 const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
                 if (!d) return
-                if (lorebookId) {
-                  await deleteGlobalLorebookByIdWithOutcome(lorebookId)
-                } else if (getDatabase().loreBook[ind] === lorebookReference) {
-                  await deleteGlobalLorebookWithOutcome(ind)
-                }
+                await deleteGlobalLorebookByIdWithOutcome(targetLorebookId)
               }}>
               <TrashIcon size={18} />
             </button>
@@ -220,6 +220,7 @@
     <div class="flex mt-2 items-center">
       <button
         aria-label={language.add}
+        disabled={collectionsResourceState.statuses.loreBook !== 'ready'}
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           createGlobalLorebook()
@@ -228,6 +229,7 @@
       </button>
       <button
         aria-label={language.edit}
+        disabled={collectionsResourceState.statuses.loreBook !== 'ready'}
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode

@@ -90,6 +90,7 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
 import Lorepreset from './lorepreset.svelte'
 import { language } from '../../lang'
 import {
+  collectionsResourceState,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
@@ -282,6 +283,23 @@ describe('global lorebook modal targeting', () => {
 
     expect(deleteButton('First')).toBeTruthy()
     expect(deleteButton('Second')).toBeTruthy()
+    expect(deleteButton('First').disabled).toBe(true)
+    expect(deleteButton('Second').disabled).toBe(true)
+  })
+
+  it('fails closed while the global lorebook collection owner is in error', async () => {
+    projectLorebooks([lorebook('g1', 'First'), lorebook('g2', 'Second')])
+    collectionsResourceState.statuses.loreBook = 'error'
+
+    component = mount(Lorepreset, { target })
+    await tick()
+
+    expect(target.textContent).not.toContain('First')
+    expect(target.textContent).not.toContain('Second')
+    const addButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.add}"]`)
+    expect(addButton?.disabled).toBe(true)
+    addButton?.click()
+    expect(lorepresetMocks.createGlobalLorebook).not.toHaveBeenCalled()
   })
 })
 

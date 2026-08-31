@@ -18,7 +18,7 @@
 <script lang="ts">
   import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from '@lucide/svelte'
   import { language } from '../../../lang'
-  import { getCurrentCharacter, getCurrentChat, getDatabase, type loreBook } from '../../../ts/storage/database.svelte'
+  import type { Chat, character, loreBook } from '../../../ts/storage/database.svelte'
   import { alertConfirm, alertError, alertMd, alertNormal } from '../../../ts/alert'
   import Check from '../../UI/GUI/CheckInput.svelte'
   import Help from '../../Others/Help.svelte'
@@ -46,6 +46,12 @@
   } from 'src/ts/server/scopedLorebookMutationUiState'
   import { onDestroy, onMount } from 'svelte'
   import { isAgentOnlyLorebookEntry } from '@risuai/shared-core/agent-only-lorebook'
+  import { selectedCharID } from 'src/ts/stores.svelte'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
 
   const tokenCountCache = new Map<string, number>()
   const MAX_TOKEN_COUNT_CACHE = 500
@@ -110,8 +116,41 @@
   let deletionCommitted = false
   let tokenPromise = $state<Promise<number> | null>(null)
 
+  function characterOwners(): readonly character[] {
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+  }
+
+  function selectedCharacterOwner(): character | undefined {
+    const selectedIndex =
+      charactersResourceState.selectionRevision !== null ? charactersResourceState.currentChar : $selectedCharID
+    const candidate = characterOwners()[selectedIndex]
+    if (typeof candidate?.chaId !== 'string' || !candidate.chaId.trim()) return undefined
+    return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+  }
+
+  function selectedChatOwner(): Chat | undefined {
+    const character = selectedCharacterOwner()
+    const candidate = character?.chats?.[character.chatPage ?? 0]
+    if (!character || typeof candidate?.id !== 'string' || !candidate.id.trim()) return undefined
+
+    let owner: { character: character; chat: Chat } | undefined
+    for (const characterOwner of characterOwners()) {
+      for (const chatOwner of characterOwner.chats ?? []) {
+        if (chatOwner?.id !== candidate.id) continue
+        if (owner) return undefined
+        owner = { character: characterOwner, chat: chatOwner }
+      }
+    }
+    return owner?.character === character ? owner.chat : undefined
+  }
+
+  function localActivationSettingEnabled(): boolean {
+    if (settingsResourceState.groupStatuses.sidebar !== 'ready') return false
+    return settingsResourceState.value.localActivationInGlobalLorebook === true
+  }
+
   let localActivationScopeKey = $derived.by(() => {
-    const chatId = getCurrentChat()?.id
+    const chatId = selectedChatOwner()?.id
     return chatId ? `chat:${chatId}` : null
   })
   let localActivationState = $derived(
@@ -292,7 +331,7 @@
   function captureDeletionTarget(): LorebookDeletionTarget {
     const snapshot = cloneJsonValue(draft)
     const id = typeof snapshot.id === 'string' && snapshot.id.trim() ? snapshot.id : undefined
-    const currentChat = getCurrentChat()
+    const currentChat = selectedChatOwner()
     const localActivationCleanup =
       id &&
       entryDraftScopeKey?.startsWith('character:') &&
@@ -347,7 +386,7 @@
   }
 
   function isLocallyActivated(book: loreBook) {
-    return book.id ? getCurrentChat()?.localLore.some((e) => e.id === book.id) : false
+    return book.id ? selectedChatOwner()?.localLore.some((e) => e.id === book.id) : false
   }
   function toggleLocalActive(check: boolean, book: loreBook) {
     if (localActivationStatus === 'pending') return
@@ -373,7 +412,7 @@
   }
   function getParentLoreName(book: loreBook) {
     if (book.mode === 'child') {
-      const value = getCurrentCharacter()?.globalLore.find((e) => e.id === book.id)
+      const value = selectedCharacterOwner()?.globalLore.find((e) => e.id === book.id)
       if (value) {
         return value.comment.length === 0 ? (value.key.length === 0 ? 'Unnamed Lore' : value.key) : value.comment
       }
@@ -611,7 +650,7 @@
             disabled={isAgentOnlyLorebookEntry(draft)}
             name={language.alwaysActive} />
         </div>
-        {#if !isAgentOnlyLorebookEntry(draft) && !draft.alwaysActive && getCurrentCharacter()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && getDatabase().localActivationInGlobalLorebook}
+        {#if !isAgentOnlyLorebookEntry(draft) && !draft.alwaysActive && selectedCharacterOwner()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && localActivationSettingEnabled()}
           <div class="flex items-center mt-2">
             <Check
               check={isLocallyActivated(draft)}

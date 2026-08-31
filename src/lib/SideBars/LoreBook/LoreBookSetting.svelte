@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDatabase, type Chat, type character, type Database } from 'src/ts/storage/database.svelte'
+  import type { Chat, character, Database } from 'src/ts/storage/database.svelte'
   import { language } from '../../../lang'
   import {
     DownloadIcon,
@@ -55,11 +55,7 @@
   type LorebookAdvancedSetting = 'bulkEnabling' | 'loreBookDepth' | 'loreBookToken' | 'useExperimental'
 
   function characterOwners(): readonly character[] {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return getDatabase().characters ?? []
-    }
-    return []
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   }
 
   function uniqueCharacterOwner(characterId: string | undefined): character | undefined {
@@ -70,9 +66,7 @@
   }
 
   function selectedCharacterIndex(): number {
-    return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
-      ? charactersResourceState.currentChar
-      : $selectedCharID
+    return charactersResourceState.selectionRevision !== null ? charactersResourceState.currentChar : $selectedCharID
   }
 
   function selectedCharacter(): character | undefined {
@@ -115,8 +109,7 @@
         ? (settings[key] as Database[K] | undefined)
         : undefined
     }
-    if (status === 'error') return undefined
-    return getDatabase()[key]
+    return undefined
   }
 
   function globalLorebookOwners(): readonly GlobalLorebook[] {
@@ -126,8 +119,7 @@
         ? (collectionsResourceState.values.loreBook as GlobalLorebook[])
         : []
     }
-    if (status === 'error') return []
-    return getDatabase().loreBook ?? []
+    return []
   }
 
   function uniqueGlobalLorebookOwner(lorebookId: string | undefined): GlobalLorebook | undefined {
@@ -139,13 +131,7 @@
   function selectedGlobalLorebook(): GlobalLorebook | undefined {
     const snapshot = $lorebookPageOwnerState
     const ownerPage = lorebookPageIndexFromSnapshot(snapshot)
-    const compatibilityPage = getDatabase().loreBookPage
-    const page =
-      snapshot.status === 'ready' || snapshot.status === 'stale'
-        ? ownerPage
-        : snapshot.status !== 'error' && Number.isInteger(compatibilityPage) && compatibilityPage >= 0
-          ? compatibilityPage
-          : null
+    const page = snapshot.status === 'ready' || snapshot.status === 'stale' ? ownerPage : null
     const candidate = page === null ? undefined : globalLorebookOwners()[page]
     return typeof candidate?.id === 'string' && candidate.id.trim()
       ? uniqueGlobalLorebookOwner(candidate.id)

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { getDatabase, type Chat, type character, type Database, type loreBook } from 'src/ts/storage/database.svelte'
+  import type { Chat, character, Database, loreBook } from 'src/ts/storage/database.svelte'
   import LoreBookData, { type LorebookDeletionTarget } from './LoreBookData.svelte'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, tick } from 'svelte'
@@ -80,11 +80,7 @@
   type GlobalLorebook = Database['loreBook'][number]
 
   function characterOwners(): readonly character[] {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-      return getDatabase().characters ?? []
-    }
-    return []
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   }
 
   function uniqueCharacterOwner(characterId: string | undefined): character | undefined {
@@ -96,9 +92,7 @@
   }
 
   function selectedCharacterIndex(): number {
-    return charactersResourceState.status === 'ready' && charactersResourceState.selectionRevision !== null
-      ? charactersResourceState.currentChar
-      : $selectedCharID
+    return charactersResourceState.selectionRevision !== null ? charactersResourceState.currentChar : $selectedCharID
   }
 
   function selectedCharacter(): character | undefined {
@@ -148,17 +142,14 @@
         ? (collectionsResourceState.values.loreBook as GlobalLorebook[])
         : []
     }
-    if (status === 'error') return []
-    return getDatabase().loreBook ?? []
+    return []
   }
 
   function selectedGlobalLorebookIndex(): number | null {
     const snapshot = $lorebookPageOwnerState
     const ownerIndex = lorebookPageIndexFromSnapshot(snapshot)
     if (snapshot.status === 'ready' || snapshot.status === 'stale') return ownerIndex
-    if (snapshot.status === 'error') return null
-    const compatibilityPage = getDatabase().loreBookPage
-    return Number.isInteger(compatibilityPage) && compatibilityPage >= 0 ? compatibilityPage : null
+    return null
   }
 
   function uniqueGlobalLorebookOwner(lorebookId: string | undefined): GlobalLorebook | undefined {
@@ -292,7 +283,11 @@
   function resolveLorebookDeletionIndex(entries: loreBook[], target: LorebookDeletionTarget): number {
     const targetId = stableEntryId(target)
     if (targetId) {
-      return entries.findIndex((entry) => stableEntryId(entry) === targetId)
+      const matchingIndexes = entries.reduce<number[]>((matches, entry, index) => {
+        if (stableEntryId(entry) === targetId) matches.push(index)
+        return matches
+      }, [])
+      return matchingIndexes.length === 1 ? matchingIndexes[0] : -1
     }
 
     if (target.mode === 'folder') {
