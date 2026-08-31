@@ -2752,6 +2752,7 @@ describe('API-backed client bootstrap', () => {
     )
     withTrustedResourceWrite(() => {
       getDatabase().selectedPersona = 0
+      getDatabase().selectedPersonaId = 'persona-a'
       getDatabase().username = 'Attempted name'
       getDatabase().userIcon = 'attempted-icon'
       getDatabase().personaPrompt = 'Attempted prompt'
@@ -2823,6 +2824,7 @@ describe('API-backed client bootstrap', () => {
     )
     withTrustedResourceWrite(() => {
       getDatabase().selectedPersona = 0
+      getDatabase().selectedPersonaId = 'persona-b'
       getDatabase().username = 'B'
       getDatabase().userIcon = ''
       getDatabase().personaPrompt = 'B'
@@ -2910,6 +2912,7 @@ describe('API-backed client bootstrap', () => {
       applyCollectionsResource({ revision: 5, collections: { personas: [persona] as never } }, 'personas')
       withTrustedResourceWrite(() => {
         getDatabase().selectedPersona = 0
+        getDatabase().selectedPersonaId = 'persona-a'
         getDatabase().username = 'Attempted'
         getDatabase().userIcon = ''
         getDatabase().personaPrompt = ''
@@ -2988,6 +2991,7 @@ describe('API-backed client bootstrap', () => {
       )
       withTrustedResourceWrite(() => {
         getDatabase().selectedPersona = 1
+        getDatabase().selectedPersonaId = 'persona-b'
         getDatabase().username = 'Newer B'
         getDatabase().userIcon = ''
         getDatabase().personaPrompt = 'Newer B prompt'
@@ -3046,6 +3050,7 @@ describe('API-backed client bootstrap', () => {
       applyCollectionsResource({ revision: 5, collections: { personas: personas as never } }, 'personas')
       withTrustedResourceWrite(() => {
         getDatabase().selectedPersona = 1
+        getDatabase().selectedPersonaId = 'persona-b'
         getDatabase().username = 'B'
         getDatabase().userIcon = ''
         getDatabase().personaPrompt = 'B'
@@ -3060,6 +3065,7 @@ describe('API-backed client bootstrap', () => {
           revision: 5,
           settings: {
             selectedPersona: 1,
+            selectedPersonaId: 'persona-b',
             username: 'B',
             userIcon: '',
             personaPrompt: 'B',
