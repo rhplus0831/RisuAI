@@ -8,7 +8,7 @@
 
 import { isTokenizerUrl, serveTokenizerFetch } from './tokenizerFetch'
 import { resolveModelForRole, type LegacyModelMode } from '@risuai/shared-core/model-roles'
-import { getDatabase } from '../../../storage/database.svelte'
+import { composeResourceDatabaseSnapshot } from '../../../server/resourceState.svelte'
 
 interface ServerCompletionCallBase {
   url: string
@@ -165,7 +165,7 @@ function stringField(value: unknown): string | undefined {
 }
 
 function selectedServerIntentModel(body: CompletionPayload): string {
-  const db = getDatabase({ snapshot: true }) as unknown as Record<string, unknown>
+  const db = composeResourceDatabaseSnapshot() as unknown as Record<string, unknown>
   const staticModel = stringField(body.staticModel)
   if (staticModel) return staticModel
 
@@ -175,7 +175,7 @@ function selectedServerIntentModel(body: CompletionPayload): string {
 }
 
 function serverIntentResult(body: CompletionPayload): { result: string; model?: string } {
-  const db = getDatabase({ snapshot: true }) as unknown as Record<string, unknown>
+  const db = composeResourceDatabaseSnapshot() as unknown as Record<string, unknown>
   const aiModel = selectedServerIntentModel(body)
 
   if (aiModel === 'echo_model') {

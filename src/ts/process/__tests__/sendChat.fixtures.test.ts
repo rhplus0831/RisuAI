@@ -19,6 +19,10 @@ vi.mock('../request/durableGeneration', async (importActual) => {
     resolveDurableGeneration: () => ({ type: 'non-durable' as const, reason: 'test' }),
   }
 })
+vi.mock('../../server/commands', async (importActual) => {
+  const actual = await importActual<typeof import('../../server/commands')>()
+  return { ...actual, canUseServerCommands: () => false }
+})
 
 // fastifyStorage.getNodeServerProxyAuth touches indexedDB which is unavailable
 // in the jsdom test environment. Stub it to prevent the ReferenceError.

@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect } from 'vitest'
-import { getResourceDatabase as getDatabase } from '../../server/resourceState.svelte'
+import { charactersResourceState } from '../../server/resourceState.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import type { Message } from '../../storage/database.svelte'
 import { chatProcessStage, doingChat } from '../index.svelte'
@@ -121,7 +121,7 @@ function normalizeProviderCall(call: { arg: unknown; model: unknown }): Normaliz
 
 export function captureSnapshot(stages: number[]): FixtureSnapshot {
   const charIdx = get(selectedCharID)
-  const char = getDatabase().characters[charIdx]
+  const char = charactersResourceState.characters[charIdx]
   const chat = char.chats[char.chatPage]
   const lastAssistant = [...chat.message].reverse().find((m) => m.role === 'char')
 
