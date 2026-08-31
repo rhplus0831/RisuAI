@@ -2531,13 +2531,16 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
-      if (!canUseServerCommands()) {
+      if (!canUseServerCommands() && !input.executionWrapper) {
         runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
         return { status: 'unavailable' }
       }
       const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
       const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
-      const execute = () => executeServerBackedSettingsPatch(executionInput, grouped, rollbackEpoch)
+      const execute = () =>
+        canUseServerCommands()
+          ? executeServerBackedSettingsPatch(executionInput, grouped, rollbackEpoch)
+          : Promise.resolve({ status: 'unavailable' as const })
       let result: ServerCommandResult
       try {
         result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
@@ -5942,7 +5945,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
     withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, async () => {
-      if (!canUseServerCommands()) {
+      if (!canUseServerCommands() && !input.executionWrapper) {
         runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
         return { status: 'unavailable' }
       }
@@ -5950,6 +5953,7 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
       const deferredRollback = input.failureRollbackDisposition ? input.rollback : undefined
       const executionInput = input.failureRollbackDisposition ? { ...input, rollback: undefined } : input
       const execute = () => {
+        if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' as const })
         executionStarted = true
         return executeServerCommand(executionInput, rollbackEpoch)
       }
