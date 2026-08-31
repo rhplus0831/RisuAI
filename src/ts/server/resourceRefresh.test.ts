@@ -89,6 +89,7 @@ import {
   forceServerDatabaseReplacementRefresh,
   forceServerResourceRefresh,
   refreshServerRealmImportResources,
+  serverResourceInvalidationHooks,
 } from './resourceRefresh'
 import {
   clearAppliedServerResourceRevision,
@@ -98,7 +99,12 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
 } from './commands'
-import { getResourceDatabase, replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+  resetServerResourceState,
+} from './resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 
@@ -149,6 +155,17 @@ beforeEach(() => {
     },
   })
 })
+
+it.each(['idle', 'loading', 'error'] as const)(
+  'does not refresh greeting translations through retained characters while the owner is %s',
+  async (status) => {
+    charactersResourceState.status = status
+
+    await expect(serverResourceInvalidationHooks.refreshGreetingTranslations!('char-a', 5)).resolves.toBe(true)
+
+    expect(sideEffects.refreshGreetingTranslations).not.toHaveBeenCalled()
+  },
+)
 
 describe('Realm import resource refresh', () => {
   it('applies a contiguous character-created event without destructive refresh side effects', async () => {

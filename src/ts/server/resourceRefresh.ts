@@ -30,7 +30,7 @@ import {
   resetLorebookHydration,
 } from './lorebookBridge.svelte'
 import {
-  getResourceDatabase as getDatabase,
+  charactersResourceState,
   resetServerResourceRevisionFencesForDatabaseReplacement,
 } from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
@@ -83,7 +83,7 @@ export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = 
   clearActiveMessageTranslation,
   refreshGreetingTranslations: async (characterId, minimumRevision) => {
     clearGreetingTranslationProjection(characterId)
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const character = readyCharacterOwners().find((candidate) => candidate.chaId === characterId)
     const chatId = character?.chats?.[character.chatPage]?.id
     if (!chatId) return true
     const result = await refreshGreetingTranslationProjection(characterId, chatId, { minimumRevision })
@@ -169,7 +169,7 @@ export async function refreshServerRealmImportResources(input: {
     if (result.scope === 'targeted') {
       // Preserve existing hydration identities. Only mark characters whose
       // character-list payload actually carried a resident lorebook.
-      recordHydratedCharacterLorebooks(getDatabase().characters)
+      recordHydratedCharacterLorebooks(readyCharacterOwners())
     }
     setCachedServerCommandRevision(result.revision)
     setAppliedServerResourceRevision(result.revision)
@@ -234,7 +234,7 @@ async function completeFullServerResourceRefresh(
   resetChatHydration()
   resetLorebookHydration()
   clearGreetingTranslationProjection()
-  recordHydratedCharacterLorebooks(getDatabase().characters)
+  recordHydratedCharacterLorebooks(readyCharacterOwners())
   void hydrateActiveChat({ force: true })
 
   if (!(await ensurePromptTemplateHydrated({ force: true, minimumRevision: revision }))) {
@@ -276,4 +276,8 @@ async function refreshRuntimeJobs(): Promise<void> {
   applyGenerationOperationBootstrap(runtime.bootstrap, 'full_resource_refresh')
   setActiveMessageTranslations(runtime.bootstrap.activeMessageTranslations ?? [])
   setActiveGreetingTranslations(runtime.bootstrap.activeGreetingTranslations ?? [])
+}
+
+function readyCharacterOwners() {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
