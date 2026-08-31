@@ -189,8 +189,8 @@
 <script lang="ts">
   import { CheckIcon, XIcon } from '@lucide/svelte'
   import { createEventDispatcher, onDestroy } from 'svelte'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     findAllOriginalRangesFromHtml,
     findAllOriginalRangesFromText,
@@ -236,6 +236,9 @@
   let displayMode: PartialEditDisplayMode = $derived(
     typeof translationText !== 'string' ? 'original' : bilingualActive ? 'bilingual' : 'translation',
   )
+  let displaySettingsReady = $derived(settingsResourceState.groupStatuses.display === 'ready')
+  let zoomSize = $derived(displaySettingsReady ? (settingsResourceState.value.zoomsize ?? 100) : 100)
+  let lineHeight = $derived(displaySettingsReady ? (settingsResourceState.value.lineHeight ?? 1.25) : 1.25)
 
   function layerSourceData(layer: PartialEditLayer): string | null {
     if (layer === 'translation') return typeof translationText === 'string' ? translationText : null
@@ -1169,8 +1172,8 @@
         aria-label={editModalTitle}
         onkeydown={handleEditTextareaKeydown}
         oninput={adjustHeight}
-        style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
-        style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem"></textarea>
+        style:font-size="{0.875 * (zoomSize / 100)}rem"
+        style:line-height="{lineHeight * (zoomSize / 100)}rem"></textarea>
       <div class="partial-edit-buttons">
         <button
           type="button"

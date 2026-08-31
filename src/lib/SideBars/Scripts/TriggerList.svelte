@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getDatabase, type triggerscript } from 'src/ts/storage/database.svelte'
+  import type { triggerscript } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import { alertConfirm } from 'src/ts/alert'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
@@ -8,6 +8,7 @@
   import { hubURL } from 'src/ts/characterCards'
   import TriggerV2List from './TriggerV2List.svelte'
   import { diagnoseServerTriggerCompatibility } from 'src/ts/process/triggerServerSupport'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   interface Props {
     value?: triggerscript[]
@@ -23,6 +24,10 @@
   )
   let modeReplacementAttempt = 0
   let serverCompatibilityDiagnostics = $derived(diagnoseServerTriggerCompatibility(value))
+  let showDeprecatedTriggerV1 = $derived(
+    settingsResourceState.groupStatuses.advanced === 'ready' &&
+      settingsResourceState.value.showDeprecatedTriggerV1 === true,
+  )
 
   const loadTriggerV1List = () => import('./TriggerV1List.svelte').then((m) => m.default)
 
@@ -62,7 +67,7 @@
   </div>
 {/if}
 <div class="flex items-start mt-2 gap-2">
-  {#if v1Enabled || getDatabase().showDeprecatedTriggerV1}
+  {#if v1Enabled || showDeprecatedTriggerV1}
     <button
       aria-pressed={v1Enabled}
       class="bg-bgcolor py-1 rounded-md text-sm px-2"

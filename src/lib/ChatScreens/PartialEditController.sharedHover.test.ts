@@ -1,8 +1,15 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({ lineHeight: 1.25, zoomsize: 100 }),
+const partialEditSettingsMocks = vi.hoisted(() => ({
+  settingsResourceState: {
+    value: { lineHeight: 1.5, zoomsize: 200 },
+    groupStatuses: { display: 'ready' },
+  },
+}))
+
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: partialEditSettingsMocks.settingsResourceState,
 }))
 
 import PartialEditController from './PartialEditController.svelte'
@@ -209,6 +216,9 @@ function getFloatingAction(action: 'delete' | 'edit'): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  partialEditSettingsMocks.settingsResourceState.value.lineHeight = 1.5
+  partialEditSettingsMocks.settingsResourceState.value.zoomsize = 200
+  partialEditSettingsMocks.settingsResourceState.groupStatuses.display = 'ready'
   vi.stubGlobal('IntersectionObserver', VisibleIntersectionObserver)
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
@@ -444,6 +454,49 @@ describe('PartialEditController shared hover handler', () => {
 })
 
 describe('PartialEditController modal accessibility', () => {
+  it('uses only ready display settings and falls back safely after owner errors', async () => {
+    const fixture = createHoverFixture({
+      text: 'styled edit block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    stubElementFromPoint([fixture])
+    const controller = mountController(fixture.bodyRoot, {
+      messageData: 'alpha styled edit block omega',
+    })
+    await settleEffects()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getFloatingAction('edit').click()
+    await settleEffects()
+
+    let textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea?.style.fontSize).toBe('1.75rem')
+    expect(textarea?.style.lineHeight).toBe('3rem')
+
+    pressKey(textarea!, 'Escape')
+    await settleEffects()
+    unmountController(controller)
+    partialEditSettingsMocks.settingsResourceState.groupStatuses.display = 'error'
+
+    const fallbackController = mountController(fixture.bodyRoot, {
+      messageData: 'alpha styled edit block omega',
+    })
+    await settleEffects()
+    movePointer(60, 112)
+    await flushHoverFrame()
+    getFloatingAction('edit').click()
+    await settleEffects()
+
+    textarea = document.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(textarea?.style.fontSize).toBe('0.875rem')
+    expect(textarea?.style.lineHeight).toBe('1.25rem')
+    unmountController(fallbackController)
+  })
+
   it('keeps modal focus contained and restores focus after Escape', async () => {
     const fixture = createHoverFixture({
       text: 'keyboard target block',
