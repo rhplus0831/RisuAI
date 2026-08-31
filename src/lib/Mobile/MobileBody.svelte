@@ -66,7 +66,10 @@
       ownerReady: charactersResourceState.status === 'ready',
       ownerSelectedIndex: charactersResourceState.currentChar,
       compatibilitySelectedIndex: $selectedCharID,
-      readCompatibilityCharacters: () => getDatabase().characters,
+      readCompatibilityCharacters: () =>
+        charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+          ? getDatabase().characters
+          : [],
     }),
   )
 </script>

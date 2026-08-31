@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getResourceDatabase as getDatabase,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
   import Hub from './Realm/RealmMain.svelte'
   import { OpenRealmStore } from 'src/ts/stores.svelte'
   import { ArrowLeft, ChevronRightIcon, Globe2Icon, PinIcon, UsersIcon } from '@lucide/svelte'
@@ -31,7 +35,16 @@
   let realmConfirmOpen = $state(false)
   let showAllPinnedChats = $state(false)
   let relativeTimeNow = $state(Date.now())
-  let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(getDatabase().language))
+  let relativeTimeLocale = $derived(
+    resolveMobileRelativeTimeLocale(
+      settingsResourceState.groupStatuses.language === 'ready'
+        ? (settingsResourceState.value.language as string | undefined)
+        : settingsResourceState.groupStatuses.language === 'idle' ||
+            settingsResourceState.groupStatuses.language === 'loading'
+          ? getDatabase().language
+          : undefined,
+    ),
+  )
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let warningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
   let generatingChatIds = $derived(
@@ -39,7 +52,11 @@
   )
   function characterRowsOwner() {
     const rows =
-      charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
+      charactersResourceState.status === 'ready'
+        ? charactersResourceState.characters
+        : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+          ? getDatabase().characters
+          : []
     if (charactersResourceState.status !== 'ready') return rows
 
     const counts = new Map<string, number>()
@@ -52,7 +69,9 @@
   function characterOrderOwner() {
     return charactersResourceState.status === 'ready' && charactersResourceState.orderRevision !== null
       ? charactersResourceState.characterOrder
-      : (getDatabase().characterOrder ?? [])
+      : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+        ? (getDatabase().characterOrder ?? [])
+        : []
   }
 
   let pinnedChats = $derived(collectPinnedChats(characterRowsOwner(), characterOrderOwner()))
@@ -77,7 +96,14 @@
   async function openRealm() {
     if ($OpenRealmStore || realmConfirmOpen) return
 
-    if (!getDatabase().doNotWarnExternalServers) {
+    const doNotWarnExternalServers =
+      settingsResourceState.groupStatuses.advanced === 'ready'
+        ? settingsResourceState.value.doNotWarnExternalServers === true
+        : settingsResourceState.groupStatuses.advanced === 'idle' ||
+            settingsResourceState.groupStatuses.advanced === 'loading'
+          ? getDatabase().doNotWarnExternalServers === true
+          : true
+    if (!doNotWarnExternalServers) {
       realmConfirmOpen = true
       try {
         if (!(await alertConfirm(language.sendExternalServerWarning))) return
@@ -131,7 +157,12 @@
                       src={imageSource || '/none.webp'}
                       alt=""
                       class="h-14 w-14 rounded-lg object-cover object-top"
-                      class:rounded-full={getDatabase().roundIcons} />
+                      class:rounded-full={settingsResourceState.groupStatuses.display === 'ready'
+                        ? settingsResourceState.value.roundIcons === true
+                        : settingsResourceState.groupStatuses.display === 'idle' ||
+                            settingsResourceState.groupStatuses.display === 'loading'
+                          ? getDatabase().roundIcons === true
+                          : false} />
                   {/await}
                   {#if warningChatIds.has(item.chatId)}
                     <GenerationIndicator
@@ -207,7 +238,12 @@
                     src={imageSource || '/none.webp'}
                     alt=""
                     class="h-11 w-11 shrink-0 rounded-lg object-cover object-top"
-                    class:rounded-full={getDatabase().roundIcons} />
+                    class:rounded-full={settingsResourceState.groupStatuses.display === 'ready'
+                      ? settingsResourceState.value.roundIcons === true
+                      : settingsResourceState.groupStatuses.display === 'idle' ||
+                          settingsResourceState.groupStatuses.display === 'loading'
+                        ? getDatabase().roundIcons === true
+                        : false} />
                 {/await}
                 <span class="min-w-0">
                   <span class="block truncate text-sm font-semibold">{item.characterName}</span>
