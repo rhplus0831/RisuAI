@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const botSettingsMocks = vi.hoisted(() => {
   function deferredResult() {
@@ -151,6 +153,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
 
   return {
     applyServerBackedSetting: vi.fn(),
+    flushPendingServerBackedSettingsPatch: vi.fn(),
     persistServerBackedSettingsPatchWithSettlement: vi.fn(async () => ({ status: 'accepted' as const })),
     createServerBackedSettingDraft: (key: string, fallback: unknown) => {
       const initialValue = botSettingsMocks.settingDraftInitialValues.has(key)
@@ -261,7 +264,7 @@ import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
 import { dispatchSelectPluginProvider } from 'src/ts/pluginCommands'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
-import { resetServerResourceState } from 'src/ts/server/resourceState.svelte'
+import { resetServerResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -342,6 +345,19 @@ afterEach(() => {
 })
 
 describe('BotSettings legacy layout synchronization', () => {
+  it('uses explicit settings, collection, model, and prompt owners', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/BotSettings.svelte'), 'utf8')
+
+    expect(source).toContain('settingsResourceState')
+    expect(source).toContain('collectionsResourceState')
+    expect(source).toContain('modelSettingsOwner')
+    expect(source).toContain('capturePromptTemplateOwnerMutationFence')
+    expect(source).not.toContain('getDatabase(')
+    expect(source).not.toContain('withTrustedResourceWrite')
+    expect(source).not.toContain('getServerResourceApplyEpoch')
+    expect(source).not.toContain('captureSettingsGroupProjectionEpoch')
+  })
+
   it('switches a mounted legacy page with authoritative useLegacyGUI updates', async () => {
     if (component) unmount(component)
     setDatabaseLite({ ...getDatabase({ snapshot: true }), useLegacyGUI: false } as any)
@@ -543,13 +559,13 @@ describe('BotSettings pending prompt persistence', () => {
     )
     expect(providerSelect?.value).toBe('provider-a')
 
-    getDatabase().currentPluginProvider = 'provider-b'
+    settingsResourceState.value.currentPluginProvider = 'provider-b'
     await tick()
     expect(providerSelect?.value).toBe('provider-b')
 
     customProviderStore.set(['provider-a', 'provider-b'])
     await tick()
-    getDatabase().currentPluginProvider = 'provider-b'
+    settingsResourceState.value.currentPluginProvider = 'provider-b'
     await tick()
     vi.mocked(dispatchSelectPluginProvider).mockClear()
     const liveProviderSelect = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find(

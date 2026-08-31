@@ -37,9 +37,11 @@
   import PromptSettings from './PromptSettings.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
+  // Durable preset-command facade: owner ids are resolved locally before its remaining index-based calls.
   import {
-    getDatabase,
     updatePromptPreset,
+    type Database,
+    type ModelPreset,
     type PresetMutationOutcome,
     type PromptPreset,
   } from 'src/ts/storage/database.svelte'
@@ -58,13 +60,9 @@
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
+  // Durable settings-draft bridge: retained for debounced persistence, receipts, and reload reassertion.
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
-  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import {
-    captureSettingsGroupProjectionEpoch,
-    hasSettingsGroupProjectionEpochChanged,
-    markSettingsGroupAcknowledgementTainted,
-  } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     canUseServerCommands,
     enablePromptItemsCommand,
@@ -90,6 +88,8 @@
     splitPresetSettingDraftOwnerKey,
   } from 'src/ts/server/settingsDraftAcknowledgement'
   import {
+    applyPluginProviderOwner,
+    currentPluginProviderOwnerSnapshot,
     currentPluginWatchSuppressionVersion,
     currentPluginStateSnapshot,
     dispatchSelectPluginProvider,
@@ -107,6 +107,7 @@
     setPromptPresetModelOverrideEnabled,
   } from 'src/ts/promptPresetModelOverrides.svelte'
   import { promptPresetModelOverrideFieldForDatabaseKey, resolvePromptPresetRegexField } from 'src/ts/presetSplit'
+  // Prompt-owner bridge: retained for owner-specific hydration fences, durable structural commands, and rollback.
   import {
     capturePromptItemOptimisticAcknowledgement,
     capturePromptTemplateOwnerMutationFence,
@@ -146,7 +147,7 @@
     previous: {} as SettingsPatch,
     attempted: {} as SettingsPatch,
     durableAttempted: {} as SettingsPatch,
-    projectionEpoch: null as number | null,
+    ownerFence: null as PromptSettingsOwnerFence | null,
     intent: null as DurableMutationIntent | null,
     outbox: null as PendingMutationHandle | null,
     timer: null as ReturnType<typeof setTimeout> | null,
@@ -155,8 +156,16 @@
     patch: SettingsPatch
     previous: SettingsPatch
     attempted: SettingsPatch
-    projectionEpoch: number | null
+    ownerFence: PromptSettingsOwnerFence | null
     settled: boolean
+  }
+  interface PromptSettingsOwnerFence {
+    resource: object
+    revision: number | null
+  }
+  interface PromptFieldOwnerProjection {
+    resource: object
+    revision: number | null
   }
   const unsettledPromptFieldPatches: PromptFieldPatchAttempt[] = []
   const unregisterPendingPromptFieldFlush = registerPendingBridgePatchFlusher(
@@ -256,7 +265,64 @@
   const globalNoteDraft = createPromptFieldDraft<string>('globalNote', '')
   const formatingOrderDraft = createPromptFieldDraft<string[]>('formatingOrder', [])
   const promptPreprocessDraft = createPromptFieldDraft<boolean>('promptPreprocess', false)
-  let currentPluginProviderDraft = $state(getDatabase().currentPluginProvider ?? '')
+  let currentPluginProviderDraft = $state(currentPluginProviderOwnerSnapshot())
+
+  function settingsOwnerRecord(): Record<string, unknown> {
+    return settingsResourceState.value as Record<string, unknown>
+  }
+
+  function readUniquePresetOwners<T extends { id?: unknown }>(value: unknown): T[] | null {
+    if (!Array.isArray(value)) return null
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.length === 0 || id.trim() !== id || ids.has(id)) return null
+      ids.add(id)
+    }
+    return value as T[]
+  }
+
+  function promptPresetOwners(): PromptPreset[] {
+    return readUniquePresetOwners<PromptPreset>(collectionsResourceState.values.promptPresets) ?? []
+  }
+
+  function modelPresetOwners(): ModelPreset[] {
+    return readUniquePresetOwners<ModelPreset>(collectionsResourceState.values.modelPresets) ?? []
+  }
+
+  function legacyPresetOwnerCount(): number {
+    return readUniquePresetOwners(collectionsResourceState.values.botPresets)?.length ?? 0
+  }
+
+  function selectedPromptPresetOwnerIndex(): number {
+    const selectedIndex = settingsResourceState.value.promptPresetsId
+    return Number.isInteger(selectedIndex) && (selectedIndex as number) >= 0 ? (selectedIndex as number) : -1
+  }
+
+  function selectedPromptPresetOwnerIndexById(presetId: string): number {
+    const presets = promptPresetOwners()
+    const index = presets.findIndex((preset) => preset.id === presetId)
+    return index >= 0 && presets.filter((preset) => preset.id === presetId).length === 1 ? index : -1
+  }
+
+  function promptTemplateCompatibilityOwner(): unknown {
+    return collectionsResourceState.values.promptTemplate
+  }
+
+  function capturePromptSettingsOwnerFence(): PromptSettingsOwnerFence {
+    return {
+      resource: settingsResourceState.value as object,
+      revision: settingsResourceState.groupRevisions.prompt ?? settingsResourceState.fullRevision,
+    }
+  }
+
+  function hasPromptSettingsOwnerFenceChanged(fence: PromptSettingsOwnerFence): boolean {
+    return (
+      fence.resource !== settingsResourceState.value ||
+      fence.revision !== (settingsResourceState.groupRevisions.prompt ?? settingsResourceState.fullRevision)
+    )
+  }
 
   const PROVIDER_CATALOG_KEY_DEBOUNCE_MS = 400
   let nanogptCatalogApiKey = $state(nanogptKeyDraft.value)
@@ -305,7 +371,7 @@
       : '',
   )
   let recommendedModelPresetMissing = $derived(
-    !!recommendedModelPresetId && !getDatabase().modelPresets.some((preset) => preset.id === recommendedModelPresetId),
+    !!recommendedModelPresetId && !modelPresetOwners().some((preset) => preset.id === recommendedModelPresetId),
   )
   let recommendedModelPresetMutationStatus = $derived(
     selectedPromptPreset?.id && recommendedModelPresetMutation?.promptPresetId === selectedPromptPreset.id
@@ -335,7 +401,7 @@
   let lastPluginWatchSuppressionVersion = currentPluginWatchSuppressionVersion()
   let suppressPluginProviderDraftDispatch = false
   $effect(() => {
-    const provider = getDatabase().currentPluginProvider ?? ''
+    const provider = currentPluginProviderOwnerSnapshot()
     const suppressionVersion = currentPluginWatchSuppressionVersion()
     const draftProvider = untrack(() => currentPluginProviderDraft)
     if (provider !== draftProvider) {
@@ -356,7 +422,7 @@
   $effect(() => {
     const provider = currentPluginProviderDraft
     if (!canUseServerCommands()) {
-      getDatabase().currentPluginProvider = provider
+      applyPluginProviderOwner(provider)
       previousPluginProvider = provider
       return
     }
@@ -364,9 +430,7 @@
     if (provider === previousPluginProvider) return
     const previous = currentPluginStateSnapshot()
     previous.currentPluginProvider = previousPluginProvider
-    withTrustedResourceWrite(() => {
-      getDatabase().currentPluginProvider = provider
-    })
+    applyPluginProviderOwner(provider)
     const mirroredToPreset = mirrorTopLevelPresetField('currentPluginProvider', provider)
     previousPluginProvider = provider
     if (!mirroredToPreset) {
@@ -437,7 +501,7 @@
   function defaultSubmenuForKind(kind: BotSettingsKind): number {
     if (kind === 'model') return 0
     if (kind === 'prompt') return 2
-    return getDatabase().useLegacyGUI ? -1 : 0
+    return settingsResourceState.value.useLegacyGUI ? -1 : 0
   }
 
   // svelte-ignore state_referenced_locally
@@ -455,7 +519,7 @@
   let showModelOthersControls = $derived(settingsKind !== 'model')
   let showModelPresetButton = $derived(settingsKind !== 'prompt' && submenu !== -1)
   let showPromptPresetButton = $derived(settingsKind === 'legacy' && submenu === -1)
-  let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && getDatabase().botPresets?.length > 0)
+  let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && legacyPresetOwnerCount() > 0)
   let selectedPromptPresetName = $derived(selectedPromptPreset?.name?.trim() || language.promptPresets)
   let parameterItems = $derived.by(() =>
     promptParameterOverrideMode
@@ -469,7 +533,7 @@
 
   $effect(() => {
     if (settingsKind !== 'legacy') return
-    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+    submenu = reconcileLegacyGuiSubmenu(Boolean(settingsResourceState.value.useLegacyGUI), submenu)
   })
 
   $effect(() => {
@@ -493,7 +557,7 @@
   async function updateRecommendedModelPreset(recommendedModelPresetId: string): Promise<void> {
     const promptPresetId = selectedPromptPreset?.id
     if (!promptPresetId || recommendedModelPresetMutationStatus === 'saving') return
-    const promptPresetIndex = getDatabase().promptPresets.findIndex((preset) => preset.id === promptPresetId)
+    const promptPresetIndex = selectedPromptPresetOwnerIndexById(promptPresetId)
     if (promptPresetIndex < 0) return
 
     const operation = ++recommendedModelPresetOperation
@@ -584,15 +648,17 @@
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
     let previousDraftDispatchSnapshot = snapshotJson(initialValue)
-    let previousResourceApplyEpoch = getServerResourceApplyEpoch()
     let previousOwnerSignature = promptFieldOwnerSignature()
+    let previousOwnerProjection = promptFieldOwnerProjection()
     let dirty = false
     let dirtyOwnerKey: string | null = null
 
     $effect(() => {
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
-      const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
       const ownerSignature = promptFieldOwnerSignature()
+      const ownerProjection = promptFieldOwnerProjection()
+      const ownerProjectionChanged =
+        ownerProjection.resource !== previousOwnerProjection.resource ||
+        ownerProjection.revision !== previousOwnerProjection.revision
       const serverValue = currentPromptFieldValue(key, fallback)
       const serverSnapshot = snapshotJson(serverValue)
       const draftSnapshot = snapshotJson(draft.value)
@@ -606,13 +672,13 @@
           suppressDraftDispatch = false
         })
       } else {
-        if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+        if (ownerProjectionChanged && dirty && serverSnapshot === draftSnapshot) {
           clearDirty()
         }
 
         if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
           suppressDraftDispatch = true
-          if (resourceApplyChanged && dirty) {
+          if (ownerProjectionChanged && dirty) {
             reassertDirtyPromptFieldDraftValue(key, draft.value)
           } else {
             clearDirty()
@@ -625,8 +691,8 @@
         }
       }
 
-      previousResourceApplyEpoch = resourceApplyEpoch
       previousOwnerSignature = ownerSignature
+      previousOwnerProjection = ownerProjection
       previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
     })
 
@@ -667,19 +733,15 @@
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
-        const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
-        withTrustedResourceWrite(() => {
-          // Re-read inside the trusted write to get the mutable projection.
-          const target = getDatabase() as unknown as Record<string, unknown>
-          target[key] = attempted
-        })
+        const previous = cloneJsonValue(settingsOwnerRecord()[key])
         const mirroredToPreset = writeSelectedPromptPresetField(key, attempted)
+        if (!mirroredToPreset && !selectedPromptPresetCandidate()) settingsOwnerRecord()[key] = attempted
         dirtyOwnerKey = mirroredToPreset
           ? currentPromptFieldDraftOwnerKey(key)
           : PROMPT_SETTINGS_COMMAND_KEYS.has(key)
             ? serverSettingDraftOwnerKey(key)
             : `local:${key}`
-        if (!mirroredToPreset && PROMPT_SETTINGS_COMMAND_KEYS.has(key)) {
+        if (!mirroredToPreset && !selectedPromptPresetCandidate() && PROMPT_SETTINGS_COMMAND_KEYS.has(key)) {
           queuePromptFieldPatch({ [key]: attempted }, { [key]: previous })
         }
         previousServerSnapshot = snapshot
@@ -699,17 +761,34 @@
     return selectedId ? `preset:${selectedId}` : 'root'
   }
 
+  function promptFieldOwnerProjection(): PromptFieldOwnerProjection {
+    if (selectedPromptPresetCandidate()) {
+      const resource = collectionsResourceState.values.promptPresets
+      return {
+        resource: (Array.isArray(resource) ? resource : collectionsResourceState.values) as object,
+        revision: collectionsResourceState.revisions.promptPresets ?? collectionsResourceState.fullRevision,
+      }
+    }
+    return {
+      resource: settingsResourceState.value as object,
+      revision: settingsResourceState.groupRevisions.prompt ?? settingsResourceState.fullRevision,
+    }
+  }
+
   function selectedPromptPresetCandidate(): PromptPreset | undefined {
-    const selectedIndex = getDatabase().promptPresetsId
+    const selectedIndex = selectedPromptPresetOwnerIndex()
+    const presets = collectionsResourceState.values.promptPresets
     return Number.isInteger(selectedIndex) && selectedIndex >= 0
-      ? (getDatabase().promptPresets?.[selectedIndex] as PromptPreset | undefined)
+      ? Array.isArray(presets)
+        ? (presets[selectedIndex] as PromptPreset | undefined)
+        : undefined
       : undefined
   }
 
   function selectedPromptPresetOwner(): PromptPreset | undefined {
     const candidate = selectedPromptPresetCandidate()
     if (!candidate) return undefined
-    return resolveUniquePromptPreset(getDatabase().promptPresets, candidate.id) as PromptPreset | undefined
+    return resolveUniquePromptPreset(promptPresetOwners(), candidate.id) as PromptPreset | undefined
   }
 
   function currentPromptFieldDraftOwnerKey(key: string): string {
@@ -719,14 +798,11 @@
 
   function reassertDirtyPromptFieldDraftValue<T>(key: string, value: T): void {
     if (selectedPromptPresetCandidate() && !selectedPromptPreset) return
-    withTrustedResourceWrite(() => {
-      const target = getDatabase() as unknown as Record<string, unknown>
-      target[key] = cloneJsonValue(value)
-      const preset = selectedPromptPreset
-      if (!preset) return
-      preset[key] = cloneJsonValue(value)
-      if (key === 'presetRegex') preset.regex = []
-    })
+    settingsOwnerRecord()[key] = cloneJsonValue(value)
+    const preset = selectedPromptPreset
+    if (!preset) return
+    preset[key] = cloneJsonValue(value)
+    if (key === 'presetRegex') preset.regex = []
   }
 
   function queuePromptFieldPatch(patch: SettingsPatch, previous: SettingsPatch): void {
@@ -740,7 +816,7 @@
 
     if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
     pendingPromptFieldPatch.timer = null
-    pendingPromptFieldPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
+    pendingPromptFieldPatch.ownerFence ??= capturePromptSettingsOwnerFence()
     const correctionOnly = refreshPendingPromptFieldDurability()
     if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
       return
@@ -767,7 +843,7 @@
     const commandPatch = pendingPromptFieldPatch.patch
     const commandPrevious = pendingPromptFieldPatch.previous
     const commandAttempted = pendingPromptFieldPatch.attempted
-    const commandProjectionEpoch = pendingPromptFieldPatch.projectionEpoch
+    const commandOwnerFence = pendingPromptFieldPatch.ownerFence
     const commandIntent = pendingPromptFieldPatch.intent
     const commandOutbox = pendingPromptFieldPatch.outbox
     resetPendingPromptFieldPatch()
@@ -781,7 +857,7 @@
       patch: commandPatch,
       previous: commandPrevious,
       attempted: commandAttempted,
-      projectionEpoch: commandProjectionEpoch,
+      ownerFence: commandOwnerFence,
       settled: false,
     }
     unsettledPromptFieldPatches.push(attempt)
@@ -793,8 +869,6 @@
             {
               baseRevision,
               patch: commandPatch,
-              acknowledgeOptimistic: commandProjectionEpoch !== null,
-              optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
             },
             options.signal,
             options.keepalive,
@@ -804,7 +878,7 @@
         },
         rollback: () => {
           settlePromptFieldPatchAttempt(attempt, false)
-          rollbackPromptFields(attempt.previous, attempt.attempted, attempt.projectionEpoch)
+          rollbackPromptFields(attempt.previous, attempt.attempted, attempt.ownerFence)
         },
         ...options,
         ...transport,
@@ -872,7 +946,7 @@
     pendingPromptFieldPatch.previous = {}
     pendingPromptFieldPatch.attempted = {}
     pendingPromptFieldPatch.durableAttempted = {}
-    pendingPromptFieldPatch.projectionEpoch = null
+    pendingPromptFieldPatch.ownerFence = null
     pendingPromptFieldPatch.intent = null
     pendingPromptFieldPatch.outbox = null
     pendingPromptFieldPatch.timer = null
@@ -906,18 +980,15 @@
   function rollbackPromptFields(
     previous: SettingsPatch,
     attempted: SettingsPatch,
-    projectionEpoch: number | null,
+    ownerFence: PromptSettingsOwnerFence | null,
   ): void {
-    markSettingsGroupAcknowledgementTainted('prompt')
-    if (projectionEpoch === null || hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)) return
-    withTrustedResourceWrite(() => {
-      const target = getDatabase() as unknown as Record<string, unknown>
-      for (const [key, previousValue] of Object.entries(previous)) {
-        if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
-          target[key] = cloneJsonValue(previousValue)
-        }
+    if (!ownerFence || hasPromptSettingsOwnerFenceChanged(ownerFence)) return
+    const target = settingsOwnerRecord()
+    for (const [key, previousValue] of Object.entries(previous)) {
+      if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
+        target[key] = cloneJsonValue(previousValue)
       }
-    })
+    }
   }
 
   function currentPromptFieldValue<T>(key: string, fallback: T): T {
@@ -930,7 +1001,7 @@
       if (Object.prototype.hasOwnProperty.call(preset, key)) return preset[key] as T
     }
     if (selectedPromptPresetCandidate()) return fallback
-    const target = getDatabase() as unknown as Record<string, unknown> | undefined
+    const target = settingsOwnerRecord()
     const value = target?.[key]
     return value === undefined ? fallback : (value as T)
   }
@@ -939,7 +1010,7 @@
     if (value === undefined) return false
     const preset = selectedPromptPreset
     if (!preset) return false
-    const selectedIndex = getDatabase().promptPresets?.findIndex((candidate) => candidate === preset) ?? -1
+    const selectedIndex = preset.id ? selectedPromptPresetOwnerIndexById(preset.id) : -1
     if (selectedIndex < 0) return false
     if (snapshotJson(preset[key]) === snapshotJson(value)) return false
     updatePromptPreset(selectedIndex, { [key]: cloneJsonValue(value) } as Partial<PromptPreset>)
@@ -949,13 +1020,12 @@
   function selectedPromptPresetHasOwnPromptTemplate(): boolean {
     const candidate = selectedPromptPresetCandidate()
     if (candidate) return !!selectedPromptPreset && Array.isArray(selectedPromptPreset.promptTemplate)
-    return Array.isArray(getDatabase().promptTemplate)
+    return Array.isArray(promptTemplateCompatibilityOwner())
   }
 
   function promptTemplatePresetSelectionSignature(): string {
-    const selectedIndex = getDatabase().promptPresetsId
-    const selectedId =
-      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? getDatabase().promptPresets?.[selectedIndex]?.id : null
+    const selectedIndex = selectedPromptPresetOwnerIndex()
+    const selectedId = selectedPromptPresetCandidate()?.id
     return `${selectedIndex}:${selectedId ?? ''}`
   }
 
@@ -964,10 +1034,11 @@
     template: unknown
   } {
     if (ownerId === null) {
-      if (!Array.isArray(getDatabase().promptTemplate)) {
+      const template = promptTemplateCompatibilityOwner()
+      if (!Array.isArray(template)) {
         return { hasTemplate: false, template: undefined }
       }
-      return { hasTemplate: true, template: cloneJsonValue(getDatabase().promptTemplate) }
+      return { hasTemplate: true, template: cloneJsonValue(template) }
     }
     const preset = selectedPromptPreset
     if (preset?.id !== ownerId || !Array.isArray(preset.promptTemplate)) {
@@ -977,25 +1048,22 @@
   }
 
   function setSelectedPromptPresetTemplateProjection(enabled: boolean, template: unknown = []): void {
-    withTrustedResourceWrite(() => {
-      const ownerId = currentPromptTemplateOwnerId()
-      const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-      if (ownerId !== null) {
-        const ownerMatches = (getDatabase().promptPresets ?? []).filter((candidate) => candidate?.id === ownerId)
-        if (!preset || preset.id !== ownerId || ownerMatches.length !== 1) return
-        if (enabled) {
-          preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
-        } else {
-          delete preset.promptTemplate
-        }
-        return
-      }
+    const ownerId = currentPromptTemplateOwnerId()
+    if (ownerId !== null) {
+      const preset = selectedPromptPresetOwner() as Record<string, unknown> | undefined
+      if (!preset || preset.id !== ownerId) return
       if (enabled) {
-        getDatabase().promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
+        preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
       } else {
-        delete (getDatabase() as unknown as Record<string, unknown>).promptTemplate
+        delete preset.promptTemplate
       }
-    })
+      return
+    }
+    if (enabled) {
+      collectionsResourceState.values.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
+    } else {
+      delete collectionsResourceState.values.promptTemplate
+    }
   }
 
   function restoreSelectedPromptPresetTemplateProjection(snapshot: { hasTemplate: boolean; template: unknown }): void {
@@ -1129,7 +1197,7 @@
   }
 
   function currentPromptPresetIconUploadTarget() {
-    const selectedIndex = getDatabase().promptPresetsId
+    const selectedIndex = selectedPromptPresetOwnerIndex()
     const preset = selectedPromptPreset
     return capturePromptPresetIconUploadTarget({
       presetIndex: selectedIndex,
@@ -1139,7 +1207,7 @@
 
   function promptPresetIconUploadFreshness(operation: PromptPresetIconUploadOperation) {
     const selectedPreset = selectedPromptPreset
-    const rowPreset = getDatabase().promptPresets?.[operation.presetIndex]
+    const rowPreset = promptPresetOwners()[operation.presetIndex]
 
     return {
       selectedPresetId: selectedPreset?.id,
@@ -1306,16 +1374,17 @@
     flushPendingPromptFieldPatch()
   })
 
+  let modelSettingsOwner = $derived.by(() => ({ ...settingsResourceState.value }) as unknown as Database)
   let mainProfile = $derived.by(() =>
     resolveModelProfile({
-      database: getDatabase(),
+      database: modelSettingsOwner,
       role: 'chatMain',
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
   let auxProfile = $derived.by(() =>
     resolveModelProfile({
-      database: getDatabase(),
+      database: modelSettingsOwner,
       role: 'chatAux',
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
@@ -1324,7 +1393,7 @@
   let subModelInfo = $derived(auxProfile.modelInfo)
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
-      database: getDatabase(),
+      database: modelSettingsOwner,
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
@@ -1353,7 +1422,7 @@
   let usesTextgenWebUIModel = $derived(modelProfileUiState.usesTextgenWebUIModel)
   let usesOobaModel = $derived(modelProfileUiState.usesOobaModel)
   let nanogptInputMode = $state<'list' | 'manual'>(
-    getDatabase().nanogptRequestModel && !getDatabase().nanogptRequestModelName ? 'manual' : 'list',
+    nanogptRequestModelDraft.value && !nanogptRequestModelNameDraft.value ? 'manual' : 'list',
   )
   // svelte-ignore state_referenced_locally
   let prevNanogptInputMode = nanogptInputMode
@@ -1400,11 +1469,9 @@
             <OptionInput value={recommendedModelPresetId}
               >{language.missingRecommendedModelPreset(recommendedModelPresetId)}</OptionInput>
           {/if}
-          {#each getDatabase().modelPresets as preset, index (preset.id ?? index)}
-            {#if preset.id}
-              <OptionInput value={preset.id}
-                >{preset.name?.trim() || language.modelProfiles.defaultPresetName(index + 1)}</OptionInput>
-            {/if}
+          {#each modelPresetOwners() as preset, index (preset.id)}
+            <OptionInput value={preset.id}
+              >{preset.name?.trim() || language.modelProfiles.defaultPresetName(index + 1)}</OptionInput>
           {/each}
         </SelectInput>
         {#if recommendedModelPresetMutationStatus === 'failed'}
@@ -2240,7 +2307,7 @@
       <!-- Standard parameters come from SettingRenderer. -->
     {/if}
 
-    {#if (getDatabase().reverseProxyOobaMode && usesReverseProxyModel) || usesOobaModel}
+    {#if (reverseProxyOobaModeDraft.value && usesReverseProxyModel) || usesOobaModel}
       <OobaSettings instructionMode={usesOobaModel} />
     {/if}
 

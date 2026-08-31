@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBFactory } from 'fake-indexeddb'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const presetSpies = vi.hoisted(() => ({
   changeToPreset: vi.fn(),
@@ -110,7 +112,11 @@ import {
   setDatabaseLite,
 } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
-import { applyCollectionsResource, type ServerCollectionName } from 'src/ts/server/resourceState.svelte'
+import {
+  applyCollectionsResource,
+  collectionsResourceState,
+  type ServerCollectionName,
+} from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -528,6 +534,30 @@ afterEach(() => {
 })
 
 describe('generation settings picker mode', () => {
+  it('reads preset owners directly and uses only stable row identities', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/botpreset.svelte'), 'utf8')
+
+    expect(source).toContain('collectionsResourceState')
+    expect(source).toContain('settingsResourceState')
+    expect(source).toContain('livePresetIndex')
+    expect(source).not.toContain('getResourceDatabase')
+    expect(source).not.toContain('getDatabase(')
+    expect(source).not.toContain('`index:${')
+  })
+
+  it('fails closed when a preset collection has duplicate owner ids', async () => {
+    collectionsResourceState.values.promptPresets = [
+      { id: 'duplicate-owner', name: 'First duplicate' },
+      { id: 'duplicate-owner', name: 'Second duplicate' },
+    ]
+
+    mountPresetPicker('global')
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-generation-picker-row]')).toHaveLength(0)
+    expect(target.querySelector('[data-risu-preset-empty-state]')).toBeTruthy()
+  })
+
   it('gives the preset picker a blocking focus contract and owned close interactions', async () => {
     const opener = createModalOpener('Open presets')
     const close = mountPresetPicker('global')

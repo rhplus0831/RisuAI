@@ -2,6 +2,7 @@
   import { untrack } from 'svelte'
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
+  // Durable preset-command compatibility facade. Every row call resolves its stable owner id immediately beforehand.
   import {
     createModelPreset,
     createPromptPreset,
@@ -22,7 +23,7 @@
     type botPreset,
   } from '../../ts/storage/database.svelte'
   import { selectedCharID, type GenerationSettingsPickerMode, type PresetPickerKind } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     ArchiveIcon,
     ArchiveRestoreIcon,
@@ -38,6 +39,7 @@
   } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { prebuiltPresets } from 'src/ts/process/templates/templates'
+  // Active-chat owner bridge: retained for chat-scoped selection persistence and settlement reporting.
   import {
     createManualModelPresetSelection,
     createPromptPresetSelection,
@@ -48,6 +50,7 @@
   import ModelPresetList from './Pages/Model/ModelPresetList.svelte'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  // Prompt-template hydration bridge: retained for duplicating the exact prompt owner body.
   import {
     clonePromptTemplateSelectedFallback,
     ensurePromptTemplateHydrated,
@@ -58,6 +61,8 @@
 
   type ModernPreset = ModelPreset | PromptPreset
   type ModernPresetKind = 'model' | 'prompt'
+  type StableModernPreset = ModernPreset & { id: string }
+  type StableLegacyPreset = botPreset & { id: string }
 
   let editMode = $state(false)
   let showArchivedPromptPresets = $state(false)
@@ -88,7 +93,7 @@
   let title = $derived(
     kind === 'model' ? language.modelPresets : kind === 'prompt' ? language.promptPresets : language.legacyBotPresets,
   )
-  let modernPresets = $derived.by(() => (kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets))
+  let modernPresets = $derived.by(() => modernPresetOwners(kind === 'prompt' ? 'prompt' : 'model'))
   let visibleModernPresetEntries = $derived.by(() =>
     modernPresets.flatMap((preset, index) => {
       if (kind !== 'prompt' || ((preset as PromptPreset).archived === true) === showArchivedPromptPresets) {
@@ -97,7 +102,9 @@
       return []
     }),
   )
-  let legacyPresets = $derived.by(() => (Array.isArray(getDatabase().botPresets) ? getDatabase().botPresets : []))
+  let legacyPresets = $derived.by(() =>
+    readUniquePresetOwners<StableLegacyPreset>(collectionsResourceState.values.botPresets),
+  )
   let useModelPresetManager = $derived(kind === 'model' && mode === 'global')
   let activeChatSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
@@ -133,29 +140,59 @@
     }
   })
 
-  function nonEmptyId(id: unknown): string | null {
-    return typeof id === 'string' && id.trim().length > 0 ? id : null
+  function stableId(id: unknown): string | null {
+    return typeof id === 'string' && id.length > 0 && id.trim() === id ? id : null
   }
 
-  function selectedIndex(): number {
-    return kind === 'prompt' ? getDatabase().promptPresetsId : getDatabase().modelPresetsId
+  function readUniquePresetOwners<T extends { id?: unknown }>(value: unknown): T[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const id = stableId((candidate as { id?: unknown }).id)
+      if (!id || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as T[]
   }
 
-  function presetDraftKey(preset: ModernPreset | undefined, index: number) {
-    return `${kind}:${nonEmptyId(preset?.id) ?? `index:${index}`}`
+  function modernPresetOwners(presetKind: ModernPresetKind): StableModernPreset[] {
+    return presetKind === 'prompt'
+      ? readUniquePresetOwners<StableModernPreset>(collectionsResourceState.values.promptPresets)
+      : readUniquePresetOwners<StableModernPreset>(collectionsResourceState.values.modelPresets)
   }
 
-  function presetName(preset: ModernPreset | undefined) {
+  function selectedIndex(presetKind: ModernPresetKind): number {
+    const value =
+      presetKind === 'prompt' ? settingsResourceState.value.promptPresetsId : settingsResourceState.value.modelPresetsId
+    return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : -1
+  }
+
+  function selectedGlobalPresetId(presetKind: ModernPresetKind): string | null {
+    return modernPresetOwners(presetKind)[selectedIndex(presetKind)]?.id ?? null
+  }
+
+  function livePresetIndex(presetKind: ModernPresetKind, presetId: string): number {
+    const presets = modernPresetOwners(presetKind)
+    const index = presets.findIndex((candidate) => candidate.id === presetId)
+    return index >= 0 && presets.filter((candidate) => candidate.id === presetId).length === 1 ? index : -1
+  }
+
+  function presetDraftKey(preset: StableModernPreset) {
+    return `${kind}:${preset.id}`
+  }
+
+  function presetName(preset: StableModernPreset) {
     return preset?.name ?? ''
   }
 
-  function updatePresetName(preset: ModernPreset | undefined, index: number, name: string) {
-    const key = presetDraftKey(preset, index)
-    const presetId = nonEmptyId(preset?.id)
-    const presets = kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
-    const liveIndex = presetId ? presets.findIndex((candidate) => candidate?.id === presetId) : index
+  function updatePresetName(preset: StableModernPreset, name: string) {
+    const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
+    const key = presetDraftKey(preset)
+    const presets = modernPresetOwners(presetKind)
+    const liveIndex = livePresetIndex(presetKind, preset.id)
     const livePreset = presets[liveIndex]
-    if (!livePreset || (!presetId && livePreset !== preset) || (livePreset.name ?? '') === name) return
+    if (!livePreset || (livePreset.name ?? '') === name) return
 
     const operation = ++renameOperation
     renameStates[key] = { operation, status: 'saving' }
@@ -204,20 +241,18 @@
     alertError(language.presetRenameFailed)
   }
 
-  async function selectPreset(preset: ModernPreset | undefined, index: number) {
+  async function selectPreset(preset: StableModernPreset) {
     if (editMode) return
     if (isChatGenerationSelectionMode) {
-      const presetId = nonEmptyId(preset?.id)
-      if (!presetId) return
       if (selectionPendingKey) return
 
       const operation = ++selectionOperation
-      selectionPendingKey = presetDraftKey(preset, index)
+      selectionPendingKey = presetDraftKey(preset)
       selectionError = ''
       const patch =
         kind === 'prompt'
-          ? createPromptPresetSelection(presetId, preset, activeChatSettings)
-          : createManualModelPresetSelection(presetId)
+          ? createPromptPresetSelection(preset.id, preset, activeChatSettings)
+          : createManualModelPresetSelection(preset.id)
       try {
         const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(patch, { expectedTarget: target })
         if (!persistence) {
@@ -247,14 +282,18 @@
       return
     }
 
-    if (isPresetSelected(preset, index)) {
+    if (isPresetSelected(preset)) {
       close()
       return
     }
     if (selectionPendingKey) return
 
+    const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
+    const index = livePresetIndex(presetKind, preset.id)
+    if (index < 0) return
+
     const operation = ++selectionOperation
-    selectionPendingKey = presetDraftKey(preset, index)
+    selectionPendingKey = presetDraftKey(preset)
     selectionError = ''
     const outcome = await (kind === 'prompt' ? selectPromptPreset(index) : selectModelPreset(index))
     if (operation !== selectionOperation) return
@@ -269,14 +308,14 @@
     close()
   }
 
-  function isPresetSelected(preset: ModernPreset | undefined, index: number) {
-    if (!isChatGenerationSelectionMode) return index === selectedIndex()
-    const presetId = nonEmptyId(preset?.id)
-    return !!presetId && presetId === activeSelectedId
+  function isPresetSelected(preset: StableModernPreset) {
+    const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
+    if (!isChatGenerationSelectionMode) return preset.id === selectedGlobalPresetId(presetKind)
+    return preset.id === activeSelectedId
   }
 
-  function presetsForKind(presetKind: ModernPresetKind): ModernPreset[] {
-    return presetKind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
+  function presetsForKind(presetKind: ModernPresetKind): StableModernPreset[] {
+    return modernPresetOwners(presetKind)
   }
 
   function observePresetRowMutation(key: string, outcome: Promise<PresetMutationOutcome> | undefined): void {
@@ -325,28 +364,29 @@
     alertError(language.presetMutationFailed)
   }
 
-  function movePreset(presetKind: ModernPresetKind, fromIndex: number, toIndex: number) {
+  function movePreset(presetKind: ModernPresetKind, presetId: string, toIndex: number) {
+    const fromIndex = livePresetIndex(presetKind, presetId)
+    if (fromIndex < 0) return
     const preset = presetsForKind(presetKind)[fromIndex]
-    const key = `${presetKind}:${nonEmptyId(preset?.id) ?? `index:${fromIndex}`}`
+    if (!preset || preset.id !== presetId) return
+    const key = `${presetKind}:${presetId}`
     const outcome =
       presetKind === 'prompt' ? reorderPromptPresets(fromIndex, toIndex) : reorderModelPresets(fromIndex, toIndex)
     observePresetRowMutation(key, outcome)
   }
 
-  function setPromptPresetArchived(preset: PromptPreset, index: number, archived: boolean) {
-    const presetId = nonEmptyId(preset.id)
-    const presets = getDatabase().promptPresets
-    const liveIndex = presetId ? presets.findIndex((candidate) => candidate?.id === presetId) : index
+  function setPromptPresetArchived(preset: StableModernPreset, archived: boolean) {
+    const presets = modernPresetOwners('prompt')
+    const liveIndex = livePresetIndex('prompt', preset.id)
     const livePreset = presets[liveIndex]
-    if (!livePreset || (!presetId && livePreset !== preset) || livePreset.archived === archived) return
+    if (!livePreset || livePreset.archived === archived) return
 
-    const key = `prompt:${presetId ?? `index:${liveIndex}`}`
+    const key = `prompt:${preset.id}`
     observePresetRowMutation(key, updatePromptPreset(liveIndex, { archived }))
   }
 
-  function duplicatePromptPreset(preset: PromptPreset): void {
-    const presetId = nonEmptyId(preset.id)
-    if (!presetId) return
+  function duplicatePromptPreset(preset: StableModernPreset): void {
+    const presetId = preset.id
     const key = `prompt:${presetId}`
     if (rowMutationStates[key]) return
 
@@ -359,8 +399,8 @@
           return
         }
 
-        const presets = getDatabase().promptPresets
-        const liveIndex = presets.findIndex((candidate) => candidate?.id === presetId)
+        const presets = modernPresetOwners('prompt')
+        const liveIndex = livePresetIndex('prompt', presetId)
         const livePreset = presets[liveIndex]
         if (!livePreset) {
           showPresetRowMutationFailure(key, operation)
@@ -391,7 +431,7 @@
   function handlePresetSortEnd(event: SortableEvent): void {
     const oldIndex = event.oldDraggableIndex
     const newIndex = event.newDraggableIndex
-    const presetId = nonEmptyId((event.item as HTMLElement).dataset.risuPresetSortableKey)
+    const presetId = stableId((event.item as HTMLElement).dataset.risuPresetSortableKey)
     restorePresetSortableDom(event, presetId)
     if (
       presetSortingDisabled ||
@@ -404,10 +444,7 @@
     }
 
     const presetKind: ModernPresetKind = kind === 'prompt' ? 'prompt' : 'model'
-    const visiblePresetIds = visibleModernPresetEntries.flatMap((entry) => {
-      const id = nonEmptyId(entry.preset.id)
-      return id ? [id] : []
-    })
+    const visiblePresetIds = visibleModernPresetEntries.map((entry) => entry.preset.id)
     const visibleSourceIndex = visiblePresetIds.indexOf(presetId)
     if (visibleSourceIndex < 0 || newIndex < 0 || newIndex >= visiblePresetIds.length) return
 
@@ -416,13 +453,13 @@
     reorderedVisibleIds.splice(newIndex, 0, presetId)
 
     const presets = presetsForKind(presetKind)
-    const sourceIndex = presets.findIndex((preset) => nonEmptyId(preset.id) === presetId)
+    const sourceIndex = presets.findIndex((preset) => preset.id === presetId)
     const followingPresetId = reorderedVisibleIds[newIndex + 1]
     const targetIndex = followingPresetId
-      ? presets.findIndex((preset) => nonEmptyId(preset.id) === followingPresetId)
+      ? presets.findIndex((preset) => preset.id === followingPresetId)
       : presets.length
     if (sourceIndex < 0 || targetIndex < 0) return
-    movePreset(presetKind, sourceIndex, targetIndex)
+    movePreset(presetKind, presetId, targetIndex)
   }
 
   function restorePresetSortableDom(event: SortableEvent, presetId: string | null): void {
@@ -444,29 +481,39 @@
     }
   }
 
-  async function removeModernPreset(index: number, preset: ModernPreset) {
+  async function removeModernPreset(preset: StableModernPreset) {
     const list = modernPresets
     if (list.length <= 1) {
       alertError(language.errors.onlyOneChat)
       return
     }
     const targetKind = kind
-    const presetId = nonEmptyId(preset?.id)
     if (!(await alertConfirm(`${language.removeConfirm}${preset.name ?? ''}`))) return
 
-    const currentPresets = targetKind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
+    const presetKind: ModernPresetKind = targetKind === 'prompt' ? 'prompt' : 'model'
+    const currentPresets = modernPresetOwners(presetKind)
     if (currentPresets.length <= 1) return
-    const liveIndex = presetId ? currentPresets.findIndex((candidate) => candidate?.id === presetId) : index
-    if (liveIndex < 0 || (!presetId && currentPresets[liveIndex] !== preset)) return
+    const liveIndex = livePresetIndex(presetKind, preset.id)
+    if (liveIndex < 0) return
 
-    const key = `${targetKind}:${presetId ?? `index:${liveIndex}`}`
+    const key = `${presetKind}:${preset.id}`
     const outcome = targetKind === 'prompt' ? deletePromptPreset(liveIndex, 0) : deleteModelPreset(liveIndex, 0)
     observePresetRowMutation(key, outcome)
   }
 
-  function extractLegacy(index: number, mode: 'all' | 'model' | 'prompt') {
+  function extractLegacy(preset: StableLegacyPreset, mode: 'all' | 'model' | 'prompt') {
+    const index = legacyPresets.findIndex((candidate) => candidate.id === preset.id)
+    if (index < 0) return
+    // Compatibility bridge: legacy extraction remains index-based after resolving the stable owner id.
     extractLegacyBotPresetByIndex(index, mode)
     if (legacyPresets.length <= 1) close()
+  }
+
+  async function downloadModernPromptPreset(presetId: string): Promise<void> {
+    const index = livePresetIndex('prompt', presetId)
+    if (index < 0) return
+    // Compatibility bridge: the export facade accepts an index, resolved here from the stable prompt owner id.
+    await downloadPreset(index, 'risupreset')
   }
 
   function handleDialogKeydown(event: KeyboardEvent): void {
@@ -540,7 +587,7 @@
       {#if legacyPresets.length === 0}
         <span class="text-textcolor2 text-sm">{language.noLegacyBotPresets}</span>
       {:else}
-        {#each legacyPresets as preset, i}
+        {#each legacyPresets as preset, i (preset.id)}
           <div class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 gap-2">
             <div class="flex-1 min-w-0">
               <span class="truncate">{preset.name ?? 'Legacy preset'}</span>
@@ -549,17 +596,17 @@
               class="text-textcolor2 hover:text-green-500 cursor-pointer"
               aria-label={`${language.extractModelAndPrompt}: ${preset.name ?? `#${i + 1}`}`}
               title={language.extractModelAndPrompt}
-              onclick={() => extractLegacy(i, 'all')}>
+              onclick={() => extractLegacy(preset, 'all')}>
               <WandSparklesIcon size={18} />
             </button>
             <button
               class="text-textcolor2 hover:text-green-500 cursor-pointer text-sm"
-              onclick={() => extractLegacy(i, 'model')}>
+              onclick={() => extractLegacy(preset, 'model')}>
               {language.extractModelOnly}
             </button>
             <button
               class="text-textcolor2 hover:text-green-500 cursor-pointer text-sm"
-              onclick={() => extractLegacy(i, 'prompt')}>
+              onclick={() => extractLegacy(preset, 'prompt')}>
               {language.extractPromptOnly}
             </button>
           </div>
@@ -574,28 +621,28 @@
         </span>
       {/if}
       <div class="flex flex-col" role="list" data-risu-preset-sortable-list bind:this={presetListElement}>
-        {#each visibleModernPresetEntries as entry, visibleIndex (nonEmptyId(entry.preset.id) ?? entry.index)}
+        {#each visibleModernPresetEntries as entry, visibleIndex (entry.preset.id)}
           {@const preset = entry.preset}
           {@const i = entry.index}
-          {@const presetId = nonEmptyId(preset.id)}
-          <div role="presentation" class="contents" data-risu-preset-sort-anchor={presetId ?? ''}></div>
+          {@const presetId = preset.id}
+          <div role="presentation" class="contents" data-risu-preset-sort-anchor={presetId}></div>
 
           <!-- The native select button owns keyboard activation; this handler keeps the full row as the pointer target. -->
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-            class:bg-selected={isPresetSelected(preset, i)}
+            class:bg-selected={isPresetSelected(preset)}
             data-risu-generation-picker-row
             data-risu-preset-sortable-item
-            data-risu-preset-sortable-key={presetId ?? ''}
+            data-risu-preset-sortable-key={presetId}
             data-risu-picker-kind={kind}
             data-risu-picker-mode={mode}
-            data-risu-row-id={presetId ?? ''}
+            data-risu-row-id={presetId}
             data-risu-row-index={i}
-            data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
+            data-risu-selected={isPresetSelected(preset) ? 'true' : 'false'}
             onclick={() => {
-              if (!editMode) selectPreset(preset, i)
+              if (!editMode) selectPreset(preset)
             }}>
             {#if !editMode}
               <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -612,13 +659,13 @@
             {#if editMode}
               <div class="min-w-0 grow">
                 <TextInput
-                  bind:value={() => presetName(preset), (value) => updatePresetName(preset, i, value)}
+                  bind:value={() => presetName(preset), (value) => updatePresetName(preset, value)}
                   ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
                   placeholder="string"
                   padding={false} />
-                {#if renameErrors[presetDraftKey(preset, i)]}
+                {#if renameErrors[presetDraftKey(preset)]}
                   <span data-risu-preset-rename-status role="alert" class="block text-xs text-draculared">
-                    {renameErrors[presetDraftKey(preset, i)]}
+                    {renameErrors[presetDraftKey(preset)]}
                   </span>
                 {/if}
               </div>
@@ -628,11 +675,11 @@
                 data-risu-picker-select
                 class="flex min-w-0 grow items-center text-left"
                 disabled={!!selectionPendingKey}
-                aria-pressed={isPresetSelected(preset, i)}
-                aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
+                aria-pressed={isPresetSelected(preset)}
+                aria-current={isPresetSelected(preset) ? 'true' : undefined}
                 onclick={(event) => {
                   event.stopPropagation()
-                  selectPreset(preset, i)
+                  selectPreset(preset)
                 }}>
                 {#if visibleIndex < 9}
                   <span class="w-2 text-center mr-2 text-textcolor2">{visibleIndex + 1}</span>
@@ -645,13 +692,13 @@
                 <button
                   type="button"
                   data-risu-preset-duplicate-action
-                  disabled={!!rowMutationStates[presetDraftKey(preset, i)]}
+                  disabled={!!rowMutationStates[presetDraftKey(preset)]}
                   class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
                   aria-label={`${language.duplicate}: ${preset.name ?? `#${visibleIndex + 1}`}`}
                   title={language.duplicate}
                   onclick={(e) => {
                     e.stopPropagation()
-                    duplicatePromptPreset(preset as PromptPreset)
+                    duplicatePromptPreset(preset)
                   }}>
                   <CopyIcon size={18} />
                 </button>
@@ -669,7 +716,7 @@
                     : language.archivePromptPreset}
                   onclick={(e) => {
                     e.stopPropagation()
-                    setPromptPresetArchived(preset as PromptPreset, i, (preset as PromptPreset).archived !== true)
+                    setPromptPresetArchived(preset, (preset as PromptPreset).archived !== true)
                   }}>
                   {#if (preset as PromptPreset).archived === true}
                     <ArchiveRestoreIcon size={18} />
@@ -682,7 +729,7 @@
                   aria-label={`${language.export}: ${preset.name ?? `#${i + 1}`}`}
                   onclick={async (e) => {
                     e.stopPropagation()
-                    await downloadPreset(i, 'risupreset')
+                    await downloadModernPromptPreset(preset.id)
                   }}>
                   <Share2Icon size={18} />
                 </button>
@@ -692,15 +739,15 @@
                 aria-label={`${language.remove}: ${preset.name ?? `#${i + 1}`}`}
                 onclick={(e) => {
                   e.stopPropagation()
-                  removeModernPreset(i, preset)
+                  removeModernPreset(preset)
                 }}>
                 <TrashIcon size={18} />
               </button>
             </div>
           </div>
-          {#if rowMutationErrors[presetDraftKey(preset, i)]}
+          {#if rowMutationErrors[presetDraftKey(preset)]}
             <span data-risu-preset-row-mutation-status role="alert" class="block px-2 text-xs text-draculared">
-              {rowMutationErrors[presetDraftKey(preset, i)]}
+              {rowMutationErrors[presetDraftKey(preset)]}
             </span>
           {/if}
         {/each}
