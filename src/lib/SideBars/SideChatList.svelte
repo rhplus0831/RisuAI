@@ -21,7 +21,6 @@
     applyChatMetadataOwnerPatch,
     charactersResourceState,
     getCharacterResourceOwner,
-    getResourceDatabase as getDatabase,
     restoreChatFolderMetadataOwnerSnapshot,
     restoreChatMetadataOwnerSnapshot,
   } from 'src/ts/server/resourceState.svelte'
@@ -81,6 +80,7 @@
     resolveActiveChatGenerationSettings,
   } from 'src/ts/activeChatGenerationSettings'
   import { resolveChatBoundPersonaId } from 'src/ts/personaModuleLinks'
+  import { selectedPersonaId } from 'src/ts/persona'
   import { exportAllChats, exportChat, importChat, matchesAllChatsExportFence } from 'src/ts/characters'
 
   interface Props {
@@ -95,15 +95,19 @@
 
   let { chara: aggregateCharacter }: Props = $props()
   let sidebarCharacter = $derived.by(() => {
-    if (charactersResourceState.status !== 'ready') return aggregateCharacter
-    return aggregateCharacter.chaId ? getCharacterResourceOwner(aggregateCharacter.chaId) : undefined
+    if (charactersResourceState.status === 'error') return undefined
+    const owner = aggregateCharacter.chaId ? getCharacterResourceOwner(aggregateCharacter.chaId) : undefined
+    if (owner || charactersResourceState.status === 'ready') return owner
+    return aggregateCharacter
   })
   let chara = $derived(sidebarCharacter ?? unavailableCharacter)
 
   function identityCharacterRows(): readonly character[] {
-    return charactersResourceState.status === 'ready'
-      ? charactersResourceState.characters
-      : (getDatabase().characters ?? [])
+    if (charactersResourceState.status === 'error') return []
+    if (charactersResourceState.characters.length > 0) return charactersResourceState.characters
+    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+      ? [aggregateCharacter]
+      : []
   }
 
   function uniqueSidebarChat(chatId: string | undefined): Chat | undefined {
@@ -983,10 +987,8 @@
 
       let personaId: string | null = null
       if (!previousBinding) {
-        const selectedPersona = getDatabase().selectedPersona
-        const persona = getDatabase().personas?.[selectedPersona]
-        if (!persona?.id?.trim()) return
-        personaId = persona.id
+        personaId = selectedPersonaId()
+        if (!personaId) return
       }
 
       const state = resolveActiveChatGenerationSettings({

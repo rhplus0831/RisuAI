@@ -540,8 +540,10 @@ function seedDatabase(messageCounts: number[]) {
     hypaV3: false,
     inputHooks: [],
     newMessageButtonStyle: 'bottom-center',
-    personas: [{ name: 'User', icon: '', largePortrait: false, personaPrompt: '' }],
+    personas: [{ id: 'persona-default', name: 'User', icon: '', largePortrait: false, personaPrompt: '', note: '' }],
     playMessage: false,
+    personaPrompt: '',
+    selectedPersonaId: 'persona-default',
     selectedPersona: 0,
     showMenuChatList: false,
     showMenuHypaMemoryModal: false,
@@ -553,6 +555,8 @@ function seedDatabase(messageCounts: number[]) {
     useChatSticker: false,
     useSayNothing: false,
     username: 'User',
+    userIcon: '',
+    userNote: '',
   } as unknown as Database)
   loadPageMocks.getChatMessageOwnerState.mockImplementation((chatId: string) => {
     const matches = charactersResourceState.characters.flatMap((character) =>
@@ -846,7 +850,10 @@ beforeEach(() => {
   loadPageMocks.toCanvas.mockImplementation(async () => createCanvas())
   loadPageMocks.hydrateActiveChatFully.mockClear()
   loadPageMocks.hydrateActiveChatWindow.mockClear()
-  loadPageMocks.guardActiveChatGenerationSettingsForSend.mockReturnValue({ status: 'ok' })
+  loadPageMocks.guardActiveChatGenerationSettingsForSend.mockImplementation(() => ({
+    status: 'ok',
+    state: resolveActiveChatGenerationSettings(),
+  }))
   loadPageMocks.preflightChatSendBeforeMutation.mockReturnValue({ type: 'server' })
 })
 
@@ -906,6 +913,8 @@ describe('DefaultChatScreen persona presentation', () => {
         personaPrompt: '',
       },
     ] as never
+    database.selectedPersonaId = 'persona-a'
+    database.selectedPersona = 0
     database.characters[0].chats[0].generationSettings = { personaId: 'persona-a' }
     database.characters[1].chats[0].generationSettings = { personaId: 'persona-b' }
     loadPageMocks.getCharImage.mockImplementation((image?: unknown) => String(image ?? ''))

@@ -392,10 +392,17 @@ function seedStores() {
     menuSideBar: false,
     moduleIntergration: '',
     modules: [],
+    personaPrompt: '',
+    personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
     plugins: [],
     roundIcons: false,
+    selectedPersonaId: 'persona-a',
+    selectedPersona: 0,
     showFolderName: true,
     showMenuChatList: false,
+    userIcon: '',
+    userNote: '',
+    username: 'Persona A',
   } as unknown as Database)
 
   resetStartupReadinessForTests()
@@ -730,6 +737,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(syncRouteFromState).toHaveBeenCalledWith(
       expect.objectContaining({
         currentRouteKind: 'settings',
+        personaId: 'persona-a',
         settingsMenuIndex: 17,
         settingsOpen: true,
       }),

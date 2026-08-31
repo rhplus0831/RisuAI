@@ -7,12 +7,27 @@ const pickerMocks = vi.hoisted(() => ({
   changeUserPersonaWithOutcome: vi.fn(),
   close: vi.fn(),
   saveActiveChatGenerationSettingsSelectionWithOutcome: vi.fn(),
-  database: {
-    personas: [
-      { id: 'persona-a', name: 'Persona A', note: '' },
-      { id: 'persona-b', name: 'Persona B', note: 'Second' },
-    ],
-    selectedPersona: 0,
+  ownerState: {
+    collections: {
+      values: {
+        personas: [
+          { id: 'persona-a', name: 'Persona A', note: '' },
+          { id: 'persona-b', name: 'Persona B', note: 'Second' },
+        ],
+      },
+      statuses: { personas: 'ready' },
+    },
+    settings: {
+      value: {
+        selectedPersonaId: 'persona-a',
+        selectedPersona: 0,
+        username: 'Persona A',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+      },
+      standaloneStatuses: { selectedPersonaId: 'ready', selectedPersona: 'ready' },
+    },
   },
 }))
 
@@ -23,7 +38,6 @@ vi.mock('src/ts/alert', () => ({
 
 vi.mock('src/ts/persona', () => ({
   changeUserPersonaWithOutcome: pickerMocks.changeUserPersonaWithOutcome,
-  validUniquePersonaIdAt: (index: number) => pickerMocks.database.personas[index]?.id ?? null,
 }))
 
 vi.mock('src/ts/personaDisplayName', () => ({
@@ -31,7 +45,19 @@ vi.mock('src/ts/personaDisplayName', () => ({
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => pickerMocks.database,
+  collectionsResourceState: pickerMocks.ownerState.collections,
+  getPersonaOwnerStateSnapshot: () => {
+    const personas = pickerMocks.ownerState.collections.values.personas
+    const settings = pickerMocks.ownerState.settings.value
+    if (pickerMocks.ownerState.collections.statuses.personas === 'error' || !Array.isArray(personas)) return null
+    const ids = personas.map((persona) => persona.id)
+    if (ids.some((id) => typeof id !== 'string' || id.trim().length === 0) || new Set(ids).size !== ids.length) {
+      return null
+    }
+    const selectedPersona = personas.findIndex((persona) => persona.id === settings.selectedPersonaId)
+    if (selectedPersona < 0 || selectedPersona !== settings.selectedPersona) return null
+    return { personas, ...settings }
+  },
 }))
 
 vi.mock('src/ts/activeChatGenerationSettings', () => ({
@@ -79,7 +105,15 @@ beforeEach(() => {
   pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome.mockReset().mockReturnValue({
     settlement: Promise.resolve({ status: 'accepted' }),
   })
-  pickerMocks.database.selectedPersona = 0
+  pickerMocks.ownerState.collections.values.personas = [
+    { id: 'persona-a', name: 'Persona A', note: '' },
+    { id: 'persona-b', name: 'Persona B', note: 'Second' },
+  ]
+  pickerMocks.ownerState.collections.statuses.personas = 'ready'
+  pickerMocks.ownerState.settings.value.selectedPersonaId = 'persona-a'
+  pickerMocks.ownerState.settings.value.selectedPersona = 0
+  pickerMocks.ownerState.settings.standaloneStatuses.selectedPersonaId = 'ready'
+  pickerMocks.ownerState.settings.standaloneStatuses.selectedPersona = 'ready'
 })
 
 afterEach(() => {
@@ -94,11 +128,14 @@ describe('global persona picker persistence', () => {
     pickerMocks.changeUserPersonaWithOutcome.mockReturnValue(persistence.promise)
     component = mount(ListedPersona, { target, props: { close: pickerMocks.close } })
 
+    expect(personaRow(0).dataset.risuSelected).toBe('true')
+    expect(personaRow(1).dataset.risuSelected).toBe('false')
     personaRow(1).click()
     personaRow(1).click()
     await tick()
 
     expect(pickerMocks.changeUserPersonaWithOutcome).toHaveBeenCalledOnce()
+    expect(pickerMocks.changeUserPersonaWithOutcome).toHaveBeenCalledWith(1)
     expect(pickerMocks.close).not.toHaveBeenCalled()
     expect(personaRow(1).disabled).toBe(true)
     expect(target.querySelector('[role="dialog"]')?.getAttribute('aria-busy')).toBe('true')
@@ -155,6 +192,10 @@ describe('active-chat persona picker persistence', () => {
     personaRow(1).click()
     await tick()
 
+    expect(pickerMocks.saveActiveChatGenerationSettingsSelectionWithOutcome).toHaveBeenCalledWith(
+      { personaId: 'persona-b' },
+      { expectedTarget: targetIdentity },
+    )
     expect(personaRow(1).disabled).toBe(true)
     expect(target.querySelector('[role="status"]')).toBeNull()
     expect(pickerMocks.close).not.toHaveBeenCalled()
@@ -206,5 +247,42 @@ describe('active-chat persona picker persistence', () => {
 
     await vi.waitFor(() => expect(pickerMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued))
     expect(pickerMocks.close).toHaveBeenCalledOnce()
+  })
+})
+
+describe('persona owner readiness', () => {
+  it('renders valid resident owners while the persona collection is pre-ready', async () => {
+    pickerMocks.ownerState.collections.statuses.personas = 'loading'
+    component = mount(ListedPersona, { target, props: { close: pickerMocks.close } })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-generation-picker-row]')).toHaveLength(2)
+  })
+
+  it('fails closed when the ready persona collection owner is missing', async () => {
+    pickerMocks.ownerState.collections.values.personas = undefined
+    component = mount(ListedPersona, { target, props: { close: pickerMocks.close } })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-generation-picker-row]')).toHaveLength(0)
+  })
+
+  it('fails closed when the ready persona collection has duplicate stable IDs', async () => {
+    pickerMocks.ownerState.collections.values.personas = [
+      { id: 'persona-a', name: 'Persona A', note: '' },
+      { id: 'persona-a', name: 'Ambiguous Persona', note: '' },
+    ]
+    component = mount(ListedPersona, { target, props: { close: pickerMocks.close } })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-generation-picker-row]')).toHaveLength(0)
+  })
+
+  it('fails closed on an errored persona collection even with resident owners', async () => {
+    pickerMocks.ownerState.collections.statuses.personas = 'error'
+    component = mount(ListedPersona, { target, props: { close: pickerMocks.close } })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-generation-picker-row]')).toHaveLength(0)
   })
 })

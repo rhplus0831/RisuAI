@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Send } from '@lucide/svelte'
   import { changeLanguage, language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { getPersonaOwnerStateSnapshot, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import { alertError, alertNormal } from 'src/ts/alert'
@@ -54,8 +54,9 @@
   const queuedSettlementSubscriptions = new Set<QueuedSettlementSubscription>()
 
   function activeUsername(): string {
-    const database = getDatabase()
-    return database.personas?.[database.selectedPersona]?.name ?? database.username ?? 'User'
+    const owner = getPersonaOwnerStateSnapshot()
+    const persona = owner?.personas.find((candidate) => candidate.id === owner.selectedPersonaId)
+    return persona?.name ?? owner?.username ?? 'User'
   }
 
   const SETUP_COMPLETION_PENDING_STEP = 9
@@ -138,7 +139,7 @@
   }
 
   async function completeOnboardingSetup(): Promise<void> {
-    if (!mounted || setupApplied || setupCompletionPending || getDatabase().didFirstSetup === true) return
+    if (!mounted || setupApplied || setupCompletionPending || settingsResourceState.value.didFirstSetup === true) return
 
     const snapshot: SetupChoicesSnapshot = {
       chatLang,
@@ -213,7 +214,7 @@
       if (!isCurrentLanguageAttempt(attempt)) return
       languagePersistencePending = false
       onboardingPersistenceError = { kind: 'language', attemptId: attempt.attemptId }
-      changeLanguage(getDatabase().language)
+      changeLanguage(settingsResourceState.value.language)
       return
     }
 
@@ -221,7 +222,7 @@
     languagePersistencePending = false
     if (receipt.status === 'failed') {
       onboardingPersistenceError = { kind: 'language', attemptId: attempt.attemptId }
-      changeLanguage(getDatabase().language)
+      changeLanguage(settingsResourceState.value.language)
       return
     }
 

@@ -588,9 +588,13 @@ function seedSidebarDatabase(): character {
     hypaV3: false,
     jailbreak: '',
     modules: [],
-    personas: [],
+    personas: [{ id: 'persona-selected', name: 'Selected Persona', icon: '', personaPrompt: '', note: '' }],
     promptTemplate: [],
+    personaPrompt: '',
+    selectedPersonaId: 'persona-selected',
     selectedPersona: 0,
+    userIcon: '',
+    userNote: '',
     username: 'User',
   } as never)
 

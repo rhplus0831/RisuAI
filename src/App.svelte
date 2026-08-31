@@ -33,7 +33,12 @@
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
   import ObserverShell from './lib/ObserverShell.svelte'
   import { showRealmInfoStore } from './ts/realmInfoStore'
-  import { getResourceDatabase as getDatabase } from './ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    getPersonaOwnerStateSnapshot,
+    settingsResourceState,
+  } from './ts/server/resourceState.svelte'
   import { language } from './lang'
   import LazyComponent from './lib/UI/LazyComponent.svelte'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
@@ -170,6 +175,28 @@
     event.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
   }
 
+  function selectedRouteCharacter(index: number) {
+    if (charactersResourceState.status === 'error') return undefined
+    const candidate = charactersResourceState.characters[index]
+    if (!candidate?.chaId) return undefined
+    return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+  }
+
+  function selectedRouteChatId(character: ReturnType<typeof selectedRouteCharacter>): string | undefined {
+    const candidate = character?.chats?.[character.chatPage]
+    if (!character?.chaId || typeof candidate?.id !== 'string' || candidate.id.trim().length === 0) return undefined
+
+    let owner: typeof candidate | undefined
+    for (const characterOwner of charactersResourceState.characters) {
+      for (const chatOwner of characterOwner.chats ?? []) {
+        if (chatOwner.id !== candidate.id) continue
+        if (owner) return undefined
+        owner = chatOwner
+      }
+    }
+    return owner === candidate ? candidate.id : undefined
+  }
+
   function closeResponsiveSidebar(): void {
     if ($sideBarClosing) return
     sideBarClosing.set(true)
@@ -215,9 +242,8 @@
     const selectedCharacterIndex = $selectedCharID
     const playgroundIndex = $PlaygroundStore
     const chatIsOpen = routeChatIsOpen
-    const database = getDatabase()
-    const character = database.characters?.[selectedCharacterIndex]
-    const persona = database.personas?.[database.selectedPersona]
+    const character = selectedRouteCharacter(selectedCharacterIndex)
+    const personaId = getPersonaOwnerStateSnapshot()?.selectedPersonaId ?? undefined
 
     if (
       isApplyingRouteToStores() ||
@@ -231,9 +257,9 @@
       settingsMenuIndex,
       selectedCharID: selectedCharacterIndex,
       playgroundStore: playgroundIndex,
-      personaId: typeof persona?.id === 'string' ? persona.id : undefined,
+      personaId,
       characterId: character?.chaId,
-      chatId: chatIsOpen ? character?.chats?.[character.chatPage]?.id : undefined,
+      chatId: chatIsOpen ? selectedRouteChatId(character) : undefined,
     })
   })
 </script>
@@ -301,7 +327,8 @@
       return
     }
 
-    const aliveMode = getDatabase().keepSessionAlive
+    const advancedStatus = settingsResourceState.groupStatuses.advanced ?? settingsResourceState.status
+    const aliveMode = advancedStatus === 'error' ? undefined : settingsResourceState.value.keepSessionAlive
     switch (aliveMode) {
       case 'sound': {
         console.log('Starting silent audio to keep session alive')

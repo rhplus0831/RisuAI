@@ -103,9 +103,9 @@
   import { getSelectedCharacterOwner, selectCharacterOwner } from '../../ts/characterState'
   import {
     charactersResourceState,
-    collectionsResourceState,
     getCharacterResourceOwner,
     getChatMetadataOwnerSnapshot,
+    getPersonaOwnerStateSnapshot,
     settingsResourceState,
   } from '../../ts/server/resourceState.svelte'
   import {
@@ -240,24 +240,9 @@
     return resolveReadyOwnerValue(settingsResourceState.groupStatuses[group] ?? 'idle', ownerValue, undefined)
   }
 
-  function standaloneSetting<K extends 'selectedPersona' | 'userIcon'>(key: K): Database[K] | undefined {
-    const ownerValue = (settingsResourceState.value as unknown as Partial<Database>)[key] as Database[K] | undefined
-    return resolveReadyOwnerValue(settingsResourceState.standaloneStatuses[key] ?? 'idle', ownerValue, undefined)
-  }
-
   function fullSettingsOwner<K extends keyof Database>(key: K): Database[K] | undefined {
     if (settingsResourceState.fullRevision === null) return undefined
     return (settingsResourceState.value as unknown as Partial<Database>)[key] as Database[K] | undefined
-  }
-
-  function shellBootstrapUsername(): string | undefined {
-    return settingsResourceState.value.username
-  }
-
-  function personaOwners(): Database['personas'] {
-    return collectionsResourceState.statuses.personas === 'ready'
-      ? (collectionsResourceState.values.personas ?? [])
-      : []
   }
 
   function selectedCharacterForScreen(): character | undefined {
@@ -2146,11 +2131,12 @@
   }
 
   let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
+    const personaOwner = getPersonaOwnerStateSnapshot()
     const personaDatabase = {
-      personas: personaOwners(),
-      selectedPersona: standaloneSetting('selectedPersona') ?? -1,
-      username: shellBootstrapUsername() ?? 'User',
-      userIcon: standaloneSetting('userIcon') ?? '',
+      personas: personaOwner?.personas ?? [],
+      selectedPersonaId: personaOwner?.selectedPersonaId ?? null,
+      username: personaOwner?.username ?? 'User',
+      userIcon: personaOwner?.userIcon ?? '',
     } as unknown as Database
     const chat = currentChatId
       ? ({

@@ -249,6 +249,10 @@ beforeEach(() => {
     didFirstSetup: false,
     language: 'en',
     username: '',
+    userIcon: '',
+    personaPrompt: '',
+    userNote: '',
+    selectedPersonaId: 'default-persona',
     selectedPersona: 0,
     personas: [{ id: 'default-persona', name: 'User', icon: '', personaPrompt: '', note: '' }],
   } as never)

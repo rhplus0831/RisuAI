@@ -334,8 +334,10 @@ function seedDatabase(character: Record<string, unknown>) {
     fixedChatTextarea: false,
     hypaV3: false,
     newMessageButtonStyle: 'bottom-center',
-    personas: [{ name: 'User', icon: '', largePortrait: false, personaPrompt: '' }],
+    personas: [{ id: 'persona-default', name: 'User', icon: '', largePortrait: false, personaPrompt: '', note: '' }],
     playMessage: false,
+    personaPrompt: '',
+    selectedPersonaId: 'persona-default',
     selectedPersona: 0,
     showMenuChatList: false,
     showMenuHypaMemoryModal: false,
@@ -347,6 +349,8 @@ function seedDatabase(character: Record<string, unknown>) {
     useChatSticker: false,
     useSayNothing: false,
     username: 'User',
+    userIcon: '',
+    userNote: '',
   } as unknown as Database)
 }
 

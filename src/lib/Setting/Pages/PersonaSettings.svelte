@@ -21,7 +21,6 @@
     queueSelectedPersonaUpdate,
     reconcileSelectedPersonaProjectionEpoch,
     reorderUserPersonasByIndicesWithOutcome,
-    selectedPersonaId,
     selectUserImg,
     snapshotPersonaJson,
     updateSelectedPersonaDisplayName,
@@ -34,8 +33,12 @@
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
-  import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
+  import {
+    captureCollectionProjectionEpoch,
+    captureSettingsProjectionEpoch,
+    collectionsResourceState,
+    getPersonaOwnerStateSnapshot,
+  } from 'src/ts/server/resourceState.svelte'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import { navigateToPersonaSettings } from 'src/ts/router'
   import { CircleCheckIcon } from '@lucide/svelte'
@@ -47,23 +50,35 @@
   let personaWatcherInitialized = false
   let previousPersonaSnapshot = ''
   let previousPersonaState: PersonaStateSnapshot | null = null
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let previousPersonaCollectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+  let previousSettingsProjectionEpoch = captureSettingsProjectionEpoch()
   let structuralMutationPending = $state(false)
   let structuralMutationError = $state('')
   let moduleSearch = $state('')
 
+  let personaOwner = $derived(getPersonaOwnerStateSnapshot())
+  let personas = $derived(personaOwner?.personas ?? [])
+  let modules = $derived(readModuleOwners())
+  let selectedPersonaId = $derived(personaOwner?.selectedPersonaId ?? null)
+  let selectedPersona = $derived(personas.find((persona) => persona.id === selectedPersonaId))
+  let selectedPersonaProjection = $derived(currentSelectedPersonaProjectionSnapshot())
+
   function selectedPersonaModuleIds(): string[] {
-    return getDatabase().personas[getDatabase().selectedPersona]?.modules ?? []
+    return Array.isArray(selectedPersona?.modules)
+      ? selectedPersona.modules.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      : []
   }
 
   function selectedPersonaProfile(field: 'name' | 'icon' | 'personaPrompt' | 'note'): string {
-    const persona = getDatabase().personas[getDatabase().selectedPersona]
-    return persona?.[field] ?? ''
+    if (field === 'name') return selectedPersonaProjection.username
+    if (field === 'icon') return selectedPersonaProjection.userIcon
+    if (field === 'personaPrompt') return selectedPersonaProjection.personaPrompt
+    return selectedPersonaProjection.userNote
   }
 
   function linkablePersonaModules() {
     const query = moduleSearch.trim().toLocaleLowerCase()
-    return (getDatabase().modules ?? [])
+    return modules
       .filter((module) => !module.mcp && (!query || module.name.toLocaleLowerCase().includes(query)))
       .sort((left, right) => left.name.localeCompare(right.name))
   }
@@ -100,25 +115,33 @@
   }
 
   $effect(() => {
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
-    const current = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
+    const personaCollectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    const ownerProjectionChanged =
+      personaCollectionProjectionEpoch !== previousPersonaCollectionProjectionEpoch ||
+      settingsProjectionEpoch !== previousSettingsProjectionEpoch
+    const current = snapshotPersonaJson(selectedPersonaProjection)
     if (!personaWatcherInitialized) {
       personaWatcherInitialized = true
-      previousResourceApplyEpoch = resourceApplyEpoch
+      previousPersonaCollectionProjectionEpoch = personaCollectionProjectionEpoch
+      previousSettingsProjectionEpoch = settingsProjectionEpoch
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
     if (isPersonaSettingsWatcherSuppressed()) {
-      previousResourceApplyEpoch = resourceApplyEpoch
+      previousPersonaCollectionProjectionEpoch = personaCollectionProjectionEpoch
+      previousSettingsProjectionEpoch = settingsProjectionEpoch
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
-    if (resourceApplyChanged) {
-      untrack(() => reconcileSelectedPersonaProjectionEpoch())
-      previousResourceApplyEpoch = resourceApplyEpoch
+    if (ownerProjectionChanged) {
+      if (Array.isArray(collectionsResourceState.values.personas)) {
+        untrack(() => reconcileSelectedPersonaProjectionEpoch())
+      }
+      previousPersonaCollectionProjectionEpoch = personaCollectionProjectionEpoch
+      previousSettingsProjectionEpoch = settingsProjectionEpoch
       previousPersonaSnapshot = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
       previousPersonaState = currentPersonaStateSnapshot()
       return
@@ -168,6 +191,35 @@
       } catch (error) {}
     }
   })
+
+  function readModuleOwners(): readonly PersonaModule[] {
+    const ownerValue = collectionsResourceState.values.modules
+    if (collectionsResourceState.statuses.modules === 'error') return []
+    if (!Array.isArray(ownerValue)) return []
+
+    const ids = new Set<string>()
+    for (const candidate of ownerValue) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return []
+      const module = candidate as PersonaModule
+      if (
+        typeof module.id !== 'string' ||
+        module.id.trim() !== module.id ||
+        module.id.length === 0 ||
+        ids.has(module.id)
+      ) {
+        return []
+      }
+      if (typeof module.name !== 'string') return []
+      ids.add(module.id)
+    }
+    return ownerValue as PersonaModule[]
+  }
+
+  interface PersonaModule {
+    id: string
+    name: string
+    mcp?: unknown
+  }
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.persona}</h2>
@@ -183,10 +235,10 @@
     class="p-4 rounded-md border-darkborderc border mb-2 flex-wrap flex gap-2 w-full max-w-full min-w-0"
     bind:this={ele}
     aria-busy={structuralMutationPending}>
-    {#each getDatabase().personas as persona, i}
+    {#each personas as persona, i}
       <button
         aria-label={persona.name || `${language.persona} ${i + 1}`}
-        aria-pressed={i === getDatabase().selectedPersona}
+        aria-pressed={persona.id === selectedPersonaId}
         disabled={structuralMutationPending}
         data-risu-idx={i}
         onclick={async () => {
@@ -196,19 +248,19 @@
         {#if persona.icon === ''}
           <div
             class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-            class:ring-3={i === getDatabase().selectedPersona}>
+            class:ring-3={persona.id === selectedPersonaId}>
           </div>
         {:else}
           {#await getCharImage(persona.icon, 'css')}
             <div
               class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-              class:ring-3={i === getDatabase().selectedPersona}>
+              class:ring-3={persona.id === selectedPersonaId}>
             </div>
           {:then im}
             <div
               class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
               style={im}
-              class:ring-3={i === getDatabase().selectedPersona}>
+              class:ring-3={persona.id === selectedPersonaId}>
             </div>
           {/await}
         {/if}
@@ -251,7 +303,7 @@
       {#if selectedPersonaProfile('icon') === ''}
         <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
       {:else}
-        {#await getCharImage(selectedPersonaProfile('icon'), getDatabase().personas[getDatabase().selectedPersona]?.largePortrait ? 'lgcss' : 'css')}
+        {#await getCharImage(selectedPersonaProfile('icon'), selectedPersona?.largePortrait ? 'lgcss' : 'css')}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
         {:then im}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}>
@@ -272,9 +324,7 @@
       marginBottom
       size="lg"
       placeholder={language.displayName}
-      bind:value={
-        () => getDatabase().personas[getDatabase().selectedPersona]?.displayName ?? '', updateSelectedPersonaDisplayName
-      } />
+      bind:value={() => selectedPersona?.displayName ?? '', updateSelectedPersonaDisplayName} />
     <span class="text-sm text-textcolor2">{language.personaNote}</span>
     <TextAreaInput
       height="20"
@@ -323,23 +373,19 @@
         styled="danger"
         disabled={structuralMutationPending}
         onclick={async () => {
-          if (getDatabase().personas.length === 1) {
+          if (personas.length === 1) {
             return
           }
-          const targetPersonaId = selectedPersonaId()
+          const targetPersonaId = selectedPersona?.id
           if (!targetPersonaId) return
-          const d = await alertConfirm(
-            `${language.removeConfirm}${getPersonaDisplayName(getDatabase().personas[getDatabase().selectedPersona])}`,
-          )
+          const d = await alertConfirm(`${language.removeConfirm}${getPersonaDisplayName(selectedPersona)}`)
           if (d) {
             await runPersonaStructuralMutation(() => deleteSelectedUserPersonaWithOutcome(targetPersonaId))
           }
         }}>{language.remove}</Button>
       <Check
-        bind:check={
-          () => getDatabase().personas[getDatabase().selectedPersona]?.largePortrait ?? false,
-          (value) => updateSelectedPersonaLargePortrait(value)
-        }>{language.largePortrait}</Check>
+        bind:check={() => selectedPersona?.largePortrait ?? false, (value) => updateSelectedPersonaLargePortrait(value)}
+        >{language.largePortrait}</Check>
     </div>
   </div>
 </div>

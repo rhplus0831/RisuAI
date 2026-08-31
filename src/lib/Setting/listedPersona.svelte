@@ -4,8 +4,8 @@
   import { alertError, alertNormal } from 'src/ts/alert'
 
   import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import { changeUserPersonaWithOutcome, validUniquePersonaIdAt } from 'src/ts/persona'
+  import { collectionsResourceState, getPersonaOwnerStateSnapshot } from 'src/ts/server/resourceState.svelte'
+  import { changeUserPersonaWithOutcome } from 'src/ts/persona'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import {
     resolveActiveChatGenerationSettings,
@@ -33,6 +33,9 @@
   })
   let mutationPending = $state(false)
   let mutationError = $state('')
+  let personaOwner = $derived(getPersonaOwnerStateSnapshot())
+  let personas = $derived(isChatGenerationSelectionMode ? readPersonaOwners() : (personaOwner?.personas ?? []))
+  let selectedPersonaId = $derived(personaOwner?.selectedPersonaId ?? null)
 
   function nonEmptyId(id: unknown): string | null {
     return typeof id === 'string' && id.trim().length > 0 ? id : null
@@ -44,7 +47,7 @@
     mutationError = ''
     try {
       if (isChatGenerationSelectionMode) {
-        const personaId = validUniquePersonaIdAt(index)
+        const personaId = uniquePersonaIdAt(index)
         if (!personaId) return
         const persistence = saveActiveChatGenerationSettingsSelectionWithOutcome(
           { personaId },
@@ -88,12 +91,46 @@
     }
   }
 
-  function isPersonaSelected(index: number) {
+  function isPersonaSelected(persona: PersonaOwner) {
+    const personaId = nonEmptyId(persona.id)
+    if (!personaId) return false
     if (!isChatGenerationSelectionMode) {
-      return index === getDatabase().selectedPersona
+      return personaId === selectedPersonaId
     }
-    const personaId = nonEmptyId(getDatabase().personas[index]?.id)
-    return !!personaId && personaId === activeChatPersonaId
+    return personaId === activeChatPersonaId
+  }
+
+  function readPersonaOwners(): readonly PersonaOwner[] {
+    const ownerValue = collectionsResourceState.values.personas
+    const owners = uniquePersonaOwners(ownerValue)
+    if (collectionsResourceState.statuses.personas === 'error') return []
+    return owners ?? []
+  }
+
+  function uniquePersonaOwners(value: unknown): readonly PersonaOwner[] | undefined {
+    if (!Array.isArray(value)) return undefined
+
+    const ids = new Set<string>()
+    for (const candidate of value) {
+      if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return undefined
+      const id = (candidate as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return undefined
+      ids.add(id)
+    }
+    return value as PersonaOwner[]
+  }
+
+  function uniquePersonaIdAt(index: number): string | null {
+    const id = nonEmptyId(personas[index]?.id)
+    if (!id) return null
+    return personas.filter((persona) => nonEmptyId(persona.id) === id).length === 1 ? id : null
+  }
+
+  interface PersonaOwner {
+    id: string
+    name?: string
+    displayName?: string
+    note?: string
   }
 
   function handleDialogKeydown(event: KeyboardEvent): void {
@@ -144,22 +181,22 @@
         {mutationError}
       </div>
     {/if}
-    {#each getDatabase().personas as persona, i}
+    {#each personas as persona, i}
       <button
         disabled={mutationPending}
         onclick={async () => {
           await selectPersona(i)
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={isPersonaSelected(i)}
+        class:bg-selected={isPersonaSelected(persona)}
         data-risu-generation-picker-row
         data-risu-picker-kind="persona"
         data-risu-picker-mode={mode}
         data-risu-row-id={nonEmptyId(persona.id) ?? ''}
         data-risu-row-index={i}
-        data-risu-selected={isPersonaSelected(i) ? 'true' : 'false'}
-        aria-pressed={isPersonaSelected(i)}
-        aria-current={isPersonaSelected(i) ? 'true' : undefined}>
+        data-risu-selected={isPersonaSelected(persona) ? 'true' : 'false'}
+        aria-pressed={isPersonaSelected(persona)}
+        aria-current={isPersonaSelected(persona) ? 'true' : undefined}>
         <span class="overflow-x-auto whitespace-nowrap w-full text-left">
           <span class="font-medium">{getPersonaDisplayName(persona)}</span>
           {#if persona.note}
