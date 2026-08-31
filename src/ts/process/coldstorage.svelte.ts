@@ -1,8 +1,7 @@
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
 import { alertClear, alertError, alertWait } from '../alert'
 import { language } from 'src/lang'
-import { getDatabase, type character } from '../storage/database.svelte'
-import { createNonSecurityUuid } from '../nonSecurityUuid'
+import type { Chat, character } from '../storage/databaseTypes'
 import { forageStorage } from '../globalApi.svelte'
 import {
   getServerCommandBaseRevision,
@@ -10,7 +9,14 @@ import {
   recoverColdStorageChatCommand,
   type ServerCommandResult,
 } from '../server/commands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import {
+  applyCharacterResource,
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+  markChatBodyResourceRevision,
+} from '../server/resourceState.svelte'
+import { applyServerChatMessagesResource, getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
 
 export const coldStorageHeader = '\uEF01COLDSTORAGE\uEF01'
 
@@ -77,157 +83,30 @@ async function removeColdStorageItems(keys: string[]) {
 }
 
 export async function listColdDataKeys(): Promise<string[]> {
+  if (charactersResourceState.status !== 'ready') return []
+
   const keys: string[] = []
-  const characters = getDatabase().characters
-  for (let i = 0; i < characters.length; i++) {
-    if (characters[i].coldstorage) {
-      keys.push(characters[i].coldstorage!)
-      keys.push(...(characters[i].coldStoragedChats ?? []))
+  for (const candidate of charactersResourceState.characters) {
+    if (!candidate?.chaId) return []
+    const character = getCharacterResourceOwner(candidate.chaId)
+    if (character !== candidate) return []
+
+    if (character.coldstorage) {
+      keys.push(character.coldstorage)
+      keys.push(...(character.coldStoragedChats ?? []))
     }
-    for (let j = 0; j < characters[i].chats.length; j++) {
-      const chat = characters[i].chats[j]
-      if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
-        const coldDataKey = chat.message[0].data.slice(coldStorageHeader.length)
+
+    for (const chat of character.chats ?? []) {
+      if (!chat?.id) continue
+      const transcript = getChatMessageOwnerState(chat.id)
+      const pointer = transcript?.messages?.[0]?.data
+      if (pointer?.startsWith(coldStorageHeader)) {
+        const coldDataKey = pointer.slice(coldStorageHeader.length)
         keys.push(coldDataKey)
       }
     }
   }
   return keys
-}
-
-async function makeColdDataForCharacter(i: number, coldTime: number) {
-  const lastInteraction = getDatabase().characters[i].lastInteraction ?? Date.now()
-  if (lastInteraction < coldTime && !getDatabase().characters[i].coldstorage) {
-    console.log(
-      `Character ${getDatabase().characters[i].name ?? i} has not been interacted with since ${new Date(lastInteraction).toLocaleDateString()}, moving to cold storage`,
-    )
-    const id = createNonSecurityUuid()
-    const writeSuccess = await setColdStorageItem(id, {
-      character: getDatabase().characters[i],
-    })
-
-    if (!writeSuccess) {
-      console.error(`Cold storage write failed for character ${i}, keeping original data`)
-      return
-    }
-
-    const verifyData = await getColdStorageItem(id)
-    if (!verifyData || (!Array.isArray(verifyData) && !verifyData.character)) {
-      console.error(
-        `Cold storage verification failed for character ${getDatabase().characters[i].chaId ?? i}, keeping original data`,
-        verifyData,
-      )
-      return
-    }
-
-    //get cold storaged chats in this character
-    const coldStoragedChats: string[] = []
-    for (let j = 0; j < getDatabase().characters[i].chats.length; j++) {
-      const chat = getDatabase().characters[i].chats[j]
-      if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
-        const coldDataKey = chat.message[0].data.slice(coldStorageHeader.length)
-        coldStoragedChats.push(coldDataKey)
-      }
-    }
-
-    // Not a full character object,
-    // just the data needed to show in the character list and load the chat when clicked. The rest will be loaded back when the character is opened.
-    const coldCharacter: character = {
-      type: 'character',
-      image: getDatabase().characters[i].image,
-      name: getDatabase().characters[i].name,
-      chats: [
-        {
-          message: [
-            {
-              time: Date.now(),
-              data: '',
-              role: 'char',
-            },
-          ],
-          note: '',
-          name: '',
-          localLore: [],
-        },
-      ],
-      chatPage: 0,
-      chaId: getDatabase().characters[i].chaId,
-      firstMsgIndex: 0,
-      coldstorage: id,
-      coldStoragedChats: coldStoragedChats,
-    } as any
-
-    getDatabase().characters[i] = coldCharacter
-  }
-}
-
-async function makeColdDataForChat(i: number, j: number, coldTime: number) {
-  const chat = getDatabase().characters[i].chats[j]
-  let greatestTime = chat.lastDate ?? 0
-
-  if (chat.message.length < 4) {
-    //it is inefficient to store small data
-    return
-  }
-
-  if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
-    //already cold storage
-    return
-  }
-
-  if (getDatabase().characters[i].coldstorage) {
-    //character is in cold storage, no need to cold storage individual chats
-    return
-  }
-
-  for (let k = 0; k < chat.message.length; k++) {
-    const message = chat.message[k]
-    const time = message.time
-    if (!time) {
-      continue
-    }
-
-    if (time > greatestTime) {
-      greatestTime = time
-    }
-  }
-
-  if (greatestTime < coldTime) {
-    const id = createNonSecurityUuid()
-    const writeSuccess = await setColdStorageItem(id, {
-      message: chat.message,
-      hypaV3Data: chat.hypaV3Data,
-      scriptstate: chat.scriptstate,
-      localLore: chat.localLore,
-    })
-
-    if (!writeSuccess) {
-      console.error(`Cold storage write failed for chat ${chat.id ?? j} in character ${i}, keeping original data`)
-      alertError(language.errors.coldStorageWriteFailed)
-      return
-    }
-
-    // Verify the data can be read back before replacing
-    const verifyData = await getColdStorageItem(id)
-    if (!verifyData || (!Array.isArray(verifyData) && !verifyData.message)) {
-      console.error(`Cold storage verification failed for chat ${chat.id ?? j}, keeping original data`)
-      alertError(language.errors.coldStorageVerifyFailed)
-      return
-    }
-
-    chat.message = [
-      {
-        time: Date.now(),
-        data: coldStorageHeader + id,
-        role: 'char',
-      },
-    ]
-    chat.hypaV3Data = {
-      summaries: [],
-    }
-    chat.scriptstate = {}
-    chat.localLore = []
-  }
 }
 
 export async function makeColdData() {
@@ -265,13 +144,21 @@ async function runCharacterRecovery(characterId: string, key: string): Promise<b
       return reportRecoveryFailure(key, 'server returned an invalid recovered character')
     }
 
-    withTrustedResourceWrite(() => {
-      const index = getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
-      const current = getDatabase().characters[index]
-      if (index >= 0 && (!current.coldstorage || current.coldstorage === key)) {
-        getDatabase().characters[index] = result.character as unknown as character
-      }
+    const current = getCharacterResourceOwner(characterId)
+    if (!current) return reportRecoveryFailure(key, 'character owner is unavailable')
+    if (current.coldstorage && current.coldstorage !== key) {
+      return reportRecoveryFailure(key, 'character archive pointer changed before recovery completed')
+    }
+
+    const applied = applyCharacterResource({
+      revision: result.revision,
+      character: result.character as unknown as character,
     })
+    const resident = getCharacterResourceOwner(characterId)
+    if (!applied && resident?.coldstorage) {
+      return reportRecoveryFailure(key, 'recovered character was superseded by another owner revision')
+    }
+    if (applied) applyRecoveredCharacterTranscripts(result.character as unknown as character, result.revision)
     alertClear()
     return true
   } catch (error) {
@@ -280,7 +167,7 @@ async function runCharacterRecovery(characterId: string, key: string): Promise<b
 }
 
 export function recoverColdStorageCharacter(characterIndex: number): Promise<boolean> {
-  const current = getDatabase().characters?.[characterIndex]
+  const current = characterOwnerAt(characterIndex)
   if (!current) return Promise.resolve(false)
   if (!current.coldstorage) return Promise.resolve(true)
   if (!current.chaId) return Promise.resolve(reportRecoveryFailure(current.coldstorage, 'character id is missing'))
@@ -305,19 +192,36 @@ async function runChatRecovery(characterId: string, chatId: string, key: string)
       return reportRecoveryFailure(key, 'server returned an invalid recovered chat')
     }
 
-    withTrustedResourceWrite(() => {
-      const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
-      const chatIndex = character?.chats.findIndex((candidate) => candidate.id === chatId) ?? -1
-      const current = character?.chats[chatIndex]
-      const pointer = current?.message?.[0]?.data
-      if (
-        character &&
-        chatIndex >= 0 &&
-        (!pointer?.startsWith(coldStorageHeader) || pointer === `${coldStorageHeader}${key}`)
-      ) {
-        character.chats[chatIndex] = result.chat as (typeof character.chats)[number]
-      }
-    })
+    const character = getCharacterResourceOwner(characterId)
+    const current = character ? uniqueCharacterChatOwner(character, chatId) : undefined
+    const pointer = getChatMessageOwnerState(chatId)?.messages?.[0]?.data
+    if (!character || !current) return reportRecoveryFailure(key, 'chat owner is unavailable')
+    if (pointer?.startsWith(coldStorageHeader) && pointer !== `${coldStorageHeader}${key}`) {
+      return reportRecoveryFailure(key, 'chat archive pointer changed before recovery completed')
+    }
+    if (!pointer?.startsWith(coldStorageHeader)) return true
+
+    const chatIndex = character.chats.indexOf(current)
+    const nextCharacter = structuredClone(character)
+    nextCharacter.chats[chatIndex] = result.chat as unknown as Chat
+    const rowApplied = applyCharacterResource({ revision: result.revision, character: nextCharacter })
+    if (!rowApplied) {
+      const residentPointer = getChatMessageOwnerState(chatId)?.messages?.[0]?.data
+      if (!residentPointer?.startsWith(coldStorageHeader)) return true
+      return reportRecoveryFailure(key, 'recovered chat metadata was superseded by another owner revision')
+    }
+
+    const recovered = result.chat as unknown as Chat
+    const bodyApplied = applyServerChatMessagesResource(
+      chatId,
+      recovered.message ?? [],
+      recovered.hypaV3Data,
+      [],
+      undefined,
+      { hypaV3DataIncluded: Object.prototype.hasOwnProperty.call(recovered, 'hypaV3Data') },
+    )
+    if (!bodyApplied) return reportRecoveryFailure(key, 'recovered chat transcript could not be applied')
+    markChatBodyResourceRevision(chatId, result.revision)
     return true
   } catch (error) {
     return reportRecoveryFailure(key, error)
@@ -325,12 +229,13 @@ async function runChatRecovery(characterId: string, chatId: string, key: string)
 }
 
 export function preLoadChat(characterIndex: number, chatIndex: number): Promise<boolean> {
-  const character = getDatabase().characters?.[characterIndex]
+  const character = characterOwnerAt(characterIndex)
   const chat = character?.chats?.[chatIndex]
 
   if (!character || !chat) return Promise.resolve(false)
 
-  const pointer = chat.message?.[0]?.data
+  if (!chat?.id || getChatMetadataOwnerState(chat.id)?.chatId !== chat.id) return Promise.resolve(false)
+  const pointer = getChatMessageOwnerState(chat.id)?.messages?.[0]?.data
   if (!pointer?.startsWith(coldStorageHeader)) return Promise.resolve(true)
   const key = pointer.slice(coldStorageHeader.length)
   if (!character.chaId || !chat.id || !key) {
@@ -343,4 +248,29 @@ export function preLoadChat(characterIndex: number, chatIndex: number): Promise<
   const job = runChatRecovery(character.chaId, chat.id, key).finally(() => chatRecoveryJobs.delete(jobKey))
   chatRecoveryJobs.set(jobKey, job)
   return job
+}
+
+function characterOwnerAt(index: number): character | undefined {
+  if (charactersResourceState.status !== 'ready' || index < 0) return undefined
+  const candidate = charactersResourceState.characters[index]
+  return candidate?.chaId && getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+}
+
+function uniqueCharacterChatOwner(character: character, chatId: string): Chat | undefined {
+  if (getChatMetadataOwnerState(chatId)?.chatId !== chatId) return undefined
+  const matches = (character.chats ?? []).filter((candidate) => candidate?.id === chatId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function applyRecoveredCharacterTranscripts(character: character, revision: number): void {
+  for (const chat of character.chats ?? []) {
+    if (!chat?.id || getChatMetadataOwnerState(chat.id)?.chatId !== chat.id) continue
+    if (
+      applyServerChatMessagesResource(chat.id, chat.message ?? [], chat.hypaV3Data, [], undefined, {
+        hypaV3DataIncluded: Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data'),
+      })
+    ) {
+      markChatBodyResourceRevision(chat.id, revision)
+    }
+  }
 }
