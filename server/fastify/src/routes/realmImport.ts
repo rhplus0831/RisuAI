@@ -1020,14 +1020,15 @@ async function importRealmCharx(args: {
   }
 }
 
-function appendRealmCharacter(args: {
+export function appendRealmCharacter(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
   eventOrigin?: CommandEventOrigin
+  baseRevision?: number
   character: JsonRecord
 }): JsonCommandMutationResult<{ characterId: string }> {
-  const baseRevision = getSchemaState(args.db).revision
+  const baseRevision = args.baseRevision ?? getSchemaState(args.db).revision
   const chatCarrier = { ...args.character } as CharacterRecord
   const chats = ensureCharacterChats(chatCarrier)
   const characterRecord = createCharacterRecord(

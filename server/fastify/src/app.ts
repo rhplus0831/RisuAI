@@ -56,6 +56,7 @@ import { registerProxyRoutes } from './routes/proxy.js'
 import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
 import { registerRequestHistoryRoutes } from './routes/requestHistory.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
+import { registerLocalFileImportRoutes } from './routes/localFileImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
 import { registerStartupTelemetryRoutes } from './routes/startupTelemetry.js'
@@ -409,6 +410,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     realmUrl: config.realmUrl,
     maxExpandedImportBytes: config.realmImportMaxExpandedBytes ?? DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
     ...opts.realmImport,
+  })
+  registerLocalFileImportRoutes(app, db, authState, config.dataDir, commandEventSink, activeWriterState, {
+    maxUploadBytes: config.importMaxBytes,
+    maxExpandedBytes: config.realmImportMaxExpandedBytes ?? DEFAULT_REALM_IMPORT_MAX_EXPANDED_BYTES,
   })
   registerCommandRoutes(
     app,

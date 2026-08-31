@@ -14,6 +14,7 @@ const saveAssets = vi.hoisted(() => vi.fn())
 const decodeRPack = vi.hoisted(() => vi.fn(async (data: Uint8Array) => data))
 const sleep = vi.hoisted(() => vi.fn())
 const createGlobalModule = vi.hoisted(() => vi.fn())
+const importLocalModuleFileFromServer = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
 const getCurrentChatMock = vi.hoisted(() => vi.fn())
 type ModuleDatabaseFixture = {
@@ -122,7 +123,10 @@ vi.mock('../util', () => ({
 
 vi.mock('../filePicker', () => ({
   selectSingleFile: vi.fn(async () => selectedFileState.file),
+  selectFileByDom: vi.fn(async () => (selectedFileState.file ? [selectedFileState.file] : null)),
 }))
+
+vi.mock('../server/localFileImport', () => ({ importLocalModuleFileFromServer }))
 
 vi.mock('./lorebook.svelte', () => ({
   convertExternalLorebook: vi.fn(() => []),
@@ -198,6 +202,7 @@ import {
   getModuleTriggerOwner,
   getModuleTriggers,
   importModule,
+  importRisuModuleData,
   importRisuModuleObject,
   moduleUpdate,
   moduleForSingleItemExport,
@@ -372,6 +377,13 @@ describe('module imports', () => {
     sleep.mockReset()
     createGlobalModule.mockReset()
     createGlobalModule.mockResolvedValue(null)
+    importLocalModuleFileFromServer.mockReset()
+    importLocalModuleFileFromServer.mockResolvedValue({
+      status: 'ok',
+      revision: 10,
+      event: { type: 'module.created', resource: 'moduleCreated', revision: 10 },
+      moduleId: 'server-module',
+    })
     alertConfirm.mockReset()
     alertConfirm.mockResolvedValue(true)
     alertModuleSelect.mockReset()
@@ -451,7 +463,7 @@ describe('module imports', () => {
     )
   })
 
-  it('imports ordinary .risum modules through asset upload and module command helpers', async () => {
+  it('uploads an ordinary .risum once and lets the server process and create it', async () => {
     const assetData = new Uint8Array([7, 8, 9])
     selectedFileState.file = {
       name: 'module.risum',
@@ -468,17 +480,11 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: 'portrait.webp' }], {
-      onProgress: expect.any(Function),
-    })
-    expect(createGlobalModule).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: expect.not.stringMatching(/^old-id$/),
-        name: 'Imported module',
-        description: 'Imported',
-        assets: [['portrait', 'asset-0', 'portrait.webp']],
-      }),
+    expect(importLocalModuleFileFromServer).toHaveBeenCalledWith(
+      expect.objectContaining({ file: selectedFileState.file, fileName: 'module.risum' }),
     )
+    expect(saveAssets).not.toHaveBeenCalled()
+    expect(createGlobalModule).not.toHaveBeenCalled()
     expect(alertNormal).toHaveBeenCalled()
   })
 
@@ -499,7 +505,7 @@ describe('module imports', () => {
       ),
     }
 
-    const importPromise = importModule()
+    const importPromise = importRisuModuleData(selectedFileState.file.data)
     await vi.waitFor(() => expect(saveAssets).toHaveBeenCalledOnce())
 
     expect(alertWait.mock.calls.map(([message]) => message)).toEqual(['Loading... (Adding Assets 0 / 3)'])
@@ -541,7 +547,7 @@ describe('module imports', () => {
       }),
     }
 
-    const importPromise = importModule()
+    const importPromise = importRisuModuleData(selectedFileState.file.data)
     await vi.waitFor(() => expect(createGlobalModule).toHaveBeenCalledOnce())
     expect(alertNormal).not.toHaveBeenCalled()
 
@@ -594,7 +600,7 @@ describe('module imports', () => {
       },
     ],
   ])('reports unavailable creation for converted %s imports', async (_kind, payload) => {
-    createGlobalModule.mockResolvedValueOnce({ status: 'unavailable' })
+    importLocalModuleFileFromServer.mockResolvedValueOnce({ status: 'unavailable' })
     selectedFileState.file = {
       name: 'converted.json',
       data: Buffer.from(JSON.stringify(payload)),
@@ -602,7 +608,7 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(createGlobalModule).toHaveBeenCalledOnce()
+    expect(importLocalModuleFileFromServer).toHaveBeenCalledOnce()
     expect(alertError).toHaveBeenCalledWith(language.moduleImport.commandUnavailable)
   })
 
@@ -621,7 +627,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: '' }], {
       onProgress: expect.any(Function),
@@ -651,7 +657,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(avifData), fileName: 'asset.avif' }], {
       onProgress: expect.any(Function),
@@ -680,7 +686,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertConfirm).toHaveBeenCalled()
     expect(saveAssets).not.toHaveBeenCalled()
@@ -704,7 +710,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertError).not.toHaveBeenCalled()
     expect(alertConfirm).toHaveBeenCalled()
@@ -737,7 +743,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertError).toHaveBeenCalledWith(language.moduleImport.mcpInvalidUrl)
     expect(alertConfirm).not.toHaveBeenCalled()
@@ -751,7 +757,7 @@ describe('module imports', () => {
       data: new Uint8Array([111, 0, 0, 0]),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(alertError).toHaveBeenCalledWith(language.errors.noData)
     expect(saveAssets).not.toHaveBeenCalled()
@@ -775,7 +781,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleData(selectedFileState.file.data)
 
     expect(decodeRPack).toHaveBeenCalledTimes(2)
     expect(sleep).not.toHaveBeenCalled()
@@ -797,7 +803,7 @@ describe('module imports', () => {
       ),
     }
 
-    await importModule()
+    await importRisuModuleObject(JSON.parse(Buffer.from(selectedFileState.file.data).toString()))
 
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({

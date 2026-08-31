@@ -202,15 +202,19 @@ the ZIP-style local-backup export; this is guarded by
 `src/lib/Setting/Pages/UserSettings.svelte.test.ts`. The separate bug-report
 export masks registered secrets.
 
-## Client Content Exchange
+## Content Exchange
 
-Portable client formats outside whole-database saves remain browser workflows:
+Portable formats outside whole-database saves retain browser UI/confirmation
+ownership. Local character-card and module files are exceptions at the byte
+boundary: the browser sends each selected file once and Fastify owns decoding,
+asset registration, validation, and the final revisioned create.
 
 | Owner                                                                                            | Exchange contract                                                 |
 | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | `src/ts/storage/exportAsDataset.ts`                                                              | Dataset JSON export.                                              |
 | `src/ts/characters.ts`                                                                           | Single-chat and all-chat import/export.                           |
-| `src/ts/characterCards.ts`, `src/ts/process/processzip.ts`                                       | Character-card import/export, including packaged CharX assets.    |
+| `src/ts/characterCards.ts`, `src/ts/process/processzip.ts`                                       | Character-card export and non-picker compatibility helpers.       |
+| `server/fastify/src/routes/localFileImport.ts`, `server/fastify/src/localFileImport.ts`           | Local character-card/module upload, decoding, assets, and create.  |
 | `src/ts/persona.ts`                                                                              | Persona PNG import/export.                                        |
 | `src/ts/storage/database.svelte.ts`                                                              | Legacy and split preset exchange, including `.risup`.             |
 | `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`, `src/ts/translator/presets.ts` | Lorebook, regex-script, and `.risutl` translator-preset exchange. |
@@ -223,34 +227,28 @@ only the prompt half, or cancel without writing either half.
 
 ### Character Cards
 
-`CharXImporter` incrementally decodes `.charx` and JPEG-embedded CharX ZIPs.
-Entries that expand beyond 50 MiB and oversized inline data-URI assets are
-dropped while readable card content is imported. The completion alert names
-every dropped archive path and every inline `data.assets[index]` item; missing
-assets that were not named by that size report remain hard errors. Internally,
-completed assets flush at 32 items or the 8 MiB batch
-target, and ZIP input pauses while retained decoded asset bytes exceed the
-32 MiB queue target. Because thresholds are checked after accepting an entry,
-one otherwise valid entry can exceed a batch or queue target up to the 50 MiB
-per-entry cap. The shared asset helper then applies its four-worker hashing,
-existence probing, deduplication, timeout, retry, and upload-chunk rules described
-above. `src/ts/process/processzip.test.ts` guards the entry cap,
-high-asset-count batching, queue backpressure, and representative valid output;
-`src/ts/characterCards.pngImport.svelte-node.test.ts` guards salvage and exact reporting.
+`POST /api/v1/import/character-card` accepts one multipart JSON, PNG, CharX, or
+JPEG-embedded CharX file. Fastify streams the upload to a temporary file,
+decodes archives server-side, stores content-addressed assets, converts the
+card, and creates the character in one revisioned operation. Entries that
+expand beyond 50 MiB and oversized inline data-URI assets are dropped while
+readable card content is imported; the response report drives the existing
+localized completion alert. Missing non-dropped assets remain hard errors.
+Password and low-level-access prompts use a short-lived pending token, so a
+confirmation retry sends JSON only and does not upload or unpack the file
+again. The older browser `CharXImporter` remains for non-picker compatibility
+callers and export-adjacent tests.
 
-CharX asset writes finish before the imported character is dispatched through
-the command path. They are content-addressed and deduplicated, but are not
-rolled back when later card validation, low-level-access confirmation, or the
-character mutation fails; assets left without a durable reference become
-eligible for normal grace-window GC.
+Local character-card asset writes and the character mutation now run in the
+same server request. Content-addressed assets written before a later validation
+or revision conflict are not deleted eagerly; unreferenced bytes remain eligible
+for normal grace-window GC.
 
-Every browser card path passes through
-`normalizeImportedCharacterIdentities()` before the optimistic character
-append. In addition to rekeying identities, it fills a missing starter-chat
-`fmIndex` from the character's `firstMsgIndex` or `-1`, so the imported greeting
-is available immediately after selection. This is guarded for spec and off-spec
-imports by `src/ts/characterCards.pngImport.svelte-node.test.ts` and
-`src/ts/characters.changeChar.test.ts`.
+Fastify generates fresh character/chat/definition identities for uploaded
+cards and initializes the starter chat's `fmIndex` to `-1`, so the imported
+greeting is available immediately after selection. Programmatic compatibility
+imports that still enter through `importCharacterProcess()` retain the browser
+identity normalizer.
 
 Packaged-card export rewrites prebuilt-asset exclusion references together with
 their asset references. Import keeps only exclusions that resolve to imported

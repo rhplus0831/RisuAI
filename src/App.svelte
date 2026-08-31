@@ -329,19 +329,15 @@
         const { importPreset } = await import('./ts/storage/database.svelte')
         await importPreset({ name: file.name, data })
       } else if (name.endsWith('.risum')) {
-        const data = new Uint8Array(await file.arrayBuffer())
-        const { importRisuModuleData } = await import('./ts/process/modules')
-        await importRisuModuleData(data)
+        const { importModuleFile } = await import('./ts/process/modules')
+        await importModuleFile(file, file.name)
         return
       } else {
-        const [{ importCharacterProcess }, { checkCharOrder }] = await Promise.all([
+        const [{ importCharacterFile }, { checkCharOrder }] = await Promise.all([
           import('./ts/characterCards'),
           import('./ts/globalApi.svelte'),
         ])
-        await importCharacterProcess({
-          name: file.name,
-          data: file,
-        })
+        await importCharacterFile(file, file.name)
         checkCharOrder()
       }
     } catch (error) {

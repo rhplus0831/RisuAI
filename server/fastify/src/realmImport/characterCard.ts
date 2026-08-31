@@ -57,6 +57,7 @@ export async function convertRealmCharacterCard(
   let notificationImage = ''
   const emotions: [string, string][] = []
   const additionalAssets: [string, string, string][] = []
+  const importedAssetReferences = new Map<string, string>()
   const ccAssets: Array<{ type: string; uri: string; name: string; ext: string }> = []
   let vits: JsonRecord | null = null
 
@@ -79,14 +80,12 @@ export async function convertRealmCharacterCard(
         continue
       }
       const fileName = typeof entry[2] === 'string' ? entry[2] : ''
-      additionalAssets.push([
-        entry[0],
-        await storeRisuV2Asset(entry[1], options.storeAsset, {
-          assetDict: options.assetDict,
-          defaultFileName: fileName,
-        }),
-        fileName,
-      ])
+      const assetId = await storeRisuV2Asset(entry[1], options.storeAsset, {
+        assetDict: options.assetDict,
+        defaultFileName: fileName,
+      })
+      additionalAssets.push([entry[0], assetId, fileName])
+      importedAssetReferences.set(entry[1], assetId)
     }
 
     if (typeof risuExt.notificationImage === 'string' && risuExt.notificationImage) {
@@ -145,6 +144,7 @@ export async function convertRealmCharacterCard(
         emotions.push([fileName, assetId])
       } else if (type === 'x-risu-asset') {
         additionalAssets.push([fileName, assetId, ext])
+        importedAssetReferences.set(uri, assetId)
       } else if (type === 'x-risu-notification-image') {
         notificationImage = assetId
       } else if (type === 'icon' && fileName === 'main') {
@@ -173,6 +173,7 @@ export async function convertRealmCharacterCard(
         note: '',
         name: 'Chat 1',
         localLore: [],
+        fmIndex: -1,
       },
     ],
     chatPage: 0,
@@ -228,7 +229,11 @@ export async function convertRealmCharacterCard(
     defaultVariables: readString(risuExt?.defaultVariables),
     chatFolders: [],
     prebuiltAssetCommand: readString(risuExt?.prebuiltAssetCommand),
-    prebuiltAssetExclude: readStringArray(risuExt?.prebuiltAssetExclude),
+    prebuiltAssetExclude: normalizePrebuiltAssetExcludes(
+      risuExt?.prebuiltAssetExclude,
+      additionalAssets,
+      importedAssetReferences,
+    ),
     prebuiltAssetStyle: readString(risuExt?.prebuiltAssetStyle),
   }
 
@@ -242,6 +247,32 @@ export async function convertRealmCharacterCard(
   normalizeScriptDefinitionCollection({ characters: [character] })
 
   return character
+}
+
+function normalizePrebuiltAssetExcludes(
+  value: unknown,
+  additionalAssets: readonly [string, string, string][],
+  importedAssetReferences: ReadonlyMap<string, string>,
+): string[] {
+  if (!Array.isArray(value)) return []
+  const availableAssetIds = new Set(additionalAssets.map((asset) => asset[1]))
+  const normalized: string[] = []
+  const seen = new Set<string>()
+  for (const reference of value) {
+    if (typeof reference !== 'string') continue
+    const legacyMatch = /^assets\/([a-f0-9]{64})\.[a-z0-9]+$/i.exec(reference)
+    const assetId =
+      importedAssetReferences.get(reference) ??
+      (availableAssetIds.has(reference)
+        ? reference
+        : legacyMatch && availableAssetIds.has(legacyMatch[1].toLowerCase())
+          ? legacyMatch[1].toLowerCase()
+          : undefined)
+    if (!assetId || seen.has(assetId)) continue
+    seen.add(assetId)
+    normalized.push(assetId)
+  }
+  return normalized
 }
 
 async function storeRisuV2Asset(

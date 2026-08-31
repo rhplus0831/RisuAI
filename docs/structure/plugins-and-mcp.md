@@ -305,11 +305,12 @@ visibility belong to
 Fastify-backed mode supports MCP module creation through both the direct MCP
 import UI and `.risum` files. Direct import applies the shared predicate,
 performs the MCP handshake/metadata lookup, creates the module metadata and info
-lorebook, and dispatches command-backed module creation. `.risum` import
-normalizes `mcp.url`, applies the same syntactic predicate, asks for
-low-level-access confirmation only when requested, uploads embedded assets, and
-uses the same command-backed create path. The server repeats the predicate on
-creation; the `stdio:` limitation above still applies.
+lorebook, and dispatches command-backed module creation. Local `.risum` import
+uploads one file to `POST /api/v1/import/module`; Fastify decodes it, normalizes
+`mcp.url`, applies the same syntactic predicate, stores embedded assets, and
+creates the module. Low-level-access confirmation uses a short-lived server
+token, so the retry contains no file bytes. The `stdio:` limitation above still
+applies.
 
 Stored MCP rows remain a special module kind, not generally editable modules.
 Normal module patch, script/lorebook/trigger definition, and

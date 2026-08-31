@@ -65,6 +65,7 @@ import {
   type ServerRealmImportProgress,
   type ServerRealmImportResult,
 } from './server/realmImport'
+import { importLocalCharacterFileFromServer, type ServerLocalCharacterImportResult } from './server/localFileImport'
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
 import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
 import { ensureClientLorebookEntryIds } from './server/lorebookOwner.svelte'
@@ -229,10 +230,7 @@ export async function importCharacter(): Promise<CharacterImportOutcome | null |
 
     let outcome: CharacterImportOutcome | null = null
     for (const f of files) {
-      const nextOutcome = await importCharacterProcess({
-        name: f.name,
-        data: f,
-      })
+      const nextOutcome = await importCharacterFile(f, f.name)
       if (nextOutcome) outcome = nextOutcome
       checkCharOrder()
     }
@@ -247,6 +245,85 @@ export async function importCharacter(): Promise<CharacterImportOutcome | null |
         reason: 'invalid-request',
       },
     }
+  }
+}
+
+export async function importCharacterFile(
+  file: Blob,
+  fileName = file instanceof File ? file.name : 'character.png',
+): Promise<CharacterImportOutcome | null> {
+  alertStore.set({ type: 'wait', msg: 'Loading... (Uploading)' })
+  let result = await importLocalCharacterFileFromServer({ file, fileName })
+  let pendingImportToken: string | undefined
+  let password: string | undefined
+  let allowLowLevelAccess = false
+
+  while (result.status === 'password-required' || result.status === 'low-level-access') {
+    pendingImportToken = result.pendingImportToken
+    if (result.status === 'password-required') {
+      const entered = await alertInput(language.inputCardPassword)
+      if (!entered) {
+        alertClear()
+        return null
+      }
+      password = entered
+    } else {
+      const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+      if (!confirmed) {
+        alertClear()
+        return null
+      }
+      allowLowLevelAccess = true
+    }
+    alertStore.set({ type: 'wait', msg: 'Loading... (Processing)' })
+    result = await importLocalCharacterFileFromServer({
+      pendingImportToken,
+      password,
+      allowLowLevelAccess,
+    })
+  }
+
+  if (result.status === 'password-invalid') {
+    alertError(language.errors.wrongPassword)
+    return null
+  }
+  const outcome = localCharacterImportOutcome(result)
+  return reportCharacterImportOutcome(
+    outcome,
+    result.status === 'ok'
+      ? {
+          droppedArchiveEntries: result.importReport.droppedArchiveEntries,
+          droppedInlineAssets: result.importReport.droppedInlineAssets,
+        }
+      : undefined,
+  )
+}
+
+function localCharacterImportOutcome(result: ServerLocalCharacterImportResult): CharacterImportOutcome {
+  if (result.status === 'ok') {
+    return {
+      status: 'accepted',
+      characterId: result.characterId,
+      result: {
+        status: 'ok',
+        revision: result.revision,
+        event: result.event,
+      },
+    }
+  }
+  if (result.status === 'conflict') {
+    return { status: 'failed', result: { status: 'conflict', currentRevision: result.currentRevision } }
+  }
+  if (result.status === 'unavailable') {
+    return { status: 'failed', result: { status: 'unavailable' } }
+  }
+  return {
+    status: 'failed',
+    result: {
+      status: 'error',
+      error: result.status === 'error' || result.status === 'password-invalid' ? result.error : 'Import failed',
+      reason: 'invalid-request',
+    },
   }
 }
 

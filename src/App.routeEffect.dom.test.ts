@@ -53,7 +53,7 @@ const appRouteDomMocks = vi.hoisted(() => {
     checkCharOrder: vi.fn(),
     closeGridRoute: vi.fn(),
     getCharImage: vi.fn(() => ''),
-    importCharacterProcess: vi.fn(),
+    importCharacterFile: vi.fn(),
     importPreset: vi.fn(),
     openGridRoute: vi.fn(),
     discardGenerationRecoveryStartup: vi.fn(async () => true),
@@ -181,7 +181,7 @@ vi.mock('./ts/bootstrap', () => ({
 
 vi.mock('./ts/characterCards', () => ({
   showRealmInfoStore: writable(null),
-  importCharacterProcess: appRouteDomMocks.importCharacterProcess,
+  importCharacterFile: appRouteDomMocks.importCharacterFile,
 }))
 
 async function createDatabaseMock() {
@@ -781,7 +781,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     target.querySelector('main')?.dispatchEvent(dropEvent)
 
     expect(dropEvent.defaultPrevented).toBe(true)
-    expect(appRouteDomMocks.importCharacterProcess).not.toHaveBeenCalled()
+    expect(appRouteDomMocks.importCharacterFile).not.toHaveBeenCalled()
 
     const olderIntent = recordObserverRouteIntent({ kind: 'home', path: '/' })
     const latestRoute: AppRoute = {
@@ -941,7 +941,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     main?.dispatchEvent(dropEvent)
 
     expect(dropEvent.defaultPrevented).toBe(true)
-    expect(appRouteDomMocks.importCharacterProcess).not.toHaveBeenCalled()
+    expect(appRouteDomMocks.importCharacterFile).not.toHaveBeenCalled()
   })
 
   it('advertises copy for external file drags', () => {
@@ -1036,7 +1036,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
 
   it('replaces a rejected dropped character import with an error', async () => {
     const importError = new Error('Corrupt character archive')
-    appRouteDomMocks.importCharacterProcess.mockRejectedValueOnce(importError)
+    appRouteDomMocks.importCharacterFile.mockRejectedValueOnce(importError)
 
     const droppedFile = {
       name: 'broken.charx',

@@ -10,9 +10,8 @@ import {
 } from '../storage/database.svelte'
 import { AppendableBuffer, downloadFile, forageStorage, readImage, saveAssets } from '../globalApi.svelte'
 import { sleep } from '../util'
-import { selectSingleFile } from '../filePicker'
+import { selectFileByDom } from '../filePicker'
 import { v4 } from 'uuid'
-import { convertExternalLorebook } from './lorebook.svelte'
 import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
 import { HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
@@ -61,6 +60,7 @@ import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
+import { importLocalModuleFileFromServer } from '../server/localFileImport'
 
 export interface MCPModule {
   url: string
@@ -573,61 +573,41 @@ export async function importRisuModuleObject(
 }
 
 export async function importModule() {
-  const f = await selectSingleFile(['json', 'lorebook', 'risum'])
-  if (!f) {
+  const file = (await selectFileByDom(['json', 'lorebook', 'risum'], 'single'))?.[0]
+  if (!file) {
     return
   }
-  let fileData = f.data
-  if (f.name.endsWith('.risum')) {
-    await importRisuModuleData(fileData)
-    return
-  }
-  try {
-    const importData = JSON.parse(Buffer.from(fileData).toString())
-    if (importData.type === 'risuModule') {
-      await importRisuModuleObject(importData)
-      return
-    }
-    // importData.type === 'risu' in conflict with HypaV3 preset exports
-    // difference: record vs. array
-    if (importData.type === 'risu' && importData.data && Array.isArray(importData.data)) {
-      const lores: loreBook[] = importData.data
-      const importModule = {
-        name: importData.name || 'Imported Lorebook',
-        description: importData.description || 'Converted from risu lorebook',
-        lorebook: lores,
-        id: v4(),
-      }
-      await createImportedGlobalModule(importModule)
-      return
-    }
-    if (importData.entries) {
-      const lores: loreBook[] = convertExternalLorebook(importData.entries)
-      const importModule = {
-        name: importData.name || 'Imported Lorebook',
-        description: importData.description || 'Converted from external lorebook',
-        lorebook: lores,
-        id: v4(),
-      }
-      await createImportedGlobalModule(importModule)
-      return
-    }
-    if (importData.type === 'regex' && importData.data) {
-      const regexs: customscript[] = importData.data
-      const importModule = {
-        name: importData.name || 'Imported Regex',
-        description: importData.description || 'Converted from risu regex',
-        regex: regexs,
-        id: v4(),
-      }
-      await createImportedGlobalModule(importModule)
-      return
-    }
-  } catch (error) {
-    console.error(error)
-  }
+  await importModuleFile(file, file.name)
+}
 
-  alertNormal(language.errors.noData)
+export async function importModuleFile(file: Blob, fileName = file instanceof File ? file.name : 'module.risum') {
+  alertWait('Loading... (Uploading)')
+  let result = await importLocalModuleFileFromServer({ file, fileName })
+  if (result.status === 'low-level-access') {
+    const confirmed = await alertConfirm(language.lowLevelAccessConfirm)
+    if (!confirmed) {
+      alertClear()
+      return
+    }
+    alertWait('Loading... (Processing)')
+    result = await importLocalModuleFileFromServer({
+      pendingImportToken: result.pendingImportToken,
+      allowLowLevelAccess: true,
+    })
+  }
+  if (result.status === 'ok') {
+    alertNormal(language.successImport)
+    return
+  }
+  if (result.status === 'conflict') {
+    alertError(language.moduleImport.commandConflict)
+  } else if (result.status === 'unavailable') {
+    alertError(language.moduleImport.commandUnavailable)
+  } else if (result.status === 'error' || result.status === 'password-invalid') {
+    alertError(language.moduleImport.commandError(result.error))
+  } else {
+    alertError(language.errors.noData)
+  }
 }
 
 const emptyModuleList: RisuModule[] = []

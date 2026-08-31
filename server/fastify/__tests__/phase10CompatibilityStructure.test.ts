@@ -133,9 +133,10 @@ const PLUGIN_RPC_MESSAGE_TYPES = [
 
 const MODULE_LIFECYCLE_OWNER_ANCHORS = {
   'src/ts/process/modules.ts': [
-    "selectSingleFile(['json', 'lorebook', 'risum'])",
+    "selectFileByDom(['json', 'lorebook', 'risum'], 'single')",
     "downloadFile(module.name + '.risum'",
     'createImportedGlobalModule',
+    'importLocalModuleFileFromServer',
     'resolveModuleActivationStates',
   ],
   'src/ts/moduleCommands.ts': [
@@ -158,6 +159,8 @@ const MODULE_LIFECYCLE_OWNER_ANCHORS = {
     "'/api/v1/commands/modules/enable'",
     "'/api/v1/commands/modules/reorder'",
   ],
+  'server/fastify/src/routes/localFileImport.ts': ["'/api/v1/import/module'", 'importLocalModuleFile'],
+  'server/fastify/src/localFileImport.ts': ['importLocalModuleFile', 'parseRisum', 'persistAsset'],
   'server/fastify/src/repository.ts': ["modules: 'modules'", 'writeCollectionTableRows(db, tableName'],
 } as const
 

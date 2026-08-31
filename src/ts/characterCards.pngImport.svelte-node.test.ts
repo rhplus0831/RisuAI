@@ -37,6 +37,10 @@ const filePickerState = vi.hoisted(() => ({
   selectFileByDom: vi.fn(),
 }))
 
+const localFileImportState = vi.hoisted(() => ({
+  importLocalCharacterFileFromServer: vi.fn(),
+}))
+
 const clientIdentityState = vi.hoisted(() => ({ nextId: 0 }))
 
 function ensureUniqueTestIds<T extends { id?: string }>(rows: T[], prefix: string): T[] {
@@ -254,6 +258,10 @@ vi.mock('./server/realmImport', () => ({
   importRealmCharacterFromServer: vi.fn(),
 }))
 
+vi.mock('./server/localFileImport', () => ({
+  importLocalCharacterFileFromServer: localFileImportState.importLocalCharacterFileFromServer,
+}))
+
 vi.mock('./server/resourceRefresh', () => ({
   forceServerResourceRefresh: vi.fn(),
 }))
@@ -299,6 +307,14 @@ beforeEach(() => {
   clientIdentityState.nextId = 0
   charxState.module = undefined
   filePickerState.selectFileByDom.mockReset()
+  localFileImportState.importLocalCharacterFileFromServer.mockReset()
+  localFileImportState.importLocalCharacterFileFromServer.mockResolvedValue({
+    status: 'ok',
+    revision: 12,
+    event: { type: 'character.created', revision: 12, resource: 'character' },
+    characterId: 'server-character',
+    importReport: { droppedArchiveEntries: [], droppedInlineAssets: [] },
+  })
   characterCommandState.applyCharacterCreateOptimistically.mockReset()
   characterCommandState.applyCharacterCreateOptimistically.mockImplementation((character: { chaId: string }) => {
     if (dbState.db.characters.some((candidate) => candidate?.chaId === character.chaId)) return -1
@@ -768,7 +784,7 @@ describe('PNG character card import', () => {
     expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledWith(imported, expect.any(Object))
   })
 
-  it('surfaces salvaged CharX entries through the importCharacter alert boundary', async () => {
+  it('surfaces the server CharX salvage report through the importCharacter alert boundary', async () => {
     const cardBytes = Buffer.from(JSON.stringify(characterCardFixture('Alert Boundary')))
     const archive = concatBytes([
       storedLocalFile('module.risum', new Uint8Array(), DEFAULT_CHARX_MAX_ENTRY_SIZE_BYTES + 1, 0),
@@ -776,14 +792,25 @@ describe('PNG character card import', () => {
     ])
     const selectedFile = Object.assign(archive, { name: 'oversized-module.charx' })
     filePickerState.selectFileByDom.mockResolvedValueOnce([selectedFile])
+    localFileImportState.importLocalCharacterFileFromServer.mockResolvedValueOnce({
+      status: 'ok',
+      revision: 12,
+      event: { type: 'character.created', revision: 12, resource: 'character' },
+      characterId: 'server-character',
+      importReport: { droppedArchiveEntries: ['module.risum'], droppedInlineAssets: [] },
+    })
 
     await expect(importCharacter()).resolves.toMatchObject({ status: 'accepted' })
 
+    expect(localFileImportState.importLocalCharacterFileFromServer).toHaveBeenCalledWith({
+      file: selectedFile,
+      fileName: 'oversized-module.charx',
+    })
     expect(alertState.alertError).toHaveBeenCalledOnce()
     const surfacedReport = String(alertState.alertError.mock.calls[0][0])
     expect(surfacedReport).toContain('module.risum')
-    expect(dbState.db.characters).toHaveLength(1)
-    expect(characterCommandState.dispatchCreateCharacter).toHaveBeenCalledOnce()
+    expect(globalApiState.saveAssets).not.toHaveBeenCalled()
+    expect(characterCommandState.dispatchCreateCharacter).not.toHaveBeenCalled()
     expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })

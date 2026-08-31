@@ -516,6 +516,28 @@ export const PROTOCOL_ROUTE_POLICIES = [
     },
   },
   {
+    id: 'local-character-card-import',
+    auth: {
+      decision: 'required',
+      reason: 'Local character-card imports contain private card data and embedded assets.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Character-card import registers assets and creates a character.',
+    },
+  },
+  {
+    id: 'local-module-import',
+    auth: {
+      decision: 'required',
+      reason: 'Local module imports contain private module definitions and embedded assets.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Module import registers assets and creates a module.',
+    },
+  },
+  {
     id: 'command-mutation-receipt-ack',
     auth: {
       decision: 'required',
