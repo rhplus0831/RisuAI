@@ -1,10 +1,10 @@
-# Domain Mutations and Editing Bridges
+# Domain Mutations and Editing Owners
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-31.
 
 This area covers optimistic browser edits and rollback for settings, prompts and presets, characters,
 chats and messages, personas, loadouts, modules, plugins, lorebooks, and script definitions. It also
-covers debounced Svelte editing bridges, dirty-draft reconciliation, stable-target command adapters, and
+covers debounced Svelte owner drafts, dirty-draft reconciliation, stable-target command adapters, and
 the retained local projections used while durable mutations await replay.
 
 The shared command queue, encrypted outbox, authoritative resource owners, and event reconciliation are
@@ -31,7 +31,7 @@ a command sequence, and rollback that must touch only fields still equal to the 
 Assertion strength is high. Tests normally assert the immediate optimistic value, exact command payload,
 durable ordering or result classification, and final rollback/retained state while checking that sibling
 rows and newer edits survive. The main limitation is that many cases stop at resource state or mocked
-command calls. Only part of the prompt bridge suite mounts real Svelte UI; most character, chat, persona,
+command calls. Only part of the prompt owner suite mounts real Svelte UI; most character, chat, persona,
 loadout, module, lorebook, and script rollback behavior lacks a rendered-state assertion.
 
 ## Test groups
@@ -44,7 +44,7 @@ loadout, module, lorebook, and script rollback behavior lacks a rendered-state a
 | Chats, messages, generation settings, and file-driven writes | `chatCommands.test.ts` covers projection helpers, selection and structure snapshots, message/scriptstate/note dispatch, factory/sequence rejection, narrow diffs, rollback matrices, durable chat/folder structures, and full-chat reset. Reset cases optimistically replace one character's chats with an empty selected `Chat 1` and restore the exact prior chat array if the durable PUT fails. `activeChatGenerationSettings.test.ts` and `chatGenerationSettings.test.ts` cover readiness, defaults, sparse diffs/digests, stale references, pruning, and stable errors. `alternateGreetingMutation.test.ts` and `alternateGreetingCommands.test.ts` repair chat greeting indices and fence durable optimistic cascades. `globalApi.changeChatTo.test.ts`, `process/files/multisend.test.ts`, and `util.persona.test.ts` cover clone-free selection, file ingestion, and persona precedence. | Protects the highest-frequency state transitions: selecting or resetting chats, editing metadata, appending/editing/deleting messages, importing transcripts, and saving chat-owned generation settings. | Critical and comprehensive at the state boundary. Exact message IDs, placeholder safety, large imports, retained tails, and newer-edit preservation are asserted. The broad chat command fixture still repeats generic rollback harnesses; cross-link DOM chat tests for visible optimism and rollback. |
 | Personas and loadouts                                        | `persona.test.ts`: 33 stable-ID preparation/debounced PATCH/selection/delete/reorder/dependency/absolute-correction cases, five collection rollback guards, and five dirty selected-profile reconciliation cases. `personaDisplayName.test.ts` and `personaMutationCertificate.test.ts` pin display/internal naming and compact certificate serialization. `loadout.test.ts` covers canonical create, multi-facet serialized apply, retained/terminal steps, queue reservation, concurrent replanning, hydration, persona/preset/module/global-variable/Agent Preset facets, touch/favorite, refresh overlays, and create/delete rollback. `loadoutCanonical.test.ts` expands 13 exact/invalid server-shape cases.                                                                                                                                                                                                                                                          | Persona and loadout operations touch several resource owners at once. Partial rollback can corrupt the selected profile, references in chats/loadouts, preset selections, module links, or sidebar settings.                      | Strong multi-resource regression value. Cases assert stable IDs and field-level rollback across concurrent edits and partial success. A real browser-to-Fastify multi-step apply/rollback journey is missing. Model and Agent Preset record validity is assessed in the provider/model document.                                                                          |
 | Modules, plugins, imports, and MCP adapters                  | `moduleCommands.test.ts` covers projection helpers, chat-scoped toggles, snapshot narrowing, multi-step rollback, durable order, and record/link mutations. `pluginCommands.svelte-node.test.ts` covers arguments, enable/provider/create/update/delete/reorder, grouped settings, pending storage overlays, serialization, and bulk rollback; `pluginCommands.durable.svelte-node.test.ts` adds exact predecessor/successor replay settlement. `process/modules.test.ts`, MCP module projection/read tests, and `stores.modulesEffect.svelte.test.ts` cover imports, partial settlement, refresh, immediate read visibility, and reactive dependency cost. | Modules and plugins span collection records, enabled lists, character/chat references, assets, lorebooks, scripts, triggers, and custom storage. Sequencing errors can persist only half an import or resurrect a deleted record. | Broad and strongly asserted. Partial success, retained replay, reference cleanup, and storage overlays are realistic. `process/modules.test.ts` mixes import, mutation, and active-runtime cache concerns; split fixtures by behavior. Plugin/MCP protocol/security coverage belongs in its focused document. |
-| Lorebooks and script/trigger definitions                     | `lorebookBridge.svelte.test.ts` covers dirty-entry merge, no-data-loss hydration/watchers, modal and entry mutations, sparse/structural rollback, scoped watchers, ID validation, and module projection fencing. `lorebookBridge.test.ts` covers scoped snapshots/dispatch and durable owner ordering. `scopedLorebookMutationUiState.test.ts` keeps coalesced failure and local activation outcomes bound to chat plus stable entry ID. `scriptDefinitionOwner.svelte.test.ts` and `scriptDefinitionMutations.test.ts` cover explicit owner drafts, compact mutations, global-script watching, and scoped rollback. | Lorebook and script editors are vulnerable to catastrophic stub writes, wrong-owner updates, and broad rollback that removes unrelated entries or domains. | Among the most valuable data-loss suites. They refuse unhydrated stubs, revalidate IDs at flush, preserve newer fields/siblings, fence authoritative projections, and test durable owner dependencies. |
+| Lorebooks and script/trigger definitions                     | `lorebookOwner.svelte.test.ts` covers dirty-entry merge, no-data-loss hydration/watchers, modal and entry mutations, sparse/structural rollback, scoped watchers, ID validation, and module projection fencing. `lorebookOwner.durable.svelte.test.ts` covers scoped snapshots/dispatch and durable owner ordering. `scopedLorebookMutationUiState.test.ts` keeps coalesced failure and local activation outcomes bound to chat plus stable entry ID. `scriptDefinitionOwner.svelte.test.ts` and `scriptDefinitionMutations.test.ts` cover explicit owner drafts, compact mutations, global-script watching, and scoped rollback. | Lorebook and script editors are vulnerable to catastrophic stub writes, wrong-owner updates, and broad rollback that removes unrelated entries or domains. | Among the most valuable data-loss suites. They refuse unhydrated stubs, revalidate IDs at flush, preserve newer fields/siblings, fence authoritative projections, and test durable owner dependencies. |
 
 ## Included case matrices and boundaries
 
@@ -115,7 +115,7 @@ coverage boundaries explicit without repeating one paragraph per assertion.
 
 - `chatCommands.test.ts` and `characterCommands.test.ts` are the main protection against broad rollback
   corrupting large character/chat collections after ordinary user edits.
-- `lorebookBridge.svelte.test.ts` explicitly protects the no-data-loss invariant that an unloaded or
+- `lorebookOwner.svelte.test.ts` explicitly protects the no-data-loss invariant that an unloaded or
   re-stubbed character lorebook is never persisted as empty.
 - `promptTemplateMutations.svelte.test.ts` prevents writes to an old selected owner and prevents unloaded
   templates from being created or saved as empty.
@@ -127,13 +127,13 @@ coverage boundaries explicit without repeating one paragraph per assertion.
 
 ## Attention and gaps
 
-- The current bridge owners execute resource-state or mounted behavior and no
+- The current explicit owners execute resource-state or mounted behavior and no
   longer read their production source. Companion checks in
   `src/lib/_audit/frontendArchitecture.static.test.ts` still use source text for
   explicit wiring policy; do not count those static policies as runtime proof.
 - Large files repeat deferred promises, command receipts, projection epochs, and generic attempted-field/
   keyed-list rollback. `chatCommands.test.ts` is many lines; `storage/database.svelte.test.ts` is 4,928;
-  lorebook/prompt/script bridge suites are each multi-thousand-line. The scenarios are mostly valuable,
+  lorebook/prompt/script owner suites are each multi-thousand-line. The scenarios are mostly valuable,
   but shared harnesses would make failures easier to diagnose.
 - Historical work-item identifiers such as “Phase”, “Lxx”, “Mxx”, “K4”, and “P1” do not belong in test
   titles. Name tests for the behavior, scope, or performance contract they protect.
@@ -173,4 +173,4 @@ plugin/MCP protocol, scripting runtime, and UI files are assessed in their focus
 | Chats and generation      | `src/ts/activeChatGenerationSettings.test.ts`; `alternateGreetingCommands.test.ts`; `alternateGreetingMutation.test.ts`; `chatCommands.test.ts`; `chatGenerationSettings.test.ts`; `globalApi.changeChatTo.test.ts`; `process/files/multisend.test.ts`; `src/ts/util.persona.test.ts`                                        |
 | Personas and loadouts     | `src/ts/loadout.test.ts`; `persona.test.ts`; `personaDisplayName.test.ts`; `personaMutationCertificate.test.ts`; `src/ts/server/loadoutCanonical.test.ts`                                                                                                                                                                                                              |
 | Modules and plugins       | `src/ts/moduleCommands.test.ts`; `pluginCommands.durable.svelte-node.test.ts`; `pluginCommands.svelte-node.test.ts`; `process/modules.test.ts`; `process/mcp/risuaccess/tests/modules.optimisticProjection.test.ts`; `process/mcp/risuaccess/tests/modules.test.ts`; `stores.modulesEffect.svelte.test.ts`                                                                                          |
-| Lorebooks and definitions | `src/ts/server/lorebookBridge.svelte.test.ts`; `lorebookBridge.test.ts`; `scopedLorebookMutationUiState.test.ts`; `scriptDefinitionOwner.svelte.test.ts`; `scriptDefinitionMutations.test.ts`                                                                                                                                                                           |
+| Lorebooks and definitions | `src/ts/server/lorebookOwner.svelte.test.ts`; `lorebookOwner.durable.svelte.test.ts`; `scopedLorebookMutationUiState.test.ts`; `scriptDefinitionOwner.svelte.test.ts`; `scriptDefinitionMutations.test.ts`                                                                                                                                                                           |

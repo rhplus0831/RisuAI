@@ -1,11 +1,11 @@
 # Durable Mutations And Recovery
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-31.
 
 This guide owns browser-to-Fastify mutation durability and reconciliation:
 encrypted outbox intent, the serialized command queue, compact optimistic
-effects, command-event invalidation/recovery, resource write guards, bridge
-watchers, active-writer loss, and protocol diagnostics. Bootstrap resources,
+effects, command-event invalidation/recovery, explicit owner mutation
+lifecycles, active-writer loss, and protocol diagnostics. Bootstrap resources,
 cache validation, read endpoints, and hydration workflows remain in
 [Server Resources And Hydration](server-resources-and-bridges.md).
 
@@ -21,7 +21,7 @@ Important files:
 | `src/ts/server/resourceInvalidation.ts` | Event-to-endpoint planning, targeted reads, revision fences, and resource application. |
 | `src/ts/server/resourceRefresh.ts` | Coalesced complete refresh for gaps, restores, and broad recovery. |
 | `src/ts/server/lifecycleRecovery.ts` | Shared visibility/page-show/online/focus recovery dispatcher. |
-| `src/ts/server/resourceWriteGuard.svelte.ts` | Trusted-write scopes and projection/application epochs. |
+| `src/ts/server/resourceState.svelte.ts` | Explicit resource owners, per-owner projection epochs, and acknowledgement fences. |
 | `src/ts/server/persistenceActivity.svelte.ts` | Saving signal for commands and current-writer outbox work. |
 | `src/ts/server/draftRecoveryScope.ts` | Lineage/writer scope for non-authoritative editing recovery. |
 | `src/lib/ChatScreens/DefaultChatScreen.composerDrafts.ts` | Bounded transcript composer recovery in `sessionStorage`. |
@@ -145,7 +145,7 @@ coalesced event batch, then converts each resource key into concrete reads:
   top-level compatibility collection); prompt-preset selection/update/delete
   events refresh the selected owner when ownership may have changed.
 - Inlay-catalog events read `/api/v1/inlay-assets`; catalog entries are a
-  standalone projection and are not folded into the aggregate database view.
+  standalone projection.
 - BardWiki settings/document/confirmation/import/rebuild publication events
   refresh only the affected chat summary or currently hydrated document.
   Bounded live `bardwiki.job` progress updates the operational projection
@@ -171,7 +171,7 @@ newer edit while its serialized save is in flight.
 Generic settings, collection, character-list, and character-row reads also
 capture their owner projection epochs and resident JSON at request start. A
 response is left unapplied when either fence changes while it is in flight, so
-an optimistic bridge edit cannot be rewound merely because its cached server
+an optimistic owner edit cannot be rewound merely because its cached server
 revision has not advanced yet. Complete refreshes use the same per-slice fence:
 unaffected slices still refresh, while a concurrently edited slice and its
 unsettled durable intent remain available for dispatch or next-bootstrap
@@ -206,32 +206,25 @@ the stream. Memory progress is not replayed and does not invalidate database
 resources. The full SSE ordering contract is in
 [Data And Events](data-and-events.md#sse-and-streaming).
 
-## Resource Write Guard
+## Explicit Resource Owners And Projection Fences
 
-`src/ts/server/resourceWriteGuard.svelte.ts` scopes writes to the API-backed
-aggregate compatibility view. Ordinary UI code should use the owning settings,
-collections, or characters resource instead of mutating that aggregate view
-directly.
+Production browser code has no aggregate mutable `Database` proxy. Settings,
+collections, character rows, chats/transcripts, lorebooks, prompt templates, and
+standalone feature projections expose explicit read/application/mutation
+helpers. UI code updates optimistic state through its owning command or draft
+helper; REST hydration and event reconciliation apply responses through the
+same owners.
 
-The aggregate compatibility proxy is stable but does not implicitly read its
-broad facade epoch. Nested proxy reads provide ordinary fine-grained Svelte
-dependencies; consumers that intentionally observe every resource write must
-read `getResourceDatabaseFacadeEpoch()` explicitly.
+Each owner maintains only the revision, projection epoch, hydration state, and
+acknowledgement taint needed for its scope. Settings groups, collections,
+character rows/lorebooks, prompt-template owners, chats, and message bodies can
+therefore reject stale responses and stale rollback without waking unrelated
+consumers. Prompt-template drafts combine owner fences with hydration state and
+cached command-revision reconciliation.
 
-Trusted write scopes are reserved for authoritative REST application,
-chat-message and character-lorebook hydration, command helpers that
-intentionally perform optimistic writes, and bridge/draft helpers that restore
-snapshots after failure. The guard delegates to the resource state owner so
-those compatibility writes remain scoped and observable.
-
-The guard also advances a broad server-resource-apply epoch. Settings,
-character, chat, lorebook, and script-definition bridge watchers use that epoch
-to refresh their baselines after passive API updates without echoing them back
-as commands. Resource state additionally maintains narrower projection epochs
-and acknowledgement-taint flags for settings groups, collections, character
-rows/lorebooks, the lorebook page, and prompt-template owners. Prompt-template
-drafts combine those owner fences with hydration state and cached
-command-revision reconciliation.
+`composeResourceDatabaseSnapshot()` deliberately materializes a detached value
+for interchange, browser-smoke diagnostics, and test adapters. It is not
+reactive state, command authority, or a route for production mutations.
 
 Compatibility chat mutations in `src/ts/chatCommands.ts` choose the narrowest
 safe message command: append, single-message update, prefix truncate, single
@@ -244,7 +237,7 @@ race. `dispatchSaveChatGenerationSettings()` registers the optimistic value
 while its serialized save is pending, and a character-row resource apply keeps
 that value until the save settles.
 
-Tests for resource guards, hydration, event invalidation, or watcher changes
+Tests for resource owners, hydration, event invalidation, or lifecycle changes
 that affect rendered state should follow the visible-state policy in
 `testing-and-operations.md`.
 
@@ -255,7 +248,7 @@ that affect rendered state should follow the visible-state policy in
 | `ownerMutationLifecycle.ts`       | Flushes every registered, loaded owner on `pagehide` / hidden visibility with `keepalive`; it does not import feature owners into bootstrap.                                            |
 | `pendingOwnerMutationRegistry.ts` | Registers owner flush/reset callbacks for targeted structural calls, lifecycle durability, and database-ownership replacement.                                                          |
 | `settingsOwner.svelte.ts`          | Explicit group-owned drafts and patches through `PATCH /commands/settings/:group`, with equality-noop suppression, exact projection fences, durable receipts, and field-scoped rollback. |
-| `lorebookBridge.svelte.ts`         | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
+| `lorebookOwner.svelte.ts`          | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
 | `scriptDefinitionOwner.svelte.ts`  | Explicit character/module definition owner mutations plus the global-script settings draft watcher; compact create/update/delete/reorder classification, projection fencing, and full-replacement fallback. |
 
 Common requirements are to capture snapshots, suppress no-op updates, respect
@@ -279,8 +272,8 @@ keepalive flush boundary.
 Active writer is server-side. A writer-intent bootstrap owns
 `risu-writer-session`; a still-connected foreign writer requires the explicit
 disconnect handshake, and stale guarded mutations receive
-`423 active_writer_stale`. The client resource write guard is separate and
-catches accidental unscoped local mutation.
+`423 active_writer_stale`. Browser owner projection epochs are local freshness
+fences and are not writer authority.
 
 With the observer rollout disabled, writer loss retains the conservative
 refresh-or-freeze behavior. With the rollout enabled, a foreign writer event

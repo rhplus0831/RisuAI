@@ -1,11 +1,11 @@
 # Server Resources And Hydration
 
-Last audited: 2026-08-30.
+Last audited: 2026-08-31.
 
 This guide owns the Fastify-to-browser read boundary: bootstrap resources,
 root and targeted REST reads, hash-verified cache substitution, lazy body
 hydration, settings/feature projections, and their endpoint contracts. Durable
-commands, event recovery, write guards, bridge watchers, and active-writer
+commands, event recovery, explicit owner mutation lifecycles, and active-writer
 handling live in
 [Durable Mutations And Recovery](durable-mutations-and-recovery.md). Start from
 the [architecture index](README.md) for adjacent ownership.
@@ -16,11 +16,11 @@ the [architecture index](README.md) for adjacent ownership.
 `src/ts/startupReadiness.ts` publishes monotonic milestones and the narrow
 capabilities consumed by the shell and protocol adapters:
 
-- The temporary pre-writer observer rollout is controlled by
+- The pre-writer observer rollout is controlled by
   `VITE_FAST_BOOTSTRAP_OBSERVER=TRUE` and remains disabled in a normal production
   build unless that build-time flag is present. When enabled, startup first uses
-  read-only bootstrap without caching its revision as command authority, enables
-  the resource write guard, and reads `GET /api/v1/resources/shell`. A coherent,
+  read-only bootstrap without caching its revision as command authority and
+  reads `GET /api/v1/resources/shell`. A coherent,
   initialized response publishes `observer-ready` and may render the dedicated
   read-only observer UI; it does not enable route persistence, commands, or
   generation. An unavailable or uninitialized observer read falls back to the
@@ -66,7 +66,7 @@ capabilities consumed by the shell and protocol adapters:
   observer shell is already visible. That equal-or-newer projection replaces
   observer-era summary/detail state, installs the known-server and applied-event
   cursors, and starts command reconciliation. Startup then records runtime/job
-  projections, starts bridge and hydration lifecycles, and subscribes to
+  projections, starts owner-mutation and hydration lifecycles, and subscribes to
   `/api/v1/events` from the applied shell revision. Only an accepted event
   subscription publishes `writer-ready`.
 - The resulting capability order is deliberate: `canRenderShell` opens at
@@ -93,7 +93,7 @@ capabilities consumed by the shell and protocol adapters:
   memoized and joined by intent, navigation, and rendering; route stores do not
   switch until both pre-route resources and target code are ready. Only the root
   shell has a cross-field atomic barrier; granular route resources apply
-  independently behind the write guard.
+  independently through their explicit owners and revision fences.
 - Generation recovery treats SQLite `generation_operations`,
   `generation_operation_attempts`, and `generation_effects` as durable
   authority. Active jobs are live attachment hints and local activities are
@@ -124,7 +124,7 @@ capabilities consumed by the shell and protocol adapters:
 | `src/ts/server/resourceManifest.ts`                        | Audited ownership manifest for shared, route, deferred-runtime, and first-use resource surfaces.                                     |
 | `src/ts/server/routeResourceLoader.ts`                     | Route/deferred-surface loading, deduplication, supersession, retry state, and idle character-detail prefetch.                         |
 | `src/ts/server/resourceCache.ts`                           | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
-| `src/ts/server/resourceState.svelte.ts`                    | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view.                                     |
+| `src/ts/server/resourceState.svelte.ts`                    | Explicit Svelte resource owners plus per-slice revisions, status, errors, projection epochs, and acknowledgement fences.              |
 | `src/ts/server/hydrationReads.ts`                          | Browser wrappers for chat, lorebook, legacy-preset, and prompt-template bodies.                                                      |
 | `src/ts/server/chatMessageHydration.svelte.ts`             | Active/ranged/bulk chat hydration and character-lorebook hydration.                                                                  |
 | `src/ts/server/characterShellHydration.svelte.ts`          | Fetches a full character row when a consumer encounters a shell row.                                                                 |
@@ -137,11 +137,12 @@ capabilities consumed by the shell and protocol adapters:
 | `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |
 | `src/ts/server/displaySources.ts`                          | Batches intermediate-display source reads and falls back when the advertised protocol is unavailable.                               |
 
-`getResourceDatabase()` and the `getDatabase()` adapter compose the settings,
-collections, and characters owners into a transitional aggregate `Database`
-view. The inlay catalog remains standalone. Neither is a second persistence
-layer. New code should read or update the owning resource slice whenever
-practical, and all durable writes still go through API commands.
+Production code reads and updates the explicit settings, collection, character,
+chat/transcript, lorebook, prompt-template, and standalone feature owners. There
+is no production aggregate `Database` facade. A detached
+`composeResourceDatabaseSnapshot()` materializer remains deliberately scoped to
+interchange, browser-smoke diagnostics, and test adapters; it is not reactive
+state or a persistence layer. All durable writes go through API commands.
 
 ## Read And Hydration Endpoints
 
@@ -234,7 +235,7 @@ clearing the coherent shell.
 | One settings group                                 | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                        | Event-driven targeted invalidation                  |
 | Every split collection                             | Cache `POST /api/v1/collections`; full `GET` fallback                                            | `resourceReads.ts`, `collectionsResourceState`      |
 | One split collection                               | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                      | Event-driven targeted invalidation                  |
-| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters/aggregate`; full `GET` fallback                                | Temporary Phase 2 diagnostic and rollback seam       |
+| Legacy message-free character aggregate/order/current | Cache `POST /api/v1/characters/aggregate`; full `GET` fallback                                | External compatibility route; no first-party production consumer. Remove after path telemetry records zero supported-client requests for 30 consecutive days. |
 | Version 1 character summaries/order/current        | Cache `POST /api/v1/characters`; full `GET` fallback                                             | `resourceReads.ts`, `charactersResourceState`        |
 | Inlay metadata catalog                             | `GET /api/v1/inlay-assets`                                                                       | `inlayCatalog.ts`                                   |
 | Character order only                               | `GET /api/v1/characters/order`                                                                   | Character-order invalidation                        |
@@ -243,7 +244,7 @@ clearing the coherent shell.
 | One character's greeting translations              | `GET /api/v1/characters/:id/greeting-translations`                                               | `greetingTranslations.svelte.ts`                    |
 | Full, tail, ranged, or generation-suffix chat body | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` | `hydrateActiveChat*()` and event invalidation       |
 | Many chat bodies                                   | `POST /api/v1/chats/messages/bulk`                                                               | `ensureAllChatsHydrated()`                          |
-| Derived intermediate display text                  | `POST /api/v1/chats/:id/display-sources`                                                         | `displaySources.ts` batch/fallback bridge           |
+| Derived intermediate display text                  | `POST /api/v1/chats/:id/display-sources`                                                         | `displaySources.ts` negotiated batch/fallback client |
 | Generation-effect status                           | `GET /api/v1/generation-effects/:generationId`                                                   | `generationEffectLedger.ts`, recovery               |
 | BardWiki chat summary/settings/index/receipts/jobs | `GET /api/v1/bardwiki/chats/:chatId`                                                             | `bardWikiResource.ts`, lazy active-chat workspace   |
 | One BardWiki document and bounded versions         | `GET /api/v1/bardwiki/chats/:chatId/documents/:documentId`; `.../versions`                        | Lazy BardWiki document/version hydration            |
@@ -344,5 +345,5 @@ through `ensureBotPresetHydrated*()` only when a legacy workflow needs their
 settings body.
 
 Character lorebook hydration is lazy only when experimental
-`enableLorebookStubs` is enabled; the lorebook bridge tracks hydrated
+`enableLorebookStubs` is enabled; the explicit lorebook owner tracks hydrated
 characters so an absent stub is never persisted as a deletion.

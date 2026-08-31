@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-08-27.
+Last audited: 2026-08-31.
 
 This file covers browser TypeScript coordinators that influence visible Svelte
 UI. For component ownership and UI triage, start with the
@@ -16,7 +16,7 @@ messages on demand.
 
 | Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                                                                                                                                                     |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, encrypted pending-mutation outbox/replay, REST resource reads, resource state/invalidation, commands, hydration, events, active writer, provider/media operations, assets, backups, Realm import, bridge watchers, push notifications, stale-operation guards, diagnostics, smoke hooks. |
+| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, encrypted pending-mutation outbox/replay, REST resource reads, explicit resource owners/invalidation, commands, hydration, events, active writer, provider/media operations, assets, backups, Realm import, owner mutation lifecycles, push notifications, stale-operation guards, diagnostics, smoke hooks. |
 | `src/ts/storage/`                                                                                                                                                              | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection.                                                                                                                                                                                                   |
 | `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                                                                                                                                           |
 | `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                                                                                                                                                     |
@@ -69,8 +69,8 @@ generation operations consume the narrow capabilities directly.
 
 1. Start the best-effort startup telemetry publisher. If the temporary observer
    rollout is enabled, perform a read-only bootstrap without caching its
-   revision as command authority, install the resource write guard, and load
-   `GET /api/v1/resources/shell`. A coherent initialized shell may publish
+   revision as command authority and load `GET /api/v1/resources/shell`. A
+   coherent initialized shell may publish
    `observer-ready` and render the dedicated read-only observer UI while writer
    acquisition continues. A failed or uninitialized observer read falls back to
    the conservative writer-first boundary.
@@ -152,22 +152,23 @@ projection and intent, while lineage replacement fences and replaces it.
 
 ## Server Resources And Durable Mutations
 
-The browser composes its compatibility projection from settings, collections,
-and characters in `src/ts/server/resourceState.svelte.ts`; the inlay catalog in
-`src/ts/server/inlayCatalog.ts` is a fourth, standalone root projection. Large
-chat, lorebook, legacy-preset, and prompt-template bodies hydrate only when a
-workflow needs them. The authoritative-state invariant is canonical in
+The browser renders from explicit settings, collection, character,
+chat/transcript, lorebook, prompt-template, and standalone feature owners in
+`src/ts/server/resourceState.svelte.ts` and adjacent owner modules. The inlay
+catalog in `src/ts/server/inlayCatalog.ts` is a standalone root projection.
+Large chat, lorebook, legacy-preset, and prompt-template bodies hydrate only
+when a workflow needs them. The authoritative-state invariant is canonical in
 [Project Structure](../../STRUCTURE.md#repository-wide-invariants), while
 [Server Resources And Hydration](../../docs/structure/server-resources-and-bridges.md)
 owns endpoint, cache, and hydration contracts. Event reconciliation, the
 mutation queue, and durable outbox behavior belong in
 [Durable Mutations And Recovery](../../docs/structure/durable-mutations-and-recovery.md).
 
-The compatibility facade keeps a stable proxy identity, but `getDatabase()` has
-no whole-database epoch. Reactive callers track the settings, collection,
-character, chat, and message fields they actually read. A scoped compatibility
-write to one background chat must therefore not wake a mounted transcript for
-another chat.
+There is no production aggregate database facade. Reactive callers subscribe to
+the specific owner fields they render, and owner-specific projection epochs
+fence stale reads and rollbacks without turning unrelated updates into a global
+invalidation. `composeResourceDatabaseSnapshot()` creates a detached snapshot
+only for interchange, browser-smoke diagnostics, and test adapters.
 
 The main client boundaries are:
 
@@ -179,8 +180,8 @@ The main client boundaries are:
 | `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts`                                              | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
 | `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts`                                     | Encrypted crash-recovery intents and pre-hydration replay.                  |
 | `src/ts/server/greetingTranslations.svelte.ts`                                                                                         | Character-scoped greeting projection, refresh, manual translation, and job recovery. |
-| `src/ts/server/resourceWriteGuard.svelte.ts`                                                                                           | Guards direct writes to the compatibility view.                             |
-| `src/ts/server/*Bridge.svelte.ts`                                                                                                      | Converts compatibility/UI mutations into command-backed writes.             |
+| `src/ts/server/ownerMutationLifecycle.ts`, `pendingOwnerMutationRegistry.ts`                                                           | Registers and flushes loaded explicit owners at structural and lifecycle boundaries. |
+| `src/ts/server/settingsOwner.svelte.ts`, `lorebookOwner.svelte.ts`, `scriptDefinitionOwner.svelte.ts`                                 | Owner-scoped drafts, narrow command dispatch, projection fencing, and field/row rollback. |
 
 If a component shows stale or missing data, confirm whether the data is:
 
@@ -409,8 +410,8 @@ precedence stays in the focused guides linked above.
 
 ## Runtime Risks For UI Work
 
-- Direct compatibility-view mutation can fail under the resource write guard or
-  be lost on a later REST refresh. Use command helpers or bridge utilities.
+- Direct mutation outside an explicit owner can be lost on a later REST refresh.
+  Use the owning command, draft, or hydration helper.
 - Character resources intentionally provide message-free chat rows and can
   provide lorebook stubs. Active chat messages and lorebooks hydrate later from
   their concrete endpoints.

@@ -1,6 +1,6 @@
 # Structure Documentation Index
 
-Last audited: 2026-08-29.
+Last audited: 2026-08-31.
 
 Read [`STRUCTURE.md`](../../STRUCTURE.md) for repository boundaries and stable
 invariants. Then open only the document that owns the behavior you are changing.
@@ -17,7 +17,7 @@ in `docs/structure/` appears below.
 | [`backend.md`](backend.md) | Fastify composition, security hooks, route families, startup telemetry, intermediate-display processing, workers, Web Push, generation operation/effect/job/timer wiring, half-streaming telemetry, and persistence fencing. |
 | [`data-and-events.md`](data-and-events.md) | SQLite stores, revisions, lineage, active writer, command events, atomic chat reset transactions, and command-event SSE. |
 | [`server-resources-and-bridges.md`](server-resources-and-bridges.md) | Browser bootstrap/root resources, REST endpoint and hydration workflows, cache protocol, route surfaces, and settings/feature projections. |
-| [`durable-mutations-and-recovery.md`](durable-mutations-and-recovery.md) | Encrypted mutation intent, command queue/local effects, event invalidation/recovery, write guard, bridge watchers, active writer, and protocol diagnostics. |
+| [`durable-mutations-and-recovery.md`](durable-mutations-and-recovery.md) | Encrypted mutation intent, command queue/local effects, event invalidation/recovery, explicit owner lifecycles, active writer, and protocol diagnostics. |
 | [`assets-and-saves.md`](assets-and-saves.md) | Content-addressed assets, inlay catalog, `.risu`/CharX/chat exchange, export fences and blob lifetime, Realm conversion, and backup/restore table policy. |
 | [`plugins-and-mcp.md`](plugins-and-mcp.md) | Plugin V3 host, permissions, storage/network boundaries, modules, MCP transports and OAuth, UI surfaces, and lifecycle. |
 | [`providers-and-models.md`](providers-and-models.md) | Model registry metadata, profiles, credentials, provider/media operations, runtime options, capability routing, adapters, chat/tool transport, and LLM request history. |

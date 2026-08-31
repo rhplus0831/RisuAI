@@ -2,7 +2,7 @@
 
 Last audited: 2026-08-30.
 
-This area covers Plugin V3 execution and permissions, V2-series rejection, module import and activation, permissioned network access, MCP client transport/OAuth/tool dispatch, and RisuAccess tools. Durable command mechanics are cross-referenced in [Domain Mutations and Editing Bridges](domain-mutations-and-editing-bridges.md); the server egress boundary is also discussed in [API Security and Runtime](api-security-and-runtime.md).
+This area covers Plugin V3 execution and permissions, V2-series rejection, module import and activation, permissioned network access, MCP client transport/OAuth/tool dispatch, and RisuAccess tools. Durable command mechanics are cross-referenced in [Domain Mutations and Editing Owners](domain-mutations-and-editing-bridges.md); the server egress boundary is also discussed in [API Security and Runtime](api-security-and-runtime.md).
 
 ## Assessment
 
