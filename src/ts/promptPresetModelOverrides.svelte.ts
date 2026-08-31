@@ -6,8 +6,9 @@ import {
   promptPresetModelOverrideFieldForDatabaseKey,
   promptPresetOverridesModelParameters,
 } from './presetSplit'
-import { getDatabase, updatePromptPreset, type PromptPreset } from './storage/database.svelte'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import { collectionsResourceState, settingsResourceState } from './server/resourceState.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from './server/settingsGroups'
+import { getDatabase, updatePromptPreset, type Database, type PromptPreset } from './storage/database.svelte'
 
 type OverrideGroup = 'parameters'
 
@@ -28,6 +29,16 @@ export interface PromptPresetModelOverrideMirrorTarget {
   presetId: string
 }
 
+interface PromptPresetOwnerSnapshot {
+  presets: ReadonlyArray<Record<string, unknown>>
+  selectedIndex: number
+}
+
+interface SettingsOwnerValueSnapshot {
+  available: boolean
+  value: unknown
+}
+
 export function promptPresetModelOverrideEnabled(group: OverrideGroup): boolean {
   const preset = selectedPromptPreset()
   const enabledByGroup: Record<OverrideGroup, boolean> = {
@@ -45,11 +56,12 @@ export function setPromptPresetModelOverrideEnabled(group: OverrideGroup, enable
   const patch: Record<string, unknown> = { [flagKey]: enabled }
 
   if (enabled) {
-    const db = getDatabase() as unknown as Record<string, unknown>
     for (const field of fields) {
       if (Object.prototype.hasOwnProperty.call(preset, field)) continue
       const databaseKey = databaseKeyForModelPresetField(field)
-      const value = db[databaseKey]
+      const owner = currentSettingsOwnerValueSnapshot(databaseKey)
+      if (!owner.available) return
+      const value = owner.value
       if (value !== undefined) patch[field] = cloneJsonValue(value)
     }
   }
@@ -107,10 +119,9 @@ export function createPromptPresetModelOverrideDraft<T>(
       const attempted = cloneJsonValue(draft.value)
       const target = resolvePromptPresetModelOverrideMirrorTarget(databaseKey)
       if (!target) return
-      withTrustedResourceWrite(() => {
-        const database = getDatabase() as unknown as Record<string, unknown>
-        database[databaseKey] = attempted
-      })
+      // updatePromptPreset owns the durable stable-id queue and its selected
+      // settings optimistic projection, so a second raw aggregate write here
+      // would sit outside queued/failure rollback ownership.
       mirrorPromptPresetModelOverrideFieldToTarget(target, attempted)
       previousServerSnapshot = snapshot
     })
@@ -125,7 +136,7 @@ export function currentPromptPresetModelOverrideValue<T>(databaseKey: string, fa
   if (presetField && preset && Object.prototype.hasOwnProperty.call(preset, presetField)) {
     return cloneJsonValue(preset[presetField]) as T
   }
-  const value = (getDatabase() as unknown as Record<string, unknown> | undefined)?.[databaseKey]
+  const value = currentSettingsOwnerValue(databaseKey)
   return value === undefined ? fallback : (cloneJsonValue(value) as T)
 }
 
@@ -140,9 +151,8 @@ export function resolvePromptPresetModelOverrideMirrorTarget(
 ): PromptPresetModelOverrideMirrorTarget | null {
   const presetField = promptPresetModelOverrideFieldForDatabaseKey(databaseKey)
   if (!presetField) return null
-  const selectedIndex = getDatabase().promptPresetsId
   const selected = selectedPromptPresetEntry()
-  if (!selected || selected.index !== selectedIndex) return null
+  if (!selected) return null
   return { databaseKey, presetField, presetId: selected.preset.id as string }
 }
 
@@ -152,7 +162,7 @@ export function currentPromptPresetModelOverrideMirrorValue(target: PromptPreset
   if (Object.prototype.hasOwnProperty.call(preset, target.presetField)) {
     return cloneJsonValue(preset[target.presetField])
   }
-  return cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.databaseKey])
+  return cloneJsonValue(currentSettingsOwnerValue(target.databaseKey))
 }
 
 export function mirrorPromptPresetModelOverrideFieldToTarget(
@@ -182,10 +192,9 @@ function selectedPromptPreset(): Record<string, unknown> | undefined {
 }
 
 function selectedPromptPresetEntry(): { index: number; preset: Record<string, unknown> } | undefined {
-  const selectedIndex = getDatabase().promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return undefined
-  const presets = getDatabase().promptPresets
-  if (!Array.isArray(presets)) return undefined
+  const owner = currentPromptPresetOwnerSnapshot()
+  if (!owner) return undefined
+  const { presets, selectedIndex } = owner
   const preset = presets?.[selectedIndex] as Record<string, unknown> | undefined
   if (!preset || typeof preset.id !== 'string' || preset.id.trim() === '') return undefined
   const matches = presets.filter((candidate) => candidate?.id === preset.id)
@@ -193,8 +202,8 @@ function selectedPromptPresetEntry(): { index: number; preset: Record<string, un
 }
 
 function uniquePromptPresetEntryById(presetId: string): { index: number; preset: Record<string, unknown> } | undefined {
-  const presets = getDatabase().promptPresets
-  if (!Array.isArray(presets) || !presetId.trim()) return undefined
+  const presets = currentPromptPresetCollectionOwner()
+  if (!presets || !presetId.trim()) return undefined
   const matches = presets
     .map((candidate, index) => ({ candidate, index }))
     .filter(({ candidate }) => candidate?.id === presetId)
@@ -204,6 +213,66 @@ function uniquePromptPresetEntryById(presetId: string): { index: number; preset:
 
 function uniquePromptPresetById(presetId: string): Record<string, unknown> | undefined {
   return uniquePromptPresetEntryById(presetId)?.preset
+}
+
+function currentPromptPresetOwnerSnapshot(): PromptPresetOwnerSnapshot | null {
+  const presets = currentPromptPresetCollectionOwner()
+  const selectedIndex = currentPromptPresetSelectionOwner()
+  if (!presets || selectedIndex === null || selectedIndex < 0 || selectedIndex >= presets.length) return null
+  return { presets, selectedIndex }
+}
+
+function currentPromptPresetCollectionOwner(): PromptPresetOwnerSnapshot['presets'] | null {
+  const status = collectionsResourceState.statuses.promptPresets
+  if (collectionsResourceState.status === 'error' || status === 'error') return null
+
+  const value =
+    status === 'ready'
+      ? collectionsResourceState.values.promptPresets
+      : canUseCompatibility(collectionsResourceState.status) && canUseCompatibility(status)
+        ? compatibilityDatabase().promptPresets
+        : undefined
+  if (!Array.isArray(value)) return null
+  return value as ReadonlyArray<Record<string, unknown>>
+}
+
+function currentPromptPresetSelectionOwner(): number | null {
+  const status = settingsResourceState.standaloneStatuses.promptPresetsId
+  if (settingsResourceState.status === 'error' || status === 'error') return null
+
+  const value =
+    status === 'ready'
+      ? settingsResourceState.value.promptPresetsId
+      : canUseCompatibility(settingsResourceState.status) && canUseCompatibility(status)
+        ? compatibilityDatabase().promptPresetsId
+        : undefined
+  return Number.isInteger(value) ? (value as number) : null
+}
+
+function currentSettingsOwnerValue(key: string): unknown {
+  const snapshot = currentSettingsOwnerValueSnapshot(key)
+  return snapshot.available ? snapshot.value : undefined
+}
+
+function currentSettingsOwnerValueSnapshot(key: string): SettingsOwnerValueSnapshot {
+  const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+  const status = group ? settingsResourceState.groupStatuses[group] : settingsResourceState.status
+  if (settingsResourceState.status === 'error' || status === 'error') return { available: false, value: undefined }
+  if (status === 'ready') {
+    return { available: true, value: (settingsResourceState.value as Record<string, unknown>)[key] }
+  }
+  if (canUseCompatibility(settingsResourceState.status) && canUseCompatibility(status)) {
+    return { available: true, value: (compatibilityDatabase() as unknown as Record<string, unknown>)[key] }
+  }
+  return { available: false, value: undefined }
+}
+
+function compatibilityDatabase(): Database {
+  return getDatabase()
+}
+
+function canUseCompatibility(status: string | undefined): boolean {
+  return status === undefined || status === 'idle' || status === 'loading'
 }
 
 function snapshotJson(value: unknown): string {
