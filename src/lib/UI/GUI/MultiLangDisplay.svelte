@@ -2,7 +2,7 @@
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { parseMultilangString, toLangName } from 'src/ts/util'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   interface Props {
     value: string
@@ -12,7 +12,9 @@
   let { value, markdown = false }: Props = $props()
   let valueObject: { [code: string]: string } = $derived(parseMultilangString(value))
 
-  let userLang = $derived(getDatabase().language)
+  let userLang = $derived(
+    settingsResourceState.groupStatuses.language === 'ready' ? (settingsResourceState.value.language ?? 'en') : 'en',
+  )
 
   let defaultLang = $derived.by(() => {
     if (valueObject[userLang] !== undefined) return userLang

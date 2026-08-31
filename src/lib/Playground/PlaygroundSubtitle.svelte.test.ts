@@ -22,6 +22,24 @@ vi.mock('src/ts/storage/database.svelte', () => ({
   reapplyPendingPresetProjections: vi.fn(),
 }))
 
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: {
+    status: 'ready',
+    value: {
+      language: 'en',
+      openAIKey: '',
+      useStreaming: true,
+    },
+    groupStatuses: {
+      advanced: 'ready',
+      language: 'ready',
+      models: 'ready',
+      providers: 'ready',
+      runtime: 'ready',
+    },
+  },
+}))
+
 vi.mock('src/ts/model/modellist', () => ({
   getModelInfo: () => ({ flags: ['audio', 'video', 'streaming'] }),
   LLMFlags: {
@@ -241,6 +259,10 @@ describe('PlaygroundSubtitle run recovery', () => {
 
     runButton()!.click()
     await vi.waitFor(() => expect(reader.read).toHaveBeenCalledTimes(1))
+    expect(subtitleMocks.requestChatData.mock.calls[0][0].database).toMatchObject({
+      language: 'en',
+      useStreaming: true,
+    })
     const signal = subtitleMocks.requestChatData.mock.calls[0][2] as AbortSignal
 
     unmount(component)

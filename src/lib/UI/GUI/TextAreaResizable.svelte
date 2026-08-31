@@ -12,7 +12,7 @@
   } from 'src/ts/stores.svelte'
   import { longpress } from 'src/ts/gui/longtouch'
   import { sleep } from 'src/ts/util'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   let textarea: HTMLTextAreaElement = $state()
   let previousScrollHeight = 0
@@ -20,6 +20,15 @@
   let openingPopupEditor = false
   let popupEditorRun = 0
   let activePopupEditorSessionId: number | null = null
+  let sidebarSettingsReady = $derived(settingsResourceState.groupStatuses.sidebar === 'ready')
+  let popupEditorHotkey = $derived(
+    sidebarSettingsReady
+      ? settingsResourceState.value.hotkeys?.find((hotkey) => hotkey.action === 'popupEditor')
+      : undefined,
+  )
+  let displaySettingsReady = $derived(settingsResourceState.groupStatuses.display === 'ready')
+  let zoomSize = $derived(displaySettingsReady ? (settingsResourceState.value.zoomsize ?? 100) : 100)
+  let lineHeight = $derived(displaySettingsReady ? (settingsResourceState.value.lineHeight ?? 1.25) : 1.25)
   interface Props {
     value?: string
     handleLongPress?: any
@@ -120,11 +129,9 @@
     onkeydown={(e) => {
       if (
         popupEditor &&
+        popupEditorHotkey &&
         (e.ctrlKey || e.shiftKey || e.altKey) &&
-        hotkeyMatches(
-          getDatabase().hotkeys.find((hk) => hk.action === 'popupEditor'),
-          e,
-        )
+        hotkeyMatches(popupEditorHotkey, e)
       ) {
         e.preventDefault()
         void openPopupEditor()
@@ -139,8 +146,8 @@
     style:height={stableHeight ? '16rem' : undefined}
     style:min-height={stableHeight ? '12rem' : undefined}
     style:max-height={stableHeight ? '60vh' : undefined}
-    style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
-    style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem"></textarea>
+    style:font-size="{0.875 * (zoomSize / 100)}rem"
+    style:line-height="{lineHeight * (zoomSize / 100)}rem"></textarea>
 
   {#if popupEditor}
     <button

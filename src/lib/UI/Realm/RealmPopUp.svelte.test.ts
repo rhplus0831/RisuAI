@@ -40,7 +40,15 @@ vi.mock('src/ts/server/resourceState.svelte', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/server/resourceState.svelte')>()
   return {
     ...actual,
-    getResourceDatabase: () => popupMocks.database,
+    settingsResourceState: {
+      status: 'ready',
+      value: popupMocks.database,
+      groupStatuses: {
+        account: 'ready',
+        display: 'ready',
+        language: 'ready',
+      },
+    },
   }
 })
 

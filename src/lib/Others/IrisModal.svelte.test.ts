@@ -431,6 +431,11 @@ describe('IrisModal model availability', () => {
     expect(secondSignal).toBe(firstSignal)
     expect(irisMocks.risuAccessSignals).toEqual([firstSignal])
     expect(firstArg).toMatchObject({ tools: [tool], toolRounds: [] })
+    expect(firstArg.database).toMatchObject({
+      language: 'en',
+      modelRoles: { otherAx: 'claude-3-haiku-20240307' },
+    })
+    expect(secondArg.database).toBe(firstArg.database)
     expect(secondArg.toolRounds).toEqual([
       {
         assistantContent: '',

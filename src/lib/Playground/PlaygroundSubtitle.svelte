@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte'
+  import { onDestroy, untrack } from 'svelte'
   import { language } from 'src/lang'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import type { Database } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
   import { resolveModelForRole } from '@risuai/shared-core/model-roles'
   import { requestChatData } from 'src/ts/process/request/request'
@@ -29,9 +30,32 @@
   let WhisperModePrompt =
     '```\n{{slot::data}}\n``` Translate the following WEBVTT to natural {{slot}}, with keeping the timestamp and header, inside a markdown code block. (prefix ``` / postfix ```)'
 
-  let selLang = $state(getDatabase().language)
+  let ownerLanguage = $derived(
+    settingsResourceState.groupStatuses.language === 'ready' ? (settingsResourceState.value.language ?? 'en') : 'en',
+  )
+  let modelSettingsReady = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' && settingsResourceState.groupStatuses.models === 'ready',
+  )
+  let requestSettingsReady = $derived(modelSettingsReady && settingsResourceState.groupStatuses.runtime === 'ready')
+  let modelCatalog = $derived({
+    customModels: modelSettingsReady ? settingsResourceState.value.customModels : undefined,
+    enableCustomFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready'
+        ? settingsResourceState.value.enableCustomFlags
+        : undefined,
+    customFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready' ? settingsResourceState.value.customFlags : undefined,
+  })
+  let selLang = $state(untrack(() => ownerLanguage))
   let prompt = $state(LLMModePrompt)
-  let modelInfo = $derived(getModelInfo(resolveModelForRole(getDatabase(), 'translate')))
+  let modelInfo = $derived.by(() => {
+    if (!modelSettingsReady) return getModelInfo()
+    const model = resolveModelForRole(settingsResourceState.value as unknown as Database, 'translate')
+    return getModelInfo(model, modelCatalog)
+  })
+  let useStreaming = $derived(
+    settingsResourceState.groupStatuses.runtime === 'ready' && Boolean(settingsResourceState.value.useStreaming),
+  )
   let outputText = $state('')
   let fileB64 = $state('')
   let vttB64 = $state('')
@@ -54,6 +78,7 @@
   }
   type SubtitleRun = {
     controller: AbortController
+    database: Database
     reader: SubtitleStreamReader | null
     pipeline: DisposablePipeline | null
   }
@@ -62,6 +87,11 @@
   let destroyed = false
   let trackedInputSignature = ''
   const disposedPipelines = new WeakSet<object>()
+
+  function requestDatabaseSnapshot(): Database | null {
+    if (!requestSettingsReady) return null
+    return $state.snapshot(settingsResourceState.value) as unknown as Database
+  }
 
   function subtitleAbortError(): DOMException {
     return new DOMException('Subtitle run aborted', 'AbortError')
@@ -213,6 +243,7 @@
     const v = await awaitRun(
       requestChatData(
         {
+          database: run.database,
           formated: [
             {
               role: 'user',
@@ -469,6 +500,7 @@
     const v = await awaitRun(
       requestChatData(
         {
+          database: run.database,
           formated: [
             {
               role: 'user',
@@ -547,6 +579,8 @@
 
   async function runSelectedMode(): Promise<void> {
     if (running) return
+    const database = requestDatabaseSnapshot()
+    if (!database) return
 
     trackedInputSignature = currentInputSignature()
     const runMode = mode
@@ -555,6 +589,7 @@
     const sourceLanguageSnapshot = sourceLang
     const run: SubtitleRun = {
       controller: new AbortController(),
+      database,
       reader: null,
       pipeline: null,
     }
@@ -724,7 +759,7 @@
 {#if !(modelInfo.flags.includes(LLMFlags.hasAudioInput) && modelInfo.flags.includes(LLMFlags.hasVideoInput)) && mode === 'llm'}
   <span class="text-draculared text-lg mt-4">{language.subtitlesWarning1}</span>
 {/if}
-{#if !(modelInfo.flags.includes(LLMFlags.hasStreaming) && getDatabase().useStreaming)}
+{#if !(modelInfo.flags.includes(LLMFlags.hasStreaming) && useStreaming)}
   <span class="text-draculared text-lg mt-4">{language.subtitlesWarning2}</span>
 {/if}
 {#if !('gpu' in navigator) && mode === 'whisperLocal'}
@@ -732,7 +767,7 @@
 {/if}
 
 {#if !outputText}
-  <Button className="mt-4" disabled={running} onclick={runSelectedMode}>
+  <Button className="mt-4" disabled={running || !requestSettingsReady} onclick={runSelectedMode}>
     {language.run}
   </Button>
 {:else if vttB64 && fileB64}

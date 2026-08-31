@@ -14,7 +14,7 @@
   import { isMobile } from 'src/ts/platform'
   import { hotkeyMatches } from 'src/ts/hotkey'
   import { language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   type PopupEditorAvailability = boolean | 'auto'
 
@@ -74,6 +74,15 @@
   let popupEditorRun = 0
   let popupEditorContextRevision = 0
   let activePopupEditorSessionId: number | null = null
+  let sidebarSettingsReady = $derived(settingsResourceState.groupStatuses.sidebar === 'ready')
+  let popupEditorHotkey = $derived(
+    sidebarSettingsReady
+      ? settingsResourceState.value.hotkeys?.find((hotkey) => hotkey.action === 'popupEditor')
+      : undefined,
+  )
+  let longPressToPopupEditor = $derived(
+    sidebarSettingsReady && Boolean(settingsResourceState.value.longPressToPopupEditor),
+  )
 
   const isInteractionDisabled = () => disabled || Boolean(inputDom?.closest('fieldset[disabled]'))
 
@@ -455,18 +464,16 @@
       onkeydown={async (e) => {
         if (
           isPopupEditorEnabled() &&
+          popupEditorHotkey &&
           (e.ctrlKey || e.shiftKey || e.altKey) &&
-          hotkeyMatches(
-            getDatabase().hotkeys.find((hk) => hk.action === 'popupEditor'),
-            e,
-          )
+          hotkeyMatches(popupEditorHotkey, e)
         ) {
           e.preventDefault()
           await openPopupEditor()
         }
       }}
       oncontextmenu={(e) => {
-        if (isPopupEditorEnabled() && getDatabase().longPressToPopupEditor) {
+        if (isPopupEditorEnabled() && longPressToPopupEditor) {
           e.preventDefault()
           void openPopupEditor()
         }

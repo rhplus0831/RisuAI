@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte'
   import { closePopupEditorSession, popUpEditorStore } from '../../ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import type MonacoEditorType from './MonacoEditor.svelte'
   import { language } from 'src/lang'
   import { risuChatParser } from 'src/ts/parser/parser.svelte'
@@ -24,9 +24,12 @@
   const sessionId = untrack(() => popUpEditorStore.sessionId)
   const monacoSettingKey = isMobile ? 'useMonacoEditorOnMobile' : 'useMonacoEditorOnDesktop'
   let useMonacoEditor = $state(
-    untrack(() =>
-      isMobile ? (getDatabase().useMonacoEditorOnMobile ?? false) : (getDatabase().useMonacoEditorOnDesktop ?? false),
-    ),
+    untrack(() => {
+      if (settingsResourceState.groupStatuses.sidebar !== 'ready') return false
+      return isMobile
+        ? (settingsResourceState.value.useMonacoEditorOnMobile ?? false)
+        : (settingsResourceState.value.useMonacoEditorOnDesktop ?? false)
+    }),
   )
 
   function loadMonacoEditor(): void {
@@ -59,7 +62,9 @@
     }
 
     try {
-      $state.snapshot(getDatabase().globalChatVariables)
+      if (settingsResourceState.groupStatuses.sidebar === 'ready') {
+        $state.snapshot(settingsResourceState.value.globalChatVariables)
+      }
     } catch (error) {}
     return risuChatParser(popUpEditorStore.value)
   })

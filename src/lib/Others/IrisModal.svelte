@@ -1,9 +1,9 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition'
-  import { onDestroy, onMount } from 'svelte'
+  import { onDestroy, onMount, untrack } from 'svelte'
   import IrisImage from '../../etc/Airisu.webp'
   import { irisStore } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { requestChatData } from 'src/ts/process/request/request'
   import { alertError } from 'src/ts/alert'
   import { getIrisSystemPrompt } from 'src/ts/iris'
@@ -20,6 +20,7 @@
     type ServerToolResult,
     type ServerToolRound,
   } from '@risuai/protocol/server-tool'
+  import type { Database } from 'src/ts/storage/database.svelte'
 
   interface DialogueLine {
     speaker: string
@@ -88,7 +89,25 @@
     storeName: 'iris_dialogues',
   })
 
-  let dialogue = $state<DialogueLine[]>(introDialogue[getDatabase().language] ?? introDialogue.en)
+  let ownerLanguage = $derived(
+    settingsResourceState.groupStatuses.language === 'ready' ? (settingsResourceState.value.language ?? 'en') : 'en',
+  )
+  let requestSettingsReady = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' &&
+      settingsResourceState.groupStatuses.models === 'ready' &&
+      settingsResourceState.groupStatuses.runtime === 'ready',
+  )
+  let modelCatalog = $derived({
+    customModels:
+      settingsResourceState.groupStatuses.providers === 'ready' ? settingsResourceState.value.customModels : undefined,
+    enableCustomFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready'
+        ? settingsResourceState.value.enableCustomFlags
+        : undefined,
+    customFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready' ? settingsResourceState.value.customFlags : undefined,
+  })
+  let dialogue = $state<DialogueLine[]>(untrack(() => introDialogue[ownerLanguage] ?? introDialogue.en))
 
   let currentIndex = $state(0)
   let displayedText = $state('')
@@ -101,8 +120,9 @@
   let userInputEl = $state<HTMLInputElement | null>(null)
 
   let isUnsupportedModel = $derived.by(() => {
-    const currentModel = resolveModelForRole(getDatabase(), 'otherAx')
-    const modelInfo = getModelInfo(currentModel)
+    if (!requestSettingsReady) return true
+    const currentModel = resolveModelForRole(settingsResourceState.value as unknown as Database, 'otherAx')
+    const modelInfo = getModelInfo(currentModel, modelCatalog)
     return !(
       modelInfo.format === LLMFormat.Anthropic ||
       modelInfo.format === LLMFormat.OpenAICompatible ||
@@ -110,6 +130,11 @@
       modelInfo.format === LLMFormat.GoogleCloud
     )
   })
+
+  function requestDatabaseSnapshot(): Database | null {
+    if (!requestSettingsReady) return null
+    return $state.snapshot(settingsResourceState.value) as unknown as Database
+  }
 
   let typingTimeout: ReturnType<typeof setTimeout> | null = null
   let typingRun = 0
@@ -215,6 +240,8 @@
     const trimmed = userInput.trim()
     if (!trimmed) return
     if (isUnsupportedModel) return
+    const requestDatabase = requestDatabaseSnapshot()
+    if (!requestDatabase) return
     if (!pushDialogue({ speaker: 'You', text: trimmed })) {
       alertError(language.errors.emptyText)
       return
@@ -242,7 +269,7 @@
           })),
       ]
       if (submission.controller.signal.aborted) return
-      await requestLLM(history, submission)
+      await requestLLM(history, submission, requestDatabase)
     } catch (error) {
       if (submission.controller.signal.aborted || !isCurrentRequest(submission.line, submission.epoch)) return
       alertError(error)
@@ -368,7 +395,7 @@
     return result
   }
 
-  async function requestLLM(chat: OpenAIChat[], submission: ActiveSubmission) {
+  async function requestLLM(chat: OpenAIChat[], submission: ActiveSubmission, database: Database) {
     const client = new RisuAccessClient(submission.controller.signal)
     const tools = await client.getToolList()
     const allowedToolNames = new Set(tools.map((tool) => tool.name))
@@ -378,6 +405,7 @@
       if (submission.controller.signal.aborted) return
       const res = await requestChatData(
         {
+          database,
           formated: chat,
           bias: {},
           tools,
@@ -435,14 +463,14 @@
           dialogue = saved
           currentIndex = dialogue.length - 1
         } else {
-          dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
+          dialogue = introDialogue[ownerLanguage] ?? introDialogue.en
           currentIndex = 0
         }
         startTyping(dialogue[currentIndex].text)
       })
       .catch(() => {
         if (!mounted || dialogueEpoch !== hydrationEpoch) return
-        dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
+        dialogue = introDialogue[ownerLanguage] ?? introDialogue.en
         currentIndex = 0
         startTyping(dialogue[currentIndex].text)
       })
@@ -484,7 +512,7 @@
 
   function resetDialogue() {
     invalidateActiveSubmission(false)
-    dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
+    dialogue = introDialogue[ownerLanguage] ?? introDialogue.en
     currentIndex = 0
     saveDialogue()
     startTyping(dialogue[0].text)
@@ -634,7 +662,7 @@
         {/if}
         {#if isUnsupportedModel}
           <div class="mt-2 rounded-md bg-red-600/80 px-3 py-2 text-sm text-white">
-            {unsupportedModelDialogue[getDatabase().language]?.[0].text ?? unsupportedModelDialogue.en[0].text}
+            {unsupportedModelDialogue[ownerLanguage]?.[0].text ?? unsupportedModelDialogue.en[0].text}
           </div>
         {/if}
       </div>

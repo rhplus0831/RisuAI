@@ -11,7 +11,7 @@
     getRealmInfo,
   } from 'src/ts/characterCards'
 
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import RealmLicense from './RealmLicense.svelte'
   import MultiLangDisplay from '../GUI/MultiLangDisplay.svelte'
   import { tooltip } from 'src/ts/gui/tooltip'
@@ -25,6 +25,12 @@
 
   let { openedData = $bindable(), onRemoved }: Props = $props()
   let removing = $state(false)
+  let hideAllImages = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' && Boolean(settingsResourceState.value.hideAllImages),
+  )
+  let accountId = $derived(
+    settingsResourceState.groupStatuses.account === 'ready' ? settingsResourceState.value.account?.id : undefined,
+  )
 
   function closePopup(): void {
     cancelPendingRealmInfoRequest()
@@ -159,7 +165,7 @@
             }}>{language.realm.forked}</button>
         {/if}
         <div class="flex justify-start gap-4 mt-4">
-          {#if getDatabase().hideAllImages}
+          {#if hideAllImages}
             <div class="h-36 w-36 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
               <span class="text-4xl">?</span>
             </div>
@@ -222,7 +228,7 @@
           onclick={reportCharacter}>
           <FlagIcon />
         </button>
-        {#if openedData.creator && getDatabase().account?.id === openedData.creator}
+        {#if openedData.creator && accountId === openedData.creator}
           <button
             type="button"
             aria-label={language.realm.removeCharacter}
