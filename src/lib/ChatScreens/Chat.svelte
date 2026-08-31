@@ -72,16 +72,18 @@
     applyChatMetadataOwnerPatch,
     charactersResourceState,
     getCharacterResourceOwner,
+    getChatMetadataOwnerState,
     getChatMetadataOwnerSnapshot,
+    settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
   import {
-    getCurrentCharacter,
-    getCurrentChat,
     getDatabase,
     type Chat,
+    type Database,
     type Message,
     type MessageGenerationInfo,
     type MessageTranslation,
+    type character as Character,
   } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { HideIconStore, ReloadGUIPointer, VariableReloadGUIPointer, selIdState } from '../../ts/stores.svelte'
@@ -164,6 +166,7 @@
   import { bilingualInterleave } from 'src/ts/translator/bilingualInterleave'
   import type { GenerationPersistenceIndicatorState } from 'src/ts/process/generationPersistenceState'
   import type { DisplaySourcePriority } from 'src/ts/server/displaySources'
+  import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -175,12 +178,110 @@
   let translationEditOperation = 0
   let activeRawTranslationRequestTarget: RawTranslationTarget | null = $state(null)
   let bodyRoot: HTMLElement | null = $state(null)
-  // Rendering follows the unique resource owner once ready. The aggregate
-  // row remains a pre-readiness compatibility fallback for existing shells.
-  let renderCharacter = $derived(
-    getSelectedCharacterOwner() ??
-      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters?.[selIdState.selId]),
-  )
+  function isCharacterOwnerPreReady(): boolean {
+    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+  }
+
+  // Explicit startup compatibility only. Ready/error character reads never
+  // consult the aggregate projection.
+  function preReadyCharacterRows(): readonly Character[] {
+    return isCharacterOwnerPreReady() ? (getDatabase().characters ?? []) : []
+  }
+
+  function characterRowsForRead(): readonly Character[] {
+    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    return preReadyCharacterRows()
+  }
+
+  function selectedCharacterReadOwner(): Character | undefined {
+    if (charactersResourceState.status === 'ready') return getSelectedCharacterOwner()
+    if (!isCharacterOwnerPreReady()) return undefined
+
+    const characters = preReadyCharacterRows()
+    const candidate = characters[selIdState.selId]
+    if (!candidate?.chaId) return undefined
+    return characters.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+  }
+
+  interface CharacterChatOwner {
+    character: Character
+    chat: Chat
+  }
+
+  function uniqueChatReadOwner(chatId: string): CharacterChatOwner | undefined {
+    if (!chatId) return undefined
+    const characters = characterRowsForRead()
+    let owner: CharacterChatOwner | undefined
+    for (const character of characters) {
+      if (!character?.chaId || characters.filter((candidate) => candidate?.chaId === character.chaId).length !== 1) {
+        continue
+      }
+      for (const chat of character.chats ?? []) {
+        if (chat?.id !== chatId) continue
+        if (owner) return undefined
+        owner = { character, chat }
+      }
+    }
+    if (!owner) return undefined
+    if (charactersResourceState.status !== 'ready') return owner
+    if (getCharacterResourceOwner(owner.character.chaId) !== owner.character) return undefined
+    if (!getChatMetadataOwnerState(chatId)) return undefined
+    if (!getChatMetadataOwnerSnapshot(owner.character.chaId, chatId)) return undefined
+    return owner
+  }
+
+  // This is the retained mutable compatibility bridge for drafts, optimistic
+  // writes, and trigger results. Identity is authorized by the explicit owners
+  // above before a live aggregate object is exposed for those mutations.
+  function mutableChatBridgeRows(): readonly Character[] {
+    return getDatabase().characters ?? []
+  }
+
+  function mutableCharacterBridgeById(characterId: string): Character | undefined {
+    if (!characterId || charactersResourceState.status === 'error') return undefined
+    if (charactersResourceState.status === 'ready' && !getCharacterResourceOwner(characterId)) return undefined
+    const matches = mutableChatBridgeRows().filter((candidate) => candidate?.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  }
+
+  function mutableChatBridgeById(characterId: string, chatId: string): CharacterChatOwner | undefined {
+    const readOwner = uniqueChatReadOwner(chatId)
+    if (!readOwner || readOwner.character.chaId !== characterId) return undefined
+    const characters = mutableChatBridgeRows()
+    const character = mutableCharacterBridgeById(characterId)
+    if (!character) return undefined
+    const matches: CharacterChatOwner[] = []
+    for (const candidateCharacter of characters) {
+      for (const candidateChat of candidateCharacter.chats ?? []) {
+        if (candidateChat?.id === chatId) matches.push({ character: candidateCharacter, chat: candidateChat })
+      }
+    }
+    return matches.length === 1 && matches[0].character === character ? matches[0] : undefined
+  }
+
+  function mutableActiveChatBridge(): CharacterChatOwner | undefined {
+    const character = selectedCharacterReadOwner()
+    const chatPage = character?.chatPage
+    const chatId = typeof chatPage === 'number' ? character?.chats?.[chatPage]?.id : undefined
+    if (!character?.chaId || !chatId) return undefined
+    return mutableChatBridgeById(character.chaId, chatId)
+  }
+
+  function readSettingsGroup(group: SettingsGroup): Partial<Database> {
+    const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value as Partial<Database>
+    if (status === 'error' || settingsResourceState.status === 'error') return {}
+    // Explicit startup compatibility only. Owner errors and ready-but-missing
+    // settings remain authoritative and never revive aggregate values.
+    if (status === 'idle' || status === 'loading') return getDatabase()
+    return {}
+  }
+
+  let displaySettings = $derived(readSettingsGroup('display'))
+  let languageSettings = $derived(readSettingsGroup('language'))
+  let sidebarSettings = $derived(readSettingsGroup('sidebar'))
+  let advancedSettings = $derived(readSettingsGroup('advanced'))
+  let renderCharacter = $derived(selectedCharacterReadOwner())
   interface Props {
     message?: string
     translation?: MessageTranslation | null
@@ -297,14 +398,14 @@
     shouldAutoPopupMessageEditor({
       editMode,
       index: idx,
-      disableAutoPopupMessageEditor: getDatabase().disableAutoPopupMessageEditor,
+      disableAutoPopupMessageEditor: sidebarSettings.disableAutoPopupMessageEditor,
     }),
   )
   const autoPopupTranslationEditor = $derived(
     shouldAutoPopupTranslationEditor({
       editTranslationMode,
       index: idx,
-      disableAutoPopupMessageEditor: getDatabase().disableAutoPopupMessageEditor,
+      disableAutoPopupMessageEditor: sidebarSettings.disableAutoPopupMessageEditor,
       suppressAutoPopupTranslationEditor,
     }),
   )
@@ -313,7 +414,7 @@
       editMode,
       index: idx,
       message,
-      theme: getDatabase().theme,
+      theme: displaySettings.theme,
     }),
   )
   const useStableTranslationEditor = $derived(
@@ -321,7 +422,7 @@
       editMode: editTranslationMode,
       index: idx,
       message: editTranslationText,
-      theme: getDatabase().theme,
+      theme: displaySettings.theme,
     }),
   )
 
@@ -336,13 +437,12 @@
   let messageEditTarget: MessageEditorTarget | null = null
 
   function captureMessageEditorTarget(): MessageEditorTarget | null {
-    const character = getDatabase().characters?.[selIdState.selId]
-    const chatPage = character?.chatPage
-    if (!character || typeof chatPage !== 'number' || idx < 0) return null
-
-    const chat = character.chats?.[chatPage]
+    const owner = mutableActiveChatBridge()
+    if (!owner || idx < 0) return null
+    const { character, chat } = owner
     const liveMessage = chat?.message?.[idx]
-    if (!chat || !liveMessage) return null
+    const readMessage = currentLiveMessage()
+    if (!liveMessage?.chatId || readMessage?.chatId !== liveMessage.chatId) return null
 
     return {
       characterId: character.chaId || undefined,
@@ -367,9 +467,11 @@
   function isCurrentMessageEditorTarget(target: MessageEditorTarget): boolean {
     if (idx !== target.messageIndex) return false
 
-    const character = getDatabase().characters?.[selIdState.selId]
-    const chatPage = character?.chatPage
-    if (!character || typeof chatPage !== 'number') return false
+    const owner = mutableActiveChatBridge()
+    if (!owner) return false
+    const { character, chat } = owner
+    const readMessage = currentLiveMessage()
+    if (!readMessage?.chatId || chat.message?.[idx]?.chatId !== readMessage.chatId) return false
     if (
       !matchesMessageEditorIdentity(
         character.chaId || undefined,
@@ -381,8 +483,7 @@
       return false
     }
 
-    const chat = character.chats?.[chatPage]
-    if (!chat || !matchesMessageEditorIdentity(chat.id || undefined, target.chatId, chat, target.chatReference)) {
+    if (!matchesMessageEditorIdentity(chat.id || undefined, target.chatId, chat, target.chatReference)) {
       return false
     }
 
@@ -415,7 +516,7 @@
   }
 
   function handleMessageBodyClick(event: MouseEvent): void {
-    if (isGenerationProjection || !getDatabase().clickToEdit || idx < 0 || event.defaultPrevented) return
+    if (isGenerationProjection || !sidebarSettings.clickToEdit || idx < 0 || event.defaultPrevented) return
 
     const target = event.target
     if (
@@ -607,9 +708,9 @@
     const route = parseRoute(window.location.pathname)
     if (route.kind !== 'character' || route.chaId !== characterId || route.chatId !== provisionalChatId) return
 
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const character = mutableCharacterBridgeById(characterId)
     if (!character || character.chats?.some((chat) => chat.id === provisionalChatId)) return
-    if (character.chats?.[character.chatPage]?.id !== sourceChatId) return
+    if (mutableChatBridgeById(characterId, sourceChatId)?.chat !== character.chats?.[character.chatPage]) return
 
     navigate(characterRoutePath(characterId, sourceChatId), { replace: true })
   }
@@ -654,15 +755,12 @@
 
     // Resolve the branch source from the target captured at interaction time so a chat switch
     // during the confirm/hydration await cannot retarget the branch to whatever chat is now active.
-    const currentCharacter = getDatabase().characters?.find((candidate) =>
-      sourceCharacterId ? candidate.chaId === sourceCharacterId : candidate === target.characterReference,
-    )
-    const currentChat = currentCharacter?.chats?.find((candidate) =>
-      sourceChatId ? candidate.id === sourceChatId : candidate === target.chatReference,
-    )
-    if (!currentCharacter || !currentChat) {
+    if (!sourceCharacterId || !sourceChatId) return
+    const bridge = mutableChatBridgeById(sourceCharacterId, sourceChatId)
+    if (!bridge) {
       return
     }
+    const { character: currentCharacter, chat: currentChat } = bridge
 
     const branchIndex = sourceMessageId
       ? currentChat.message.findIndex((candidate) => candidate.chatId === sourceMessageId)
@@ -676,7 +774,7 @@
     const previous = currentChatStateSnapshot()
     let folder
     let sourcePatch: { folderId?: string | null } = {}
-    if (getDatabase().createFolderOnBranch && !currentChat.folderId) {
+    if (sidebarSettings.createFolderOnBranch && !currentChat.folderId) {
       const folderId = v4()
       folder = {
         id: folderId,
@@ -749,13 +847,15 @@
     }
 
     if (!isCurrentMessageEditorTarget(originTarget)) return
-    const currentCharacter = getDatabase().characters?.[selIdState.selId]
-    const sourceChat = currentCharacter?.chats?.find((chat) => chat.id === branchReference.sourceChatId)
-    if (
-      !currentCharacter ||
-      !sourceChat ||
-      !sourceChat.message.some((candidate) => candidate.chatId === branchReference.sourceMessageId)
-    ) {
+    const currentOwner = mutableActiveChatBridge()
+    const currentCharacter = currentOwner?.character
+    const sourceOwner = currentCharacter?.chaId
+      ? mutableChatBridgeById(currentCharacter.chaId, branchReference.sourceChatId)
+      : undefined
+    const sourceChat = sourceOwner?.chat
+    const sourceMessages =
+      sourceChat?.message?.filter((candidate) => candidate.chatId === branchReference.sourceMessageId) ?? []
+    if (!currentCharacter || !sourceChat || sourceMessages.length !== 1) {
       alertError(language.chatDataLoadFailed)
       return
     }
@@ -768,16 +868,15 @@
   }
 
   function resolveActiveMessageTarget(target: MessageEditorTarget): { chat: Chat; messageIndex: number } | null {
-    const character = getDatabase().characters?.[selIdState.selId]
-    if (
-      !character ||
-      (target.characterId ? character.chaId !== target.characterId : character !== target.characterReference)
-    ) {
+    if (!target.characterId || !target.chatId) return null
+    const owner = mutableChatBridgeById(target.characterId, target.chatId)
+    const character = owner?.character
+    const chat = owner?.chat
+    if (!character || !chat || character !== target.characterReference) {
       return null
     }
 
-    const chat = character.chats?.[character.chatPage]
-    if (!chat || (target.chatId ? chat.id !== target.chatId : chat !== target.chatReference)) return null
+    if (chat !== target.chatReference) return null
     const messageIndex = target.messageId
       ? chat.message.findIndex((candidate) => candidate.chatId === target.messageId)
       : chat.message.findIndex((candidate) => candidate === target.messageReference)
@@ -871,7 +970,8 @@
       const character = getCharacterResourceOwner(previous.characterId)
       const chatMatches = character?.chats?.filter((candidate) => candidate.id === previous.chatId) ?? []
       if (chatMatches.length !== 1) return false
-      const messageMatches = (chatMatches[0].message ?? []).filter((candidate) => candidate.chatId === messageId)
+      const messageMatches =
+        getChatMessageOwnerState(previous.chatId)?.messages.filter((candidate) => candidate.chatId === messageId) ?? []
       if (messageMatches.length !== 1) return false
       const ownerSnapshot = getChatMetadataOwnerSnapshot(previous.characterId, previous.chatId)
       if (!ownerSnapshot) return false
@@ -890,10 +990,11 @@
       if (applied) syncServerBackedChatMetadataBaselines()
       return applied
     }
+    if (!isCharacterOwnerPreReady()) return false
 
     let applied = false
     withTrustedResourceWrite(() => {
-      const characters = getDatabase().characters ?? []
+      const characters = mutableChatBridgeRows()
       const characterMatches = previous.characterId
         ? characters.filter((candidate) => candidate.chaId === previous.characterId)
         : [characters[previous.selectedCharID]].filter(Boolean)
@@ -919,11 +1020,11 @@
   function hasServerRawTranslationTarget() {
     return (
       captureRawTranslationTarget() !== null &&
-      getDatabase().translator !== '' &&
-      (getDatabase().translatorType === 'google' ||
-        getDatabase().translatorType === 'deepl' ||
-        getDatabase().translatorType === 'deeplX' ||
-        getDatabase().translatorType === 'llm')
+      languageSettings.translator !== '' &&
+      (languageSettings.translatorType === 'google' ||
+        languageSettings.translatorType === 'deepl' ||
+        languageSettings.translatorType === 'deeplX' ||
+        languageSettings.translatorType === 'llm')
     )
   }
 
@@ -937,7 +1038,7 @@
 
   function currentLiveMessage(): Message | null {
     const chat = currentLiveChat()
-    if (!chat || idx < 0) return null
+    if (!chat?.id || idx < 0) return null
     const messages =
       charactersResourceState.status === 'ready' ? getChatMessageOwnerState(chat.id)?.messages : chat.message
     if (!messages) return null
@@ -950,16 +1051,21 @@
   function currentLiveChat(): Chat | null {
     const character = renderCharacter
     const chatPage = character?.chatPage
-    if (chatPage === undefined || chatPage === null || !character) return null
+    if (typeof chatPage !== 'number' || !character) return null
     const candidate = character.chats?.[chatPage]
-    if (charactersResourceState.status !== 'ready') return candidate ?? null
-    if (!candidate?.id || !character.chaId || !getChatMetadataOwnerSnapshot(character.chaId, candidate.id)) return null
-    const matches = character.chats.filter((chat) => chat.id === candidate.id)
-    return matches.length === 1 ? matches[0] : null
+    if (!candidate?.id || !character.chaId) return null
+    const owner = uniqueChatReadOwner(candidate.id)
+    return owner?.character === character ? owner.chat : null
   }
 
   function automaticTranslationDisplayEnabled(): boolean {
     return currentLiveChat()?.autoTranslate === true
+  }
+
+  function chatMessagesForRead(chat: Chat): Message[] | undefined {
+    if (!chat.id) return undefined
+    if (charactersResourceState.status === 'ready') return getChatMessageOwnerState(chat.id)?.messages
+    return isCharacterOwnerPreReady() ? chat.message : undefined
   }
 
   function automaticTranslationRequestEnabled(): boolean {
@@ -1032,24 +1138,18 @@
   }
 
   function findLiveMessageByTarget(target: TranslationMessageTarget): Message | null {
-    if (renderCharacter) {
-      const chats = target.chatId
-        ? (renderCharacter.chats?.filter((candidate) => candidate.id === target.chatId) ?? [])
-        : charactersResourceState.status === 'ready'
-          ? []
-          : [currentLiveChat()].filter((candidate): candidate is Chat => candidate !== null)
-      if (chats.length !== 1) return null
-      const chat = chats[0]
-      const matches = chat?.message?.filter((candidate) => candidate.chatId === target.messageId) ?? []
+    if (target.chatId) {
+      const owner = uniqueChatReadOwner(target.chatId)
+      if (!owner) return null
+      const matches =
+        chatMessagesForRead(owner.chat)?.filter((candidate) => candidate.chatId === target.messageId) ?? []
       return matches.length === 1 ? matches[0] : null
     }
-    if (charactersResourceState.status === 'ready') return null
+    if (!isCharacterOwnerPreReady()) return null
     const matches: Message[] = []
 
-    for (const character of getDatabase().characters ?? []) {
+    for (const character of characterRowsForRead()) {
       for (const chat of character.chats ?? []) {
-        if (target.chatId && chat.id !== target.chatId) continue
-
         for (const candidate of chat.message ?? []) {
           if (candidate.chatId === target.messageId) {
             matches.push(candidate)
@@ -1062,42 +1162,38 @@
   }
 
   function translationScopedSnapshot(target: TranslationMessageTarget): ReturnType<typeof currentChatScopedSnapshot> {
-    if (renderCharacter) {
-      const chats = target.chatId
-        ? (renderCharacter.chats?.filter((candidate) => candidate.id === target.chatId) ?? [])
-        : charactersResourceState.status === 'ready'
-          ? []
-          : [currentLiveChat()].filter((candidate): candidate is Chat => candidate !== null)
-      const chat = chats.length === 1 ? chats[0] : undefined
-      const hasMessage = chat?.message?.some((candidate) => candidate.chatId === target.messageId)
-      return hasMessage
-        ? {
-            selectedCharID: selIdState.selId,
-            characterId: renderCharacter.chaId,
-            chatId: chat.id,
-            chat: cloneJsonValue(chat),
-          }
-        : { selectedCharID: $selectedCharID, characterId: undefined, chatId: undefined, chat: undefined }
+    const emptySnapshot = {
+      selectedCharID: $selectedCharID,
+      characterId: undefined,
+      chatId: undefined,
+      chat: undefined,
     }
-    if (charactersResourceState.status === 'ready') {
-      return { selectedCharID: $selectedCharID, characterId: undefined, chatId: undefined, chat: undefined }
-    }
-    const matches: Array<ReturnType<typeof currentChatScopedSnapshot>> = []
-    for (const [characterIndex, character] of (getDatabase().characters ?? []).entries()) {
-      for (const chat of character.chats ?? []) {
-        if (target.chatId && chat.id !== target.chatId) continue
-        if (!(chat.message ?? []).some((candidate) => candidate.chatId === target.messageId)) continue
-        matches.push({
-          selectedCharID: characterIndex,
-          characterId: character.chaId,
-          chatId: chat.id,
-          chat: cloneJsonValue(chat),
-        })
+    let owner = target.chatId ? uniqueChatReadOwner(target.chatId) : undefined
+    if (!owner && !target.chatId && isCharacterOwnerPreReady()) {
+      const matches: CharacterChatOwner[] = []
+      for (const character of characterRowsForRead()) {
+        for (const chat of character.chats ?? []) {
+          if ((chat.message ?? []).filter((candidate) => candidate.chatId === target.messageId).length !== 1) continue
+          if (!chat.id) continue
+          const uniqueOwner = uniqueChatReadOwner(chat.id)
+          if (uniqueOwner?.chat === chat) matches.push(uniqueOwner)
+        }
       }
+      owner = matches.length === 1 ? matches[0] : undefined
     }
-    return matches.length === 1
-      ? matches[0]
-      : { selectedCharID: $selectedCharID, characterId: undefined, chatId: undefined, chat: undefined }
+    if (!owner?.character.chaId || !owner.chat.id) return emptySnapshot
+    const messages = chatMessagesForRead(owner.chat)
+    if (!messages || messages.filter((candidate) => candidate.chatId === target.messageId).length !== 1) {
+      return emptySnapshot
+    }
+    const characterIndex = characterRowsForRead().indexOf(owner.character)
+    if (characterIndex < 0) return emptySnapshot
+    return {
+      selectedCharID: characterIndex,
+      characterId: owner.character.chaId,
+      chatId: owner.chat.id,
+      chat: cloneJsonValue({ ...owner.chat, message: messages }),
+    }
   }
 
   function isSameTranslation(left: MessageTranslation | null | undefined, right: MessageTranslation | null): boolean {
@@ -1331,7 +1427,7 @@
       message !== sourceMessage ||
       idx !== sourceIndex ||
       hasServerRawTranslationTarget() ||
-      getDatabase().translatorType !== 'llm'
+      languageSettings.translatorType !== 'llm'
     ) {
       return
     }
@@ -1417,9 +1513,9 @@
       return
     }
 
-    const rm = getDatabase().askRemoval ? await alertConfirm(language.removeChat) : true
+    const rm = sidebarSettings.askRemoval ? await alertConfirm(language.removeChat) : true
     if (rm) {
-      if (getDatabase().instantRemove || rec) {
+      if (sidebarSettings.instantRemove || rec) {
         const r = await alertConfirm(language.instantRemoveConfirm)
         if (!r) {
           await truncateAtMessageTarget(messageTarget)
@@ -1440,7 +1536,8 @@
     if (!isCurrentMessageEditorTarget(target)) return
 
     const previous = currentChatScopedSnapshot()
-    const chat = getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
+    const chat = mutableActiveChatBridge()?.chat
+    if (!chat) return
     const liveMessage = chat.message[idx]
     if (!liveMessage || liveMessage.data === message) return
 
@@ -1467,10 +1564,10 @@
 
   function handlePartialEditSave(e: CustomEvent<PartialEditSaveDetail>) {
     if (idx >= 0) {
-      const character = getDatabase().characters?.[selIdState.selId]
-      const chatPage = character?.chatPage
-      const chat = chatPage !== undefined && chatPage !== null ? character?.chats?.[chatPage] : undefined
+      const chat = mutableActiveChatBridge()?.chat
       const liveMessage = chat?.message?.[idx]
+      const readMessage = currentLiveMessage()
+      if (!liveMessage?.chatId || readMessage?.chatId !== liveMessage.chatId) return
       const liveTranslation = liveMessage?.translation
       const freshness = resolveFreshPartialEditSave(
         e.detail,
@@ -1638,38 +1735,10 @@
     ((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1) || isComment,
   )
   let showSenderIdentity = $derived(!isComment)
-  let messageRowId = $derived.by(() => {
-    const character = getDatabase().characters?.[selIdState.selId]
-    const chatPage = character?.chatPage
-    if (idx < 0 || chatPage === undefined || chatPage === null) {
-      return ''
-    }
-    return character.chats?.[chatPage]?.message?.[idx]?.chatId ?? ''
-  })
-  let currentChatId = $derived.by(() => {
-    const character = getDatabase().characters?.[selIdState.selId]
-    const chatPage = character?.chatPage
-    if (chatPage === undefined || chatPage === null) {
-      return ''
-    }
-    return character.chats?.[chatPage]?.id ?? ''
-  })
-  // Agent-progress visibility is render-only; mutation and translation targets
-  // continue to use the compatibility currentChatId above.
-  let renderChatId = $derived.by(() => {
-    const owner = getSelectedCharacterOwner()
-    return owner?.chats?.[owner.chatPage]?.id ?? ''
-  })
-  let ownerMessage = $derived.by(() => {
-    const chatId = renderChatId || currentChatId
-    if (!chatId || idx < 0) return undefined
-    const messages = getChatMessageOwnerState(chatId)?.messages ?? []
-    const candidate = messages[idx]
-    if (!candidate?.chatId || messages.filter((message) => message.chatId === candidate.chatId).length !== 1) {
-      return undefined
-    }
-    return candidate
-  })
+  let currentChatId = $derived(currentLiveChat()?.id ?? '')
+  let ownerMessage = $derived(currentLiveMessage() ?? undefined)
+  let messageRowId = $derived(ownerMessage?.chatId ?? '')
+  let renderChatId = $derived(currentChatId)
   let hasActiveAgentPresetProgress = $derived(
     $agentPresetProgress.some((progress) => progress.chatId === (renderChatId || currentChatId)),
   )
@@ -1706,9 +1775,8 @@
     const liveChat = currentLiveChat()
     if (liveChat?.bilingualDisplay !== true) return rawTranslation.text
 
-    const database = getDatabase()
-    const paragraphBreakBySentences = database.paragraphBreakBySentences ?? false
-    const paragraphBreakSentenceCount = database.paragraphBreakSentenceCount ?? 3
+    const paragraphBreakBySentences = displaySettings.paragraphBreakBySentences ?? false
+    const paragraphBreakSentenceCount = displaySettings.paragraphBreakSentenceCount ?? 3
     return bilingualInterleave(message, rawTranslation.text, {
       emphasize: liveChat.bilingualEmphasis ?? 'original',
       sentenceBreaks: paragraphBreakBySentences ? { sentencesPerParagraph: paragraphBreakSentenceCount } : undefined,
@@ -1885,7 +1953,7 @@
       consumeAutomaticTranslationEligibility()
       return
     }
-    if (getDatabase().autoTranslateCachedOnly && getDatabase().translatorType === 'llm') {
+    if (languageSettings.autoTranslateCachedOnly && languageSettings.translatorType === 'llm') {
       consumeAutomaticTranslationEligibility()
       return
     }
@@ -1974,23 +2042,20 @@
   }
 
   function readChatButtonTriggerLiveTarget(identity: ChatButtonTriggerIdentity): ChatButtonTriggerTarget | null {
-    const selectedCharacterIndex = selIdState.selId
-    const character = getDatabase().characters?.[selectedCharacterIndex]
-    const chatPage = character?.chatPage
-    if (!character || typeof chatPage !== 'number') {
-      return null
-    }
-
-    const chat = character.chats?.[chatPage]
-    if (!chat) {
-      return null
-    }
+    const owner = mutableActiveChatBridge()
+    if (!owner) return null
+    const { character, chat } = owner
+    const selectedCharacterIndex = mutableChatBridgeRows().indexOf(character)
+    const chatPage = character.chats.indexOf(chat)
+    if (selectedCharacterIndex < 0 || chatPage < 0) return null
 
     const messages = chat.message ?? []
     const sourceMessage = idx >= 0 ? messages[idx] : undefined
     if (idx >= 0 && !sourceMessage) {
       return null
     }
+    const readMessage = idx >= 0 ? currentLiveMessage() : null
+    if (idx >= 0 && (!readMessage?.chatId || sourceMessage?.chatId !== readMessage.chatId)) return null
     const tailMessage = messages.at(-1)
 
     return {
@@ -2019,11 +2084,10 @@
       return null
     }
 
-    const character = getDatabase().characters?.[liveTarget.selectedCharacterIndex]
-    const chat = character?.chats?.[liveTarget.chatPage]
-    if (!chat) {
-      return null
-    }
+    if (!liveTarget.characterId || !liveTarget.chatId) return null
+    const owner = mutableChatBridgeById(liveTarget.characterId, liveTarget.chatId)
+    if (!owner) return null
+    const { chat } = owner
 
     return {
       snapshot: captureChatButtonTriggerFreshness(liveTarget, renderedChatButtonTriggerOperationTracker),
@@ -2067,20 +2131,11 @@
     let applied = false
 
     withTrustedResourceWrite(() => {
-      const characters = getDatabase().characters ?? []
-      const character = target.snapshot.characterId
-        ? characters.find((candidate) => candidate.chaId === target.snapshot.characterId)
-        : characters[target.snapshot.selectedCharacterIndex]
-      if (!character?.chats) {
-        return
-      }
-
-      const chatIndex = target.snapshot.chatId
-        ? character.chats.findIndex((candidate) => candidate.id === target.snapshot.chatId)
-        : target.snapshot.chatPage
-      if (chatIndex < 0 || !character.chats[chatIndex]) {
-        return
-      }
+      if (!target.snapshot.characterId || !target.snapshot.chatId) return
+      const owner = mutableChatBridgeById(target.snapshot.characterId, target.snapshot.chatId)
+      const character = owner?.character
+      const chatIndex = owner && character ? character.chats.indexOf(owner.chat) : -1
+      if (!character || chatIndex < 0) return
 
       character.chats[chatIndex] = nextChatSnapshot
       applied = true
@@ -2133,17 +2188,19 @@
         return
       }
       const triggerTarget = captureChatButtonTriggerTarget(identity)
-      const currentChar = getCurrentCharacter()
-      if (!triggerTarget || !currentChar) {
+      if (!triggerTarget?.snapshot.characterId || !triggerTarget.snapshot.chatId) {
         return
       }
+      const triggerBridge = mutableChatBridgeById(triggerTarget.snapshot.characterId, triggerTarget.snapshot.chatId)
+      if (!triggerBridge) return
+      const currentChar = triggerBridge.character
 
       let triggerResult = null
       if (triggerName) {
         const triggerController = createManualTriggerAbortController()
         try {
           triggerResult = await runTrigger(currentChar, 'manual', {
-            chat: triggerTarget.previous.chat ?? getCurrentChat(),
+            chat: triggerTarget.previous.chat ?? triggerBridge.chat,
             manualName: triggerName,
             triggerId: triggerId || undefined,
             signal: triggerController.signal,
@@ -2186,9 +2243,10 @@
 
   async function toggleBookmark() {
     const previous = currentChatScopedSnapshot()
-    const chat = getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
+    const chat = mutableActiveChatBridge()?.chat
 
-    if (!chat.message[idx]) return
+    const readMessage = currentLiveMessage()
+    if (!chat?.message[idx]?.chatId || readMessage?.chatId !== chat.message[idx].chatId) return
     if (reportWriterAccessLostMutation()) return
 
     const useServerCommands = canUseServerCommands()
@@ -2302,15 +2360,12 @@
 {#snippet genInfo()}
   {#if !isGenerationLoading}
     <div class="flex flex-wrap justify-end items-center">
-      {#if messageGenerationInfo && (getDatabase().requestInfoInsideChat || aiLawApplies())}
+      {#if messageGenerationInfo && (sidebarSettings.requestInfoInsideChat || aiLawApplies())}
         <button
           class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                     hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
           onclick={() => {
-            const currentGenerationInfo =
-              idx >= 0
-                ? renderCharacter?.chats?.[renderCharacter.chatPage]?.message?.[idx]?.generationInfo
-                : messageGenerationInfo
+            const currentGenerationInfo = idx >= 0 ? ownerMessage?.generationInfo : messageGenerationInfo
 
             alertRequestData({
               genInfo: currentGenerationInfo,
@@ -2350,7 +2405,7 @@
             </span>
           </button>
         {/if}
-      {:else if !hasServerRawTranslationTarget() && getDatabase().translatorType === 'llm' && translated && !translationInProgress}
+      {:else if !hasServerRawTranslationTarget() && languageSettings.translatorType === 'llm' && translated && !translationInProgress}
         <button
           class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
@@ -2445,8 +2500,8 @@
       class:prose-invert={$ColorSchemeTypeStore}
       bind:this={bodyRoot}
       onclick={handleMessageBodyClick}
-      style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
-      style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem">
+      style:font-size="{0.875 * ((displaySettings.zoomsize ?? 100) / 100)}rem"
+      style:line-height="{(displaySettings.lineHeight ?? 1.25) * ((displaySettings.zoomsize ?? 100) / 100)}rem">
       {#key `${totalLengthPointer}|${chatReloadPointer}|${chatScopePointer}`}
         {#if hasServerRawTranslationTarget()}
           <ChatBody
@@ -2486,21 +2541,21 @@
             bind:translating
             bind:retranslate
             allowClientTranslation={idx < 0 &&
-              getDatabase().translator !== '' &&
-              getDatabase().translatorType !== 'none'}
+              languageSettings.translator !== '' &&
+              languageSettings.translatorType !== 'none'}
             {onInitialDisplayParseStart}
             {onInitialDisplayParseSettled} />
         {/if}
       {/key}
-      {#if idx >= 0 && !editMode && !translationInProgress && !isGenerationProjection && partialEditEnabled && (getDatabase().enableBlockPartialEdit || getDatabase().enableDragPartialEdit)}
+      {#if idx >= 0 && !editMode && !translationInProgress && !isGenerationProjection && partialEditEnabled && (sidebarSettings.enableBlockPartialEdit || sidebarSettings.enableDragPartialEdit)}
         <PartialEditController
           messageData={message}
           chatIndex={idx}
           chatId={currentChatId || undefined}
           messageId={messageRowId || undefined}
           {bodyRoot}
-          blockEditEnabled={getDatabase().enableBlockPartialEdit}
-          dragEditEnabled={getDatabase().enableDragPartialEdit}
+          blockEditEnabled={sidebarSettings.enableBlockPartialEdit}
+          dragEditEnabled={sidebarSettings.enableDragPartialEdit}
           translationText={partialEditTranslationText}
           bilingualActive={partialEditBilingualActive}
           on:save={handlePartialEditSave} />
@@ -2540,12 +2595,12 @@
         {@render translationButton()}
         {#if $SizeStore.w >= 640}
           {@render majorIconButtonsBody(false)}
-          {#if getDatabase().characters[selIdState.selId] && idx > -1}
+          {#if renderCharacter && idx > -1}
             <PopupButton>
               {@render minorIconButtonsBody(true)}
             </PopupButton>
           {/if}
-        {:else if getDatabase().characters[selIdState.selId]}
+        {:else if renderCharacter}
           <PopupButton>
             {@render majorIconButtonsBody(true)}
             {#if idx > -1}
@@ -2562,7 +2617,7 @@
 {/snippet}
 
 {#snippet majorIconButtonsBody(showNames: boolean)}
-  {#if getDatabase().useChatCopy && !blankMessage}
+  {#if displaySettings.useChatCopy && !blankMessage}
     <button
       data-risu-message-action="copy"
       aria-label={language.copy}
@@ -2908,7 +2963,7 @@
 {/snippet}
 
 {#snippet translationButton(showNames = false)}
-  {#if getDatabase().translator !== '' && getDatabase().translatorType !== 'none' && !blankMessage}
+  {#if languageSettings.translator !== '' && languageSettings.translatorType !== 'none' && !blankMessage}
     <button
       data-risu-message-action="translate"
       class={'flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate ' +
@@ -2989,7 +3044,7 @@
         }}>
         <ArrowLeft size={22} />
       </button>
-      {#if firstMessage && getDatabase().swipe && getDatabase().showFirstMessagePages}
+      {#if firstMessage && sidebarSettings.swipe && displaySettings.showFirstMessagePages}
         <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
       {/if}
       <button
@@ -3005,7 +3060,7 @@
         }}>
         <ArrowRight size={22} />
       </button>
-    {:else if getDatabase().swipe}
+    {:else if sidebarSettings.swipe}
       <button
         data-risu-message-action="reroll"
         aria-label={language.reroll}
@@ -3050,7 +3105,7 @@
 {/snippet}
 
 {#snippet minorIconButtonsBody(showNames: boolean)}
-  {#if getDatabase().enableBookmark}
+  {#if advancedSettings.enableBookmark}
     <button
       data-risu-message-action="bookmark"
       aria-label={language.bookmark}
@@ -3088,11 +3143,10 @@
     aria-label={language.disableMessage}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
-      const currentMessage =
-        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
-          idx
-        ]
-      if (!currentMessage) return
+      const chat = mutableActiveChatBridge()?.chat
+      const currentMessage = chat?.message[idx]
+      const readMessage = currentLiveMessage()
+      if (!currentMessage?.chatId || readMessage?.chatId !== currentMessage.chatId) return
       const previous = currentChatScopedSnapshot()
       const disabled = !currentMessage.disabled
       const messageId = currentMessage.chatId
@@ -3100,8 +3154,6 @@
         if (messageId) {
           observeMessageMutation(dispatchUpdateMessageScoped(messageId, { disabled }, previous))
         } else {
-          const chat =
-            getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
             nextMessages[idx].disabled = disabled
@@ -3110,9 +3162,7 @@
         }
       } else {
         const localMessageId = ensureMessageId(currentMessage)
-        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
-          idx
-        ].disabled = disabled
+        currentMessage.disabled = disabled
         observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, { disabled }, previous))
       }
     }}>
@@ -3127,11 +3177,10 @@
     aria-label={language.disableAbove}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
-      const currentMessage =
-        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
-          idx
-        ]
-      if (!currentMessage) return
+      const chat = mutableActiveChatBridge()?.chat
+      const currentMessage = chat?.message[idx]
+      const readMessage = currentLiveMessage()
+      if (!currentMessage?.chatId || readMessage?.chatId !== currentMessage.chatId) return
       const previous = currentChatScopedSnapshot()
       const disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
       const messageId = currentMessage.chatId
@@ -3139,8 +3188,6 @@
         if (messageId) {
           observeMessageMutation(dispatchUpdateMessageScoped(messageId, { disabled }, previous))
         } else {
-          const chat =
-            getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
           const nextMessages = cloneMessagesWithIds(chat)
           if (nextMessages[idx]) {
             nextMessages[idx].disabled = disabled
@@ -3149,9 +3196,7 @@
         }
       } else {
         const localMessageId = ensureMessageId(currentMessage)
-        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
-          idx
-        ].disabled = disabled
+        currentMessage.disabled = disabled
         observeMessageMutation(dispatchUpdateMessageScoped(localMessageId, { disabled }, previous))
       }
     }}>
@@ -3164,11 +3209,11 @@
 
 {#snippet senderIcon(options: { rounded?: boolean; styleFix?: string } = {})}
   {#if showSenderIdentity && !$HideIconStore}
-    {#if getDatabase().characters[selIdState.selId]?.chaId === '§playground'}
+    {#if renderCharacter?.chaId === '§playground'}
       <div
         class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2"
         style={options?.styleFix ??
-          `height:${(getDatabase().iconsize * 3.5) / 100}rem;width:${(getDatabase().iconsize * 3.5) / 100}rem;min-width:${(getDatabase().iconsize * 3.5) / 100}rem`}
+          `height:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;min-width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem`}
         class:rounded-md={options?.rounded}
         class:rounded-full={options?.rounded}>
         {#if name === 'assistant'}
@@ -3182,7 +3227,7 @@
         <div
           class="shadow-lg bg-textcolor2"
           style={options?.styleFix ??
-            `height:${(getDatabase().iconsize * 3.5) / 100}rem;width:${(getDatabase().iconsize * 3.5) / 100}rem;min-width:${(getDatabase().iconsize * 3.5) / 100}rem`}
+            `height:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;min-width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem`}
           class:rounded-md={!options?.rounded}
           class:rounded-full={options?.rounded}>
         </div>
@@ -3192,7 +3237,7 @@
             class="shadow-lg bg-textcolor2"
             style={m +
               (options?.styleFix ??
-                `height:${(getDatabase().iconsize * 3.5) / 100 / 0.75}rem;width:${(getDatabase().iconsize * 3.5) / 100}rem;min-width:${(getDatabase().iconsize * 3.5) / 100}rem`)}
+                `height:${((displaySettings.iconsize ?? 100) * 3.5) / 100 / 0.75}rem;width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;min-width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem`)}
             class:rounded-md={!options?.rounded}
             class:rounded-full={options?.rounded}>
           </div>
@@ -3201,7 +3246,7 @@
             class="shadow-lg bg-textcolor2"
             style={m +
               (options?.styleFix ??
-                `height:${(getDatabase().iconsize * 3.5) / 100}rem;width:${(getDatabase().iconsize * 3.5) / 100}rem;min-width:${(getDatabase().iconsize * 3.5) / 100}rem`)}
+                `height:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem;min-width:${((displaySettings.iconsize ?? 100) * 3.5) / 100}rem`)}
             class:rounded-md={!options?.rounded}
             class:rounded-full={options?.rounded}>
           </div>
@@ -3369,11 +3414,11 @@
   data-risu-message-index={idx}
   data-risu-message-id={messageRowId}
   data-generation-display-projection={isGenerationProjection ? 'regenerate' : undefined}
-  style={isLastMemory ? `border-top:${getDatabase().memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
+  style={isLastMemory ? `border-top:${displaySettings.memoryLimitThickness ?? 1}px solid rgba(98, 114, 164, 0.7);` : ''}
   onclickcapture={handleButtonTriggerWithin}>
   <div
     class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start max-w-full">
-    {#if getDatabase().theme === 'mobilechat' && !blankMessage}
+    {#if displaySettings.theme === 'mobilechat' && !blankMessage}
       <div class={role === 'user' ? 'flex items-start w-full justify-end' : 'flex items-start'}>
         {#if role !== 'user'}
           {@render senderIcon({ rounded: true })}
@@ -3383,7 +3428,7 @@
           class:rounded-tl-none={role !== 'user'}
           class:rounded-tr-none={role === 'user'}>
           <p class="text-gray-800">{@render textBox()}</p>
-          {#if renderCharacter?.chats?.[renderCharacter.chatPage]?.message?.[idx]?.time}
+          {#if ownerMessage?.time}
             <span class="text-xs text-textcolor2 mt-1 block">
               {new Intl.DateTimeFormat(undefined, {
                 hour: '2-digit',
@@ -3392,7 +3437,7 @@
                 month: '2-digit',
                 day: '2-digit',
                 hour12: false,
-              }).format(renderCharacter.chats[renderCharacter.chatPage].message[idx].time)}
+              }).format(ownerMessage.time)}
             </span>
           {/if}
         </div>
@@ -3400,7 +3445,7 @@
           {@render senderIcon({ rounded: true })}
         {/if}
       </div>
-    {:else if getDatabase().theme === 'cardboard' && !blankMessage}
+    {:else if displaySettings.theme === 'cardboard' && !blankMessage}
       <div class="w-full flex flex-col px-0 sm:px-4 py-4 relative">
         <div
           class="bg-linear-to-b from-gray-100 to-gray-200 rounded-lg shadow-lg border-gray-400 border p-4 flex flex-col">
@@ -3430,29 +3475,24 @@
           {@render iconButtons({ applyTextColors: false })}
         </div>
       </div>
-    {:else if getDatabase().theme === 'customHTML' && !blankMessage && hasCustomHtmlTemplate(getDatabase().guiHTML)}
+    {:else if displaySettings.theme === 'customHTML' && !blankMessage && hasCustomHtmlTemplate(displaySettings.guiHTML)}
       {@const customHtmlCacheScopeKey = `${currentChatId}|${$VariableReloadGUIPointer}`}
-      {@render renderGuiHtmlPart(RenderGUIHtml(getDatabase().guiHTML, customHtmlCacheScopeKey))}
+      {@render renderGuiHtmlPart(RenderGUIHtml(displaySettings.guiHTML, customHtmlCacheScopeKey))}
     {:else}
-      {@render senderIcon({ rounded: getDatabase().roundIcons })}
+      {@render senderIcon({ rounded: displaySettings.roundIcons })}
       <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
         <div class="flexium items-center chat-width">
-          {#if renderCharacter?.chaId === '§playground' && !blankMessage && renderCharacter.chats?.[renderCharacter.chatPage]?.message?.[idx]}
+          {#if renderCharacter?.chaId === '§playground' && !blankMessage && ownerMessage}
             <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
-              <span
-                >{renderCharacter.chats[renderCharacter.chatPage].message[idx].role === 'char'
-                  ? 'Assistant'
-                  : 'User'}</span>
+              <span>{ownerMessage.role === 'char' ? 'Assistant' : 'User'}</span>
               <button
                 data-risu-message-action="switch-role"
                 aria-label={language.switchMessageRole}
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {
                   const previous = currentChatScopedSnapshot()
-                  const chat =
-                    getDatabase().characters[selIdState.selId].chats[
-                      getDatabase().characters[selIdState.selId].chatPage
-                    ]
+                  const chat = mutableActiveChatBridge()?.chat
+                  if (!chat?.message[idx]?.chatId || chat.message[idx].chatId !== ownerMessage?.chatId) return
                   const role = chat.message[idx].role === 'char' ? 'user' : 'char'
                   const messageId = chat.message[idx].chatId
                   if (canUseServerCommands()) {

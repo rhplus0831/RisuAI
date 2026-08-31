@@ -27,6 +27,20 @@ const customHtmlMocks = vi.hoisted(() => {
     dispatchForkChatWithOutcome: vi.fn(),
     foldChatToMessage: vi.fn(),
     getDatabase: vi.fn(),
+    getChatMessageOwnerState: vi.fn(
+      (
+        _chatId: string,
+      ):
+        | {
+            chatId: string
+            messages: Array<Record<string, unknown>>
+            projectionEpoch: number
+            resourceLoaded: boolean
+            hydrationPending: boolean
+            hydrationFailed: boolean
+          }
+        | undefined => undefined,
+    ),
     getServerCommandBaseRevision: vi.fn(async () => 1),
     hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean; force?: boolean }) => undefined),
     runServerCommand: vi.fn(
@@ -374,7 +388,7 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(() => true),
-  getChatMessageOwnerState: () => undefined,
+  getChatMessageOwnerState: customHtmlMocks.getChatMessageOwnerState,
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateChatMessages: customHtmlMocks.hydrateChatMessages,
   resetChatHydration: vi.fn(),
@@ -412,9 +426,15 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+  settingsResourceState,
+} from '../../ts/server/resourceState.svelte'
 import {
   dispatchCompatibleChatUpdateScoped,
+  dispatchDeleteMessageScoped,
   dispatchForkChatWithOutcome,
   dispatchReplaceMessagesScoped,
   dispatchTruncateMessagesScoped,
@@ -645,6 +665,20 @@ beforeEach(() => {
   customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.getFileSrc.mockResolvedValue('')
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
+  customHtmlMocks.getChatMessageOwnerState.mockImplementation((chatId: string) => {
+    const matches = testDatabaseState.db.characters.flatMap((character) =>
+      character.chats.filter((chat) => chat.id === chatId),
+    )
+    if (matches.length !== 1) return undefined
+    return {
+      chatId,
+      messages: matches[0].message,
+      projectionEpoch: 0,
+      resourceLoaded: true,
+      hydrationPending: false,
+      hydrationFailed: false,
+    }
+  })
   vi.mocked(dispatchForkChatWithOutcome).mockResolvedValue({
     status: 'accepted',
     result: { status: 'ok' },
@@ -782,6 +816,43 @@ describe('generation finalization row indicator', () => {
     expect(affected?.querySelector('[data-generation-persistence-state="stalled_legacy"]')?.textContent).toContain(
       'generationPersistenceStalledLegacy',
     )
+  })
+})
+
+describe('explicit Chat resource owners', () => {
+  it('does not recover a ready message id from the aggregate when the transcript owner is missing', async () => {
+    seedDatabase(1, null as unknown as string)
+    customHtmlMocks.getChatMessageOwnerState.mockReturnValue(undefined)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')?.dataset.chatId).toBe('')
+    target.querySelector<HTMLButtonElement>('[data-risu-message-action="remove"]')?.click()
+    await settle()
+    expect(dispatchDeleteMessageScoped).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when ready character or chat ids are duplicated', async () => {
+    seedDatabase(1, null as unknown as string)
+    const character = testDatabaseState.db.characters[0]
+    character.chats.push(JSON.parse(JSON.stringify(character.chats[0])) as (typeof character.chats)[number])
+    testDatabaseState.db.characters.push(JSON.parse(JSON.stringify(character)) as typeof character)
+    mountCustomHtmlRows(1)
+    await settle()
+
+    expect(target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')?.dataset.chatId).toBe('')
+  })
+
+  it('does not revive character or display aggregates after an owner error', async () => {
+    seedDatabase(1, customHtmlMocks.templates.base)
+    charactersResourceState.status = 'error'
+    settingsResourceState.groupStatuses.display = 'error'
+    mountCustomHtmlRows(1)
+    await settle()
+
+    const row = target.querySelector<HTMLElement>('.risu-chat[data-chat-index="0"]')
+    expect(row?.dataset.chatId).toBe('')
+    expect(row?.querySelector('.custom-html-template')).toBeNull()
   })
 })
 
