@@ -16,14 +16,11 @@
   import {
     currentChatScopedSnapshot,
     dispatchUpdateChatScopedWithOutcome,
+    restoreChatRowMetadata,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import {
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-  } from 'src/ts/server/chatBridge.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import {
     applyChatMetadataOwnerPatch,
@@ -400,9 +397,7 @@
     patch: { bookmarks?: string[]; bookmarkNames?: Record<string, string> },
   ): boolean {
     const character = chara?.chaId ? uniqueCharacterOwner(chara.chaId) : undefined
-    const applied = character?.chaId ? applyChatMetadataOwnerPatch(character.chaId, chatId, patch) : false
-    if (applied) syncServerBackedChatMetadataBaselines()
-    return applied
+    return character?.chaId ? applyChatMetadataOwnerPatch(character.chaId, chatId, patch) : false
   }
 
   async function editName(chatId: string) {
@@ -426,7 +421,7 @@
             chat.id!,
             { bookmarkNames: nextBookmarkNames },
             previous,
-            rollbackServerBackedChatRowMetadata,
+            restoreChatRowMetadata,
           )
         })
         return
@@ -469,7 +464,7 @@
             chat.id!,
             { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
             previous,
-            rollbackServerBackedChatRowMetadata,
+            restoreChatRowMetadata,
           )
         })
         return

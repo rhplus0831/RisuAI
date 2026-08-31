@@ -116,6 +116,7 @@
     dispatchUpdateChatScopedWithOutcome,
     dispatchUpdateMessageScoped,
     ensureMessageId,
+    restoreChatRowMetadata,
     type ActiveChatTarget,
     type ChatMutationOutcome,
   } from 'src/ts/chatCommands'
@@ -142,10 +143,6 @@
     isCurrentGreetingTranslationJob,
     refreshGreetingTranslationProjection,
   } from 'src/ts/server/greetingTranslations.svelte'
-  import {
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-  } from 'src/ts/server/chatBridge.svelte'
   import {
     captureChatButtonTriggerFreshness,
     chatButtonTriggerChatSignature,
@@ -949,12 +946,10 @@
     ) {
       return false
     }
-    const applied = applyChatMetadataOwnerPatch(previous.characterId, previous.chatId, {
+    return applyChatMetadataOwnerPatch(previous.characterId, previous.chatId, {
       bookmarks: [...bookmarks],
       bookmarkNames: { ...bookmarkNames },
     })
-    if (applied) syncServerBackedChatMetadataBaselines()
-    return applied
   }
 
   function hasServerRawTranslationTarget() {
@@ -2251,7 +2246,7 @@
             bookmarkNames,
           },
           previous,
-          rollbackServerBackedChatRowMetadata,
+          restoreChatRowMetadata,
         ),
       )
     }

@@ -163,8 +163,7 @@ const customHtmlMocks = vi.hoisted(() => {
     setLLMCache: vi.fn(async () => undefined),
     sleep: vi.fn(async () => undefined),
     navigate: vi.fn(),
-    rollbackServerBackedChatRowMetadata: vi.fn(),
-    syncServerBackedChatMetadataBaselines: vi.fn(),
+    restoreChatRowMetadata: vi.fn(),
   }
 })
 
@@ -302,6 +301,7 @@ vi.mock('src/ts/chatCommands', () => ({
     message.chatId ??= 'generated-message-id'
     return message.chatId
   }),
+  restoreChatRowMetadata: customHtmlMocks.restoreChatRowMetadata,
 }))
 
 vi.mock('src/ts/server/commands', () => ({
@@ -379,11 +379,6 @@ vi.mock('src/ts/server/greetingTranslations.svelte', () => ({
       jobs.filter((job) => (job as Record<string, unknown>).jobId !== jobId),
     )
   },
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatRowMetadata: customHtmlMocks.rollbackServerBackedChatRowMetadata,
-  syncServerBackedChatMetadataBaselines: customHtmlMocks.syncServerBackedChatMetadataBaselines,
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
@@ -1353,7 +1348,6 @@ describe('message action target freshness', () => {
     popupStore.openId = 0
     await openMessageActions()
     expect(target.querySelector('.button-icon-bookmark')?.classList.contains('text-yellow-400')).toBe(true)
-    expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(dispatchUpdateChatScopedWithOutcome).toHaveBeenCalled()
   })
 
@@ -1378,7 +1372,6 @@ describe('message action target freshness', () => {
       'message-0': 'Pinned original',
     })
     expect(testDatabaseState.db.characters[0].chats[1].bookmarks).toEqual([])
-    expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(dispatchUpdateChatScopedWithOutcome).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.objectContaining({
@@ -1388,7 +1381,7 @@ describe('message action target freshness', () => {
         },
       }),
       expect.anything(),
-      customHtmlMocks.rollbackServerBackedChatRowMetadata,
+      customHtmlMocks.restoreChatRowMetadata,
     )
   })
 

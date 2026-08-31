@@ -176,6 +176,7 @@ vi.mock('src/ts/chatCommands', () => ({
     message.chatId ??= 'generated-message-id'
     return message.chatId
   }),
+  restoreChatRowMetadata: vi.fn(),
 }))
 
 vi.mock('src/ts/server/commands', () => ({

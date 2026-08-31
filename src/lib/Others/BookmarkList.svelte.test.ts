@@ -11,6 +11,7 @@ const bookmarkMocks = vi.hoisted(() => ({
   dispatchUpdateChatScopedWithOutcome: vi.fn(),
   hydrateChatMessages: vi.fn(),
   navigateToCharacterChatMessage: vi.fn(),
+  restoreChatRowMetadata: vi.fn(),
 }))
 
 vi.mock('../ChatScreens/Chat.svelte', async () => ({
@@ -45,15 +46,11 @@ vi.mock('src/ts/chatCommands', () => ({
   currentChatStateSnapshot: vi.fn(),
   dispatchUpdateChat: vi.fn(),
   dispatchUpdateChatScopedWithOutcome: bookmarkMocks.dispatchUpdateChatScopedWithOutcome,
+  restoreChatRowMetadata: bookmarkMocks.restoreChatRowMetadata,
 }))
 
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: bookmarkMocks.canUseServerCommands,
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatRowMetadata: vi.fn(),
-  syncServerBackedChatMetadataBaselines: vi.fn(),
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', async (importOriginal) => ({

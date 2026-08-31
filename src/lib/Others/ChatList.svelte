@@ -22,14 +22,10 @@
     dispatchCreateChatWithOutcome,
     dispatchDeleteChatWithOutcome,
     dispatchUpdateChatWithOutcome,
+    restoreChatRowMetadata,
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import {
-    rollbackServerBackedChatRowMetadata,
-    syncServerBackedChatMetadataBaselines,
-    watchServerBackedChatMetadata,
-  } from 'src/ts/server/chatBridge.svelte'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
@@ -136,11 +132,6 @@
     }
     return character
   }
-
-  $effect(() => {
-    const stop = untrack(() => watchServerBackedChatMetadata())
-    return stop
-  })
 
   $effect(() => {
     if (!modalCharacter) {
@@ -356,7 +347,6 @@
     const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
     if (!liveCharacter?.chaId || !liveChat || liveChat.name !== previousChat?.name) return
     if (!applyChatMetadataOwnerPatch(liveCharacter.chaId, liveTargetChat.id, { name })) return
-    syncServerBackedChatMetadataBaselines()
     clearFailedMutations(key)
     const action = `${language.edit}: ${name}`
     await settleMutation(
@@ -364,14 +354,7 @@
       liveTargetChat.id,
       action,
       [chatConflictKey(liveTargetChat.id)],
-      () =>
-        dispatchUpdateChatWithOutcome(
-          liveTargetChat.id,
-          { name },
-          previous,
-          false,
-          rollbackServerBackedChatRowMetadata,
-        ),
+      () => dispatchUpdateChatWithOutcome(liveTargetChat.id, { name }, previous, false, restoreChatRowMetadata),
       undefined,
       undefined,
       key,

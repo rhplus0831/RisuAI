@@ -178,9 +178,6 @@ const chatListMocks = vi.hoisted(() => {
     }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
-    rollbackServerBackedChatRowMetadata: vi.fn(),
-    syncServerBackedChatMetadataBaselines: vi.fn(),
-    watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
     withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
 })
@@ -249,12 +246,6 @@ vi.mock('src/ts/router', () => ({
     chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
   currentRoute: chatListMocks.currentRoute,
   navigate: chatListMocks.navigate,
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatRowMetadata: chatListMocks.rollbackServerBackedChatRowMetadata,
-  syncServerBackedChatMetadataBaselines: chatListMocks.syncServerBackedChatMetadataBaselines,
-  watchServerBackedChatMetadata: chatListMocks.watchServerBackedChatMetadata,
 }))
 
 vi.mock('src/ts/server/commands', () => ({
@@ -567,7 +558,6 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-b', true)
     expectRowSelected('chat-a', false)
     expectRowSelected('chat-c', false)
-    expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
   it('closes and removes an open modal when the route clears the selected character', async () => {
@@ -670,14 +660,11 @@ describe('ChatList DOM contract harness', () => {
 
     expect(chatListMocks.canUseServerCommands).toHaveBeenCalled()
     expect(chatListMocks.withTrustedResourceWrite).not.toHaveBeenCalled()
-    expect(chatListMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledOnce()
     const [chatId, patch, previous] = chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0]
     expect(chatId).toBe('chat-b')
     expect(patch).toEqual({ name: 'Renamed Modal Chat B' })
-    expect(chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0][4]).toBe(
-      chatListMocks.rollbackServerBackedChatRowMetadata,
-    )
+    expect(chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0][4]).toBe(restoreChatRowMetadata)
     expect(previous).toMatchObject({
       selectedCharID: 0,
       characters: [
@@ -696,7 +683,6 @@ describe('ChatList DOM contract harness', () => {
     chatListMocks.setServerCommandsEnabled(true)
     const firstRename = chatListMocks.createDeferredUpdateCommand()
     const finalRename = chatListMocks.createDeferredUpdateCommand()
-    chatListMocks.rollbackServerBackedChatRowMetadata.mockImplementationOnce(restoreChatRowMetadata)
     chatListMocks.dispatchUpdateChatWithOutcome
       .mockImplementationOnce(async (chatId, patch, previous, _select, rollback) => {
         const outcome = (await firstRename.promise) as any
