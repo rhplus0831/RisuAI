@@ -176,6 +176,7 @@ const DEDICATED_COMMAND_DATABASE_FIELDS = [
   'personaPrompt',
   'promptPresetsId',
   'selectedPersona',
+  'selectedPersonaId',
   'translatorPresetId',
   'userIcon',
   'userNote',
@@ -208,12 +209,14 @@ const ROUND_TRIP_DATABASE_FIELDS = [
   'geminiStream',
   'googleClaudeTokenizing',
   'hubServerType',
+  'hypaV3Settings',
   'igpPrompt',
   'lastPatchNoteCheckVersion',
   'pluginV2',
   'removePunctuationHypa',
   'saveTime',
   'statics',
+  'supaMemoryKey',
 ] as const
 
 interface BridgeClassification {
@@ -237,13 +240,6 @@ const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = [
     flusher: 'flushPendingServerBackedCharacterPatches',
     registrationId: 'character-profile',
     commands: ['character profile patch'],
-    outcomes: ['accepted', 'queued-retained', 'failed-owned-field-rollback'],
-  },
-  {
-    file: 'chatBridge.svelte.ts',
-    flusher: 'flushPendingServerBackedChatPatches',
-    registrationId: 'chat-metadata',
-    commands: ['chat metadata patch', 'chat folder patch'],
     outcomes: ['accepted', 'queued-retained', 'failed-owned-field-rollback'],
   },
   {

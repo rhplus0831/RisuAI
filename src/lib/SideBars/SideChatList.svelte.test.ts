@@ -315,9 +315,6 @@ const sidebarMocks = vi.hoisted(() => {
       generationSettingsApplier = applier
     },
     dispatchCreateChatWithOutcome: (...args: any[]) => createOutcomeOverride?.(...args),
-    rollbackServerBackedChatFolderRowMetadata: vi.fn(),
-    rollbackServerBackedChatRowMetadata: vi.fn(),
-    syncServerBackedChatMetadataBaselines: vi.fn(),
     setCurrentRoute,
     truncateMessagesCommand: unusedCommand,
     updateChatCommand: vi.fn((input: unknown) => {
@@ -336,7 +333,6 @@ const sidebarMocks = vi.hoisted(() => {
     }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
-    watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
   }
 })
 
@@ -453,13 +449,6 @@ vi.mock('src/ts/router', () => ({
     chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
   currentRoute: sidebarMocks.currentRoute,
   navigate: sidebarMocks.navigate,
-}))
-
-vi.mock('src/ts/server/chatBridge.svelte', () => ({
-  rollbackServerBackedChatFolderRowMetadata: sidebarMocks.rollbackServerBackedChatFolderRowMetadata,
-  rollbackServerBackedChatRowMetadata: sidebarMocks.rollbackServerBackedChatRowMetadata,
-  syncServerBackedChatMetadataBaselines: sidebarMocks.syncServerBackedChatMetadataBaselines,
-  watchServerBackedChatMetadata: sidebarMocks.watchServerBackedChatMetadata,
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
@@ -795,7 +784,6 @@ describe('SideChatList DOM contract harness', () => {
     expectRowSelected('chat-root-b', false)
     expect(sidebarRoot().dataset.risuChatOpen).toBe('false')
     expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeNull()
-    expect(sidebarMocks.watchServerBackedChatMetadata).not.toHaveBeenCalled()
   })
 
   it('renders chat names from the hydrated owner when aggregate metadata conflicts', async () => {
@@ -1821,7 +1809,6 @@ describe('SideChatList DOM contract harness', () => {
       expect.anything(),
       expect.any(Function),
     )
-    expect(sidebarMocks.syncServerBackedChatMetadataBaselines).not.toHaveBeenCalled()
   })
 
   it('keeps folder, foldered-chat, and unfiled-chat rename inputs enabled while saves are pending', async () => {
@@ -2121,7 +2108,6 @@ describe('SideChatList DOM contract harness', () => {
     await tick()
 
     expect(sidebarMocks.dispatchUpdateChatFolderWithOutcome).toHaveBeenCalledTimes(1)
-    expect(sidebarMocks.rollbackServerBackedChatFolderRowMetadata).not.toHaveBeenCalled()
     expect(selectedCharacter().chatFolders[0].folded).toBe(false)
     expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('false')
   })

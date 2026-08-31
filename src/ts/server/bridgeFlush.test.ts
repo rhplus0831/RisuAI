@@ -4,7 +4,6 @@ const calls = vi.hoisted(() => ({
   settingInputs: [] as unknown[],
   settings: [] as unknown[],
   character: [] as unknown[],
-  chat: [] as unknown[],
   lorebook: [] as unknown[],
   promptTemplate: [] as unknown[],
   scriptDefinition: [] as unknown[],
@@ -19,12 +18,6 @@ vi.mock('./settingsBridge.svelte', () => ({
 vi.mock('./characterBridge.svelte', () => ({
   flushPendingServerBackedCharacterPatches: vi.fn((options: unknown) => {
     calls.character.push(options)
-  }),
-}))
-
-vi.mock('./chatBridge.svelte', () => ({
-  flushPendingServerBackedChatPatches: vi.fn((options: unknown) => {
-    calls.chat.push(options)
   }),
 }))
 
@@ -56,7 +49,6 @@ function allCallBuckets(): unknown[][] {
     calls.settingInputs,
     calls.settings,
     calls.character,
-    calls.chat,
     calls.lorebook,
     calls.promptTemplate,
     calls.scriptDefinition,

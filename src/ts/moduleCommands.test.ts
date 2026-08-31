@@ -240,6 +240,7 @@ beforeEach(() => {
   setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite({
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -448,10 +449,14 @@ describe('module command projection helpers', () => {
 
   it('prefills active sidebar toggle defaults when enabling a chat-scoped module', async () => {
     const calls = stubCommandFetch()
-    getDatabase().personas = [{ id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' }] as any
-    getDatabase().modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
-    getDatabase().promptPresets = [{ id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' }] as any
-    getDatabase().modules = [
+    collectionsResourceState.values.personas = [
+      { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
+    ] as any
+    collectionsResourceState.values.modelPresets = [{ id: 'model-a', name: 'Model A' }] as any
+    collectionsResourceState.values.promptPresets = [
+      { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: '' },
+    ] as any
+    collectionsResourceState.values.modules = [
       { id: 'mod-a', name: 'Module A', customModuleToggle: 'existing=Existing' },
       {
         id: 'mod-b',
@@ -459,6 +464,9 @@ describe('module command projection helpers', () => {
         customModuleToggle: 'flag=Flag\nmode=Mode=select=alpha,beta\nnote=Note=text\nmemo=Memo=textarea',
       },
     ] as any
+    collectionsResourceState.statuses.personas = 'ready'
+    collectionsResourceState.statuses.modelPresets = 'ready'
+    collectionsResourceState.statuses.promptPresets = 'ready'
     getDatabase().characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',

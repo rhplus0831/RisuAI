@@ -105,10 +105,6 @@
     type CharacterNotificationImageUploadOperation,
   } from 'src/ts/server/characterNotificationImageUpload'
   import {
-    flushPendingServerBackedChatPatches,
-    syncServerBackedChatMetadataBaselines,
-  } from 'src/ts/server/chatBridge.svelte'
-  import {
     clearDirtyScriptDefinitionFieldsMatchingAttempt,
     flushPendingCharacterScriptDefinitionDraft,
     markDirtyScriptDefinitionRowFields,
@@ -840,7 +836,6 @@
       }
     }
     syncServerBackedCharacterProfileBaselines()
-    syncServerBackedChatMetadataBaselines()
   }
 
   async function applyAlternateGreetingMutation(operation: AlternateGreetingMutation): Promise<void> {
@@ -860,7 +855,6 @@
       // Older debounced edits must enter the shared command queue first so this
       // collection-wide mutation remains the final atomic write.
       flushPendingServerBackedCharacterPatches()
-      flushPendingServerBackedChatPatches()
     }
 
     const applyOptimistic = () => {
@@ -872,7 +866,6 @@
       characterDraft.value.alternateGreetings = cloneJsonValue(mutation.alternateGreetings)
       characterDraft.value = { ...characterDraft.value }
       syncServerBackedCharacterProfileBaselines()
-      syncServerBackedChatMetadataBaselines()
     }
     const rollback = () => {
       const attemptedGreetings = snapshotJson(mutation.alternateGreetings)

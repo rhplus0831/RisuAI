@@ -1,7 +1,6 @@
 import type { ServerCommandTransportOptions } from './commands'
 import { flushPendingServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { flushPendingServerBackedCharacterPatches } from './characterBridge.svelte'
-import { flushPendingServerBackedChatPatches } from './chatBridge.svelte'
 import { flushPendingServerBackedLorebookPatches } from './lorebookBridge.svelte'
 import { flushPendingPromptTemplatePatches } from './promptTemplateBridge.svelte'
 import { flushPendingServerBackedScriptDefinitionPatches } from './scriptDefinitionBridge.svelte'
@@ -11,7 +10,6 @@ export function flushAllPendingBridgePatches(options: ServerCommandTransportOpti
   flushRegisteredPendingBridgePatches(options)
   flushPendingServerBackedSettingsPatch(options)
   flushPendingServerBackedCharacterPatches(options)
-  flushPendingServerBackedChatPatches(options)
   flushPendingServerBackedLorebookPatches(options)
   flushPendingPromptTemplatePatches(options)
   flushPendingServerBackedScriptDefinitionPatches(options)

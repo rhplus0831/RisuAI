@@ -171,7 +171,6 @@ import {
   type ServerBackedCharacterDraft,
   watchServerBackedCharacterProfile,
 } from './characterBridge.svelte'
-import { watchServerBackedChatMetadata } from './chatBridge.svelte'
 import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
 import { markLocalCharacterProjectionMutation, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
@@ -941,13 +940,12 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     stop()
   })
 
-  it('keeps the character watcher baseline when started beside chat metadata in an untracked owner effect', async () => {
+  it('keeps the character watcher baseline when started beside script definitions in an untracked owner effect', async () => {
     setupCharacter()
     const stop = $effect.root(() => {
       $effect(() => {
         const stops = untrack(() => [
           watchServerBackedCharacterProfile({ delayMs: DELAY }),
-          watchServerBackedChatMetadata({ delayMs: DELAY }),
           watchServerBackedScriptDefinitions({ delayMs: DELAY, scope: { kind: 'character' } }),
         ])
         return () => {

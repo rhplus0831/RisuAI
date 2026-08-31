@@ -149,7 +149,6 @@ import {
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
-import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from './server/chatBridge.svelte'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
 import { acknowledgeCreatedChatTranscriptLocalEffect, resetChatHydration } from './server/chatMessageHydration.svelte'
@@ -6975,16 +6974,13 @@ describe('scriptstate-scoped var dispatch', () => {
     }
   })
 
-  it('flushes owned note and chat metadata PATCHes before DELETE without walking unrelated flushers', async () => {
+  it('flushes an owned note PATCH before DELETE without walking unrelated flushers', async () => {
     resetPendingMutationOutboxForTests()
     setCachedServerCommandRevision(30)
     setResourceWriteGuardEnabled(true)
-    const stopWatcher = watchServerBackedChatMetadata({ delayMs: 60_000 })
-    flushSync()
 
     const noteRollback = applyChatNoteValueLocally('chat-a', 'fallback note')
     expect(noteRollback).not.toBeNull()
-    syncServerBackedChatMetadataBaselines()
     const noteMutation = stageChatNoteMutation({
       chatId: 'chat-a',
       characterId: 'char-a',
@@ -6998,10 +6994,6 @@ describe('scriptstate-scoped var dispatch', () => {
     })
 
     try {
-      withTrustedResourceWrite(() => {
-        getDatabase().characters[0].chats[0].name = 'Fallback rename'
-      })
-      flushSync()
       const previous = currentChatStateSnapshot()
       expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toMatchObject({ applied: true })
 
@@ -7033,17 +7025,15 @@ describe('scriptstate-scoped var dispatch', () => {
       )
 
       dispatchDeleteChat('chat-a', previous)
-      await vi.waitFor(() => expect(commands).toHaveLength(3))
+      await vi.waitFor(() => expect(commands).toHaveLength(2))
 
       expect(commands).toEqual([
-        { method: 'PATCH', patch: { name: 'Fallback rename' } },
         { method: 'PATCH', patch: { note: 'fallback note' } },
         { method: 'DELETE', patch: undefined },
       ])
       expect(pendingNote).toBe(true)
     } finally {
       unregisterNoteFlusher()
-      stopWatcher()
       resetPendingMutationOutboxForTests()
     }
   })

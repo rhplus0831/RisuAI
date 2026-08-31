@@ -66,7 +66,6 @@ import {
 } from './server/scriptDefinitionBridge.svelte'
 import { flushPendingServerBackedSettingsPatch } from './server/settingsBridge.svelte'
 import { flushPendingServerBackedCharacterPatches } from './server/characterBridge.svelte'
-import { flushPendingServerBackedChatPatches } from './server/chatBridge.svelte'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
 
 export interface GlobalModuleStateSnapshot {
@@ -796,7 +795,6 @@ export async function dispatchDeleteModule(
   if (!canUseServerCommands()) return { status: 'failed', result: { status: 'unavailable' } }
   flushPendingServerBackedSettingsPatch()
   flushPendingServerBackedCharacterPatches()
-  flushPendingServerBackedChatPatches()
   flushPendingServerBackedLorebookPatches()
   flushPendingServerBackedScriptDefinitionPatches()
   const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)
