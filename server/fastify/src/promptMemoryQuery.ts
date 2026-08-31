@@ -5,6 +5,7 @@ import { normalizeHypaV3Settings, type HypaV3Settings } from './memoryPlanner.js
 import { armMemoryProviderFetchDeadline, resolveMemoryProviderFetchDeadlineMs } from './memoryProviderDeadline.js'
 import { listMemoryEmbeddings, listMemorySummaries } from './memoryRepository.js'
 import { filterMemorySummariesForModel } from './memorySummaryCompatibility.js'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export type PromptMemoryQueryStatus = 'skipped' | 'success' | 'failed' | 'timed-out' | 'aborted'
 
@@ -61,8 +62,8 @@ export interface PromptMemoryQueryCharacter {
 export interface PromptMemoryQueryDatabase extends MemoryEmbeddingSettings {
   characters: readonly PromptMemoryQueryCharacter[]
   hypaV3?: boolean
-  hypaV3PresetId?: number
-  hypaV3Presets?: readonly { settings?: Partial<HypaV3Settings> }[]
+  selectedHypaV3PresetId?: unknown
+  hypaV3Presets?: readonly { id?: unknown; settings?: Partial<HypaV3Settings> }[]
 }
 
 export interface PrefetchPromptMemoryQueryInput {
@@ -351,7 +352,10 @@ function messagesFromLastReset<T extends Pick<PromptMemoryQueryMessage, 'disable
 }
 
 function resolveHypaV3PresetSettings(database: PromptMemoryQueryDatabase): Partial<HypaV3Settings> | null | undefined {
-  const presetId = typeof database.hypaV3PresetId === 'number' ? database.hypaV3PresetId : 0
+  const presetId = hypaV3PresetIndexFromStableId({
+    hypaV3Presets: database.hypaV3Presets,
+    selectedHypaV3PresetId: database.selectedHypaV3PresetId,
+  })
   const preset = database.hypaV3Presets?.[presetId]
   if (preset && typeof preset === 'object' && 'settings' in preset) {
     return preset.settings as Partial<HypaV3Settings>

@@ -92,9 +92,11 @@ function database(settings: Record<string, unknown> = {}) {
       model: 'custom-embed',
       key: 'sk-test',
     },
+    selectedHypaV3PresetId: 'memory-default',
     hypaV3PresetId: 0,
     hypaV3Presets: [
       {
+        id: 'memory-default',
         name: 'Default',
         settings: {
           embeddingRequestsPerMinute: 100,
@@ -434,6 +436,23 @@ describe('embed memory job handler', () => {
       seedBatchJob(db, { id: 'job-1', chunkId: 'chunk-1', text: 'chunk one' })
       seedBatchJob(db, { id: 'job-2', chunkId: 'chunk-2', text: 'chunk two' })
       seedBatchJob(db, { id: 'job-3', chunkId: 'chunk-3', text: 'chunk three' })
+      const selectedDatabase = {
+        ...database(),
+        selectedHypaV3PresetId: 'selected-memory',
+        hypaV3PresetId: 0,
+        hypaV3Presets: [
+          {
+            id: 'numeric-memory',
+            name: 'Numeric compatibility projection',
+            settings: { embeddingMaxConcurrent: 1 },
+          },
+          {
+            id: 'selected-memory',
+            name: 'Stable selection',
+            settings: { embeddingMaxConcurrent: 2 },
+          },
+        ],
+      }
       let active = 0
       let maxActive = 0
       const releases: Array<() => void> = []
@@ -442,7 +461,7 @@ describe('embed memory job handler', () => {
         batchHandlers: {
           embed: createEmbedMemoryJobBatchHandler({
             db,
-            loadDatabase: () => database({ embeddingMaxConcurrent: 2 }),
+            loadDatabase: () => selectedDatabase,
             sleep: async () => {},
             embed: async () => {
               active += 1
@@ -463,8 +482,9 @@ describe('embed memory job handler', () => {
       await flushMicrotasks()
       expect(releases).toHaveLength(2)
 
-      // The selected preset allows two concurrent jobs; the stale flat
-      // hypaV3Settings fixture would incorrectly serialize this batch.
+      // The stable selected preset allows two concurrent jobs; both the
+      // numeric compatibility projection and stale flat settings would
+      // incorrectly serialize this batch.
       expect(maxActive).toBe(2)
       for (const release of releases.splice(0)) release()
       await flushMicrotasks()

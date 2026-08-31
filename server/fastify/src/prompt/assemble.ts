@@ -15,6 +15,7 @@ import type { CbsCallbackMemo } from './cbsCallbackMemo.js'
 import type { ReportedClientContext } from '@risuai/protocol/client-context'
 import type { PromptMessage } from './promptMessage.js'
 import { trimUntilPunctuation } from '@risuai/shared-core/punctuation'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { EntityNotFoundError } from '../repository.js'
 import {
   determineHypaV3SummarizedPrefixStartIndex,
@@ -2324,7 +2325,10 @@ function clampHypaTokenBudget(legacyBudget: number, hypaTokenBudget: number | nu
 }
 
 function resolveHypaV3PresetSettings(database: Database): unknown {
-  const presetId = typeof database.hypaV3PresetId === 'number' ? database.hypaV3PresetId : 0
+  const presetId = hypaV3PresetIndexFromStableId({
+    hypaV3Presets: database.hypaV3Presets,
+    selectedHypaV3PresetId: database.selectedHypaV3PresetId,
+  })
   const preset = database.hypaV3Presets?.[presetId]
   if (preset && typeof preset === 'object' && 'settings' in preset) {
     return preset.settings

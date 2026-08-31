@@ -21,6 +21,7 @@ import {
 } from '../src/memoryRepository.js'
 import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.js'
 import type { SummaryAdapterResult } from '../src/memorySummaryAdapter.js'
+import { DEFAULT_SUMMARIZATION_PROMPT } from '../src/memorySummaryPrompt.js'
 import { writePersistedWithMessages } from '../src/repository.js'
 import { assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
 
@@ -80,9 +81,11 @@ function database(settings: Record<string, unknown> = {}) {
       },
     ],
     modelRoleProfiles: { memory: { mode: 'profile', profileId: 'profile-memory' } },
+    selectedHypaV3PresetId: 'memory-default',
     hypaV3PresetId: 0,
     hypaV3Presets: [
       {
+        id: 'memory-default',
         name: 'Default',
         settings: {
           summarizationModel: 'subModel',
@@ -201,6 +204,45 @@ describe('summarize memory job handler', () => {
       ])
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
       expect(getMemoryJob(db, 'job-1')).toMatchObject({ status: 'completed', error: null })
+    } finally {
+      db.close()
+    }
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['blank', '   '],
+    ['non-string', 42],
+  ])('fails closed to normalized settings for a %s stable preset selection', async (_label, selectedPresetId) => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const job = seedChunkAndJob(db)
+      const invalidSelectionDatabase = {
+        ...database({ summarizationPrompt: 'NUMERIC PRESET MUST NOT BE USED {{slot}}' }),
+        selectedHypaV3PresetId: selectedPresetId,
+        hypaV3PresetId: 0,
+      }
+      const summarize = vi.fn(async () => ({ text: 'summary text', tokens: 12 }))
+
+      await createSummarizeMemoryJobHandler({
+        db,
+        loadDatabase: () => invalidSelectionDatabase,
+        summarize,
+      })(job)
+
+      expect(summarize).toHaveBeenCalledOnce()
+      expect((summarize.mock.calls as any[][])[0][0]).toEqual([
+        {
+          role: 'user',
+          content: 'assistant: first\nassistant: second',
+        },
+        {
+          role: 'system',
+          content: DEFAULT_SUMMARIZATION_PROMPT,
+        },
+      ])
+      expect(invalidSelectionDatabase.hypaV3Presets).toEqual([expect.objectContaining({ id: 'memory-default' })])
+      expect(invalidSelectionDatabase.selectedHypaV3PresetId).toBe(selectedPresetId)
     } finally {
       db.close()
     }

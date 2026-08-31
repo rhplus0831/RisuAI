@@ -35,7 +35,7 @@ const source = {
 }
 
 describe('prompt memory query text projection', () => {
-  it('uses normalized defaults for an invalid preset pointer instead of stale flat settings', async () => {
+  it('uses normalized defaults for an ambiguous stable preset selection instead of numeric or flat settings', async () => {
     const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-prompt-memory-query-'))
     dataDirs.push(dataDir)
     const db = openDatabase(dataDir)
@@ -67,8 +67,18 @@ describe('prompt memory query text projection', () => {
       const databaseWithConflictingLegacySettings = {
         ...database([{ role: 'user', data: 'hello' }]),
         hypaV3: true,
-        hypaV3PresetId: 99,
-        hypaV3Presets: [{ settings: { summarizationModel: 'subModel', similarMemoryRatio: 1, queryChatCount: 1 } }],
+        selectedHypaV3PresetId: 'duplicate-memory-preset',
+        hypaV3PresetId: 0,
+        hypaV3Presets: [
+          {
+            id: 'duplicate-memory-preset',
+            settings: { summarizationModel: 'subModel', similarMemoryRatio: 0, queryChatCount: 0 },
+          },
+          {
+            id: 'duplicate-memory-preset',
+            settings: { summarizationModel: 'subModel', similarMemoryRatio: 0, queryChatCount: 0 },
+          },
+        ],
         hypaV3Settings: { similarMemoryRatio: 0, queryChatCount: 0 },
         hypaModel: 'custom',
         hypaCustomSettings: { url: 'https://example.test/v1', model: 'embed-model', key: 'secret' },

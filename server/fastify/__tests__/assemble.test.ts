@@ -1504,6 +1504,7 @@ function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
     hypaModel: 'embedding-model' as never,
     hypaV3Presets: [
       {
+        id: 'test-memory',
         name: 'Test',
         settings: {
           summarizationModel: 'summary-model',
@@ -1513,6 +1514,7 @@ function memoryEnabledDatabase(overrides: Partial<Database> = {}): Database {
         },
       },
     ] as never,
+    selectedHypaV3PresetId: 'test-memory',
     hypaV3PresetId: 0,
     characters: [
       makeCharacter({
@@ -2950,7 +2952,7 @@ describe('fillMemoryAndPostHistory', () => {
     }
   })
 
-  it('does not use stale flat Hypa settings when the selected preset pointer is invalid', async () => {
+  it('does not use numeric or stale flat Hypa settings when the stable selection is invalid', async () => {
     const memoryDb = openDatabase(makeDataDir())
     try {
       seedPromptMemory(memoryDb, {
@@ -2959,7 +2961,8 @@ describe('fillMemoryAndPostHistory', () => {
         text: 'stale flat summary',
       })
       const db = memoryEnabledDatabase({
-        hypaV3PresetId: 99,
+        selectedHypaV3PresetId: 'missing-memory-preset',
+        hypaV3PresetId: 0,
         hypaV3Settings: {
           summarizationModel: 'summary-model',
           recentMemoryRatio: 1,
@@ -2993,6 +2996,7 @@ describe('fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'memory',
@@ -3116,6 +3120,7 @@ describe('fillMemoryAndPostHistory', () => {
         promptTemplate: [{ type: 'chat', rangeStart: 0, rangeEnd: 'end' }],
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'summary-model',
@@ -3208,6 +3213,7 @@ describe('fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'summary-model',
@@ -3277,6 +3283,7 @@ describe('fillMemoryAndPostHistory', () => {
           promptTemplate: [{ type: 'memory', innerFormat: 'Mem: {{slot}}' }],
           hypaV3Presets: [
             {
+              id: 'test-memory',
               name: 'Test',
               settings: {
                 summarizationModel: 'summary-model',
@@ -3362,6 +3369,7 @@ describe('fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Test',
             settings: {
               summarizationModel: 'summary-model',
@@ -3410,6 +3418,7 @@ describe('fillMemoryAndPostHistory', () => {
         maxResponse: 0,
         hypaV3Presets: [
           {
+            id: 'test-memory',
             name: 'Invalid',
             settings: {
               summarizationModel: 'summary-model',

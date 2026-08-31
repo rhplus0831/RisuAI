@@ -24,6 +24,7 @@ import { loadPersistedDatabaseForMemoryJob } from './repository.js'
 import { MEMORY_JOB_BATCH_MAX_JOBS, type MemoryJobBatchHandler, type MemoryJobHandlerContext } from './memoryWorker.js'
 import { emitProtocolMetric } from './protocolMetrics.js'
 import { createMemoryProviderAbortScope, throwIfMemoryProviderAborted } from './memoryProviderDeadline.js'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export interface EmbedMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -48,7 +49,7 @@ interface HypaV3EmbedJobPayload {
 
 interface MemoryEmbeddingJobDatabase extends MemoryEmbeddingSettings {
   hypaV3Presets?: unknown
-  hypaV3PresetId?: unknown
+  selectedHypaV3PresetId?: unknown
 }
 
 export function createEmbedMemoryJobHandler(
@@ -724,7 +725,10 @@ function loadDatabase(opts: EmbedMemoryJobHandlerOptions): MemoryEmbeddingJobDat
 function resolveHypaV3Settings(database: MemoryEmbeddingJobDatabase): HypaV3Settings {
   const db = database
   let rawSettings: unknown = null
-  const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
+  const presetId = hypaV3PresetIndexFromStableId({
+    hypaV3Presets: db.hypaV3Presets,
+    selectedHypaV3PresetId: db.selectedHypaV3PresetId,
+  })
   if (Array.isArray(db.hypaV3Presets)) {
     const preset = db.hypaV3Presets[presetId]
     if (isRecord(preset)) rawSettings = preset.settings

@@ -25,6 +25,7 @@ import {
   type RequestHistoryContext,
 } from './requestHistory.js'
 import { applyEffectivePresetComposition } from '@risuai/shared-core/preset-split'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export interface SummarizeMemoryJobHandlerOptions {
   db: DatabaseSync
@@ -52,7 +53,7 @@ interface HypaV3SummarizeJobPayload {
 
 interface DatabaseLike {
   hypaV3Presets?: unknown
-  hypaV3PresetId?: unknown
+  selectedHypaV3PresetId?: unknown
   characters?: unknown
 }
 
@@ -454,7 +455,10 @@ function findChatById(database: Database, chatId: string): ChatLike | undefined 
 function resolveHypaV3Settings(database: Database): HypaV3Settings {
   const db = database as DatabaseLike
   let rawSettings: unknown = null
-  const presetId = typeof db.hypaV3PresetId === 'number' ? db.hypaV3PresetId : 0
+  const presetId = hypaV3PresetIndexFromStableId({
+    hypaV3Presets: db.hypaV3Presets,
+    selectedHypaV3PresetId: db.selectedHypaV3PresetId,
+  })
   if (Array.isArray(db.hypaV3Presets)) {
     const preset = db.hypaV3Presets[presetId]
     if (isRecord(preset)) rawSettings = preset.settings
