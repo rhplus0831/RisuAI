@@ -66,7 +66,6 @@
   } from 'src/ts/chatCommands'
   import { reportWriterAccessLostMutation } from 'src/ts/server/activeWriterSession'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { rekeyClonedChat } from 'src/ts/chatFork'
@@ -860,29 +859,13 @@
   function applyDirectOptimisticChatMetadata(chatId: string, patch: Partial<Chat>): boolean {
     const characterId = sidebarCharacter?.chaId
     if (!characterId || !uniqueSidebarChat(chatId)) return false
-    if (charactersResourceState.status === 'ready') {
-      return applyChatMetadataOwnerPatch(characterId, chatId, patch)
-    }
-    return withTrustedResourceWrite(() => {
-      const chat = uniqueSidebarChat(chatId)
-      if (!chat) return false
-      Object.assign(chat, patch)
-      return true
-    })
+    return applyChatMetadataOwnerPatch(characterId, chatId, patch)
   }
 
   function applyDirectOptimisticFolderMetadata(folderId: string, patch: Partial<ChatFolder>): boolean {
     const characterId = sidebarCharacter?.chaId
     if (!characterId || !uniqueSidebarFolder(folderId)) return false
-    if (charactersResourceState.status === 'ready') {
-      return applyChatFolderMetadataOwnerPatch(characterId, folderId, patch)
-    }
-    return withTrustedResourceWrite(() => {
-      const folder = uniqueSidebarFolder(folderId)
-      if (!folder) return false
-      Object.assign(folder, patch)
-      return true
-    })
+    return applyChatFolderMetadataOwnerPatch(characterId, folderId, patch)
   }
 
   function rollbackOwnedChatMetadata(snapshot: ChatRowMetadataSnapshot): void {

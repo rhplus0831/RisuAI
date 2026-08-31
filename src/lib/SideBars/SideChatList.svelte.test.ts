@@ -582,6 +582,7 @@ function seedSidebarDatabase(): character {
   selectedCharID.set(0)
   setDatabaseLite({
     characters: [chara],
+    currentChar: 0,
     customPromptTemplateToggle: '',
     customSidebarItems: [],
     enabledModules: [],
@@ -827,22 +828,21 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    expect(target.querySelector<HTMLElement>('[data-risu-chat-list="sidebar"]')?.hidden).toBe(true)
+    expect(target.querySelector('[data-risu-chat-list="sidebar"]')).toBeNull()
     expect(sidebarMocks.navigate).not.toHaveBeenCalled()
   })
 
-  it('retains the aggregate character fallback only before owner readiness', async () => {
-    const aggregate = seedSidebarDatabase()
-    removeCharacterId(aggregate)
+  it('waits for character owner readiness before rendering', async () => {
+    seedSidebarDatabase()
     charactersResourceState.status = 'loading'
 
     component = mount(SideChatListHarness, { target })
     await tick()
-    expect(target.querySelector('[data-risu-chat-list="sidebar"]')).toBeTruthy()
+    expect(target.querySelector('[data-risu-chat-list="sidebar"]')).toBeNull()
 
     charactersResourceState.status = 'ready'
     await tick()
-    expect(target.querySelector<HTMLElement>('[data-risu-chat-list="sidebar"]')?.hidden).toBe(true)
+    expect(target.querySelector('[data-risu-chat-list="sidebar"]')).toBeTruthy()
   })
 
   it('fails closed for duplicate ready chat IDs across navigation and export actions', async () => {
@@ -1003,7 +1003,7 @@ describe('SideChatList DOM contract harness', () => {
     await tick()
     expect(sidebarMocks.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
 
-    selectedCharID.set(-1)
+    charactersResourceState.currentChar = -1
     resolveHydration()
     await flushCommandWork()
 
@@ -2313,42 +2313,6 @@ describe('SideChatList DOM contract harness', () => {
 
     expectRowSelected('chat-foldered', false)
     expectRowSelected('chat-root-b', true)
-  })
-
-  it('optimistically selects a sidebar row through command fallback and restores on failure', async () => {
-    const chara = seedSidebarDatabase()
-    chara.chatPage = 0
-    removeCharacterId(chara)
-    charactersResourceState.status = 'loading'
-    sidebarMocks.setServerCommandsEnabled(true)
-    const command = sidebarMocks.createDeferredSelectCommand()
-
-    component = mount(SideChatListHarness, { target })
-    await tick()
-
-    expectRowSelected('chat-root-a', true)
-    expectRowSelected('chat-root-b', false)
-
-    selectButtonForRow(rowByChatId('chat-root-b')).click()
-    await tick()
-
-    expect(sidebarMocks.navigate).not.toHaveBeenCalled()
-    expect(command.settled).toBe(false)
-    expect(command.input).toMatchObject({
-      chatId: 'chat-root-b',
-      patch: {},
-      select: true,
-    })
-    expect(chara.chatPage).toBe(2)
-    expectRowSelected('chat-root-a', false)
-    expectRowSelected('chat-root-b', true)
-
-    command.resolve({ error: 'select failed', status: 'error' })
-    await flushCommandWork()
-
-    expect(chara.chatPage).toBe(0)
-    expectRowSelected('chat-root-a', true)
-    expectRowSelected('chat-root-b', false)
   })
 
   it('shows a pending sidebar chat but waits for acceptance before navigating', async () => {

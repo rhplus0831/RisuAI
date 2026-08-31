@@ -24,9 +24,9 @@
     rollbackServerBackedChatRowMetadata,
     syncServerBackedChatMetadataBaselines,
   } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import {
+    applyChatMetadataOwnerPatch,
     charactersResourceState,
     getCharacterResourceOwner,
     getChatMetadataOwnerSnapshot,
@@ -399,15 +399,8 @@
     chatId: string,
     patch: { bookmarks?: string[]; bookmarkNames?: Record<string, string> },
   ): boolean {
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const character = chara?.chaId ? uniqueCharacterOwner(chara.chaId) : undefined
-      const liveChat = character?.chats?.find((candidate) => candidate.id === chatId)
-      if (!liveChat) return
-      if (patch.bookmarks) liveChat.bookmarks = patch.bookmarks
-      if (patch.bookmarkNames) liveChat.bookmarkNames = patch.bookmarkNames
-      applied = true
-    })
+    const character = chara?.chaId ? uniqueCharacterOwner(chara.chaId) : undefined
+    const applied = character?.chaId ? applyChatMetadataOwnerPatch(character.chaId, chatId, patch) : false
     if (applied) syncServerBackedChatMetadataBaselines()
     return applied
   }

@@ -4,7 +4,11 @@
   import { alertConfirm, alertError, alertNormal } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
+  import {
+    applyChatMetadataOwnerPatch,
+    charactersResourceState,
+    getCharacterResourceOwner,
+  } from 'src/ts/server/resourceState.svelte'
   import { isServerCharacterShell } from 'src/ts/storage/database.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
@@ -26,7 +30,6 @@
     syncServerBackedChatMetadataBaselines,
     watchServerBackedChatMetadata,
   } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { modalBackdropDismiss } from 'src/ts/gui/modalBackdropDismiss'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
@@ -347,17 +350,12 @@
       ? previous.characters.find((candidate) => candidate.chaId === ownerCharacterId)
       : previous.characters[ownerSelectedCharIndex]
     const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveCharacter = previousCharacter?.chaId
-        ? uniqueCharacterOwner(previousCharacter.chaId)
-        : resolveOriginCharacter(undefined, ownerSelectedCharIndex, ownerCharacterReference)
-      const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
-      if (!liveChat || liveChat.name !== previousChat?.name) return
-      liveChat.name = name
-      applied = true
-    })
-    if (!applied) return
+    const liveCharacter = previousCharacter?.chaId
+      ? uniqueCharacterOwner(previousCharacter.chaId)
+      : resolveOriginCharacter(undefined, ownerSelectedCharIndex, ownerCharacterReference)
+    const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
+    if (!liveCharacter?.chaId || !liveChat || liveChat.name !== previousChat?.name) return
+    if (!applyChatMetadataOwnerPatch(liveCharacter.chaId, liveTargetChat.id, { name })) return
     syncServerBackedChatMetadataBaselines()
     clearFailedMutations(key)
     const action = `${language.edit}: ${name}`

@@ -669,7 +669,7 @@ describe('ChatList DOM contract harness', () => {
     await tick()
 
     expect(chatListMocks.canUseServerCommands).toHaveBeenCalled()
-    expect(chatListMocks.withTrustedResourceWrite).toHaveBeenCalledOnce()
+    expect(chatListMocks.withTrustedResourceWrite).not.toHaveBeenCalled()
     expect(chatListMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(chatListMocks.dispatchUpdateChatWithOutcome).toHaveBeenCalledOnce()
     const [chatId, patch, previous] = chatListMocks.dispatchUpdateChatWithOutcome.mock.calls[0]

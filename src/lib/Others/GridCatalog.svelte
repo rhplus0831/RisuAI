@@ -79,7 +79,6 @@
     dispatchUpdateCharacterScopedWithOutcome,
     type CharacterMutationOutcome,
   } from 'src/ts/characterCommands'
-  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
   import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
   import { alertError, alertNormal } from 'src/ts/alert'
@@ -265,19 +264,12 @@
       return { status: 'failed', result: { status: 'error', error: 'missing-character-id' } }
     }
     const previous = currentCharacterRowSnapshot(index)
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const liveCharacter = uniqueCharacterOwner(characterId)?.character as
-        | (typeof character & { trashTime?: number | null })
-        | undefined
-      if (!liveCharacter) return
-      liveCharacter.trashTime = null
-      applied = true
-    })
-    if (applied) {
-      return (await dispatchUpdateCharacterScopedWithOutcome(characterId, { trashTime: null }, previous)) ?? null
-    }
-    return null
+    const liveCharacter = uniqueCharacterOwner(characterId)?.character as
+      | (typeof character & { trashTime?: number | null })
+      | undefined
+    if (!liveCharacter) return null
+    liveCharacter.trashTime = null
+    return (await dispatchUpdateCharacterScopedWithOutcome(characterId, { trashTime: null }, previous)) ?? null
   }
 </script>
 
