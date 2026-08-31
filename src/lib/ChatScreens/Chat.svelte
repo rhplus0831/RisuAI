@@ -938,8 +938,11 @@
   function currentLiveMessage(): Message | null {
     const chat = currentLiveChat()
     if (!chat || idx < 0) return null
-    const candidate = chat.message?.[idx]
-    return candidate?.chatId && chat.message.filter((message) => message.chatId === candidate.chatId).length === 1
+    const messages =
+      charactersResourceState.status === 'ready' ? getChatMessageOwnerState(chat.id)?.messages : chat.message
+    if (!messages) return null
+    const candidate = messages[idx]
+    return candidate?.chatId && messages.filter((message) => message.chatId === candidate.chatId).length === 1
       ? candidate
       : null
   }
@@ -950,7 +953,7 @@
     if (chatPage === undefined || chatPage === null || !character) return null
     const candidate = character.chats?.[chatPage]
     if (charactersResourceState.status !== 'ready') return candidate ?? null
-    if (!candidate?.id) return null
+    if (!candidate?.id || !character.chaId || !getChatMetadataOwnerSnapshot(character.chaId, candidate.id)) return null
     const matches = character.chats.filter((chat) => chat.id === candidate.id)
     return matches.length === 1 ? matches[0] : null
   }
@@ -2178,14 +2181,7 @@
   }
 
   let isBookmarked = $derived(
-    getDatabase().characters[selIdState.selId]?.chats[
-      getDatabase().characters[selIdState.selId].chatPage
-    ]?.bookmarks?.includes(
-      ownerMessage?.chatId ??
-        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
-          idx
-        ]?.chatId,
-    ) ?? false,
+    currentLiveChat()?.bookmarks?.includes(ownerMessage?.chatId ?? currentLiveMessage()?.chatId ?? '') ?? false,
   )
 
   async function toggleBookmark() {
