@@ -1,6 +1,6 @@
 # Phase 4: Translator And Smaller Compatibility Mirrors
 
-Status: queued.
+Status: complete through `2ffde5c29`, `86d3fc2b3`, and `9f558b7c4`.
 
 Depends on: Phase 1 foundation and per-family Phase 0 dispositions.
 

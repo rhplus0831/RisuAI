@@ -1,9 +1,9 @@
 # Canonical State And Compatibility Retirement Plan
 
-Date: 2026-08-30
+Date: 2026-08-31
 
-Status: active. Phases 0, 1, and 2 are complete; Phase 3 prompt-template
-ownership is the execution cursor.
+Status: complete. Phases 0-7 are closed; final dispositions and release evidence
+are recorded in the compatibility baseline and verification report.
 
 ## Goal
 
@@ -99,8 +99,8 @@ Phase 0 must classify each surface. Names such as `legacy`, `ensure`, or
 | Compatibility baseline | `71c476e9c86263fe907105b011ca4dde0a619d66` | Immutable pre-Fastify behavioral source for historical fixtures, where applicable. |
 | Behavioral sync cursor | `f3f0242fba297d82e0efcc2c31ca1428569b70f2` | Latest upstream unit already dispositioned; not a source-equivalent ancestor. |
 | Workstream 3 model-owner release | `6020f6009` | Phase 2 normal model consumers released; named compatibility and Phase 5/6 repair boundaries remain. |
-| Workstream 3 prompt-owner release | Not released | Phase 3 closes before prompt bridge removal. |
-| Workstream 3 translator/smaller-owner release | Not released | Phase 4 closes per family before bridge/facade retirement. |
+| Workstream 3 prompt-owner release | Released through `998d0c121` | Modern prompt presets own normal hydration, edits, body storage, and assembly; retained root/legacy behavior is explicit compatibility. |
+| Workstream 3 translator/smaller-owner release | Released through `2ffde5c29`, `86d3fc2b3`, and `9f558b7c4` | Translator, persona, and Hypa selections use stable canonical owners; legacy aliases remain import-only or explicit compatibility. |
 
 Exact per-resource implementation cursors live in [`status.md`](status.md).
 

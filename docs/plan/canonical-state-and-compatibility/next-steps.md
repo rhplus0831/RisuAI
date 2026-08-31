@@ -2,28 +2,20 @@
 
 Date: 2026-08-31
 
-## Current Task
+## Closed Workstream
 
-Execute [Phase 3 prompt-template ownership](phases/phase-3-prompt-template-ownership.md)
-after the Phase 2 model-owner release at `6020f6009`.
+Phases 0-7 are complete. There is no remaining implementation slice. Preserve
+the compatibility baseline beside this plan when archiving it under
+`.archived-docs/architecture-and-migration/` and update the architecture
+inventory's canonical path in the archival commit.
 
-## Phase 0 Release
+## Retained Follow-Up Triggers
 
-`1e758cd22` adds the named transactional runner checks, test-only interruption
-proof, damaged-database refusal, and 19-surface fixture adapter required by the
-Phase 0 dispositions.
-
-## Not In This Slice
-
-- Do not migrate prompt ownership or translator preset persistence in this
-  consumer slice.
-- Do not remove a compatibility reader, exporter, table, field, or route.
-- Do not turn legacy conversion or damaged-state repair into an implicit normal
-  command.
-- Do not remove a Workstream 3 bridge for any resource family.
-
-## Handoff
-
-Phase 2 model consumers are released to Workstream 3. Retain the named model
-static/import/export/compatibility seams and Phase 5 inline-secret repair hold
-while Prompt Phase 3 establishes its canonical owner and release evidence.
+- Remove an explicit compatibility surface only through a new, separately
+  approved migration after its supported reader/exporter contract is retired.
+- Keep legacy/import normalization out of ordinary commands and runtime reads.
+- Keep the final 28-surface/63-probe inventory gate active after archival so a
+  new mirror, fallback, or repair boundary cannot appear silently.
+- Treat broad typecheck, full-suite, and browser-matrix reruns as CI/release
+  responsibilities; focused closeout evidence is recorded in
+  [`latest-verification.md`](latest-verification.md).

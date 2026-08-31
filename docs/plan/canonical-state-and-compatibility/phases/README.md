@@ -2,6 +2,7 @@
 
 The phase files translate [`PLAN.md`](../PLAN.md) into bounded outcomes.
 [`status.md`](../status.md) owns the current and per-resource dependency cursors.
+All eight phases are complete.
 
 ## Execution Order
 

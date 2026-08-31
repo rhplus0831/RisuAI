@@ -1,6 +1,6 @@
 # Phase 6: Import, Export, Backup, And Obsolete Storage
 
-Status: queued.
+Status: complete through `49c9c6f3e`.
 
 Depends on: replacement canonical readers/writers and their rollback proofs.
 

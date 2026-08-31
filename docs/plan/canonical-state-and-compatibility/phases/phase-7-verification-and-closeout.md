@@ -1,6 +1,7 @@
 # Phase 7: Verification And Closeout
 
-Status: queued.
+Status: complete at `993222d82` with current-guide reconciliation at
+`27c41103d`.
 
 Depends on: Phases 0-6 complete and all Workstream 3 releases/holds resolved.
 

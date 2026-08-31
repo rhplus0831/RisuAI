@@ -2,95 +2,60 @@
 
 Date: 2026-08-31
 
-This is the mutable execution router. Stable scope lives in [`PLAN.md`](PLAN.md),
-phase detail in [`phases/`](phases/README.md), selection guidance in
-[`next-steps.md`](next-steps.md), and exact proof in
+This is the final execution record. Stable scope lives in [`PLAN.md`](PLAN.md),
+phase detail in [`phases/`](phases/README.md), retained operational boundaries
+in [`next-steps.md`](next-steps.md), and exact proof in
 [`latest-verification.md`](latest-verification.md).
 
-## Current Snapshot
+## Final Snapshot
 
-- Plan state: Active; Phases 0, 1, and 2 complete.
-- Current phase: [Phase 3 prompt-template ownership](phases/phase-3-prompt-template-ownership.md).
-- Active slice: Phase 3 prompt-template ownership, opened after the Phase 2
-  model-owner release at `6020f6009`.
-- Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Runtime changes through the Phase 2 release: schema v34 transactionally
-  creates deterministic profiles/bindings for usable flat selections at
-  migration, fresh-init, and import boundaries without copying inline secrets;
-  selected legacy model/preset role ownership is isolated to effective clones,
-  profile-local tokenizer configuration outranks global defaults, browser prompt
-  shape/token budgeting/image capability use one resolved request profile, and
-  the custom sidebar, Fastify completion path, ordinary browser request
-  samplers, and provider-specific thinking overrides use canonical owners.
-  Prompt-visible CBS identity, V3 plugin recursion protection, and default
-  generation labels now use the effective profile as well. Translation cache
-  identity and the NovelList source-language heuristic use the resolved
-  translate role while preserving legacy auxiliary fallback. Seed visibility,
-  HypaV3 response reservation, and display-source Lua/trigger identity now use
-  resolved model context, the unused lorebook model mirror is removed, and the
-  Hypa settings capacity ratio uses the selected runtime profile. The final
-  ordinary flat model/runtime reads are either removed or isolated behind the
-  named older-server response-budget compatibility fallback.
-- Latest verification: Phase 2 model-owner release passed through
-  `6020f6009`; Prompt Phase 3 is now the execution cursor.
-- Character/chat dependency release: singular SQLite row owners and the bounded
-  pre-extraction fallback are released at `7cb62afa8`; orphan/integrity repair
-  remains held for Phases 5-6.
+- Plan state: Complete; Phases 0-7 closed.
+- Implementation closeout candidate: `993222d82`.
+- Current-guide reconciliation: `27c41103d`.
+- Compatibility inventory: 28 surfaces and 63 probes, with 7 canonical,
+  14 explicit-compatibility, 6 import-only, and 1 removed disposition.
+- Workstream 3 release: all persisted-owner dependencies are released; retained
+  compatibility rows are final boundaries rather than unresolved migration
+  holds.
 
 ## Dependency Cursors
 
-| Dependency or release | Cursor | State |
+| Dependency or release | Cursor | Final state |
 | --- | --- | --- |
-| Workstream 1 package/boundary conventions | `b01e88b03` | Released; Phase 0 may execute. |
-| Workstream 1 shared contracts | Per contract family | Required only before a slice introduces or consumes that shared contract. |
-| Migration/recovery foundation | `1e758cd22` | Released with named-step validation, rollback/retry/reopen injection proof, damaged-database refusal, and all 19 historical fixture adapters. |
-| Model configuration canonical owner | `6020f6009` | Phase 2 released to Workstream 3 after the closed-world flat-access and consumer-ownership gates passed; explicit static/import/export/compatibility and Phase 5/6 repair holds remain named. |
-| Character/chat canonical owners | `7cb62afa8` | Character, chat, message, and Hypa rows are singular normal owners; legacy import repairs ids before extraction. Summary-only Workstream 3 consumers are released; broader contracts remain per-family dependencies. |
-| Prompt-template canonical owner | Phase 3 | Not released to Workstream 3. |
-| Translator/smaller canonical owners | Phase 4 per family | Not released to Workstream 3. |
-| Repair/interchange cleanup | Phases 5-6 | Not started; may add per-family holds to earlier releases. |
-
-## Opening Research Snapshot
-
-- `server/fastify/src/db.ts` has a versioned migration runner; repository boot,
-  import, and command modules also contain normalizers and repair helpers.
-- Durable model profile records and role bindings coexist with legacy conversion
-  and fallback paths.
-- Prompt ownership spans modern prompt-preset bodies, the aggregate
-  `promptTemplate` compatibility field, hydration/substitution behavior, and the
-  `prompt_templates` table.
-- Translator preset commands synchronize selected preset data into legacy
-  first-step scalar fields.
-- Existing compatibility harness fixtures, import/export tests, database tests,
-  provider/prompt/translator tests, and archived ownership workstreams provide
-  evidence sources; Phase 0 must identify real historical fixture provenance.
+| Workstream 1 package/boundary conventions | `b01e88b03` | Released. |
+| Migration/recovery foundation | `1e758cd22` | Released with named-step, interruption, retry, reopen, and historical-fixture proof. |
+| Model configuration canonical owner | `6020f6009` | Released; ordinary consumers use durable profile/runtime owners. |
+| Character/chat canonical owners | `7cb62afa8` | Released; legacy embedded rows remain import/recovery inputs only. |
+| Prompt-template canonical owner | `998d0c121` | Released; modern selected presets own normal bodies and assembly. |
+| Translator canonical owner | `2ffde5c29` | Released; stable-id preset pipelines own translation and authoring. |
+| Persona and Hypa selection owners | `86d3fc2b3`, `9f558b7c4` | Released with stable persisted identities. |
+| Repair boundary | `223ff37d5` | Released; ordinary reads/commands do not persist unrelated compatibility repair. |
+| Interchange and export boundary | `49c9c6f3e` | Released; exports materialize detached owner data and supported inputs normalize explicitly. |
+| Final inventory | `993222d82` | Closed at 28 surfaces and 63 probes with final dispositions only. |
 
 ## Phase Router
 
-| Phase | Status | Opens when |
+| Phase | Status | Release |
 | ---: | --- | --- |
-| [0. Inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md) | Complete | Closed at `cd04b0e11`. |
-| [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Complete | Closed at `1e758cd22`. |
-| [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Complete | Released at `6020f6009`; normal model consumers use resolved profile/runtime inputs. |
-| [3. Prompt templates](phases/phase-3-prompt-template-ownership.md) | Active | Current execution cursor after the Phase 2 release. |
-| [4. Translator/smaller mirrors](phases/phase-4-translator-and-smaller-mirrors.md) | Queued | Foundation and per-family dispositions are complete. |
-| [5. Repair boundary](phases/phase-5-repair-boundary.md) | Queued | Canonical owners exist for affected commands. |
-| [6. Interchange/backups/storage](phases/phase-6-interchange-backup-and-obsolete-storage.md) | Queued | Replacement readers/writers and rollback proofs pass. |
-| [7. Verification/closeout](phases/phase-7-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
+| [0. Inventory and retention policy](phases/phase-0-compatibility-inventory-and-retention-policy.md) | Complete | `cd04b0e11` |
+| [1. Migration/recovery foundation](phases/phase-1-migration-and-recovery-foundation.md) | Complete | `1e758cd22` |
+| [2. Model configuration](phases/phase-2-model-configuration-ownership.md) | Complete | `6020f6009` |
+| [3. Prompt templates](phases/phase-3-prompt-template-ownership.md) | Complete | `998d0c121` |
+| [4. Translator/smaller mirrors](phases/phase-4-translator-and-smaller-mirrors.md) | Complete | `2ffde5c29`, `86d3fc2b3`, `9f558b7c4` |
+| [5. Repair boundary](phases/phase-5-repair-boundary.md) | Complete | `223ff37d5` |
+| [6. Interchange/backups/storage](phases/phase-6-interchange-backup-and-obsolete-storage.md) | Complete | `49c9c6f3e` |
+| [7. Verification/closeout](phases/phase-7-verification-and-closeout.md) | Complete | `993222d82`, `27c41103d` |
 
-## Blockers And Risks
+## Final Compatibility Boundaries
 
-- No Phase 2 blocker remains; Prompt Phase 3 is the current execution cursor.
-- A field may be an explicit export projection, not a removable mirror; Phase 0
-  must decide before implementation.
-- Command-time repair may currently make damaged historical data usable. Moving
-  it requires migration/recovery fixtures, not simple deletion.
-- Prompt and model ownership affect generation output; parity evidence must be
-  model-visible, not merely structural.
-- Persisted-owner changes must not overlap the same Workstream 3 resource-family
-  bridge removal.
+- Model flat inputs, inline-secret repair, prompt root/default storage, loadout
+  snapshots/touch fields, legacy backup restore, and bounded command/repository
+  recovery remain explicit compatibility actions.
+- Persona mirrors and the numeric Hypa pointer remain explicit external-format
+  projections; canonical runtime selection uses stable IDs.
+- Hypa aliases, translator scalars/synchronization, legacy bot presets, legacy
+  database JSON, and RisuSave legacy envelopes are import-only.
+- The lorebook-page compatibility replica is removed; the unsupported plugin key
+  fails closed.
 
-## Start Here
-
-Use [`next-steps.md`](next-steps.md). Continue Prompt Phase 3 while preserving
-the named model static/import/export/compatibility seams and Phase 5/6 holds.
+No execution blocker remains. The intact workstream is ready for archival.
