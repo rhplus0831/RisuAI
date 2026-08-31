@@ -181,17 +181,14 @@ function enabledModulesOwnerWrite(enabledModules: string[]): void {
 function isStableModuleCollection(value: unknown): value is RisuModule[] {
   if (!Array.isArray(value)) return false
   const ids = new Set<string>()
-  const namespaces = new Set<string>()
   for (const candidate of value) {
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
     const module = candidate as Record<string, unknown>
     if (typeof module.id !== 'string' || module.id.length === 0 || ids.has(module.id)) return false
-    if (module.namespace !== undefined) {
-      if (typeof module.namespace !== 'string' || module.namespace.length === 0 || namespaces.has(module.namespace)) {
-        return false
-      }
-      namespaces.add(module.namespace)
-    }
+    // A namespace is an activation alias, not an identity. Multiple modules
+    // may intentionally share one, and persisted imports may contain an empty
+    // namespace, so only the row id must be unique.
+    if (module.namespace !== undefined && typeof module.namespace !== 'string') return false
     ids.add(module.id)
   }
   return true

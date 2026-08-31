@@ -344,7 +344,8 @@ describe('module command projection helpers', () => {
     expect(settingsResourceState.value.enabledModules).toEqual([])
   })
 
-  it('fails closed for a ready module owner with duplicate namespaces', async () => {
+  it('treats duplicate namespaces as valid shared activation groups', async () => {
+    const calls = stubCommandFetch()
     setDatabaseLite({
       characters: [],
       characterOrder: [],
@@ -355,15 +356,37 @@ describe('module command projection helpers', () => {
       ],
     } as any)
 
-    const before = JSON.parse(JSON.stringify(collectionsResourceState.values.modules))
-    expect(currentGlobalModuleStateSnapshot().modules).toEqual([])
+    expect(currentGlobalModuleStateSnapshot().modules).toEqual([
+      { id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+    ])
     await expect(
       updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' }),
-    ).resolves.toMatchObject({ status: 'error' })
-    await expect(setGlobalModuleEnabled('mod-a', true)).resolves.toMatchObject({ status: 'failed' })
-    await expect(deleteGlobalModule('mod-a')).resolves.toMatchObject({ status: 'failed' })
-    expect(collectionsResourceState.values.modules).toEqual(before)
-    expect(settingsResourceState.value.enabledModules).toEqual([])
+    ).resolves.toMatchObject({ status: 'ok' })
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Attempted', description: '', namespace: 'shared' },
+      { id: 'mod-b', name: 'Module B', description: '', namespace: 'shared' },
+    ])
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a')).toBe(true)
+  })
+
+  it.each([
+    ['an empty namespace', ''],
+    ['an existing shared namespace', 'shared'],
+  ])('projects an imported module immediately with %s', async (_label, namespace) => {
+    const calls = stubCommandFetch()
+    collectionsResourceState.values.modules = [{ id: 'mod-a', name: 'Module A', description: '', namespace: 'shared' }]
+
+    const result = createGlobalModule({
+      id: 'mod-imported',
+      name: 'Imported Module',
+      description: '',
+      namespace,
+    })
+
+    expect(collectionsResourceState.values.modules?.map((module) => module.id)).toEqual(['mod-a', 'mod-imported'])
+    await expect(result).resolves.toMatchObject({ status: 'ok' })
+    expect(calls.some((call) => call.url === '/api/v1/commands/modules')).toBe(true)
   })
 
   it('fails closed for a ready settings owner with duplicate enabled module ids', async () => {
