@@ -44,15 +44,6 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 
 # Test Workflow
 
-- Agents may run only `pnpm test -- <test-or-source-file>`, and only when that
-  focused run is necessary to answer a concrete implementation question,
-  reproduce a failure, or check changed behavior. The argument must be exactly
-  one repository file. Test files run directly in their owning runtime; source
-  files select only related tests.
-- Agents must not run `pnpm test:all`, compatibility harnesses, coverage, broad
-  frontend/server lanes, browser-smoke suites, any other package script that
-  executes tests, or equivalent direct Vitest/Playwright commands. Do not turn
-  testing into a routine edit, commit, integration-boundary, or handoff step.
 - The user and CI own periodic full-suite execution and result review. At
   handoff, report the focused `pnpm test -- <file>` command that ran, or state
   that no tests were run. Do not start broader verification on the user's
