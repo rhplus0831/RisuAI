@@ -272,10 +272,40 @@ function seedDb(): void {
     hypaV3: false,
     translator: '',
     translatorType: 'llm',
-    translatorPresetId: 0,
+    translatorPresetId: 'translator-a',
     translatorPresets: [
-      { id: 'translator-a', name: 'Translator Alpha', prompt: 'Alpha', maxResponse: 128, steps: [] },
-      { id: 'translator-b', name: 'Translator Beta', prompt: 'Beta', maxResponse: 256, steps: [] },
+      {
+        id: 'translator-a',
+        name: 'Translator Alpha',
+        prompt: 'Alpha',
+        maxResponse: 128,
+        steps: [
+          {
+            id: 'translator-a-step',
+            name: 'Step 1',
+            enabled: true,
+            prompt: 'Alpha',
+            maxResponse: 128,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
+      {
+        id: 'translator-b',
+        name: 'Translator Beta',
+        prompt: 'Beta',
+        maxResponse: 256,
+        steps: [
+          {
+            id: 'translator-b-step',
+            name: 'Step 1',
+            enabled: true,
+            prompt: 'Beta',
+            maxResponse: 256,
+            model: { mode: 'inheritTranslate' },
+          },
+        ],
+      },
     ],
     personas: [
       {
