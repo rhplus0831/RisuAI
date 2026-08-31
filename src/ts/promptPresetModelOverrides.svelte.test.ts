@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const modelOverrideState = vi.hoisted(() => ({
-  db: {} as Record<string, unknown>,
-  getDatabase: vi.fn(),
   updatePromptPreset: vi.fn(),
   settingsResourceState: {
     value: {} as Record<string, unknown>,
@@ -18,7 +16,6 @@ const modelOverrideState = vi.hoisted(() => ({
 }))
 
 vi.mock('./storage/database.svelte', () => ({
-  getDatabase: modelOverrideState.getDatabase,
   updatePromptPreset: modelOverrideState.updatePromptPreset,
 }))
 
@@ -38,13 +35,6 @@ import {
 describe('prompt preset model override ownership', () => {
   beforeEach(() => {
     modelOverrideState.updatePromptPreset.mockClear()
-    modelOverrideState.getDatabase.mockReset()
-    modelOverrideState.db = {
-      promptPresetsId: 0,
-      promptPresets: [{ id: 'compatibility-only', name: 'Stale aggregate', temperature: 0.1 }],
-      temperature: 0.2,
-    }
-    modelOverrideState.getDatabase.mockImplementation(() => modelOverrideState.db)
     modelOverrideState.settingsResourceState.status = 'ready'
     modelOverrideState.settingsResourceState.value = { promptPresetsId: 0, temperature: 0.5 }
     modelOverrideState.settingsResourceState.groupStatuses = { runtime: 'ready' }
@@ -63,7 +53,6 @@ describe('prompt preset model override ownership', () => {
     expect(currentPromptPresetModelOverrideMirrorValue(target!)).toBe(0.7)
     expect(mirrorPromptPresetModelOverrideFieldToTarget(target!, 0.9)).toBe(true)
     expect(modelOverrideState.updatePromptPreset).toHaveBeenCalledWith(0, { temperature: 0.9 })
-    expect(modelOverrideState.getDatabase).not.toHaveBeenCalled()
   })
 
   it.each(['missing', 'duplicate'])('fails closed for a %s selected prompt owner', (kind) => {
@@ -96,7 +85,6 @@ describe('prompt preset model override ownership', () => {
         presetId: 'prompt-a',
       }),
     ).toBe(0.5)
-    expect(modelOverrideState.getDatabase).not.toHaveBeenCalled()
   })
 
   it('keeps a delayed override bound to its captured owner after selection changes', () => {
@@ -117,7 +105,6 @@ describe('prompt preset model override ownership', () => {
     modelOverrideState.collectionsResourceState.statuses.promptPresets = 'error'
 
     expect(resolvePromptPresetModelOverrideMirrorTarget('temperature')).toBeNull()
-    expect(modelOverrideState.getDatabase).not.toHaveBeenCalled()
   })
 
   it('does not enable overrides from a partial or errored settings snapshot', () => {
@@ -128,22 +115,14 @@ describe('prompt preset model override ownership', () => {
     setPromptPresetModelOverrideEnabled('parameters', true)
 
     expect(modelOverrideState.updatePromptPreset).not.toHaveBeenCalled()
-    expect(modelOverrideState.getDatabase).not.toHaveBeenCalled()
   })
 
-  it('retains the cold-start aggregate compatibility fallback', () => {
-    modelOverrideState.settingsResourceState.status = 'loading'
-    modelOverrideState.settingsResourceState.standaloneStatuses = {}
-    modelOverrideState.collectionsResourceState.status = 'loading'
-    modelOverrideState.collectionsResourceState.statuses = {}
-    modelOverrideState.db = {
-      promptPresetsId: 0,
-      promptPresets: [{ id: 'compat-prompt', temperature: 0.4 }],
-      temperature: 0.3,
-    }
+  it.each(['idle', 'loading'] as const)('does not resolve overrides while owners are %s', (status) => {
+    modelOverrideState.settingsResourceState.standaloneStatuses.promptPresetsId = status
+    modelOverrideState.settingsResourceState.groupStatuses.runtime = status
+    modelOverrideState.collectionsResourceState.statuses.promptPresets = status
 
-    expect(resolvePromptPresetModelOverrideMirrorTarget('temperature')).toMatchObject({ presetId: 'compat-prompt' })
-    expect(currentPromptPresetModelOverrideValue('temperature', 0)).toBe(0.4)
-    expect(modelOverrideState.getDatabase).toHaveBeenCalled()
+    expect(resolvePromptPresetModelOverrideMirrorTarget('temperature')).toBeNull()
+    expect(currentPromptPresetModelOverrideValue('temperature', 0)).toBe(0)
   })
 })

@@ -8,7 +8,7 @@ import {
 } from './presetSplit'
 import { collectionsResourceState, settingsResourceState } from './server/resourceState.svelte'
 import { SERVER_SETTINGS_GROUP_BY_KEY } from './server/settingsGroups'
-import { getDatabase, updatePromptPreset, type Database, type PromptPreset } from './storage/database.svelte'
+import { updatePromptPreset, type PromptPreset } from './storage/database.svelte'
 
 type OverrideGroup = 'parameters'
 
@@ -224,28 +224,18 @@ function currentPromptPresetOwnerSnapshot(): PromptPresetOwnerSnapshot | null {
 
 function currentPromptPresetCollectionOwner(): PromptPresetOwnerSnapshot['presets'] | null {
   const status = collectionsResourceState.statuses.promptPresets
-  if (collectionsResourceState.status === 'error' || status === 'error') return null
+  if (collectionsResourceState.status === 'error' || status !== 'ready') return null
 
-  const value =
-    status === 'ready'
-      ? collectionsResourceState.values.promptPresets
-      : canUseCompatibility(collectionsResourceState.status) && canUseCompatibility(status)
-        ? compatibilityDatabase().promptPresets
-        : undefined
+  const value = collectionsResourceState.values.promptPresets
   if (!Array.isArray(value)) return null
   return value as ReadonlyArray<Record<string, unknown>>
 }
 
 function currentPromptPresetSelectionOwner(): number | null {
   const status = settingsResourceState.standaloneStatuses.promptPresetsId
-  if (settingsResourceState.status === 'error' || status === 'error') return null
+  if (settingsResourceState.status === 'error' || status !== 'ready') return null
 
-  const value =
-    status === 'ready'
-      ? settingsResourceState.value.promptPresetsId
-      : canUseCompatibility(settingsResourceState.status) && canUseCompatibility(status)
-        ? compatibilityDatabase().promptPresetsId
-        : undefined
+  const value = settingsResourceState.value.promptPresetsId
   return Number.isInteger(value) ? (value as number) : null
 }
 
@@ -261,18 +251,7 @@ function currentSettingsOwnerValueSnapshot(key: string): SettingsOwnerValueSnaps
   if (status === 'ready') {
     return { available: true, value: (settingsResourceState.value as Record<string, unknown>)[key] }
   }
-  if (canUseCompatibility(settingsResourceState.status) && canUseCompatibility(status)) {
-    return { available: true, value: (compatibilityDatabase() as unknown as Record<string, unknown>)[key] }
-  }
   return { available: false, value: undefined }
-}
-
-function compatibilityDatabase(): Database {
-  return getDatabase()
-}
-
-function canUseCompatibility(status: string | undefined): boolean {
-  return status === undefined || status === 'idle' || status === 'loading'
 }
 
 function snapshotJson(value: unknown): string {
