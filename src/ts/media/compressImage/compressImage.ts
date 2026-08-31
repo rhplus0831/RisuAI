@@ -1,9 +1,13 @@
-import { getDatabase } from '../../storage/database.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 import { getImageType } from '../imageType'
 import { doLossyCompression } from './lossyCompression'
 
 export async function compressImage(data: Uint8Array) {
-  if (!getDatabase().imageCompression) {
+  if (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.media !== 'ready' ||
+    settingsResourceState.value.imageCompression !== true
+  ) {
     return data
   }
 

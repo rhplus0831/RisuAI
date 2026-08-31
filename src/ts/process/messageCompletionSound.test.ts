@@ -482,18 +482,18 @@ describe('completion sound Web Audio lifecycle', () => {
     await vi.waitFor(() => expect(StubAudioContext.instances[0]?.sources).toHaveLength(1))
   })
 
-  it('uses compatibility settings only while loading and fails closed on display-owner error', async () => {
+  it('waits for ready display settings and fails closed on owner error', async () => {
     const { playMessageCompletionSoundIfEnabled } = await loadCompletionSoundModule()
     resourceDatabase.playMessage = true
     settingsResourceState.value = { playMessage: false, playMessageOnTranslateEnd: false }
     settingsResourceState.groupStatuses.display = 'loading'
 
-    expect(playMessageCompletionSoundIfEnabled()).toBe(true)
-    await vi.waitFor(() => expect(StubAudioContext.instances[0]?.sources).toHaveLength(1))
+    expect(playMessageCompletionSoundIfEnabled()).toBe(false)
+    expect(StubAudioContext.instances).toHaveLength(0)
 
     settingsResourceState.groupStatuses.display = 'error'
     expect(playMessageCompletionSoundIfEnabled()).toBe(false)
-    expect(StubAudioContext.instances[0].sources).toHaveLength(1)
+    expect(StubAudioContext.instances).toHaveLength(0)
   })
 })
 

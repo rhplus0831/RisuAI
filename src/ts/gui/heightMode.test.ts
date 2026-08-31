@@ -47,15 +47,15 @@ describe('height mode runtime projection', () => {
     expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100%')
   })
 
-  it('uses loading compatibility and leaves the last value intact on owner error', () => {
+  it('waits while loading and leaves the last value intact on owner error', () => {
     heightModeState.settingsResourceState.groupStatuses.display = 'loading'
     heightModeState.database.heightMode = 'dvh'
     updateHeightMode()
-    expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100dvh')
+    expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('')
 
     heightModeState.settingsResourceState.groupStatuses.display = 'error'
     heightModeState.database.heightMode = 'vh'
     updateHeightMode()
-    expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100dvh')
+    expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('')
   })
 })

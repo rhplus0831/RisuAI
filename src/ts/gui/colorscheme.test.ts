@@ -187,7 +187,7 @@ describe('custom color scheme persistence', () => {
     expect(colorSchemeMocks.downloadFile).toHaveBeenCalledWith('colorScheme.json', JSON.stringify(custom))
   })
 
-  it('uses only the compatibility projection while the display owner is loading', () => {
+  it('does not export a compatibility projection while the display owner is loading', () => {
     const compatibility = scheme('eee')
     colorSchemeMocks.database.customColorScheme = compatibility
     colorSchemeMocks.settingsResourceState.value = { customColorScheme: scheme('fff') }
@@ -195,7 +195,7 @@ describe('custom color scheme persistence', () => {
 
     exportColorScheme()
 
-    expect(colorSchemeMocks.downloadFile).toHaveBeenCalledWith('colorScheme.json', JSON.stringify(compatibility))
+    expect(colorSchemeMocks.downloadFile).not.toHaveBeenCalled()
   })
 
   it('fails closed when the display owner is in error', () => {

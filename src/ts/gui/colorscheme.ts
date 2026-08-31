@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import { getDatabase, type Database } from '../storage/database.svelte'
+import type { Database } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { BufferToText } from '../util'
 import { selectSingleFile } from '../filePicker'
@@ -276,7 +276,6 @@ export const colorSchemeList = Object.keys(builtInColorSchemes) as (keyof typeof
 function displaySettingsOwner(): Partial<Database> | undefined {
   const status = settingsResourceState.groupStatuses.display ?? 'idle'
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 

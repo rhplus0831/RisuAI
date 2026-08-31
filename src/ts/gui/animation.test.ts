@@ -62,16 +62,16 @@ describe('app reduced motion preference', () => {
     expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('0.01ms')
   })
 
-  it('uses loading compatibility settings and fails closed after a display-owner error', () => {
+  it('waits for the display owner and leaves the last value intact on error', () => {
     animationState.settingsResourceState.value = { animationSpeed: 9, reducedMotion: true }
     animationState.settingsResourceState.groupStatuses.display = 'loading'
     animationState.database.animationSpeed = 0.2
     updateReducedMotion()
-    expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('0.2s')
+    expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('')
 
     animationState.settingsResourceState.groupStatuses.display = 'error'
     animationState.database.animationSpeed = 0.8
     updateReducedMotion()
-    expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('0.2s')
+    expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('')
   })
 })

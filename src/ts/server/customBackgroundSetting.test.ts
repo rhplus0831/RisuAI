@@ -36,12 +36,12 @@ describe('legacy custom background normalization ownership', () => {
     expect(customBackgroundState.applyServerBackedSetting).toHaveBeenCalledWith('customBackground', '')
   })
 
-  it('uses the compatibility value only while the display owner is loading', () => {
+  it('waits while the display owner is loading', () => {
     customBackgroundState.settingsResourceState.groupStatuses.display = 'loading'
     customBackgroundState.settingsResourceState.value.customBackground = 'owner-value'
 
-    expect(normalizeLegacyCustomBackgroundSetting()).toBe(true)
-    expect(customBackgroundState.applyServerBackedSetting).toHaveBeenCalledOnce()
+    expect(normalizeLegacyCustomBackgroundSetting()).toBe(false)
+    expect(customBackgroundState.applyServerBackedSetting).not.toHaveBeenCalled()
   })
 
   it('fails closed when the display owner is in error', () => {
