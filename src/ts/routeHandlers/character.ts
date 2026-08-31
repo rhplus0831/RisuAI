@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { characterRoutePath, type AppRoute } from '../routerRoute'
-import { charactersResourceState, getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { charactersResourceState } from '../server/resourceState.svelte'
 import { OpenRealmStore, PlaygroundStore, selectedCharID, settingsOpen } from '../stores.svelte'
 import { changeChar } from '../characters'
 import type { character } from '../storage/database.svelte'
@@ -70,9 +70,7 @@ function restoreSelectedCharacterRoute(replacePath: (path: string) => void): voi
 }
 
 function findRouteCharacterIndex(characterId: string): number {
-  const ownerIndex = uniqueCharacterOwnerIndex(characterId)
-  if (ownerIndex >= 0 || charactersResourceState.status === 'ready') return ownerIndex
-  return legacyCharacterIndex(characterId)
+  return charactersResourceState.status === 'ready' ? uniqueCharacterOwnerIndex(characterId) : -1
 }
 
 function uniqueCharacterOwnerIndex(characterId: string): number {
@@ -86,13 +84,8 @@ function uniqueCharacterOwnerIndex(characterId: string): number {
 }
 
 function selectedCharacterForRoute(selectedIndex: number): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
   const owner = charactersResourceState.characters[selectedIndex]
   if (owner?.chaId && uniqueCharacterOwnerIndex(owner.chaId) === selectedIndex) return owner
-  if (charactersResourceState.status === 'ready') return undefined
-  return getDatabase().characters?.[selectedIndex]
-}
-
-/** Compatibility fallback for local/offline databases before the owner list is ready. */
-function legacyCharacterIndex(characterId: string): number {
-  return getDatabase().characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
+  return undefined
 }

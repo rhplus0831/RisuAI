@@ -44,6 +44,22 @@ describe('character route owner lookup', () => {
     expect(get(selectedCharID)).toBe(-1)
   })
 
+  it.each(['idle', 'loading', 'error'] as const)(
+    'redirects instead of routing through retained rows while the owner is %s',
+    async (status) => {
+      charactersResourceState.status = status
+      const replacePath = vi.fn()
+
+      await applyCharacterRoute(
+        { kind: 'character', path: '/character/owner-a/chat-a', chaId: 'owner-a', chatId: 'chat-a' },
+        { isFresh: () => true, replacePath },
+      )
+
+      expect(replacePath).toHaveBeenCalledWith('/')
+      expect(get(selectedCharID)).toBe(-1)
+    },
+  )
+
   it('fences a stale route before changing selection', async () => {
     const replacePath = vi.fn()
     await applyCharacterRoute(
