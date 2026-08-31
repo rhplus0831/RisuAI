@@ -212,8 +212,12 @@ export const RESOURCE_SURFACE_MANIFEST = {
       collection('personas', ['render', 'interact']),
       standalone('selectedPersonaId', ['render', 'interact']),
       standalone('selectedPersona', ['render', 'interact']),
+      standalone('personaPrompt', ['render', 'interact']),
+      standalone('userIcon', ['render', 'interact']),
+      standalone('userNote', ['render', 'interact']),
     ],
-    notes: 'Persona data supplies the selected user identity shown beside a selected character.',
+    notes:
+      'The complete persona owner supplies the selected user identity shown beside a selected character; its fail-closed snapshot also validates the legacy profile projection.',
   },
   'route:character-chat': {
     family: 'route',

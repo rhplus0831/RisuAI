@@ -186,6 +186,26 @@ describe('route resource manifest', () => {
     expect(new Set(shellSettingKeys)).toEqual(new Set(SERVER_SHELL_SETTINGS_KEYS))
   })
 
+  it('hydrates the complete persona owner before rendering a character chat', () => {
+    const requirements = resolveResourceRequirements(
+      resourceSurfacesForRoute(parseRoute('/character/character-a/chat-a')),
+    )
+    const standaloneSettings = requirements.flatMap((requirement) =>
+      requirement.kind === 'standalone-setting' ? [requirement.setting] : [],
+    )
+    const account = requirements.find(
+      (requirement) => requirement.kind === 'settings-group' && requirement.group === 'account',
+    )
+
+    expect(standaloneSettings).toEqual(
+      expect.arrayContaining(['selectedPersonaId', 'selectedPersona', 'personaPrompt', 'userIcon', 'userNote']),
+    )
+    expect(account).toMatchObject({ keys: ['username'], purposes: ['render'] })
+    expect(
+      requirements.some((requirement) => requirement.kind === 'collection' && requirement.collection === 'personas'),
+    ).toBe(true)
+  })
+
   it('declares generation selection pointers outside the minimal shell', () => {
     const requirements: readonly ResourceRequirement[] =
       RESOURCE_SURFACE_MANIFEST['runtime:chat-generation'].requirements
