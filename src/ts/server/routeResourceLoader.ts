@@ -27,7 +27,6 @@ import {
   failCollectionsResourceLoad,
   failSettingsGroupResourceLoad,
   failStandaloneSettingResourceLoad,
-  getResourceDatabase,
   settingsResourceState,
 } from './resourceState.svelte'
 import { currentPromptTemplateOwnerId, ensurePromptTemplateHydrated } from './promptTemplateHydration'
@@ -599,7 +598,7 @@ function refreshResult(identity: string, result: ServerResourceRefreshResult): R
 }
 
 function activePromptTemplateOwnerId(chatId: string): string | null {
-  for (const character of getResourceDatabase().characters ?? []) {
+  for (const character of readyRouteCharacters()) {
     const chat = character.chats?.find((candidate) => candidate.id === chatId)
     const ownerId = chat?.generationSettings?.promptPresetId
     if (typeof ownerId === 'string' && ownerId.trim() !== '') return ownerId.trim()
@@ -613,11 +612,15 @@ async function prepareRouteTargetResources(
   minimumRevision: number | undefined,
 ): Promise<boolean> {
   if (route.kind !== 'character' || !route.chatId) return true
-  const routeCharacter = getResourceDatabase().characters?.find((character) => character?.chaId === route.chaId)
+  const routeCharacter = readyRouteCharacters().find((character) => character?.chaId === route.chaId)
   if (!routeCharacter?.chats?.some((chat) => chat.id === route.chatId)) return true
 
   try {
-    if (!(await hydrateChatMessageWindow(route.chatId, getInitialChatLoadPages(getResourceDatabase())))) {
+    const displaySettings =
+      settingsResourceState.status !== 'error' && settingsResourceState.groupStatuses.display === 'ready'
+        ? settingsResourceState.value
+        : {}
+    if (!(await hydrateChatMessageWindow(route.chatId, getInitialChatLoadPages(displaySettings)))) {
       throw new Error('Selected chat hydration failed')
     }
     if (!isCurrentRouteLoad(load)) return false
@@ -640,6 +643,10 @@ async function prepareRouteTargetResources(
   }
 
   return isCurrentRouteLoad(load)
+}
+
+function readyRouteCharacters() {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 function requirementRequestKey(requirement: ResourceRequirement, route: AppRoute | null): string {
