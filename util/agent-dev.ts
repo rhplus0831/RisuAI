@@ -5,10 +5,11 @@ import { parseAgentDataSandboxMode, prepareAgentDataSandbox } from '../server/fa
 const repoRoot = process.cwd()
 const frontendPort = parsePort(process.env.RISU_AGENT_DEV_PORT, 6418, 'RISU_AGENT_DEV_PORT')
 const apiPort = parsePort(process.env.RISU_AGENT_API_PORT, 6419, 'RISU_AGENT_API_PORT')
-// Agent mode disables authentication for automated browser sessions, so keep
-// it local unless the operator explicitly opts into a network-visible bind.
-const host = process.env.RISU_AGENT_DEV_HOST ?? '127.0.0.1'
 const traceMode = process.env.RISU_API_TRACE_MODE?.trim().toLowerCase()
+// Human mode keeps password authentication enabled, so expose it on network
+// interfaces (including Tailscale) by default. Agent mode bypasses auth and
+// must remain loopback-only unless the operator explicitly opts into a wider bind.
+const host = process.env.RISU_AGENT_DEV_HOST ?? (traceMode === 'human' ? '0.0.0.0' : '127.0.0.1')
 const defaultAuthBypass = traceMode === 'human' ? 'FALSE' : 'TRUE'
 // Agent mode runs against a disposable clone of the human data dir so
 // agent-driven sessions can mutate state freely. An explicit RISU_API_DATA_DIR

@@ -85,6 +85,8 @@ pnpm dev:human
 ```
 
 The app is available at `http://localhost:6002`, with the API on port `6001`.
+Human development mode also listens on network interfaces, so another device
+on the same Tailscale network can open the Tailscale IPv4 URL printed by Vite.
 
 Alternatively, run the two halves in separate terminals:
 
