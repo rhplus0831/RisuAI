@@ -706,6 +706,160 @@ export const charactersResourceState = $state<CharactersResourceState>({
   rowErrors: {},
 })
 
+export interface PersonaOwnerStateSnapshot {
+  personas: Database['personas']
+  selectedPersonaId: string | null
+  /** Derived compatibility projection. Never use this field as persona identity. */
+  selectedPersona: number
+  username: string
+  userIcon: string
+  personaPrompt: string
+  userNote: string
+}
+
+export type PersonaOwnerStateDraft = Omit<PersonaOwnerStateSnapshot, 'selectedPersona'>
+
+/**
+ * Read the canonical persona collection and stable selection owner together.
+ * Missing, duplicate, mismatched, or errored owners fail closed; normal reads
+ * never repair rows or fall back to the legacy numeric pointer.
+ */
+export function getPersonaOwnerStateSnapshot(): PersonaOwnerStateSnapshot | null {
+  if (personaOwnerHasResourceError()) return null
+
+  const personas = collectionsResourceState.values.personas
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (!Array.isArray(personas) || !isUniquePresetCollection(personas)) return null
+
+  const selectedPersonaId = settings.selectedPersonaId
+  if (selectedPersonaId !== null && !nonEmptyString(selectedPersonaId)) return null
+  const selectedPersona = personaSelectionIndex(personas, selectedPersonaId)
+  if (
+    (personas.length === 0 ? selectedPersonaId !== null || selectedPersona !== -1 : selectedPersona === -1) ||
+    settings.selectedPersona !== selectedPersona ||
+    typeof settings.username !== 'string' ||
+    typeof settings.userIcon !== 'string' ||
+    typeof settings.personaPrompt !== 'string' ||
+    typeof settings.userNote !== 'string'
+  ) {
+    return null
+  }
+
+  return {
+    personas: cloneJsonValue(personas) as Database['personas'],
+    selectedPersonaId,
+    selectedPersona,
+    username: settings.username,
+    userIcon: settings.userIcon,
+    personaPrompt: settings.personaPrompt,
+    userNote: settings.userNote,
+  }
+}
+
+/**
+ * Apply one optimistic persona-owner mutation atomically. The callback edits a
+ * detached draft that exposes only stable selection identity; commit derives
+ * the numeric compatibility pointer from the resulting unique rows.
+ */
+export function updatePersonaOwnerState(mutator: (draft: PersonaOwnerStateDraft) => boolean | void): boolean {
+  const current = getPersonaOwnerStateSnapshot()
+  if (!current) return false
+
+  const draft: PersonaOwnerStateDraft = {
+    personas: cloneJsonValue(current.personas),
+    selectedPersonaId: current.selectedPersonaId,
+    username: current.username,
+    userIcon: current.userIcon,
+    personaPrompt: current.personaPrompt,
+    userNote: current.userNote,
+  }
+  if (mutator(draft) === false || !isUniquePresetCollection(draft.personas)) return false
+  if (draft.selectedPersonaId !== null && !nonEmptyString(draft.selectedPersonaId)) return false
+
+  const selectedPersona = personaSelectionIndex(draft.personas, draft.selectedPersonaId)
+  if (
+    (draft.personas.length === 0
+      ? draft.selectedPersonaId !== null || selectedPersona !== -1
+      : selectedPersona === -1) ||
+    typeof draft.username !== 'string' ||
+    typeof draft.userIcon !== 'string' ||
+    typeof draft.personaPrompt !== 'string' ||
+    typeof draft.userNote !== 'string'
+  ) {
+    return false
+  }
+
+  collectionsResourceState.values.personas = cloneJsonValue(draft.personas)
+  const settings = settingsResourceState.value as Record<string, unknown>
+  settings.selectedPersonaId = draft.selectedPersonaId
+  settings.selectedPersona = selectedPersona
+  settings.username = draft.username
+  settings.userIcon = draft.userIcon
+  settings.personaPrompt = draft.personaPrompt
+  settings.userNote = draft.userNote
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Reassert one retained optimistic create across a split collection refresh.
+ * The row and stable selection were already captured by the durable attempt;
+ * this only restores that exact row and re-derives the numeric projection.
+ */
+export function reassertPendingPersonaOwnerRow(persona: Database['personas'][number]): boolean {
+  if (personaOwnerHasResourceError() || !isPlainRecord(persona) || !nonEmptyString(persona.id)) return false
+  const personas = collectionsResourceState.values.personas
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (!Array.isArray(personas) || !isUniquePresetCollection(personas)) return false
+  if (personas.some((candidate) => isPlainRecord(candidate) && candidate.id === persona.id)) return false
+
+  const selectedPersonaId = settings.selectedPersonaId
+  if (selectedPersonaId !== null && !nonEmptyString(selectedPersonaId)) return false
+  if (
+    typeof settings.username !== 'string' ||
+    typeof settings.userIcon !== 'string' ||
+    typeof settings.personaPrompt !== 'string' ||
+    typeof settings.userNote !== 'string'
+  ) {
+    return false
+  }
+
+  const nextPersonas = [...personas, cloneJsonValue(persona)]
+  if (!isUniquePresetCollection(nextPersonas)) return false
+  const selectedPersona = personaSelectionIndex(nextPersonas, selectedPersonaId)
+  if (selectedPersona === -1) return false
+
+  collectionsResourceState.values.personas = nextPersonas as Database['personas']
+  settings.selectedPersona = selectedPersona
+  markResourceDatabaseChanged()
+  return true
+}
+
+function personaOwnerHasResourceError(): boolean {
+  return (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.account === 'error' ||
+    settingsResourceState.standaloneStatuses.selectedPersonaId === 'error' ||
+    settingsResourceState.standaloneStatuses.selectedPersona === 'error' ||
+    settingsResourceState.standaloneStatuses.personaPrompt === 'error' ||
+    settingsResourceState.standaloneStatuses.userIcon === 'error' ||
+    settingsResourceState.standaloneStatuses.userNote === 'error' ||
+    collectionsResourceState.statuses.personas === 'error'
+  )
+}
+
+function personaSelectionIndex(personas: readonly unknown[], selectedPersonaId: string | null): number {
+  if (!selectedPersonaId) return -1
+  let selectedIndex = -1
+  for (let index = 0; index < personas.length; index += 1) {
+    const persona = personas[index]
+    if (!isPlainRecord(persona) || persona.id !== selectedPersonaId) continue
+    if (selectedIndex !== -1) return -1
+    selectedIndex = index
+  }
+  return selectedIndex
+}
+
 /**
  * Read-only owner boundary for chat metadata consumers. This deliberately
  * projects scalar display metadata instead of exposing the chat record, whose
@@ -2050,7 +2204,9 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
 
   if (
     payload.legacyProfileProjectionApplied &&
-    (settingsResourceState.status !== 'ready' || settingsResourceState.fullRevision === null)
+    (settingsResourceState.status !== 'ready' ||
+      settingsResourceState.fullRevision === null ||
+      !getPersonaOwnerStateSnapshot())
   ) {
     return false
   }
@@ -2084,6 +2240,7 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
     !['create', 'delete', 'select', 'reorder'].includes(payload.operation) ||
     typeof payload.collectionWritten !== 'boolean' ||
     typeof payload.settingsWritten !== 'boolean' ||
+    !payload.settingsWritten ||
     ((payload.operation === 'create' || payload.operation === 'delete' || payload.operation === 'reorder') &&
       !payload.collectionWritten)
   ) {
@@ -2113,22 +2270,12 @@ export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLo
     return false
   }
 
-  if (payload.settingsWritten) {
-    const settings = settingsResourceState.value as Record<string, unknown>
-    const selectedPersona = settings.selectedPersona
-    if (
-      settingsResourceState.status !== 'ready' ||
-      settingsResourceState.fullRevision === null ||
-      !Number.isInteger(selectedPersona) ||
-      (selectedPersona as number) < 0 ||
-      (selectedPersona as number) >= personas.length ||
-      typeof settings.username !== 'string' ||
-      typeof settings.userIcon !== 'string' ||
-      typeof settings.personaPrompt !== 'string' ||
-      typeof settings.userNote !== 'string'
-    ) {
-      return false
-    }
+  if (!getPersonaOwnerStateSnapshot()) return false
+  if (
+    payload.settingsWritten &&
+    (settingsResourceState.status !== 'ready' || settingsResourceState.fullRevision === null)
+  ) {
+    return false
   }
 
   let changed = false

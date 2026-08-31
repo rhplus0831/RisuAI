@@ -4,6 +4,7 @@ import { resolveEffectivePersonaId, resolvePersonaModuleIds } from './personaMod
 
 function database(): Database {
   return {
+    selectedPersonaId: 'persona-global',
     selectedPersona: 0,
     personas: [
       { id: 'persona-global', name: 'Global', icon: '', personaPrompt: '', modules: ['module-a'] },
@@ -47,6 +48,14 @@ describe('Persona module links', () => {
     expect(resolvePersonaModuleIds(db, chat())).toEqual(['module-a'])
   })
 
+  it('uses the stable global selection instead of a stale numeric projection', () => {
+    const db = database()
+    db.selectedPersona = 1
+
+    expect(resolveEffectivePersonaId(db, chat())).toBe('persona-global')
+    expect(resolvePersonaModuleIds(db, chat())).toEqual(['module-a'])
+  })
+
   it('does not revive legacy or global Persona modules once modern chat settings exist', () => {
     const db = database()
 
@@ -62,5 +71,15 @@ describe('Persona module links', () => {
     expect(resolvePersonaModuleIds(db, chat({ generationSettings: { personaId: 'persona-chat' } }))).toEqual([
       'module-b',
     ])
+  })
+
+  it('fails closed when the stable global selection is missing or duplicated', () => {
+    const missing = database()
+    missing.selectedPersonaId = 'missing'
+    expect(resolvePersonaModuleIds(missing, chat())).toEqual([])
+
+    const duplicate = database()
+    duplicate.personas[1].id = 'persona-global'
+    expect(resolvePersonaModuleIds(duplicate, chat())).toEqual([])
   })
 })

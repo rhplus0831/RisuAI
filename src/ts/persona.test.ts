@@ -99,15 +99,29 @@ function makePersona(patch: Record<string, unknown>): Record<string, unknown> {
 }
 
 function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPersona = 0): void {
+  const selectedId = personas[selectedPersona]?.id
+  const selectedPersonaId =
+    typeof selectedId === 'string' &&
+    selectedId.trim() !== '' &&
+    personas.filter((persona) => persona.id === selectedId).length === 1
+      ? selectedId
+      : null
   setDatabaseLite({
     characters: [],
     personas,
+    selectedPersonaId,
     selectedPersona,
     username: 'Unsaved User Name',
     userIcon: 'unsaved-user-icon.png',
     personaPrompt: 'Unsaved persona prompt',
     userNote: 'Unsaved user note',
   } as any)
+}
+
+function setSelectedPersonaIndex(index: number): void {
+  const personaId = getDatabase().personas[index]?.id
+  getDatabase().selectedPersonaId = typeof personaId === 'string' ? personaId : null
+  getDatabase().selectedPersona = index
 }
 
 function applySelectedPersonaProjection(
@@ -189,6 +203,7 @@ describe('persona ID read and command preparation', () => {
     })
     const previous = {
       personas: [personaA, personaB],
+      selectedPersonaId: 'persona-a',
       selectedPersona: 0,
       username: 'Edited A',
       userIcon: 'edited-a.png',
@@ -206,6 +221,7 @@ describe('persona ID read and command preparation', () => {
         },
         personaB,
       ],
+      selectedPersonaId: 'persona-b',
       selectedPersona: 1,
       username: 'B',
       userIcon: 'b.png',
@@ -246,8 +262,13 @@ describe('persona ID read and command preparation', () => {
     expect(
       personaMutationOptimisticAcknowledgement({
         operation: 'reorder',
-        previous: { ...attempted, selectedPersona: 1 },
-        attempted: { ...attempted, personas: [personaB, attempted.personas[0]], selectedPersona: 0 },
+        previous: { ...attempted, selectedPersonaId: 'persona-b', selectedPersona: 1 },
+        attempted: {
+          ...attempted,
+          personas: [personaB, attempted.personas[0]],
+          selectedPersonaId: 'persona-b',
+          selectedPersona: 0,
+        },
         mirrorLegacyProfile: false,
         saveCurrent: false,
         collectionProjectionEpoch: 8,
@@ -727,7 +748,7 @@ describe('persona ID read and command preparation', () => {
         note: 'Server A note',
       }) as any,
     )
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     getDatabase().username = 'Server Persona A'
     getDatabase().userIcon = 'server-a.png'
     getDatabase().personaPrompt = 'Server A prompt'
@@ -1379,7 +1400,7 @@ describe('persona ID read and command preparation', () => {
 
     try {
       await vi.waitFor(async () => expect(await listPendingMutations()).toHaveLength(1))
-      getDatabase().selectedPersona = 1
+      setSelectedPersonaIndex(1)
       getDatabase().username = 'Persona B'
       getDatabase().userIcon = ''
       getDatabase().personaPrompt = 'B prompt'
@@ -1539,6 +1560,7 @@ describe('persona ID read and command preparation', () => {
     applySettingsResource({
       revision: 1,
       settings: {
+        selectedPersonaId: 'persona-a',
         selectedPersona: 0,
         username: 'Persona A',
         userIcon: 'a.png',
@@ -1674,7 +1696,7 @@ describe('persona ID read and command preparation', () => {
       ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     getDatabase().username = 'Persona B live name'
     getDatabase().userIcon = 'b-live.png'
     getDatabase().personaPrompt = 'Persona B live prompt'
@@ -1744,7 +1766,7 @@ describe('persona ID read and command preparation', () => {
       ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     getDatabase().username = 'Persona B live name'
     getDatabase().userIcon = 'b-live.png'
     getDatabase().personaPrompt = 'Persona B live prompt'
@@ -2060,7 +2082,7 @@ describe('persona ID read and command preparation', () => {
       ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    getDatabase().selectedPersona = 2
+    setSelectedPersonaIndex(2)
     getDatabase().username = 'Persona C live name'
     getDatabase().userIcon = 'c-live.png'
     getDatabase().personaPrompt = 'Persona C live prompt'
@@ -2151,7 +2173,7 @@ describe('persona ID read and command preparation', () => {
     }
   })
 
-  it('selectedPersonaId returns null for missing and duplicate IDs without mutating the projection', () => {
+  it('selectedPersonaId fails closed for missing, duplicate, or mismatched owners without mutation', () => {
     seedPersonaState([makePersona({ name: 'Missing ID' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
     const missingBefore = cloneJsonValue(getDatabase())
 
@@ -2169,6 +2191,13 @@ describe('persona ID read and command preparation', () => {
 
     expect(selectedPersonaId()).toBeNull()
     expect(getDatabase({ snapshot: true })).toEqual(duplicateBefore)
+
+    seedPersonaState([makePersona({ id: 'persona-a', name: 'A' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
+    getDatabase().selectedPersona = 1
+    const mismatchBefore = cloneJsonValue(getDatabase())
+
+    expect(selectedPersonaId()).toBeNull()
+    expect(getDatabase({ snapshot: true })).toEqual(mismatchBefore)
   })
 
   it('does not assign IDs or save profile fields while preparing an invalid reorder', () => {
@@ -2204,7 +2233,7 @@ describe('persona ID read and command preparation', () => {
       0,
     )
     const confirmedPersonaId = selectedPersonaId()
-    getDatabase().selectedPersona = 1
+    setSelectedPersonaIndex(1)
     const before = cloneJsonValue(getDatabase())
 
     expect(confirmedPersonaId).toBe('persona-a')
@@ -2232,6 +2261,24 @@ describe('persona ID read and command preparation', () => {
 })
 
 describe('persona collection rollback guards', () => {
+  it('failed first create restores the canonical empty owner selection', async () => {
+    seedPersonaState([], -1)
+    mockNextCommandFailure()
+
+    const mutation = createNewUserPersonaWithOutcome()
+    await expect(mutation.persistence).resolves.toBe('failed')
+
+    expect(getDatabase().personas).toEqual([])
+    expect(getDatabase()).toMatchObject({
+      selectedPersonaId: null,
+      selectedPersona: -1,
+      username: 'Unsaved User Name',
+      userIcon: 'unsaved-user-icon.png',
+      personaPrompt: 'Unsaved persona prompt',
+      userNote: 'Unsaved user note',
+    })
+  })
+
   it('failed create removes only the still-attempted new persona and preserves newer sibling edit', async () => {
     seedPersonaState(
       [
@@ -2465,7 +2512,7 @@ describe('persona collection rollback guards', () => {
 
     expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
     getDatabase().personas = [getDatabase().personas[2], getDatabase().personas[0], getDatabase().personas[1]]
-    getDatabase().selectedPersona = 0
+    setSelectedPersonaIndex(0)
     await flushCommandEffects()
 
     expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-c', 'persona-a'])

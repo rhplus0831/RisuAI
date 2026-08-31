@@ -53,6 +53,7 @@ import {
   captureSettingsProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
+  getPersonaOwnerStateSnapshot,
   getResourceDatabase,
   getChatFolderMetadataOwnerSnapshot,
   getChatMetadataOwnerState,
@@ -80,6 +81,7 @@ import {
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
   settingsResourceState,
+  updatePersonaOwnerState,
   withResourceDatabaseWrite,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
@@ -756,6 +758,7 @@ describe('resource-scoped database state', () => {
             note: 'Attempted note',
           },
         ],
+        selectedPersonaId: 'persona-a',
         selectedPersona: 0,
         username: 'Newer local name',
         userIcon: 'newer-local-icon',
@@ -814,12 +817,51 @@ describe('resource-scoped database state', () => {
     expect(isSettingsAcknowledgementTainted()).toBe(true)
   })
 
+  it('mutates stable persona selection and its numeric compatibility projection atomically', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [
+          { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
+          { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
+        ],
+        selectedPersonaId: 'persona-b',
+        selectedPersona: 1,
+        username: 'Legacy',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+      } as never,
+      3,
+    )
+
+    const snapshot = getPersonaOwnerStateSnapshot()
+    expect(snapshot).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 1 })
+    expect(
+      updatePersonaOwnerState((draft) => {
+        draft.personas = [draft.personas[1], draft.personas[0]]
+      }),
+    ).toBe(true)
+    expect(getPersonaOwnerStateSnapshot()).toMatchObject({
+      selectedPersonaId: 'persona-b',
+      selectedPersona: 0,
+    })
+    expect(getResourceDatabase()).toMatchObject({ selectedPersonaId: 'persona-b', selectedPersona: 0 })
+    ;(settingsResourceState.value as Record<string, unknown>).selectedPersona = 1
+    const before = composeResourceDatabaseSnapshot()
+    expect(getPersonaOwnerStateSnapshot()).toBeNull()
+    expect(updatePersonaOwnerState((draft) => draft.personas.reverse())).toBe(false)
+    expect(composeResourceDatabaseSnapshot()).toEqual(before)
+  })
+
   it('fences an accepted persona PATCH after a later optimistic delete removed the row', () => {
     replaceResourceDatabase(
       {
         ...completeCollections(),
         characters: [],
         personas: [{ id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' }],
+        selectedPersonaId: 'persona-b',
         selectedPersona: 0,
         username: 'B',
         userIcon: '',
@@ -913,6 +955,7 @@ describe('resource-scoped database state', () => {
           { id: 'persona-b', name: 'Newer B', icon: '', personaPrompt: 'B', note: '' },
           { id: 'persona-a', name: 'Newer A', icon: '', personaPrompt: 'A', note: '' },
         ],
+        selectedPersonaId: 'persona-b',
         selectedPersona: 0,
         username: 'Newer B',
         userIcon: '',
@@ -931,11 +974,11 @@ describe('resource-scoped database state', () => {
         revision: 4,
         operation: 'create',
         collectionWritten: true,
-        settingsWritten: false,
+        settingsWritten: true,
       }),
     ).toBe(true)
     expect(collectionsResourceState.revisions.personas).toBe(4)
-    expect(settingsResourceState.fullRevision).toBe(3)
+    expect(settingsResourceState.fullRevision).toBe(4)
 
     expect(
       applyPersonaMutationLocalEffect({
@@ -980,6 +1023,7 @@ describe('resource-scoped database state', () => {
         ...completeCollections(),
         characters: [],
         personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+        selectedPersonaId: 'persona-a',
         selectedPersona: 0,
         username: 'A',
         userIcon: '',

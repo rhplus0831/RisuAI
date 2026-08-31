@@ -16,7 +16,7 @@ export interface PersonaIconUploadOperation extends PersonaIconUploadTarget {
 }
 
 export interface PersonaIconUploadFreshness {
-  readonly selectedPersona: number
+  readonly selectedPersonaId: string | null
   readonly userIcon: unknown
   readonly personas: readonly PersonaIconRecord[] | null | undefined
 }
@@ -33,28 +33,28 @@ function nonBlankPersonaId(persona: PersonaIconRecord | null | undefined): strin
   return typeof id === 'string' && id.trim().length > 0 ? id : null
 }
 
-function uniquePersonaIdAt(personas: readonly PersonaIconRecord[], index: number): string | null {
-  const id = nonBlankPersonaId(personas[index])
-  if (!id) return null
-
-  let matches = 0
-  for (const persona of personas) {
-    if (nonBlankPersonaId(persona) === id) {
-      matches += 1
-    }
+function uniquePersonaIndexById(personas: readonly PersonaIconRecord[], personaId: string | null): number | null {
+  if (!personaId) return null
+  const seen = new Set<string>()
+  let selectedIndex = -1
+  for (let index = 0; index < personas.length; index += 1) {
+    const id = nonBlankPersonaId(personas[index])
+    if (!id || seen.has(id)) return null
+    seen.add(id)
+    if (id === personaId) selectedIndex = index
   }
-  return matches === 1 ? id : null
+  return selectedIndex === -1 ? null : selectedIndex
 }
 
 export function capturePersonaIconUploadTarget(input: PersonaIconUploadFreshness): PersonaIconUploadTarget | null {
   const personas = input.personas ?? []
-  const personaId = uniquePersonaIdAt(personas, input.selectedPersona)
-  if (!personaId) return null
+  const selectedIndex = uniquePersonaIndexById(personas, input.selectedPersonaId)
+  if (selectedIndex === null || !input.selectedPersonaId) return null
 
   return {
-    personaId,
+    personaId: input.selectedPersonaId,
     userIconSnapshot: snapshotJson(input.userIcon),
-    rowIconSnapshot: snapshotJson(personas[input.selectedPersona]?.icon),
+    rowIconSnapshot: snapshotJson(personas[selectedIndex]?.icon),
   }
 }
 
@@ -75,10 +75,12 @@ export function resolveFreshPersonaIconUploadIndex(
 ): number | null {
   if (!personaIconUploadGuard.isLatest(operation.token)) return null
   const personas = freshness.personas ?? []
-  if (uniquePersonaIdAt(personas, freshness.selectedPersona) !== operation.personaId) return null
+  if (freshness.selectedPersonaId !== operation.personaId) return null
+  const selectedIndex = uniquePersonaIndexById(personas, freshness.selectedPersonaId)
+  if (selectedIndex === null) return null
   if (snapshotJson(freshness.userIcon) !== operation.userIconSnapshot) return null
-  if (snapshotJson(personas[freshness.selectedPersona]?.icon) !== operation.rowIconSnapshot) return null
-  return freshness.selectedPersona
+  if (snapshotJson(personas[selectedIndex]?.icon) !== operation.rowIconSnapshot) return null
+  return selectedIndex
 }
 
 export function isFreshPersonaIconUpload(

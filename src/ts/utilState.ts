@@ -12,6 +12,7 @@ import {
   charactersResourceState,
   collectionsResourceState,
   getChatMetadataOwnerSnapshot,
+  getPersonaOwnerStateSnapshot,
   settingsResourceState,
 } from './server/resourceState.svelte'
 
@@ -22,12 +23,9 @@ export interface UserPersonaPresentation {
 }
 
 function selectedPersonaRecord(database: Database): Database['personas'][number] | undefined {
-  const index = database.selectedPersona
-  const persona = database.personas?.[index]
-  const id = persona?.id
-  if (!persona || typeof id !== 'string' || id.trim() === '') return undefined
-  if (database.personas.filter((candidate) => candidate?.id === id).length !== 1) return undefined
-  return persona
+  const id = database.selectedPersonaId
+  if (typeof id !== 'string' || id.trim() === '') return undefined
+  return uniquePersonaRecord(database.personas ?? [], id)
 }
 
 function uniquePersonaRecord(
@@ -39,25 +37,20 @@ function uniquePersonaRecord(
 }
 
 function personaOwnerRows(): Database['personas'] {
-  const personas = collectionsResourceState.values.personas
-  const status = collectionsResourceState.statuses.personas
-  if (status === 'ready') {
-    return Array.isArray(personas) ? personas : []
-  }
-  if (status === 'error') return []
-  // Before the collection read completes, this value is the compatibility
-  // projection retained by bootstrap. A ready owner never falls through here.
-  return Array.isArray(personas) ? personas : []
+  return getPersonaOwnerStateSnapshot()?.personas ?? []
 }
 
 function personaPresentationDatabase(): Database {
-  const settings = settingsResourceState.value as unknown as Partial<Database>
+  const owner = getPersonaOwnerStateSnapshot()
+  if (owner) return owner as Database
   return {
-    personas: personaOwnerRows(),
-    selectedPersona: Number.isInteger(settings.selectedPersona) ? settings.selectedPersona : -1,
-    username: typeof settings.username === 'string' ? settings.username : 'User',
-    userIcon: typeof settings.userIcon === 'string' ? settings.userIcon : '',
-    personaPrompt: typeof settings.personaPrompt === 'string' ? settings.personaPrompt : '',
+    personas: [],
+    selectedPersonaId: null,
+    selectedPersona: -1,
+    username: 'User',
+    userIcon: '',
+    personaPrompt: '',
+    userNote: '',
   } as Database
 }
 

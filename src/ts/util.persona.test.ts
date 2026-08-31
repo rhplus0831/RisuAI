@@ -16,10 +16,12 @@ import {
 function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
   selectedCharID.set(0)
   testDatabaseState.db = {
+    selectedPersonaId: 'global-persona',
     selectedPersona: 1,
     username: 'Global Persona',
     userIcon: 'global.png',
     personaPrompt: 'global prompt',
+    userNote: '',
     personas: [
       {
         id: 'chat-persona',
@@ -96,15 +98,15 @@ describe('active chat persona display helpers', () => {
     expect(getPersonaPrompt()).toBe('CANONICAL PROMPT')
   })
 
-  it('fails closed to legacy compatibility when the selected row ID is ambiguous', () => {
+  it('fails closed instead of falling back to legacy compatibility when selection is ambiguous', () => {
     const db = testDatabaseState.db
     db.username = 'Compatibility Name'
     db.personaPrompt = 'Compatibility Prompt'
     db.personas[1] = { ...db.personas[1], id: 'duplicate-persona', name: 'Ambiguous Name' }
     db.personas[2] = { ...db.personas[2], id: 'duplicate-persona', personaPrompt: 'Ambiguous Prompt' }
 
-    expect(getUserName()).toBe('Compatibility Name')
-    expect(getPersonaPrompt()).toBe('Compatibility Prompt')
+    expect(getUserName()).toBe('User')
+    expect(getPersonaPrompt()).toBe('')
   })
 
   it('uses the chat generation-settings persona before the global selected persona', () => {
@@ -210,7 +212,7 @@ describe('active chat persona display helpers', () => {
     testDatabaseState.db.characters[0].chats[0].generationSettings = { personaId: 'chat-persona' } as never
 
     expect(checkPersonaBinded()).toBeNull()
-    expect(getUserDisplayName()).toBe('Visible Global Persona')
+    expect(getUserDisplayName()).toBe('User')
   })
 
   it('does not fall back to the selected-index mirror after the character owner is ready', () => {

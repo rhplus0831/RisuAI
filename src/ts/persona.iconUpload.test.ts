@@ -155,6 +155,7 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
   setDatabaseLite({
     characters: [],
     personas,
+    selectedPersonaId: typeof selected?.id === 'string' ? selected.id : null,
     selectedPersona,
     username: selected?.name ?? '',
     userIcon: selected?.icon ?? '',
@@ -165,6 +166,7 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
 
 function selectPersonaDirect(index: number): void {
   const target = getDatabase().personas[index]
+  getDatabase().selectedPersonaId = target.id
   getDatabase().selectedPersona = index
   getDatabase().username = target.name
   getDatabase().userIcon = target.icon
@@ -291,7 +293,7 @@ describe('persona icon upload freshness', () => {
 
     expect(selectedFileState.requestedExtensions).toEqual([['png', 'webp']])
     expect(calls.filter((call) => call.url === '/api/v1/assets')).toHaveLength(1)
-    expect(getDatabase().userIcon).toBe('webp-icon')
+    expect(getDatabase().userIcon).toBe('old-icon')
     expect(getDatabase().personas[0].icon).toBe('webp-icon')
   })
 
@@ -389,10 +391,10 @@ describe('persona icon upload freshness', () => {
     })
 
     expect(getDatabase()).toMatchObject({
-      username: 'Edited Name',
-      personaPrompt: 'Edited prompt',
-      userNote: 'Edited note',
-      userIcon: 'fresh-icon',
+      username: 'Old Name',
+      personaPrompt: 'Old prompt',
+      userNote: 'Old note',
+      userIcon: 'old-icon',
     })
     expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-edit',
@@ -404,7 +406,7 @@ describe('persona icon upload freshness', () => {
       largePortrait: false,
     })
     expect(commandCalls(calls)[0].body).toMatchObject({
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
     })
     expect((commandCalls(calls)[0].body as { patch: unknown }).patch).toEqual({
       name: 'Edited Name',
@@ -436,7 +438,7 @@ describe('persona icon upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(getDatabase().userIcon).toBe('older-icon')
+    expect(getDatabase().userIcon).toBe('old-icon')
     expect(getDatabase().personas[0].icon).toBe('older-icon')
   })
 
@@ -492,7 +494,7 @@ describe('persona icon upload freshness', () => {
       await expect(selectUserImg()).resolves.toBe('queued')
 
       expect(personaAlertState.current).toMatchObject({ type: 'normal', msg: language.personaIconSaveQueued })
-      expect(getDatabase().userIcon).toBe('queued-icon')
+      expect(getDatabase().userIcon).toBe('old-icon')
       expect(getDatabase().personas[0].icon).toBe('queued-icon')
       expect((await listPendingMutations()).map((entry) => entry.intent.requests[0].method)).toEqual(['PATCH'])
       expect(commandCalls(calls)).toHaveLength(1)
@@ -505,6 +507,7 @@ describe('persona icon upload freshness', () => {
       applySettingsResource({
         revision: authoritativeRevision,
         settings: {
+          selectedPersonaId: 'persona-icon-retained',
           selectedPersona: 0,
           username: String(serverPersona.name),
           userIcon: 'old-icon',
@@ -514,13 +517,13 @@ describe('persona icon upload freshness', () => {
       })
       reconcileSelectedPersonaProjectionEpoch()
 
-      expect(getDatabase().userIcon).toBe('queued-icon')
+      expect(getDatabase().userIcon).toBe('old-icon')
       expect(getDatabase().personas[0].icon).toBe('queued-icon')
       settleAcceptedPersonaPatchDirtyFields(
         'persona-icon-retained',
         { icon: 'queued-icon' },
         { id: 'persona-icon-retained', icon: 'queued-icon' },
-        true,
+        false,
       )
     } finally {
       await clearPendingMutationOutbox()
@@ -663,7 +666,7 @@ describe('persona icon upload freshness', () => {
         note: 'D note',
       }) as any,
     )
-    getDatabase().selectedPersona = 3
+    selectPersonaDirect(3)
     getDatabase().username = 'Persona D live name'
     getDatabase().userIcon = 'icon-d'
     getDatabase().personaPrompt = 'Persona D live prompt'

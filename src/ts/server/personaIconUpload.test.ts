@@ -14,12 +14,12 @@ function persona(id: string | null | undefined, icon = 'old-icon'): PersonaIconR
 }
 
 function beginUpload(input: {
-  selectedPersona?: number
+  selectedPersonaId?: string | null
   userIcon?: unknown
   personas?: PersonaIconRecord[]
 }): PersonaIconUploadOperation {
   const target = capturePersonaIconUploadTarget({
-    selectedPersona: input.selectedPersona ?? 0,
+    selectedPersonaId: input.selectedPersonaId ?? 'persona-a',
     userIcon: Object.hasOwn(input, 'userIcon') ? input.userIcon : 'old-icon',
     personas: input.personas ?? [persona('persona-a', 'old-icon')],
   })
@@ -34,13 +34,13 @@ function beginUpload(input: {
 function resolveUpload(
   operation: PersonaIconUploadOperation,
   freshness?: Partial<{
-    selectedPersona: number
+    selectedPersonaId: string | null
     userIcon: unknown
     personas: PersonaIconRecord[]
   }>,
 ): number | null {
   return resolveFreshPersonaIconUploadIndex(operation, {
-    selectedPersona: freshness?.selectedPersona ?? 0,
+    selectedPersonaId: freshness?.selectedPersonaId ?? operation.personaId,
     userIcon: Object.hasOwn(freshness ?? {}, 'userIcon') ? freshness?.userIcon : 'old-icon',
     personas: freshness?.personas ?? [persona(operation.personaId, 'old-icon')],
   })
@@ -55,7 +55,7 @@ describe('persona icon upload freshness', () => {
     try {
       expect(
         resolveUpload(operation, {
-          selectedPersona: 1,
+          selectedPersonaId: 'persona-b',
           userIcon: 'old-icon',
           personas: [persona('persona-a', 'old-icon'), persona('persona-b', 'icon-b')],
         }),
@@ -105,7 +105,7 @@ describe('persona icon upload freshness', () => {
   it('does not let a canceled newer picker invalidate an older pending upload', () => {
     const older = beginUpload({})
     const canceledTarget = capturePersonaIconUploadTarget({
-      selectedPersona: 0,
+      selectedPersonaId: 'persona-a',
       userIcon: 'old-icon',
       personas: [persona('persona-a', 'old-icon')],
     })
@@ -121,7 +121,7 @@ describe('persona icon upload freshness', () => {
   it('rejects missing and duplicate persona ids', () => {
     expect(
       capturePersonaIconUploadTarget({
-        selectedPersona: 0,
+        selectedPersonaId: 'persona-a',
         userIcon: 'old-icon',
         personas: [persona(undefined, 'old-icon')],
       }),
@@ -129,7 +129,7 @@ describe('persona icon upload freshness', () => {
 
     expect(
       capturePersonaIconUploadTarget({
-        selectedPersona: 1,
+        selectedPersonaId: 'duplicate',
         userIcon: 'old-icon',
         personas: [persona('duplicate', 'icon-a'), persona('duplicate', 'icon-b')],
       }),
