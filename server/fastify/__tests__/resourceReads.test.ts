@@ -332,6 +332,18 @@ describe('authenticated resource read routes', () => {
   })
 
   it('returns one exact standalone setting projection', async () => {
+    const stableSelection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/resources/settings/selectedPersonaId',
+      headers: authHeaders(),
+    })
+    expect(stableSelection.statusCode).toBe(200)
+    expect(stableSelection.json()).toEqual({
+      revision,
+      setting: 'selectedPersonaId',
+      state: { present: true, value: 'persona-a' },
+    })
+
     const present = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/resources/settings/selectedPersona',

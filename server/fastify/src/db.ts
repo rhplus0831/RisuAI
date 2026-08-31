@@ -21,10 +21,11 @@ import {
   createCollectionTables,
   createSettingsTable,
   migrateLegacyFlatModelConfigurationInSqlite,
+  repairPersistedPersonaSelectionIdentityInSqlite,
   repairPersistedGlobalLorebookIdsInSqlite,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 34
+export const CURRENT_SCHEMA_VERSION = 35
 
 export const CURRENT_SCHEMA_TABLES = [
   'assets',
@@ -456,6 +457,15 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: 'durable-model-profile-ownership',
     up: (db) => {
       migrateLegacyFlatModelConfigurationInSqlite(db)
+    },
+  },
+  {
+    version: 35,
+    name: 'durable-persona-selection-identity',
+    up: (db) => {
+      createCollectionTables(db)
+      createSettingsTable(db)
+      repairPersistedPersonaSelectionIdentityInSqlite(db)
     },
   },
 ]

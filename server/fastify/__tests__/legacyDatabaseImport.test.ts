@@ -223,6 +223,38 @@ describe('legacy db.json boot import', () => {
     expect(loadPersistedWithMessages(secondDb, dataDir)).toEqual(afterFirstBoot)
   })
 
+  it('repairs persona ids and persists stable selection before retiring a legacy snapshot', () => {
+    const dataDir = makeDataDir()
+    const filePath = path.join(dataDir, 'db.json')
+    const legacy = snapshot('legacy-persona', 'legacy-chat', 'legacy message')
+    ;(legacy.database as Record<string, unknown>).selectedPersona = 2
+    ;(legacy.database as Record<string, unknown>).selectedPersonaId = 'duplicate'
+    ;(legacy.database as Record<string, unknown>).personas = [
+      { id: 'duplicate', name: 'First' },
+      { id: 'duplicate', name: 'Second' },
+      { name: 'Legacy selected' },
+    ]
+    writeFileSync(filePath, JSON.stringify(legacy))
+
+    const firstDb = makeDb(dataDir)
+    ensureDbJsonImported(firstDb, dataDir, makeLogger())
+    const afterFirstBoot = loadPersistedWithMessages(firstDb, dataDir)
+    expect(afterFirstBoot.database).toMatchObject({
+      selectedPersona: 2,
+      selectedPersonaId: 'persona-3',
+      personas: [
+        { id: 'duplicate', name: 'First' },
+        { id: 'persona-2', name: 'Second' },
+        { id: 'persona-3', name: 'Legacy selected' },
+      ],
+    })
+    closeDb(firstDb)
+
+    const secondDb = makeDb(dataDir)
+    ensureDbJsonImported(secondDb, dataDir, makeLogger())
+    expect(loadPersistedWithMessages(secondDb, dataDir)).toEqual(afterFirstBoot)
+  })
+
   it('quarantines an invalid envelope without clobbering an existing quarantine or touching tables', () => {
     const dataDir = makeDataDir()
     const db = makeDb(dataDir)

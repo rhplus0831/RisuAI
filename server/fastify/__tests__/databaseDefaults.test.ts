@@ -92,6 +92,9 @@ describe('database defaults', () => {
     })
     expect(database.agentPresets).toEqual([])
     expect(database.agentPresetDefaultId).toBeUndefined()
+    expect(database.personas).toEqual([expect.objectContaining({ id: 'default-persona', name: 'User' })])
+    expect(database.selectedPersonaId).toBe('default-persona')
+    expect(database.selectedPersona).toBe(0)
     expect(database.inputHooks).toEqual([
       {
         id: 'default-translate',
@@ -161,6 +164,26 @@ describe('database defaults', () => {
       scriptAux: {},
       overrides: {},
     })
+  })
+
+  it('repairs persona ids deterministically and gives a unique stable selection precedence', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        personas: [{ id: '' }, { id: 'owned' }, { id: 'duplicate' }, { id: 'duplicate' }],
+        selectedPersona: 3,
+        selectedPersonaId: 'owned',
+      },
+      { providerDefaults: false },
+    )
+
+    expect((database.personas as Array<{ id: string }>).map(({ id }) => id)).toEqual([
+      'persona-1',
+      'owned',
+      'duplicate',
+      'persona-4',
+    ])
+    expect(database.selectedPersonaId).toBe('owned')
+    expect(database.selectedPersona).toBe(1)
   })
 
   it('deterministically migrates usable legacy model selections without copying inline secrets', () => {

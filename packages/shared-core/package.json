@@ -43,6 +43,7 @@
     "./openai-models": "./src/openaiModels.ts",
     "./mutation-certificates": "./src/mutationCertificates.ts",
     "./parse-key-value": "./src/parseKeyValue.ts",
+    "./persona-selection-identity": "./src/personaSelectionIdentity.ts",
     "./prompt-block-role": "./src/promptBlockRole.ts",
     "./prompt-info-snapshot": "./src/promptInfoSnapshot.ts",
     "./prompt-settings": "./src/promptSettings.ts",

@@ -26,6 +26,7 @@ export type ResourcePurpose = (typeof RESOURCE_PURPOSES)[number]
  * these values; a shell or focused projection has to own each one explicitly.
  */
 export const STANDALONE_SETTING_NAMES = [
+  'selectedPersonaId',
   'selectedPersona',
   'botPresetsId',
   'modelPresetsId',
@@ -209,6 +210,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
     requirements: [
       projection('selected-character', ['render', 'interact', 'mutate']),
       collection('personas', ['render', 'interact']),
+      standalone('selectedPersonaId', ['render', 'interact']),
       standalone('selectedPersona', ['render', 'interact']),
     ],
     notes: 'Persona data supplies the selected user identity shown beside a selected character.',
@@ -376,6 +378,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
       group('account', ['render', 'interact', 'mutate'], ['username']),
       collection('personas', ['render', 'interact', 'mutate']),
       collection('modules', ['render', 'interact', 'mutate']),
+      standalone('selectedPersonaId', ['render', 'interact', 'mutate']),
       standalone('selectedPersona', ['render', 'interact', 'mutate']),
       standalone('personaPrompt', ['render', 'interact', 'mutate']),
       standalone('userIcon', ['render', 'interact', 'mutate']),
@@ -623,6 +626,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
       standalone('botPresetsId', ['generate']),
       standalone('modelPresetsId', ['generate']),
       standalone('promptPresetsId', ['generate']),
+      standalone('selectedPersonaId', ['generate']),
       standalone('selectedPersona', ['generate']),
       projection('selected-character', ['generate']),
       projection('selected-chat', ['generate']),
@@ -666,6 +670,7 @@ export const RESOURCE_SURFACE_MANIFEST = {
     owners: ['src/lib/SideBars/SideChatList.svelte'],
     requirements: [
       collection('personas', ['render', 'interact', 'mutate']),
+      standalone('selectedPersonaId', ['render', 'interact', 'mutate']),
       standalone('selectedPersona', ['render', 'interact', 'mutate']),
     ],
   },

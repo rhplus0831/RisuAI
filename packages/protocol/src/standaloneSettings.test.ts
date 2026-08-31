@@ -6,8 +6,9 @@ import {
 } from '@risuai/protocol/standalone-settings'
 
 describe('standalone-settings protocol', () => {
-  it('publishes and validates the exact eight-name taxonomy', () => {
+  it('publishes and validates the exact nine-name taxonomy', () => {
     expect(SERVER_STANDALONE_SETTING_NAMES).toEqual([
+      'selectedPersonaId',
       'selectedPersona',
       'botPresetsId',
       'modelPresetsId',

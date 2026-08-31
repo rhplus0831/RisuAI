@@ -198,7 +198,13 @@ describe('route resource manifest', () => {
 
     expect(collections).toEqual(expect.arrayContaining(['botPresets', 'modelPresets', 'promptPresets']))
     expect(standaloneSettings).toEqual(
-      expect.arrayContaining(['botPresetsId', 'modelPresetsId', 'promptPresetsId', 'selectedPersona']),
+      expect.arrayContaining([
+        'botPresetsId',
+        'modelPresetsId',
+        'promptPresetsId',
+        'selectedPersonaId',
+        'selectedPersona',
+      ]),
     )
   })
 

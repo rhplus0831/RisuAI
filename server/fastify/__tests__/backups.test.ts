@@ -1818,6 +1818,65 @@ describe('backups', () => {
     })
   })
 
+  it('repairs durable persona selection identity while restoring a pre-v35 SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'pre-v35-persona',
+      selectedPersonaId: 'persona-before-backup',
+      selectedPersona: 0,
+      personas: [{ id: 'persona-before-backup', name: 'Before backup' }],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'pre-v35 persona identity' },
+    })
+    expect(backup.statusCode).toBe(201)
+
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const settingsRow = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      settings.selectedPersona = 2
+      settings.selectedPersonaId = 'duplicate-persona'
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      backupDb.exec('DELETE FROM personas')
+      const insertPersona = backupDb.prepare('INSERT INTO personas (position, data_json) VALUES (?, ?)')
+      insertPersona.run(0, JSON.stringify({ id: 'duplicate-persona', name: 'First' }))
+      insertPersona.run(1, JSON.stringify({ id: 'duplicate-persona', name: 'Second' }))
+      insertPersona.run(2, JSON.stringify({ name: 'Selected' }))
+      backupDb.prepare('UPDATE schema_version SET version = 34 WHERE id = 1').run()
+    } finally {
+      backupDb.close()
+    }
+
+    await importDb(harness.app, assertion, { tag: 'live-after-persona-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      selectedPersona: 2,
+      selectedPersonaId: 'persona-3',
+      personas: [
+        { id: 'duplicate-persona', name: 'First' },
+        { id: 'persona-2', name: 'Second' },
+        { id: 'persona-3', name: 'Selected' },
+      ],
+    })
+  })
+
   it('round-trips split model and prompt preset tables with backup/restore', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, {
@@ -2375,6 +2434,13 @@ describe('backups', () => {
     }
     const legacyDatabase = {
       tag: 'legacy-db-json',
+      selectedPersona: 2,
+      selectedPersonaId: 'duplicate-persona',
+      personas: [
+        { id: 'duplicate-persona', name: 'First legacy persona' },
+        { id: 'duplicate-persona', name: 'Second legacy persona' },
+        { name: 'Selected legacy persona' },
+      ],
       modules: [{ id: 'module-a', name: 'Legacy module', assets: [['icon.png', PNG_SHA, 'png']] }],
       pluginCustomStorage: { 'plugin-a': { enabled: true } },
       characters: [
@@ -2419,6 +2485,13 @@ describe('backups', () => {
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.resourceDatabase).toMatchObject({
       tag: 'legacy-db-json',
+      selectedPersona: 2,
+      selectedPersonaId: 'persona-3',
+      personas: [
+        { id: 'duplicate-persona', name: 'First legacy persona' },
+        { id: 'persona-2', name: 'Second legacy persona' },
+        { id: 'persona-3', name: 'Selected legacy persona' },
+      ],
       modules: [{ id: 'module-a', name: 'Legacy module' }],
       pluginCustomStorage: { 'plugin-a': { enabled: true } },
       characters: [{ chaId: 'legacy-char', chats: [{ id: 'legacy-chat', message: [] }] }],

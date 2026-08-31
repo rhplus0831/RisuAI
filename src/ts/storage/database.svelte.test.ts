@@ -371,6 +371,28 @@ describe('promptTemplateIdsNeedNormalization', () => {
 })
 
 describe('settings database normalization', () => {
+  it('derives a missing stable persona selection only from one unique row id', () => {
+    seedPresetDatabase()
+    const legacyData = clonePlain(getDatabase())
+    legacyData.personas = [
+      { id: 'persona-a', name: 'A', displayName: '', personaPrompt: '', icon: '' },
+      { id: 'persona-b', name: 'B', displayName: '', personaPrompt: '', icon: '' },
+    ]
+    legacyData.selectedPersona = 1
+    delete (legacyData as Partial<Database>).selectedPersonaId
+
+    setDatabase(legacyData)
+    expect(getDatabase().selectedPersonaId).toBe('persona-b')
+
+    const ambiguous = clonePlain(getDatabase())
+    ambiguous.personas[0].id = 'duplicate'
+    ambiguous.personas[1].id = 'duplicate'
+    delete (ambiguous as Partial<Database>).selectedPersonaId
+    setDatabase(ambiguous)
+    expect(getDatabase().selectedPersonaId).toBeNull()
+    expect(ambiguous.personas.map(({ id }) => id)).toEqual(['duplicate', 'duplicate'])
+  })
+
   it('prefers legacy Hypa settings over the stale Supa prompt during first-preset migration', () => {
     seedPresetDatabase()
     const legacyData = clonePlain(getDatabase()) as Database & { supaMemoryPrompt?: string }

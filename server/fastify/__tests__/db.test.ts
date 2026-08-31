@@ -212,6 +212,86 @@ describe('schema migrations', () => {
     }
   })
 
+  it('rolls back and deterministically retries durable persona selection identity repair', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const legacySettings = { selectedPersona: 2, selectedPersonaId: 'duplicate' }
+    const legacyPersonas = [{ id: 'persona-1' }, { id: 'duplicate' }, { id: 'duplicate' }, {}]
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(legacySettings))
+    const insertPersona = initial.prepare('INSERT INTO personas (position, data_json) VALUES (?, ?)')
+    legacyPersonas.forEach((persona, index) => insertPersona.run(index, JSON.stringify(persona)))
+    initial.prepare('UPDATE schema_version SET version = 34, revision = 17 WHERE id = 1').run()
+    initial.exec(`
+      CREATE TRIGGER fail_persona_identity_migration_version_bump
+      BEFORE UPDATE OF version ON schema_version
+      WHEN NEW.version = 35
+      BEGIN
+        SELECT RAISE(ABORT, 'injected persona identity version bump failure');
+      END;
+    `)
+    initial.close()
+
+    expect(() => openDatabase(dataDir)).toThrow(
+      /durable-persona-selection-identity.*injected persona identity version bump failure/,
+    )
+
+    const afterFailure = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(afterFailure)).toEqual({ version: 34, revision: 17 })
+      const settings = afterFailure.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
+        data_json: string
+      }
+      expect(JSON.parse(settings.data_json)).toEqual(legacySettings)
+      expect(
+        (
+          afterFailure.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{ data_json: string }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(legacyPersonas)
+      afterFailure.exec('DROP TRIGGER fail_persona_identity_migration_version_bump')
+    } finally {
+      afterFailure.close()
+    }
+
+    const retried = openDatabase(dataDir)
+    let repairedSettings: Record<string, unknown>
+    let repairedPersonas: unknown[]
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 17 })
+      repairedSettings = JSON.parse(
+        (retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      ) as Record<string, unknown>
+      repairedPersonas = (
+        retried.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{ data_json: string }>
+      ).map(({ data_json }) => JSON.parse(data_json))
+      expect(repairedSettings).toMatchObject({ selectedPersona: 2, selectedPersonaId: 'persona-3' })
+      expect(repairedPersonas).toEqual([
+        { id: 'persona-1' },
+        { id: 'duplicate' },
+        { id: 'persona-3' },
+        { id: 'persona-4' },
+      ])
+    } finally {
+      retried.close()
+    }
+
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(reopened)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 17 })
+      expect(
+        JSON.parse(
+          (reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ),
+      ).toEqual(repairedSettings)
+      expect(
+        (
+          reopened.prepare('SELECT data_json FROM personas ORDER BY position').all() as Array<{ data_json: string }>
+        ).map(({ data_json }) => JSON.parse(data_json)),
+      ).toEqual(repairedPersonas)
+    } finally {
+      reopened.close()
+    }
+  })
+
   it('migrates finalization retries to retain multi-generation alternates', () => {
     const dataDir = makeDataDir()
     seedSchemaVersion(dataDir, 19, 4)

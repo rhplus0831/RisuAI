@@ -107,6 +107,7 @@ export function canonicalOwnerPersistenceDatabase(): JsonRecord {
     ],
     translatorPrompt: 'stale translator scalar',
     translatorMaxResponse: 1,
+    selectedPersonaId: 'persona-owner',
     selectedPersona: 1,
     personas: [
       {
@@ -156,7 +157,7 @@ export function canonicalOwnerPersistenceSnapshot(database: unknown): JsonRecord
   const modelProfiles = Array.isArray(source.modelProfiles) ? source.modelProfiles : []
   const selectedPrompt = selectedArrayRecord(source.promptPresets, source.promptPresetsId)
   const selectedTranslator = uniqueRecordById(source.translatorPresets, source.translatorPresetId)
-  const selectedPersona = selectedArrayRecord(source.personas, source.selectedPersona)
+  const selectedPersona = uniqueRecordById(source.personas, source.selectedPersonaId)
   const selectedHypaPreset = selectedArrayRecord(source.hypaV3Presets, source.hypaV3PresetId)
   const selectedHypaSettings = isRecord(selectedHypaPreset?.settings) ? selectedHypaPreset.settings : {}
   const roleBindings = isRecord(source.modelRoleProfiles) ? source.modelRoleProfiles : {}
@@ -178,7 +179,7 @@ export function canonicalOwnerPersistenceSnapshot(database: unknown): JsonRecord
       cacheSignature: translatorPipelineSignature(resolveTranslatorPipeline(source)),
     },
     persona: {
-      selectedId: selectedPersona?.id ?? null,
+      selectedId: source.selectedPersonaId ?? null,
       name: selectedPersona?.name ?? null,
       personaPrompt: selectedPersona?.personaPrompt ?? null,
       note: selectedPersona?.note ?? null,

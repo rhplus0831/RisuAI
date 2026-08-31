@@ -5,7 +5,7 @@ import {
   decodeLegacyRisuSaveEnvelope,
 } from './legacyEnvelopeCodec.js'
 import type { ExpandedSizeLimitOptions } from './importLimits.js'
-import { COLLECTION_FIELDS, ValidationError } from '../repository.js'
+import { COLLECTION_FIELDS, repairPersistedPersonaSelectionIdentity, ValidationError } from '../repository.js'
 import { normalizePresetCollection } from '../commands/presets.js'
 import { normalizePromptTemplateCollection } from '../commands/prompts.js'
 import { normalizePersonaCollection } from '../commands/personas.js'
@@ -428,7 +428,10 @@ function normalizeImportDatabaseShape(database: unknown): JsonRecord {
 
   normalizePresetCollection(target)
   normalizePromptTemplateCollection(target)
-  if (hasAnyKey(target, ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt'])) {
+  if (
+    hasAnyKey(target, ['personas', 'selectedPersonaId', 'selectedPersona', 'username', 'userIcon', 'personaPrompt'])
+  ) {
+    repairPersistedPersonaSelectionIdentity(target)
     normalizePersonaCollection(target)
   }
   if (hasAnyKey(target, ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'])) {

@@ -50,6 +50,7 @@ import {
 import { normalizePromptTemplateValue } from './commands/prompts.js'
 import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './requestHistory.js'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@risuai/protocol'
+import { repairPersonaSelectionIdentity } from '@risuai/shared-core/persona-selection-identity'
 
 type JsonRecord = Record<string, unknown>
 
@@ -1221,17 +1222,11 @@ function normalizePersonas(database: JsonRecord): void {
         modules: [],
       },
     ]
-    database.selectedPersona = 0
-    return
   }
 
-  const seen = new Set<string>()
-  for (const [index, persona] of database.personas.entries()) {
+  const personas = database.personas as unknown[]
+  for (const persona of personas) {
     if (!isRecord(persona)) continue
-    const requestedId = typeof persona.id === 'string' && persona.id.trim() ? persona.id : ''
-    const id = requestedId && !seen.has(requestedId) ? requestedId : `persona-${index + 1}`
-    persona.id = seen.has(id) ? `${id}-${index + 1}` : id
-    seen.add(persona.id as string)
     if (persona.modules !== undefined) {
       persona.modules = Array.isArray(persona.modules)
         ? Array.from(
@@ -1244,10 +1239,7 @@ function normalizePersonas(database: JsonRecord): void {
         : []
     }
   }
-
-  if (!Number.isInteger(database.selectedPersona)) database.selectedPersona = 0
-  const selected = database.selectedPersona as number
-  if (selected < 0 || selected >= database.personas.length) database.selectedPersona = 0
+  repairPersonaSelectionIdentity(database)
 }
 
 function normalizePersonaModuleLinks(database: JsonRecord): void {

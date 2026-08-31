@@ -40,6 +40,7 @@ import {
   setChatHypaV3,
   countChatMessages,
 } from './messageStore.js'
+import { repairPersonaSelectionIdentity } from '@risuai/shared-core/persona-selection-identity'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -267,6 +268,48 @@ export function repairPersistedGlobalLorebookIdsInSqlite(db: DatabaseSync): bool
     }
   }
   return changed
+}
+
+/** Explicit migration/import/recovery-boundary persona identity repair. */
+export function repairPersistedPersonaSelectionIdentity(database: unknown): boolean {
+  if (!isRecord(database)) return false
+  return repairPersonaSelectionIdentity(database).changed
+}
+
+/** Schema-migration and backup-recovery adapter for split settings/persona rows. */
+export function repairPersistedPersonaSelectionIdentityInSqlite(db: DatabaseSync): boolean {
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!settingsRow) return false
+
+  const settings = JSON.parse(settingsRow.data_json) as unknown
+  if (!isRecord(settings)) return false
+  const rows = db.prepare('SELECT position, data_json FROM personas ORDER BY position').all() as Array<{
+    position: number
+    data_json: string
+  }>
+
+  if (rows.length === 0) {
+    const result = repairPersonaSelectionIdentity(settings)
+    if (result.changed) db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    return result.changed
+  }
+
+  const personas = rows.map((row) => JSON.parse(row.data_json))
+  const projection: JsonRecord = { ...settings, personas }
+  const result = repairPersonaSelectionIdentity(projection)
+  if (!result.changed) return false
+
+  const updatePersona = db.prepare('UPDATE personas SET data_json = ? WHERE position = ?')
+  personas.forEach((persona, index) => {
+    const encoded = JSON.stringify(persona)
+    if (encoded !== rows[index]!.data_json) updatePersona.run(encoded, rows[index]!.position)
+  })
+  settings.selectedPersona = result.selectedPersona
+  settings.selectedPersonaId = result.selectedPersonaId
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  return true
 }
 
 /**
@@ -1430,6 +1473,7 @@ function importLegacyDatabaseSnapshot(db: DatabaseSync, filePath: string): void 
 
   migrateLegacyFlatModelConfiguration(database)
   repairPersistedGlobalLorebookIds(database)
+  repairPersistedPersonaSelectionIdentity(database)
   repairChatIds(database)
   replaceAllSettingsInTable(db, database)
   replaceAllCharactersInTable(db, database)
@@ -2727,7 +2771,10 @@ export async function applyImport(
       options.beforeRevision?.(db)
     }
     const importedDatabase = cloneBeforeMessageSplit ? structuredClone(database) : database
-    if (isRecord(importedDatabase)) migrateLegacyFlatModelConfiguration(importedDatabase)
+    if (isRecord(importedDatabase)) {
+      migrateLegacyFlatModelConfiguration(importedDatabase)
+      repairPersistedPersonaSelectionIdentity(importedDatabase)
+    }
     const messageFree = splitChatMessagesIntoTable(db, {
       ...current,
       database: importedDatabase,
@@ -3934,6 +3981,7 @@ function restoreSqliteFromBackup(
       rebuildAllBardWikiDerivedState(db)
       db.exec('DELETE FROM request_history')
       repairPersistedGlobalLorebookIdsInSqlite(db)
+      repairPersistedPersonaSelectionIdentityInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)

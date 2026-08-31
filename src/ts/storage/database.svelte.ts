@@ -3101,6 +3101,7 @@ export function setDatabase(data: Database) {
   data.personaPrompt ??= ''
   data.personas ??= [
     {
+      id: 'default-persona',
       name: data.username,
       displayName: '',
       personaPrompt: '',
@@ -3118,6 +3119,16 @@ export function setDatabase(data: Database) {
           )
         : []
     }
+  }
+  if (data.selectedPersonaId === undefined) {
+    const selectedPersona = Number.isInteger(data.selectedPersona) ? data.personas[data.selectedPersona] : undefined
+    const selectedPersonaId = selectedPersona?.id
+    data.selectedPersonaId =
+      typeof selectedPersonaId === 'string' &&
+      selectedPersonaId.trim() !== '' &&
+      data.personas.filter((persona) => persona.id === selectedPersonaId).length === 1
+        ? selectedPersonaId
+        : null
   }
   data.classicMaxWidth ??= false
   data.chatScreenWidth ??= 900
@@ -3871,7 +3882,7 @@ export interface Database {
   agentContextMaxToolRounds?: number
   cipherChat: boolean
   loreBook: {
-    id?: string
+    id: string
     name: string
     data: loreBook[]
   }[]
@@ -4015,6 +4026,7 @@ export interface Database {
   nanogptUseSubscriptionEndpoint: boolean
   openrouterFallback: boolean
   selectedPersona: number
+  selectedPersonaId: string | null
   personas: {
     personaPrompt: string
     name: string
