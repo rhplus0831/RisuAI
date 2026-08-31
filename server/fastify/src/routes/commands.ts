@@ -58,18 +58,13 @@ import {
   readProviderCredentials,
 } from '@risuai/shared-core/provider-credential-records'
 import { normalizeChatGenerationTogglePresets } from '@risuai/shared-core/chat-generation-toggle-preset-records'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import {
   MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB,
   MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB,
 } from '@risuai/shared-core/regex-output-size-limit'
 import {
-  normalizeAgentPresetDefaultId,
-  normalizeAgentPresets,
-  normalizeAgents,
-} from '@risuai/shared-core/agent-preset-records'
-import {
   createPromptItemRecord,
-  ensurePromptTemplateCollection,
   normalizePromptItemRecord,
   PROMPT_SETTINGS_KEYS,
   readPromptItemId,
@@ -77,6 +72,7 @@ import {
   readPromptSettingsPatch,
   requirePromptItemIndex,
   validateFullPromptItemIdList,
+  type PromptItemRecord,
 } from '../commands/prompts.js'
 import {
   buildPersonaMutationCertificate,
@@ -111,6 +107,7 @@ import {
   saveCurrentPresetSnapshot,
   selectedPresetId,
   validateFullPresetIdList,
+  type PresetRecord,
 } from '../commands/presets.js'
 import {
   applyModelPreset,
@@ -167,7 +164,6 @@ import {
   type CharacterRecord,
   buildStrictPatchedCharacterRow,
   createCharacterRecord,
-  ensureCharacterCollection,
   ensureDatabaseObject as ensureCharacterDatabaseObject,
   findCharacterIndex,
   readAlternateGreetingMutation,
@@ -176,6 +172,7 @@ import {
   readCharacterPatch,
   repairCharacterCollectionRow,
   requireCharacterIndex,
+  readStrictCharacterRecord,
   remapAlternateGreetingIndex,
   selectedCharacterId,
   validateCharacterOrderAssetRefs,
@@ -214,6 +211,7 @@ import {
   validateFullChatFolderOrder,
   validateFullChatOrder,
   type ChatRecord,
+  type ChatFolderRecord,
 } from '../commands/chats.js'
 import {
   createMessageRecord,
@@ -260,9 +258,6 @@ import {
 } from '../commands/scriptDefinitions.js'
 import {
   createModuleRecord,
-  ensureEnabledModules,
-  ensureModuleCommandDatabase,
-  ensureModuleRecords,
   findCharacterForModuleCommand,
   readCharacterId as readModuleCharacterId,
   readModuleEnabled,
@@ -311,11 +306,10 @@ import {
   updateAgentCommand,
   updateAgentPresetCommand,
   updateAgentPresetStepCommand,
+  readStrictAgentConfiguration,
 } from '../commands/agentPresets.js'
 import {
   createPluginRecord,
-  ensurePluginCommandDatabase,
-  ensurePluginRecords,
   readPluginEnabled,
   readPluginId,
   readPluginIdList,
@@ -323,14 +317,9 @@ import {
   readPluginProvider,
   requirePluginIndex,
   validateFullPluginOrder,
+  type PluginRecord,
 } from '../commands/plugins.js'
-import {
-  ensurePluginCustomStorage,
-  ensurePluginStorageDatabase,
-  readPluginStorageBulkPatch,
-  readPluginStorageKey,
-  readPluginStorageValue,
-} from '../commands/pluginStorage.js'
+import { readPluginStorageBulkPatch, readPluginStorageKey, readPluginStorageValue } from '../commands/pluginStorage.js'
 import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
@@ -555,6 +544,325 @@ function readScopedCharacterRecords(database: unknown): CharacterRecord[] {
   return [candidate as CharacterRecord]
 }
 
+function readStrictIdentityCollection<T extends Record<string, unknown>>(
+  value: unknown,
+  collectionLabel: string,
+  idKey: string,
+): T[] {
+  if (!Array.isArray(value)) {
+    throw new ValidationError(`${collectionLabel} must be an array`)
+  }
+  const seen = new Set<string>()
+  value.forEach((candidate, index) => {
+    const record = readJsonObject(candidate, `${collectionLabel}[${index}]`) as T
+    const id = record[idKey]
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError(`${collectionLabel}[${index}].${idKey} must be a non-empty string`)
+    }
+    if (seen.has(id)) {
+      throw new ValidationError(`Duplicate ${collectionLabel} id: ${id}`)
+    }
+    seen.add(id)
+  })
+  return value as T[]
+}
+
+function readStrictHypaV3PresetState(
+  target: Record<string, unknown>,
+  options: { validateNumericProjection?: boolean } = {},
+): { presets: Record<string, unknown>[]; selectedId: string | null; selectedIndex: number } {
+  const presets = readStrictIdentityCollection<Record<string, unknown>>(target.hypaV3Presets, 'hypaV3Presets', 'id')
+  for (let index = 0; index < presets.length; index += 1) {
+    const preset = presets[index]
+    if (typeof preset.name !== 'string') {
+      throw new ValidationError(`hypaV3Presets[${index}].name must be a string`)
+    }
+    if (!isPlainObject(preset.settings)) {
+      throw new ValidationError(`hypaV3Presets[${index}].settings must be an object`)
+    }
+  }
+  validateHypaV3PresetSummaryModels(presets)
+
+  const selectedId = target.selectedHypaV3PresetId
+  if (presets.length === 0) {
+    if (selectedId !== null) {
+      throw new ValidationError('selectedHypaV3PresetId must be null when hypaV3Presets is empty')
+    }
+  } else if (typeof selectedId !== 'string' || selectedId.trim() === '') {
+    throw new ValidationError('selectedHypaV3PresetId must identify an existing Hypa V3 preset')
+  }
+
+  const selectedIndex = hypaV3PresetIndexFromStableId(target)
+  if (presets.length > 0 && selectedIndex === -1) {
+    throw new ValidationError(`Unknown selectedHypaV3PresetId: ${String(selectedId)}`)
+  }
+  if (options.validateNumericProjection !== false && target.hypaV3PresetId !== selectedIndex) {
+    throw new ValidationError('hypaV3PresetId must match the selectedHypaV3PresetId compatibility projection')
+  }
+
+  return { presets, selectedId: selectedId as string | null, selectedIndex }
+}
+
+function validateStrictSelectedIndex(target: Record<string, unknown>, key: string, collectionLength: number): number {
+  const selected = target[key]
+  if (!Number.isInteger(selected)) {
+    throw new ValidationError(`${key} must be an integer`)
+  }
+  const index = selected as number
+  if (collectionLength === 0) {
+    if (index !== -1) throw new ValidationError(`${key} must be -1 when its collection is empty`)
+    return index
+  }
+  if (index < 0 || index >= collectionLength) {
+    throw new ValidationError(`${key} must select an existing record`)
+  }
+  return index
+}
+
+function assertStoredRecordAlreadyCanonical<T>(record: T, parse: (copy: T) => unknown, label: string): void {
+  const copy = cloneJsonForCommandCertificate(record)
+  const canonical = parse(copy)
+  if (!isDeepStrictEqual(record, canonical)) {
+    throw new ValidationError(`${label} must already be canonical; use an explicit import or recovery boundary`)
+  }
+}
+
+function readStrictLegacyPresetCollection(
+  target: Record<string, unknown>,
+  options: { allowEmptyPendingFirstRecord?: boolean; allowInvalidSelectedPointer?: boolean } = {},
+): PresetRecord[] {
+  const presets = readStrictIdentityCollection<PresetRecord>(target.botPresets, 'botPresets', 'id')
+  for (let index = 0; index < presets.length; index += 1) {
+    if (presets[index].name !== undefined && typeof presets[index].name !== 'string') {
+      throw new ValidationError(`botPresets[${index}].name must be a string`)
+    }
+  }
+  if (
+    !options.allowInvalidSelectedPointer &&
+    !(options.allowEmptyPendingFirstRecord && presets.length === 0 && target.botPresetsId === 0)
+  ) {
+    validateStrictSelectedIndex(target, 'botPresetsId', presets.length)
+  }
+  return presets
+}
+
+function readStrictModelPresetCollection(
+  target: Record<string, unknown>,
+): ReturnType<typeof ensureModelPresetCollection> {
+  const presets = readStrictIdentityCollection<ReturnType<typeof ensureModelPresetCollection>[number]>(
+    target.modelPresets,
+    'modelPresets',
+    'id',
+  )
+  for (let index = 0; index < presets.length; index += 1) {
+    if (presets[index].name !== undefined && typeof presets[index].name !== 'string') {
+      throw new ValidationError(`modelPresets[${index}].name must be a string`)
+    }
+  }
+  validateStrictSelectedIndex(target, 'modelPresetsId', presets.length)
+  return presets
+}
+
+function readStrictPromptPresetCollection(
+  target: Record<string, unknown>,
+): ReturnType<typeof ensurePromptPresetCollection> {
+  const presets = readStrictIdentityCollection<ReturnType<typeof ensurePromptPresetCollection>[number]>(
+    target.promptPresets,
+    'promptPresets',
+    'id',
+  )
+  for (let index = 0; index < presets.length; index += 1) {
+    const preset = presets[index]
+    if (preset.name !== undefined && typeof preset.name !== 'string') {
+      throw new ValidationError(`promptPresets[${index}].name must be a string`)
+    }
+    if (preset.archived !== undefined && typeof preset.archived !== 'boolean') {
+      throw new ValidationError(`promptPresets[${index}].archived must be a boolean`)
+    }
+    if (
+      preset.recommendedModelPresetId !== undefined &&
+      preset.recommendedModelPresetId !== null &&
+      (typeof preset.recommendedModelPresetId !== 'string' || preset.recommendedModelPresetId.trim() === '')
+    ) {
+      throw new ValidationError(`promptPresets[${index}].recommendedModelPresetId must be non-empty or null`)
+    }
+  }
+  validateStrictSelectedIndex(target, 'promptPresetsId', presets.length)
+  return presets
+}
+
+function readStrictPromptTemplateCollection(
+  target: Record<string, unknown>,
+  options: { allowMissing?: boolean } = {},
+): PromptItemRecord[] {
+  if (target.promptTemplate === undefined && options.allowMissing) return []
+  const items = readStrictIdentityCollection<PromptItemRecord>(target.promptTemplate, 'promptTemplate', 'id')
+  for (let index = 0; index < items.length; index += 1) {
+    assertStoredRecordAlreadyCanonical(
+      items[index],
+      (record) => normalizePromptItemRecord(record),
+      `promptTemplate[${index}]`,
+    )
+  }
+  return items
+}
+
+function readStrictPluginCommandTarget(database: unknown): {
+  target: Record<string, unknown>
+  plugins: PluginRecord[]
+} {
+  const target = readJsonObject(database, 'database')
+  if (typeof target.currentPluginProvider !== 'string') {
+    throw new ValidationError('currentPluginProvider must be a string')
+  }
+  const plugins = readStrictIdentityCollection<PluginRecord>(target.plugins, 'plugins', 'name')
+  for (let index = 0; index < plugins.length; index += 1) {
+    createPluginRecord(plugins[index], `plugins[${index}]`)
+  }
+  return { target, plugins }
+}
+
+function readStrictPluginProviderTarget(database: unknown): Record<string, unknown> {
+  const target = readJsonObject(database, 'database')
+  if (typeof target.currentPluginProvider !== 'string') {
+    throw new ValidationError('currentPluginProvider must be a string')
+  }
+  return target
+}
+
+function readStrictPluginStorageTarget(database: unknown): {
+  target: Record<string, unknown>
+  storage: Record<string, unknown>
+} {
+  const target = readJsonObject(database, 'database')
+  const storage = readJsonObject(target.pluginCustomStorage, 'pluginCustomStorage')
+  return { target, storage }
+}
+
+function readStrictCharacterCollection(database: unknown): CharacterRecord[] {
+  const target = readJsonObject(database, 'database')
+  if (!Array.isArray(target.characters)) {
+    throw new ValidationError('characters must be an array')
+  }
+  const seen = new Set<string>()
+  target.characters.forEach((candidate, index) => {
+    const record = readJsonObject(candidate, `characters[${index}]`)
+    const id = readCharacterId(record.chaId, `characters[${index}].chaId`)
+    if (seen.has(id)) throw new ValidationError(`Duplicate character id: ${id}`)
+    seen.add(id)
+    readStrictCharacterRecord(record, id)
+  })
+  validateStrictSelectedIndex(target, 'currentChar', target.characters.length)
+  return target.characters as CharacterRecord[]
+}
+
+function readStrictCharacterChats(
+  character: CharacterRecord,
+  globalChatIds: Set<string> = new Set<string>(),
+): ChatRecord[] {
+  if (!Array.isArray(character.chats)) {
+    throw new ValidationError(`character ${character.chaId}.chats must be an array`)
+  }
+  const folders = readStrictChatFolders(character)
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  const chats = character.chats as ChatRecord[]
+  for (let index = 0; index < chats.length; index += 1) {
+    const record = readJsonObject(chats[index], `character ${character.chaId}.chats[${index}]`)
+    const id = readChatId(record.id, `character ${character.chaId}.chats[${index}].id`)
+    if (globalChatIds.has(id)) throw new ValidationError(`Duplicate chat id: ${id}`)
+    globalChatIds.add(id)
+    requireStrictChatLocation([character], id)
+    if (record.folderId !== undefined && record.folderId !== null) {
+      const folderId = readChatFolderId(record.folderId, `chat ${id}.folderId`)
+      if (!folderIds.has(folderId)) throw new ValidationError(`Unknown chat folder id: ${folderId}`)
+    }
+  }
+  selectedChatIdStrict(character)
+  return chats
+}
+
+function readStrictChatFolders(character: CharacterRecord): ChatFolderRecord[] {
+  readStrictCharacterChatFolders(character)
+  return character.chatFolders as ChatFolderRecord[]
+}
+
+function readStrictCharacterGraph(database: unknown): CharacterRecord[] {
+  const characters = readStrictCharacterCollection(database)
+  const chatIds = new Set<string>()
+  const folderIds = new Set<string>()
+  for (const character of characters) {
+    const folders = readStrictChatFolders(character)
+    for (const folder of folders) {
+      if (folderIds.has(folder.id)) throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
+      folderIds.add(folder.id)
+    }
+    readStrictCharacterChats(character, chatIds)
+  }
+  return characters
+}
+
+function requireStrictChatFolderIndex(
+  characters: readonly CharacterRecord[],
+  folderId: string,
+): { character: CharacterRecord; characterIndex: number; folderIndex: number } {
+  let found: { character: CharacterRecord; characterIndex: number; folderIndex: number } | undefined
+  for (let characterIndex = 0; characterIndex < characters.length; characterIndex += 1) {
+    const character = characters[characterIndex]
+    const folders = readStrictChatFolders(character)
+    const folderIndex = folders.findIndex((folder) => folder.id === folderId)
+    if (folderIndex === -1) continue
+    if (found) throw new ValidationError(`Duplicate chat folder id: ${folderId}`)
+    readStrictCharacterChats(character)
+    found = { character, characterIndex, folderIndex }
+  }
+  if (!found) throw new EntityNotFoundError(`Chat folder not found: ${folderId}`)
+  return found
+}
+
+function validateStrictFullChatOrder(
+  character: CharacterRecord,
+  chatIds: readonly string[],
+  folderByChatId: Record<string, string | null> = {},
+): void {
+  const chats = readStrictCharacterChats(character)
+  const existing = new Set(chats.map((chat) => chat.id))
+  const seen = new Set<string>()
+  for (const chatId of chatIds) {
+    if (!existing.has(chatId)) throw new ValidationError(`Unknown chat id in chatIds: ${chatId}`)
+    if (seen.has(chatId)) throw new ValidationError(`Duplicate chat id in chatIds: ${chatId}`)
+    seen.add(chatId)
+  }
+  if (seen.size !== existing.size) throw new ValidationError('chatIds must include every chat for the character')
+  const folderIds = new Set(readStrictChatFolders(character).map((folder) => folder.id))
+  for (const [chatId, folderId] of Object.entries(folderByChatId)) {
+    if (!existing.has(chatId)) throw new ValidationError(`Unknown chat id in folderByChatId: ${chatId}`)
+    if (folderId !== null && !folderIds.has(folderId)) {
+      throw new ValidationError(`Unknown chat folder id in folderByChatId: ${folderId}`)
+    }
+  }
+}
+
+function validateStrictFullChatFolderOrder(character: CharacterRecord, folderIds: readonly string[]): void {
+  const folders = readStrictChatFolders(character)
+  const existing = new Set(folders.map((folder) => folder.id))
+  const seen = new Set<string>()
+  for (const folderId of folderIds) {
+    if (!existing.has(folderId)) throw new ValidationError(`Unknown chat folder id in folderIds: ${folderId}`)
+    if (seen.has(folderId)) throw new ValidationError(`Duplicate chat folder id in folderIds: ${folderId}`)
+    seen.add(folderId)
+  }
+  if (seen.size !== existing.size) {
+    throw new ValidationError('folderIds must include every chat folder for the character')
+  }
+}
+
+function selectChatStrict(character: CharacterRecord, chatId: string): void {
+  const chats = readStrictCharacterChats(character)
+  const index = chats.findIndex((chat) => chat.id === chatId)
+  if (index === -1) throw new EntityNotFoundError(`Chat not found for character ${character.chaId}: ${chatId}`)
+  character.chatPage = index
+}
+
 function requireOrdinaryChatLocation(characters: readonly CharacterRecord[], chatId: string, db: DatabaseSync) {
   return chatRowExists(db, chatId)
     ? requireStrictChatLocation(characters, chatId)
@@ -636,6 +944,21 @@ function readModuleCollectionCommandTarget(database: unknown): {
   return { target, modules }
 }
 
+function readStrictModuleCommandTarget(database: unknown): {
+  target: Record<string, unknown>
+  modules: ReturnType<typeof readStrictModuleRecords>
+  enabledModuleIds: string[]
+} {
+  const target = readJsonObject(database, 'database')
+  const modules = readStrictModuleRecords(target)
+  for (let index = 0; index < modules.length; index += 1) {
+    validateStoredModuleRecord(modules[index], `module[${index}]`, { allowMcp: true })
+  }
+  const enabledModuleIds = readStrictEnabledModules(target)
+  validateNormalModuleLinks(modules, enabledModuleIds, 'enabledModules')
+  return { target, modules, enabledModuleIds }
+}
+
 function readStrictModuleLorebookTarget(database: unknown, moduleId: string) {
   const { modules } = readModuleCollectionCommandTarget(database)
   const module = requireModule(modules, moduleId)
@@ -687,7 +1010,7 @@ function updateCharacterOrderForPatchedRow(
 }
 
 function applySelectedPromptPresetAfterModelPreset(target: Record<string, unknown>): void {
-  const promptPresets = ensurePromptPresetCollection(target)
+  const promptPresets = readStrictPromptPresetCollection(target)
   const promptPresetIndex = Number.isInteger(target.promptPresetsId as number) ? (target.promptPresetsId as number) : -1
   const promptPreset = promptPresetIndex >= 0 ? promptPresets[promptPresetIndex] : undefined
   if (promptPreset) {
@@ -876,17 +1199,18 @@ function buildChatGenerationSettingsValidationContext(
   const chatModuleIds = Array.isArray(chat.modules)
     ? chat.modules.filter((id): id is string => typeof id === 'string')
     : []
-  const agentPresets = normalizeAgentPresets(target.agentPresets)
+  const { agents, presets: agentPresets, defaultId: effectiveAgentPresetId } = readStrictAgentConfiguration(target)
+  const { modules, enabledModuleIds } = readStrictModuleCommandTarget(target)
 
   return {
     personas: ensurePersonaCollection(target),
-    modelPresets: ensureModelPresetCollection(target),
-    promptPresets: ensurePromptPresetCollection(target),
+    modelPresets: readStrictModelPresetCollection(target),
+    promptPresets: readStrictPromptPresetCollection(target),
     agentPresets,
-    agents: normalizeAgents(target.agents),
-    effectiveAgentPresetId: normalizeAgentPresetDefaultId(target.agentPresetDefaultId, agentPresets),
-    modules: ensureModuleRecords(target),
-    enabledModuleIds: ensureEnabledModules(target),
+    agents,
+    effectiveAgentPresetId,
+    modules,
+    enabledModuleIds,
     characterModuleIds,
     chatModuleIds,
   }
@@ -907,20 +1231,21 @@ function readOptionalPromptPresetIdFromBody(body: PromptCommandBody): string | u
 function requireSelectedPromptPresetCommandTarget(
   database: unknown,
   promptPresetId: string,
+  options: { allowMissingPromptTemplate?: boolean } = {},
 ): {
   preset: ReturnType<typeof ensurePromptPresetCollection>[number]
   index: number
-  items: ReturnType<typeof ensurePromptTemplateCollection>
+  items: PromptItemRecord[]
 } {
   const target = ensureSplitPresetDatabaseObject(database)
-  const presets = ensurePromptPresetCollection(target)
+  const presets = readStrictPromptPresetCollection(target)
   const index = requirePromptPresetIndex(presets, promptPresetId)
   const selectedId = selectedPromptPresetId(target, presets)
   if (selectedId !== promptPresetId) {
     throw new ValidationError(`Selected prompt preset changed before command reached the server: ${promptPresetId}`)
   }
   const preset = presets[index]
-  const items = ensurePromptTemplateCollection(preset)
+  const items = readStrictPromptTemplateCollection(preset, { allowMissing: options.allowMissingPromptTemplate })
   return { preset, index, items }
 }
 
@@ -946,6 +1271,7 @@ const COLLECTION_SCOPED_READS = {
   lorebooks: ['loreBook'],
   modules: ['modules'],
   plugins: ['plugins'],
+  hypaV3Presets: ['hypaV3Presets'],
 } as const
 
 interface RuntimeSettingsCommandBody {
@@ -1645,6 +1971,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'hypaV3',
     'hypaV3Presets',
     'hypaV3PresetId',
+    'selectedHypaV3PresetId',
     'hypaCustomSettings',
     'showMenuHypaMemoryModal',
   ],
@@ -2057,7 +2384,7 @@ const ARRAY_SETTING_KEYS = new Set([
 
 const ARRAY_OR_NULL_SETTING_KEYS = new Set(['localStopStrings'])
 
-const STRING_OR_NULL_SETTING_KEYS = new Set(['textScreenBorder', 'textScreenColor'])
+const STRING_OR_NULL_SETTING_KEYS = new Set(['selectedHypaV3PresetId', 'textScreenBorder', 'textScreenColor'])
 
 const OBJECT_SETTING_KEYS = new Set([
   'account',
@@ -2295,6 +2622,12 @@ export function registerCommandRoutes(
       const patch = group === 'prompt' ? readPromptSettingsPatch(body.patch) : readSettingsGroupPatch(group, body.patch)
       const requestedPatch = body.patch as Record<string, unknown>
       const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')
+      const writesSelectedHypaV3PresetId = Object.prototype.hasOwnProperty.call(patch, 'selectedHypaV3PresetId')
+      const writesHypaV3PresetId = Object.prototype.hasOwnProperty.call(patch, 'hypaV3PresetId')
+      const writesHypaV3Identity = writesHypaV3Presets || writesSelectedHypaV3PresetId || writesHypaV3PresetId
+      if (writesHypaV3PresetId && !writesSelectedHypaV3PresetId) {
+        throw new ValidationError('hypaV3PresetId is derived and requires selectedHypaV3PresetId in the same patch')
+      }
       validateSettingsAssetRefs(db, patch)
       const result = applyTargetedCommandMutation({
         db,
@@ -2302,9 +2635,32 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.settings,
-        settingsScopedRead: true,
+        ...(writesHypaV3Identity
+          ? { collectionScopedRead: COLLECTION_SCOPED_READS.hypaV3Presets }
+          : { settingsScopedRead: true }),
         mutate(database, innerDb) {
-          applySettingsPatch(database, patch)
+          let appliedPatch = patch
+          if (writesHypaV3Identity) {
+            const target = readJsonObject(database, 'database')
+            readStrictHypaV3PresetState(target)
+            const proposed = {
+              ...target,
+              ...(writesHypaV3Presets ? { hypaV3Presets: patch.hypaV3Presets } : {}),
+              ...(writesSelectedHypaV3PresetId ? { selectedHypaV3PresetId: patch.selectedHypaV3PresetId } : {}),
+            }
+            const { selectedId, selectedIndex } = readStrictHypaV3PresetState(proposed, {
+              validateNumericProjection: false,
+            })
+            if (writesHypaV3PresetId && patch.hypaV3PresetId !== selectedIndex) {
+              throw new ValidationError('hypaV3PresetId must match the selectedHypaV3PresetId compatibility projection')
+            }
+            appliedPatch = {
+              ...patch,
+              selectedHypaV3PresetId: selectedId,
+              hypaV3PresetId: selectedIndex,
+            }
+          }
+          applySettingsPatch(database, appliedPatch)
           writeSettingsOnly(innerDb, extractSettings(database as Record<string, unknown>))
           if (Object.prototype.hasOwnProperty.call(patch, 'requestHistoryLimit')) {
             pruneRequestHistory(innerDb, (database as Record<string, unknown>).requestHistoryLimit)
@@ -3202,7 +3558,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target, { allowEmptyPendingFirstRecord: true })
           if (findPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate preset id: ${preset.id}`)
           }
@@ -3252,7 +3608,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           const index = requirePresetIndex(presets, presetId)
           const patch = readPresetPatch(resolveMaskedLegacyPresetPatch(presets[index], requestedPatch, presetId), {
             assetDb: db,
@@ -3267,7 +3623,9 @@ export function registerCommandRoutes(
             ...patch,
             id: presetId,
           }
-          normalizePresetAgentSettings(presets[index])
+          if (Object.prototype.hasOwnProperty.call(patch, 'agentPresets')) {
+            normalizePresetAgentSettings(presets[index])
+          }
           writeSingleCollectionRow(innerDb, 'botPresets', index, presets[index])
           const receipt = compactCanonicalPresetReceipt(presets[index], optimisticPreset)
           return {
@@ -3313,7 +3671,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           if (presets.length <= 1) {
             throw new ValidationError('Cannot delete the only preset')
           }
@@ -3398,7 +3756,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           const savedPresetId = saveCurrent ? selectedPresetId(target, presets) : null
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
@@ -3455,7 +3813,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target, { allowInvalidSelectedPointer: true })
           const beforeSelected = target.botPresetsId
           const previousSelectedId = selectedPresetId(target, presets)
           if (saveCurrent) {
@@ -3571,7 +3929,7 @@ export function registerCommandRoutes(
           const target = ensureDatabaseObject(database)
           const rawPresets = cloneJsonForCommandCertificate(target.botPresets)
           const rawSelected = target.botPresetsId
-          const presets = ensurePresetCollection(target)
+          const presets = readStrictLegacyPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && rawSelected === target.botPresetsId
           const beforeSelected = target.botPresetsId
@@ -3636,7 +3994,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           if (findModelPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate model preset id: ${preset.id}`)
           }
@@ -3680,7 +4038,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           const index = requireModelPresetIndex(presets, modelPresetId)
           const projectionKeys = splitPresetSettingsProjectionKeys('model', patch)
           const selectedProjectionCandidate = target.modelPresetsId === index && projectionKeys.length > 0
@@ -3708,7 +4066,7 @@ export function registerCommandRoutes(
           const selectedProjectionApplied =
             selectedProjectionCandidate && hasSplitPresetProjectionChange(target, canonicalTarget, projectionKeys)
           const selectedPromptPreset = selectedProjectionApplied
-            ? selectedPromptPresetId(target, ensurePromptPresetCollection(target))
+            ? selectedPromptPresetId(target, readStrictPromptPresetCollection(target))
             : null
           writeSingleCollectionRow(innerDb, 'modelPresets', index, presets[index])
           if (selectedProjectionApplied) {
@@ -3767,8 +4125,8 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
-          const promptPresets = ensurePromptPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
+          const promptPresets = readStrictPromptPresetCollection(target)
           const deletedIndex = findModelPresetIndex(presets, modelPresetId)
           if (deletedIndex === -1) {
             const selectedId = selectedModelPresetId(target, presets)
@@ -3868,7 +4226,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           const beforeSelected = target.modelPresetsId
           const nextSelectedIndex = requireModelPresetIndex(presets, modelPresetId)
           target.modelPresetsId = nextSelectedIndex
@@ -3954,7 +4312,7 @@ export function registerCommandRoutes(
           const target = ensureSplitPresetDatabaseObject(database)
           const rawPresets = cloneJsonForCommandCertificate(target.modelPresets)
           const rawSelected = target.modelPresetsId
-          const presets = ensureModelPresetCollection(target)
+          const presets = readStrictModelPresetCollection(target)
           const acknowledgementSafe =
             Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && rawSelected === target.modelPresetsId
           const beforeSelected = target.modelPresetsId
@@ -4016,12 +4374,12 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           if (findPromptPresetIndex(presets, preset.id) !== -1) {
             throw new ValidationError(`Duplicate prompt preset id: ${preset.id}`)
           }
           if (Object.prototype.hasOwnProperty.call(preset, 'recommendedModelPresetId')) {
-            validatePromptPresetRecommendedModelPreset(preset, ensureModelPresetCollection(target))
+            validatePromptPresetRecommendedModelPreset(preset, readStrictModelPresetCollection(target))
           }
           presets.push(preset)
           writeSingleCollectionTable(innerDb, 'promptPresets', presets)
@@ -4065,7 +4423,7 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const index = requirePromptPresetIndex(presets, promptPresetId)
           const projectionKeys = splitPresetSettingsProjectionKeys('prompt', patch)
           const selected = target.promptPresetsId === index
@@ -4086,7 +4444,7 @@ export function registerCommandRoutes(
             id: promptPresetId,
           }
           if (Object.prototype.hasOwnProperty.call(patch, 'recommendedModelPresetId')) {
-            validatePromptPresetRecommendedModelPreset(nextPreset, ensureModelPresetCollection(target))
+            validatePromptPresetRecommendedModelPreset(nextPreset, readStrictModelPresetCollection(target))
           }
           presets[index] = nextPreset
           const canonicalTarget = { ...target }
@@ -4153,7 +4511,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const deletedIndex = findPromptPresetIndex(presets, promptPresetId)
           if (deletedIndex === -1) {
             const selectedId = selectedPromptPresetId(target, presets)
@@ -4236,7 +4594,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const beforeSelected = target.promptPresetsId
           const nextSelectedIndex = requirePromptPresetIndex(presets, promptPresetId)
           target.promptPresetsId = nextSelectedIndex
@@ -4324,7 +4682,7 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.promptPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
-          const presets = ensurePromptPresetCollection(target)
+          const presets = readStrictPromptPresetCollection(target)
           const beforeSelected = target.promptPresetsId
           const currentSelectedId = selectedPromptPresetId(target, presets)
           validateFullPromptPresetIdList(presets, promptPresetIds)
@@ -4452,7 +4810,7 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
+          const items = scoped ? scoped.items : readStrictPromptTemplateCollection(ensureDatabaseObject(database))
           if (items.some((item) => item.id === promptItem.id)) {
             throw new ValidationError(`Duplicate prompt item id: ${promptItem.id}`)
           }
@@ -4503,7 +4861,7 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
+          const items = scoped ? scoped.items : readStrictPromptTemplateCollection(ensureDatabaseObject(database))
           const index = requirePromptItemIndex(items, itemId)
           const updated = { ...items[index] }
           for (const key of deleteKeys) delete updated[key]
@@ -4555,10 +4913,10 @@ export function registerCommandRoutes(
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           let scoped: ReturnType<typeof requireSelectedPromptPresetCommandTarget> | undefined
-          let items: ReturnType<typeof ensurePromptTemplateCollection>
+          let items: PromptItemRecord[]
           if (promptPresetId) {
             const target = ensureSplitPresetDatabaseObject(database)
-            const presets = ensurePromptPresetCollection(target)
+            const presets = readStrictPromptPresetCollection(target)
             const presetIndex = findPromptPresetIndex(presets, promptPresetId)
             if (presetIndex === -1) {
               return {
@@ -4570,7 +4928,7 @@ export function registerCommandRoutes(
                 extra: { itemId },
               }
             }
-            const presetItems = ensurePromptTemplateCollection(presets[presetIndex])
+            const presetItems = readStrictPromptTemplateCollection(presets[presetIndex])
             if (!presetItems.some((item) => item.id === itemId)) {
               return {
                 event: {
@@ -4584,7 +4942,7 @@ export function registerCommandRoutes(
             scoped = requireSelectedPromptPresetCommandTarget(database, promptPresetId)
             items = scoped.items
           } else {
-            items = ensurePromptTemplateCollection(ensureDatabaseObject(database))
+            items = readStrictPromptTemplateCollection(ensureDatabaseObject(database))
             if (!items.some((item) => item.id === itemId)) {
               return {
                 event: { ...COMMAND_EVENT_CATALOG.promptItemDeleted, id: itemId },
@@ -4641,10 +4999,14 @@ export function registerCommandRoutes(
           ? COLLECTION_SCOPED_READS.promptPresets
           : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
-          const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
+          const scoped = promptPresetId
+            ? requireSelectedPromptPresetCommandTarget(database, promptPresetId, {
+                allowMissingPromptTemplate: enabled,
+              })
+            : undefined
           if (scoped) {
             if (enabled) {
-              ensurePromptTemplateCollection(scoped.preset)
+              if (scoped.preset.promptTemplate === undefined) scoped.preset.promptTemplate = []
             } else {
               delete scoped.preset.promptTemplate
             }
@@ -4655,7 +5017,8 @@ export function registerCommandRoutes(
             // enabling ensures the array, disabling clears it. Either way it is a
             // single-table write — the `prompt_templates` rows, never another table.
             if (enabled) {
-              const items = ensurePromptTemplateCollection(target)
+              const items = readStrictPromptTemplateCollection(target, { allowMissing: true })
+              if (target.promptTemplate === undefined) target.promptTemplate = items
               writePromptTemplatesTable(innerDb, items)
             } else {
               delete target.promptTemplate
@@ -4705,7 +5068,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const target = ensureDatabaseObject(database)
-          const items = scoped ? scoped.items : ensurePromptTemplateCollection(target)
+          const items = scoped ? scoped.items : readStrictPromptTemplateCollection(target)
           validateFullPromptItemIdList(items, itemIds)
           const byId = new Map(items.map((item) => [item.id, item]))
           const reordered = itemIds.map((id) => byId.get(id)!)
@@ -4751,7 +5114,11 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.personasWithModules,
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
-          validateNormalModuleLinks(ensureModuleRecords(target), persona.modules ?? [], 'persona.modules')
+          validateNormalModuleLinks(
+            readStrictModuleCommandTarget(target).modules,
+            persona.modules ?? [],
+            'persona.modules',
+          )
           const personas = ensurePersonaCollection(target)
           if (personas.length > 0) requireSelectedPersonaIndex(target, personas)
           if (findPersonaIndex(personas, persona.id) !== -1) {
@@ -4820,7 +5187,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensurePersonaDatabaseObject(database)
           if (Array.isArray(patch.modules)) {
-            validateNormalModuleLinks(ensureModuleRecords(target), patch.modules, 'patch.modules')
+            validateNormalModuleLinks(readStrictModuleCommandTarget(target).modules, patch.modules, 'patch.modules')
           }
           const personas = ensurePersonaCollection(target)
           const index = requirePersonaIndex(personas, personaId)
@@ -5542,7 +5909,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
+          const characters = readStrictCharacterCollection(target)
+          const characterOrder = readCharacterOrder(target.characterOrder)
+          validateFullCharacterOrder(characters, characterOrder)
           if (findCharacterIndex(characters, character.chaId) !== -1) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
@@ -5550,14 +5919,14 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
-          character.chatPage = 0
+          character.chatPage = initialChat ? 0 : -1
           characters.push(character)
-          const normalizedCharacters = ensureCharacterCollection(target)
+          updateCharacterOrderForPatchedRow(target, character.chaId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreated, id: character.chaId },
             extra: {
               characterId: character.chaId,
-              selectedCharacterId: selectedCharacterId(target, normalizedCharacters),
+              selectedCharacterId: selectedCharacterId(target, characters),
             },
           }
         },
@@ -5593,7 +5962,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutate(database) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
+          const characters = readStrictCharacterCollection(target)
+          const characterOrder = readCharacterOrder(target.characterOrder)
+          validateFullCharacterOrder(characters, characterOrder)
           if (findCharacterIndex(characters, character.chaId) !== -1) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
@@ -5601,15 +5972,15 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
-          character.chatPage = 0
+          character.chatPage = initialChat ? 0 : -1
           characters.push(character)
-          const normalizedCharacters = ensureCharacterCollection(target)
-          target.currentChar = requireCharacterIndex(normalizedCharacters, character.chaId)
+          updateCharacterOrderForPatchedRow(target, character.chaId, character)
+          target.currentChar = requireCharacterIndex(characters, character.chaId)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreatedAndSelected, id: character.chaId },
             extra: {
               characterId: character.chaId,
-              selectedCharacterId: selectedCharacterId(target, normalizedCharacters),
+              selectedCharacterId: selectedCharacterId(target, characters),
             },
           }
         },
@@ -5717,7 +6088,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = normalizeAllCharacterChats(target)
+          const characters = readStrictCharacterGraph(target)
           const character = characters[requireCharacterIndex(characters, characterId)]
           const currentGreetings = Array.isArray(character.alternateGreetings)
             ? character.alternateGreetings.filter((value): value is string => typeof value === 'string')
@@ -5725,7 +6096,7 @@ export function registerCommandRoutes(
           const mutation = readAlternateGreetingMutation(body, currentGreetings.length)
           appliedGreetingMutation = mutation.operation
           character.alternateGreetings = mutation.alternateGreetings
-          const chats = ensureCharacterChats(character)
+          const chats = readStrictCharacterChats(character)
           const chatGreetingIndices = chats.map((chat) => {
             const fmIndex = remapAlternateGreetingIndex(chat.fmIndex, currentGreetings.length, mutation.operation)
             chat.fmIndex = fmIndex
@@ -5904,7 +6275,7 @@ export function registerCommandRoutes(
         // Sibling character-row repairs mutate the clone only and are discarded.
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
+          const characters = readStrictCharacterCollection(target)
           const index = findCharacterIndex(characters, characterId)
           if (index === -1) {
             return {
@@ -5916,9 +6287,15 @@ export function registerCommandRoutes(
             }
           }
           const character = characters[index]
-          const removedChatIds = ensureCharacterChats(character).map((chat) => chat.id)
+          const removedChatIds = readStrictCharacterChats(character).map((chat) => chat.id)
+          const selectedIndex = target.currentChar as number
+          const characterOrder = readCharacterOrder(target.characterOrder)
+          validateFullCharacterOrder(characters, characterOrder)
           characters.splice(index, 1)
-          ensureCharacterCollection(target)
+          if (characters.length === 0) target.currentChar = -1
+          else if (selectedIndex === index) target.currentChar = Math.min(index, characters.length - 1)
+          else if (selectedIndex > index) target.currentChar = selectedIndex - 1
+          target.characterOrder = characterOrderWithout(characterOrder, characterId)
           // The chats.character_id ON DELETE CASCADE removes the chat rows with
           // the character row; no explicit chats DELETE needed.
           deleteCharacterRow(innerDb, characterId)
@@ -5992,11 +6369,10 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.settings,
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = ensureCharacterCollection(target)
+          const characters = readStrictCharacterCollection(target)
           validateFullCharacterOrder(characters, order)
           // `characterOrder` is a settings scalar; reorder edits presentation
-          // order, not `characters` table positions. The `ensureCharacterCollection`
-          // repair on sibling rows is validate-only and is not persisted.
+          // order, not `characters` table positions.
           target.characterOrder = order
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -6038,12 +6414,11 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const modules = ensureModuleRecords(target)
+          const { target, modules } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          const previousSelectedChatId = selectedChatId(character)
-          const chats = ensureCharacterChats(character)
+          const previousSelectedChatId = selectedChatIdStrict(character)
+          const chats = readStrictCharacterChats(character)
           if (chatIdExists(characters, chat.id)) {
             throw new ValidationError(`Duplicate chat id: ${chat.id}`)
           }
@@ -6056,7 +6431,7 @@ export function registerCommandRoutes(
             validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
           }
           if (chat.folderId) {
-            const folders = ensureCharacterChatFolders(character)
+            const folders = readStrictChatFolders(character)
             if (!folders.some((folder) => folder.id === chat.folderId)) {
               throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
             }
@@ -6071,9 +6446,7 @@ export function registerCommandRoutes(
           if (selectCreated) {
             character.chatPage = 0
           } else if (previousSelectedChatId) {
-            selectChat(character, previousSelectedChatId)
-          } else {
-            ensureCharacterChats(character)
+            selectChatStrict(character, previousSelectedChatId)
           }
           writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
           insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
@@ -6092,7 +6465,7 @@ export function registerCommandRoutes(
             },
             extra: {
               chatId: chat.id,
-              selectedChatId: selectedChatId(character),
+              selectedChatId: selectedChatIdStrict(character),
               generationSettings: chat.generationSettings ?? null,
             },
           }
@@ -6134,9 +6507,8 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const modules = ensureModuleRecords(target)
+          const { target, modules } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
           const character = characters[requireCharacterIndex(characters, characterId)]
           if (chatIdExists(characters, chat.id)) {
             throw new ValidationError(`Duplicate chat id: ${chat.id}`)
@@ -6145,7 +6517,7 @@ export function registerCommandRoutes(
             validateNormalModuleLinks(modules, chat.modules, 'chat.modules')
           }
           if (chat.folderId) {
-            const folders = ensureCharacterChatFolders(character)
+            const folders = readStrictChatFolders(character)
             if (!folders.some((folder) => folder.id === chat.folderId)) {
               throw new ValidationError(`Unknown chat folder id: ${chat.folderId}`)
             }
@@ -6157,7 +6529,7 @@ export function registerCommandRoutes(
             )
           }
 
-          const removedChatIds = ensureCharacterChats(character).map((candidate) => candidate.id)
+          const removedChatIds = readStrictCharacterChats(character).map((candidate) => candidate.id)
           character.chats = [chat]
           character.chatPage = 0
 
@@ -6208,25 +6580,23 @@ export function registerCommandRoutes(
         ...(hasModulePatch ? {} : { chatScopedRead: { chatId, exactChatRow: true } }),
         mutate(database, innerDb) {
           const target = hasModulePatch
-            ? ensureModuleCommandDatabase(database)
+            ? readStrictModuleCommandTarget(database).target
             : ensureCharacterDatabaseObject(database)
-          const characters = hasModulePatch ? normalizeAllCharacterChats(target) : readScopedCharacterRecords(target)
+          const characters = hasModulePatch ? readStrictCharacterGraph(target) : readScopedCharacterRecords(target)
           const { character, chatIndex } = hasModulePatch
-            ? requireChatLocation(characters, chatId)
+            ? requireStrictChatLocation(characters, chatId)
             : requireOrdinaryChatLocation(characters, chatId, innerDb)
           if (hasModulePatch) {
-            const modules = ensureModuleRecords(target)
+            const modules = readStrictModuleRecords(target)
             validateNormalModuleLinks(modules, patch.modules as string[], 'patch.modules')
           }
           if (patch.folderId) {
-            const folders = hasModulePatch
-              ? ensureCharacterChatFolders(character)
-              : readStrictCharacterChatFolders(character)
+            const folders = readStrictChatFolders(character)
             if (!folders.some((folder) => folder.id === patch.folderId)) {
               throw new ValidationError(`Unknown chat folder id: ${patch.folderId}`)
             }
           }
-          const chats = hasModulePatch ? ensureCharacterChats(character) : (character.chats as ChatRecord[])
+          const chats = hasModulePatch ? readStrictCharacterChats(character) : (character.chats as ChatRecord[])
           const updatedChat = {
             ...chats[chatIndex],
             ...patch,
@@ -6245,7 +6615,7 @@ export function registerCommandRoutes(
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
             extra: {
               chatId,
-              selectedChatId: hasModulePatch ? selectedChatId(character) : selectedChatIdStrict(character),
+              selectedChatId: selectedChatIdStrict(character),
             },
           }
         },
@@ -6354,9 +6724,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const { character, chat } = requireChatLocation(characters, chatId)
+          const { target } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
+          const { character, chat } = requireStrictChatLocation(characters, chatId)
           const write = readChatGenerationSettingsWrite(
             body,
             chat.generationSettings,
@@ -6412,7 +6782,7 @@ export function registerCommandRoutes(
         // clone only and is discarded.
         mutate(database, innerDb) {
           const target = ensureCharacterDatabaseObject(database)
-          const characters = normalizeAllCharacterChats(target)
+          const characters = readStrictCharacterGraph(target)
           if (!chatIdExists(characters, chatId)) {
             const currentCharacterIndex = Number.isInteger(target.currentChar as number)
               ? (target.currentChar as number)
@@ -6422,17 +6792,22 @@ export function registerCommandRoutes(
               event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId },
               extra: {
                 chatId,
-                selectedChatId: currentCharacter ? selectedChatId(currentCharacter) : null,
+                selectedChatId: currentCharacter ? selectedChatIdStrict(currentCharacter) : null,
               },
             }
           }
-          const { character, chatIndex } = requireChatLocation(characters, chatId)
-          const chats = ensureCharacterChats(character)
+          const { character, chatIndex } = requireStrictChatLocation(characters, chatId)
+          const chats = readStrictCharacterChats(character)
           if (chats.length <= 1) {
             throw new ValidationError('Cannot delete the only chat for a character')
           }
+          const previousSelectedChatId = selectedChatIdStrict(character)
           chats.splice(chatIndex, 1)
-          ensureCharacterChats(character)
+          if (previousSelectedChatId && previousSelectedChatId !== chatId) {
+            selectChatStrict(character, previousSelectedChatId)
+          } else {
+            character.chatPage = Math.min(chatIndex, chats.length - 1)
+          }
           const characterId = character.chaId as string
           deleteCharacterChatRow(innerDb, chatId, characterId)
           writeCharacterChatRows(innerDb, characterId, chats as Record<string, unknown>[])
@@ -6441,7 +6816,7 @@ export function registerCommandRoutes(
           deleteChatHypaV3(innerDb, chatId)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatDeleted, id: chatId, parentId: character.chaId },
-            extra: { chatId, selectedChatId: selectedChatId(character) },
+            extra: { chatId, selectedChatId: selectedChatIdStrict(character) },
           }
         },
       })
@@ -6481,13 +6856,12 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const target = ensureModuleCommandDatabase(database)
-          const characters = normalizeAllCharacterChats(target)
-          const modules = ensureModuleRecords(target)
-          const { character, chatIndex } = requireChatLocation(characters, sourceChatId)
-          const previousSelectedChatId = selectedChatId(character)
-          const chats = ensureCharacterChats(character)
-          const folders = ensureCharacterChatFolders(character)
+          const { target, modules } = readStrictModuleCommandTarget(database)
+          const characters = readStrictCharacterGraph(target)
+          const { character, chatIndex } = requireStrictChatLocation(characters, sourceChatId)
+          const previousSelectedChatId = selectedChatIdStrict(character)
+          const chats = readStrictCharacterChats(character)
+          const folders = readStrictChatFolders(character)
           if (folder) {
             if (chatFolderIdExists(characters, folder.id)) {
               throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
@@ -6538,9 +6912,7 @@ export function registerCommandRoutes(
           if (selectFork) {
             character.chatPage = 0
           } else if (previousSelectedChatId) {
-            selectChat(character, previousSelectedChatId)
-          } else {
-            ensureCharacterChats(character)
+            selectChatStrict(character, previousSelectedChatId)
           }
           // Surgical fork persistence, scoped to the source character: re-stamp
           // its existing chat-row positions (source chat's `sourcePatch` rides
@@ -6567,7 +6939,7 @@ export function registerCommandRoutes(
             extra: {
               chatId: nextChat.id,
               sourceChatId,
-              selectedChatId: selectedChatId(character),
+              selectedChatId: selectedChatIdStrict(character),
               generationSettings: nextChat.generationSettings ?? null,
             },
           }
@@ -6602,10 +6974,10 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          validateFullChatOrder(character, chatIds, folderByChatId)
-          const chats = ensureCharacterChats(character)
+          validateStrictFullChatOrder(character, chatIds, folderByChatId)
+          const chats = readStrictCharacterChats(character)
           const chatById = new Map(chats.map((chat) => [chat.id, chat]))
           character.chats = chatIds.map((chatId) => {
             const chat = chatById.get(chatId)!
@@ -6615,9 +6987,7 @@ export function registerCommandRoutes(
             return chat
           })
           if (selectedId) {
-            selectChat(character, selectedId)
-          } else {
-            ensureCharacterChats(character)
+            selectChatStrict(character, selectedId)
           }
           // Reorder shifts only this character's chat-row positions (+ folderId
           // where folderByChatId moved a chat); the character row carries the
@@ -6626,7 +6996,7 @@ export function registerCommandRoutes(
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatReordered, parentId: characterId },
-            extra: { selectedChatId: selectedChatId(character) },
+            extra: { selectedChatId: selectedChatIdStrict(character) },
           }
         },
       })
@@ -6656,14 +7026,13 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          const folders = ensureCharacterChatFolders(character)
+          const folders = readStrictChatFolders(character)
           if (chatFolderIdExists(characters, folder.id)) {
             throw new ValidationError(`Duplicate chat folder id: ${folder.id}`)
           }
-          // `chatFolders` lives in the character row; sibling-character chat
-          // normalization is validate-only.
+          // `chatFolders` lives in the character row.
           folders.unshift(folder)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -6702,9 +7071,9 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
-          const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
-          const folders = ensureCharacterChatFolders(character)
+          const characters = readStrictCharacterGraph(database)
+          const { character, folderIndex } = requireStrictChatFolderIndex(characters, folderId)
+          const folders = readStrictChatFolders(character)
           folders[folderIndex] = {
             ...folders[folderIndex],
             ...patch,
@@ -6746,21 +7115,19 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           if (!chatFolderIdExists(characters, folderId)) {
             return {
               event: { ...COMMAND_EVENT_CATALOG.chatFolderDeleted, id: folderId },
               extra: { folderId },
             }
           }
-          const { character, folderIndex } = requireChatFolderIndex(characters, folderId)
-          const folders = ensureCharacterChatFolders(character)
+          const { character, folderIndex } = requireStrictChatFolderIndex(characters, folderId)
+          const folders = readStrictChatFolders(character)
           folders.splice(folderIndex, 1)
           // The folder lives on the character row (`chatFolders`); deleting it
           // re-homes only the chat rows whose `folderId` pointed at it. Iterate
-          // the already-normalized `character.chats` directly: calling
-          // `ensureCharacterChats` again here would itself null the now-orphaned
-          // `folderId` before this comparison could see it.
+          // the already-validated `character.chats` directly.
           const reHomed: Record<string, unknown>[] = []
           for (const chat of character.chats as Record<string, unknown>[]) {
             if (chat.folderId === folderId) {
@@ -6810,21 +7177,21 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         mutate(database, innerDb) {
-          const characters = normalizeAllCharacterChats(database)
+          const characters = readStrictCharacterGraph(database)
           const character = characters[requireCharacterIndex(characters, characterId)]
-          validateFullChatFolderOrder(character, folderIds)
-          const folders = ensureCharacterChatFolders(character)
+          validateStrictFullChatFolderOrder(character, folderIds)
+          const folders = readStrictChatFolders(character)
           const folderById = new Map(folders.map((folder) => [folder.id, folder]))
           // `chatFolders` and `chatPage` (via selectChat) live in the character
           // row; reordering folders touches no chat row.
           character.chatFolders = folderIds.map((folderId) => folderById.get(folderId)!)
           if (selectedId) {
-            selectChat(character, selectedId)
+            selectChatStrict(character, selectedId)
           }
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatFolderReordered, parentId: characterId },
-            extra: { selectedChatId: selectedChatId(character) },
+            extra: { selectedChatId: selectedChatIdStrict(character) },
           }
         },
       })
@@ -8433,8 +8800,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { plugins } = readStrictPluginCommandTarget(database)
           if (plugins.some((candidate) => candidate.name === plugin.name)) {
             throw new ValidationError(`Plugin already exists: ${plugin.name}`)
           }
@@ -8473,8 +8839,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { plugins } = readStrictPluginCommandTarget(database)
           const index = requirePluginIndex(plugins, pluginId)
           for (const [key, value] of Object.entries(patch)) {
             if (value === null) {
@@ -8516,8 +8881,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { target, plugins } = readStrictPluginCommandTarget(database)
           const index = requirePluginIndex(plugins, pluginId)
           plugins.splice(index, 1)
           // The deleted plugin shifts later positions, so rewrite the one table.
@@ -8569,8 +8933,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { plugins } = readStrictPluginCommandTarget(database)
           const index = requirePluginIndex(plugins, pluginId)
           plugins[index].enabled = enabled
           writeSingleCollectionRow(innerDb, 'plugins', index, plugins[index])
@@ -8606,7 +8969,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.settings,
         settingsScopedRead: true,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
+          const target = readStrictPluginProviderTarget(database)
           target.currentPluginProvider = provider
           writeSettingsOnly(innerDb, extractSettings(target))
           return {
@@ -8641,8 +9004,7 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.plugins,
         mutate(database, innerDb) {
-          const target = ensurePluginCommandDatabase(database)
-          const plugins = ensurePluginRecords(target)
+          const { target, plugins } = readStrictPluginCommandTarget(database)
           validateFullPluginOrder(plugins, pluginIds)
           const byId = new Map(plugins.map((plugin) => [plugin.name, plugin]))
           const reordered = pluginIds.map((id) => byId.get(id))
@@ -8817,8 +9179,8 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.pluginStorage,
         mutate(database, innerDb) {
-          const target = ensurePluginStorageDatabase(database)
-          const storage = patch.clear ? {} : { ...ensurePluginCustomStorage(target) }
+          const { storage: currentStorage } = readStrictPluginStorageTarget(database)
+          const storage = patch.clear ? {} : { ...currentStorage }
           for (const key of patch.deleteKeys) {
             delete storage[key]
           }

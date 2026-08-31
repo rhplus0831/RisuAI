@@ -3877,8 +3877,10 @@ describe('scalar settings groups', () => {
         patch: {
           hypaV3: true,
           hypaV3PresetId: 0,
+          selectedHypaV3PresetId: 'fastify-memory',
           hypaV3Presets: [
             {
+              id: 'fastify-memory',
               name: 'Fastify memory',
               settings: {
                 summarizationModel: 'subModel',
@@ -4071,8 +4073,10 @@ describe('scalar settings groups', () => {
       emotionProcesser: 'embedding',
       hypaV3: true,
       hypaV3PresetId: 0,
+      selectedHypaV3PresetId: 'fastify-memory',
       hypaV3Presets: [
         {
+          id: 'fastify-memory',
           name: 'Fastify memory',
           settings: {
             summarizationModel: 'subModel',
@@ -4134,8 +4138,10 @@ describe('scalar settings groups', () => {
       payload: {
         baseRevision: settingsOnly.json().revision,
         patch: {
+          selectedHypaV3PresetId: 'cross-resource-memory',
           hypaV3Presets: [
             {
+              id: 'cross-resource-memory',
               name: 'Cross-resource memory',
               settings: {
                 summarizationModel: 'subModel',
@@ -4150,7 +4156,7 @@ describe('scalar settings groups', () => {
     })
     expect(withPresets.statusCode).toBe(200)
     expect(withPresets.json()).toMatchObject({
-      acknowledgedKeys: ['hypaV3Presets'],
+      acknowledgedKeys: ['selectedHypaV3PresetId', 'hypaV3Presets'],
       settings: {},
     })
     expect(withPresets.json().event).toMatchObject({
@@ -4160,6 +4166,122 @@ describe('scalar settings groups', () => {
     })
   })
 
+  it('keeps stable Hypa selection authoritative and co-writes its numeric projection atomically', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      hypaV3Presets: [
+        { id: 'memory-a', name: 'A', settings: {} },
+        { id: 'memory-b', name: 'B', settings: {} },
+      ],
+      selectedHypaV3PresetId: 'memory-a',
+      hypaV3PresetId: 0,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { selectedHypaV3PresetId: 'memory-b' } },
+    })
+    expect(selected.statusCode, selected.body).toBe(200)
+    revision = selected.json().revision
+
+    const reordered = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          hypaV3Presets: [
+            { id: 'memory-b', name: 'B', settings: {} },
+            { id: 'memory-a', name: 'A', settings: {} },
+          ],
+        },
+      },
+    })
+    expect(reordered.statusCode, reordered.body).toBe(200)
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const settings = JSON.parse(
+        (db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+      ) as Record<string, unknown>
+      expect(settings).toMatchObject({ selectedHypaV3PresetId: 'memory-b', hypaV3PresetId: 0 })
+      const presets = db.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
+        data_json: string
+      }>
+      expect(presets.map(({ data_json }) => (JSON.parse(data_json) as { id: string }).id)).toEqual([
+        'memory-b',
+        'memory-a',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('rejects malformed Hypa identity patches and damaged stored rows without write or revision churn', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      hypaV3Presets: [
+        { id: 'memory-a', name: 'A', settings: {} },
+        { id: 'memory-b', name: 'B', settings: {} },
+      ],
+      selectedHypaV3PresetId: 'memory-a',
+      hypaV3PresetId: 0,
+    })
+
+    for (const patch of [
+      { hypaV3PresetId: 1 },
+      { selectedHypaV3PresetId: 'memory-b', hypaV3PresetId: 0 },
+      {
+        selectedHypaV3PresetId: 'missing',
+        hypaV3Presets: [{ id: 'memory-a', name: 'A', settings: {} }],
+      },
+      {
+        selectedHypaV3PresetId: 'memory-a',
+        hypaV3Presets: [{ name: 'Missing id', settings: {} }],
+      },
+      {
+        selectedHypaV3PresetId: 'duplicate',
+        hypaV3Presets: [
+          { id: 'duplicate', name: 'A', settings: {} },
+          { id: 'duplicate', name: 'B', settings: {} },
+        ],
+      },
+    ]) {
+      const before = readAllDatabaseRows(harness.dataDir)
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/settings/memory',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, patch },
+      })
+      expect(response.statusCode, response.body).toBe(400)
+      expect(readAllDatabaseRows(harness.dataDir)).toEqual(before)
+    }
+
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare('UPDATE hypa_v3_presets SET data_json = ? WHERE position = 1').run(
+        JSON.stringify({ id: 'memory-a', name: 'Damaged duplicate', settings: {} }),
+      )
+    } finally {
+      db.close()
+    }
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
+
+    const response = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { selectedHypaV3PresetId: 'memory-b' } },
+    })
+    expect(response.statusCode, response.body).toBe(400)
+    expect(response.json().error).toBe('Duplicate hypaV3Presets id: memory-a')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
+  })
+
   it('rejects legacy Hypa aliases while allowing canonical preset settings to remain authoritative', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -4167,6 +4289,7 @@ describe('scalar settings groups', () => {
       supaMemoryKey: 'stale-flat-key',
       hypaV3Presets: [
         {
+          id: 'canonical-memory',
           name: 'Canonical memory',
           settings: { summarizationModel: 'subModel', summarizationPrompt: 'canonical prompt' },
         },
@@ -4196,6 +4319,7 @@ describe('scalar settings groups', () => {
         patch: {
           hypaV3Presets: [
             {
+              id: 'canonical-memory',
               name: 'Canonical memory',
               settings: { summarizationModel: 'subModel', summarizationPrompt: 'updated canonical prompt' },
             },
@@ -4232,8 +4356,10 @@ describe('scalar settings groups', () => {
       payload: {
         baseRevision: revision,
         patch: {
+          selectedHypaV3PresetId: 'unsupported-gpu',
           hypaV3Presets: [
             {
+              id: 'unsupported-gpu',
               name: 'Unsupported GPU preset',
               settings: { summarizationModel: 'Qwen3-4B-q4f32_1-MLC' },
             },
@@ -5264,7 +5390,7 @@ describe('bot preset commands', () => {
     expect(bootstrap.resourceDatabase.botPresetsId).toBe(0)
   })
 
-  it('omits the preset reorder receipt when the selected pointer requires normalization', async () => {
+  it('rejects preset reorder when the persisted selected pointer requires repair', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       botPresets: [
@@ -5276,6 +5402,7 @@ describe('bot preset commands', () => {
     updateSettingsRow((settings) => {
       settings.botPresetsId = 99
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const reordered = await harness.app.inject({
       method: 'POST',
@@ -5287,18 +5414,9 @@ describe('bot preset commands', () => {
       },
     })
 
-    expect(reordered.statusCode, reordered.body).toBe(200)
-    expect(reordered.json()).toMatchObject({
-      selectedPresetId: 'preset-b',
-      event: {
-        type: 'preset.reordered',
-        resource: 'presetCollectionWithPointer',
-      },
-    })
-    expect(reordered.json()).not.toHaveProperty('presetReorderCertificate')
-    expect(reordered.json()).not.toHaveProperty('presetKind')
-    expect(reordered.json()).not.toHaveProperty('presetIds')
-    expect(reordered.json()).not.toHaveProperty('settingsWritten')
+    expect(reordered.statusCode, reordered.body).toBe(400)
+    expect(reordered.json().error).toBe('botPresetsId must select an existing record')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
   it('rejects missing and duplicate preset ids on copy and import', async () => {
@@ -5974,7 +6092,7 @@ describe('Agent Preset command surface', () => {
     })
   })
 
-  it('withholds field acknowledgements when collection normalization repairs sibling state', async () => {
+  it('rejects Agent Preset updates when a sibling requires repair', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       agentPresets: [
@@ -5987,6 +6105,7 @@ describe('Agent Preset command surface', () => {
       const presets = settings.agentPresets as Array<Record<string, unknown>>
       presets[1] = { ...presets[1], name: '  Repaired Sibling  ', unexpected: true }
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const updated = await harness.app.inject({
       method: 'PATCH',
@@ -5995,31 +6114,12 @@ describe('Agent Preset command surface', () => {
       payload: { baseRevision: revision, patch: { enabled: false } },
     })
 
-    expect(updated.statusCode).toBe(200)
-    expect(updated.json()).toMatchObject({
-      presetId: 'ap_target',
-      acknowledgedKeys: [],
-      canonicalValues: {},
-      canonicalDeletedKeys: [],
-    })
-    expect(updated.json()).not.toHaveProperty('updatedAt')
-
-    const agents = await harness.app.inject({
-      method: 'GET',
-      url: '/api/v1/settings/agents',
-      headers: { 'risu-auth': assertion },
-    })
-    expect(agents.json().settings.agentPresets[1]).toEqual({
-      id: 'ap_sibling',
-      name: 'Repaired Sibling',
-      enabled: true,
-      version: 1,
-      agentUses: [],
-      steps: [],
-    })
+    expect(updated.statusCode).toBe(400)
+    expect(updated.json().error).toContain('Agent configuration must already be canonical')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
-  it('withholds collection acknowledgements when reorder/default repairs non-canonical state', async () => {
+  it('rejects Agent Preset reorder/default when the collection requires repair', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       agentPresets: [
@@ -6032,6 +6132,7 @@ describe('Agent Preset command surface', () => {
       const presets = settings.agentPresets as Array<Record<string, unknown>>
       presets[1] = { ...presets[1], name: '  Repaired Sibling  ', unexpected: true }
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const reordered = await harness.app.inject({
       method: 'POST',
@@ -6040,24 +6141,20 @@ describe('Agent Preset command surface', () => {
       payload: { baseRevision: revision, presetIds: ['ap_sibling', 'ap_target'] },
     })
 
-    expect(reordered.statusCode).toBe(200)
-    expect(reordered.json()).not.toHaveProperty('certificate')
-    expect(reordered.json()).not.toHaveProperty('agentPresetIds')
+    expect(reordered.statusCode).toBe(400)
+    expect(reordered.json().error).toContain('Agent configuration must already be canonical')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
 
-    updateSettingsRow((settings) => {
-      const presets = settings.agentPresets as Array<Record<string, unknown>>
-      presets[0] = { ...presets[0], name: '  Repaired Again  ', unexpected: true }
-    })
     const defaulted = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/agent-presets/default',
       headers: { 'risu-auth': assertion },
-      payload: { baseRevision: reordered.json().revision, agentPresetId: 'ap_sibling' },
+      payload: { baseRevision: revision, agentPresetId: 'ap_sibling' },
     })
 
-    expect(defaulted.statusCode).toBe(200)
-    expect(defaulted.json()).not.toHaveProperty('certificate')
-    expect(defaulted.json()).not.toHaveProperty('agentPresetIds')
+    expect(defaulted.statusCode).toBe(400)
+    expect(defaulted.json().error).toContain('Agent configuration must already be canonical')
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
   it('deletes Agent Presets and clears default, chat, and loadout references atomically', async () => {

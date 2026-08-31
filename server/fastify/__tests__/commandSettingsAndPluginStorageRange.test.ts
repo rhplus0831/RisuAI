@@ -56,7 +56,9 @@ function seedDatabase(): Record<string, unknown> {
     loreBookPage: 0,
     currentPluginProvider: 'none',
     enabledModules: [],
-    hypaV3Presets: [{ name: 'hypa-0' }],
+    hypaV3Presets: [{ id: 'hypa-0', name: 'hypa-0', settings: {} }],
+    selectedHypaV3PresetId: 'hypa-0',
+    hypaV3PresetId: 0,
     botPresets: [{ name: 'preset-0' }, { name: 'preset-1' }],
     modules: [{ id: 'mod-a', name: 'Module A' }],
     plugins: [{ name: 'plugin-a', version: '3.0' }],
@@ -259,7 +261,12 @@ describe('settings-scalar mutation range', () => {
       url: '/api/v1/commands/settings/memory',
       payload: {
         baseRevision: revision,
-        patch: { hypaV3Presets: [{ name: 'hypa-0' }, { name: 'hypa-1' }] },
+        patch: {
+          hypaV3Presets: [
+            { id: 'hypa-0', name: 'hypa-0', settings: {} },
+            { id: 'hypa-1', name: 'hypa-1', settings: {} },
+          ],
+        },
       },
     })
 
@@ -267,7 +274,10 @@ describe('settings-scalar mutation range', () => {
     expect(metric.writtenTables).toEqual(['hypa_v3_presets', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
-    expect(readCollection('hypa_v3_presets')).toEqual([{ name: 'hypa-0' }, { name: 'hypa-1' }])
+    expect(readCollection('hypa_v3_presets')).toEqual([
+      { id: 'hypa-0', name: 'hypa-0', settings: {} },
+      { id: 'hypa-1', name: 'hypa-1', settings: {} },
+    ])
     // The presets array lives in its table, not the settings row.
     expect(readSettings().hypaV3Presets).toBeUndefined()
     // Other collection tables are untouched.

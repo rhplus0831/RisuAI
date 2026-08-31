@@ -46,7 +46,8 @@ import {
   type CommandEventSink,
 } from './events.js'
 import { ensureLoadoutCollection } from './loadouts.js'
-import { normalizeAllCharacterChats } from './chats.js'
+import { readCharacterId, readStrictCharacterRecord, type CharacterRecord } from './characters.js'
+import { readChatId, requireStrictChatLocation, type ChatRecord } from './chats.js'
 
 interface AgentPresetCommandArgs {
   db: DatabaseSync
@@ -83,6 +84,12 @@ interface CanonicalAgentPresetState {
   presets: AgentPresetRecord[]
   defaultId: string | undefined
   acknowledgementSafe: boolean
+}
+
+export interface StrictAgentConfiguration {
+  agents: AgentRecord[]
+  presets: AgentPresetRecord[]
+  defaultId: string | undefined
 }
 
 const AGENT_PRESET_PHASE_SET = new Set<string>(AGENT_PRESET_STEP_PHASES)
@@ -625,22 +632,39 @@ function currentAgentConfiguration(target: Record<string, unknown>): {
   agents: AgentRecord[]
   presets: AgentPresetRecord[]
 } {
-  const normalized = normalizeAgentConfiguration(target.agents, target.agentPresets)
-  assertValidAgentCollection(normalized.agents)
-  assertValidPresetCollection(normalized.agentPresets, normalized.agents)
-  target.agents = cloneJson(normalized.agents)
-  target.agentPresets = cloneJson(normalized.agentPresets)
-  return { agents: normalized.agents, presets: normalized.agentPresets }
+  const { agents, presets } = readStrictAgentConfiguration(target)
+  return { agents, presets }
+}
+
+/** Validate the persisted Agent owner exactly as stored. Legacy step migration,
+ * id repair, and default-pointer repair belong to explicit ingress/recovery. */
+export function readStrictAgentConfiguration(target: Record<string, unknown>): StrictAgentConfiguration {
+  if (!Array.isArray(target.agents)) throw new ValidationError('agents must be an array')
+  if (!Array.isArray(target.agentPresets)) throw new ValidationError('agentPresets must be an array')
+  const agents = target.agents as AgentRecord[]
+  const presets = target.agentPresets as AgentPresetRecord[]
+  assertValidAgentCollection(agents)
+  assertValidPresetCollection(presets, agents)
+
+  const normalized = normalizeAgentConfiguration(cloneJson(agents), cloneJson(presets))
+  if (!isDeepStrictEqual(agents, normalized.agents) || !isDeepStrictEqual(presets, normalized.agentPresets)) {
+    throw new ValidationError('Agent configuration must already be canonical; use migration or recovery')
+  }
+
+  let defaultId: string | undefined
+  if (hasOwn(target, 'agentPresetDefaultId')) {
+    defaultId = readNonEmptyString(target.agentPresetDefaultId, 'agentPresetDefaultId')
+    if (!presets.some((preset) => preset.id === defaultId)) {
+      throw new ValidationError(`Unknown Agent Preset default id: ${defaultId}`)
+    }
+  }
+  return { agents, presets, defaultId }
 }
 
 function readCanonicalAgentPresetState(target: Record<string, unknown>): CanonicalAgentPresetState {
   const rawAgents = target.agents
   const rawPresets = target.agentPresets
-  const { agents, presets } = currentAgentConfiguration(target)
-  const defaultId = normalizeAgentPresetDefaultId(target.agentPresetDefaultId, presets)
-  const defaultIsCanonical = defaultId
-    ? target.agentPresetDefaultId === defaultId
-    : !hasOwn(target, 'agentPresetDefaultId')
+  const { agents, presets, defaultId } = readStrictAgentConfiguration(target)
   return {
     agents,
     presets,
@@ -649,8 +673,7 @@ function readCanonicalAgentPresetState(target: Record<string, unknown>): Canonic
       Array.isArray(rawAgents) &&
       isDeepStrictEqual(rawAgents, agents) &&
       Array.isArray(rawPresets) &&
-      isDeepStrictEqual(rawPresets, presets) &&
-      defaultIsCanonical,
+      isDeepStrictEqual(rawPresets, presets),
   }
 }
 
@@ -1326,7 +1349,7 @@ function validateFullIdOrder(
 
 function clearChatAgentPresetSelections(target: Record<string, unknown>, presetId: string): number {
   let cleared = 0
-  const characters = normalizeAllCharacterChats(target)
+  const characters = readStrictAgentSelectionCharacters(target)
   for (const character of characters) {
     const chats = Array.isArray(character.chats) ? character.chats : []
     for (const chat of chats) {
@@ -1336,6 +1359,30 @@ function clearChatAgentPresetSelections(target: Record<string, unknown>, presetI
     }
   }
   return cleared
+}
+
+function readStrictAgentSelectionCharacters(target: Record<string, unknown>): CharacterRecord[] {
+  if (!Array.isArray(target.characters)) throw new ValidationError('characters must be an array')
+  const characterIds = new Set<string>()
+  const chatIds = new Set<string>()
+  return target.characters.map((rawCharacter, characterIndex) => {
+    const record = readObject(rawCharacter, `characters[${characterIndex}]`)
+    const characterId = readCharacterId(record.chaId, `characters[${characterIndex}].chaId`)
+    if (characterIds.has(characterId)) throw new ValidationError(`Duplicate character id: ${characterId}`)
+    characterIds.add(characterId)
+    const character = readStrictCharacterRecord(record, characterId)
+    if (!Array.isArray(character.chats)) {
+      throw new ValidationError(`character ${characterId}.chats must be an array`)
+    }
+    for (let chatIndex = 0; chatIndex < character.chats.length; chatIndex += 1) {
+      const chat = readObject(character.chats[chatIndex], `character ${characterId}.chats[${chatIndex}]`) as ChatRecord
+      const chatId = readChatId(chat.id, `character ${characterId}.chats[${chatIndex}].id`)
+      if (chatIds.has(chatId)) throw new ValidationError(`Duplicate chat id: ${chatId}`)
+      chatIds.add(chatId)
+      requireStrictChatLocation([character], chatId)
+    }
+    return character
+  })
 }
 
 function clearLoadoutAgentPresetSelections(target: Record<string, unknown>, presetId: string): number {
@@ -1351,16 +1398,10 @@ function clearLoadoutAgentPresetSelections(target: Record<string, unknown>, pres
 }
 
 function normalizeAgentPresetDefault(target: Record<string, unknown>): void {
-  const normalized = normalizeAgentConfiguration(target.agents, target.agentPresets)
-  target.agents = normalized.agents
-  target.agentPresets = normalized.agentPresets
-  const presets = normalized.agentPresets
-  const defaultId = normalizeAgentPresetDefaultId(target.agentPresetDefaultId, presets)
-  if (defaultId) {
-    target.agentPresetDefaultId = defaultId
-  } else {
-    delete target.agentPresetDefaultId
-  }
+  if (!hasOwn(target, 'agentPresetDefaultId')) return
+  const defaultId = readNonEmptyString(target.agentPresetDefaultId, 'agentPresetDefaultId')
+  const presets = target.agentPresets as AgentPresetRecord[]
+  if (!presets.some((preset) => preset.id === defaultId)) delete target.agentPresetDefaultId
 }
 
 function assertMaxConcurrencyValue(value: unknown, label: string): void {

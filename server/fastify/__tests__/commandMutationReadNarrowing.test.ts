@@ -596,7 +596,7 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
     }
   })
 
-  it('settings commands read only the settings row on extracted SQLite state', async () => {
+  it('settings commands read only settings plus the explicitly owned Hypa collection', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase({
       ...fixture.database,
@@ -621,21 +621,26 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
       withServerLoadInstrumentation(() =>
         command('PATCH', '/api/v1/commands/settings/memory', {
           baseRevision: revision,
-          patch: { hypaV3Presets: [{ name: 'request-preset' }] },
+          patch: {
+            selectedHypaV3PresetId: 'request-preset',
+            hypaV3Presets: [{ id: 'request-preset', name: 'request-preset', settings: {} }],
+          },
         }),
       ),
     )
     expect(memoryRun.result.result.statusCode).toBe(200)
-    expect(memoryRun.result.corpusLoadCount).toBe(0)
-    expect(memoryRun.result.loadCountByTable.hypa_v3_presets ?? 0).toBe(0)
-    expectSettingsCommandReadOnlySettings(memoryRun.readCountByTable)
+    expect(memoryRun.result.corpusLoadCount).toBe(1)
+    expectCollectionLoadOnlyTables(memoryRun.result.loadCountByTable, ['hypa_v3_presets'])
+    expectCollectionCommandReadOnlyTables(memoryRun.readCountByTable, ['hypa_v3_presets'])
 
     const db = openDatabase(harness.dataDir)
     try {
       const rows = db.prepare('SELECT data_json FROM hypa_v3_presets ORDER BY position').all() as Array<{
         data_json: string
       }>
-      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([{ name: 'request-preset' }])
+      expect(rows.map((row) => JSON.parse(row.data_json))).toEqual([
+        { id: 'request-preset', name: 'request-preset', settings: {} },
+      ])
     } finally {
       db.close()
     }
@@ -806,7 +811,7 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
       const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
         withServerLoadInstrumentation(() => command(method, url, payload)),
       )
-      expect(loadRun.result.statusCode).toBe(200)
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
       expectCollectionCommandReadOnlyTables(readCountByTable, expectedTables)
       expectCollectionLoadOnlyTables(loadRun.loadCountByTable, expectedLoadTables)
       const body = loadRun.result.json() as Record<string, unknown>
@@ -1278,6 +1283,123 @@ describe('command-mutation read narrowing on the large-corpus fixture', () => {
         (db.prepare('SELECT json FROM messages WHERE uid = ? AND alternate = 0').get(messageId) as { json: string })
           .json,
       ).toBe(damagedMessageJson)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('ordinary collection and Agent commands leave malformed persisted owners byte-identical', async () => {
+    const fixture = buildLargeCorpusFixture()
+    fixture.database.botPresets = [
+      { id: 'preset-a', name: 'Preset A' },
+      { id: 'preset-b', name: 'Preset B' },
+    ]
+    fixture.database.botPresetsId = 0
+    fixture.database.currentPluginProvider = ''
+    fixture.database.plugins = [
+      {
+        name: 'plugin-a',
+        script: '',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
+      {
+        name: 'plugin-b',
+        script: '',
+        arguments: {},
+        realArg: {},
+        customLink: [],
+        argMeta: {},
+        version: '3.0',
+      },
+    ]
+    const revision = await importDatabase(fixture.database)
+    const db = openDatabase(harness.dataDir)
+    try {
+      const eventCount = () =>
+        (db.prepare('SELECT COUNT(*) AS count FROM command_events').get() as { count: number }).count
+      const beforeEvents = eventCount()
+
+      const presetRows = db
+        .prepare('SELECT position, data_json FROM bot_presets ORDER BY position')
+        .all() as unknown as Array<{
+        position: number
+        data_json: string
+      }>
+      const damagedPreset = { ...(JSON.parse(presetRows[1].data_json) as Record<string, unknown>), id: 'preset-a' }
+      const damagedPresetJson = JSON.stringify(damagedPreset)
+      db.prepare('UPDATE bot_presets SET data_json = ? WHERE position = 1').run(damagedPresetJson)
+      const presetPatch = await command('PATCH', '/api/v1/commands/presets/preset-a', {
+        baseRevision: revision,
+        patch: { name: 'must not repair presets' },
+      })
+      expect(presetPatch.statusCode).toBe(400)
+      expect(presetPatch.json().error).toBe('Duplicate botPresets id: preset-a')
+      expect(
+        (db.prepare('SELECT data_json FROM bot_presets WHERE position = 1').get() as { data_json: string }).data_json,
+      ).toBe(damagedPresetJson)
+      db.prepare('UPDATE bot_presets SET data_json = ? WHERE position = 1').run(presetRows[1].data_json)
+
+      const promptRow = db.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get() as {
+        data_json: string
+      }
+      const damagedPromptPreset = JSON.parse(promptRow.data_json) as Record<string, unknown>
+      const damagedPromptItems = damagedPromptPreset.promptTemplate as Array<Record<string, unknown>>
+      delete damagedPromptItems[0].id
+      const damagedPromptJson = JSON.stringify(damagedPromptPreset)
+      db.prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0').run(damagedPromptJson)
+      const promptCreate = await command('POST', '/api/v1/commands/prompt-items', {
+        baseRevision: revision,
+        promptPresetId: 'corpus-prompt-preset-0',
+        promptItem: { id: 'must-not-create', type: 'plain', text: 'must not repair prompts' },
+      })
+      expect(promptCreate.statusCode).toBe(400)
+      expect(promptCreate.json().error).toContain('promptTemplate[0].id must be a non-empty string')
+      expect(
+        (db.prepare('SELECT data_json FROM prompt_presets WHERE position = 0').get() as { data_json: string })
+          .data_json,
+      ).toBe(damagedPromptJson)
+      db.prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0').run(promptRow.data_json)
+
+      const pluginRows = db
+        .prepare('SELECT position, data_json FROM plugins ORDER BY position')
+        .all() as unknown as Array<{
+        position: number
+        data_json: string
+      }>
+      const damagedPlugin = { ...(JSON.parse(pluginRows[1].data_json) as Record<string, unknown>), name: 'plugin-a' }
+      const damagedPluginJson = JSON.stringify(damagedPlugin)
+      db.prepare('UPDATE plugins SET data_json = ? WHERE position = 1').run(damagedPluginJson)
+      const pluginPatch = await command('PATCH', '/api/v1/commands/plugins/plugin-a', {
+        baseRevision: revision,
+        patch: { enabled: true },
+      })
+      expect(pluginPatch.statusCode).toBe(400)
+      expect(pluginPatch.json().error).toBe('Duplicate plugins id: plugin-a')
+      expect(
+        (db.prepare('SELECT data_json FROM plugins WHERE position = 1').get() as { data_json: string }).data_json,
+      ).toBe(damagedPluginJson)
+      db.prepare('UPDATE plugins SET data_json = ? WHERE position = 1').run(pluginRows[1].data_json)
+
+      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const damagedSettings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
+      damagedSettings.agents = {}
+      const damagedSettingsJson = JSON.stringify(damagedSettings)
+      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(damagedSettingsJson)
+      const agentCreate = await command('POST', '/api/v1/commands/agents', {
+        baseRevision: revision,
+        agent: {},
+      })
+      expect(agentCreate.statusCode).toBe(400)
+      expect(agentCreate.json().error).toBe('agents must be an array')
+      expect((db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json).toBe(
+        damagedSettingsJson,
+      )
+
+      expect(eventCount()).toBe(beforeEvents)
     } finally {
       db.close()
     }
