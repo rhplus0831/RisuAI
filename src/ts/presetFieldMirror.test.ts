@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const presetUpdateState = vi.hoisted(() => ({
-  getDatabase: vi.fn(),
   updateModelPreset: vi.fn(),
   updatePromptPreset: vi.fn(),
   settingsResourceState: {
@@ -16,12 +15,7 @@ const presetUpdateState = vi.hoisted(() => ({
   },
 }))
 
-const dbState = vi.hoisted(() => ({
-  db: {} as Record<string, unknown>,
-}))
-
 vi.mock('./storage/database.svelte', () => ({
-  getDatabase: presetUpdateState.getDatabase,
   updateModelPreset: presetUpdateState.updateModelPreset,
   updatePromptPreset: presetUpdateState.updatePromptPreset,
 }))
@@ -43,14 +37,6 @@ describe('mirrorTopLevelPresetField', () => {
   beforeEach(() => {
     presetUpdateState.updateModelPreset.mockClear()
     presetUpdateState.updatePromptPreset.mockClear()
-    presetUpdateState.getDatabase.mockReset()
-    dbState.db = {
-      modelPresetsId: 0,
-      modelPresets: [{ id: 'compat-model', name: 'Stale model', temperature: 0.1 }],
-      promptPresetsId: 0,
-      promptPresets: [{ id: 'compat-prompt', name: 'Stale prompt', mainPrompt: 'stale prompt' }],
-    }
-    presetUpdateState.getDatabase.mockImplementation(() => dbState.db)
     presetUpdateState.settingsResourceState.status = 'ready'
     presetUpdateState.settingsResourceState.value = { modelPresetsId: 0, promptPresetsId: 0 }
     presetUpdateState.settingsResourceState.standaloneStatuses = {
@@ -89,7 +75,6 @@ describe('mirrorTopLevelPresetField', () => {
 
     expect(presetUpdateState.updatePromptPreset).toHaveBeenCalledWith(0, { mainPrompt: 'new prompt' })
     expect(presetUpdateState.updateModelPreset).not.toHaveBeenCalled()
-    expect(presetUpdateState.getDatabase).not.toHaveBeenCalled()
   })
 
   it.each(['missing', 'duplicate'])('fails closed for a %s selected prompt owner', (kind) => {
@@ -138,22 +123,13 @@ describe('mirrorTopLevelPresetField', () => {
     presetUpdateState.collectionsResourceState.statuses.modelPresets = 'error'
 
     expect(resolveTopLevelPresetFieldMirrorTarget('temperature')).toBeNull()
-    expect(presetUpdateState.getDatabase).not.toHaveBeenCalled()
   })
 
-  it('retains the cold-start aggregate compatibility fallback', () => {
-    presetUpdateState.settingsResourceState.status = 'loading'
-    presetUpdateState.settingsResourceState.standaloneStatuses = {}
-    presetUpdateState.collectionsResourceState.status = 'loading'
-    presetUpdateState.collectionsResourceState.statuses = {}
-    dbState.db = {
-      modelPresetsId: 0,
-      modelPresets: [{ id: 'compat-model', temperature: 0.4 }],
-      promptPresetsId: 0,
-      promptPresets: [{ id: 'compat-prompt', mainPrompt: 'compat prompt' }],
-    }
+  it.each(['idle', 'loading'] as const)('does not mirror while preset owners are %s', (status) => {
+    presetUpdateState.settingsResourceState.standaloneStatuses.modelPresetsId = status
+    presetUpdateState.collectionsResourceState.statuses.modelPresets = status
 
-    expect(resolveTopLevelPresetFieldMirrorTarget('temperature')).toMatchObject({ presetId: 'compat-model' })
-    expect(presetUpdateState.getDatabase).toHaveBeenCalled()
+    expect(resolveTopLevelPresetFieldMirrorTarget('temperature')).toBeNull()
+    expect(presetUpdateState.updateModelPreset).not.toHaveBeenCalled()
   })
 })

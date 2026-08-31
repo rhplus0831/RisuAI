@@ -1,10 +1,8 @@
 import { MODEL_PRESET_FIELDS, PROMPT_PRESET_FIELDS } from './presetSplit'
 import { collectionsResourceState, settingsResourceState } from './server/resourceState.svelte'
 import {
-  getDatabase,
   updateModelPreset,
   updatePromptPreset,
-  type Database,
   type ModelPreset,
   type PresetMutationOutcome,
   type PromptPreset,
@@ -125,14 +123,9 @@ function currentSplitPresetOwnerSnapshot(kind: SplitPresetKind): SplitPresetOwne
 function currentSplitPresetCollectionOwner(kind: SplitPresetKind): SplitPresetOwnerSnapshot['presets'] | null {
   const collectionName = kind === 'model' ? 'modelPresets' : 'promptPresets'
   const status = collectionsResourceState.statuses[collectionName]
-  if (collectionsResourceState.status === 'error' || status === 'error') return null
+  if (collectionsResourceState.status === 'error' || status !== 'ready') return null
 
-  const value =
-    status === 'ready'
-      ? collectionsResourceState.values[collectionName]
-      : canUseCompatibility(collectionsResourceState.status) && canUseCompatibility(status)
-        ? compatibilityDatabase()[collectionName]
-        : undefined
+  const value = collectionsResourceState.values[collectionName]
   if (!Array.isArray(value)) return null
   return value as ReadonlyArray<Record<string, unknown>>
 }
@@ -140,23 +133,10 @@ function currentSplitPresetCollectionOwner(kind: SplitPresetKind): SplitPresetOw
 function currentSplitPresetSelectionOwner(kind: SplitPresetKind): number | null {
   const selectionKey = kind === 'model' ? 'modelPresetsId' : 'promptPresetsId'
   const status = settingsResourceState.standaloneStatuses[selectionKey]
-  if (settingsResourceState.status === 'error' || status === 'error') return null
+  if (settingsResourceState.status === 'error' || status !== 'ready') return null
 
-  const value =
-    status === 'ready'
-      ? settingsResourceState.value[selectionKey]
-      : canUseCompatibility(settingsResourceState.status) && canUseCompatibility(status)
-        ? compatibilityDatabase()[selectionKey]
-        : undefined
+  const value = settingsResourceState.value[selectionKey]
   return Number.isInteger(value) ? (value as number) : null
-}
-
-function compatibilityDatabase(): Database {
-  return getDatabase()
-}
-
-function canUseCompatibility(status: string | undefined): boolean {
-  return status === undefined || status === 'idle' || status === 'loading'
 }
 
 function modelPresetKeyForDatabaseKey(key: string): string | null {
