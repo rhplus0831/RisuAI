@@ -1,7 +1,15 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { openURL } from 'src/ts/globalApi.svelte'
+
+  function readLanguageOwner(): string | undefined {
+    const groupStatus = settingsResourceState.groupStatuses.language
+    if (settingsResourceState.status === 'error' || groupStatus === 'error') return undefined
+    if (groupStatus !== 'ready' && settingsResourceState.shellRevision === null) return undefined
+    const value = settingsResourceState.value.language
+    return typeof value === 'string' ? value : undefined
+  }
 
   let specialDay = $state('')
   const today = new Date()
@@ -21,9 +29,10 @@
     specialDay = 'halloween'
   }
   if (today.getMonth() === 8 && today.getDate() === 16) {
-    if (getDatabase().language === 'ko') {
+    const language = readLanguageOwner()
+    if (language === 'ko') {
       specialDay = 'chuseok'
-    } else if (getDatabase().language === 'zh-Hant' || getDatabase().language === 'zh') {
+    } else if (language === 'zh-Hant' || language === 'zh') {
       specialDay = 'midAutumn'
     }
   }

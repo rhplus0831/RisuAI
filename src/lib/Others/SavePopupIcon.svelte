@@ -1,15 +1,13 @@
 <script lang="ts">
   import { SaveIcon } from '@lucide/svelte'
   import { saving } from 'src/ts/globalApi.svelte'
-  import { getResourceDatabase as getDatabase, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   let showSavingIcon = $derived(
-    settingsResourceState.groupStatuses.display === 'ready'
-      ? settingsResourceState.value.showSavingIcon === true
-      : settingsResourceState.groupStatuses.display === 'idle' ||
-          settingsResourceState.groupStatuses.display === 'loading'
-        ? getDatabase().showSavingIcon === true
-        : false,
+    settingsResourceState.status !== 'error' &&
+      settingsResourceState.groupStatuses.display !== 'error' &&
+      (settingsResourceState.groupStatuses.display === 'ready' || settingsResourceState.shellRevision !== null) &&
+      settingsResourceState.value.showSavingIcon === true,
   )
 </script>
 

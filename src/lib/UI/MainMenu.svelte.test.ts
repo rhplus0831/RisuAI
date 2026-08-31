@@ -3,26 +3,34 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mainMenuMocks = vi.hoisted(() => ({
-  database: {
+  settings: {
     language: 'en',
     doNotWarnExternalServers: true,
     roundIcons: false,
-    characterOrder: ['character-a', 'character-b', 'character-trash', '§playground'],
-    characters: [] as Array<Record<string, unknown>>,
   },
+  characterOrder: ['character-a', 'character-b', 'character-trash', '§playground'],
+  characters: [] as Array<Record<string, unknown>>,
   navigate: vi.fn(),
   openGridRoute: vi.fn(),
   markChatRead: vi.fn(),
+  alertConfirm: vi.fn(async () => true),
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   charactersResourceState: {
-    characters: mainMenuMocks.database.characters,
-    characterOrder: mainMenuMocks.database.characterOrder,
+    characters: mainMenuMocks.characters,
+    characterOrder: mainMenuMocks.characterOrder,
     status: 'ready',
-    orderRevision: null,
+    listRevision: 1,
+    orderRevision: 1,
+    rowStatuses: {},
   },
-  getResourceDatabase: () => mainMenuMocks.database,
+  settingsResourceState: {
+    value: mainMenuMocks.settings,
+    status: 'ready',
+    shellRevision: 1,
+    groupStatuses: {},
+  },
 }))
 
 vi.mock('src/ts/stores.svelte', async () => {
@@ -69,7 +77,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 vi.mock('src/ts/alert', () => ({
-  alertConfirm: vi.fn(async () => true),
+  alertConfirm: mainMenuMocks.alertConfirm,
 }))
 
 vi.mock('./Realm/RealmMain.svelte', () => ({ default: () => {} }))
@@ -78,7 +86,7 @@ vi.mock('./Title.svelte', () => ({ default: () => {} }))
 import MainMenu from './MainMenu.svelte'
 import { changeLanguage, language } from 'src/lang'
 import { OpenRealmStore } from 'src/ts/stores.svelte'
-import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -96,8 +104,13 @@ beforeEach(() => {
   mainMenuMocks.navigate.mockReset()
   mainMenuMocks.openGridRoute.mockReset()
   mainMenuMocks.markChatRead.mockReset()
+  mainMenuMocks.alertConfirm.mockClear()
   ;(OpenRealmStore as Writable<boolean>).set(false)
-  mainMenuMocks.database.characters = [
+  mainMenuMocks.settings.language = 'en'
+  mainMenuMocks.settings.doNotWarnExternalServers = true
+  mainMenuMocks.settings.roundIcons = false
+  mainMenuMocks.characterOrder = ['character-a', 'character-b', 'character-trash', '§playground']
+  mainMenuMocks.characters = [
     {
       chaId: 'character-a',
       name: 'Character A',
@@ -130,10 +143,18 @@ beforeEach(() => {
       chats: [],
     },
   ]
-  charactersResourceState.characters = mainMenuMocks.database.characters as any
-  charactersResourceState.characterOrder = mainMenuMocks.database.characterOrder as any
+  charactersResourceState.characters = mainMenuMocks.characters as any
+  charactersResourceState.characterOrder = mainMenuMocks.characterOrder as any
   charactersResourceState.status = 'ready'
-  charactersResourceState.orderRevision = null
+  charactersResourceState.listRevision = 1
+  charactersResourceState.orderRevision = 1
+  charactersResourceState.rowStatuses = Object.fromEntries(
+    mainMenuMocks.characters.map((character) => [character.chaId, 'ready']),
+  ) as any
+  settingsResourceState.value = mainMenuMocks.settings as any
+  settingsResourceState.status = 'ready'
+  settingsResourceState.shellRevision = 1
+  settingsResourceState.groupStatuses = {}
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -149,15 +170,10 @@ afterEach(() => {
 })
 
 describe('MainMenu home dashboard', () => {
-  it('uses ready owner rows for pinned and recent chat navigation when the aggregate is stale', async () => {
-    const staleRows = mainMenuMocks.database.characters
-    charactersResourceState.characters = staleRows.map((character, index) =>
+  it('uses ready owner rows for pinned and recent chat navigation', async () => {
+    charactersResourceState.characters = mainMenuMocks.characters.map((character, index) =>
       index === 0 ? { ...character, name: 'Owner A', chats: [chat('pinned-1', 'Owner pinned', true)] } : character,
     ) as any
-    staleRows[0].name = 'Aggregate stale'
-    staleRows[0].chats = []
-    charactersResourceState.characterOrder = mainMenuMocks.database.characterOrder as any
-    charactersResourceState.orderRevision = 1
 
     component = mount(MainMenu, { target })
     await tick()
@@ -167,13 +183,49 @@ describe('MainMenu home dashboard', () => {
   })
 
   it('fails closed for duplicate ready owner IDs instead of rendering ambiguous chat rows', async () => {
-    const owner = mainMenuMocks.database.characters[0]
+    const owner = mainMenuMocks.characters[0]
     charactersResourceState.characters = [
       { ...owner, chats: [chat('pinned-1', 'First', true)] },
       { ...owner, chats: [chat('pinned-2', 'Second', true)] },
     ] as any
     charactersResourceState.characterOrder = ['character-a'] as any
-    charactersResourceState.orderRevision = 1
+
+    component = mount(MainMenu, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-home-pinned-chat]')).toBeNull()
+    expect(target.querySelector('[data-risu-home-recent-character]')).toBeNull()
+  })
+
+  it('keeps revisioned owner rows visible while the collection and shell groups refresh', async () => {
+    charactersResourceState.status = 'loading'
+    settingsResourceState.groupStatuses = {
+      language: 'loading',
+      advanced: 'loading',
+      display: 'loading',
+    }
+    mainMenuMocks.settings.roundIcons = true
+
+    component = mount(MainMenu, { target })
+    await tick()
+
+    expect(target.querySelectorAll('[data-risu-home-pinned-chat]')).toHaveLength(6)
+    expect(target.querySelector('[data-risu-home-recent-character="character-b"]')).toBeTruthy()
+    expect(target.querySelector('[data-risu-home-pinned-chat] img')?.classList).toContain('rounded-full')
+  })
+
+  it('fails closed when the character collection owner is missing', async () => {
+    charactersResourceState.listRevision = null
+
+    component = mount(MainMenu, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-home-pinned-chat]')).toBeNull()
+    expect(target.querySelector('[data-risu-home-recent-character]')).toBeNull()
+  })
+
+  it('fails closed when the character collection owner errors', async () => {
+    charactersResourceState.status = 'error'
 
     component = mount(MainMenu, { target })
     await tick()
@@ -233,11 +285,27 @@ describe('MainMenu home dashboard', () => {
     expect(get(OpenRealmStore)).toBe(false)
   })
 
+  it('keeps the external-server warning when its settings owner errors', async () => {
+    settingsResourceState.groupStatuses.advanced = 'error'
+
+    component = mount(MainMenu, { target })
+    await tick()
+
+    const openRealm = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes(language.openRisuRealm),
+    )
+    openRealm!.click()
+    expect(mainMenuMocks.alertConfirm).toHaveBeenCalledOnce()
+    await tick()
+    expect(get(OpenRealmStore)).toBe(true)
+  })
+
   it('uses compact guidance when there is nothing to resume', async () => {
-    mainMenuMocks.database.characters = []
-    mainMenuMocks.database.characterOrder = []
+    mainMenuMocks.characters = []
+    mainMenuMocks.characterOrder = []
     charactersResourceState.characters = []
     charactersResourceState.characterOrder = []
+    charactersResourceState.rowStatuses = {}
     component = mount(MainMenu, { target })
     await tick()
 

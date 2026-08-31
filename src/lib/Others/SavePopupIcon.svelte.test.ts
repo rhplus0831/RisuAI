@@ -2,13 +2,18 @@ import { mount, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const saveIconState = vi.hoisted(() => ({
-  database: { showSavingIcon: true },
+  settingsResourceState: {
+    value: { showSavingIcon: true },
+    status: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+    shellRevision: 1 as number | null,
+    groupStatuses: {} as Record<string, 'idle' | 'loading' | 'ready' | 'error'>,
+  },
   saving: { state: true },
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({ saving: saveIconState.saving }))
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => saveIconState.database,
+  settingsResourceState: saveIconState.settingsResourceState,
 }))
 
 import SavePopupIcon from './SavePopupIcon.svelte'
@@ -19,7 +24,10 @@ let component: MountedComponent | undefined
 let target: HTMLElement
 
 beforeEach(() => {
-  saveIconState.database.showSavingIcon = true
+  saveIconState.settingsResourceState.value.showSavingIcon = true
+  saveIconState.settingsResourceState.status = 'ready'
+  saveIconState.settingsResourceState.shellRevision = 1
+  saveIconState.settingsResourceState.groupStatuses = {}
   saveIconState.saving.state = true
   target = document.createElement('div')
   document.body.append(target)
@@ -32,14 +40,15 @@ afterEach(async () => {
 })
 
 describe('SavePopupIcon', () => {
-  it('renders while persistence is active and the setting is enabled', () => {
+  it('renders from the resident shell owner while the display group loads', () => {
+    saveIconState.settingsResourceState.groupStatuses.display = 'loading'
     component = mount(SavePopupIcon, { target })
 
     expect(target.querySelector('svg')).not.toBeNull()
   })
 
   it('stays hidden when the setting is disabled', () => {
-    saveIconState.database.showSavingIcon = false
+    saveIconState.settingsResourceState.value.showSavingIcon = false
     component = mount(SavePopupIcon, { target })
 
     expect(target.querySelector('svg')).toBeNull()
@@ -47,6 +56,22 @@ describe('SavePopupIcon', () => {
 
   it('stays hidden while persistence is idle', () => {
     saveIconState.saving.state = false
+    component = mount(SavePopupIcon, { target })
+
+    expect(target.querySelector('svg')).toBeNull()
+  })
+
+  it('stays hidden when the display owner errors', () => {
+    saveIconState.settingsResourceState.groupStatuses.display = 'error'
+    component = mount(SavePopupIcon, { target })
+
+    expect(target.querySelector('svg')).toBeNull()
+  })
+
+  it('stays hidden when the display owner is missing', () => {
+    saveIconState.settingsResourceState.status = 'idle'
+    saveIconState.settingsResourceState.shellRevision = null
+    saveIconState.settingsResourceState.groupStatuses.display = 'idle'
     component = mount(SavePopupIcon, { target })
 
     expect(target.querySelector('svg')).toBeNull()
