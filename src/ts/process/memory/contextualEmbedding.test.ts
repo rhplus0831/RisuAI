@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
   db: { voyageApiKey: '__RISU_SECRET_MASKED__' },
+  settingsResourceState: {
+    value: { voyageApiKey: '__RISU_SECRET_MASKED__' } as Record<string, unknown>,
+    groupStatuses: { memory: 'ready' } as Record<string, string>,
+    status: 'ready',
+  },
   requestGroups: vi.fn(),
 }))
 
@@ -9,9 +14,15 @@ vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => state.db,
 }))
 
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: state.settingsResourceState,
+}))
+
 vi.mock('src/ts/server/embeddingOperations', () => ({
-  embeddingOperationCredential: (value: unknown) =>
-    value === '__RISU_SECRET_MASKED__' ? { source: 'stored' } : { source: 'provided', apiKey: value },
+  embeddingOperationCredential: (value: unknown) => {
+    if (value === '__RISU_SECRET_MASKED__') return { source: 'stored' }
+    return typeof value === 'string' && value.trim() ? { source: 'provided', apiKey: value } : { source: 'none' }
+  },
   requestRemoteEmbeddingGroups: state.requestGroups,
 }))
 
@@ -22,6 +33,10 @@ vi.mock('./hypamemory', () => ({
 import { getContextProvider } from './contextualEmbedding'
 
 beforeEach(() => {
+  state.db.voyageApiKey = '__RISU_SECRET_MASKED__'
+  state.settingsResourceState.value = { voyageApiKey: '__RISU_SECRET_MASKED__' }
+  state.settingsResourceState.groupStatuses.memory = 'ready'
+  state.settingsResourceState.status = 'ready'
   state.requestGroups.mockReset()
   state.requestGroups.mockImplementation(async ({ groups }: { groups: string[][] }) =>
     groups.map((group) => group.map((_text, index) => [index + 1])),
@@ -60,5 +75,22 @@ describe('Voyage contextual embedding bridge', () => {
       inputType: 'query',
       credential: { source: 'stored' },
     })
+  })
+
+  it('uses compatibility credentials only while the memory owner is loading', async () => {
+    state.settingsResourceState.value = { voyageApiKey: 'stale-owner-key' }
+    state.settingsResourceState.groupStatuses.memory = 'loading'
+
+    await getContextProvider('voyageContext3')!.embedQueries(['query'])
+
+    expect(state.requestGroups).toHaveBeenCalledWith(expect.objectContaining({ credential: { source: 'stored' } }))
+  })
+
+  it('fails closed without reusing aggregate credentials after an owner error', async () => {
+    state.settingsResourceState.groupStatuses.memory = 'error'
+
+    await getContextProvider('voyageContext3')!.embedQueries(['query'])
+
+    expect(state.requestGroups).toHaveBeenCalledWith(expect.objectContaining({ credential: { source: 'none' } }))
   })
 })

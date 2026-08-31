@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { CharEmotion, selectedCharID, VariableReloadGUIPointer } from '../stores.svelte'
-import { type character, type customscript, type Database, type Chat } from '../storage/database.svelte'
+import { getDatabase, type character, type customscript, type Database, type Chat } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
@@ -11,7 +11,6 @@ import {
   risuChatParser as risuChatParserOrg,
   type simpleCharacterArgument,
 } from '../parser/parser.svelte'
-import { getModuleAssets, getModuleRegexScripts } from './modules'
 import { HypaProcesser } from './memory/hypamemory'
 import { runLuaEditTrigger } from './scriptings'
 import { pluginV2 } from '../plugins/plugins.svelte'
@@ -32,23 +31,109 @@ import {
 import { assertClientRegexPatternSafe } from './regexSafety'
 import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
 import { getSelectedCharacterOwner } from '../characterState'
-import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  settingsResourceState,
+  type ServerCollectionName,
+} from '../server/resourceState.svelte'
+import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
+import { resolveActiveModuleStates } from '../moduleActivation'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
 
+function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
+function collectionOwner<Name extends ServerCollectionName>(name: Name): Database[Name] | undefined {
+  const status = collectionsResourceState.statuses[name] ?? 'idle'
+  if (collectionsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
+  if (status === 'idle' || status === 'loading') return getDatabase()[name]
+  return undefined
+}
+
+function standaloneSettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.standaloneStatuses.selectedPersonaId ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
 function scriptSettings(): Partial<Database> {
-  if (settingsResourceState.status === 'error') return {}
-  return settingsResourceState.value as unknown as Partial<Database>
+  const advanced = settingsGroupOwner('advanced')
+  const media = settingsGroupOwner('media')
+  return {
+    globalscript: advanced?.globalscript,
+    complexRegexInputTimeoutMs: advanced?.complexRegexInputTimeoutMs,
+    complexRegexOutputTimeoutMs: advanced?.complexRegexOutputTimeoutMs,
+    complexRegexDisplayTimeoutMs: advanced?.complexRegexDisplayTimeoutMs,
+    regexOutputSizeLimitMiB: advanced?.regexOutputSizeLimitMiB,
+    dynamicAssets: media?.dynamicAssets,
+    dynamicAssetsEditDisplay: media?.dynamicAssetsEditDisplay,
+  }
 }
 
 function promptPresetDatabase(): Database {
+  const prompt = settingsGroupOwner('prompt')
   return {
-    ...scriptSettings(),
-    promptPresets:
-      collectionsResourceState.statuses.promptPresets === 'error'
-        ? []
-        : (collectionsResourceState.values.promptPresets ?? []),
+    presetRegex: prompt?.presetRegex ?? [],
+    promptPresets: collectionOwner('promptPresets') ?? [],
+  } as Database
+}
+
+function stableOwnerCollection<T extends { id?: unknown }>(value: unknown): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    const id = typeof candidate?.id === 'string' ? candidate.id.trim() : ''
+    if (!id || ids.has(id)) return undefined
+    ids.add(id)
+  }
+  return value as T[]
+}
+
+function moduleActivationDatabase(): Database | undefined {
+  const moduleSettings = settingsGroupOwner('modules')
+  const advancedSettings = settingsGroupOwner('advanced')
+  const agentSettings = settingsGroupOwner('agents')
+  const personaSelection = standaloneSettingsOwner()
+  const modules = stableOwnerCollection<Database['modules'][number]>(collectionOwner('modules'))
+  const promptPresets = stableOwnerCollection<Database['promptPresets'][number]>(collectionOwner('promptPresets'))
+  const personas = stableOwnerCollection<Database['personas'][number]>(collectionOwner('personas'))
+  const agentPresets = stableOwnerCollection<Database['agentPresets'][number]>(agentSettings?.agentPresets)
+  const enabledModules = moduleSettings?.enabledModules
+  if (
+    !moduleSettings ||
+    !advancedSettings ||
+    !agentSettings ||
+    !personaSelection ||
+    !modules ||
+    !promptPresets ||
+    !personas ||
+    !agentPresets ||
+    !Array.isArray(enabledModules) ||
+    !enabledModules.every((id) => typeof id === 'string' && id.trim().length > 0)
+  ) {
+    return undefined
+  }
+
+  return {
+    modules,
+    promptPresets,
+    personas,
+    enabledModules,
+    moduleIntergration: advancedSettings.moduleIntergration,
+    agentPresets,
+    agentPresetDefaultId: agentSettings.agentPresetDefaultId,
+    selectedPersonaId: personaSelection.selectedPersonaId,
   } as Database
 }
 
@@ -304,20 +389,14 @@ function applyInjectMutation(data: string, mode: ScriptMode, chatID: number, cha
     if (!messageId) return
 
     const previous = currentChatScopedSnapshot()
-    let updated = false
-    withTrustedResourceWrite(() => {
-      const message = selectedChatMessage(chat, chatID)
-      if (!message || message.chatId !== messageId) return
-      message.data = data
-      updated = true
-    })
-
-    if (updated) {
-      dispatchUpdateMessageScoped(messageId, { data }, previous, { optimisticPatchAlreadyApplied: true })
-    }
+    dispatchUpdateMessageScoped(messageId, { data }, previous)
     return
   }
 
+  const characterStatus = charactersResourceState.status
+  if (characterStatus !== 'idle' && characterStatus !== 'loading') return
+  // Compatibility-only pre-readiness path. A ready/error owner with command
+  // access unavailable must not receive an unpersisted trusted write.
   withTrustedResourceWrite(() => {
     const message = selectedChatMessage(chat, chatID)
     if (message) {
@@ -397,10 +476,12 @@ export async function processScriptFull(
   }
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions })
+  const moduleDatabase = moduleActivationDatabase()
+  const activeModules = moduleDatabase ? resolveActiveModuleStates(moduleDatabase, activeCharacter, currentChat) : []
   const scripts = getProcessableCustomScripts(db.globalscript)
     .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(promptPresetDatabase(), currentChat)))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
-    .concat(getProcessableCustomScripts(getModuleRegexScripts()))
+    .concat(getProcessableCustomScripts(activeModules.flatMap(({ module }) => module.regex ?? [])))
   const regexSizeLimit = regexOutputSizeLimitCodeUnits(db.regexOutputSizeLimitMiB)
   const hash = generateScriptCacheKey(
     scripts,
@@ -632,7 +713,7 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0])
 
-    const moduleAssets = getModuleAssets({ character: char.type === 'character' ? char : undefined, chat: currentChat })
+    const moduleAssets = activeModules.flatMap(({ module }) => module.assets ?? [])
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0])

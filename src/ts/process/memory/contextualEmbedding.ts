@@ -1,5 +1,6 @@
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { embeddingOperationCredential, requestRemoteEmbeddingGroups } from 'src/ts/server/embeddingOperations'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import type { ContextualRemoteEmbeddingModel } from '@risuai/protocol/embedding-operation'
 import { contextHash, type VectorArray } from './hypamemory'
 
@@ -27,6 +28,16 @@ const VOYAGE_CONTEXT_MODELS = {
 const MAX_CHUNKS_PER_REQUEST = 1000
 const MAX_INPUTS_PER_REQUEST = 256
 
+function voyageCredentialOwnerValue(): unknown {
+  const status = settingsResourceState.groupStatuses.memory ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value.voyageApiKey
+  // Explicit bootstrap compatibility only. Once the memory settings owner is
+  // ready (or has failed), embedding requests never consult the aggregate.
+  if (status === 'idle' || status === 'loading') return getDatabase().voyageApiKey
+  return undefined
+}
+
 class VoyageContextProvider implements ContextualEmbeddingProvider {
   constructor(
     private readonly applicationModel: ContextualRemoteEmbeddingModel,
@@ -34,7 +45,7 @@ class VoyageContextProvider implements ContextualEmbeddingProvider {
   ) {}
 
   async embedDocumentGroups(groups: string[][], signal?: AbortSignal): Promise<VectorArray[][]> {
-    const credential = embeddingOperationCredential(getDatabase().voyageApiKey)
+    const credential = embeddingOperationCredential(voyageCredentialOwnerValue())
     const batches = this.batchGroups(groups)
     const allResults: VectorArray[][] = new Array(groups.length)
 
@@ -58,7 +69,7 @@ class VoyageContextProvider implements ContextualEmbeddingProvider {
   }
 
   async embedQueries(queries: string[], signal?: AbortSignal): Promise<VectorArray[]> {
-    const credential = embeddingOperationCredential(getDatabase().voyageApiKey)
+    const credential = embeddingOperationCredential(voyageCredentialOwnerValue())
     const batches = this.batchGroups(queries.map((query) => [query]))
     const results: VectorArray[] = []
     for (const groups of batches) {

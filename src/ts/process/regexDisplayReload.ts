@@ -8,7 +8,9 @@ import {
   collectionsResourceState,
   getChatMetadataOwnerSnapshot,
   settingsResourceState,
+  type ServerCollectionName,
 } from '../server/resourceState.svelte'
+import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
 
 export const RegexDisplayReloadPointer = writable(0)
 
@@ -80,8 +82,10 @@ export function regexDisplayReloadTokenForContext(
     const promptPresetId = selectedChat?.generationSettings?.promptPresetId?.trim()
     ownerKeys.push(promptPresetId ? `preset:${promptPresetId}` : 'root')
 
-    for (const state of resolveActiveModuleStates(ownerState.database, selectedCharacter, selectedChat)) {
-      ownerKeys.push(`module:${state.module.id}`)
+    if (ownerState.database) {
+      for (const state of resolveActiveModuleStates(ownerState.database, selectedCharacter, selectedChat)) {
+        ownerKeys.push(`module:${state.module.id}`)
+      }
     }
 
     return ownerKeys.map((key) => `${key}:${scope.ownerEpochs[key] ?? 0}`).join('|')
@@ -167,7 +171,7 @@ function projectChatMetadataOwner(selectedCharacter: character, selectedChat: Ch
 }
 
 function regexDisplayOwnerState(): {
-  database: Database
+  database: Database | undefined
   characters: readonly character[]
   selectedCharacterIndex: number
   ready: boolean
@@ -199,15 +203,74 @@ function regexDisplayOwnerState(): {
   }
 }
 
-function canonicalModuleActivationDatabase(): Database {
+function canonicalModuleActivationDatabase(): Database | undefined {
+  const moduleSettings = settingsGroupOwner('modules')
+  const advancedSettings = settingsGroupOwner('advanced')
+  const agentSettings = settingsGroupOwner('agents')
+  const personaSelection = standaloneSettingsOwner()
+  const modules = stableOwnerCollection<Database['modules'][number]>(collectionOwner('modules'))
+  const promptPresets = stableOwnerCollection<Database['promptPresets'][number]>(collectionOwner('promptPresets'))
+  const personas = stableOwnerCollection<Database['personas'][number]>(collectionOwner('personas'))
+  const agentPresets = stableOwnerCollection<Database['agentPresets'][number]>(agentSettings?.agentPresets)
+  const enabledModules = moduleSettings?.enabledModules
+  if (
+    !moduleSettings ||
+    !advancedSettings ||
+    !agentSettings ||
+    !personaSelection ||
+    !modules ||
+    !promptPresets ||
+    !personas ||
+    !agentPresets ||
+    !Array.isArray(enabledModules) ||
+    !enabledModules.every((id) => typeof id === 'string' && id.trim().length > 0)
+  ) {
+    return undefined
+  }
+
   return {
-    ...(settingsResourceState.value as Partial<Database>),
-    ...(collectionsResourceState.values as Partial<Database>),
-    characters: charactersResourceState.characters,
-    enabledModules: settingsResourceState.value.enabledModules ?? [],
-    agentPresets: settingsResourceState.value.agentPresets ?? [],
-    modules: collectionsResourceState.values.modules ?? [],
-    promptPresets: collectionsResourceState.values.promptPresets ?? [],
-    personas: collectionsResourceState.values.personas ?? [],
+    modules,
+    promptPresets,
+    personas,
+    enabledModules,
+    moduleIntergration: advancedSettings.moduleIntergration,
+    agentPresets,
+    agentPresetDefaultId: agentSettings.agentPresetDefaultId,
+    selectedPersonaId: personaSelection.selectedPersonaId,
   } as Database
+}
+
+function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
+function collectionOwner<Name extends ServerCollectionName>(name: Name): Database[Name] | undefined {
+  const status = collectionsResourceState.statuses[name] ?? 'idle'
+  if (collectionsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
+  if (status === 'idle' || status === 'loading') return getDatabase()[name]
+  return undefined
+}
+
+function standaloneSettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.standaloneStatuses.selectedPersonaId ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return undefined
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
+function stableOwnerCollection<T extends { id?: unknown }>(value: unknown): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    const id = typeof candidate?.id === 'string' ? candidate.id.trim() : ''
+    if (!id || ids.has(id)) return undefined
+    ids.add(id)
+  }
+  return value as T[]
 }

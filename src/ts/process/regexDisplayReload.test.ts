@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import { selectedCharID } from '../stores.svelte'
-import { charactersResourceState } from '../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
 import {
   RegexDisplayReloadPointer,
   RegexDisplayReloadScope,
@@ -52,6 +56,9 @@ beforeEach(() => {
       { id: 'module-b', name: 'Module B', description: '' },
     ],
     promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    personas: [],
+    agentPresets: [],
+    moduleIntergration: '',
     enabledModules: [],
     currentChar: 0,
   } as any
@@ -117,6 +124,16 @@ describe('regex display reload scoping', () => {
     expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).toBe(
       initial,
     )
+  })
+
+  it('omits module owners when a required activation owner fails', () => {
+    collectionsResourceState.statuses.modules = 'error'
+
+    const initial = currentToken()
+    reloadRegexDisplay('module:module-a')
+
+    expect(currentToken()).toBe(initial)
+    expect(settingsResourceState.groupStatuses.modules).toBe('ready')
   })
 
   it('fails closed for duplicate character and chat stable IDs', () => {

@@ -28,6 +28,7 @@ import { safeStructuredClone } from '../polyfill'
 import { selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
+import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setClientRegexWorkerFactoryForTesting } from './clientRegexWorker'
@@ -128,6 +129,12 @@ function seedDb(messageChatId: string | null = 'm-0'): character {
       },
     ],
     characterOrder: [],
+    modules: [],
+    promptPresets: [],
+    personas: [],
+    agentPresets: [],
+    enabledModules: [],
+    moduleIntergration: '',
     presetRegex: [],
     templateDefaultVariables: '',
   } as any
@@ -542,6 +549,77 @@ describe('editdisplay render path logging', () => {
     const result = await processScriptFull(char, 'CHAT GLOBAL', 'editdisplay', 0)
 
     expect(result.data).toBe('chat global')
+  })
+
+  it('fails closed for an errored global-script settings owner', async () => {
+    const char = seedDb()
+    ;(settingsResourceState.value as any).globalscript = [
+      {
+        comment: 'stale-global-regex',
+        type: 'editdisplay',
+        in: 'GLOBAL',
+        out: 'stale',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ]
+    settingsResourceState.groupStatuses.advanced = 'error'
+
+    const result = await processScriptFull(char, 'GLOBAL', 'editdisplay', 0)
+
+    expect(result.data).toBe('GLOBAL')
+  })
+
+  it('fails closed for an errored prompt-preset collection owner', async () => {
+    const char = seedDb()
+    ;(char.chats[0] as any).generationSettings = { promptPresetId: 'prompt-stale' }
+    collectionsResourceState.values.promptPresets = [
+      {
+        id: 'prompt-stale',
+        presetRegex: [
+          {
+            comment: 'stale-prompt-regex',
+            type: 'editdisplay',
+            in: 'PROMPT',
+            out: 'stale',
+            flag: 'g',
+            ableFlag: true,
+          },
+        ],
+      },
+    ]
+    collectionsResourceState.statuses.promptPresets = 'error'
+
+    const result = await processScriptFull(char, 'PROMPT', 'editdisplay', 0)
+
+    expect(result.data).toBe('PROMPT')
+  })
+
+  it('resolves module regex from the explicit owner projection', async () => {
+    const char = seedDb()
+    char.modules = ['module-owner']
+    collectionsResourceState.values.modules = [
+      {
+        id: 'module-owner',
+        name: 'Owner module',
+        description: '',
+        regex: [
+          {
+            comment: 'owner-module-regex',
+            type: 'editdisplay',
+            in: 'MODULE',
+            out: 'module',
+            flag: 'g',
+            ableFlag: true,
+          },
+        ],
+      },
+    ]
+    collectionsResourceState.statuses.modules = 'ready'
+
+    const result = await processScriptFull(char, 'MODULE', 'editdisplay', 0)
+
+    expect(result.data).toBe('module')
   })
 
   it('does not fall back to global regex when the active chat selected prompt has none', async () => {

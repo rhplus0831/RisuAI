@@ -11,6 +11,7 @@ import {
   type ServerCollectionName,
 } from '../server/resourceState.svelte'
 import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { selectedCharID, selIdState } from './coreStores.svelte'
 
 // This effect used to register its dependency on the modules array via a
@@ -119,6 +120,28 @@ function runtimeOwnerFailed(): boolean {
   return ['modules', 'promptPresets'].some((name) => collectionsResourceState.statuses[name] === 'error')
 }
 
+function selectedRuntimeHypaV3Preset(
+  memorySettings: Partial<Database> | undefined,
+  hypaV3Presets: Database['hypaV3Presets'] | undefined,
+): Database['hypaV3Presets'][number] | undefined {
+  if (!memorySettings || !Array.isArray(hypaV3Presets)) return undefined
+  const memoryStatus = settingsResourceState.groupStatuses.memory ?? 'idle'
+  const presetStatus = collectionsResourceState.statuses.hypaV3Presets ?? 'idle'
+  if (memoryStatus === 'ready' && presetStatus === 'ready') {
+    const index = hypaV3PresetIndexFromStableId({
+      selectedHypaV3PresetId: memorySettings.selectedHypaV3PresetId,
+      hypaV3Presets,
+    })
+    return index >= 0 ? hypaV3Presets[index] : undefined
+  }
+  const compatibilityStatuses = new Set(['idle', 'loading'])
+  if (!compatibilityStatuses.has(memoryStatus) || !compatibilityStatuses.has(presetStatus)) return undefined
+  const legacyIndex = memorySettings.hypaV3PresetId
+  return Number.isInteger(legacyIndex) && (legacyIndex as number) >= 0
+    ? hypaV3Presets[legacyIndex as number]
+    : undefined
+}
+
 let disposeRuntimeEffects: (() => void) | null = null
 
 export function installStoreRuntimeEffects(): () => void {
@@ -130,7 +153,8 @@ export function installStoreRuntimeEffects(): () => void {
       if (character) {
         const memorySettings = settingsGroupOwner('memory')
         const hypaV3Presets = collectionOwner('hypaV3Presets')
-        if (memorySettings?.hypaV3 && hypaV3Presets?.[memorySettings.hypaV3PresetId]?.settings?.alwaysToggleOn) {
+        const selectedHypaV3Preset = selectedRuntimeHypaV3Preset(memorySettings, hypaV3Presets)
+        if (memorySettings?.hypaV3 && selectedHypaV3Preset?.settings?.alwaysToggleOn) {
           if (!isServerCharacterShellRow(character) && !character.supaMemory && character.chaId) {
             const characterId = character.chaId
             void import('../characterCommands').then(({ setCharacterSupaMemory }) => {

@@ -10,6 +10,9 @@ const runtimeEffectState = vi.hoisted(() => ({
     agentPresets: [] as unknown[],
     agentPresetDefaultId: '',
     moduleIntergration: '',
+    hypaV3: false,
+    hypaV3PresetId: 0,
+    hypaV3Presets: [] as any[],
   },
   settingsResourceState: {
     value: {} as Record<string, any>,
@@ -101,9 +104,13 @@ beforeEach(() => {
   runtimeEffectState.database.agentPresets = []
   runtimeEffectState.database.agentPresetDefaultId = ''
   runtimeEffectState.database.moduleIntergration = ''
+  runtimeEffectState.database.hypaV3 = false
+  runtimeEffectState.database.hypaV3PresetId = 0
+  runtimeEffectState.database.hypaV3Presets = []
   runtimeEffectState.settingsResourceState.value = {
     hypaV3: false,
     hypaV3PresetId: 0,
+    selectedHypaV3PresetId: null,
     enabledModules: [],
     agentPresets: [],
     agentPresetDefaultId: '',
@@ -188,12 +195,52 @@ describe('store runtime effects', () => {
     runtimeEffectState.database.characters = [{ chaId: 'stale-character', supaMemory: false }]
     runtimeEffectState.settingsResourceState.value.hypaV3 = true
     runtimeEffectState.settingsResourceState.value.hypaV3PresetId = 0
-    runtimeEffectState.collectionsResourceState.values.hypaV3Presets = [{ settings: { alwaysToggleOn: true } }]
+    runtimeEffectState.settingsResourceState.value.selectedHypaV3PresetId = 'preset-on'
+    runtimeEffectState.collectionsResourceState.values.hypaV3Presets = [
+      { id: 'preset-on', settings: { alwaysToggleOn: true } },
+    ]
 
     dispose = installStoreRuntimeEffects()
 
     await vi.waitFor(() => {
       expect(runtimeEffectState.setCharacterSupaMemory).toHaveBeenCalledWith('character-owner', true)
+    })
+  })
+
+  it('fails closed for a duplicate ready Hypa preset selection', async () => {
+    const owner = { chaId: 'character-owner', chats: [], chatPage: 0, supaMemory: false }
+    runtimeEffectState.charactersResourceState.characters = [owner]
+    runtimeEffectState.charactersResourceState.currentChar = 0
+    runtimeEffectState.charactersResourceState.selectionRevision = 1
+    runtimeEffectState.settingsResourceState.value.hypaV3 = true
+    runtimeEffectState.settingsResourceState.value.selectedHypaV3PresetId = 'preset-duplicate'
+    runtimeEffectState.collectionsResourceState.values.hypaV3Presets = [
+      { id: 'preset-duplicate', settings: { alwaysToggleOn: true } },
+      { id: 'preset-duplicate', settings: { alwaysToggleOn: true } },
+    ]
+
+    dispose = installStoreRuntimeEffects()
+    await Promise.resolve()
+
+    expect(runtimeEffectState.setCharacterSupaMemory).not.toHaveBeenCalled()
+  })
+
+  it('retains numeric Hypa selection only while both owners are loading', async () => {
+    runtimeEffectState.database.characters = [
+      { chaId: 'compatibility-character', chats: [], chatPage: 0, supaMemory: false },
+    ]
+    runtimeEffectState.database.hypaV3 = true
+    runtimeEffectState.database.hypaV3PresetId = 0
+    runtimeEffectState.database.hypaV3Presets = [{ settings: { alwaysToggleOn: true } }]
+    runtimeEffectState.settingsResourceState.groupStatuses.memory = 'loading'
+    runtimeEffectState.collectionsResourceState.statuses.hypaV3Presets = 'loading'
+    runtimeEffectState.charactersResourceState.status = 'loading'
+    selectedCharID.set(0)
+
+    dispose = installStoreRuntimeEffects()
+
+    await vi.waitFor(() => {
+      expect(runtimeEffectState.setCharacterSupaMemory).toHaveBeenCalledWith('compatibility-character', true)
     })
   })
 

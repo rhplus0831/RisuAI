@@ -1,19 +1,75 @@
 import { language } from '../../lang'
 import { alertSelect } from '../alert'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 import { persistServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
-import type { Database } from '../storage/database.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export type RetiredMemoryAlgorithm = 'SupaMemory' | 'Legacy HypaMemory' | 'Hypa V2' | 'Hanurai' | 'Experimental Hypa V3'
 
 const queuedNoticeDatabases = new WeakSet<object>()
 
-export function detectActiveRetiredMemoryAlgorithms(database: Partial<Database>): RetiredMemoryAlgorithm[] {
+interface LegacyMemoryNoticeOwner {
+  database: Partial<Database>
+  identity: object
+  allowLegacyNumericSelection: boolean
+}
+
+function legacyMemoryNoticeOwner(): LegacyMemoryNoticeOwner | undefined {
+  const memoryStatus = settingsResourceState.groupStatuses.memory ?? 'idle'
+  const presetStatus = collectionsResourceState.statuses.hypaV3Presets ?? 'idle'
+  if (
+    settingsResourceState.status === 'error' ||
+    collectionsResourceState.status === 'error' ||
+    memoryStatus === 'error' ||
+    presetStatus === 'error'
+  ) {
+    return undefined
+  }
+
+  const ready = memoryStatus === 'ready' && presetStatus === 'ready'
+  const compatibilityStatuses = new Set(['idle', 'loading'])
+  const compatibility = compatibilityStatuses.has(memoryStatus) && compatibilityStatuses.has(presetStatus)
+  if (!ready && !compatibility) return undefined
+
+  const memorySettings = ready ? (settingsResourceState.value as Partial<Database>) : getDatabase()
+  const hypaV3Presets = ready ? collectionsResourceState.values.hypaV3Presets : getDatabase().hypaV3Presets
+  if (!memorySettings || !Array.isArray(hypaV3Presets)) return undefined
+
+  return {
+    identity: memorySettings,
+    allowLegacyNumericSelection: compatibility,
+    database: {
+      memoryAlgorithmType: memorySettings.memoryAlgorithmType,
+      supaModelType: memorySettings.supaModelType,
+      hypaMemory: memorySettings.hypaMemory,
+      hypav2: memorySettings.hypav2,
+      hanuraiEnable: memorySettings.hanuraiEnable,
+      legacyMemoryMigrationNoticeDismissed: memorySettings.legacyMemoryMigrationNoticeDismissed,
+      hypaV3: memorySettings.hypaV3,
+      selectedHypaV3PresetId: memorySettings.selectedHypaV3PresetId,
+      ...(compatibility ? { hypaV3PresetId: memorySettings.hypaV3PresetId } : {}),
+      hypaV3Presets,
+    },
+  }
+}
+
+export function detectActiveRetiredMemoryAlgorithms(
+  database: Partial<Database>,
+  options: { allowLegacyNumericSelection?: boolean } = {},
+): RetiredMemoryAlgorithm[] {
   const retired: RetiredMemoryAlgorithm[] = []
   const algorithm = database.memoryAlgorithmType
-  const selectedPreset = Array.isArray(database.hypaV3Presets)
-    ? database.hypaV3Presets[database.hypaV3PresetId ?? 0]
-    : undefined
+  const hypaV3Presets = Array.isArray(database.hypaV3Presets) ? database.hypaV3Presets : []
+  const selectedPresetIndex = options.allowLegacyNumericSelection
+    ? Number.isInteger(database.hypaV3PresetId)
+      ? (database.hypaV3PresetId as number)
+      : -1
+    : hypaV3PresetIndexFromStableId({
+        selectedHypaV3PresetId: database.selectedHypaV3PresetId,
+        hypaV3Presets,
+      })
+  const selectedPreset = selectedPresetIndex >= 0 ? hypaV3Presets[selectedPresetIndex] : undefined
   const v3Active = database.hypaV3 === true || algorithm === 'hypaMemoryV3'
 
   if (v3Active) {
@@ -46,12 +102,14 @@ export function detectActiveRetiredMemoryAlgorithms(database: Partial<Database>)
 
 /** Queue a non-blocking, once-per-database notice after resource hydration. */
 export function showLegacyMemoryMigrationNoticeIfNeeded(): boolean {
-  const database = getDatabase()
-  if (database.legacyMemoryMigrationNoticeDismissed === true || queuedNoticeDatabases.has(database)) return false
-  const retired = detectActiveRetiredMemoryAlgorithms(database)
+  const owner = legacyMemoryNoticeOwner()
+  if (!owner) return false
+  const { database, identity, allowLegacyNumericSelection } = owner
+  if (database.legacyMemoryMigrationNoticeDismissed === true || queuedNoticeDatabases.has(identity)) return false
+  const retired = detectActiveRetiredMemoryAlgorithms(database, { allowLegacyNumericSelection })
   if (retired.length === 0) return false
 
-  queuedNoticeDatabases.add(database)
+  queuedNoticeDatabases.add(identity)
   void alertSelect([language.dismissNotice], language.legacyMemoryMigrationNotice(retired.join(', '))).then(() =>
     persistServerBackedSettingsPatch({ legacyMemoryMigrationNoticeDismissed: true }),
   )
