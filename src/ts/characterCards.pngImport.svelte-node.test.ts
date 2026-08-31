@@ -25,6 +25,7 @@ const globalApiState = vi.hoisted(() => ({
 }))
 
 const characterCommandState = vi.hoisted(() => ({
+  applyCharacterCreateOptimistically: vi.fn(),
   dispatchCreateCharacter: vi.fn(),
 }))
 
@@ -172,11 +173,8 @@ vi.mock('./storage/database.svelte', () => ({
   applyServerResourceDatabase: vi.fn(),
   defaultSdDataFunc: vi.fn(() => []),
   getCurrentCharacter: vi.fn(),
-  getDatabase: vi.fn(() => dbState.db),
   importPreset: vi.fn(),
   setCurrentCharacter: vi.fn(),
-  setDatabase: vi.fn(),
-  setDatabaseLite: vi.fn(),
 }))
 
 vi.mock('./characters', () => ({
@@ -215,6 +213,7 @@ vi.mock('./process/modules', () => ({
 }))
 
 vi.mock('./characterCommands', () => ({
+  applyCharacterCreateOptimistically: characterCommandState.applyCharacterCreateOptimistically,
   currentCharacterStateSnapshot: vi.fn(() => ({
     characters: [],
     characterOrder: [],
@@ -222,6 +221,29 @@ vi.mock('./characterCommands', () => ({
   })),
   dispatchCreateCharacter: characterCommandState.dispatchCreateCharacter,
   dispatchUpdateCharacter: vi.fn(),
+}))
+
+vi.mock('./server/resourceState.svelte', () => ({
+  charactersResourceState: {
+    get characters() {
+      return dbState.db.characters
+    },
+    set characters(characters: any[]) {
+      dbState.db.characters = characters
+    },
+    status: 'ready',
+  },
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = dbState.db.characters.filter((candidate) => candidate?.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  },
+  settingsResourceState: {
+    get value() {
+      return dbState.db
+    },
+    groupStatuses: { sidebar: 'ready' },
+    status: 'ready',
+  },
 }))
 
 vi.mock('./moduleCommands', () => ({
@@ -277,6 +299,12 @@ beforeEach(() => {
   clientIdentityState.nextId = 0
   charxState.module = undefined
   filePickerState.selectFileByDom.mockReset()
+  characterCommandState.applyCharacterCreateOptimistically.mockReset()
+  characterCommandState.applyCharacterCreateOptimistically.mockImplementation((character: { chaId: string }) => {
+    if (dbState.db.characters.some((candidate) => candidate?.chaId === character.chaId)) return -1
+    dbState.db.characters.push(character)
+    return dbState.db.characters.length - 1
+  })
   characterCommandState.dispatchCreateCharacter.mockReset()
   characterCommandState.dispatchCreateCharacter.mockResolvedValue({
     status: 'accepted',

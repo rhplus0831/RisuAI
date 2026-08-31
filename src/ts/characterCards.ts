@@ -13,16 +13,12 @@ import {
 import {
   defaultSdDataFunc,
   type character,
-  setDatabase,
   type customscript,
   type loreSettings,
   type loreBook,
   type triggerscript,
   importPreset,
-  getDatabase,
-  setDatabaseLite,
   appVer,
-  type Database,
 } from './storage/database.svelte'
 import { checkNullish, decryptBuffer, isKnownUri, sleep } from './util'
 import { selectFileByDom } from './filePicker'
@@ -59,6 +55,7 @@ import {
   type RisuModule,
 } from './process/modules'
 import {
+  applyCharacterCreateOptimistically,
   currentCharacterStateSnapshot,
   dispatchCreateCharacter,
   type CharacterMutationOutcome,
@@ -69,7 +66,6 @@ import {
   type ServerRealmImportResult,
 } from './server/realmImport'
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
 import { ensureClientLorebookEntryIds } from './server/lorebookBridge.svelte'
 import {
@@ -77,6 +73,11 @@ import {
   ensureClientTriggerDefinitionIds,
 } from './server/scriptDefinitionBridge.svelte'
 import { serverAssetIdFromReference } from './server/assets'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from './server/resourceState.svelte'
 import { showRealmInfoStore } from './realmInfoStore'
 import type { hubType } from './types/risuHub'
 
@@ -170,14 +171,7 @@ async function appendImportedCharacter(
 ): Promise<CharacterImportOutcome> {
   normalizeImportedCharacterIdentities(character)
   const characterId = character.chaId
-  withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    db.characters ??= []
-    if (characterId && db.characters.some((candidate) => candidate?.chaId === characterId)) {
-      return
-    }
-    db.characters.push(character)
-  })
+  applyCharacterCreateOptimistically(character)
   const outcome = await dispatchCreateCharacter(character, previous)
   return outcome.status === 'accepted' ? { ...outcome, characterId } : outcome
 }
@@ -773,8 +767,9 @@ function convertOffSpecCards(
 }
 
 export async function exportChar(charaID: number): Promise<string> {
-  const db = getDatabase({ snapshot: true })
-  let char = structuredClone(db.characters[charaID])
+  const owner = characterOwnerAt(charaID)
+  if (!owner) return ''
+  let char = structuredClone(owner)
 
   if (!char.image) {
     const res = await fetch('/none.webp')
@@ -2106,11 +2101,8 @@ export async function downloadRisuHub(
         })
       }
       checkCharOrder()
-      const db = getDatabase()
       const index =
-        importedCharacter?.status === 'accepted'
-          ? db.characters.findIndex((character) => character.chaId === importedCharacter.characterId)
-          : -1
+        importedCharacter?.status === 'accepted' ? characterOwnerIndexById(importedCharacter.characterId) : -1
       if (
         isLatestRealmImportOperation(realmImportOperationToken) &&
         index !== -1 &&
@@ -2131,11 +2123,7 @@ export async function downloadRisuHub(
 
     const importedCharacter = await importCharacterCardSpec(data, await getHubResources(img), 'hub')
     checkCharOrder()
-    const db = getDatabase()
-    const index =
-      importedCharacter?.status === 'accepted'
-        ? db.characters.findIndex((character) => character.chaId === importedCharacter.characterId)
-        : -1
+    const index = importedCharacter?.status === 'accepted' ? characterOwnerIndexById(importedCharacter.characterId) : -1
     if (
       isLatestRealmImportOperation(realmImportOperationToken) &&
       index !== -1 &&
@@ -2196,9 +2184,8 @@ async function finishServerRealmImport(
     percent: 100,
   })
   checkCharOrder()
-  const db = getDatabase()
-  const index = db.characters.findIndex((character) => character.chaId === imported.characterId)
-  if (index !== -1 && (db.goCharacterOnImport || arg.forceRedirect)) {
+  const index = characterOwnerIndexById(imported.characterId)
+  if (index !== -1 && shouldNavigateImportedCharacter(arg)) {
     changeChar(index, {
       isFresh: () => isLatestRealmImportOperation(operationToken),
     })
@@ -2212,8 +2199,25 @@ async function finishServerRealmImport(
 }
 
 function shouldNavigateImportedCharacter(arg: { forceRedirect?: boolean }): boolean {
-  const db = getDatabase()
-  return !!(db.goCharacterOnImport || arg.forceRedirect)
+  if (arg.forceRedirect) return true
+  const sidebarStatus = settingsResourceState.groupStatuses.sidebar ?? settingsResourceState.status
+  return (
+    settingsResourceState.status !== 'error' &&
+    sidebarStatus === 'ready' &&
+    settingsResourceState.value.goCharacterOnImport === true
+  )
+}
+
+function characterOwnerAt(index: number): character | undefined {
+  if (charactersResourceState.status !== 'ready' || index < 0) return undefined
+  const candidate = charactersResourceState.characters[index]
+  return candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
+}
+
+function characterOwnerIndexById(characterId: string): number {
+  if (charactersResourceState.status !== 'ready') return -1
+  const owner = getCharacterResourceOwner(characterId)
+  return owner ? charactersResourceState.characters.indexOf(owner) : -1
 }
 
 function showRealmImportProgress(progress: ServerRealmImportProgress) {
