@@ -1,17 +1,6 @@
-import { get } from 'svelte/store'
 import { v4 } from 'uuid'
-import { alertToast } from '../alert'
-import {
-  changeToPreset,
-  getDatabase,
-  type Database,
-  type MessagePresetInfo,
-  type Message,
-  type character,
-} from '../storage/database.svelte'
-import { selectedCharID } from '../stores.svelte'
+import type { Database, MessagePresetInfo, Message, character } from '../storage/database.svelte'
 import { ChatTokenizer, resolveMainTokenizerProfile, resolveTokenizerDatabaseSnapshot } from '../tokenizer'
-import { parseToggleSyntax } from '../util'
 import {
   dispatchCharacterOwnedDurableBatch,
   toMessageSnapshot,
@@ -22,13 +11,12 @@ import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSett
 import { createPromptInfoSnapshot } from '../promptInfo'
 import { canUseServerCommands, replaceTailMessagesCommand, updateCharacterCommand } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   captureChatBodyProjectionEpoch,
   charactersResourceState,
   getCharacterResourceOwner,
+  settingsResourceState,
 } from '../server/resourceState.svelte'
-import { getModuleToggles } from './modules'
 import { resolveModelProfileTokenizerSelection } from '../model/modelProfileResolver'
 
 export interface SendChatContextResult {
@@ -84,33 +72,29 @@ function currentSendRollbackSnapshot(input: {
 }
 
 function restoreLastInteraction(snapshot: SendRollbackSnapshot): void {
-  withTrustedResourceWrite(() => {
-    const character = locateSendSnapshotCharacter(snapshot)
-    if (!character) return
-    if (character.lastInteraction === snapshot.attemptedLastInteraction) {
-      character.lastInteraction = snapshot.lastInteraction
-    }
-  })
+  const character = locateSendSnapshotCharacter(snapshot)
+  if (!character) return
+  if (character.lastInteraction === snapshot.attemptedLastInteraction) {
+    character.lastInteraction = snapshot.lastInteraction
+  }
 }
 
 function restoreBackfilledMessageIds(snapshot: SendRollbackSnapshot): void {
   if (!snapshot.messageIds?.length) return
-  withTrustedResourceWrite(() => {
-    const character = locateSendSnapshotCharacter(snapshot)
-    if (!character) return
-    const chatIndex = locateSendSnapshotChatIndex(character, snapshot)
-    if (chatIndex < 0) return
-    const messages = character.chats[chatIndex].message
-    for (const messageId of snapshot.messageIds) {
-      const message = messages.find((candidate) => candidate.chatId === messageId.attempted)
-      if (message) message.chatId = messageId.previous
-    }
-  })
+  const character = locateSendSnapshotCharacter(snapshot)
+  if (!character) return
+  const chatIndex = locateSendSnapshotChatIndex(character, snapshot)
+  if (chatIndex < 0) return
+  const messages = character.chats[chatIndex].message
+  for (const messageId of snapshot.messageIds) {
+    const message = messages.find((candidate) => candidate.chatId === messageId.attempted)
+    if (message) message.chatId = messageId.previous
+  }
 }
 
 function locateSendSnapshotCharacter(snapshot: SendRollbackSnapshot): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
   const characters = charactersResourceState.characters
-  if (!characters) return undefined
   if (snapshot.characterId) {
     return getCharacterResourceOwner(snapshot.characterId)
   }
@@ -139,9 +123,8 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
 }
 
 /**
- * Run the sendChat entry-context setup: retained compatibility-only preset-chain
- * and statistics handling (skipped by the live Fastify runtime), character + chat
- * lookup, lastInteraction stamp, chatId backfill, promptInfo seed (gated on
+ * Run the sendChat entry-context setup: owner-backed character + chat lookup,
+ * lastInteraction stamp, chatId backfill, promptInfo seed (gated on
  * `promptInfoInsideChat`), and tokenizer creation. The optimistic context is
  * returned synchronously together with the exact durable maintenance promise.
  * Reattach callers disable maintenance so they only reconstruct render context.
@@ -157,31 +140,9 @@ export function setupSendChatContext(args: {
   target?: ActiveChatTarget | null
   database?: Database
 }): SendChatContextResult {
-  const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true, target } = args
+  const { chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true, target } = args
   const serverBacked = canUseServerCommands()
-
-  if (writeMaintenance && !serverBacked && chatProcessIndex === -1 && getDatabase().presetChain) {
-    const names = getDatabase()
-      .presetChain.split(',')
-      .map((v) => v.trim())
-    const randomSelect = Math.floor(Math.random() * names.length)
-    const ele = names[randomSelect]
-
-    const findId = getDatabase().botPresets.findIndex((v) => {
-      return v.name === ele
-    })
-
-    if (findId === -1) {
-      alertToast(`Cannot find preset: ${ele}`)
-    } else {
-      changeToPreset(findId, true)
-    }
-  }
-
-  if (writeMaintenance && !serverBacked) {
-    getDatabase().statics.messages += 1
-  }
-  const selectedChar = serverBacked ? resolveOwnedCharacterIndex(target) : resolveSendCharacterIndex(target)
+  const selectedChar = resolveOwnedCharacterIndex(target)
   const lastInteraction = Date.now()
   let persistence: Promise<CharacterOwnedDurableBatchResult> = Promise.resolve({
     status: 'ok',
@@ -193,9 +154,8 @@ export function setupSendChatContext(args: {
     let rollbackSnapshot: SendRollbackSnapshot | null = null
     let characterId: string | undefined
 
-    withTrustedResourceWrite(() => {
-      const nowChatroom = resolveOwnedCharacter(target)
-      if (!nowChatroom) return
+    const nowChatroom = resolveOwnedCharacter(target)
+    if (nowChatroom) {
       characterId = nowChatroom.chaId
       const selectedChat = resolveSendChatIndex(nowChatroom, target)
       const selectedChatRecord = nowChatroom.chats[selectedChat]
@@ -269,7 +229,7 @@ export function setupSendChatContext(args: {
           },
         })
       }
-    })
+    }
 
     if (!characterId) {
       if (rollbackSnapshot) {
@@ -284,24 +244,14 @@ export function setupSendChatContext(args: {
     } else if (steps.length > 0) {
       persistence = dispatchCharacterOwnedDurableBatch(characterId, steps)
     }
-  } else if (writeMaintenance && !serverBacked) {
-    const nowChatroom = getDatabase().characters[selectedChar]
-    nowChatroom.lastInteraction = lastInteraction
-    const selectedChatRecord = nowChatroom.chats[resolveSendChatIndex(nowChatroom, target)]
-    if (selectedChatRecord.message.some((v) => v.chatId == null)) {
-      selectedChatRecord.message = selectedChatRecord.message.map((v) => {
-        v.chatId = v.chatId ?? v4()
-        return v
-      })
-    }
   }
-  const nowChatroom = serverBacked ? resolveOwnedCharacter(target) : getDatabase().characters[selectedChar]
+  const nowChatroom = resolveOwnedCharacter(target)
   if (!nowChatroom) {
     throw new Error('Missing character owner for send context')
   }
   const selectedChat = resolveSendChatIndex(nowChatroom, target)
 
-  const promptInfo = createInitialPromptInfo(serverBacked, target)
+  const promptInfo = createInitialPromptInfo(target)
   const database = args.database ?? resolveTokenizerDatabaseSnapshot()
   const mainProfile = resolveMainTokenizerProfile(database)
   const mainModelId = mainProfile.modelId
@@ -334,12 +284,15 @@ export function setupSendChatContext(args: {
   }
 }
 
-function createInitialPromptInfo(
-  serverBacked: boolean,
-  target: ActiveChatTarget | null | undefined,
-): MessagePresetInfo {
-  if (!getDatabase().promptInfoInsideChat) return {}
-  return serverBacked ? createServerBackedPromptInfo(target) : createLegacyPromptInfo()
+function createInitialPromptInfo(target: ActiveChatTarget | null | undefined): MessagePresetInfo {
+  if (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.advanced !== 'ready' ||
+    !settingsResourceState.value.promptInfoInsideChat
+  ) {
+    return {}
+  }
+  return createServerBackedPromptInfo(target)
 }
 
 function createServerBackedPromptInfo(target: ActiveChatTarget | null | undefined): MessagePresetInfo {
@@ -352,17 +305,10 @@ function createServerBackedPromptInfo(target: ActiveChatTarget | null | undefine
   })
 }
 
-function resolveSendCharacterIndex(target: ActiveChatTarget | null | undefined): number {
-  if (!target) return get(selectedCharID)
-  if (target.characterId !== undefined) {
-    return getDatabase().characters.findIndex((character) => character.chaId === target.characterId)
-  }
-  return target.selectedCharID
-}
-
 function resolveOwnedCharacter(target: ActiveChatTarget | null | undefined): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
   if (target?.characterId !== undefined) return getCharacterResourceOwner(target.characterId)
-  const selectedIndex = target?.selectedCharID ?? get(selectedCharID)
+  const selectedIndex = target?.selectedCharID ?? charactersResourceState.currentChar
   const candidate = charactersResourceState.characters[selectedIndex]
   return candidate
 }
@@ -378,26 +324,4 @@ function resolveSendChatIndex(character: character, target: ActiveChatTarget | n
     return character.chats.findIndex((chat) => chat.id === target.chatId)
   }
   return target.chatPage
-}
-
-function createLegacyPromptInfo(): MessagePresetInfo {
-  const db = getDatabase()
-  const initialPresetName = db.botPresets[db.botPresetsId]?.name ?? ''
-  const initialPromptToggles = parseToggleSyntax(db.customPromptTemplateToggle + getModuleToggles()).flatMap(
-    (toggle) => {
-      const raw = db.globalChatVariables[`toggle_${toggle.key}`]
-      if (toggle.type === 'select' || toggle.type === 'text') {
-        return [{ key: toggle.value, value: toggle.options[raw] }]
-      }
-      if (raw === '1') {
-        return [{ key: toggle.value, value: 'ON' }]
-      }
-      return []
-    },
-  )
-
-  return {
-    promptName: initialPresetName,
-    promptToggles: initialPromptToggles,
-  }
 }

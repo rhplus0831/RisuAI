@@ -33,7 +33,11 @@ import {
 } from '../../server/commands'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getResourceDatabase,
+  replaceResourceDatabase,
+} from '../../server/resourceState.svelte'
 import { setupSendChatContext } from '../sendChatContext'
 import { seedCloneCostDb, withCloneInstrumentation } from '../../__tests__/cloneCostHarness'
 import {
@@ -93,6 +97,7 @@ function seedDb(extra: Partial<Database> = {}) {
     aiModel: 'gpt-4o',
     subModel: 'gpt-4o',
     characters: [makeChar()],
+    currentChar: 0,
     maxContext: 4000,
     botPresetsId: 0,
     statics: { messages: 0 } as unknown as Database['statics'],
@@ -773,16 +778,29 @@ describe('setupSendChatContext - tokenizer + maxContextTokens', () => {
 })
 
 describe('setupSendChatContext - selectedChar / selectedChat', () => {
-  it('returns selectedChar from the store and selectedChat from chatPage', () => {
+  it('returns selectedChar from the selection owner and selectedChat from chatPage', () => {
     seedDb({
       characters: [makeChar({ name: 'A' }), makeChar({ name: 'B', chatPage: 0 })],
     })
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
     expect(ctx.selectedChar).toBe(1)
     expect(ctx.selectedChat).toBe(0)
     expect(ctx.nowChatroom.name).toBe('B')
   })
+
+  it.each(['idle', 'loading', 'error'] as const)(
+    'does not build context from retained character rows while the owner is %s',
+    (status) => {
+      seedDb()
+      charactersResourceState.status = status
+
+      expect(() => setupSendChatContext({ chatProcessIndex: -1, writeMaintenance: false })).toThrow(
+        'Missing character owner for send context',
+      )
+    },
+  )
 
   it('resolves an explicit target by stable ids after another chat becomes active', () => {
     seedDb({
@@ -824,6 +842,7 @@ describe('setupSendChatContext - field-scoped send rollback', () => {
     const seeded = seedCloneCostDb() // char-0 large (40 messages), siblings small
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(1)
+    charactersResourceState.currentChar = 1
     const calls = stubCommandFetch()
 
     // Messages already carry chatIds, so the only optimistic write is the
@@ -842,6 +861,7 @@ describe('setupSendChatContext - field-scoped send rollback', () => {
     const seeded = seedCloneCostDb({ characterCount: 4 })
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(2)
+    charactersResourceState.currentChar = 2
     const originalLastInteraction = testDatabaseState.db.characters[2].lastInteraction
     const patchResponse = deferredResponse()
 
