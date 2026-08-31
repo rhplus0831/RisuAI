@@ -64,11 +64,15 @@ export function agentUsageCount(agentId: string): number {
  */
 function readAgentConfigurationOwner(): AgentConfigurationOwner {
   const owner = settingsResourceState.value as AgentConfigurationOwner
-  const ownerReady = settingsResourceState.groupStatuses.agents === 'ready'
+  const ownerStatus = settingsResourceState.groupStatuses.agents
+  if (ownerStatus === 'error' || settingsResourceState.status === 'error') return {}
+
+  const projectedOwner = projectAgentConfigurationOwner(owner)
+  const ownerReady = ownerStatus === 'ready'
   const hasResidentRows =
     (Array.isArray(owner.agents) && owner.agents.length > 0) ||
     (Array.isArray(owner.agentPresets) && owner.agentPresets.length > 0)
-  if (ownerReady || hasResidentRows) return owner
+  if (ownerReady || hasResidentRows) return projectedOwner
 
   return readLegacyAgentConfigurationBeforeReadiness()
 }
@@ -76,7 +80,64 @@ function readAgentConfigurationOwner(): AgentConfigurationOwner {
 /** Compatibility-only path for cold/offline callers before the owner projects rows. */
 function readLegacyAgentConfigurationBeforeReadiness(): AgentConfigurationOwner {
   const database = getDatabase()
-  return { agents: database.agents, agentPresets: database.agentPresets }
+  return projectAgentConfigurationOwner({ agents: database.agents, agentPresets: database.agentPresets })
+}
+
+function projectAgentConfigurationOwner(owner: AgentConfigurationOwner): AgentConfigurationOwner {
+  return {
+    agents: isStableAgentCollection(owner.agents) ? owner.agents : undefined,
+    agentPresets: isStableAgentPresetCollection(owner.agentPresets) ? owner.agentPresets : undefined,
+  }
+}
+
+function isStableAgentCollection(value: unknown): value is AgentRecord[] {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!isDatabaseRecord(candidate)) return false
+    const id = nonBlankId(candidate.id)
+    if (!id || ids.has(id)) return false
+    ids.add(id)
+  }
+  return true
+}
+
+function isStableAgentPresetCollection(value: unknown): value is AgentPresetRecord[] {
+  if (!Array.isArray(value)) return false
+  const presetIds = new Set<string>()
+  for (const candidate of value) {
+    if (!isDatabaseRecord(candidate)) return false
+    const presetId = nonBlankId(candidate.id)
+    if (!presetId || presetIds.has(presetId)) return false
+    if (!Array.isArray(candidate.steps)) return false
+    const stepIds = new Set<string>()
+    for (const step of candidate.steps) {
+      if (!isDatabaseRecord(step)) return false
+      const stepId = nonBlankId(step.id)
+      if (!stepId || stepIds.has(stepId)) return false
+      stepIds.add(stepId)
+    }
+    if (candidate.agentUses !== undefined) {
+      if (!Array.isArray(candidate.agentUses)) return false
+      const useIds = new Set<string>()
+      for (const use of candidate.agentUses) {
+        if (!isDatabaseRecord(use)) return false
+        const useId = nonBlankId(use.id)
+        if (!useId || useIds.has(useId)) return false
+        useIds.add(useId)
+      }
+    }
+    presetIds.add(presetId)
+  }
+  return true
+}
+
+function isDatabaseRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function nonBlankId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
 }
 
 function uniqueAgentById(agents: readonly AgentRecord[] | undefined, agentId: string): AgentRecord | undefined {

@@ -227,6 +227,20 @@ describe('Agent Preset resource owners', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
   })
 
+  it('fails closed on settings owner errors without falling back to the compatibility projection', async () => {
+    settingsResourceState.groupStatuses.agents = 'error'
+    settingsResourceState.groupErrors.agents = 'owner unavailable'
+    const fetchMock = vi.fn(async () => response({ error: 'rejected' }, 400))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(getAgentPresets()).toEqual([])
+    expect(getAgentPresetById('ap_a')).toBeUndefined()
+    expect(getAgentPresetDefaultId()).toBeUndefined()
+    await expect(updateAgentPreset('ap_a', { name: 'Must not write' })).resolves.toMatchObject({ status: 'failed' })
+    expect((settingsResourceState.value as Record<string, any>).agentPresets[0].name).toBe('Preset A')
+    expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
   it('does not clear references when ready character or loadout owners lose stable-id uniqueness', async () => {
     seedAgentPresetDeleteReferences()
     charactersResourceState.characters = [
@@ -237,6 +251,23 @@ describe('Agent Preset resource owners', () => {
       ...(collectionsResourceState.values.loadouts ?? []),
       clonePlain(collectionsResourceState.values.loadouts?.[0]),
     ] as never
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    await expect(deleteAgentPreset('ap_a')).resolves.toMatchObject({ status: 'failed' })
+    expect(charactersResourceState.characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_a')
+    expect(collectionsResourceState.values.loadouts?.[0]).toMatchObject({
+      agentPresetId: 'ap_a',
+      agentPresetName: 'Preset A',
+    })
+  })
+
+  it('does not clear references when character or loadout owners report errors', async () => {
+    seedAgentPresetDeleteReferences()
+    charactersResourceState.status = 'error'
+    collectionsResourceState.statuses.loadouts = 'error'
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => response({ error: 'rejected' }, 400)),

@@ -7,9 +7,9 @@ const legacyConfiguration = vi.hoisted(() => ({
   agentPresets: [] as AgentPresetRecord[],
 }))
 
-vi.mock('./storage/database.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('./storage/database.svelte')>()),
-  getDatabase: () => legacyConfiguration,
+vi.mock('./server/resourceState.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('./server/resourceState.svelte')>()),
+  getResourceDatabase: () => legacyConfiguration,
 }))
 
 import { agentUsageCount, getAgentById, getAgents } from './agents'
@@ -90,7 +90,7 @@ describe('agent resource owner reads', () => {
     const second = agent('duplicate-agent', 'Second')
     installConfiguration([first, second], [preset('preset-a', ['duplicate-agent'])])
 
-    expect(getAgents()).toEqual([first, second])
+    expect(getAgents()).toEqual([])
     expect(getAgentById('duplicate-agent')).toBeUndefined()
     expect(getAgentById('missing-agent')).toBeUndefined()
     expect(getAgentById('')).toBeUndefined()
@@ -115,5 +115,25 @@ describe('agent resource owner reads', () => {
 
     expect(getAgents()).toEqual([])
     expect(getAgentById('agent-owned')).toBeUndefined()
+  })
+
+  it('fails closed for owner errors instead of falling back to stale compatibility data', () => {
+    const ownedAgent = agent('agent-owned')
+    installConfiguration([ownedAgent], [preset('preset-a', ['agent-owned'])])
+    legacyConfiguration.agents = [agent('legacy-agent')]
+    legacyConfiguration.agentPresets = [preset('legacy-preset', ['legacy-agent'])]
+    settingsResourceState.groupStatuses.agents = 'error'
+
+    expect(getAgents()).toEqual([])
+    expect(getAgentById('agent-owned')).toBeUndefined()
+    expect(agentUsageCount('agent-owned')).toBe(0)
+  })
+
+  it('fails closed for duplicate preset ids when counting Agent uses', () => {
+    const ownedAgent = agent('agent-owned')
+    installConfiguration([ownedAgent], [preset('preset-a', ['agent-owned']), preset('preset-a', ['agent-owned'])])
+
+    expect(getAgents()).toEqual([ownedAgent])
+    expect(agentUsageCount('agent-owned')).toBe(0)
   })
 })

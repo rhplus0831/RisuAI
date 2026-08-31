@@ -41,7 +41,6 @@ import {
   charactersResourceState,
   collectionsResourceState,
   getCharacterResourceOwner,
-  getResourceDatabase as getDatabase,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
@@ -50,6 +49,7 @@ import {
 } from './server/resourceState.svelte'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
+import { getDatabase } from './storage/database.svelte'
 
 type DatabaseRecord = Record<string, unknown>
 
@@ -138,8 +138,22 @@ const pendingGeneratedSubmissions = new Map<
 >()
 let latestAgentPresetRollbackAttempt: AgentPresetRollbackAttempt | undefined
 
+type AgentPresetOwnerMode = 'ready' | 'compatibility' | 'unavailable'
+
+function agentPresetSettingsOwnerMode(): AgentPresetOwnerMode {
+  const groupStatus = settingsResourceState.groupStatuses.agents
+  if (groupStatus === 'error' || settingsResourceState.status === 'error') return 'unavailable'
+  if (groupStatus === 'ready') return 'ready'
+  if (groupStatus === undefined || groupStatus === 'idle' || groupStatus === 'loading') return 'compatibility'
+  return 'unavailable'
+}
+
 function agentPresetSettingsGroupReady(): boolean {
-  return settingsResourceState.groupStatuses.agents === 'ready'
+  return agentPresetSettingsOwnerMode() === 'ready'
+}
+
+function compatibilityDatabase(): ReturnType<typeof getDatabase> {
+  return getDatabase()
 }
 
 /**
@@ -154,66 +168,108 @@ function readyAgentPresetCollectionOwner(): AgentPresetRecord[] | undefined {
 }
 
 function agentPresetCollectionOwnerRead(): AgentPresetRecord[] {
-  if (agentPresetSettingsGroupReady()) return readyAgentPresetCollectionOwner() ?? []
-  const database = getDatabase()
-  return Array.isArray(database.agentPresets) ? database.agentPresets : []
+  const mode = agentPresetSettingsOwnerMode()
+  if (mode === 'ready') return readyAgentPresetCollectionOwner() ?? []
+  if (mode === 'unavailable') return []
+  const database = compatibilityDatabase()
+  return isStableAgentPresetCollection(database.agentPresets) ? database.agentPresets : []
 }
 
 function agentPresetSettingsOwner(): DatabaseRecord | undefined {
-  if (agentPresetSettingsGroupReady()) {
+  const mode = agentPresetSettingsOwnerMode()
+  if (mode === 'ready') {
     return readyAgentPresetCollectionOwner() ? (settingsResourceState.value as DatabaseRecord) : undefined
   }
-  return getDatabase() as unknown as DatabaseRecord
+  if (mode === 'unavailable') return undefined
+  return compatibilityDatabase() as unknown as DatabaseRecord
 }
 
 function agentPresetCollectionOwnerWrite(presets: AgentPresetRecord[]): boolean {
   if (!isStableAgentPresetCollection(presets)) return false
-  if (agentPresetSettingsGroupReady()) {
+  const mode = agentPresetSettingsOwnerMode()
+  if (mode === 'ready') {
     if (!readyAgentPresetCollectionOwner()) return false
     ;(settingsResourceState.value as DatabaseRecord).agentPresets = presets
     return true
   }
+  if (mode === 'unavailable') return false
   return withTrustedResourceWrite(() => {
-    getDatabase().agentPresets = presets
+    compatibilityDatabase().agentPresets = presets
     return true
   })
 }
 
 function agentPresetDefaultOwnerRead(): string | undefined {
-  if (agentPresetSettingsGroupReady()) {
+  const mode = agentPresetSettingsOwnerMode()
+  if (mode === 'ready') {
     const presets = readyAgentPresetCollectionOwner()
     if (!presets) return undefined
     const id = nonBlankId((settingsResourceState.value as DatabaseRecord).agentPresetDefaultId)
     return id && presets.some((preset) => preset.id === id) ? id : undefined
   }
-  return nonBlankId(getDatabase().agentPresetDefaultId)
+  if (mode === 'unavailable') return undefined
+  const database = compatibilityDatabase()
+  const id = nonBlankId(database.agentPresetDefaultId)
+  return id && agentPresetCollectionOwnerRead().some((preset) => preset.id === id) ? id : undefined
 }
 
-function characterRowsOwner(): NonNullable<ReturnType<typeof getDatabase>['characters']> {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
+function characterOwnerMode(characterId?: string): AgentPresetOwnerMode {
+  if (charactersResourceState.status === 'error') return 'unavailable'
+  if (characterId && charactersResourceState.rowStatuses[characterId] === 'error') return 'unavailable'
+  if (charactersResourceState.status === 'ready') return 'ready'
+  return 'compatibility'
 }
 
-function uniqueCharacterOwner(
-  characterId: string,
-): NonNullable<ReturnType<typeof getDatabase>['characters']>[number] | undefined {
+type CharacterRows = NonNullable<ReturnType<typeof getDatabase>['characters']>
+
+function characterRowsOwner(): CharacterRows {
+  const mode = characterOwnerMode()
+  if (mode === 'ready') return charactersResourceState.characters
+  if (mode === 'unavailable') return []
+  return compatibilityDatabase().characters ?? []
+}
+
+function uniqueCharacterOwner(characterId: string): CharacterRows[number] | undefined {
   if (!nonBlankId(characterId)) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+  const mode = characterOwnerMode(characterId)
+  if (mode === 'ready') return getCharacterResourceOwner(characterId)
+  if (mode === 'unavailable') return undefined
   const matches = characterRowsOwner().filter((candidate) => candidate?.chaId === characterId)
   return matches.length === 1 ? matches[0] : undefined
 }
 
 function readyLoadoutCollectionOwner(): DatabaseRecord[] | undefined {
-  if (collectionsResourceState.statuses.loadouts !== 'ready') return undefined
+  if (loadoutCollectionOwnerMode() !== 'ready') return undefined
   const loadouts = collectionsResourceState.values.loadouts
   if (!isStableRecordCollection(loadouts)) return undefined
   return loadouts as unknown as DatabaseRecord[]
 }
 
+function loadoutCollectionOwnerMode(): AgentPresetOwnerMode {
+  const status = collectionsResourceState.statuses.loadouts
+  if (status === 'error' || collectionsResourceState.status === 'error') return 'unavailable'
+  if (status === 'ready') return 'ready'
+  return 'compatibility'
+}
+
 function loadoutCollectionOwnerRead(): DatabaseRecord[] {
-  if (collectionsResourceState.statuses.loadouts === 'ready') return readyLoadoutCollectionOwner() ?? []
-  return (getDatabase().loadouts ?? []) as unknown as DatabaseRecord[]
+  const mode = loadoutCollectionOwnerMode()
+  if (mode === 'ready') return readyLoadoutCollectionOwner() ?? []
+  if (mode === 'unavailable') return []
+  return (compatibilityDatabase().loadouts ?? []) as unknown as DatabaseRecord[]
+}
+
+function agentPresetReferenceOwnerMode(): AgentPresetOwnerMode {
+  const modes = [agentPresetSettingsOwnerMode(), characterOwnerMode(), loadoutCollectionOwnerMode()]
+  if (modes.includes('unavailable')) return 'unavailable'
+  return modes.includes('compatibility') ? 'compatibility' : 'ready'
+}
+
+function withAgentPresetReferenceOwnerWrite<T>(callback: () => T): T | undefined {
+  const mode = agentPresetReferenceOwnerMode()
+  if (mode === 'unavailable') return undefined
+  if (mode === 'ready') return callback()
+  return withTrustedResourceWrite(callback)
 }
 
 function isStableAgentPresetCollection(value: unknown): value is AgentPresetRecord[] {
@@ -229,6 +285,16 @@ function isStableAgentPresetCollection(value: unknown): value is AgentPresetReco
       const stepId = nonBlankId(step.id)
       if (!stepId || stepIds.has(stepId)) return false
       stepIds.add(stepId)
+    }
+    if (candidate.agentUses !== undefined) {
+      if (!Array.isArray(candidate.agentUses)) return false
+      const useIds = new Set<string>()
+      for (const use of candidate.agentUses) {
+        if (!isDatabaseRecord(use)) return false
+        const useId = nonBlankId(use.id)
+        if (!useId || useIds.has(useId)) return false
+        useIds.add(useId)
+      }
     }
     presetIds.add(presetId)
   }
@@ -1241,24 +1307,25 @@ function optimisticallyDeleteAgentPreset(presetId: string): (() => void) | undef
     const index = presets.indexOf(preset)
     if (index !== -1) agentPresetCollectionOwnerWrite(presets.filter((_, candidateIndex) => candidateIndex !== index))
   })
-  const referenceRollbacks = withTrustedResourceWrite(() => {
-    const rollbacks: AgentPresetDeleteFieldRollback[] = []
-    const settings = agentPresetSettingsOwner()
-    if (settings?.agentPresetDefaultId === presetId) {
-      const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
-      rollbacks.push(
-        captureAgentPresetDeleteFieldRollback({
-          target: settings,
-          resolveTarget: () => agentPresetSettingsOwner(),
-          keys: ['agentPresetDefaultId'],
-          mutate: () => delete settings.agentPresetDefaultId,
-          hasProjectionChanged: () => hasSettingsGroupProjectionEpochChanged('agents', projectionEpoch),
-        }),
-      )
-    }
-    rollbacks.push(...clearChatAgentPresetSelections(presetId), ...clearLoadoutAgentPresetSelections(presetId))
-    return rollbacks
-  })
+  const referenceRollbacks =
+    withAgentPresetReferenceOwnerWrite(() => {
+      const rollbacks: AgentPresetDeleteFieldRollback[] = []
+      const settings = agentPresetSettingsOwner()
+      if (settings?.agentPresetDefaultId === presetId) {
+        const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+        rollbacks.push(
+          captureAgentPresetDeleteFieldRollback({
+            target: settings,
+            resolveTarget: () => agentPresetSettingsOwner(),
+            keys: ['agentPresetDefaultId'],
+            mutate: () => delete settings.agentPresetDefaultId,
+            hasProjectionChanged: () => hasSettingsGroupProjectionEpochChanged('agents', projectionEpoch),
+          }),
+        )
+      }
+      rollbacks.push(...clearChatAgentPresetSelections(presetId), ...clearLoadoutAgentPresetSelections(presetId))
+      return rollbacks
+    }) ?? []
 
   return () => {
     presetRollback?.()
@@ -1266,12 +1333,13 @@ function optimisticallyDeleteAgentPreset(presetId: string): (() => void) | undef
     // superseded by a later edit. The agents taint forces authoritative
     // reconciliation before a later local acknowledgement can fence it.
     if (!uniqueAgentPresetById(presetId)) return
-    const reconciliationTargets = withTrustedResourceWrite(() =>
-      referenceRollbacks.flatMap((rollback) => {
-        const target = restoreAgentPresetDeleteFields(rollback)
-        return target ? [target] : []
-      }),
-    )
+    const reconciliationTargets =
+      withAgentPresetReferenceOwnerWrite(() =>
+        referenceRollbacks.flatMap((rollback) => {
+          const target = restoreAgentPresetDeleteFields(rollback)
+          return target ? [target] : []
+        }),
+      ) ?? []
     scheduleAgentPresetDeleteReferenceReconciliation(reconciliationTargets)
   }
 }
@@ -1322,9 +1390,13 @@ function applyOptimisticAgentPresetFields(
 ): OptimisticAgentPresetFieldPatch {
   const keys = Object.keys(patch).filter((key) => key !== 'id')
   const previous = snapshotKeys(target, keys)
-  withTrustedResourceWrite(() => {
+  const mode = agentPresetSettingsOwnerMode()
+  if (mode === 'unavailable') return {}
+  const apply = () => {
     for (const key of keys) target[key] = patch[key]
-  })
+  }
+  if (mode === 'ready') apply()
+  else withTrustedResourceWrite(apply)
   const attempted = snapshotKeys(target, keys)
   const attemptedFields = snapshotJsonFieldStates(target, keys)
   return {
@@ -1338,7 +1410,9 @@ function applyOptimisticAgentPresetFields(
     rollback: () => {
       const liveTarget = resolveTarget()
       if (!liveTarget) return
-      withTrustedResourceWrite(() => {
+      const rollbackMode = agentPresetSettingsOwnerMode()
+      if (rollbackMode === 'unavailable') return
+      const restore = () => {
         applyAttemptedFieldRollback({
           target: liveTarget,
           previous,
@@ -1346,7 +1420,9 @@ function applyOptimisticAgentPresetFields(
           keys,
           deleteMissingPrevious: true,
         })
-      })
+      }
+      if (rollbackMode === 'ready') restore()
+      else withTrustedResourceWrite(restore)
     },
   }
 }
@@ -1362,6 +1438,7 @@ function snapshotJsonFieldStates(target: DatabaseRecord, keys: readonly string[]
 }
 
 function uniqueAgentPresetById(presetId: string): AgentPresetRecord | undefined {
+  if (!nonBlankId(presetId)) return undefined
   const matches = getAgentPresets().filter((preset) => preset.id === presetId)
   return matches.length === 1 ? matches[0] : undefined
 }
@@ -1403,15 +1480,19 @@ function optimisticallyReorderAgentPresetSteps(presetId: string, stepIds: string
 }
 
 function withAgentPresetRollback(keys: string[], mutate: () => void): (() => void) | undefined {
+  const mode = agentPresetSettingsOwnerMode()
+  if (mode === 'unavailable') return undefined
   const target = agentPresetSettingsOwner()
   if (!target) return undefined
   const previous = snapshotKeys(target, keys)
-  if (agentPresetSettingsGroupReady()) mutate()
+  if (mode === 'ready') mutate()
   else withTrustedResourceWrite(mutate)
   const attempted = snapshotKeys(target, keys)
   return () => {
     const liveTarget = agentPresetSettingsOwner()
     if (!liveTarget) return
+    const rollbackMode = agentPresetSettingsOwnerMode()
+    if (rollbackMode === 'unavailable') return
     const restore = () => {
       applyAttemptedFieldRollback({
         target: liveTarget,
@@ -1421,7 +1502,7 @@ function withAgentPresetRollback(keys: string[], mutate: () => void): (() => voi
         deleteMissingPrevious: true,
       })
     }
-    if (agentPresetSettingsGroupReady()) restore()
+    if (rollbackMode === 'ready') restore()
     else withTrustedResourceWrite(restore)
   }
 }
