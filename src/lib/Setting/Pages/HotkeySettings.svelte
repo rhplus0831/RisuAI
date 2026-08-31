@@ -1,6 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import type { Hotkey } from 'src/ts/defaulthotkeys'
 
@@ -12,9 +12,26 @@
 
   // Replace the projected array instead of mutating a hotkey row in place.
   function patchHotkey(index: number, patch: Partial<Hotkey>): void {
-    const next = getDatabase().hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
+    const hotkeys = readHotkeys(settingsResourceState.value.hotkeys)
+    const next = hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
     applyServerBackedSetting('hotkeys', next)
   }
+
+  function readHotkeys(value: unknown): Hotkey[] {
+    if (!Array.isArray(value)) return []
+    const actions = new Set<string>()
+    for (const hotkey of value) {
+      if (!hotkey || typeof hotkey !== 'object' || Array.isArray(hotkey)) return []
+      const action = (hotkey as { action?: unknown }).action
+      if (typeof action !== 'string' || action.length === 0 || actions.has(action)) return []
+      actions.add(action)
+    }
+    return value as Hotkey[]
+  }
+
+  let hotkeys = $derived(
+    settingsResourceState.groupStatuses.sidebar === 'ready' ? readHotkeys(settingsResourceState.value.hotkeys) : [],
+  )
 
   function recordHotkey(event: KeyboardEvent & { currentTarget: HTMLInputElement }, index: number): void {
     if (event.key === 'Tab') return
@@ -44,7 +61,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each getDatabase().hotkeys as hotkey, index}
+      {#each hotkeys as hotkey, index}
         <tr>
           <td>{language.hotkeyDesc[hotkey.action]}</td>
           <td>

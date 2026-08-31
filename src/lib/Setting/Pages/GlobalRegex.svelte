@@ -3,7 +3,7 @@
   import { language } from 'src/lang'
   import Help from 'src/lib/Others/Help.svelte'
 
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
@@ -13,10 +13,16 @@
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
   import { onDestroy } from 'svelte'
 
-  const globalScriptDraft = createServerBackedSettingDraft('globalscript', getDatabase().globalscript, {
-    dispatch: false,
-    normalizeDraft: ensureClientScriptDefinitionIds,
-  })
+  const globalScriptDraft = createServerBackedSettingDraft(
+    'globalscript',
+    settingsResourceState.groupStatuses.advanced === 'ready' && Array.isArray(settingsResourceState.value.globalscript)
+      ? settingsResourceState.value.globalscript
+      : [],
+    {
+      dispatch: false,
+      normalizeDraft: ensureClientScriptDefinitionIds,
+    },
+  )
   const stopWatchingGlobalScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'globalScripts' } })
   onDestroy(stopWatchingGlobalScripts)
 </script>

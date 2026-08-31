@@ -2,7 +2,7 @@
   import { language } from 'src/lang'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, type BardWikiGlobalSettings } from '@risuai/protocol'
 
@@ -10,8 +10,28 @@
     ...DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
   })
 
-  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
-  let promptPresets = $derived(Array.isArray(getDatabase().promptPresets) ? getDatabase().promptPresets : [])
+  let modelProfiles = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready'
+      ? uniqueRowsWithStableIds(settingsResourceState.value.modelProfiles)
+      : [],
+  )
+  let promptPresets = $derived(
+    collectionsResourceState.statuses.promptPresets === 'ready'
+      ? uniqueRowsWithStableIds(collectionsResourceState.values.promptPresets)
+      : [],
+  )
+
+  function uniqueRowsWithStableIds(value: unknown): Array<{ id: string; name?: string }> {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const row of value) {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) return []
+      const id = (row as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as Array<{ id: string; name?: string }>
+  }
 
   function updateSetting<Key extends keyof BardWikiGlobalSettings>(key: Key, value: BardWikiGlobalSettings[Key]): void {
     settings.value = { ...settings.value, [key]: value }

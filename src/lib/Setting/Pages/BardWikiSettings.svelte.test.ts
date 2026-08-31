@@ -3,23 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const bardWikiMocks = vi.hoisted(() => ({
   draft: { value: {} as Record<string, unknown> },
-  database: {
-    modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
-    promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
-  },
 }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   createServerBackedSettingDraft: () => bardWikiMocks.draft,
 }))
 
-vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => bardWikiMocks.database,
-}))
-
 import BardWikiSettings from './BardWikiSettings.svelte'
 import { language } from 'src/lang'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -28,6 +21,10 @@ let target: HTMLElement
 
 beforeEach(() => {
   bardWikiMocks.draft.value = structuredClone(DEFAULT_BARDWIKI_GLOBAL_SETTINGS)
+  replaceResourceDatabase({
+    modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
+    promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
+  } as any)
   target = document.createElement('div')
   document.body.appendChild(target)
 })

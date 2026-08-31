@@ -1,24 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const hotkeyMocks = vi.hoisted(() => ({
-  db: {
-    hotkeys: [
-      {
-        action: 'send',
-        key: 'Enter',
-        ctrl: true,
-        shift: false,
-        alt: true,
-      },
-    ],
-  },
-  applyServerBackedSetting: vi.fn(),
-}))
-
-vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => hotkeyMocks.db,
-}))
+const hotkeyMocks = vi.hoisted(() => ({ applyServerBackedSetting: vi.fn() }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   applyServerBackedSetting: hotkeyMocks.applyServerBackedSetting,
@@ -34,6 +17,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import HotkeySettings from './HotkeySettings.svelte'
 import { language } from 'src/lang'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -57,6 +41,9 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   hotkeyMocks.applyServerBackedSetting.mockReset()
+  replaceResourceDatabase({
+    hotkeys: [{ action: 'send', key: 'Enter', ctrl: true, shift: false, alt: true }],
+  } as any)
   component = mount(HotkeySettings, { target })
 })
 

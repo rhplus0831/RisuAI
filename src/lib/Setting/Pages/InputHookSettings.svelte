@@ -11,17 +11,55 @@
     isModelProfileDividerSelectValue,
     modelProfileDividerSelectValue,
     modelProfileListItems,
+    type ModelProfileRecord,
   } from 'src/ts/model/modelProfileRecords'
   import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
-  import { getDatabase, type InputHook } from 'src/ts/storage/database.svelte'
+  import type { InputHook } from 'src/ts/storage/database.svelte'
   import { createDefaultInputHooks } from 'src/ts/storage/defaultPrompts'
 
   const inputHooksDraft = createServerBackedSettingDraft<InputHook[]>('inputHooks', createDefaultInputHooks())
   let newHookType = $state<InputHook['type']>('draft')
-  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
-  let modelProfileItems = $derived(modelProfileListItems(modelProfiles, getDatabase().modelProfileOrder))
+  let modelProfiles = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' && settingsResourceState.groupStatuses.models === 'ready'
+      ? readModelProfileOwners(settingsResourceState.value.modelProfiles)
+      : [],
+  )
+  let modelProfileItems = $derived(
+    settingsResourceState.groupStatuses.providers === 'ready' && settingsResourceState.groupStatuses.models === 'ready'
+      ? hasUniqueModelProfileOrder(settingsResourceState.value.modelProfileOrder)
+        ? modelProfileListItems(modelProfiles, settingsResourceState.value.modelProfileOrder)
+        : []
+      : [],
+  )
+
+  function readModelProfileOwners(value: unknown): ModelProfileRecord[] {
+    if (!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    for (const profile of value) {
+      if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return []
+      const id = (profile as { id?: unknown }).id
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return []
+      ids.add(id)
+    }
+    return value as ModelProfileRecord[]
+  }
+
+  function hasUniqueModelProfileOrder(value: unknown): boolean {
+    if (value === undefined) return true
+    if (!Array.isArray(value)) return false
+    const ids = new Set<string>()
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+      const row = entry as { kind?: unknown; profileId?: unknown; id?: unknown }
+      const id = row.kind === 'profile' ? row.profileId : row.kind === 'divider' ? row.id : undefined
+      if (typeof id !== 'string' || id.trim() !== id || id.length === 0 || ids.has(id)) return false
+      ids.add(id)
+    }
+    return true
+  }
 
   function updateHooks(updater: (hooks: InputHook[]) => void): void {
     const hooks = inputHooksDraft.value.map((hook) => ({ ...hook }))

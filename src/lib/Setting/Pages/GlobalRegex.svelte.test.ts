@@ -12,9 +12,6 @@ vi.mock('src/lib/Others/Help.svelte', async () => ({
 vi.mock('src/lib/SideBars/Scripts/RegexList.svelte', async () => ({
   default: (await import('./GlobalRegex.testStub.svelte')).default,
 }))
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({ globalscript: [] }),
-}))
 vi.mock('src/ts/process/scripts', () => ({
   exportRegex: regexMocks.exportRegex,
   importRegexRows: regexMocks.importRegexRows,
@@ -29,6 +26,7 @@ vi.mock('src/ts/server/scriptDefinitionBridge.svelte', () => ({
 
 import GlobalRegex from './GlobalRegex.svelte'
 import { language } from 'src/lang'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -36,6 +34,7 @@ let component: MountedComponent | undefined
 let target: HTMLElement
 
 beforeEach(() => {
+  replaceResourceDatabase({ globalscript: [] } as any)
   target = document.createElement('div')
   document.body.appendChild(target)
   regexMocks.exportRegex.mockReset()

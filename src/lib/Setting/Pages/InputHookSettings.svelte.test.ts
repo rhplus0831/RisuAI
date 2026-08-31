@@ -27,17 +27,6 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
   }
 })
 
-vi.mock('src/ts/storage/database.svelte', async () => {
-  const { fromStore, writable } = await import('svelte/store')
-  const database = writable<Record<string, unknown>>({})
-  const reactiveDatabase = fromStore(database)
-
-  return {
-    getDatabase: () => reactiveDatabase.current,
-    setDatabaseLite: (value: Record<string, unknown>) => database.set(value),
-  }
-})
-
 vi.mock('src/ts/process/templates/templates', () => ({
   prebuiltPresets: { OAI: { mainPrompt: '', jailbreak: '' } },
 }))
@@ -47,7 +36,7 @@ vi.mock('src/lib/UI/GUI/TextAreaInput.svelte', async () => ({
 }))
 
 import { language } from 'src/lang'
-import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import InputHookSettings from './InputHookSettings.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -74,7 +63,7 @@ beforeEach(() => {
       prompt: 'Rewrite this.',
     },
   ])
-  setDatabaseLite({
+  replaceResourceDatabase({
     modelProfiles: [
       { id: 'profile-a', name: 'Profile A', modelId: 'echo_model' },
       { id: 'profile-b', name: 'Profile B', modelId: 'echo_model' },
@@ -96,7 +85,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setDatabaseLite({} as any)
+  replaceResourceDatabase({} as any)
   target.remove()
   document.body.innerHTML = ''
 })

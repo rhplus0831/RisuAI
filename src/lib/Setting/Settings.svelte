@@ -24,7 +24,7 @@
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { isLite } from 'src/ts/lite'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import LazyComponent from '../UI/LazyComponent.svelte'
@@ -59,6 +59,28 @@
   let viewportWidth = $state(window.innerWidth)
   let splitSettingsLayout = $derived(viewportWidth >= 700 && !$MobileGUI)
   let mobileSettingsLayout = $derived(!splitSettingsLayout)
+  let doNotWarnExternalServers = $derived(
+    settingsResourceState.groupStatuses.advanced === 'ready' &&
+      settingsResourceState.value.doNotWarnExternalServers === true,
+  )
+  let showGlobalLorebookAndRegex = $derived(
+    settingsResourceState.groupStatuses.advanced === 'ready' &&
+      settingsResourceState.value.showGlobalLorebookAndRegex === true,
+  )
+  let enableRisuaiProTools = $derived(
+    settingsResourceState.groupStatuses.sidebar === 'ready' &&
+      settingsResourceState.value.enableRisuaiProTools === true,
+  )
+  let settingsCloseButtonSize = $derived(
+    settingsResourceState.groupStatuses.display === 'ready'
+      ? settingsResourceState.value.settingsCloseButtonSize
+      : undefined,
+  )
+  let hasBotPresets = $derived(
+    collectionsResourceState.statuses.botPresets === 'ready' &&
+      Array.isArray(collectionsResourceState.values.botPresets) &&
+      collectionsResourceState.values.botPresets.length > 0,
+  )
 
   function updateViewportWidth(): void {
     viewportWidth = window.innerWidth
@@ -73,7 +95,7 @@
   async function openSupporterThanks() {
     if ($SettingsMenuIndex === 77 || supporterConfirmOpen) return
 
-    if (getDatabase().doNotWarnExternalServers) {
+    if (doNotWarnExternalServers) {
       navigate('/settings/supporter')
       return
     }
@@ -167,7 +189,7 @@
               <WebhookIcon size={20} />
               <span>{language.settingsNavInputHooks}</span>
             </button>
-            {#if getDatabase().botPresets?.length > 0}
+            {#if hasBotPresets}
               <button
                 class={navButtonClass($SettingsMenuIndex === 1)}
                 data-risu-route-intent="/settings/bot-preset"
@@ -286,7 +308,7 @@
             <HistoryIcon size={20} />
             <span>{language.settingsNavRequestHistory}</span>
           </button>
-          {#if !$isLite && getDatabase().showGlobalLorebookAndRegex}
+          {#if !$isLite && showGlobalLorebookAndRegex}
             <button
               class={navButtonClass($SettingsMenuIndex === 8)}
               data-risu-route-intent="/settings/global-lorebook"
@@ -346,7 +368,7 @@
               {/each}
             {/if}
 
-            {#if getDatabase().enableRisuaiProTools}
+            {#if enableRisuaiProTools}
               <button
                 class={navButtonClass($SettingsMenuIndex === 16)}
                 onclick={() => {
@@ -374,7 +396,7 @@
             onclick={() => {
               closeSettingsRoute()
             }}>
-            <CircleXIcon size={getDatabase().settingsCloseButtonSize} />
+            <CircleXIcon size={settingsCloseButtonSize} />
           </button>
         {/if}
       </div>
@@ -390,14 +412,14 @@
               title={language.goback}
               data-risu-settings-mobile-back
               onclick={goBackToSettingsList}>
-              <ArrowLeftIcon size={getDatabase().settingsCloseButtonSize} />
+              <ArrowLeftIcon size={settingsCloseButtonSize} />
               <span class="sr-only">{language.goback}</span>
             </button>
           {/if}
           {#if $SettingsMenuIndex === 0}
             <LazyComponent loader={loadUserSettings} fill testId="settings-user" />
           {:else if $SettingsMenuIndex === 1}
-            {#if getDatabase().botPresets?.length > 0}
+            {#if hasBotPresets}
               <LazyComponent
                 loader={loadBotSettings}
                 componentProps={{
@@ -478,7 +500,7 @@
           onclick={() => {
             closeSettingsRoute()
           }}>
-          <CircleXIcon size={getDatabase().settingsCloseButtonSize} />
+          <CircleXIcon size={settingsCloseButtonSize} />
         </button>
       {/if}
     {/if}

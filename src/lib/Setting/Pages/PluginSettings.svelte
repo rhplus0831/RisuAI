@@ -5,7 +5,7 @@
   import { alertConfirm, alertSelect } from 'src/ts/alert'
 
   import { hotReloading } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { collectionsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     checkPluginUpdate,
     createBlankPlugin,
@@ -66,11 +66,28 @@
   let pluginUpdateStates = $state<Record<string, PluginUpdateUiState>>({})
 
   function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
-    const plugins = getDatabase().plugins ?? []
+    if (collectionsResourceState.statuses.plugins !== 'ready') return null
+    const plugins = readPlugins(collectionsResourceState.values.plugins)
     const index = plugins.findIndex((candidate) => candidate.name === pluginName)
     if (index === -1) return null
     return { plugin: plugins[index], index }
   }
+
+  function readPlugins(value: unknown): RisuPlugin[] {
+    if (!Array.isArray(value)) return []
+    const names = new Set<string>()
+    for (const plugin of value) {
+      if (!plugin || typeof plugin !== 'object' || Array.isArray(plugin)) return []
+      const name = (plugin as { name?: unknown }).name
+      if (typeof name !== 'string' || name.trim() !== name || name.length === 0 || names.has(name)) return []
+      names.add(name)
+    }
+    return value as RisuPlugin[]
+  }
+
+  let plugins = $derived(
+    collectionsResourceState.statuses.plugins === 'ready' ? readPlugins(collectionsResourceState.values.plugins) : [],
+  )
 
   function pluginParamsId(pluginName: string): string {
     return `plugin-params-${pluginName.replace(/[^a-zA-Z0-9_-]/g, '-')}`
@@ -372,10 +389,10 @@
 <span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
 
 <div class="border-solid border-darkborderc p-2 flex flex-col border-1">
-  {#if !getDatabase().plugins || getDatabase().plugins?.length === 0}
+  {#if plugins.length === 0}
     <span class="text-textcolor2">{language.noPlugins}</span>
   {/if}
-  {#each getDatabase().plugins as plugin, i (plugin.name)}
+  {#each plugins as plugin, i (plugin.name)}
     {#if i !== 0}
       <div class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"></div>
     {/if}
