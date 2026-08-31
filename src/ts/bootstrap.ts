@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
+import { setResourceWriteGuardEnabled } from './storage/database.svelte'
 import { botMakerMode } from './stores.svelte'
 import { LoadingStatusState, selectedCharID } from './stores/coreStores.svelte'
 import { currentRoute } from './router'
@@ -17,7 +17,6 @@ import { language } from 'src/lang'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { updateGuisize } from './gui/guisize'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
-import { settingsResourceState } from './server/resourceState.svelte'
 import { subscribeServerCommandEvents, type ServerMemoryEvent, type ServerMemoryJobSnapshot } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import { publishServerBardWikiJobEvent, publishServerBardWikiJobSnapshot } from './server/bardWikiJobEvents'
@@ -159,6 +158,9 @@ import {
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
   hasChatBodyProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
@@ -169,8 +171,8 @@ import {
   isCollectionAcknowledgementTainted,
   isSettingsAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
+  settingsResourceState,
 } from './server/resourceState.svelte'
-import { withServerResourceApply, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 import {
   ensurePromptTemplateHydrated,
@@ -244,7 +246,7 @@ setSettingsRuntimeProjectionHook((keys) => {
   if (keys.includes('animationSpeed') || keys.includes('reducedMotion')) updateReducedMotion()
   if (keys.includes('heightMode')) updateHeightMode()
   if (backgroundReady() && keys.includes('notification')) {
-    void reconcileProjectedPushNotificationSetting(getDatabase().notification === true)
+    void reconcileProjectedPushNotificationSetting(settingsResourceState.value.notification === true)
   }
 })
 
@@ -281,13 +283,17 @@ setActiveGenerationReattachReadinessPredicate(
   () => startupChatReattachReady && startupGenerationRecoveryReady && isPluginRuntimeReady(),
 )
 
-function initialSelectedCharFromDatabase(db: Database): number {
-  const currentChar = (db as { currentChar?: unknown }).currentChar
-  const characterCount = Array.isArray(db.characters) ? db.characters.length : 0
+function initialSelectedCharacterIndex(): number {
+  const currentChar = charactersResourceState.currentChar
+  const characterCount = charactersResourceState.characters.length
   if (Number.isInteger(currentChar) && (currentChar as number) >= 0 && (currentChar as number) < characterCount) {
     return currentChar as number
   }
   return -1
+}
+
+function applyResourceOwnerMutation<T>(mutation: () => T): T {
+  return mutation()
 }
 
 let loadDataInFlight: Promise<void> | null = null
@@ -354,7 +360,7 @@ async function runLoadDataAttempt(): Promise<StartupRetryTarget | null> {
     }
     startStartupChatReadinessSync(startupAttemptId)
     await backgroundReadiness
-    await reconcileProjectedPushNotificationSetting(getDatabase().notification === true)
+    await reconcileProjectedPushNotificationSetting(settingsResourceState.value.notification === true)
     recordStartupMilestone('background-ready')
     completeStartupAttempt(startupAttemptId)
     return null
@@ -398,8 +404,7 @@ async function loadPreWriterObserverShell(): Promise<boolean> {
     return false
   }
 
-  const database = getDatabase()
-  selectedCharID.set(initialSelectedCharFromDatabase(database))
+  selectedCharID.set(initialSelectedCharacterIndex())
   resetChatHydration()
   resetLorebookHydration()
   setAppliedServerResourceRevision(resources.revision)
@@ -408,7 +413,7 @@ async function loadPreWriterObserverShell(): Promise<boolean> {
   updateReducedMotion()
   updateHeightMode()
   updateGuisize()
-  if (database.botSettingAtStart) botMakerMode.set(true)
+  if (settingsResourceState.value.botSettingAtStart) botMakerMode.set(true)
   recordStartupMilestone('observer-ready')
   return true
 }
@@ -548,7 +553,7 @@ async function settleStartupBackgroundReadiness(startupAttemptId: number): Promi
       stopPushRuntime ??= pushRuntime.stopPushNotificationCoordinator
       const { initializePushNotificationCoordinator, reconcileChatCompletionPushNotificationSetting } = pushRuntime
       await initializePushNotificationCoordinator()
-      await reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+      await reconcileChatCompletionPushNotificationSetting(settingsResourceState.value.notification === true)
     }),
     runStartupStep('background-runtime', async () => {
       await resourceReadiness
@@ -705,16 +710,15 @@ function startStartupChatReadinessSync(startupAttemptId: number): void {
 function currentStartupChatReadinessTarget(): string {
   const route = get(currentRoute)
   const selectedIndex = get(selectedCharID)
-  const character = getDatabase().characters?.[selectedIndex]
+  const character = charactersResourceState.characters[selectedIndex]
   const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
   const promptPresetId = currentStartupPromptTemplateOwnerId()
   return `${route.kind}\u0000${route.path}\u0000${selectedIndex}\u0000${character?.chaId ?? ''}\u0000${chatId ?? ''}\u0000${promptPresetId ?? ''}`
 }
 
 function currentStartupPromptTemplateOwnerId(): string | null {
-  const database = getDatabase()
   const selectedIndex = get(selectedCharID)
-  const character = database.characters?.[selectedIndex]
+  const character = charactersResourceState.characters[selectedIndex]
   const chat = character?.chats?.[character?.chatPage ?? 0]
   const chatPromptPresetId = chat?.generationSettings?.promptPresetId
   if (typeof chatPromptPresetId === 'string' && chatPromptPresetId.trim() !== '') {
@@ -725,13 +729,14 @@ function currentStartupPromptTemplateOwnerId(): string | null {
 }
 
 export function currentGlobalPromptTemplateOwnerId(): string | null {
-  const database = getDatabase()
-  const selectedPromptPresetIndex = database.promptPresetsId
+  const promptPresets = collectionsResourceState.values.promptPresets
+  const selectedPromptPresetIndex = settingsResourceState.value.promptPresetsId
   if (!Number.isInteger(selectedPromptPresetIndex) || selectedPromptPresetIndex < 0) return null
-  const selectedPromptPreset = database.promptPresets?.[selectedPromptPresetIndex]
+  if (!Array.isArray(promptPresets)) return null
+  const selectedPromptPreset = promptPresets[selectedPromptPresetIndex]
   const selectedPromptPresetId = selectedPromptPreset?.id
   if (typeof selectedPromptPresetId !== 'string' || selectedPromptPresetId.trim() === '') return null
-  return resolveUniquePromptPreset(database.promptPresets, selectedPromptPresetId)?.id ?? null
+  return resolveUniquePromptPreset(promptPresets, selectedPromptPresetId)?.id ?? null
 }
 
 export async function loadWebInitialDatabase(options: { coordinated?: boolean } = {}) {
@@ -825,12 +830,11 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     return result
   })
 
-  const database = await runWriterStep('writer-projection-install', async () => {
-    const result = getDatabase()
-    selectedCharID.set(initialSelectedCharFromDatabase(result))
+  await runWriterStep('writer-projection-install', async () => {
+    selectedCharID.set(initialSelectedCharacterIndex())
     resetChatHydration()
     resetLorebookHydration()
-    recordHydratedCharacterLorebooks(result.characters)
+    recordHydratedCharacterLorebooks(charactersResourceState.characters)
     setCachedServerCommandRevision(resources.revision)
     setAppliedServerResourceRevision(resources.revision)
     markReplacementDatabaseOwnershipRefreshed({ databaseLineage, writerEpoch })
@@ -848,9 +852,8 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     updateReducedMotion()
     updateHeightMode()
     updateGuisize()
-    if (result.botSettingAtStart) botMakerMode.set(true)
+    if (settingsResourceState.value.botSettingAtStart) botMakerMode.set(true)
     recordStartupMilestone('observer-ready')
-    return result
   })
   await runWriterStep('writer-runtime-services', () => {
     applyGenerationOperationBootstrap(runtime, 'startup')
@@ -872,7 +875,6 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
       serverResourceRuntimeReplayEnabled = true
     }
   })
-  return { database }
 }
 
 /**
@@ -1256,7 +1258,7 @@ function applyLegacyPresetPatchAcknowledgement(
   ) {
     return false
   }
-  return withServerResourceApply(() =>
+  return applyResourceOwnerMutation(() =>
     applyLegacyPresetPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -1291,7 +1293,7 @@ function applyPresetReorderAcknowledgement(event: CommandEvent, localEffect: Pre
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyPresetReorderLocalEffect({
       revision: event.revision,
       presetKind: localEffect.presetKind,
@@ -1319,7 +1321,7 @@ function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: Pers
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyPersonaPatchLocalEffect({
       revision: event.revision,
       personaId: localEffect.personaId,
@@ -1356,7 +1358,7 @@ function applyPersonaMutationAcknowledgement(event: CommandEvent, localEffect: P
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyPersonaMutationLocalEffect({
       revision: event.revision,
       operation: localEffect.operation,
@@ -1386,7 +1388,7 @@ function applyAgentPresetCollectionMutationAcknowledgement(
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyAgentPresetCollectionMutationLocalEffect({
       revision: event.revision,
       operation: localEffect.operation,
@@ -1410,7 +1412,7 @@ function applyAgentPresetPatchAcknowledgement(event: CommandEvent, localEffect: 
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyAgentPresetPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -1437,7 +1439,7 @@ function applyAgentPresetStepPatchAcknowledgement(
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyAgentPresetStepPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -1452,10 +1454,12 @@ function applyTranslatorPresetPatchAcknowledgement(
   event: CommandEvent,
   localEffect: TranslatorPresetPatchLocalEffect,
 ): boolean {
-  const database = getDatabase()
-  const selectedId = database.translatorPresetId
+  const translatorPresets = collectionsResourceState.values.translatorPresets
+  const selectedId = settingsResourceState.value.translatorPresetId
   const selectedPreset =
-    typeof selectedId === 'string' ? database.translatorPresets?.find((preset) => preset.id === selectedId) : undefined
+    typeof selectedId === 'string' && Array.isArray(translatorPresets)
+      ? translatorPresets.find((preset) => preset.id === selectedId)
+      : undefined
   if (
     event.type !== 'translatorPreset.updated' ||
     event.resource !== 'translatorPreset' ||
@@ -1474,7 +1478,7 @@ function applyTranslatorPresetPatchAcknowledgement(
   ) {
     return false
   }
-  return withTrustedResourceWrite(() =>
+  return applyResourceOwnerMutation(() =>
     applyTranslatorPresetPatchLocalEffect({
       revision: event.revision,
       presetId: localEffect.presetId,
@@ -1525,7 +1529,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyChatGenerationSettingsLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1536,7 +1540,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       )
     case 'characterPatch':
       if (event.resource !== 'characterRow' || event.id !== localEffect.characterId) return false
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterPatchLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1545,7 +1549,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       )
     case 'characterSelection':
       if (event.resource !== 'characterSelection' || event.id !== localEffect.characterId) return false
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterSelectionLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1567,7 +1571,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterCollectionMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1584,7 +1588,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyChatPatchLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -1651,7 +1655,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
 
       let createdChatMatches: Array<{ characterId: string; message: unknown }> = []
       if (createsTranscript) {
-        createdChatMatches = (getDatabase().characters ?? []).flatMap((character) =>
+        createdChatMatches = charactersResourceState.characters.flatMap((character) =>
           (character.chats ?? [])
             .filter((chat) => chat.id === localEffect.targetId)
             .map((chat) => ({ characterId: character.chaId, message: chat.message })),
@@ -1665,7 +1669,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         }
       }
 
-      return withServerResourceApply(() => {
+      return applyResourceOwnerMutation(() => {
         if (
           !applyCharacterRowMutationLocalEffect({
             revision: event.revision,
@@ -1676,9 +1680,9 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           return false
         }
         if (createsTranscript && localEffect.targetId) {
-          const createdChat = (getDatabase().characters ?? [])
-            .find((character) => character.chaId === localEffect.characterId)
-            ?.chats?.find((chat) => chat.id === localEffect.targetId)
+          const createdChat = getCharacterResourceOwner(localEffect.characterId)?.chats?.find(
+            (chat) => chat.id === localEffect.targetId,
+          )
           if (
             createdChat &&
             JSON.stringify(createdChat.generationSettings ?? null) ===
@@ -1718,7 +1722,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applySettingsPatchLocalEffect({
           revision: event.revision,
           group: localEffect.group,
@@ -1736,7 +1740,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
             : 'pluginStorage.bulkUpdated'
       if (event.resource !== 'pluginStorage' || event.type !== expectedType) return false
       if (localEffect.operation === 'bulk' ? event.id !== undefined : event.id !== localEffect.key) return false
-      return withServerResourceApply(() => applyPluginStorageLocalEffect({ revision: event.revision }))
+      return applyResourceOwnerMutation(() => applyPluginStorageLocalEffect({ revision: event.revision }))
     }
     case 'pluginCollectionMutation': {
       const expectedType =
@@ -1751,7 +1755,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
                 : 'plugin.reordered'
       if (event.resource !== 'pluginCollection' || event.type !== expectedType) return false
       if (localEffect.operation === 'reorder' ? event.id !== undefined : event.id !== localEffect.pluginId) return false
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyPluginCollectionMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1768,7 +1772,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyPluginProviderLocalEffect({ revision: event.revision, provider: localEffect.provider }),
       )
     case 'moduleCollectionMutation': {
@@ -1810,7 +1814,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyModuleCollectionMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -1828,7 +1832,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyModuleEnabledLocalEffect({
           revision: event.revision,
           moduleId: localEffect.moduleId,
@@ -1867,7 +1871,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
 
-      return withServerResourceApply(() => {
+      return applyResourceOwnerMutation(() => {
         if (
           !applyPromptItemMutationLocalEffect({
             revision: event.revision,
@@ -1939,7 +1943,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         }
       }
 
-      return withServerResourceApply(() => {
+      return applyResourceOwnerMutation(() => {
         if (
           !applySplitPresetPatchLocalEffect({
             revision: event.revision,
@@ -2022,7 +2026,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
 
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyGlobalLorebookMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -2092,7 +2096,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
 
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyLorebookMutationLocalEffect({
           revision: event.revision,
           scope: localEffect.scope,
@@ -2133,7 +2137,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyLoadoutMutationLocalEffect({
           revision: event.revision,
           operation: localEffect.operation,
@@ -2155,7 +2159,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterRowMutationLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -2172,7 +2176,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyMessageTranslationLocalEffect(localEffect.chatId, localEffect.messageId, localEffect.translation),
       )
     case 'messageMutation': {
@@ -2197,7 +2201,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() => acknowledgeMessageMutationLocalEffect(localEffect.chatId))
+      return applyResourceOwnerMutation(() => acknowledgeMessageMutationLocalEffect(localEffect.chatId))
     }
     case 'characterRowMutation': {
       const expectedType =
@@ -2210,7 +2214,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       ) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterRowMutationLocalEffect({
           revision: event.revision,
           characterId: localEffect.characterId,
@@ -2222,19 +2226,20 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       if (event.type !== 'character.reordered' || event.resource !== 'characterOrder' || event.id !== undefined) {
         return false
       }
-      return withServerResourceApply(() =>
+      return applyResourceOwnerMutation(() =>
         applyCharacterOrderLocalEffect({ revision: event.revision, attemptedOrder: localEffect.attemptedOrder }),
       )
   }
 }
 
 function currentSplitPresetId(kind: 'model' | 'prompt'): string | null {
-  const database = getDatabase()
-  const presets = kind === 'model' ? database.modelPresets : database.promptPresets
-  const selectedIndex = kind === 'model' ? database.modelPresetsId : database.promptPresetsId
+  const presets =
+    kind === 'model' ? collectionsResourceState.values.modelPresets : collectionsResourceState.values.promptPresets
+  const selectedIndex =
+    kind === 'model' ? settingsResourceState.value.modelPresetsId : settingsResourceState.value.promptPresetsId
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(presets)) return null
   if (kind === 'prompt') {
-    return resolveUniquePromptPreset(database.promptPresets, presets[selectedIndex]?.id)?.id ?? null
+    return resolveUniquePromptPreset(presets, presets[selectedIndex]?.id)?.id ?? null
   }
   const id = presets[selectedIndex]?.id
   return typeof id === 'string' && id.trim() !== '' ? id : null
@@ -2242,21 +2247,19 @@ function currentSplitPresetId(kind: 'model' | 'prompt'): string | null {
 
 function currentPresetReorderSelection(kind: PresetReorderLocalEffect['presetKind']): string | null {
   if (kind === 'model') return currentSplitPresetId('model')
-  const database = getDatabase()
-  const selectedIndex = database.botPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(database.botPresets)) return null
-  const id = database.botPresets[selectedIndex]?.id
+  const botPresets = collectionsResourceState.values.botPresets
+  const selectedIndex = settingsResourceState.value.botPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(botPresets)) return null
+  const id = botPresets[selectedIndex]?.id
   return typeof id === 'string' && id.trim() !== '' ? id : null
 }
 
 function selectedPromptPresetOwnsTemplate(promptPresetId: string): boolean {
-  const database = getDatabase()
-  const selectedIndex = database.promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(database.promptPresets)) return false
-  const preset = resolveUniquePromptPreset(database.promptPresets, promptPresetId) as
-    | Record<string, unknown>
-    | undefined
-  if (!preset || preset !== database.promptPresets[selectedIndex]) return false
+  const promptPresets = collectionsResourceState.values.promptPresets
+  const selectedIndex = settingsResourceState.value.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(promptPresets)) return false
+  const preset = resolveUniquePromptPreset(promptPresets, promptPresetId) as Record<string, unknown> | undefined
+  if (!preset || preset !== promptPresets[selectedIndex]) return false
   return preset?.id === promptPresetId && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
@@ -2312,11 +2315,11 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
       // transcript is still fetched from its body endpoint.
       resetChatHydration()
       resetLorebookHydration()
-      recordHydratedCharacterLorebooks(getDatabase().characters)
+      recordHydratedCharacterLorebooks(charactersResourceState.characters)
       requestActiveChatReadinessRefresh()
       void hydrateActiveChat({ force: true })
     } else {
-      recordHydratedCharacterLorebooks(getDatabase().characters)
+      recordHydratedCharacterLorebooks(charactersResourceState.characters)
     }
 
     if (
@@ -2383,9 +2386,8 @@ function reconcileSelectedCharacterAfterResourceRefresh(
   events: readonly CommandEvent[],
   selection: SelectedCharacterRefreshSnapshot,
 ): void {
-  const database = getDatabase()
   if (!selection.selectionChanged && events.some((event) => event.resource === 'characterSelection')) {
-    selectedCharID.set(initialSelectedCharFromDatabase(database))
+    selectedCharID.set(initialSelectedCharacterIndex())
     return
   }
   if (selection.target.selectedIndex < 0) return
