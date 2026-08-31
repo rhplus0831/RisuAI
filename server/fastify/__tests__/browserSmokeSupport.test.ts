@@ -46,10 +46,13 @@ describe('browser-smoke support boundaries', () => {
     expect(globals).not.toContain('../../../src/')
     expect(globals).toContain('@risuai/shared-core/browser-smoke')
 
-    const startupRecovery = source('server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts')
-    expect(startupRecovery).not.toContain('../../../src/')
-    expect(startupRecovery).toContain('@risuai/shared-core/router-route')
-    expect(startupRecovery).toContain('@risuai/shared-core/resource-manifest')
+    const phase7DirectLinks = source('server/fastify/browser-smoke/phase7DirectLinks.ts')
+    const startupDirectLinks = source('server/fastify/browser-smoke/startupDirectLinks.spec.ts')
+    expect(phase7DirectLinks).not.toContain('../../../src/')
+    expect(phase7DirectLinks).toContain('@risuai/shared-core/router-route')
+    expect(phase7DirectLinks).toContain('@risuai/shared-core/resource-manifest')
+    expect(startupDirectLinks).not.toContain('../../../src/')
+    expect(startupDirectLinks).toContain('./phase7DirectLinks.js')
 
     expect(source('src/ts/routerRoute.ts').trim()).toBe("export * from '@risuai/shared-core/router-route'")
     expect(source('src/ts/server/resourceManifest.ts').trim()).toBe(

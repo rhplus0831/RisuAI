@@ -1,18 +1,8 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
-import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { buildLargeCorpusFixture } from '../../../test/fixtures/largeCorpusFixture.js'
-import {
-  PLAYGROUND_RESOURCE_SURFACE_BY_INDEX,
-  SETTINGS_RESOURCE_SURFACE_BY_INDEX,
-  resolveResourceRequirements,
-  resourceSurfacesForRoute,
-  type ResourceRequirement,
-} from '@risuai/shared-core/resource-manifest'
-import { parseRoute, routeKey, routePathFromState, type AppRoute } from '@risuai/shared-core/router-route'
 import { STARTUP_TELEMETRY_FAILURE_CODES, STARTUP_TELEMETRY_MILESTONES } from '@risuai/protocol/startup-telemetry'
-import type { StartupCoordinatorSnapshot, StartupReadinessSnapshot } from '@risuai/protocol/startup-telemetry'
 import { subscribeProtocolMetrics } from '../src/protocolMetrics.js'
 import {
   closeFastBootstrapHarness,
@@ -21,6 +11,13 @@ import {
   startFastBootstrapHarness,
   type ObserverShellMode,
 } from './fastBootstrapHarness.js'
+import {
+  emptyPhase7RecoveryArtifact,
+  writePhase7RecoveryPartial,
+  type BrowserStartupTelemetry,
+  type Phase7RecoveryArtifact,
+  type RolloutStartupCase,
+} from './phase7IntegrationArtifact.js'
 
 interface ApiRequestRecord {
   method: string
@@ -28,98 +25,17 @@ interface ApiRequestRecord {
   startedAtEpochMs: number
 }
 
-interface RolloutStartupCase {
-  fixture: 'small' | 'large'
-  observerMode: ObserverShellMode
-  observerVisibleBeforeWriter: boolean
-  startup: StartupReadinessSnapshot
-  coordinator: StartupCoordinatorSnapshot
-  earlyRequests: {
-    mutationsBeforeWriterReady: number
-    generationsBeforeChatReady: number
-  }
-  telemetry: BrowserStartupTelemetry[]
-}
-
-interface BrowserStartupTelemetry {
-  schemaVersion: number
-  kind: string
-  attemptCount: number
-  observerShellEnabled: boolean
-  milestone?: string
-  entryDurationMs?: number
-  attemptDurationMs?: number
-  failureCode?: string
-  failureMilestone?: string
-  requestUid?: string
-}
-
-interface Phase7IntegrationArtifact {
-  schemaVersion: 1
-  startupRollout: RolloutStartupCase[]
-  directLinks: DirectLinkCase[]
-  recoveryJourneys: RecoveryJourney[]
-  writerJourneys: WriterJourney[]
-  optionalRuntimeJourneys: OptionalRuntimeJourney[]
-}
-
-interface DirectLinkCase {
-  path: string
-  requestedRouteKey: string
-  finalRouteKey: string
-  surfaces: string[]
-  requiredPaths: string[]
-  requestedPaths: string[]
-}
-
-interface RecoveryJourney {
-  scenario: 'event-gap' | 'offline-before-send' | 'response-lost-after-commit'
-  initialRevision: number
-  finalRevision: number
-  retainedMutationId?: string
-  commandAttempts: number
-  receiptAcknowledgements: number
-  resourceRefreshes: number
-}
-
-interface WriterJourney {
-  scenario: 'denial-then-takeover'
-  observerCommandsBeforePromotion: number
-  oldWriterCommandsAfterTakeover: number
-  newWriterMutationAccepted: boolean
-}
-
-interface OptionalRuntimeJourney {
-  runtime: 'background-resources' | 'inlay-catalog'
-  mode: 'failed' | 'slow'
-  canRenderShell: boolean
-  canMutate: boolean
-  canGenerate: boolean
-  localizedFailure: boolean
-  retrySucceeded: boolean
-}
-
-const outputDir = path.resolve('fast-bootstrap-results')
 const previousProtocolMetrics = process.env.RISU_PROTOCOL_METRICS
-const artifact: Phase7IntegrationArtifact = {
-  schemaVersion: 1,
-  startupRollout: [],
-  directLinks: [],
-  recoveryJourneys: [],
-  writerJourneys: [],
-  optionalRuntimeJourneys: [],
-}
+const artifact: Phase7RecoveryArtifact = emptyPhase7RecoveryArtifact()
 
 test.setTimeout(240_000)
 
 test.afterAll(async ({}, testInfo) => {
-  const machineOutput = `${JSON.stringify(artifact, null, 2)}\n`
-  const humanOutput = formatIntegrationArtifact(artifact)
-  fs.mkdirSync(outputDir, { recursive: true })
-  fs.writeFileSync(path.join(outputDir, 'phase7-integration.json'), machineOutput)
-  fs.writeFileSync(path.join(outputDir, 'phase7-integration.txt'), humanOutput)
-  await testInfo.attach('phase7-integration.json', { body: machineOutput, contentType: 'application/json' })
-  await testInfo.attach('phase7-integration.txt', { body: humanOutput, contentType: 'text/plain' })
+  const machineOutput = writePhase7RecoveryPartial(artifact)
+  await testInfo.attach('phase7-integration.recovery.partial.json', {
+    body: machineOutput,
+    contentType: 'application/json',
+  })
 })
 
 test('startup rollout matrix proves flag-off and flag-on boundaries on small and large fixtures', async ({
@@ -139,100 +55,6 @@ test('startup rollout matrix proves flag-off and flag-on boundaries on small and
   } finally {
     if (previousProtocolMetrics === undefined) delete process.env.RISU_PROTOCOL_METRICS
     else process.env.RISU_PROTOCOL_METRICS = previousProtocolMetrics
-  }
-})
-
-test('direct-link matrix hydrates every route family from an empty browser and resource cache', async ({ browser }) => {
-  const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-    temporaryDirectoryPrefix: 'risu-phase7-direct-links-',
-  })
-  const context = await browser.newContext()
-  try {
-    await setObserverShellMode(context, 'disabled')
-    const page = await context.newPage()
-    const cdp = await context.newCDPSession(page)
-    await cdp.send('Network.enable')
-    const pageErrors: string[] = []
-    const requestedPaths = new Set<string>()
-    page.on('pageerror', (error) => pageErrors.push(error.message))
-    page.on('request', (request) => {
-      const url = new URL(request.url())
-      if (url.pathname.startsWith('/api/v1/')) requestedPaths.add(url.pathname)
-    })
-
-    const cases = directLinkCases()
-    const knownRouteResourcePaths = new Set(cases.flatMap((entry) => requiredResourcePaths(entry.route)))
-    expect(new Set(cases.map((entry) => routeKey(entry.route))).size).toBe(cases.length)
-    expect(new Set(cases.flatMap((entry) => resourceSurfacesForRoute(entry.route)))).toEqual(
-      new Set([
-        'shared:app-shell',
-        'shared:settings-shell',
-        'shared:playground-shell',
-        'route:home',
-        'route:grid',
-        'route:inlay',
-        'route:not-found',
-        'route:character',
-        'route:character-chat',
-        'runtime:chat-generation',
-        ...Object.values(SETTINGS_RESOURCE_SURFACE_BY_INDEX),
-        ...Object.values(PLAYGROUND_RESOURCE_SURFACE_BY_INDEX),
-      ]),
-    )
-
-    for (const entry of cases) {
-      if (page.url().startsWith(harness.baseUrl)) {
-        await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.clearResourceCache())
-      }
-      await cdp.send('Network.clearBrowserCache')
-      pageErrors.length = 0
-      requestedPaths.clear()
-
-      await page.goto(`${harness.baseUrl}${entry.path}`, { waitUntil: 'domcontentloaded' })
-      await waitForSmokeHook(page)
-      const finalRoute = entry.finalRoute ?? entry.route
-      await expect
-        .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRouteResourceLoadState()), {
-          message: `${entry.path} did not finish its route resource load`,
-        })
-        .toMatchObject({ routeKey: routeKey(entry.route), status: 'ready', error: null })
-      const foregroundRequestedPaths = new Set(requestedPaths)
-      await page.evaluate(() =>
-        window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForStartupMilestone('background-ready', 30_000),
-      )
-      expect(await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getCurrentRoute())).toEqual(finalRoute)
-      expect(pageErrors).toEqual([])
-
-      const requiredPaths = requiredResourcePaths(entry.route)
-      expect(foregroundRequestedPaths).toContain('/api/v1/resources/shell')
-      for (const requiredPath of requiredPaths) {
-        expect(foregroundRequestedPaths, `${entry.path} did not request ${requiredPath}`).toContain(requiredPath)
-      }
-      const allowedRouteResourcePaths = new Set([
-        '/api/v1/resources/shell',
-        '/api/v1/characters/fast-bootstrap-small-character',
-        '/api/v1/chats/fast-bootstrap-small-chat/messages',
-        ...requiredPaths,
-        ...startupRuntimeResourcePaths(entry.route),
-      ])
-      const unexpectedRouteResourcePaths = [...foregroundRequestedPaths]
-        .filter((requestedPath) => knownRouteResourcePaths.has(requestedPath))
-        .filter((requestedPath) => !allowedRouteResourcePaths.has(requestedPath))
-        .sort()
-      expect(unexpectedRouteResourcePaths, `${entry.path} eagerly fetched unrelated route resources`).toEqual([])
-      artifact.directLinks.push({
-        path: entry.path,
-        requestedRouteKey: routeKey(entry.route),
-        finalRouteKey: routeKey(finalRoute),
-        surfaces: resourceSurfacesForRoute(entry.route),
-        requiredPaths,
-        requestedPaths: [...foregroundRequestedPaths].sort(),
-      })
-    }
-    await cdp.detach()
-  } finally {
-    await context.close().catch(() => undefined)
-    await closeFastBootstrapHarness(harness)
   }
 })
 
@@ -950,162 +772,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
     resolve = settle
   })
   return { promise, resolve }
-}
-
-function formatIntegrationArtifact(artifact: Phase7IntegrationArtifact): string {
-  const lines = [
-    'Phase 7 integration matrix',
-    'fixture\tobserver\tobserver_before_writer\tobserver_ms\twriter_ms\tbackground_ms',
-  ]
-  for (const entry of artifact.startupRollout) {
-    lines.push(
-      [
-        entry.fixture,
-        entry.observerMode,
-        entry.observerVisibleBeforeWriter,
-        formatNumber(entry.startup.durationsFromEntry['observer-ready']),
-        formatNumber(entry.startup.durationsFromEntry['writer-ready']),
-        formatNumber(entry.startup.durationsFromEntry['background-ready']),
-      ].join('\t'),
-    )
-  }
-  lines.push('', 'Direct links', 'path\trequested_route_key\tfinal_route_key\tsurfaces\trequired_paths')
-  for (const entry of artifact.directLinks) {
-    lines.push(
-      [
-        entry.path,
-        entry.requestedRouteKey,
-        entry.finalRouteKey,
-        entry.surfaces.join(','),
-        entry.requiredPaths.join(','),
-      ].join('\t'),
-    )
-  }
-  lines.push(
-    '',
-    'Recovery',
-    'scenario\tinitial_revision\tfinal_revision\tcommand_attempts\treceipt_acks\tresource_refreshes',
-  )
-  for (const entry of artifact.recoveryJourneys) {
-    lines.push(
-      [
-        entry.scenario,
-        entry.initialRevision,
-        entry.finalRevision,
-        entry.commandAttempts,
-        entry.receiptAcknowledgements,
-        entry.resourceRefreshes,
-      ].join('\t'),
-    )
-  }
-  lines.push('', 'Writer journeys', 'scenario\tobserver_commands_before_promotion\told_writer_commands\taccepted')
-  for (const entry of artifact.writerJourneys) {
-    lines.push(
-      [
-        entry.scenario,
-        entry.observerCommandsBeforePromotion,
-        entry.oldWriterCommandsAfterTakeover,
-        entry.newWriterMutationAccepted,
-      ].join('\t'),
-    )
-  }
-  lines.push(
-    '',
-    'Optional runtimes',
-    'runtime\tmode\tcan_render_shell\tcan_mutate\tcan_generate\tlocalized_failure\tretry_succeeded',
-  )
-  for (const entry of artifact.optionalRuntimeJourneys) {
-    lines.push(
-      [
-        entry.runtime,
-        entry.mode,
-        entry.canRenderShell,
-        entry.canMutate,
-        entry.canGenerate,
-        entry.localizedFailure,
-        entry.retrySucceeded,
-      ].join('\t'),
-    )
-  }
-  return `${lines.join('\n')}\n`
-}
-
-function formatNumber(value: number | undefined): string {
-  return value === undefined ? '' : value.toFixed(2)
-}
-
-function directLinkCases(): Array<{ path: string; route: AppRoute; finalRoute?: AppRoute }> {
-  const stateDefaults = {
-    currentRouteKind: 'home' as const,
-    settingsOpen: false,
-    settingsMenuIndex: -1,
-    selectedCharID: -1,
-    playgroundStore: 0,
-  }
-  const settings = Object.keys(SETTINGS_RESOURCE_SURFACE_BY_INDEX).map(Number)
-  const playground = Object.keys(PLAYGROUND_RESOURCE_SURFACE_BY_INDEX).map(Number)
-  const paths = [
-    '/',
-    '/grid',
-    '/inlay',
-    '/phase7-not-found',
-    '/character/fast-bootstrap-small-character',
-    '/character/fast-bootstrap-small-character/fast-bootstrap-small-chat',
-    ...settings.map((settingsMenuIndex) =>
-      routePathFromState({ ...stateDefaults, settingsOpen: true, settingsMenuIndex }),
-    ),
-    ...playground.map((playgroundStore) =>
-      playgroundStore === 14 ? '/playground/inlays' : routePathFromState({ ...stateDefaults, playgroundStore }),
-    ),
-  ]
-  return paths.map((path) => ({
-    path,
-    route: parseRoute(path),
-    ...(path === '/phase7-not-found' ? { finalRoute: parseRoute('/') } : {}),
-    ...(path === '/playground/inlays' ? { finalRoute: parseRoute('/inlay') } : {}),
-  }))
-}
-
-function requiredResourcePaths(route: AppRoute): string[] {
-  const requirements = resolveResourceRequirements(
-    resourceSurfacesForRoute(route).filter((surface) => surface !== 'shared:app-shell'),
-  )
-  return [...new Set(requirements.flatMap((requirement) => requirementResourcePaths(requirement, route)))].sort()
-}
-
-function startupRuntimeResourcePaths(route: AppRoute): string[] {
-  const requirements = resolveResourceRequirements([
-    'runtime:plugins',
-    'runtime:background-effects',
-    'runtime:chat-generation',
-  ])
-  return [...new Set(requirements.flatMap((requirement) => requirementResourcePaths(requirement, route)))].sort()
-}
-
-function requirementResourcePaths(requirement: ResourceRequirement, route: AppRoute): string[] {
-  switch (requirement.kind) {
-    case 'settings-group':
-      return [`/api/v1/settings/${requirement.group}`]
-    case 'collection':
-      return [`/api/v1/collections/${requirement.collection}`]
-    case 'standalone-setting':
-      return [`/api/v1/resources/settings/${requirement.setting}`]
-    case 'projection':
-      switch (requirement.projection) {
-        case 'character-summaries':
-        case 'character-selection':
-        case 'selected-prompt-template':
-          return []
-        case 'selected-character':
-          return route.kind === 'character' ? [`/api/v1/characters/${encodeURIComponent(route.chaId)}`] : []
-        case 'selected-chat':
-          return route.kind === 'character' && route.chatId
-            ? [`/api/v1/chats/${encodeURIComponent(route.chatId)}/messages`]
-            : []
-        case 'inlay-catalog':
-          return ['/api/v1/inlay-assets']
-      }
-  }
 }
 
 function recordCommandPaths(page: Page, paths: string[]): void {

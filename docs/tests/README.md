@@ -166,12 +166,15 @@ Vitest configuration.
 
 `startupCachePopulationMatrix.spec.ts` keeps small/large and cold/warm startup populations
 separate and writes `fast-bootstrap-results/startup-matrix.{json,txt}`.
-`startupRecoveryIntegrationMatrix.spec.ts` runs flag-off/on startup, every production
-route-manifest direct-link family, offline and response-loss replay, a real
+`startupDirectLinks.spec.ts` runs every production route-manifest direct-link
+family in four independently isolated batches. `startupRecoveryIntegrationMatrix.spec.ts`
+runs flag-off/on startup, offline and response-loss replay, a real
 `event_replay_unavailable` recovery, multi-tab denial/takeover/promotion, and
-slow/failing optional-runtime Retry. It writes
-`fast-bootstrap-results/phase7-integration.{json,txt}`. The disposable harness
-owns a temporary authenticated Fastify/SQLite instance per journey. See
+slow/failing optional-runtime Retry. Per-worker partials are merged after the
+Playwright run into `fast-bootstrap-results/phase7-integration.{json,txt}`, with
+exact batch and route-index coverage validation. The disposable harness owns a
+temporary authenticated Fastify/SQLite instance per journey or direct-link
+batch. See
 [Development And Observability](../structure/development-and-observability.md#fast-bootstrap-measurement-and-rollout-gate)
 for fixtures, budgets, artifact interpretation, and request-trace correlation.
 

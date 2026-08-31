@@ -149,8 +149,12 @@ preserves any failure in the final aggregate result. Set
 `--dry-run` to inspect the lane graph. Its topology lane validates discovery
 before the ordinary frontend lane starts. Browser smoke runs outside that pool and
 waits for `check:server` because declaration checking and the smoke build both
-use `dist/`; its stateful tests remain serial within each spec while two locally
-isolated spec files may run concurrently. The focused UI coverage lane waits
+use `dist/`; its stateful tests remain serial within each spec, while local runs
+use 75% of available CPUs up to eight workers. Set
+`RISU_BROWSER_SMOKE_WORKERS=<count>` for an explicit local or CI override; CI
+defaults to one worker. The direct-link owner is the narrow exception to
+file-serial execution: it divides the manifest-derived routes into four
+independent Playwright batches with separate Fastify/data/browser contexts. The focused UI coverage lane waits
 for the ordinary frontend lane and owns its six sentinel files during `test:all`, so the
 ordinary frontend subprocess does not execute them twice. The render/clone
 performance gates run with one Vitest worker and no file parallelism. The
@@ -212,9 +216,11 @@ and thresholds. The user/CI performance and broad-coverage lanes set
 while retaining one-worker isolation. Server Vitest uses Node, forks, a 15s
 test timeout, and
 sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
-selected. Playwright smoke keeps tests within each file serial; local runs use
-two file workers, while CI stays at one worker. It retains Chromium traces on
-failure and rejects focused tests when CI is truthy.
+selected. Playwright smoke keeps tests within each file serial except for the
+explicitly parallel Phase 7 direct-link batches. Local workers use 75% of
+available CPUs capped at eight, CI stays at one by default, and
+`RISU_BROWSER_SMOKE_WORKERS` overrides either choice. It retains Chromium traces
+on failure and rejects focused tests when CI is truthy.
 The frontend and server Vitest configs set `allowOnly: false`. Directly selecting
 `realmImport.test.ts` enables its otherwise skipped 7,000-asset stress case.
 `test:all` and CI own that selection as an isolated single-worker gate. A user

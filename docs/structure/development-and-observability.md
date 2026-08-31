@@ -204,7 +204,11 @@ lorebooks, and summary fields. Phase 0 keeps cold browser/resource cache and war
 browser/resource cache as separate populations. Phase 7 runs both fixtures with
 the observer override disabled and enabled, derives direct-link cases from the
 production route manifest, and uses isolated fixtures for replay, event-gap,
-takeover, and failure-injection journeys.
+takeover, and failure-injection journeys. The 43 direct links run as four
+independent batches in `startupDirectLinks.spec.ts`; the remaining journeys stay
+file-serial in `startupRecoveryIntegrationMatrix.spec.ts`. Each worker writes a
+unique partial artifact, and Playwright global teardown validates and merges all
+four route batches with the recovery partial into the existing combined report.
 
 Generated files are local evidence and are ignored by Git:
 
