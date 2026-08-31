@@ -7,7 +7,6 @@ const suggestionMocks = vi.hoisted(() => {
     translate: vi.fn(),
     alertConfirm: vi.fn(async () => false),
     dispatchUpdateChatRow: vi.fn(),
-    withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
 })
 
@@ -32,10 +31,6 @@ vi.mock('src/ts/chatCommands', async (importActual) => ({
   dispatchUpdateChatRow: suggestionMocks.dispatchUpdateChatRow,
 }))
 
-vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
-  withTrustedResourceWrite: suggestionMocks.withTrustedResourceWrite,
-}))
-
 vi.mock('src/ts/process/modules', () => ({
   getModules: () => [],
   getModuleLorebooks: () => [],
@@ -55,6 +50,7 @@ import {
   charactersResourceState,
   getResourceDatabase,
   replaceResourceDatabase,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
 import { defaultAutoSuggestPrompt } from 'src/ts/storage/defaultPrompts'
@@ -235,6 +231,11 @@ describe('Suggestion controls', () => {
 
     try {
       await settle()
+      const bootstrapSuggestion = target.querySelector<HTMLButtonElement>('button[aria-label="Bootstrap suggestion"]')
+      expect(bootstrapSuggestion).toBeTruthy()
+      bootstrapSuggestion!.click()
+      await settle()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
       expect(target.querySelector('button[aria-label="Bootstrap suggestion"]')).toBeTruthy()
 
       charactersResourceState.status = 'ready'
@@ -260,6 +261,24 @@ describe('Suggestion controls', () => {
       expect(target.querySelector(`button[aria-label="${language.reroll}"]`)).toBeTruthy()
       expect(target.querySelector('button[aria-label="Take the lead"]')).toBeTruthy()
       expect(target.querySelector(`button[aria-label="${language.copy}: Take the lead"]`)).toBeTruthy()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('fails closed instead of reading a stale translator value after the language owner errors', async () => {
+    seedSuggestionDatabase(['Take the lead'], 'google')
+    charactersResourceState.status = 'ready'
+    settingsResourceState.groupStatuses.language = 'error'
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector(`button[aria-label="${language.translate}"]`)).toBeNull()
+      expect(suggestionMocks.translate).not.toHaveBeenCalled()
     } finally {
       unmount(component)
       target.remove()
@@ -437,6 +456,23 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('does not shape a request while a required settings owner is unavailable', async () => {
+    seedSuggestionDatabase([])
+    settingsResourceState.groupStatuses.models = 'error'
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(suggestionMocks.requestChatData).not.toHaveBeenCalled()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
   it('keeps an in-flight generation lease while reroll confirmation settles', async () => {
     seedSuggestionDatabase(['Take the lead'])
     const confirmation = deferred<boolean>()
@@ -860,6 +896,14 @@ describe('Suggestion component persistence', () => {
 
       const [requestArg, requestMode] = suggestionMocks.requestChatData.mock.calls[0]
       expect(requestMode).toBe('otherAx')
+      expect(requestArg.database).toMatchObject({
+        autoSuggestPrompt: 'Suggest next lines for {{char}}',
+        currentChar: 0,
+        seperateModelsForAxModels: true,
+        seperateModels: { otherAx: 'local_test' },
+      })
+      expect(requestArg.database.characters).not.toBe(charactersResourceState.characters)
+      expect(requestArg.database.characters[0]).toMatchObject({ chaId: 'character-a', name: 'Character A' })
       expect(requestArg.formated).toEqual([
         { role: 'system', content: 'Suggest next lines for Character A' },
         { role: 'assistant', content: 'Hello' },
@@ -937,7 +981,6 @@ describe('Suggestion component persistence', () => {
       expect(send).toHaveBeenCalledTimes(1)
       expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
       expect(target.textContent).not.toContain('Take the lead')
-      expect(suggestionMocks.withTrustedResourceWrite).not.toHaveBeenCalled()
       expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledWith(
         'chat-a',
         { suggestMessages: [] },
