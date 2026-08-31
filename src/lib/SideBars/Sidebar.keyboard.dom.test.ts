@@ -70,7 +70,7 @@ import Sidebar from './Sidebar.svelte'
 import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
-import { charactersResourceState, getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import {
   beginChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
@@ -253,6 +253,40 @@ describe('Sidebar character keyboard activation', () => {
 
     expect(target.querySelector('[data-char-id="char-private"]')).toBeTruthy()
     expect(target.querySelector('[data-char-id="char-normal"]')).toBeTruthy()
+  })
+
+  it('keeps resident owner settings and characters while loading, then fails closed on resource errors', async () => {
+    seedPinnedSidebarDatabase()
+    settingsResourceState.value.enableDevTools = true
+    settingsResourceState.status = 'loading'
+    charactersResourceState.status = 'loading'
+    selectedCharID.set(0)
+
+    component = mount(Sidebar, { target })
+    await tick()
+
+    expect(target.querySelector('[data-char-id="char-a"]')).toBeTruthy()
+    expect(target.querySelector('[data-risu-pinned-chat="chat-a"]')).toBeTruthy()
+    expect(target.querySelector(`[aria-label="${language.enableDevTools}"]`)).toBeTruthy()
+
+    settingsResourceState.status = 'error'
+    charactersResourceState.status = 'error'
+    await tick()
+
+    expect(target.querySelector('[data-char-id]')).toBeNull()
+    expect(target.querySelector('[data-risu-pinned-chat]')).toBeNull()
+    expect(target.querySelector(`[aria-label="${language.enableDevTools}"]`)).toBeNull()
+  })
+
+  it('fails closed when the ready character order repeats a stable character ID', async () => {
+    seedPinnedSidebarDatabase()
+    charactersResourceState.characterOrder = ['char-a', 'char-a']
+
+    component = mount(Sidebar, { target })
+    await tick()
+
+    expect(target.querySelector('[data-char-id]')).toBeNull()
+    expect(target.querySelector('[data-risu-pinned-chat]')).toBeNull()
   })
 
   it('names and exposes the state of the developer tools tab', async () => {
@@ -442,6 +476,20 @@ describe('Sidebar unread indicator pointer activation', () => {
     charactersResourceState.characters = [
       { ...getResourceDatabase().characters[0], chats: [{ id: 'chat-a', pinned: true, message: [] }] },
       { ...getResourceDatabase().characters[0], chats: [{ id: 'chat-b', pinned: true, message: [] }] },
+    ] as any
+
+    component = mount(Sidebar, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-pinned-chat]')).toBeNull()
+    expect(target.querySelector('[data-char-id]')).toBeNull()
+  })
+
+  it('fails closed for duplicate ready chat IDs instead of rendering ambiguous pinned routes', async () => {
+    seedPinnedSidebarDatabase()
+    charactersResourceState.characters[0].chats = [
+      { id: 'chat-a', name: 'First pinned', pinned: true, message: [] },
+      { id: 'chat-a', name: 'Second pinned', pinned: true, message: [] },
     ] as any
 
     component = mount(Sidebar, { target })

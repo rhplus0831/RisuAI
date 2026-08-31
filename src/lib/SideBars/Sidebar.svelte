@@ -11,7 +11,7 @@
     QuickSettings,
     additionalHamburgerMenu,
   } from '../../ts/stores.svelte'
-  import { getDatabase, setDatabase } from '../../ts/storage/database.svelte'
+  import type { character } from '../../ts/storage/database.svelte'
   import BarIcon from './BarIcon.svelte'
   import SidebarIndicator from './SidebarIndicator.svelte'
   import {
@@ -78,7 +78,11 @@
   import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
   import UnreadIndicator from './UnreadIndicator.svelte'
   import { addCharacter, changeChar } from '../../ts/characters'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
 
   const loadCharConfig = () => import('./CharConfig.svelte')
   const loadDevTool = () => import('./DevTool.svelte')
@@ -368,45 +372,107 @@
     return characterOwnerAt(index)
   }
 
+  function stableOwnerId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
+  function characterRowsOwner(): readonly character[] {
+    const status = charactersResourceState.status
+    if (status === 'error') return []
+    if (status !== 'ready' && status !== 'idle' && status !== 'loading') return []
+
+    const rows = charactersResourceState.characters
+    const ownerIds = new Set<string>()
+    for (const row of rows) {
+      if (!stableOwnerId(row?.chaId) || ownerIds.has(row.chaId)) return []
+      ownerIds.add(row.chaId)
+    }
+    return rows
+  }
+
   function characterOwnerAt(index: number) {
     if (index < 0) return undefined
-    const candidate =
-      charactersResourceState.status === 'ready'
-        ? charactersResourceState.characters[index]
-        : getDatabase().characters?.[index]
-    if (charactersResourceState.status !== 'ready') return candidate
+    const candidate = characterRowsOwner()[index]
     if (!candidate?.chaId) return undefined
-    return charactersResourceState.characters.filter((character) => character?.chaId === candidate.chaId).length === 1
-      ? candidate
-      : undefined
+    if (charactersResourceState.status !== 'ready') return candidate
+    return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+  }
+
+  function hasStableUniqueCharacterOrder(
+    order: typeof charactersResourceState.characterOrder,
+    rows: readonly character[],
+  ): boolean {
+    if (!Array.isArray(order)) return false
+    const characterIds = new Set(rows.map((row) => row.chaId))
+    const orderedCharacterIds = new Set<string>()
+    const folderIds = new Set<string>()
+
+    for (const entry of order) {
+      if (typeof entry === 'string') {
+        if (!stableOwnerId(entry) || !characterIds.has(entry) || orderedCharacterIds.has(entry)) return false
+        orderedCharacterIds.add(entry)
+        continue
+      }
+      if (!entry || !stableOwnerId(entry.id) || folderIds.has(entry.id) || !Array.isArray(entry.data)) return false
+      folderIds.add(entry.id)
+      for (const characterId of entry.data) {
+        if (!stableOwnerId(characterId) || !characterIds.has(characterId) || orderedCharacterIds.has(characterId)) {
+          return false
+        }
+        orderedCharacterIds.add(characterId)
+      }
+    }
+    return true
   }
 
   function characterOrderOwner() {
-    return charactersResourceState.status === 'ready' && charactersResourceState.orderRevision !== null
-      ? charactersResourceState.characterOrder
-      : (getDatabase().characterOrder ?? [])
+    const status = charactersResourceState.status
+    if (status === 'error') return []
+    if (status !== 'ready' && status !== 'idle' && status !== 'loading') return []
+    const order = charactersResourceState.characterOrder
+    return hasStableUniqueCharacterOrder(order, characterRowsOwner()) ? order : []
   }
 
   function characterChatRowsOwner() {
-    const rows =
-      charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
-    if (charactersResourceState.status !== 'ready') return rows
-
-    const counts = new Map<string, number>()
+    const rows = characterRowsOwner()
+    if (!hasStableUniqueCharacterOrder(charactersResourceState.characterOrder, rows)) return []
+    const chatIdCounts = new Map<string, number>()
     for (const row of rows) {
-      if (row?.chaId) counts.set(row.chaId, (counts.get(row.chaId) ?? 0) + 1)
+      for (const chat of row.chats ?? []) {
+        if (stableOwnerId(chat?.id)) chatIdCounts.set(chat.id, (chatIdCounts.get(chat.id) ?? 0) + 1)
+      }
     }
-    return rows.map((row) => {
-      if (row?.chaId && counts.get(row.chaId) === 1) return row
-      return { ...row, chats: [] }
-    })
+    return rows.map((row) => ({
+      ...row,
+      chats: (row.chats ?? []).filter((chat) => stableOwnerId(chat?.id) && chatIdCounts.get(chat.id) === 1),
+    }))
+  }
+
+  type SidebarBooleanSetting =
+    | 'roundIcons'
+    | 'menuSideBar'
+    | 'hamburgerButtonBottom'
+    | 'showFolderName'
+    | 'enableDevTools'
+  type SidebarSettingsGroup = 'display' | 'sidebar' | 'advanced'
+
+  function sidebarBooleanSetting(key: SidebarBooleanSetting, group: SidebarSettingsGroup, fallback = false): boolean {
+    const status = settingsResourceState.status
+    if (status === 'error' || settingsResourceState.groupStatuses[group] === 'error') return fallback
+    if (status !== 'ready' && status !== 'idle' && status !== 'loading') return fallback
+    const value = settingsResourceState.value[key]
+    return typeof value === 'boolean' ? value : fallback
   }
 
   const getSidebarCharacterList = createSidebarCharacterListMemo()
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(characterOrderOwner(), charactersResourceState.characters).items,
+    () => getSidebarCharacterList(characterOrderOwner(), characterRowsOwner()).items,
   )
-  let IconRounded = $derived(getDatabase().roundIcons)
+  let IconRounded = $derived(sidebarBooleanSetting('roundIcons', 'display'))
+  let menuSideBar = $derived(sidebarBooleanSetting('menuSideBar', 'display'))
+  let hamburgerButtonBottom = $derived(sidebarBooleanSetting('hamburgerButtonBottom', 'sidebar'))
+  let showFolderName = $derived(sidebarBooleanSetting('showFolderName', 'display'))
+  let enableDevTools = $derived(sidebarBooleanSetting('enableDevTools', 'advanced'))
   let warningChatIds = $derived(collectExhaustedGenerationChatIds($generationJobLifecycles))
   let generatingChatIds = $derived(
     collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations, warningChatIds),
@@ -654,7 +720,7 @@
   }
 </script>
 
-{#if getDatabase().menuSideBar}
+{#if menuSideBar}
   <div
     class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
     class:editMode
@@ -716,7 +782,7 @@
     class:risu-sub-sidebar-close={$sideBarClosing}
     class:hidden
     class:flex={!hidden}>
-    {#if !getDatabase().hamburgerButtonBottom}
+    {#if !hamburgerButtonBottom}
       <button
         aria-label={language.menu}
         aria-expanded={menuMode === 1}
@@ -863,7 +929,7 @@
                     onClick={() => {
                       if (char.type === 'folder') void toggleCharacterFolder(char)
                     }}>
-                    {#if getDatabase().showFolderName}
+                    {#if showFolderName}
                       <div class="h-full w-full flex justify-center items-center">
                         <span class="hyphens-auto truncate font-bold">{char.name}</span>
                       </div>
@@ -1045,7 +1111,7 @@
           ></BaseRoundedButton>
       </div>
     </div>
-    {#if getDatabase().hamburgerButtonBottom}
+    {#if hamburgerButtonBottom}
       <div class="border-t border-t-selected w-full relative text-white">
         {#if menuMode === 1}
           <div
@@ -1152,7 +1218,7 @@
           aria-current={$botMakerMode && !devTool ? 'true' : undefined}
           class="grow rounded-br-md"
           class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
-        {#if getDatabase().enableDevTools}
+        {#if enableDevTools}
           <button
             data-testid="sidebar-developer-tools-button"
             aria-label={language.enableDevTools}
