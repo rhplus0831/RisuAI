@@ -123,8 +123,8 @@ describe('Google Cloud tokenizer cache', () => {
     moduleState.db.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'default-profile' } }
     moduleState.db.modelRuntimeDefaults = {}
     moduleState.getDatabaseMock.mockClear()
-    moduleState.settingsResourceState.value = {}
-    moduleState.settingsResourceState.status = 'idle'
+    moduleState.settingsResourceState.value = moduleState.db
+    moduleState.settingsResourceState.status = 'ready'
     moduleState.settingsResourceState.error = null
     moduleState.requestProviderOperationMock.mockReset()
     moduleState.providerOperationCredentialMock.mockClear()
@@ -211,6 +211,15 @@ describe('Google Cloud tokenizer cache', () => {
     moduleState.settingsResourceState.error = 'settings unavailable'
 
     await expect(tokenize('stale prompt')).rejects.toThrow('Tokenizer settings owner unavailable')
+    expect(moduleState.getDatabaseMock).not.toHaveBeenCalled()
+    expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
+  })
+
+  it('fails closed while the settings owner is loading', async () => {
+    const { tokenize } = await loadTokenizer()
+    moduleState.settingsResourceState.status = 'loading'
+
+    await expect(tokenize('loading prompt')).rejects.toThrow('Tokenizer settings owner unavailable')
     expect(moduleState.getDatabaseMock).not.toHaveBeenCalled()
     expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
   })

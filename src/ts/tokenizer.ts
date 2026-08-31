@@ -1,6 +1,6 @@
 import type { Tiktoken } from '@dqbd/tiktoken'
 import type { Tokenizer } from '@mlc-ai/web-tokenizers'
-import { type character, type Chat, type Database, getCurrentCharacter, getDatabase } from './storage/database.svelte'
+import { type character, type Chat, type Database, getCurrentCharacter } from './storage/database.svelte'
 import type { MultiModal, OpenAIChat } from './process/index.svelte'
 import { supportsInlayImage } from './process/files/inlays'
 import { risuChatParser } from './parser/parser.svelte'
@@ -79,21 +79,16 @@ export async function encodeWithTokenizer(
 /**
  * Resolve the settings snapshot used by tokenizer-only public helpers.
  *
- * Normal hydrated runtime reads the authoritative settings owner. The
- * aggregate fallback is intentionally limited to direct/public callers that
- * run before resource hydration has completed. Once the owner reports an
- * error, falling back would silently tokenize against stale settings, so that
- * state fails closed instead.
+ * Normal runtime reads the authoritative settings owner. Public callers that
+ * need to run outside owner readiness must provide an explicit captured
+ * snapshot.
  */
 export function resolveTokenizerDatabaseSnapshot(database?: Database): Database {
   if (database) return database
   if (settingsResourceState.status === 'ready') {
     return settingsResourceState.value as Database
   }
-  if (settingsResourceState.status === 'error') {
-    throw new Error('Tokenizer settings owner unavailable')
-  }
-  return getDatabase()
+  throw new Error('Tokenizer settings owner unavailable')
 }
 
 export function resolveMainTokenizerProfile(database?: Database): ResolvedModelProfile {
