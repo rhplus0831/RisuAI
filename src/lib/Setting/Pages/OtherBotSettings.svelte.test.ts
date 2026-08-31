@@ -20,6 +20,7 @@ const otherBotMocks = vi.hoisted(() => ({
   saveAsset: vi.fn(),
   selectSingleFile: vi.fn(),
   tokenizePreset: vi.fn(),
+  watchServerBackedSettings: vi.fn(),
 }))
 
 vi.mock('src/ts/filePicker', () => ({ selectSingleFile: otherBotMocks.selectSingleFile }))
@@ -97,7 +98,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       return draft
     },
     persistServerBackedSettingsPatch: otherBotMocks.persistServerBackedSettingsPatch,
-    watchServerBackedSettings: vi.fn(() => vi.fn()),
+    watchServerBackedSettings: otherBotMocks.watchServerBackedSettings,
   }
 })
 
@@ -148,7 +149,7 @@ vi.mock('src/ts/gui/highlight', () => ({
 
 import OtherBotSettings from './OtherBotSettings.svelte'
 import { language } from 'src/lang'
-import { getResourceDatabase, replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { replaceResourceDatabase as setDatabaseLite, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -207,6 +208,7 @@ beforeEach(() => {
   otherBotMocks.saveAsset.mockReset()
   otherBotMocks.selectSingleFile.mockReset()
   otherBotMocks.tokenizePreset.mockReset().mockResolvedValue(0)
+  otherBotMocks.watchServerBackedSettings.mockReset().mockReturnValue(vi.fn())
   otherBotMocks.initialWavespeedImage = {
     key: 'wavespeed-key',
     model: 'wavespeed/saved-model',
@@ -277,6 +279,7 @@ describe('OtherBotSettings navigation semantics', () => {
       target.querySelector<HTMLInputElement>(`input[aria-label="${language.bardWiki.automaticConfirmation}"]`)
         ?.disabled,
     ).toBe(false)
+    expect(otherBotMocks.watchServerBackedSettings).not.toHaveBeenCalled()
   })
 
   it('switches mounted layouts when the authoritative legacy-GUI setting changes', async () => {
@@ -285,11 +288,27 @@ describe('OtherBotSettings navigation semantics', () => {
 
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
 
-    setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: true } as any)
+    settingsResourceState.value.useLegacyGUI = true
     await tick()
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeNull()
 
-    setDatabaseLite({ ...getResourceDatabase({ snapshot: true }), useLegacyGUI: false } as any)
+    settingsResourceState.value.useLegacyGUI = false
+    await tick()
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+  })
+
+  it('fails closed while the display settings owner is unavailable and reloads when it recovers', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
+
+    settingsResourceState.groupStatuses.display = 'error'
+    await tick()
+    expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeNull()
+
+    settingsResourceState.value.useLegacyGUI = false
+    settingsResourceState.groupStatuses.display = 'ready'
     await tick()
     expect(target.querySelector('[data-risu-media-settings-tabs]')).toBeTruthy()
   })
@@ -649,11 +668,17 @@ describe('OtherBotSettings Hypa preset import', () => {
   it('does not announce success when preset persistence fails', async () => {
     otherBotMocks.hypaEnabled = true
     otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    const originalPresets = structuredClone(otherBotMocks.hypaPresets)
     otherBotMocks.selectSingleFile.mockResolvedValue({
       name: 'import.json',
       data: Buffer.from(JSON.stringify({ type: 'risu', data: { name: 'Imported', settings: {} } })),
     })
-    otherBotMocks.persistServerBackedSettingsPatch.mockResolvedValue('failed')
+    otherBotMocks.persistServerBackedSettingsPatch.mockImplementationOnce(async (patch) => {
+      projectSettingsPatch(patch as Record<string, unknown>)
+      await tick()
+      projectSettingsPatch({ hypaV3Presets: originalPresets, hypaV3PresetId: 0 })
+      return 'failed'
+    })
     component = mount(OtherBotSettings, { target })
     await tick()
 
@@ -662,6 +687,8 @@ describe('OtherBotSettings Hypa preset import', () => {
     await tick()
 
     expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
+    expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(originalPresets)
+    expect(hypaPresetNames()).toEqual(['Existing'])
   })
 
   it('announces when preset persistence is durably queued', async () => {
@@ -681,6 +708,7 @@ describe('OtherBotSettings Hypa preset import', () => {
     target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')?.click()
     await vi.waitFor(() => expect(otherBotMocks.alertNormal).toHaveBeenCalledWith(language.settingsSaveQueued))
     expect(otherBotMocks.alertNormal).not.toHaveBeenCalledWith(language.successImport)
+    expect(hypaPresetNames()).toEqual(['Existing', 'Imported'])
   })
 
   it('drops a file-picker continuation after the settings page unmounts', async () => {
@@ -761,6 +789,8 @@ describe('OtherBotSettings Hypa memory ratio', () => {
     const database = (profileMaxContext: number) =>
       ({
         useLegacyGUI: false,
+        promptPresets: [],
+        promptPresetsId: -1,
         promptTemplate: [],
         characters: [
           {
@@ -801,6 +831,14 @@ describe('OtherBotSettings Hypa memory ratio', () => {
       language.hypaV3Settings.recentMemoryRatioLabel,
       language.hypaV3Settings.similarMemoryRatioLabel,
     ])
+
+    settingsResourceState.groupStatuses.runtime = 'error'
+    await vi.waitFor(() => {
+      expect(ratioInput()).toBeNull()
+      expect(target.textContent).toContain(language.hypaV3Settings.maxMemoryTokensRatioError)
+    })
+    expect(otherBotMocks.tokenizePreset).toHaveBeenCalledTimes(1)
+    expect(otherBotMocks.getCharToken).toHaveBeenCalledTimes(1)
 
     setDatabaseLite(database(2000))
 

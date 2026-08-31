@@ -4,7 +4,13 @@
   import Help from 'src/lib/Others/Help.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import { selectedCharID } from 'src/ts/stores.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import {
+    charactersResourceState,
+    collectionsResourceState,
+    getCharacterResourceOwner,
+    settingsResourceState,
+  } from 'src/ts/server/resourceState.svelte'
+  import type { Database, character } from 'src/ts/storage/database.svelte'
   import { saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -24,11 +30,11 @@
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset, type HypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
-  import {
-    createServerBackedSettingDraft,
-    persistServerBackedSettingsPatch,
-    watchServerBackedSettings,
-  } from 'src/ts/server/settingsBridge.svelte'
+  // Retained WS3 seams: per-key drafts keep the existing rebase/rollback and
+  // reload contract, while the exact-patch helper owns atomic Hypa imports.
+  // Both retire with the settings bridge after their narrow command/draft
+  // replacements land; neither is used for normal owner reads in this page.
+  import { createServerBackedSettingDraft, persistServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
   import { providerOperationCredential, requestProviderOperation } from 'src/ts/server/providerOperations'
   import { createLatestOperationGuard, type LatestOperationToken } from 'src/ts/server/staleStateGuards'
@@ -60,8 +66,6 @@
 
   const loadBardWikiSettings = () => import('./BardWikiSettings.svelte')
 
-  const stopServerSettingsWatch = watchServerBackedSettings(['useLegacyGUI'])
-  onDestroy(stopServerSettingsWatch)
   let componentAlive = true
   onDestroy(() => {
     componentAlive = false
@@ -179,10 +183,14 @@
     base64image: 'reference_base64image',
   } satisfies SettingsMediaAssetUploadFieldKeys
 
-  let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
+  let submenu = $state(0)
 
   $effect(() => {
-    submenu = reconcileLegacyGuiSubmenu(Boolean(getDatabase().useLegacyGUI), submenu)
+    if (settingsResourceState.groupStatuses.display !== 'ready') {
+      submenu = -1
+      return
+    }
+    submenu = reconcileLegacyGuiSubmenu(Boolean(settingsResourceState.value.useLegacyGUI), submenu)
   })
 
   // HypaV3
@@ -220,9 +228,71 @@
     })
   })
 
+  interface MemoryBudgetOwnerSnapshot {
+    database: Database
+    char: character
+  }
+
+  function memoryBudgetOwnerSnapshot(): MemoryBudgetOwnerSnapshot | null {
+    const requiredSettingsStatuses = [
+      settingsResourceState.groupStatuses.providers,
+      settingsResourceState.groupStatuses.models,
+      settingsResourceState.groupStatuses.runtime,
+      settingsResourceState.groupStatuses.advanced,
+      settingsResourceState.standaloneStatuses.promptPresetsId,
+    ]
+    const requiredCollectionStatuses = [
+      collectionsResourceState.statuses.promptPresets,
+      collectionsResourceState.statuses.promptTemplate,
+    ]
+    const selectedCharacter = charactersResourceState.characters[$selectedCharID]
+    const characterOwner = selectedCharacter?.chaId ? getCharacterResourceOwner(selectedCharacter.chaId) : undefined
+
+    if (
+      requiredSettingsStatuses.some((status) => status !== 'ready') ||
+      requiredCollectionStatuses.some((status) => status !== 'ready') ||
+      charactersResourceState.status !== 'ready' ||
+      !characterOwner?.chaId ||
+      charactersResourceState.rowStatuses[characterOwner.chaId] !== 'ready'
+    ) {
+      return null
+    }
+
+    const settings = settingsResourceState.value
+    const database = {
+      modelProfiles: settings.modelProfiles,
+      modelRoleProfiles: settings.modelRoleProfiles,
+      modelRuntimeDefaults: settings.modelRuntimeDefaults,
+      providerCredentials: settings.providerCredentials,
+      maxResponse: settings.maxResponse,
+      maxContext: settings.maxContext,
+      loreBookToken: settings.loreBookToken,
+      promptPresetsId: settings.promptPresetsId,
+      promptPresets: collectionsResourceState.values.promptPresets,
+      promptTemplate: collectionsResourceState.values.promptTemplate,
+    } as Database
+
+    return { database, char: characterOwner }
+  }
+
   function maxMemoryRatioDependencyKey(): string {
-    const database = getDatabase()
-    const char = database.characters[$selectedCharID]
+    const owner = memoryBudgetOwnerSnapshot()
+    if (!owner) {
+      return JSON.stringify([
+        'owner-unavailable',
+        $selectedCharID,
+        settingsResourceState.groupStatuses.providers,
+        settingsResourceState.groupStatuses.models,
+        settingsResourceState.groupStatuses.runtime,
+        settingsResourceState.groupStatuses.advanced,
+        settingsResourceState.standaloneStatuses.promptPresetsId,
+        collectionsResourceState.statuses.promptPresets,
+        collectionsResourceState.statuses.promptTemplate,
+        charactersResourceState.status,
+      ])
+    }
+
+    const { database, char } = owner
     const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
     const promptTemplate = resolveEffectivePromptTemplate(database)
 
@@ -243,10 +313,12 @@
 
   async function getMaxMemoryRatio(_dependencyKey: string): Promise<number> {
     await ensurePromptTemplateHydrated()
-    const database = getDatabase()
+    const owner = memoryBudgetOwnerSnapshot()
+    if (!owner) throw new Error('Memory budget owner unavailable')
+
+    const { database, char } = owner
     const mainProfile = resolveModelProfile({ database, role: 'chatMain' })
     const promptTemplateToken = await tokenizePreset(resolveEffectivePromptTemplate(database).promptTemplate)
-    const char = database.characters[$selectedCharID]
     const charToken = await getCharToken(char)
     const maxLoreToken = char.loreSettings?.tokenBudget ?? database.loreBookToken
     const maxResponse = mainProfile.runtimeOptions.maxResponse ?? database.maxResponse
