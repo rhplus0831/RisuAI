@@ -2,7 +2,7 @@ import { untrack } from 'svelte'
 import { get, writable } from 'svelte/store'
 import { resolveActiveModuleStates } from '../moduleActivation'
 import { selectedCharID } from '../stores.svelte'
-import { getDatabase, type Chat, type Database, type character } from '../storage/database.svelte'
+import type { Chat, Database, character } from '../storage/database.svelte'
 import {
   charactersResourceState,
   collectionsResourceState,
@@ -185,16 +185,6 @@ function regexDisplayOwnerState(): {
     }
   }
 
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-    const database = getDatabase()
-    return {
-      database,
-      characters: database.characters ?? [],
-      selectedCharacterIndex: get(selectedCharID),
-      ready: false,
-    }
-  }
-
   return {
     database: canonicalModuleActivationDatabase(),
     characters: [],
@@ -244,7 +234,6 @@ function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined
   const status = settingsResourceState.groupStatuses[group] ?? 'idle'
   if (settingsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 
@@ -252,7 +241,6 @@ function collectionOwner<Name extends ServerCollectionName>(name: Name): Databas
   const status = collectionsResourceState.statuses[name] ?? 'idle'
   if (collectionsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
-  if (status === 'idle' || status === 'loading') return getDatabase()[name]
   return undefined
 }
 
@@ -260,7 +248,6 @@ function standaloneSettingsOwner(): Partial<Database> | undefined {
   const status = settingsResourceState.standaloneStatuses.selectedPersonaId ?? 'idle'
   if (settingsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 

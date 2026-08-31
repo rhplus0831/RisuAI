@@ -54,10 +54,10 @@ describe('applyChatTemplate character owner', () => {
     expect(applyChatTemplate([], { type: 'jinja', custom: '{{ risu_char }}' })).toBe('Canonical character')
   })
 
-  it('falls back to the aggregate character only before owners are ready', () => {
+  it('fails closed while character owners are loading', () => {
     charactersResourceState.status = 'loading'
 
-    expect(applyChatTemplate([], { type: 'jinja', custom: '{{ risu_char }}' })).toBe('Aggregate character')
+    expect(applyChatTemplate([], { type: 'jinja', custom: '{{ risu_char }}' })).toBe('')
   })
 
   it('uses the ready template-settings owner instead of aggregate settings', () => {

@@ -113,6 +113,9 @@ function seedNovelAiDb(extra: Record<string, unknown> = {}) {
       ...extra,
     },
   }
+  state.settingsResourceState.status = 'ready'
+  state.settingsResourceState.groupStatuses = { account: 'ready', media: 'ready', providers: 'ready' }
+  state.settingsResourceState.value = state.db
 }
 
 beforeEach(() => {
@@ -262,7 +265,9 @@ describe('stableDiff image-generation hygiene', () => {
     state.readImage.mockResolvedValueOnce(new Uint8Array([4, 5, 6]))
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,BwgJ')
 
-    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,BwgJ')
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay', { database: state.db })).resolves.toBe(
+      'data:image/png;base64,BwgJ',
+    )
 
     expect(state.readImage).toHaveBeenCalledTimes(1)
     expect(state.readImage).toHaveBeenCalledWith('saved-wavespeed-asset')
@@ -301,7 +306,10 @@ describe('stableDiff image-generation hygiene', () => {
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,dalle-image')
 
     await expect(
-      stableDiff(char, 'User asks for a moonlit character image.', { signal: abortController.signal }),
+      stableDiff(char, 'User asks for a moonlit character image.', {
+        signal: abortController.signal,
+        database: state.db,
+      }),
     ).resolves.toBe('')
 
     expect(state.requestChatData).toHaveBeenCalledTimes(1)
@@ -369,8 +377,8 @@ describe('stableDiff image-generation hygiene', () => {
         }),
     )
 
-    const first = generateAIImage('first', char, '', '')
-    const second = generateAIImage('second', char, '', '')
+    const first = generateAIImage('first', char, '', '', { database: state.db })
+    const second = generateAIImage('second', char, '', '', { database: state.db })
     expect(pending).toHaveLength(2)
     expect(pending[0].signal.aborted).toBe(true)
 
@@ -396,7 +404,7 @@ describe('stableDiff image-generation hygiene', () => {
     }
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,imagen')
 
-    await expect(generateAIImage('prompt', char, '', '')).resolves.toBe('')
+    await expect(generateAIImage('prompt', char, '', '', { database: state.db })).resolves.toBe('')
     expect(state.charEmotionValue[char.chaId]).toEqual([
       ['data:image/png;base64,imagen', 'data:image/png;base64,imagen', expect.any(Number)],
     ])
@@ -420,7 +428,7 @@ describe('stableDiff image-generation hygiene', () => {
     )
     const controller = new AbortController()
 
-    const pending = generateAIImage('prompt', char, '', '', { signal: controller.signal })
+    const pending = generateAIImage('prompt', char, '', '', { signal: controller.signal, database: state.db })
     controller.abort()
     expect(forwardedSignal.aborted).toBe(true)
     resolveRequest('data:image/png;base64,cancelled')
@@ -451,7 +459,10 @@ describe('stableDiff image-generation hygiene', () => {
     )
     const controller = new AbortController()
 
-    const pending = generateAIImage('prompt', char, '', 'inlay', { signal: controller.signal })
+    const pending = generateAIImage('prompt', char, '', 'inlay', {
+      signal: controller.signal,
+      database: state.db,
+    })
     controller.abort()
 
     expect(forwardedSignal.aborted).toBe(true)
@@ -467,7 +478,9 @@ describe('stableDiff image-generation hygiene', () => {
     }
     state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,kei')
 
-    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe('data:image/png;base64,kei')
+    await expect(generateAIImage('prompt', char, '', 'inlay', { database: state.db })).resolves.toBe(
+      'data:image/png;base64,kei',
+    )
     expect(state.requestImageGeneration).toHaveBeenCalledWith(
       {
         provider: 'kei',
@@ -492,7 +505,9 @@ describe('stableDiff image-generation hygiene', () => {
         dallEQuality: 'standard',
       }
       state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,dalle-image')
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toBe('data:image/png;base64,dalle-image')
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay', { database: state.db })).resolves.toBe(
+        'data:image/png;base64,dalle-image',
+      )
 
       state.db = {
         sdProvider: 'comfyui',
@@ -528,7 +543,9 @@ describe('stableDiff image-generation hygiene', () => {
           arrayBuffer: vi.fn(async () => new Uint8Array([9, 8, 7]).buffer),
         })
 
-      await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(/^data:image\/png;base64,/)
+      await expect(generateAIImage('prompt', char, 'neg', 'inlay', { database: state.db })).resolves.toMatch(
+        /^data:image\/png;base64/,
+      )
 
       expect(logSpy).not.toHaveBeenCalled()
     } finally {

@@ -13,6 +13,11 @@ const state = vi.hoisted(() => ({
   getItem: vi.fn(async () => null),
   setItem: vi.fn(async () => undefined),
   requestTexts: vi.fn(),
+  settingsResourceState: {
+    value: {} as Record<string, any>,
+    status: 'ready',
+    groupStatuses: { memory: 'ready' } as Record<string, string>,
+  },
 }))
 
 vi.mock('localforage', () => ({
@@ -24,8 +29,8 @@ vi.mock('localforage', () => ({
   },
 }))
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => state.db,
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  settingsResourceState: state.settingsResourceState,
 }))
 
 vi.mock('src/ts/server/embeddingOperations', () => ({
@@ -61,6 +66,9 @@ beforeEach(() => {
     key: state.masked,
     model: 'stored-model',
   }
+  state.settingsResourceState.value = state.db
+  state.settingsResourceState.status = 'ready'
+  state.settingsResourceState.groupStatuses.memory = 'ready'
 })
 
 describe('remote Hypa embedding paths', () => {
@@ -128,6 +136,25 @@ describe('remote Hypa embedding paths', () => {
         input: ['search text'],
         credential: { source: 'stored' },
       }),
+    )
+  })
+
+  it('fails closed instead of reading aggregate credentials before the memory owner is ready', async () => {
+    state.settingsResourceState.groupStatuses.memory = 'loading'
+
+    const legacyProcessor = new HypaProcesser('openai3small')
+    const currentProcessor = new HypaProcessorV2({ model: 'openai3small' })
+
+    await legacyProcessor.getEmbeds(['legacy'], 'query')
+    await currentProcessor.similaritySearchScored('current')
+
+    expect(state.requestTexts).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ credential: { source: 'none' }, input: ['legacy'] }),
+    )
+    expect(state.requestTexts).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ credential: { source: 'none' }, input: ['current'] }),
     )
   })
 })

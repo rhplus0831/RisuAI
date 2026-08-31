@@ -137,7 +137,7 @@ describe('legacy memory migration notice', () => {
     expect(noticeState.alertSelect).not.toHaveBeenCalled()
   })
 
-  it('retains compatibility reads only while both owners are loading', () => {
+  it('waits while both owners are loading', () => {
     noticeState.database = {
       memoryAlgorithmType: 'hypaMemoryV2',
       hypav2: true,
@@ -147,8 +147,8 @@ describe('legacy memory migration notice', () => {
     noticeState.collectionsResourceState.statuses.hypaV3Presets = 'loading'
     noticeState.alertSelect.mockResolvedValue(null)
 
-    expect(showLegacyMemoryMigrationNoticeIfNeeded()).toBe(true)
-    expect(noticeState.alertSelect.mock.calls[0][1]).toContain('Hypa V2')
+    expect(showLegacyMemoryMigrationNoticeIfNeeded()).toBe(false)
+    expect(noticeState.alertSelect).not.toHaveBeenCalled()
   })
 
   it('fails closed instead of reusing aggregate memory data after an owner error', () => {

@@ -1,4 +1,3 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
 import { embeddingOperationCredential, requestRemoteEmbeddingGroups } from 'src/ts/server/embeddingOperations'
 import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import type { ContextualRemoteEmbeddingModel } from '@risuai/protocol/embedding-operation'
@@ -32,9 +31,6 @@ function voyageCredentialOwnerValue(): unknown {
   const status = settingsResourceState.groupStatuses.memory ?? 'idle'
   if (settingsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return settingsResourceState.value.voyageApiKey
-  // Explicit bootstrap compatibility only. Once the memory settings owner is
-  // ready (or has failed), embedding requests never consult the aggregate.
-  if (status === 'idle' || status === 'loading') return getDatabase().voyageApiKey
   return undefined
 }
 

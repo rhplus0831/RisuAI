@@ -27,12 +27,12 @@ describe('keiServerURL settings owner', () => {
     expect(keiServerURL()).toBe('https://owner.example.test')
   })
 
-  it.each(['idle', 'loading'] as const)('retains aggregate bootstrap compatibility while %s', (status) => {
+  it.each(['idle', 'loading'] as const)('uses the public endpoint while the owner is %s', (status) => {
     state.settings.status = status
     state.settings.groupStatuses.advanced = status
     state.settings.value = {}
 
-    expect(keiServerURL()).toBe('https://aggregate.example.test')
+    expect(keiServerURL()).toBe('https://hub.example.test/kei')
   })
 
   it('fails closed to the public hub endpoint after an owner error', () => {

@@ -225,7 +225,7 @@ describe('store runtime effects', () => {
     expect(runtimeEffectState.setCharacterSupaMemory).not.toHaveBeenCalled()
   })
 
-  it('retains numeric Hypa selection only while both owners are loading', async () => {
+  it('ignores numeric Hypa compatibility selection while owners are loading', async () => {
     runtimeEffectState.database.characters = [
       { chaId: 'compatibility-character', chats: [], chatPage: 0, supaMemory: false },
     ]
@@ -239,9 +239,9 @@ describe('store runtime effects', () => {
 
     dispose = installStoreRuntimeEffects()
 
-    await vi.waitFor(() => {
-      expect(runtimeEffectState.setCharacterSupaMemory).toHaveBeenCalledWith('compatibility-character', true)
-    })
+    await Promise.resolve()
+
+    expect(runtimeEffectState.setCharacterSupaMemory).not.toHaveBeenCalled()
   })
 
   it('fails closed without running module updates when a required owner is in error', () => {

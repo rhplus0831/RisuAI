@@ -1,7 +1,7 @@
 import { Template } from '@huggingface/jinja'
 import { get } from 'svelte/store'
 import type { OpenAIChat } from '../index.svelte'
-import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import {
   charactersResourceState,
@@ -40,14 +40,9 @@ export const applyChatTemplate = (
   } = {},
 ) => {
   const providerStatus = settingsResourceState.groupStatuses.providers ?? settingsResourceState.status
-  const compatibilityDatabase = () => getDatabase()
   const settings: Partial<Pick<Database, 'instructChatTemplate' | 'JinjaTemplate'>> =
     arg.settings ??
-    (providerStatus === 'error' || settingsResourceState.status === 'error'
-      ? {}
-      : providerStatus === 'ready'
-        ? settingsResourceState.value
-        : compatibilityDatabase())
+    (providerStatus === 'ready' && settingsResourceState.status !== 'error' ? settingsResourceState.value : {})
   const selectedIndex = get(selectedCharID)
   const selectedCandidate = charactersResourceState.characters[selectedIndex]
   const currentChar =
@@ -55,9 +50,7 @@ export const applyChatTemplate = (
       ? selectedCandidate?.chaId
         ? getCharacterResourceOwner(selectedCandidate.chaId)
         : undefined
-      : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-        ? compatibilityDatabase().characters?.[selectedIndex]
-        : undefined
+      : undefined
   const type = arg.type ?? settings.instructChatTemplate
   if (!type) {
     throw new Error('Template type is not set')

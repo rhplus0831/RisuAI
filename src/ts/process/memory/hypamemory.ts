@@ -1,10 +1,18 @@
 import localforage from 'localforage'
 import { runEmbedding } from '../transformers'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import { embeddingOperationCredential, requestRemoteEmbeddingTexts } from 'src/ts/server/embeddingOperations'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import type { CustomEmbeddingConfiguration } from '@risuai/protocol/embedding-operation'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
 import { getEmbeddingCacheKey } from './embeddingCacheKey'
+
+function memorySettingsOwner(): Partial<Database> | undefined {
+  if (settingsResourceState.status === 'error' || settingsResourceState.groupStatuses.memory !== 'ready') {
+    return undefined
+  }
+  return settingsResourceState.value as Partial<Database>
+}
 
 export type HypaModel =
   | 'custom'
@@ -71,16 +79,16 @@ export class HypaProcesser {
       name: 'hypaVector',
     })
     this.vectors = []
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
     if (model === 'auto') {
-      this.model = db.hypaModel || 'MiniLM'
+      this.model = settings?.hypaModel || 'MiniLM'
     } else {
       this.model = model
     }
     this.customEmbeddingConfigurationProvided =
       customEmbeddingUrl !== undefined || options.customModel !== undefined || options.customKey !== undefined
     this.customEmbeddingUrl =
-      customEmbeddingUrl !== undefined ? customEmbeddingUrl.trim() : db.hypaCustomSettings?.url?.trim() || ''
+      customEmbeddingUrl !== undefined ? customEmbeddingUrl.trim() : settings?.hypaCustomSettings?.url?.trim() || ''
     this.customEmbeddingKey = options.customKey
     this.customEmbeddingModel = options.customModel
     this.oaikey = options.openAIKey
@@ -130,7 +138,7 @@ export class HypaProcesser {
       return results
     }
     const inputs = Array.isArray(input) ? input : [input]
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
     if (this.model === 'custom') {
       if (!this.customEmbeddingUrl) {
         throw new Error('Custom model requires a Custom Server URL')
@@ -146,7 +154,7 @@ export class HypaProcesser {
         model: 'custom',
         inputType,
         input: inputs,
-        credential: embeddingOperationCredential(this.customEmbeddingKey ?? db.hypaCustomSettings?.key),
+        credential: embeddingOperationCredential(this.customEmbeddingKey ?? settings?.hypaCustomSettings?.key),
         custom,
         signal: this.operationSignal,
       })
@@ -156,7 +164,7 @@ export class HypaProcesser {
         model: this.model,
         inputType,
         input: inputs,
-        credential: embeddingOperationCredential(this.oaikey ?? db.hypaV3Key),
+        credential: embeddingOperationCredential(this.oaikey ?? settings?.hypaV3Key),
         signal: this.operationSignal,
       })
     }
@@ -164,11 +172,11 @@ export class HypaProcesser {
   }
 
   async testText(text: string) {
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
     const cacheKey = getEmbeddingCacheKey(text, {
       model: this.model,
       customEmbeddingUrl: this.customEmbeddingUrl,
-      customEmbeddingModel: this.customEmbeddingModel ?? db.hypaCustomSettings?.model,
+      customEmbeddingModel: this.customEmbeddingModel ?? settings?.hypaCustomSettings?.model,
     })
     const forageResult: number[] = await this.forage.getItem(cacheKey)
     if (forageResult) {
@@ -180,12 +188,12 @@ export class HypaProcesser {
   }
 
   async addText(texts: string[]) {
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
     const cacheKey = (text: string) =>
       getEmbeddingCacheKey(text, {
         model: this.model,
         customEmbeddingUrl: this.customEmbeddingUrl,
-        customEmbeddingModel: this.customEmbeddingModel ?? db.hypaCustomSettings?.model,
+        customEmbeddingModel: this.customEmbeddingModel ?? settings?.hypaCustomSettings?.model,
       })
 
     for (let i = 0; i < texts.length; i++) {

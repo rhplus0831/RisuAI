@@ -1,13 +1,11 @@
-import { get } from 'svelte/store'
-import { getSelectedCharacterOwner, selectCharacterOwner } from '../characterState'
+import { getSelectedCharacterOwner } from '../characterState'
 import {
   charactersResourceState,
   getCharacterResourceOwner,
   getChatMetadataOwnerState,
 } from '../server/resourceState.svelte'
 import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
-import { selectedCharID } from '../stores/coreStores.svelte'
-import { getDatabase, type Chat, type character, type Message } from '../storage/database.svelte'
+import type { Chat, character, Message } from '../storage/database.svelte'
 
 type ChatBranch = {
   children: Map<string, ChatBranch>
@@ -75,8 +73,7 @@ function renderBranch(branch: ChatBranch, x: number, y: number, connectX = -1, c
 }
 
 export function getChatBranches() {
-  const compatibilityCharacters = branchCompatibilityCharacters()
-  const character = selectedBranchCharacterOwner(compatibilityCharacters)
+  const character = selectedBranchCharacterOwner()
   if (!character) return []
 
   const mainBranch: ChatBranch = {
@@ -87,9 +84,8 @@ export function getChatBranches() {
 
   let i = 0
   for (const candidate of character.chats) {
-    const chat = candidate?.id ? uniqueBranchChatOwner(character, candidate.id, compatibilityCharacters) : undefined
-    const messages =
-      chat && charactersResourceState.status === 'ready' ? getChatMessageOwnerState(chat.id)?.messages : chat?.message
+    const chat = candidate?.id ? uniqueBranchChatOwner(character, candidate.id) : undefined
+    const messages = chat ? getChatMessageOwnerState(chat.id)?.messages : undefined
     if (!chat || !messages || !hasUniqueMessageOwners(messages)) return []
 
     const fm = chat.fmIndex === -1 ? character.firstMessage : character.alternateGreetings?.[chat.fmIndex ?? 0]
@@ -106,45 +102,20 @@ export function getChatBranches() {
   return renderBranch(mainBranch, 0, 0)
 }
 
-function branchCompatibilityCharacters(): readonly character[] | undefined {
-  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
-  // Explicit bootstrap compatibility seam. Ready and error states must use the
-  // character owner projection (or fail closed) instead of the aggregate.
-  return getDatabase().characters ?? []
-}
-
-function selectedBranchCharacterOwner(
-  compatibilityCharacters: readonly character[] | undefined,
-): character | undefined {
+function selectedBranchCharacterOwner(): character | undefined {
   if (charactersResourceState.status === 'ready') {
     const owner = getSelectedCharacterOwner()
     return owner?.chaId && getCharacterResourceOwner(owner.chaId) === owner ? owner : undefined
   }
-  return compatibilityCharacters ? selectCharacterOwner(compatibilityCharacters, get(selectedCharID)) : undefined
+  return undefined
 }
 
-function uniqueBranchChatOwner(
-  character: character,
-  chatId: string,
-  compatibilityCharacters: readonly character[] | undefined,
-): Chat | undefined {
+function uniqueBranchChatOwner(character: character, chatId: string): Chat | undefined {
   if (!chatId) return undefined
   const matches = (character.chats ?? []).filter((candidate) => candidate?.id === chatId)
   if (matches.length !== 1) return undefined
 
-  if (charactersResourceState.status === 'ready') {
-    return getChatMetadataOwnerState(chatId) ? matches[0] : undefined
-  }
-
-  if (!compatibilityCharacters) return undefined
-  let matchCount = 0
-  for (const candidateCharacter of compatibilityCharacters) {
-    for (const candidateChat of candidateCharacter.chats ?? []) {
-      if (candidateChat?.id === chatId) matchCount += 1
-      if (matchCount > 1) return undefined
-    }
-  }
-  return matchCount === 1 ? matches[0] : undefined
+  return getChatMetadataOwnerState(chatId) ? matches[0] : undefined
 }
 
 function hasUniqueMessageOwners(messages: readonly Message[]): boolean {

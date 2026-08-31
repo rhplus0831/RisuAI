@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { language } from '../../lang'
-import { getDatabase, type character, type Database } from '../storage/database.svelte'
+import type { character, Database } from '../storage/database.svelte'
 import { requestChatData } from './request/request'
 import { alertError } from '../alert'
 import { fetchNative, globalFetch, readImage } from '../globalApi.svelte'
@@ -25,11 +25,8 @@ function imageGenerationSettingsOwner(explicit?: Database): Database | null {
   if (IMAGE_GENERATION_SETTINGS_GROUPS.some((group) => settingsResourceState.groupStatuses[group] === 'error')) {
     return null
   }
-  if (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading') {
-    // Public/bootstrap compatibility seam. Once split settings are resident,
-    // image generation never reacquires the mutable aggregate.
-    return getDatabase({ snapshot: true })
-  }
+  if (IMAGE_GENERATION_SETTINGS_GROUPS.some((group) => settingsResourceState.groupStatuses[group] !== 'ready'))
+    return null
   return settingsResourceState.value as unknown as Database
 }
 

@@ -268,12 +268,13 @@ describe('supportsInlayImage', () => {
     expect(getModelInfo).not.toHaveBeenCalled()
   })
 
-  test('retains the legacy database fallback without a model context', () => {
+  test('requires request-scoped model flags', () => {
     vi.mocked(getDatabase).mockReturnValue({ aiModel: 'legacy-vision' } as never)
     vi.mocked(getModelInfo).mockReturnValue({ flags: [LLMFlags.hasImageInput] } as never)
 
-    expect(supportsInlayImage()).toBe(true)
-    expect(getModelInfo).toHaveBeenCalledWith('legacy-vision')
+    expect(supportsInlayImage()).toBe(false)
+    expect(getDatabase).not.toHaveBeenCalled()
+    expect(getModelInfo).not.toHaveBeenCalled()
   })
 
   test('fails closed instead of using the legacy fallback after an owner error', () => {

@@ -104,14 +104,14 @@ describe('regex display reload scoping', () => {
     )
   })
 
-  it('retains the compatibility selection only while character owners are loading', () => {
+  it('ignores the compatibility selection while character owners are loading', () => {
     charactersResourceState.status = 'loading'
     charactersResourceState.currentChar = 1
     selectedCharID.set(0)
 
     const initial = regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))
     reloadRegexDisplay('char-a')
-    expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).not.toBe(
+    expect(regexDisplayReloadTokenForContext(get(RegexDisplayReloadPointer), get(RegexDisplayReloadScope))).toBe(
       initial,
     )
   })

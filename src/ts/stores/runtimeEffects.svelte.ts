@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { moduleUpdate } from '../process/modules'
 import { getSelectedCharacterOwner, selectCharacterOwner } from '../characterState'
-import { getDatabase, type Chat, type character, type Database } from '../storage/database.svelte'
+import type { Chat, character, Database } from '../storage/database.svelte'
 import {
   charactersResourceState,
   collectionsResourceState,
@@ -67,14 +67,12 @@ function isServerCharacterShellRow(character: unknown): boolean {
 function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined {
   const status = settingsResourceState.groupStatuses[group] ?? 'idle'
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 
 function collectionOwner<Name extends ServerCollectionName>(name: Name): Database[Name] | undefined {
   const status = collectionsResourceState.statuses[name] ?? 'idle'
   if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
-  if (status === 'idle' || status === 'loading') return getDatabase()[name]
   return undefined
 }
 
@@ -87,9 +85,6 @@ function selectedRuntimeCharacterOwner(): character | undefined {
         : selectCharacterOwner(charactersResourceState.characters, get(selectedCharID))
     return owner?.chaId && getCharacterResourceOwner(owner.chaId) === owner ? owner : undefined
   }
-  if (status === 'idle' || status === 'loading') {
-    return selectCharacterOwner(getDatabase().characters ?? [], get(selectedCharID))
-  }
   return undefined
 }
 
@@ -99,17 +94,7 @@ function selectedRuntimeChatOwner(character: character | undefined): Chat | unde
   if (charactersResourceState.status === 'ready') {
     return getChatMetadataOwnerState(candidate.id)?.chatId === candidate.id ? candidate : undefined
   }
-  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
-
-  let owner: Chat | undefined
-  for (const candidateCharacter of getDatabase().characters ?? []) {
-    for (const chat of candidateCharacter.chats ?? []) {
-      if (chat?.id !== candidate.id) continue
-      if (owner) return undefined
-      owner = chat
-    }
-  }
-  return owner === candidate ? owner : undefined
+  return undefined
 }
 
 function runtimeOwnerFailed(): boolean {
@@ -134,12 +119,7 @@ function selectedRuntimeHypaV3Preset(
     })
     return index >= 0 ? hypaV3Presets[index] : undefined
   }
-  const compatibilityStatuses = new Set(['idle', 'loading'])
-  if (!compatibilityStatuses.has(memoryStatus) || !compatibilityStatuses.has(presetStatus)) return undefined
-  const legacyIndex = memorySettings.hypaV3PresetId
-  return Number.isInteger(legacyIndex) && (legacyIndex as number) >= 0
-    ? hypaV3Presets[legacyIndex as number]
-    : undefined
+  return undefined
 }
 
 let disposeRuntimeEffects: (() => void) | null = null

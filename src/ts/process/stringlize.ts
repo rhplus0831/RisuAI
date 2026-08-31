@@ -1,23 +1,19 @@
 import type { OpenAIChat } from './index.svelte'
 import { settingsResourceState } from '../server/resourceState.svelte'
-import { getDatabase, type Database } from '../storage/database.svelte'
+import type { Database } from '../storage/database.svelte'
 import { getUserName } from '../utilState'
 
 type StringlizeSettings = Pick<Database, 'autoSuggestPrefix' | 'ooba' | 'username'>
 
 function currentStringlizeSettings(): Partial<StringlizeSettings> {
   if (settingsResourceState.status === 'error') return {}
-  if (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading') {
-    // Public/bootstrap compatibility seam. Normal request formatting reads the
-    // split settings owner below; an owner error never returns stale aggregate data.
-    return getDatabase()
-  }
 
   const owner = settingsResourceState.value as Partial<StringlizeSettings>
   return {
-    autoSuggestPrefix: owner.autoSuggestPrefix,
-    ...(settingsResourceState.groupStatuses.providers === 'error' ? {} : { ooba: owner.ooba }),
-    ...(settingsResourceState.groupStatuses.account === 'error' ? {} : { username: owner.username }),
+    ...(settingsResourceState.groupStatuses.providers === 'ready'
+      ? { autoSuggestPrefix: owner.autoSuggestPrefix, ooba: owner.ooba }
+      : {}),
+    ...(settingsResourceState.groupStatuses.account === 'ready' ? { username: owner.username } : {}),
   }
 }
 

@@ -1,4 +1,4 @@
-import { getDatabase, type Message } from 'src/ts/storage/database.svelte'
+import type { Message } from 'src/ts/storage/database.svelte'
 import { downloadFile } from 'src/ts/globalApi.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
 import { BufferToText as BufferToText } from 'src/ts/util'
@@ -42,19 +42,7 @@ function messagesForCapturedTarget(target: ActiveChatTarget): Message[] | null {
     return getChatMessageOwnerState(target.chatId)?.messages ?? null
   }
 
-  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return null
-  // Bootstrap/public compatibility seam for legacy targets without resident
-  // split owners. Owner errors never fall back to the aggregate transcript.
-  const characters = getDatabase().characters ?? []
-  const character = target.characterId
-    ? characters.find((candidate) => candidate.chaId === target.characterId)
-    : characters[target.selectedCharID]
-  if (!character) return null
-
-  const chat = target.chatId
-    ? character.chats?.find((candidate) => candidate.id === target.chatId)
-    : character.chats?.[target.chatPage]
-  return chat?.message ?? null
+  return null
 }
 
 function adjacentAssistantResult(messages: readonly Message[], acceptedMessageId: string): Message | null {

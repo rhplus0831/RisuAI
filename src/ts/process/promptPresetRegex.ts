@@ -1,6 +1,6 @@
 import { resolvePromptPresetRegexField } from '../presetSplit'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
-import { getCurrentChat, getDatabase, type Chat, type Database, type customscript } from '../storage/database.svelte'
+import type { Chat, Database, customscript } from '../storage/database.svelte'
 import { getSelectedCharacterOwner } from '../characterState'
 import {
   charactersResourceState,
@@ -31,9 +31,7 @@ function customScriptArray(value: unknown): customscript[] {
 
 function selectedPromptRegexChatOwner(): Chat | undefined {
   if (charactersResourceState.status === 'error') return undefined
-  if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
-    return getCurrentChat()
-  }
+  if (charactersResourceState.status !== 'ready') return undefined
 
   const character = getSelectedCharacterOwner()
   if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return undefined
@@ -60,16 +58,11 @@ function currentPromptPresetRegexOwner(currentChat?: Chat): {
     return null
   }
 
-  let compatibilityDatabase: Database | undefined
-  const compatibility = () => (compatibilityDatabase ??= getDatabase())
   const promptPresets =
-    promptCollectionStatus === 'ready' || collectionsResourceState.status === 'ready'
+    promptCollectionStatus === 'ready'
       ? promptPresetRecords({ promptPresets: collectionsResourceState.values.promptPresets } as Database)
-      : promptPresetRecords(compatibility())
-  const presetRegex =
-    promptSettingsStatus === 'ready' || settingsResourceState.status === 'ready'
-      ? settingsResourceState.value.presetRegex
-      : compatibility().presetRegex
+      : []
+  const presetRegex = promptSettingsStatus === 'ready' ? settingsResourceState.value.presetRegex : undefined
 
   return {
     currentChat: currentChat ?? selectedPromptRegexChatOwner(),
@@ -80,7 +73,7 @@ function currentPromptPresetRegexOwner(currentChat?: Chat): {
 
 export function getActivePromptPresetRegexScripts(db?: Database, currentChat?: Chat): customscript[] {
   if (db) {
-    const promptPresetId = selectedPromptPresetId(currentChat ?? getCurrentChat())
+    const promptPresetId = selectedPromptPresetId(currentChat ?? selectedPromptRegexChatOwner())
     if (promptPresetId) {
       const preset = resolveUniquePromptPreset(promptPresetRecords(db), promptPresetId)
       const regexField = resolvePromptPresetRegexField(preset)

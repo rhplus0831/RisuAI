@@ -1,6 +1,5 @@
 import localforage from 'localforage'
 import { getImageType } from 'src/ts/media'
-import { getDatabase } from '../../storage/database.svelte'
 import { getModelInfo, LLMFlags, type LLMFormat, type LLMModel } from 'src/ts/model/modellist'
 import { asBuffer } from '../../util'
 import {
@@ -580,13 +579,7 @@ export async function removeInlayAsset(id: string) {
 
 export function supportsInlayImage(modelInfo?: Pick<LLMModel, 'flags'>) {
   if (modelInfo) return modelInfo.flags.includes(LLMFlags.hasImageInput)
-
-  const providerStatus = settingsResourceState.groupStatuses.providers ?? settingsResourceState.status
-  if (providerStatus === 'error' || settingsResourceState.status === 'error') return false
-  // Public compatibility seam for context-free callers. Normal request
-  // shaping supplies request-scoped model flags and never reaches this read.
-  const flags = getModelInfo(getDatabase().aiModel).flags
-  return flags.includes(LLMFlags.hasImageInput)
+  return false
 }
 
 export async function getServerInlayAssetId(id: string): Promise<string | null> {

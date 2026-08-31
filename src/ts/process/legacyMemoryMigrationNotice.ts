@@ -2,7 +2,7 @@ import { language } from '../../lang'
 import { alertSelect } from '../alert'
 import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 import { persistServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
-import { getDatabase, type Database } from '../storage/database.svelte'
+import type { Database } from '../storage/database.svelte'
 import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 export type RetiredMemoryAlgorithm = 'SupaMemory' | 'Legacy HypaMemory' | 'Hypa V2' | 'Hanurai' | 'Experimental Hypa V3'
@@ -12,7 +12,6 @@ const queuedNoticeDatabases = new WeakSet<object>()
 interface LegacyMemoryNoticeOwner {
   database: Partial<Database>
   identity: object
-  allowLegacyNumericSelection: boolean
 }
 
 function legacyMemoryNoticeOwner(): LegacyMemoryNoticeOwner | undefined {
@@ -27,18 +26,14 @@ function legacyMemoryNoticeOwner(): LegacyMemoryNoticeOwner | undefined {
     return undefined
   }
 
-  const ready = memoryStatus === 'ready' && presetStatus === 'ready'
-  const compatibilityStatuses = new Set(['idle', 'loading'])
-  const compatibility = compatibilityStatuses.has(memoryStatus) && compatibilityStatuses.has(presetStatus)
-  if (!ready && !compatibility) return undefined
+  if (memoryStatus !== 'ready' || presetStatus !== 'ready') return undefined
 
-  const memorySettings = ready ? (settingsResourceState.value as Partial<Database>) : getDatabase()
-  const hypaV3Presets = ready ? collectionsResourceState.values.hypaV3Presets : getDatabase().hypaV3Presets
+  const memorySettings = settingsResourceState.value as Partial<Database>
+  const hypaV3Presets = collectionsResourceState.values.hypaV3Presets
   if (!memorySettings || !Array.isArray(hypaV3Presets)) return undefined
 
   return {
     identity: memorySettings,
-    allowLegacyNumericSelection: compatibility,
     database: {
       memoryAlgorithmType: memorySettings.memoryAlgorithmType,
       supaModelType: memorySettings.supaModelType,
@@ -48,7 +43,6 @@ function legacyMemoryNoticeOwner(): LegacyMemoryNoticeOwner | undefined {
       legacyMemoryMigrationNoticeDismissed: memorySettings.legacyMemoryMigrationNoticeDismissed,
       hypaV3: memorySettings.hypaV3,
       selectedHypaV3PresetId: memorySettings.selectedHypaV3PresetId,
-      ...(compatibility ? { hypaV3PresetId: memorySettings.hypaV3PresetId } : {}),
       hypaV3Presets,
     },
   }
@@ -104,9 +98,9 @@ export function detectActiveRetiredMemoryAlgorithms(
 export function showLegacyMemoryMigrationNoticeIfNeeded(): boolean {
   const owner = legacyMemoryNoticeOwner()
   if (!owner) return false
-  const { database, identity, allowLegacyNumericSelection } = owner
+  const { database, identity } = owner
   if (database.legacyMemoryMigrationNoticeDismissed === true || queuedNoticeDatabases.has(identity)) return false
-  const retired = detectActiveRetiredMemoryAlgorithms(database, { allowLegacyNumericSelection })
+  const retired = detectActiveRetiredMemoryAlgorithms(database)
   if (retired.length === 0) return false
 
   queuedNoticeDatabases.add(identity)

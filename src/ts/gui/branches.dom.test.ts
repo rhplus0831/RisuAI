@@ -81,13 +81,12 @@ describe('branch graph resource owners', () => {
     expect(branchLayout().map((branch) => branch.chatId)).toEqual([0, 0, 1])
   })
 
-  it.each(['idle', 'loading'] as const)('uses selected-index compatibility while character owners are %s', (status) => {
+  it.each(['idle', 'loading'] as const)('fails closed while character owners are %s', (status) => {
     charactersResourceState.status = status
     charactersResourceState.currentChar = 1
     resetChatHydration()
 
-    expect(branchLayout()).toHaveLength(3)
-    expect(branchLayout().map((branch) => branch.chatId)).toEqual([0, 0, 1])
+    expect(branchLayout()).toEqual([])
   })
 
   it('fails closed when the character owner is in an error state', () => {

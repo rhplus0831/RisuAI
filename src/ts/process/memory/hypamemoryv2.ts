@@ -3,11 +3,19 @@ import { type HypaModel, localModels } from './hypamemory'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
 import { TaskRateLimiter, TaskCanceledError } from './taskRateLimiter'
 import { runEmbedding } from '../transformers'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import { isMobile } from 'src/ts/platform'
 import { embeddingOperationCredential, requestRemoteEmbeddingTexts } from 'src/ts/server/embeddingOperations'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import type { CustomEmbeddingConfiguration } from '@risuai/protocol/embedding-operation'
 import { getEmbeddingCacheKey } from './embeddingCacheKey'
+
+function memorySettingsOwner(): Partial<Database> | undefined {
+  if (settingsResourceState.status === 'error' || settingsResourceState.groupStatuses.memory !== 'ready') {
+    return undefined
+  }
+  return settingsResourceState.value as Partial<Database>
+}
 
 export interface HypaProcessorV2Options {
   model?: HypaModel
@@ -44,7 +52,7 @@ export class HypaProcessorV2<TMetadata> {
   private readonly customEmbeddingConfigurationProvided: boolean
 
   public constructor(options?: HypaProcessorV2Options) {
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
 
     this.customEmbeddingConfigurationProvided =
       !!options &&
@@ -53,9 +61,9 @@ export class HypaProcessorV2<TMetadata> {
         Object.prototype.hasOwnProperty.call(options, 'customEmbeddingKey'))
 
     this.options = {
-      model: db.hypaModel || 'MiniLM',
-      customEmbeddingUrl: db.hypaCustomSettings?.url?.trim() || '',
-      oaiKey: db.hypaV3Key?.trim() || '',
+      model: settings?.hypaModel || 'MiniLM',
+      customEmbeddingUrl: settings?.hypaCustomSettings?.url?.trim() || '',
+      oaiKey: settings?.hypaV3Key?.trim() || '',
       rateLimiter: new TaskRateLimiter(),
       ...options,
     }
@@ -371,14 +379,14 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   private getCacheKey(content: string, contextTexts?: string[]): string {
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
     const ctxProvider = isContextModel(this.options.model) ? getContextProvider(this.options.model) : null
     const ctxSuffix = ctxProvider ? ctxProvider.getCacheKeySuffix(contextTexts) : ''
 
     return getEmbeddingCacheKey(content, {
       model: this.options.model,
       customEmbeddingUrl: this.options.customEmbeddingUrl,
-      customEmbeddingModel: this.options.customEmbeddingModel ?? db.hypaCustomSettings?.model,
+      customEmbeddingModel: this.options.customEmbeddingModel ?? settings?.hypaCustomSettings?.model,
       contextSuffix: ctxSuffix,
     })
   }
@@ -426,7 +434,7 @@ export class HypaProcessorV2<TMetadata> {
   }
 
   private async getAPIEmbeds(contents: string[], inputType: 'query' | 'document'): Promise<EmbeddingVector[]> {
-    const db = getDatabase()
+    const settings = memorySettingsOwner()
 
     if (this.options.model === 'custom') {
       if (!this.options.customEmbeddingUrl) {
@@ -443,7 +451,7 @@ export class HypaProcessorV2<TMetadata> {
         model: 'custom',
         inputType,
         input: contents,
-        credential: embeddingOperationCredential(this.options.customEmbeddingKey ?? db.hypaCustomSettings?.key),
+        credential: embeddingOperationCredential(this.options.customEmbeddingKey ?? settings?.hypaCustomSettings?.key),
         custom,
         signal: this.operationSignal,
       })
@@ -452,7 +460,7 @@ export class HypaProcessorV2<TMetadata> {
         model: this.options.model as 'ada' | 'openai3small' | 'openai3large',
         inputType,
         input: contents,
-        credential: embeddingOperationCredential(this.options.oaiKey ?? db.hypaV3Key),
+        credential: embeddingOperationCredential(this.options.oaiKey ?? settings?.hypaV3Key),
         signal: this.operationSignal,
       })
     } else if (isContextModel(this.options.model)) {

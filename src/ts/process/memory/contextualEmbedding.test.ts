@@ -77,13 +77,13 @@ describe('Voyage contextual embedding bridge', () => {
     })
   })
 
-  it('uses compatibility credentials only while the memory owner is loading', async () => {
+  it('does not use credentials while the memory owner is loading', async () => {
     state.settingsResourceState.value = { voyageApiKey: 'stale-owner-key' }
     state.settingsResourceState.groupStatuses.memory = 'loading'
 
     await getContextProvider('voyageContext3')!.embedQueries(['query'])
 
-    expect(state.requestGroups).toHaveBeenCalledWith(expect.objectContaining({ credential: { source: 'stored' } }))
+    expect(state.requestGroups).toHaveBeenCalledWith(expect.objectContaining({ credential: { source: 'none' } }))
   })
 
   it('fails closed without reusing aggregate credentials after an owner error', async () => {

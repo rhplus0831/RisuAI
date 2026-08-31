@@ -1,6 +1,6 @@
 import { risuChatParser } from 'src/ts/parser/parser.svelte'
 import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
-import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import { jsonOutputTrimmer } from 'src/ts/util'
 
 type JSONSchemaSettings = Pick<Database, 'jsonSchema' | 'strictJsonSchema'>
@@ -8,15 +8,7 @@ type JSONSchemaSettings = Pick<Database, 'jsonSchema' | 'strictJsonSchema'>
 function currentJSONSchemaSettings(): Partial<JSONSchemaSettings> {
   const status = settingsResourceState.groupStatuses.prompt ?? settingsResourceState.status
   if (status === 'error' || settingsResourceState.status === 'error') return {}
-  if (
-    (status === 'idle' || status === 'loading') &&
-    (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading')
-  ) {
-    // Public/bootstrap compatibility seam. Owner failures deliberately do not
-    // read the aggregate prompt projection.
-    return getDatabase()
-  }
-  return settingsResourceState.value as Partial<JSONSchemaSettings>
+  return status === 'ready' ? (settingsResourceState.value as Partial<JSONSchemaSettings>) : {}
 }
 
 function resolveSchemaInput(schema: string | undefined, settings: Partial<JSONSchemaSettings>): string {
