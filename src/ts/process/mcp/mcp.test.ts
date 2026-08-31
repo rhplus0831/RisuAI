@@ -114,6 +114,8 @@ function configureServerCompletionDb() {
     aiModel: 'echo_model',
     subModel: 'echo_model',
     fallbackModels: {},
+    modelProfiles: [{ id: 'mcp-test-profile', name: 'MCP test profile', modelId: 'echo_model' }],
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'mcp-test-profile' } },
     maxResponse: 64,
     temperature: 40,
     useStreaming: false,

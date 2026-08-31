@@ -1,12 +1,12 @@
 import {
   captureSettingsPatchProjectionEpochs,
-  getResourceDatabase as getDatabase,
+  collectionsResourceState,
+  settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import { MCPClient, type JsonRPC, type MCPRefreshTokenSource, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps, type RisuModule } from '../modules'
 import { canUseServerCommands, type PatchServerBackedSettingsInput } from '../../server/commands'
 import { dispatchDurableServerBackedSettingsPatch } from '../../server/settingsBridge.svelte'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
 import { language } from 'src/lang'
@@ -75,7 +75,6 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
   const releaseMCPClientLeases = acquireMCPClientLeases(additionalMCPs)
   beginMCPInitialization()
   try {
-    const db = getDatabase()
     const mcpUrls = getModuleMcps()
     if (additionalMCPs && additionalMCPs.length > 0) {
       for (const mcp of additionalMCPs) {
@@ -285,7 +284,7 @@ async function constructMCPClientForKey(mcp: string): Promise<void> {
 }
 
 export function resolveMCPRefreshTokenSource(mcp: string): MCPRefreshTokenSource | null {
-  const matches = (getDatabase().authRefreshes ?? []).filter((refresh) => refresh.url === mcp)
+  const matches = authRefreshTokenOwner().filter((refresh) => refresh.url === mcp)
   if (matches.length !== 1) return null
   const refresh = matches[0]
   if (isMaskedProviderSecret(refresh.refreshToken) || isMaskedProviderSecret(refresh.clientSecret)) {
@@ -435,17 +434,13 @@ async function buildMCPToolClientIndex(): Promise<Map<string, MCPToolDispatchTar
 }
 
 export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void {
-  const previous = cloneJsonValue(getDatabase().authRefreshes ?? []) as StoredMCPRefreshToken[]
+  const previous = cloneJsonValue(authRefreshTokenOwner())
   const attemptedToken: StoredMCPRefreshToken = cloneJsonValue({
     url: mcp,
     ...arg,
   })
   const attemptedNext = upsertMCPRefreshToken(previous, attemptedToken)
-  // The optimistic local write must run inside a trusted write scope so it
-  // does not throw against the read-only server projection in Fastify mode.
-  withTrustedResourceWrite(() => {
-    getDatabase().authRefreshes = cloneJsonValue(attemptedNext)
-  })
+  setAuthRefreshTokenOwner(cloneJsonValue(attemptedNext))
 
   if (!canUseServerCommands()) return
 
@@ -492,18 +487,18 @@ function upsertMCPRefreshToken(
 }
 
 function rollbackMCPRefreshTokenPersistence(attempt: PendingMCPRefreshTokenPersistence): void {
-  withTrustedResourceWrite(() => {
-    const rolledBack = applyAttemptedFieldRollback({
-      target: getDatabase() as unknown as Record<string, unknown>,
-      previous: { authRefreshes: attempt.previous },
-      attempted: { authRefreshes: attempt.attempted },
-    })
-    if (rolledBack.includes('authRefreshes')) return
-
-    const liveAuthRefreshes = getDatabase().authRefreshes
-    if (!Array.isArray(liveAuthRefreshes)) return
-    revertMCPRefreshTokenInSnapshot(liveAuthRefreshes, attempt)
+  const settingsOwner = settingsResourceState.value as Record<string, unknown>
+  const rolledBack = applyAttemptedFieldRollback({
+    target: settingsOwner,
+    previous: { authRefreshes: attempt.previous },
+    attempted: { authRefreshes: attempt.attempted },
   })
+  if (!rolledBack.includes('authRefreshes')) {
+    const liveAuthRefreshes = settingsOwner.authRefreshes
+    if (Array.isArray(liveAuthRefreshes)) {
+      revertMCPRefreshTokenInSnapshot(liveAuthRefreshes as StoredMCPRefreshToken[], attempt)
+    }
+  }
 
   rebaseLaterMCPRefreshTokenPersistences(attempt)
 }
@@ -540,6 +535,20 @@ function finishMCPRefreshTokenPersistence(attempt: PendingMCPRefreshTokenPersist
 
 function sameJsonValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function authRefreshTokenOwner(): StoredMCPRefreshToken[] {
+  const value = (settingsResourceState.value as Record<string, unknown>).authRefreshes
+  return Array.isArray(value) ? (value as StoredMCPRefreshToken[]) : []
+}
+
+function setAuthRefreshTokenOwner(value: StoredMCPRefreshToken[]): void {
+  ;(settingsResourceState.value as Record<string, unknown>).authRefreshes = value
+}
+
+function moduleCollectionOwner(): RisuModule[] {
+  const modules = collectionsResourceState.values.modules
+  return Array.isArray(modules) ? (modules as RisuModule[]) : []
 }
 
 export async function getMCPTools(additionalMCPs?: string[]) {
@@ -682,7 +691,7 @@ export async function importMCPModule(): Promise<MCPModuleImportOutcome> {
       alertNormal(language.moduleImport.mcpSuccess(serverName))
       return 'applied'
     }
-    if (getDatabase().modules?.some((module) => module.id === moduleId)) {
+    if (moduleCollectionOwner().some((module) => module.id === moduleId)) {
       alertNormal(language.moduleImport.queued)
       return 'queued'
     }

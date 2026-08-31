@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// MCP character writes apply an immediate trusted projection and keep rollback.
+// MCP character writes apply an immediate owner projection and keep rollback.
 
 const alertConfirmSpy = vi.hoisted(() => vi.fn(async () => true))
 
@@ -25,7 +25,7 @@ import {
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
 import { resetLorebookHydration } from 'src/ts/server/lorebookBridge.svelte'
-import type { character } from 'src/ts/storage/database.svelte'
+import { SERVER_CHARACTER_SHELL_MARKER, type character } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { seedCloneCostDb } from 'src/ts/__tests__/cloneCostHarness'
 import { CharacterHandler } from '../characters'
@@ -37,6 +37,8 @@ interface CapturedFetch {
 }
 
 interface StubCommandFetchOptions {
+  characterDetail?: character
+  characterLorebook?: unknown[]
   failureStatusByUrl?: Record<string, number>
   holdUrls?: string[]
 }
@@ -66,6 +68,16 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/characters/char-1' && options.characterDetail) {
+        return jsonResponse({ revision: 10, character: options.characterDetail })
+      }
+      if (url === '/api/v1/characters/char-1/lorebook' && options.characterLorebook) {
+        return jsonResponse({
+          revision: 10,
+          characterId: 'char-1',
+          globalLore: options.characterLorebook,
+        })
+      }
       if (url.startsWith('/api/v1/commands/characters/char-1')) {
         const buildResponse = () => {
           const failureStatus = options.failureStatusByUrl?.[url]
@@ -494,7 +506,7 @@ describe('MCP character writes optimistic projection', () => {
     await waitForCallCount(calls, 4)
   })
 
-  it('rejects character lorebook writes when lorebook stubs are enabled and the character is not hydrated', async () => {
+  it('attempts target-scoped hydration and rejects character lorebook writes when hydration fails', async () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     const existing = makeLorebook('Existing', 'old content')
@@ -511,7 +523,13 @@ describe('MCP character writes optimistic projection', () => {
 
     expect(toolText(updateResult)).toContain('not hydrated')
     expect(getDatabase().characters[1].globalLore).toEqual([existing])
-    expect(calls).toEqual([])
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/characters/char-1/lorebook',
+        method: 'GET',
+        body: null,
+      },
+    ])
 
     const deleteResult = await handler.handle('risu-delete-character-lorebook', {
       id: 'char-1',
@@ -520,7 +538,94 @@ describe('MCP character writes optimistic projection', () => {
 
     expect(toolText(deleteResult)).toContain('not hydrated')
     expect(getDatabase().characters[1].globalLore).toEqual([existing])
-    expect(calls).toEqual([])
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/characters/char-1/lorebook',
+        method: 'GET',
+        body: null,
+      },
+      {
+        url: '/api/v1/characters/char-1/lorebook',
+        method: 'GET',
+        body: null,
+      },
+    ])
+  })
+
+  it('hydrates one stubbed lorebook by stable character id before returning MCP JSON', async () => {
+    const hydratedLorebook = [makeLorebook('Hydrated', 'authoritative content')]
+    const { calls } = stubCommandFetch({ characterLorebook: hydratedLorebook })
+    const handler = new CharacterHandler()
+    getDatabase().characters[1].globalLore = []
+    ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+
+    expect(
+      parseToolJson<Array<{ name: string; content: string }>>(
+        await handler.handle('risu-get-character-lorebook', {
+          id: 'char-1',
+          names: ['Hydrated'],
+        }),
+      ),
+    ).toEqual([
+      {
+        alwaysActive: false,
+        content: 'authoritative content',
+        keys: 'Hydrated-key',
+        name: 'Hydrated',
+      },
+    ])
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/characters/char-1/lorebook',
+        method: 'GET',
+        body: null,
+      },
+    ])
+    expect(getDatabase().characters[1].globalLore).toEqual(hydratedLorebook)
+  })
+
+  it('hydrates one nonselected character detail owner before returning script JSON', async () => {
+    const hydratedCharacter = JSON.parse(JSON.stringify(getDatabase().characters[1])) as character
+    hydratedCharacter.customscript = [makeRegexScript('Hydrated script', 'hydrated-in', 'hydrated-out')]
+    for (const chat of hydratedCharacter.chats ?? []) {
+      chat.message = []
+      const chatRecord = chat as unknown as Record<string, unknown>
+      delete chatRecord.hypaV3Data
+      delete chatRecord.alternatives
+      delete chatRecord.alternateMessages
+    }
+    const shell = {
+      ...(JSON.parse(JSON.stringify(getDatabase().characters[1])) as character),
+      customscript: [],
+      [SERVER_CHARACTER_SHELL_MARKER]: true,
+    }
+    getDatabase().characters[1] = shell
+    const { calls } = stubCommandFetch({ characterDetail: hydratedCharacter })
+    const handler = new CharacterHandler()
+
+    expect(
+      parseToolJson<Array<{ comment: string; in: string; out: string }>>(
+        await handler.handle('risu-get-character-regex-scripts', { id: 'char-1' }),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        comment: 'Hydrated script',
+        in: 'hydrated-in',
+        out: 'hydrated-out',
+      }),
+    ])
+    expect(calls).toEqual([
+      {
+        url: '/api/v1/characters/char-1',
+        method: 'GET',
+        body: null,
+      },
+    ])
+    expect(getDatabase().characters[1]).toMatchObject({
+      chaId: 'char-1',
+      customscript: [expect.objectContaining({ comment: 'Hydrated script' })],
+    })
+    expect(getDatabase().characters[1]).not.toHaveProperty(SERVER_CHARACTER_SHELL_MARKER)
   })
 
   it('set and delete character regex scripts are immediately visible through resource state and MCP reads', async () => {

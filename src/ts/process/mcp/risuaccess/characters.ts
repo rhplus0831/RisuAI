@@ -7,9 +7,15 @@ import {
   sanitizeCharacterPatch,
 } from 'src/ts/characterCommands'
 import { canUseServerCommands } from 'src/ts/server/commands'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
+import { hydrateCharacterShell } from 'src/ts/server/characterShellHydration.svelte'
+import { ensureCharacterLorebookHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+// These scoped bridges remain the supported compatibility boundary for
+// lorebook/script command staging, stable definition ids, and rollback.
 import {
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
@@ -21,7 +27,7 @@ import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
-import { type character, type loreBook } from 'src/ts/storage/database.svelte'
+import { isServerCharacterShell, type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
@@ -412,7 +418,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterInfo(id: string, fields: string[]): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -458,8 +465,9 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterLorebooks(id: string, count: number = 100, offset: number = 0): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
-    if (!char) {
+    const detailOwner = getDetailCharacterOwner(id)
+    const detailChar = detailOwner instanceof Promise ? await detailOwner : detailOwner
+    if (!detailChar) {
       return [
         {
           type: 'text',
@@ -467,6 +475,9 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const lorebookOwner = getLorebookCharacterOwner(detailChar)
+    const char = lorebookOwner instanceof Promise ? await lorebookOwner : lorebookOwner
+    if (!char) return characterLorebookNotReadyResponse(detailChar)
 
     if (count > 100) count = 100
     if (count < 1) count = 1
@@ -490,8 +501,9 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterLorebook(id: string, entryNames: string[]): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
-    if (!char) {
+    const detailOwner = getDetailCharacterOwner(id)
+    const detailChar = detailOwner instanceof Promise ? await detailOwner : detailOwner
+    if (!detailChar) {
       return [
         {
           type: 'text',
@@ -499,6 +511,9 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const lorebookOwner = getLorebookCharacterOwner(detailChar)
+    const char = lorebookOwner instanceof Promise ? await lorebookOwner : lorebookOwner
+    if (!char) return characterLorebookNotReadyResponse(detailChar)
 
     const entries = char.globalLore.filter((entry) => {
       const displayName = entry.comment || 'Unnamed ' + pickHashRand(5515, entry.content)
@@ -530,7 +545,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async setCharacterInfo(id: string, data: any): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -552,7 +568,7 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const liveChar = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    const liveChar = getCharacterResourceOwner(characterId)
     if (!liveChar) {
       return [
         {
@@ -597,7 +613,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (canUseServerCommands()) {
       // A field patch touches one character row, so its rollback needs only
       // that row, not a deep clone of the whole characters array.
-      const index = getDatabase().characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
+      const index = charactersResourceState.characters.indexOf(liveChar)
       const acceptedPatch = sanitizeCharacterPatch(patch)
       if (index >= 0) {
         const previous = currentCharacterRowSnapshot(index)
@@ -627,8 +643,9 @@ export class CharacterHandler extends MCPToolHandler {
     newName?: string,
     alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
-    if (!char) {
+    const detailOwner = getDetailCharacterOwner(id)
+    const detailChar = detailOwner instanceof Promise ? await detailOwner : detailOwner
+    if (!detailChar) {
       return [
         {
           type: 'text',
@@ -636,6 +653,9 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const lorebookOwner = getLorebookCharacterOwner(detailChar)
+    const char = lorebookOwner instanceof Promise ? await lorebookOwner : lorebookOwner
+    if (!char) return characterLorebookNotReadyResponse(detailChar)
     if (
       !(await this.promptAccess(
         'risu-set-character-lorebook',
@@ -720,8 +740,9 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async deleteCharacterLorebook(id: string, name: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
-    if (!char) {
+    const detailOwner = getDetailCharacterOwner(id)
+    const detailChar = detailOwner instanceof Promise ? await detailOwner : detailOwner
+    if (!detailChar) {
       return [
         {
           type: 'text',
@@ -729,6 +750,9 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
+    const lorebookOwner = getLorebookCharacterOwner(detailChar)
+    const char = lorebookOwner instanceof Promise ? await lorebookOwner : lorebookOwner
+    if (!char) return characterLorebookNotReadyResponse(detailChar)
     if (
       !(await this.promptAccess(
         'risu-delete-character-lorebook',
@@ -777,7 +801,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterRegexScripts(id: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -816,7 +841,8 @@ export class CharacterHandler extends MCPToolHandler {
     flag?: string,
     ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -909,7 +935,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async deleteCharacterRegexScripts(id: string, name: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -978,7 +1005,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterAdditionalAssets(id: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -1003,7 +1031,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async deleteCharacterAdditionalAssets(id: string, assetName: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -1056,7 +1085,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async getCharacterLuaScript(id: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -1085,7 +1115,8 @@ export class CharacterHandler extends MCPToolHandler {
   }
 
   async setCharacterLuaScript(id: string, code: string): Promise<RPCToolCallContent[]> {
-    const char: character = getCharacter(id)
+    const characterOwner = getDetailCharacterOwner(id)
+    const char = characterOwner instanceof Promise ? await characterOwner : characterOwner
     if (!char) {
       return [
         {
@@ -1153,13 +1184,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (count < 1) count = 1
     if (offset < 0) offset = 0
 
-    const characters = (
-      charactersResourceState.status === 'ready'
-        ? charactersResourceState.characters
-        : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-          ? getDatabase().characters
-          : []
-    )
+    const characters = (charactersResourceState.status === 'ready' ? charactersResourceState.characters : [])
       .slice(offset, offset + count)
       .map((char) => ({
         id: char.chaId,
@@ -1192,7 +1217,7 @@ function cloneJsonValue<T>(value: T): T {
 }
 
 function replaceCharacterLorebooksThroughServerBridge(characterId: string, entries: loreBook[]): boolean {
-  if (getDatabase()?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) return false
+  if (lorebookStubsEnabled() && !isCharacterLorebookHydrated(characterId)) return false
   ensureClientLorebookEntryIds(entries)
   return replaceCharacterLorebookCollectionFull(characterId, entries, 0)
 }
@@ -1211,7 +1236,7 @@ function characterAccessName(char: character): string {
 }
 
 function characterMutationTargetChangedResponse(id: string, original: character): RPCToolCallContent[] | null {
-  const live = getDatabase().characters?.find((candidate) => candidate.chaId === original.chaId)
+  const live = getCharacterResourceOwner(original.chaId)
   if (!live) {
     return [
       {
@@ -1233,26 +1258,49 @@ function characterMutationTargetChangedResponse(id: string, original: character)
 
 function applyCharacterInfoPatchOptimistically(characterId: string, patch: Record<string, unknown>): void {
   if (Object.keys(patch).length === 0) return
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-    if (!target) return
-    const mutableTarget = target as unknown as Record<string, unknown>
-    for (const [field, value] of Object.entries(patch)) {
-      mutableTarget[field] = value
-    }
-  })
+  const target = getCharacterResourceOwner(characterId)
+  if (!target) return
+  const mutableTarget = target as unknown as Record<string, unknown>
+  for (const [field, value] of Object.entries(patch)) {
+    mutableTarget[field] = value
+  }
 }
 
 function replaceCharacterRegexScriptsOptimistically(characterId: string, scripts: character['customscript']): void {
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-    if (target) target.customscript = scripts
-  })
+  const target = getCharacterResourceOwner(characterId)
+  if (target) target.customscript = scripts
 }
 
 function replaceCharacterTriggersOptimistically(characterId: string, triggers: character['triggerscript']): void {
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-    if (target) target.triggerscript = triggers
+  const target = getCharacterResourceOwner(characterId)
+  if (target) target.triggerscript = triggers
+}
+
+function getDetailCharacterOwner(id: string): character | Promise<character | undefined> | undefined {
+  const initial = getCharacter(id)
+  if (!initial?.chaId) return undefined
+
+  const characterId = initial.chaId
+  if (!isServerCharacterShell(initial)) return getCharacterResourceOwner(characterId)
+
+  return hydrateCharacterShell(characterId).then(() => {
+    const owner = getCharacterResourceOwner(characterId)
+    return owner && !isServerCharacterShell(owner) ? owner : undefined
   })
+}
+
+function getLorebookCharacterOwner(character: character): character | Promise<character | undefined> | undefined {
+  const characterId = character.chaId
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner) return undefined
+  if (!lorebookStubsEnabled() || isCharacterLorebookHydrated(characterId)) return owner
+  return ensureCharacterLorebookHydrated(characterId).then((hydrated) => {
+    if (!hydrated) return undefined
+    const hydratedOwner = getCharacterResourceOwner(characterId)
+    return hydratedOwner && !isServerCharacterShell(hydratedOwner) ? hydratedOwner : undefined
+  })
+}
+
+function lorebookStubsEnabled(): boolean {
+  return (settingsResourceState.value as Record<string, unknown>).enableLorebookStubs === true
 }

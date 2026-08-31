@@ -1,8 +1,10 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
+import type { RisuModule } from 'src/ts/process/modules'
 import { canUseServerCommands, type ModuleSnapshot } from 'src/ts/server/commands'
-import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
+// These scoped bridges remain the supported compatibility boundary for
+// lorebook/script command staging, stable definition ids, and rollback.
 import {
   currentLorebookCollectionScopedSnapshot,
   dispatchReplaceModuleLorebooks,
@@ -377,8 +379,8 @@ export class ModuleHandler extends MCPToolHandler {
     if (count < 1) count = 1
     if (offset < 0) offset = 0
 
-    const modules = getDatabase().modules.filter((m) => !m.mcp)
-    const enabledModules = new Set(getDatabase().enabledModules || [])
+    const modules = moduleCollectionOwner().filter((m) => !m.mcp)
+    const enabledModules = new Set(enabledModuleIdsOwner())
 
     const slicedModules = modules.slice(offset, offset + count)
 
@@ -398,13 +400,13 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async getModuleInfo(id: string, fields?: string[]): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
 
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
 
-    const enabledModules = new Set(getDatabase().enabledModules || [])
+    const enabledModules = new Set(enabledModuleIdsOwner())
     const defaultFields = ['name', 'description', 'id', 'enabled']
     const targetFields = fields && fields.length > 0 ? fields : defaultFields
 
@@ -441,7 +443,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async setModuleInfo(id: string, data: any): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return [
         {
@@ -462,7 +464,7 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    const liveModule = getDatabase().modules.find((m) => m.id === moduleId)
+    const liveModule = findModuleOwner(moduleId)
     if (!liveModule || liveModule.mcp) {
       return moduleNotFound(id)
     }
@@ -504,18 +506,18 @@ export class ModuleHandler extends MCPToolHandler {
       dispatchModuleInfoPatch(moduleId, acceptedPatch, enabled, previous)
     } else {
       if (enabled !== null) {
-        const enabledModules = new Set(getDatabase().enabledModules || [])
+        const enabledModules = new Set(enabledModuleIdsOwner())
         if (enabled) {
           enabledModules.add(moduleId)
         } else {
           enabledModules.delete(moduleId)
         }
-        getDatabase().enabledModules = Array.from(enabledModules)
+        setEnabledModuleIdsOwner(Array.from(enabledModules))
       }
       applyModuleInfoFields(liveModule as unknown as Record<string, unknown>, acceptedPatch)
     }
 
-    const updatedModuleName = getDatabase().modules.find((m) => m.id === moduleId)?.name || liveModule.name || moduleId
+    const updatedModuleName = findModuleOwner(moduleId)?.name || liveModule.name || moduleId
     return [
       {
         type: 'text',
@@ -525,7 +527,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async listModuleLorebooks(id: string, count: number = 100, offset: number = 0): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -552,7 +554,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async getModuleLorebook(id: string, names: string[]): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -594,7 +596,7 @@ export class ModuleHandler extends MCPToolHandler {
     newName?: string,
     alwaysActive?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -684,7 +686,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async deleteModuleLorebook(id: string, name: string): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -738,7 +740,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async getModuleRegexScripts(id: string): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
 
     if (!module || module.mcp) {
       return moduleNotFound(id)
@@ -773,7 +775,7 @@ export class ModuleHandler extends MCPToolHandler {
     flag?: string,
     ableFlag?: boolean,
   ): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -854,7 +856,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async deleteModuleRegexScript(id: string, name: string): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -912,7 +914,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async getModuleLuaScript(id: string): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -936,7 +938,7 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async setModuleLuaScript(id: string, code: string): Promise<RPCToolCallContent[]> {
-    const module = getDatabase().modules.find((m) => m.id === id)
+    const module = findModuleOwner(id)
     if (!module || module.mcp) {
       return moduleNotFound(id)
     }
@@ -990,7 +992,7 @@ function cloneJsonValue<T>(value: T): T {
 }
 
 function moduleMutationTargetChangedResponse(id: string, original: { id: string }): RPCToolCallContent[] | null {
-  const live = getDatabase().modules.find((candidate) => candidate.id === original.id)
+  const live = findModuleOwner(original.id)
   if (!live || live.mcp) return moduleNotFound(id)
   if (live !== original) {
     return [
@@ -1006,22 +1008,20 @@ function moduleMutationTargetChangedResponse(id: string, original: { id: string 
 function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, enabled: boolean | null): void {
   if (Object.keys(patch).length === 0 && enabled === null) return
 
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
-    if (!target) return
+  const target = findModuleOwner(moduleId)
+  if (!target) return
 
-    applyModuleInfoFields(target as unknown as Record<string, unknown>, patch)
+  applyModuleInfoFields(target as unknown as Record<string, unknown>, patch)
 
-    if (enabled !== null) {
-      const enabledModules = new Set(getDatabase().enabledModules ?? [])
-      if (enabled) {
-        enabledModules.add(moduleId)
-      } else {
-        enabledModules.delete(moduleId)
-      }
-      getDatabase().enabledModules = Array.from(enabledModules)
+  if (enabled !== null) {
+    const enabledModules = new Set(enabledModuleIdsOwner())
+    if (enabled) {
+      enabledModules.add(moduleId)
+    } else {
+      enabledModules.delete(moduleId)
     }
-  })
+    setEnabledModuleIdsOwner(Array.from(enabledModules))
+  }
 }
 
 const MODULE_INFO_DELETABLE_FIELDS = new Set(['lowLevelAccess', 'backgroundEmbedding', 'customModuleToggle'])
@@ -1037,22 +1037,41 @@ function applyModuleInfoFields(target: Record<string, unknown>, patch: ModuleSna
 }
 
 function replaceModuleLorebooksOptimistically(moduleId: string, entries: loreBook[]): void {
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
-    if (target) target.lorebook = entries
-  })
+  const target = findModuleOwner(moduleId)
+  if (target) target.lorebook = entries
 }
 
 function replaceModuleRegexScriptsOptimistically(moduleId: string, scripts: customscript[]): void {
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
-    if (target) target.regex = scripts
-  })
+  const target = findModuleOwner(moduleId)
+  if (target) target.regex = scripts
 }
 
 function replaceModuleTriggersOptimistically(moduleId: string, triggers: triggerscript[]): void {
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
-    if (target) target.trigger = triggers
-  })
+  const target = findModuleOwner(moduleId)
+  if (target) target.trigger = triggers
+}
+
+function moduleCollectionOwner(): RisuModule[] {
+  const modules = collectionsResourceState.values.modules
+  return collectionsResourceState.statuses.modules === 'ready' && Array.isArray(modules)
+    ? (modules as RisuModule[])
+    : []
+}
+
+function findModuleOwner(moduleId: string): RisuModule | undefined {
+  const matches = moduleCollectionOwner().filter((candidate) => candidate.id === moduleId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function enabledModuleIdsOwner(): string[] {
+  const enabledModules = (settingsResourceState.value as Record<string, unknown>).enabledModules
+  return settingsResourceState.status === 'ready' &&
+    Array.isArray(enabledModules) &&
+    enabledModules.every((moduleId) => typeof moduleId === 'string')
+    ? enabledModules
+    : []
+}
+
+function setEnabledModuleIdsOwner(enabledModules: string[]): void {
+  ;(settingsResourceState.value as Record<string, unknown>).enabledModules = enabledModules
 }
