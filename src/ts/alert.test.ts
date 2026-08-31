@@ -4,7 +4,8 @@ const alertTestState = vi.hoisted(() => ({
   alertStoreValue: { type: 'none', msg: '' } as Record<string, unknown>,
   alertStoreSet: vi.fn(),
   alertStoreSubscribers: new Set<(value: Record<string, unknown>) => void>(),
-  getDatabase: vi.fn(() => ({ usePlainFetch: false })),
+  settings: { usePlainFetch: false } as Record<string, unknown>,
+  characters: [] as Array<Record<string, unknown>>,
 }))
 
 vi.mock('./stores/coreStores.svelte', () => ({
@@ -34,7 +35,11 @@ vi.mock('./stores/coreStores.svelte', () => ({
 vi.mock('./storage/database.svelte', () => ({
   appVer: 'test',
   getCurrentCharacter: vi.fn(() => undefined),
-  getDatabase: alertTestState.getDatabase,
+}))
+
+vi.mock('./server/resourceState.svelte', () => ({
+  settingsResourceState: { value: alertTestState.settings },
+  charactersResourceState: { characters: alertTestState.characters },
 }))
 
 vi.mock('../lang', () => ({
@@ -85,16 +90,13 @@ import {
   alertStore,
   updateAlertWait,
 } from './alert'
-import { registerAlertDatabaseAccessor } from './alertDatabase'
-
 beforeEach(() => {
   vi.unstubAllEnvs()
   alertTestState.alertStoreValue = { type: 'none', msg: '' }
   for (const subscriber of alertTestState.alertStoreSubscribers) subscriber(alertTestState.alertStoreValue)
   alertTestState.alertStoreSet.mockClear()
-  alertTestState.getDatabase.mockClear()
-  alertTestState.getDatabase.mockReturnValue({ usePlainFetch: false })
-  registerAlertDatabaseAccessor(alertTestState.getDatabase as never)
+  alertTestState.settings.usePlainFetch = false
+  alertTestState.characters.length = 0
   localStorage.clear()
 })
 
