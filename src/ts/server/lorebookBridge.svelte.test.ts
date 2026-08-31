@@ -1,13 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushSync } from 'svelte'
-
-// No-data-loss invariant for `watchServerBackedLorebooks`.
-// The watcher auto-persists any lorebook change it diffs; stubbing character
-// `globalLore` makes a `[real]`→`[]` (hydrated→stub) transition possible, which —
-// without the hydrated registry — the watcher would persist as a DELETION. Per the
-// handover, keep the resource-backed database real (it is the live $state the watcher reads)
-// and mock only the command layer + the resource guard. Drive the reactive effect
-// with flushSync() and the debounce with fake timers.
 
 const recorded = vi.hoisted(() => ({
   commands: [] as Array<Record<string, unknown> & { rollback?: () => void }>,
@@ -15,7 +6,6 @@ const recorded = vi.hoisted(() => ({
     Promise<{ status: string; error?: string; reason?: string; revision?: number; currentRevision?: number }>
   >,
 }))
-const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const durableRecorded = vi.hoisted(() => ({
   nextId: 0,
   stageError: null as Error | null,
@@ -101,8 +91,8 @@ vi.mock('./commands', () => ({
     },
   ),
   subscribeServerCommandLocalEffectApplied: () => () => {},
-  // Builders: identity stubs that tag the command kind so the test can assert which
-  // entity (if any) the watcher tried to persist.
+  // Builders: identity stubs that tag the command kind so tests can assert which
+  // owner mutation was persisted.
   createGlobalLorebookCommand: async (a: unknown) => ({ kind: 'createGlobal', a }),
   deleteCharacterLorebookEntryCommand: async (a: unknown) => ({ kind: 'deleteCharacterEntry', a }),
   deleteChatLorebookEntryCommand: async (a: unknown) => ({ kind: 'deleteChatEntry', a }),
@@ -132,12 +122,7 @@ vi.mock('./commands', () => ({
   upsertModuleLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertModuleEntry', a }),
 }))
 vi.mock('./resourceWriteGuard.svelte', () => ({
-  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
-  withServerResourceApply: (fn: () => unknown) => {
-    const result = fn()
-    resourceGuardState.epoch += 1
-    return result
-  },
+  withServerResourceApply: (fn: () => unknown) => fn(),
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -159,7 +144,6 @@ import {
   applyServerCharacterLorebookResource,
   changedLorebookEntryDraftFields,
   clearDirtyLorebookEntryFieldsMatchingProjection,
-  collectLorebookCollectionSnapshots,
   createGlobalLorebook,
   currentGlobalLorebookStateSnapshot,
   currentLorebookCollectionScopedSnapshot,
@@ -196,7 +180,6 @@ import {
   setActiveChatLorebookLocalActivationWithOutcome,
   setChatLorebookLocalActivationWithOutcome,
   subscribeLorebookEntryDraftRollbacks,
-  watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
@@ -306,7 +289,6 @@ function publishLorebookSettlement(mutationId: string, settlement: 'accepted' | 
 
 beforeEach(() => {
   vi.useFakeTimers()
-  resourceGuardState.epoch = 0
   resetLorebookHydration()
   recorded.commands.length = 0
   recorded.commandResults.length = 0
@@ -525,385 +507,6 @@ describe('lorebook identity normalization and lazy persistence', () => {
   })
 })
 
-describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
-  it('persists an edit to a HYDRATED character globalLore (the watcher is alive)', async () => {
-    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
-    markCharacterLorebookHydrated('c1')
-    const stop = watchServerBackedLorebooks({ delayMs: DELAY })
-    flushSync() // initialize the snapshot baseline
-
-    recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({ key: 'b', content: 'B', id: 'entry-b' })
-    flushSync() // diff → queue the replacement
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    const cmds = characterEntryCommands()
-    expect(cmds).toHaveLength(1)
-    expect(cmds[0].a).toMatchObject({ characterId: 'c1', entry: { content: 'B' } })
-    stop()
-  })
-
-  it('NEVER persists a re-stubbed (no-longer-hydrated) character — the data-loss path', async () => {
-    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
-    markCharacterLorebookHydrated('c1')
-    const stop = watchServerBackedLorebooks({ delayMs: DELAY })
-    flushSync() // baseline = hydrated [A]
-
-    recorded.commands.length = 0
-    // A projection re-apply re-stubs every character: reset the registry, then the
-    // re-applied stub wipes globalLore to [] (the bootstrap default).
-    resetLorebookHydration()
-    ;(getDatabase().characters[0] as { globalLore: unknown }).globalLore = []
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.commands).toHaveLength(0)
-    stop()
-  })
-
-  it('NEVER persists a character that was never hydrated (a pure stub)', async () => {
-    setupCharacter([] as Entry[]) // stubbed-empty, never marked hydrated
-    const stop = watchServerBackedLorebooks({ delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    // Even a spurious change to a stub must not be persisted.
-    ;(getDatabase().characters[0] as { globalLore: unknown }).globalLore = [{ key: 'x', content: 'X' }]
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.commands).toHaveLength(0)
-    stop()
-  })
-
-  it('rejects optimistic character collection writes until the stub is hydrated', async () => {
-    setupCharacter([] as Entry[])
-    ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
-    recordHydratedCharacterLorebooks([{ chaId: 'c1' }])
-    const attempted = [{ key: 'new', content: 'must not appear', id: 'entry-new' }] as Entry[]
-
-    const replaced = replaceCharacterLorebookCollection('c1', attempted as any, DELAY)
-
-    expect(replaced).toBe(false)
-    expect(getDatabase().characters[0].globalLore).toEqual([])
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(recorded.commands).toHaveLength(0)
-
-    // Turning the setting off changes future projections, but the currently
-    // resident row is still the same stub and must remain read-only.
-    ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = false
-    expect(replaceCharacterLorebookCollection('c1', attempted as any, DELAY)).toBe(false)
-
-    markCharacterLorebookHydrated('c1')
-    expect(replaceCharacterLorebookCollection('c1', attempted as any, DELAY)).toBe(true)
-    expect(getDatabase().characters[0].globalLore).toEqual(attempted)
-  })
-
-  it('recordHydratedCharacterLorebooks marks characters whose projected globalLore is present', async () => {
-    // Resident (array) → hydrated; stubbed (absent) → not.
-    recordHydratedCharacterLorebooks([
-      { chaId: 'resident', globalLore: [{ key: 'k', id: 'resident-entry' }] },
-      { chaId: 'stub' /* globalLore absent */ },
-    ])
-    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
-    ;(getDatabase().characters[0] as { chaId: string }).chaId = 'resident'
-    const stop = watchServerBackedLorebooks({ delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({ key: 'b', content: 'B', id: 'entry-b' })
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    // 'resident' is tracked → its edit persists.
-    expect(characterEntryCommands().map((c) => (c.a as { characterId?: string }).characterId)).toEqual(['resident'])
-    stop()
-  })
-
-  it('foreign character-lorebook resource apply refreshes baseline without echoing, then local edits dispatch', async () => {
-    setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
-    markCharacterLorebookHydrated('c1')
-    const stop = watchServerBackedLorebooks({ delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    const applied = applyServerCharacterLorebookResource('c1', [
-      { key: 'server', content: 'Server', id: 'server-entry' },
-    ])
-    expect(applied).toBe(true)
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.commands).toHaveLength(0)
-
-    recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({
-      key: 'local',
-      content: 'Local',
-      id: 'local-entry',
-    })
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    const cmds = characterEntryCommands()
-    expect(cmds).toHaveLength(1)
-    expect(cmds[0].a).toMatchObject({
-      characterId: 'c1',
-      entryId: 'local-entry',
-      entry: { id: 'local-entry', content: 'Local' },
-    })
-    stop()
-  })
-
-  it('global lorebook rename rollback suppresses watcher echo and keeps later edits live', async () => {
-    setupGlobalLorebooks()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-    flushSync()
-
-    getDatabase().loreBook[0].name = 'Conflict'
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    const firstUpdates = recorded.commands.filter((command) => command.kind === 'updateGlobal')
-    expect(firstUpdates).toHaveLength(1)
-    expect(firstUpdates[0].a).toMatchObject({
-      lorebookId: 'g1',
-      patch: { name: 'Conflict' },
-    })
-
-    firstUpdates[0].rollback?.()
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(getDatabase().loreBook[0].name).toBe('Initial')
-    expect(recorded.commands.filter((command) => command.kind === 'updateGlobal')).toHaveLength(1)
-
-    getDatabase().loreBook[0].name = 'User Edit After Rollback'
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(
-      recorded.commands
-        .filter((command) => command.kind === 'updateGlobal')
-        .map((command) => (command.a as { patch: { name: string } }).patch),
-    ).toEqual([{ name: 'Conflict' }, { name: 'User Edit After Rollback' }])
-    stop()
-  })
-
-  it('stale global rename rollback does not suppress watcher dispatch for a newer rename', async () => {
-    setupGlobalLorebooks()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-    flushSync()
-    recorded.commands.length = 0
-
-    try {
-      getDatabase().loreBook[0].name = 'Attempted Rename'
-      flushSync()
-      await flushServerCommandRecording()
-
-      const firstUpdates = globalUpdateCommands()
-      expect(firstUpdates).toHaveLength(1)
-      expect(firstUpdates[0].a).toMatchObject({
-        lorebookId: 'g1',
-        patch: { name: 'Attempted Rename' },
-      })
-
-      getDatabase().loreBook[0].name = 'Newer Rename'
-      firstUpdates[0].rollback?.()
-      flushSync()
-      await flushServerCommandRecording()
-
-      expect(getDatabase().loreBook[0].name).toBe('Newer Rename')
-      expect(
-        globalUpdateCommands()
-          .filter((command) => (command.a as { lorebookId?: string }).lorebookId === 'g1')
-          .map((command) => (command.a as { patch: { name: string } }).patch),
-      ).toEqual([{ name: 'Attempted Rename' }, { name: 'Newer Rename' }])
-    } finally {
-      stop()
-    }
-  })
-
-  it('stale global delete rollback does not suppress watcher dispatch after row and selection diverge', async () => {
-    setupGlobalLorebooks(
-      [
-        { id: 'g1', name: 'Initial', data: [] },
-        { id: 'g2', name: 'Second', data: [] },
-        { id: 'g3', name: 'Third', data: [] },
-      ],
-      1,
-    )
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-    flushSync()
-    recorded.commands.length = 0
-
-    try {
-      expect(deleteGlobalLorebook(1)).toBe(true)
-      await flushServerCommandRecording()
-
-      const deletes = globalDeleteCommands()
-      expect(deletes).toHaveLength(1)
-      ;(getDatabase().loreBook as unknown as GlobalLorebookFixture[]).splice(1, 0, {
-        id: 'g2',
-        name: 'Second',
-        data: [],
-      })
-      getDatabase().loreBookPage = 2
-      getDatabase().loreBook[0].name = 'Newer Rename'
-
-      deletes[0].rollback?.()
-      flushSync()
-      await flushServerCommandRecording()
-
-      expect(globalLorebookIds()).toEqual(['g1', 'g2', 'g3'])
-      expect(getDatabase().loreBookPage).toBe(2)
-      expect(
-        globalUpdateCommands()
-          .filter((command) => (command.a as { lorebookId?: string }).lorebookId === 'g1')
-          .map((command) => (command.a as { patch: { name: string } }).patch),
-      ).toEqual([{ name: 'Newer Rename' }])
-    } finally {
-      stop()
-    }
-  })
-
-  it('stale global delete rollback keeps watcher live when only selection restores', async () => {
-    setupGlobalLorebooks(
-      [
-        { id: 'g1', name: 'Initial', data: [] },
-        { id: 'g2', name: 'Second', data: [] },
-        { id: 'g3', name: 'Third', data: [] },
-      ],
-      1,
-    )
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-    flushSync()
-    recorded.commands.length = 0
-
-    try {
-      expect(deleteGlobalLorebook(1)).toBe(true)
-      await flushServerCommandRecording()
-
-      const deletes = globalDeleteCommands()
-      expect(deletes).toHaveLength(1)
-      ;(getDatabase().loreBook as unknown as GlobalLorebookFixture[]).splice(1, 0, {
-        id: 'g2',
-        name: 'Second',
-        data: [],
-      })
-      expect(getDatabase().loreBookPage).toBe(0)
-      getDatabase().loreBook[0].name = 'Newer Rename'
-
-      deletes[0].rollback?.()
-      flushSync()
-      await flushServerCommandRecording()
-
-      expect(globalLorebookIds()).toEqual(['g1', 'g2', 'g3'])
-      expect(getDatabase().loreBookPage).toBe(1)
-      expect(getDatabase().loreBook[1].name).toBe('Second')
-      expect(
-        globalUpdateCommands()
-          .filter((command) => (command.a as { lorebookId?: string }).lorebookId === 'g1')
-          .map((command) => (command.a as { patch: { name: string } }).patch),
-      ).toEqual([{ name: 'Newer Rename' }])
-    } finally {
-      stop()
-    }
-  })
-
-  it('global lorebook direct rollback closures restore under an active watcher without echoes', async () => {
-    const scenarios: Array<{
-      label: string
-      commandKind: string
-      run: () => void
-      expectRestored: () => void
-    }> = [
-      {
-        label: 'create',
-        commandKind: 'createGlobal',
-        run: () => {
-          setupGlobalLorebooks()
-          const previous = currentGlobalLorebookStateSnapshot()
-          const created = { id: 'g2', name: 'Created', data: [] }
-          getDatabase().loreBook.push(created as never)
-          dispatchCreateGlobalLorebook(created, previous)
-        },
-        expectRestored: () => {
-          expect(globalLorebookIds()).toEqual(['g1'])
-        },
-      },
-      {
-        label: 'delete',
-        commandKind: 'deleteGlobal',
-        run: () => {
-          setupGlobalLorebooks([
-            { id: 'g1', name: 'Initial', data: [] },
-            { id: 'g2', name: 'Second', data: [] },
-          ])
-          const previous = currentGlobalLorebookStateSnapshot()
-          getDatabase().loreBook.splice(1, 1)
-          dispatchDeleteGlobalLorebook('g2', previous)
-        },
-        expectRestored: () => {
-          expect(globalLorebookIds()).toEqual(['g1', 'g2'])
-        },
-      },
-      {
-        label: 'reorder',
-        commandKind: 'reorderGlobal',
-        run: () => {
-          setupGlobalLorebooks([
-            { id: 'g1', name: 'Initial', data: [] },
-            { id: 'g2', name: 'Second', data: [] },
-          ])
-          const previous = currentLorebookStateSnapshot()
-          getDatabase().loreBook.reverse()
-          dispatchReorderGlobalLorebooks(previous)
-        },
-        expectRestored: () => {
-          expect(globalLorebookIds()).toEqual(['g1', 'g2'])
-        },
-      },
-      {
-        label: 'update',
-        commandKind: 'updateGlobal',
-        run: () => {
-          setupGlobalLorebooks()
-          const previous = currentLorebookStateSnapshot()
-          getDatabase().loreBook[0].name = 'Conflict'
-          dispatchUpdateGlobalLorebook('g1', { name: 'Conflict' }, previous)
-        },
-        expectRestored: () => {
-          expect(getDatabase().loreBook[0].name).toBe('Initial')
-        },
-      },
-    ]
-
-    for (const scenario of scenarios) {
-      recorded.commands.length = 0
-      scenario.run()
-      await flushServerCommandRecording()
-
-      const command = recorded.commands.find((entry) => entry.kind === scenario.commandKind)
-      expect(command?.rollback).toEqual(expect.any(Function))
-
-      const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-      flushSync()
-      recorded.commands.length = 0
-
-      try {
-        command?.rollback?.()
-        flushSync()
-        await vi.advanceTimersByTimeAsync(DELAY)
-
-        scenario.expectRestored()
-        expect(recorded.commands).toEqual([])
-      } finally {
-        stop()
-      }
-    }
-  })
-})
-
 describe('lorebook snapshot purity', () => {
   it('state snapshots clone malformed lorebook data as-is without assigning ids or stub arrays', () => {
     testDatabaseState.db = {
@@ -935,7 +538,7 @@ describe('lorebook snapshot purity', () => {
   })
 })
 
-describe('global lorebook modal bridge helpers', () => {
+describe('global lorebook owner mutations', () => {
   it('creates a global lorebook, dispatches create, and rolls back to the previous list', async () => {
     setupGlobalLorebooks()
 
@@ -1064,6 +667,26 @@ describe('global lorebook modal bridge helpers', () => {
 
     expect(getDatabase().loreBook.map((book) => book.name)).toEqual(['First', 'Second', 'Third'])
     expect(globalDeleteCommands()).toHaveLength(0)
+  })
+
+  it('renames a global lorebook through an explicit owner mutation', async () => {
+    setupGlobalLorebooks()
+
+    expect(renameGlobalLorebook(0, 'Renamed')).toBe(true)
+    await flushServerCommandRecording()
+
+    expect(getDatabase().loreBook[0].name).toBe('Renamed')
+    const updates = globalUpdateCommands()
+    expect(updates).toHaveLength(1)
+    expect(updates[0].a).toMatchObject({
+      lorebookId: 'g1',
+      patch: { name: 'Renamed' },
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: expect.any(Number),
+    })
+
+    updates[0].rollback?.()
+    expect(getDatabase().loreBook[0].name).toBe('Initial')
   })
 
   it('failed delete reinserts only a still-missing row and preserves newer rows', async () => {
@@ -1214,38 +837,6 @@ describe('global lorebook modal bridge helpers', () => {
     expect(globalDeleteCommands()).toHaveLength(0)
   })
 
-  it('renames through the bridge and keeps watcher update rollback suppressed', async () => {
-    setupGlobalLorebooks()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-    flushSync()
-    recorded.commands.length = 0
-
-    try {
-      expect(renameGlobalLorebook(0, 'Renamed')).toBe(true)
-      expect(getDatabase().loreBook[0].name).toBe('Renamed')
-      flushSync()
-      await vi.advanceTimersByTimeAsync(DELAY)
-
-      const updates = globalUpdateCommands()
-      expect(updates).toHaveLength(1)
-      expect(updates[0].a).toMatchObject({
-        lorebookId: 'g1',
-        patch: { name: 'Renamed' },
-        acknowledgeOptimistic: true,
-        optimisticCollectionEpoch: expect.any(Number),
-      })
-
-      updates[0].rollback?.()
-      flushSync()
-      await vi.advanceTimersByTimeAsync(DELAY)
-
-      expect(getDatabase().loreBook[0].name).toBe('Initial')
-      expect(globalUpdateCommands()).toHaveLength(1)
-    } finally {
-      stop()
-    }
-  })
-
   it('failed rename skips rollback after a newer same-row edit and preserves siblings', async () => {
     setupGlobalLorebooks([
       { id: 'g1', name: 'Initial', data: [] },
@@ -1363,7 +954,7 @@ describe('global lorebook modal bridge helpers', () => {
   })
 })
 
-// Scope the watcher's change-detection snapshot to the mounting panel's collection.
+// Multi-owner fixtures exercise scoped operations without cloning sibling resources.
 
 function setupMultiCollectionDb(): void {
   testDatabaseState.db = {
@@ -1758,48 +1349,6 @@ describe('lorebook editor entry draft scope', () => {
     ])
   })
 
-  it('preserves the staged entry when the same-scope watcher observes a structural mutation', async () => {
-    setupK4EditorDb()
-    const stop = watchServerBackedLorebooks({ delayMs: DELAY, scope: { kind: 'character' } })
-    flushSync()
-    const scope = { kind: 'character', characterId: 'c-k4' } as const
-    const edited = {
-      ...(getDatabase().characters[0].globalLore as Entry[])[4],
-      content: 'watched entry edit before structure',
-    }
-    applyLorebookEntryDraftEdit(scope, 4, edited as any, DELAY * 10)
-    flushSync()
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({
-      id: 'watched-structural-entry',
-      key: '',
-      content: '',
-      folder: 'watched-folder',
-    })
-    flushSync()
-
-    expect(durableRecorded.staged.map(({ mutationId }) => mutationId)).toEqual(['lore-mutation-1', 'lore-mutation-2'])
-    expect(durableRecorded.dispatched.map(({ mutationId }) => mutationId)).toEqual(['lore-mutation-1'])
-    expect(durableRecorded.staged[1].intent).toEqual({
-      version: 1,
-      requests: [
-        {
-          method: 'PUT',
-          path: '/characters/c-k4/lorebooks/entries/watched-structural-entry',
-          body: {
-            entry: expect.objectContaining({ id: 'watched-structural-entry', folder: 'watched-folder' }),
-          },
-        },
-      ],
-    })
-
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(durableRecorded.dispatched.map(({ mutationId }) => mutationId)).toEqual([
-      'lore-mutation-1',
-      'lore-mutation-2',
-    ])
-    stop()
-  })
-
   it('coalesces sparse fields against the original entry and distinguishes deletion from null', async () => {
     setupK4EditorDb()
     const entries = getDatabase().characters[0].globalLore as unknown as Array<Entry & Record<string, unknown>>
@@ -1972,7 +1521,7 @@ describe('lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe(originalContent)
   })
 
-  it('bridge flush sends pending lorebook replacements with keepalive and clears debounce', async () => {
+  it('owner flush sends pending lorebook replacements with keepalive and clears debounce', async () => {
     setupK4EditorDb()
 
     applyLorebookEntryDraftEdit(
@@ -2011,66 +1560,30 @@ describe('lorebook editor entry draft scope', () => {
     expect(characterEntryCommands()).toHaveLength(1)
   })
 
-  it('watcher teardown flushes pending lorebook replacements and clears debounce', async () => {
+  it('immediate owner flush sends one replacement only', async () => {
     setupK4EditorDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY * 10 })
-    flushSync()
 
     recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({
-      id: 'teardown-entry',
-      key: 'teardown',
-      content: 'Teardown lore',
-    })
-    flushSync()
-    stop()
+    applyLorebookEntryDraftEdit(
+      { kind: 'character', characterId: 'c-k4' },
+      3,
+      { ...(getDatabase().characters[0].globalLore as Entry[])[3], content: 'blur final' } as any,
+      DELAY * 10,
+    )
+    flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' })
     await vi.advanceTimersByTimeAsync(0)
 
     const cmds = characterEntryCommands()
     expect(cmds).toHaveLength(1)
-    expect(cmds[0].keepalive).toBeUndefined()
     expect(cmds[0].a).toMatchObject({
       characterId: 'c-k4',
-      entryId: 'teardown-entry',
-      entry: { id: 'teardown-entry', content: 'Teardown lore' },
+      entryId: 'entry-3',
+      entry: { id: 'entry-3', content: 'blur final' },
+      sparseUpdate: { patch: { content: 'blur final' } },
     })
-    expect((cmds[0].a as Record<string, unknown>).sparseUpdate).toBeUndefined()
 
-    await vi.advanceTimersByTimeAsync(DELAY * 10)
+    await vi.advanceTimersByTimeAsync(DELAY)
     expect(characterEntryCommands()).toHaveLength(1)
-  })
-
-  it('immediate flush with an active watcher sends one replacement only', async () => {
-    setupK4EditorDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    try {
-      applyLorebookEntryDraftEdit(
-        { kind: 'character', characterId: 'c-k4' },
-        3,
-        { ...(getDatabase().characters[0].globalLore as Entry[])[3], content: 'blur final' } as any,
-        DELAY * 10,
-      )
-      flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' })
-      flushSync()
-      await vi.advanceTimersByTimeAsync(0)
-
-      const cmds = characterEntryCommands()
-      expect(cmds).toHaveLength(1)
-      expect(cmds[0].a).toMatchObject({
-        characterId: 'c-k4',
-        entryId: 'entry-3',
-        entry: { id: 'entry-3', content: 'blur final' },
-        sparseUpdate: { patch: { content: 'blur final' } },
-      })
-
-      await vi.advanceTimersByTimeAsync(DELAY)
-      expect(characterEntryCommands()).toHaveLength(1)
-    } finally {
-      stop()
-    }
   })
 
   it('module external entry drafts avoid collection clones and flush final module entry', async () => {
@@ -3181,372 +2694,5 @@ describe('lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[0].globalLore as Entry[]).map((entry) => entry.id)).toContain(
       'complex-later-entry',
     )
-  })
-})
-
-describe('watchServerBackedLorebooks — scoped change detection', () => {
-  it('global scope collects only the global lorebook list', () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-
-    const keys = [...collectLorebookCollectionSnapshots({ kind: 'global' }).keys()].sort()
-    expect(keys).toEqual(['global:g1', 'globalMeta:g1'])
-    // No character/chat/module entries leak into a global-scoped fire.
-    expect(keys.some((k) => k.startsWith('character:'))).toBe(false)
-    expect(keys.some((k) => k.startsWith('chat:'))).toBe(false)
-    expect(keys.some((k) => k.startsWith('module:'))).toBe(false)
-  })
-
-  it('module scope collects only the open module, not all modules', () => {
-    setupMultiCollectionDb()
-
-    const keys = [...collectLorebookCollectionSnapshots({ kind: 'module', moduleId: 'm0' }).keys()]
-    expect(keys).toEqual(['module:m0'])
-    // 'm1' and every global/character/chat entry are out of scope.
-    expect(keys).not.toContain('module:m1')
-  })
-
-  it('character scope collects only the selected character, not siblings/modules/global', () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-    selectedCharID.set(0)
-
-    // Start a character-scoped watcher so the selected-char mirror tracks c0.
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    const keys = [...collectLorebookCollectionSnapshots({ kind: 'character' }).keys()].sort()
-    expect(keys).toEqual(['character:c0', 'chat:c0chat'])
-    // c1 (sibling), modules, and the global list are never scanned.
-    expect(keys).not.toContain('character:c1')
-    expect(keys).not.toContain('chat:c1chat')
-    expect(keys.some((k) => k.startsWith('module:') || k.startsWith('global'))).toBe(false)
-    stop()
-  })
-
-  it('all scope (default) still scans the whole DB — regression', () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-
-    const keys = [...collectLorebookCollectionSnapshots({ kind: 'all' }).keys()].sort()
-    expect(keys).toEqual([
-      'character:c0',
-      'character:c1',
-      'chat:c0chat',
-      'chat:c1chat',
-      'global:g1',
-      'globalMeta:g1',
-      'module:m0',
-      'module:m1',
-    ])
-  })
-
-  it('a scoped fire performs far fewer snapshot clones than the whole-DB scan', () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-    selectedCharID.set(0)
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    const scoped = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
-    const whole = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'all' }))
-
-    // The whole-DB scan stringifies every character + chat + module + global; the
-    // character scope stringifies the hydrated character globalLore and reuses
-    // the selected chat's cached localLore snapshot.
-    expect(scoped.result.size).toBe(2)
-    expect(scoped.jsonCloneCount).toBeLessThan(whole.jsonCloneCount)
-    expect(scoped.jsonCloneCount).toBe(1)
-    stop()
-  })
-
-  it('unchanged selected-character chat localLore references reuse cached snapshots', () => {
-    setupSelectedCharacterLocalLoreCacheDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    const reused = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
-
-    expect([...reused.result.keys()].sort()).toEqual(['chat:closed-chat', 'chat:open-chat'])
-    expect(reused.jsonCloneCount).toBe(0)
-    stop()
-  })
-
-  it('replacing one localLore array stringifies only that chat', () => {
-    setupSelectedCharacterLocalLoreCacheDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-    const before = collectLorebookCollectionSnapshots({ kind: 'character' })
-
-    const closedChat = getDatabase().characters[0].chats[1]
-    closedChat.localLore = [
-      ...(closedChat.localLore as Entry[]),
-      { key: 'closed-new', content: 'Closed replacement', id: 'closed-lore-2' },
-    ] as never
-
-    const changed = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
-
-    expect(changed.jsonCloneCount).toBe(1)
-    expect(changed.result.get('chat:open-chat')).toBe(before.get('chat:open-chat'))
-    expect(changed.result.get('chat:closed-chat')).not.toBe(before.get('chat:closed-chat'))
-    stop()
-  })
-
-  it('prunes disappeared chat ids from the localLore snapshot cache', () => {
-    setupSelectedCharacterLocalLoreCacheDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    const chats = getDatabase().characters[0].chats
-    const [removedChat] = chats.splice(1, 1)
-    collectLorebookCollectionSnapshots({ kind: 'character' })
-    chats.push(removedChat)
-
-    const reappeared = withCloneInstrumentation(() => collectLorebookCollectionSnapshots({ kind: 'character' }))
-
-    expect(reappeared.jsonCloneCount).toBe(1)
-    expect([...reappeared.result.keys()].sort()).toEqual(['chat:closed-chat', 'chat:open-chat'])
-    stop()
-  })
-
-  it('a character-scoped watcher first-run id ensure touches only the selected character collections', () => {
-    setupMultiCollectionDb()
-    stripIdsForScopedEnsureRegression()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-    selectedCharID.set(0)
-
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    expect((getDatabase().characters[0].globalLore as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[1].globalLore as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[1].chats[0].localLore as Entry[])[0].id).toBeUndefined()
-    expect(((getDatabase().modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
-    expect(((getDatabase().modules as any[])[1].lorebook as Entry[])[0].id).toBeUndefined()
-    expect(((getDatabase().loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
-    expect(((getDatabase().loreBook as any[])[0].data as Entry[])[0].id).toBeUndefined()
-
-    selectedCharID.set(1)
-    flushSync()
-
-    expect((getDatabase().characters[1].globalLore as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[1].chats[0].localLore as Entry[])[0].id).toBeUndefined()
-    expect(((getDatabase().modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
-    expect(((getDatabase().loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
-    stop()
-  })
-
-  it('a global-scoped watcher first run does not assign global lorebook or entry ids', () => {
-    setupMultiCollectionDb()
-    stripIdsForScopedEnsureRegression()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'global' }, delayMs: DELAY })
-    flushSync()
-
-    expect(((getDatabase().loreBook as any[])[0] as { id?: string }).id).toBeUndefined()
-    expect(((getDatabase().loreBook as any[])[0].data as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[0].globalLore as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
-    expect(((getDatabase().modules as any[])[0].lorebook as Entry[])[0].id).toBeUndefined()
-    stop()
-  })
-
-  it('watcher skips malformed selected-character lore without dispatch or id mutation', async () => {
-    setupMultiCollectionDb()
-    stripIdsForScopedEnsureRegression()
-    markCharacterLorebookHydrated('c0')
-    selectedCharID.set(0)
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[])[0].content = 'Changed without stable id'
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.commands).toHaveLength(0)
-    expect((getDatabase().characters[0].globalLore as Entry[])[0].id).toBeUndefined()
-    expect((getDatabase().characters[0].chats[0].localLore as Entry[])[0].id).toBeUndefined()
-    stop()
-  })
-
-  it('watcher skips selected-character lore with duplicate entry ids', async () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    selectedCharID.set(0)
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({
-      key: 'duplicate',
-      content: 'Duplicate id',
-      id: 'c0g1',
-    })
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.commands).toHaveLength(0)
-    expect((getDatabase().characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(['c0g1', 'c0g1'])
-    stop()
-  })
-
-  it('watcher revalidates ids at debounce flush before sending replacements', async () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    selectedCharID.set(0)
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    const entry = (getDatabase().characters[0].globalLore as Entry[])[0]
-    entry.content = 'Queued while id is stable'
-    flushSync()
-
-    delete entry.id
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    expect(recorded.commands).toHaveLength(0)
-    expect(entry.id).toBeUndefined()
-    stop()
-  })
-
-  it('character-scoped watcher dispatches a selected-character edit but ignores a sibling chat edit', async () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-    selectedCharID.set(0)
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync() // baseline = c0 only
-
-    // A sibling character's chat edit is out of scope → never dispatched.
-    recorded.commands.length = 0
-    getDatabase().characters[1].chats[0].localLore = [
-      ...(getDatabase().characters[1].chats[0].localLore as Entry[]),
-      { key: 'x', content: 'X' },
-    ] as never
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(chatReplaceChatIds()).not.toContain('c1chat')
-
-    // The selected character's own chat edit IS dispatched.
-    recorded.commands.length = 0
-    getDatabase().characters[0].chats[0].localLore = [
-      ...(getDatabase().characters[0].chats[0].localLore as Entry[]),
-      { key: 'y', content: 'Y', id: 'c0l2' },
-    ] as never
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(chatEntryCommands().map((c) => (c.a as { chatId?: string }).chatId)).toContain('c0chat')
-    stop()
-  })
-
-  it('character-scoped watcher dispatches a non-open chat localLore replacement', async () => {
-    setupSelectedCharacterLocalLoreCacheDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    recorded.commands.length = 0
-    const closedChat = getDatabase().characters[0].chats[1]
-    closedChat.localLore = [
-      ...(closedChat.localLore as Entry[]),
-      { key: 'closed-dispatch', content: 'Non-open replacement', id: 'closed-lore-2' },
-    ] as never
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    const cmds = chatEntryCommands()
-    expect(cmds).toHaveLength(1)
-    expect(cmds[0].a).toMatchObject({
-      chatId: 'closed-chat',
-      entryId: 'closed-lore-2',
-      entry: { id: 'closed-lore-2', content: 'Non-open replacement' },
-    })
-    stop()
-  })
-
-  it('flushed direct chat entry edits advance the character-scope localLore cache baseline', async () => {
-    setupSelectedCharacterLocalLoreCacheDb()
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    const closedChat = getDatabase().characters[0].chats[1]
-    applyLorebookEntryDraftEdit(
-      { kind: 'chat', chatId: 'closed-chat' },
-      0,
-      { ...(closedChat.localLore as Entry[])[0], content: 'Draft B' } as any,
-      DELAY * 10,
-    )
-    flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId: 'closed-chat' })
-    await vi.advanceTimersByTimeAsync(0)
-    flushSync()
-
-    const directCmds = chatEntryCommands()
-    expect(directCmds).toHaveLength(1)
-    expect(directCmds[0].a).toMatchObject({
-      chatId: 'closed-chat',
-      entryId: 'closed-lore-1',
-      entry: { id: 'closed-lore-1', content: 'Draft B' },
-    })
-
-    recorded.commands.length = 0
-    closedChat.localLore = [
-      ...(closedChat.localLore as Entry[]),
-      { key: 'queued-c', content: 'Queued C', id: 'queued-c-id' },
-    ] as never
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-
-    const cmds = chatEntryCommands()
-    expect(cmds).toHaveLength(1)
-    expect(cmds[0].a).toMatchObject({
-      chatId: 'closed-chat',
-      entryId: 'queued-c-id',
-      entry: { id: 'queued-c-id', content: 'Queued C' },
-    })
-
-    cmds[0].rollback?.()
-    expect((closedChat.localLore as Entry[]).map((entry) => entry.content)).toEqual(['Draft B'])
-    stop()
-  })
-
-  it('character scope re-subscribes to the newly selected character after a switch', async () => {
-    setupMultiCollectionDb()
-    markCharacterLorebookHydrated('c0')
-    markCharacterLorebookHydrated('c1')
-    selectedCharID.set(0)
-    const stop = watchServerBackedLorebooks({ scope: { kind: 'character' }, delayMs: DELAY })
-    flushSync()
-
-    // Switch to c1: the effect re-runs and re-baselines to c1 (no spurious dispatch).
-    recorded.commands.length = 0
-    selectedCharID.set(1)
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(characterReplaceCommands()).toHaveLength(0)
-
-    // An edit to the now-selected c1 is dispatched...
-    recorded.commands.length = 0
-    ;(getDatabase().characters[1].globalLore as Entry[]).push({ key: 'b', content: 'B', id: 'c1g2' })
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(characterEntryCommands().map((c) => (c.a as { characterId?: string }).characterId)).toEqual(['c1'])
-
-    // ...while an edit to the no-longer-selected c0 is ignored.
-    recorded.commands.length = 0
-    ;(getDatabase().characters[0].globalLore as Entry[]).push({ key: 'z', content: 'Z', id: 'c0g2' })
-    flushSync()
-    await vi.advanceTimersByTimeAsync(DELAY)
-    expect(characterReplaceCommands()).toHaveLength(0)
-    stop()
   })
 })

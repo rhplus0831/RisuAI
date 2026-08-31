@@ -164,7 +164,6 @@
     ensureClientLorebookEntryIds,
     flushPendingLorebookEntryDraftEdit,
     replaceModuleLorebookCollectionDraft,
-    watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   import {
     applyModuleScriptDefinitionDraft,
@@ -217,16 +216,6 @@
   let moduleScriptDraftModuleId = $state<string | null>(null)
   let moduleScriptDraftSnapshot = ''
   let suppressModuleScriptDraftDispatch = false
-
-  $effect(() => {
-    // This panel only edits the open module's lorebook, so scope change detection
-    // to it. Reading currentModule.id here re-runs the effect (restarting the
-    // watcher with a fresh baseline) when the user opens a different module.
-    const moduleId = currentModule?.id ?? ''
-    if (draftOnly) return
-    const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'module', moduleId } })
-    return () => stopLorebooks()
-  })
 
   function snapshotModuleScriptDraft(moduleId = currentModule?.id ?? null): string {
     return JSON.stringify({

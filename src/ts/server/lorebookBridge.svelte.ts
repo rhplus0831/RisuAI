@@ -1,4 +1,3 @@
-import { untrack } from 'svelte'
 import { SvelteSet } from 'svelte/reactivity'
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
@@ -34,11 +33,7 @@ import {
   type ServerCommandTransportOptions,
   type SparseLorebookEntryUpdate,
 } from './commands'
-import {
-  getServerResourceApplyEpoch,
-  withServerResourceApply,
-  withTrustedResourceWrite,
-} from './resourceWriteGuard.svelte'
+import { withServerResourceApply, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
@@ -95,7 +90,7 @@ export interface LorebookEntryStateSnapshot {
 }
 
 type LorebookReplacementSnapshot = LorebookStateSnapshot | LorebookEntryStateSnapshot
-type LorebookReplacementSource = 'collection' | 'entry' | 'watchedCollection' | 'fullCollection'
+type LorebookReplacementSource = 'collection' | 'entry' | 'fullCollection'
 
 type LorebookProjectionEpochs =
   | { kind: 'global'; collectionEpoch: number }
@@ -139,17 +134,11 @@ const globalLorebookDeleteStateListeners = new Set<(states: readonly GlobalLoreb
 lorebookPageOwner.subscribe((snapshot) => {
   const index = lorebookPageIndexFromSnapshot(snapshot)
   if (index === null || getDatabase().loreBookPage === index) return
-  withSuppressedLorebookWatcher(() => {
-    withTrustedResourceWrite(() => {
-      getDatabase().loreBookPage = index
-    })
+  withTrustedResourceWrite(() => {
+    getDatabase().loreBookPage = index
   })
 })
 let nextLorebookEntryAttemptSequence = 0
-const pendingEntryEditKeys = new Set<string>()
-const flushedEntryEditSnapshots = new Map<string, string>()
-const flushedEntryEditClearSnapshots = new Map<string, string>()
-let suppressRollbackDispatch = false
 
 function settledScopedLorebookMutationOperation(
   scopeKey: string,
@@ -181,13 +170,6 @@ function settleScopedLorebookMutationOperations(
 ): void {
   for (const operation of operations) operation.settle(settlement)
 }
-
-interface LocalLoreSnapshotCacheEntry {
-  entries: loreBook[]
-  snapshot: string
-}
-
-const characterScopeLocalLoreSnapshots = new Map<string, LocalLoreSnapshotCacheEntry>()
 
 export type GlobalLorebookDeleteOutcome = 'accepted' | 'queued' | 'failed'
 export type GlobalLorebookDeleteUiStatus = 'deleting' | 'queued' | 'failed'
@@ -270,19 +252,10 @@ function clearGlobalLorebookDeleteState(pending: PendingGlobalLorebookDeleteProj
   publishGlobalLorebookDeleteStates()
 }
 
-// Mirror of the selected character id as $state so a `character`-scoped watcher
-// re-runs (and re-subscribes to the newly selected character's lore) when the
-// user switches characters while the panel stays mounted. A bare
-// `get(selectedCharID)` read would not re-run the effect on a switch, which could
-// drop the first edit made to the newly selected character.
-let selectedCharMirror = $state(-1)
-
 // No-data-loss guard for character `globalLore` stubs. `checkNewFormat` defaults
 // absent character lore to `[]`, so field presence cannot distinguish a stub from
-// an empty hydrated lorebook. The watcher only snapshots/persists ids in this
-// registry; re-stubbed characters are absent until hydrated again. Module
-// lorebooks still use field presence because absent module lorebooks are not
-// defaulted.
+// an empty hydrated lorebook. Explicit owner mutations only persist ids in this
+// registry; re-stubbed characters remain blocked until hydrated again.
 const hydratedCharacterLorebooks = new SvelteSet<string>()
 // Characters whose latest raw projection omitted `globalLore`. Keep this
 // separate from the current setting: turning stub mode off does not
@@ -313,13 +286,7 @@ export function resetServerBackedLorebookBridgeForTests(): void {
     publishGlobalLorebookDeleteStates()
   }
   nextLorebookEntryAttemptSequence = 0
-  pendingEntryEditKeys.clear()
-  flushedEntryEditSnapshots.clear()
-  flushedEntryEditClearSnapshots.clear()
-  characterScopeLocalLoreSnapshots.clear()
   lorebookEntryDraftRollbackListeners.clear()
-  suppressRollbackDispatch = false
-  selectedCharMirror = -1
 }
 
 /** Mark a character's `globalLore` as hydrated (real, persistable). */
@@ -408,31 +375,6 @@ export function recordHydratedCharacterLorebooks(
       stubbedCharacterLorebooks.add(character.chaId)
     }
   }
-}
-
-/**
- * Restrict the watcher's change-detection snapshot to the mounting panel's
- * collection so a single lorebook keystroke does not rebuild a DB-wide lore map
- * on every reactive fire.
- *
- * - `all` (default): the original whole-DB scan (global + every character's
- *   globalLore/chats + every module). Used by callers with no narrower scope and
- *   by the no-data-loss tests.
- * - `global`: only the global `loreBook` list (the `lorepreset` modal and the
- *   global-mode `LoreBookSetting`).
- * - `character`: only the selected character's globalLore and its chats'
- *   localLore (the character `LoreBookSetting` sidebar).
- * - `module`: only the open module's lorebook (the module `ModuleMenu`).
- */
-export type LorebookWatchScope =
-  | { kind: 'all' }
-  | { kind: 'global' }
-  | { kind: 'character' }
-  | { kind: 'module'; moduleId: string }
-
-export interface WatchServerBackedLorebooksOptions {
-  delayMs?: number
-  scope?: LorebookWatchScope
 }
 
 export function currentLorebookStateSnapshot(): LorebookStateSnapshot {
@@ -594,8 +536,8 @@ export function globalLorebookListIdsNeedNormalization(): boolean {
 /**
  * Scoped pre-edit rollback for a DISCRETE editor action on ONE collection:
  * a global lorebook's entries, a character's globalLore, or a chat's localLore.
- * Builds the same `scopeKey`+`scopedValue` rollback the watcher uses, so a failed
- * command restores only the edited collection — without the whole-DB id-assign
+ * Builds the `scopeKey`+`scopedValue` rollback used by explicit owner mutations,
+ * so a failed command restores only the edited collection — without the whole-DB id-assign
  * write older broad snapshots used to perform and without cloning the
  * characters+modules graph. Ids are ensured on the edited collection only. The
  * broad snapshot stays for the genuine multi-collection callers (module apply,
@@ -1162,12 +1104,21 @@ export function createGlobalLorebook(): boolean {
 }
 
 export function renameGlobalLorebook(index: number, name: string): boolean {
-  if (!((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]) return false
+  const current = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]
+  if (!current) return false
+  const lorebookId = stableGlobalLorebookId(current.id)
+  const previous = lorebookId
+    ? scopedLorebookStateSnapshot(`globalMeta:${lorebookId}`, snapshotJson({ name: current.name }))
+    : null
 
   withTrustedResourceWrite(() => {
     const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]
     if (lorebook) lorebook.name = name
   })
+
+  if (lorebookId && previous) {
+    dispatchUpdateGlobalLorebook(lorebookId, { name }, previous)
+  }
 
   return true
 }
@@ -1465,7 +1416,7 @@ function settlePendingGlobalLorebookDeleteProjection(
 
 function applyAcceptedGlobalLorebookDeleteProjection(lorebookId: string): void {
   const selectedLorebookId = currentSelectedGlobalLorebookId()
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
@@ -1494,7 +1445,7 @@ export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot):
   const selectedIndex = selectedLorebookId ? (lorebookIds as string[]).indexOf(selectedLorebookId) : -1
   const acknowledgeOptimistic = selectedLorebookId !== null && selectedIndex >= 0
   if (acknowledgeOptimistic) {
-    withSuppressedLorebookWatcher(() => {
+    applyLorebookOwnerMutation(() => {
       withTrustedResourceWrite(() => {
         projectGlobalLorebookPage(selectedIndex)
       })
@@ -2164,10 +2115,7 @@ function planLorebookCommand(
 
   return {
     kind: 'replace',
-    entries:
-      source === 'watchedCollection'
-        ? (cloneJsonValue(entries ?? []) as LorebookEntrySnapshot[])
-        : cloneLorebookEntriesForCommand(entries),
+    entries: cloneLorebookEntriesForCommand(entries),
   }
 }
 
@@ -2335,193 +2283,6 @@ export function dispatchReplaceModuleLorebooks(
   queueScopedLorebookReplacement({ kind: 'module', moduleId }, entries, previous, delayMs, source)
 }
 
-export function watchServerBackedLorebooks(options: WatchServerBackedLorebooksOptions = {}): () => void {
-  if (!canUseServerCommands()) return () => {}
-  const delayMs = options.delayMs ?? 300
-  const scope: LorebookWatchScope = options.scope ?? { kind: 'all' }
-  let initialized = false
-  let previousSnapshots = new Map<string, string>()
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
-
-  // A character-scoped watcher must re-run when the selected character changes,
-  // so mirror the store into the $state the collector reads. Other scopes do not
-  // read the mirror, so they never re-fire on a selection change.
-  const unsubscribeSelected =
-    scope.kind === 'character'
-      ? selectedCharID.subscribe((value) => {
-          selectedCharMirror = value
-        })
-      : null
-
-  const stop = $effect.root(() => {
-    $effect(() => {
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
-      const currentSnapshots = collectLorebookCollectionSnapshots(scope)
-
-      if (suppressRollbackDispatch || !initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
-        initialized = true
-        previousResourceApplyEpoch = resourceApplyEpoch
-        previousSnapshots = currentSnapshots
-        reconcileFlushedEntrySuppressions(currentSnapshots)
-        return
-      }
-
-      for (const [key, snapshot] of currentSnapshots) {
-        const previousSnapshot = previousSnapshots.get(key)
-        if (previousSnapshot === undefined) continue
-        const flushedEntrySnapshot = flushedEntryEditSnapshots.get(key)
-        if (snapshot === previousSnapshot) {
-          if (flushedEntrySnapshot === snapshot) {
-            scheduleFlushedEntrySuppressionClear(key, snapshot)
-          }
-          continue
-        }
-        if (pendingEntryEditKeys.has(key)) {
-          const pendingEntry = pendingReplacements.get(key)
-          if (pendingEntry?.source === 'entry') {
-            const pendingEntrySnapshot = snapshotJson(pendingEntry.attemptedEntries)
-            if (snapshot !== pendingEntrySnapshot) {
-              const previousState = scopedLorebookStateSnapshot(key, pendingEntrySnapshot)
-              untrack(() => dispatchWatchedReplacement(key, previousState, delayMs))
-            }
-          }
-          continue
-        }
-        if (flushedEntrySnapshot !== undefined) {
-          if (flushedEntrySnapshot === snapshot) {
-            scheduleFlushedEntrySuppressionClear(key, snapshot)
-            continue
-          }
-          flushedEntryEditSnapshots.delete(key)
-          flushedEntryEditClearSnapshots.delete(key)
-        }
-        const previousState = scopedLorebookStateSnapshot(key, previousSnapshot)
-        untrack(() => dispatchWatchedReplacement(key, previousState, delayMs))
-      }
-
-      reconcileFlushedEntrySuppressions(currentSnapshots)
-      previousSnapshots = currentSnapshots
-    })
-  })
-
-  return () => {
-    flushPendingServerBackedLorebookPatches()
-    unsubscribeSelected?.()
-    stop()
-  }
-}
-
-function dispatchWatchedReplacement(key: string, previous: LorebookStateSnapshot, delayMs: number): void {
-  if (key.startsWith('global:')) {
-    const lorebookId = key.slice('global:'.length)
-    if (!isStableCommandId(lorebookId)) return
-    const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
-      (candidate) => candidate.id === lorebookId,
-    )
-    if (lorebook && hasStableUniqueLorebookEntryIds(lorebook.data)) {
-      queueWatchedLorebookReplacement({ kind: 'global', lorebookId }, lorebook.data, previous, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('globalMeta:')) {
-    const lorebookId = key.slice('globalMeta:'.length)
-    if (!isStableCommandId(lorebookId)) return
-    const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
-      (candidate) => candidate.id === lorebookId,
-    )
-    if (typeof lorebook?.name === 'string') dispatchUpdateGlobalLorebook(lorebookId, { name: lorebook.name }, previous)
-    return
-  }
-  if (key.startsWith('character:')) {
-    const characterId = key.slice('character:'.length)
-    if (!isStableCommandId(characterId)) return
-    // Hard guard (defence in depth): never persist a non-hydrated character's
-    // globalLore, even if a snapshot somehow slipped through.
-    if (!hydratedCharacterLorebooks.has(characterId)) return
-    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-    if (character && hasStableUniqueLorebookEntryIds(character.globalLore)) {
-      queueWatchedLorebookReplacement({ kind: 'character', characterId }, character.globalLore, previous, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('chat:')) {
-    const chatId = key.slice('chat:'.length)
-    if (!isStableCommandId(chatId)) return
-    const chat = findChat(chatId)
-    if (chat && hasStableUniqueLorebookEntryIds(chat.localLore)) {
-      queueWatchedLorebookReplacement({ kind: 'chat', chatId }, chat.localLore, previous, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('module:')) {
-    const moduleId = key.slice('module:'.length)
-    if (!isStableCommandId(moduleId)) return
-    const module = ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
-    if (module && hasStableUniqueLorebookEntryIds(module.lorebook)) {
-      queueWatchedLorebookReplacement({ kind: 'module', moduleId }, module.lorebook, previous, delayMs)
-    }
-  }
-}
-
-function queueWatchedLorebookReplacement(
-  scope: DiscreteLorebookEditScope,
-  entries: loreBook[],
-  previous: LorebookStateSnapshot,
-  delayMs: number,
-): void {
-  if (!hasStableUniqueLorebookEntryIds(entries)) return
-  queueScopedLorebookReplacement(scope, entries, previous, delayMs, 'watchedCollection')
-}
-
-/**
- * Build the change-detection snapshot map for the watcher's scope. Exported for
- * the clone-cost regression test, which asserts a scoped fire covers only the
- * mounting panel's collection (O(panel scope)) instead of every chat of every
- * character and every module (O(all lore in the DB)). Malformed collections
- * without stable command IDs are left out of the watcher baseline.
- */
-export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): Map<string, string> {
-  const snapshots = new Map<string, string>()
-
-  if (scope.kind === 'all' || scope.kind === 'global') {
-    const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
-    const stableGlobalLorebookIds = uniqueStableGlobalLorebookIds(lorebooks)
-    for (const lorebook of lorebooks) {
-      if (lorebook.id && stableGlobalLorebookIds.has(lorebook.id)) {
-        if (hasStableUniqueLorebookEntryIds(lorebook.data)) {
-          snapshots.set(`global:${lorebook.id}`, snapshotJson(lorebook.data))
-        }
-        snapshots.set(`globalMeta:${lorebook.id}`, snapshotJson({ name: lorebook.name }))
-      }
-    }
-  }
-
-  if (scope.kind === 'all') {
-    for (const character of getDatabase().characters ?? []) {
-      collectCharacterLorebookSnapshots(snapshots, character)
-    }
-  } else if (scope.kind === 'character') {
-    // Track only the selected character's lore. Reading the $state mirror (not a
-    // bare get()) re-runs the effect on a character switch, so the first edit to
-    // the newly selected character is never dropped.
-    const character = getDatabase().characters?.[selectedCharMirror]
-    if (character) {
-      collectCharacterLorebookSnapshots(snapshots, character, characterScopeLocalLoreSnapshots)
-    }
-  }
-
-  if (scope.kind === 'all') {
-    for (const module of (getDatabase().modules ?? []) as RisuModule[]) {
-      collectModuleLorebookSnapshot(snapshots, module)
-    }
-  } else if (scope.kind === 'module') {
-    const module = ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
-    if (module) collectModuleLorebookSnapshot(snapshots, module)
-  }
-
-  return snapshots
-}
-
 export type LorebookEntryDirtyField = keyof loreBook & string
 
 export interface LorebookEntryDraftRollbackEvent {
@@ -2665,55 +2426,6 @@ function copyLorebookEntryFieldValue(target: loreBook, source: loreBook, field: 
   }
 }
 
-function collectCharacterLorebookSnapshots(
-  snapshots: Map<string, string>,
-  character: character,
-  localLoreCache?: Map<string, LocalLoreSnapshotCacheEntry>,
-): void {
-  // Snapshot a character's globalLore ONLY when it is hydrated; a stubbed /
-  // unhydrated character is never tracked, so a re-stub can't be diffed into
-  // a deletion (the no-data-loss invariant).
-  if (
-    isStableCommandId(character.chaId) &&
-    hydratedCharacterLorebooks.has(character.chaId) &&
-    hasStableUniqueLorebookEntryIds(character.globalLore)
-  ) {
-    snapshots.set(`character:${character.chaId}`, snapshotJson(character.globalLore))
-  }
-  const liveChatIds = localLoreCache ? new Set<string>() : null
-  for (const chat of character.chats ?? []) {
-    if (!isStableCommandId(chat.id) || !hasStableUniqueLorebookEntryIds(chat.localLore)) continue
-    liveChatIds?.add(chat.id)
-    snapshots.set(`chat:${chat.id}`, snapshotChatLocalLore(chat.id, chat.localLore, localLoreCache))
-  }
-  if (localLoreCache && liveChatIds) {
-    for (const chatId of localLoreCache.keys()) {
-      if (!liveChatIds.has(chatId)) localLoreCache.delete(chatId)
-    }
-  }
-}
-
-function snapshotChatLocalLore(
-  chatId: string,
-  localLore: loreBook[],
-  localLoreCache?: Map<string, LocalLoreSnapshotCacheEntry>,
-): string {
-  if (!localLoreCache) return snapshotJson(localLore)
-  const key = `chat:${chatId}`
-  const shouldRefreshEntryEditSnapshot = pendingEntryEditKeys.has(key) || flushedEntryEditSnapshots.has(key)
-  const cached = localLoreCache.get(chatId)
-  if (!shouldRefreshEntryEditSnapshot && cached?.entries === localLore) return cached.snapshot
-  const snapshot = snapshotJson(localLore)
-  localLoreCache.set(chatId, { entries: localLore, snapshot })
-  return snapshot
-}
-
-function collectModuleLorebookSnapshot(snapshots: Map<string, string>, module: RisuModule): void {
-  if (isStableCommandId(module.id) && hasStableUniqueLorebookEntryIds(module.lorebook)) {
-    snapshots.set(`module:${module.id}`, snapshotJson(module.lorebook))
-  }
-}
-
 function captureLorebookProjectionEpochs(scope: DiscreteLorebookEditScope): LorebookProjectionEpochs {
   switch (scope.kind) {
     case 'global':
@@ -2832,9 +2544,6 @@ function queueReplacement(
       void acknowledgePendingMutation(existing.outbox)
     }
     pendingReplacements.delete(key)
-    pendingEntryEditKeys.delete(key)
-    flushedEntryEditSnapshots.delete(key)
-    flushedEntryEditClearSnapshots.delete(key)
     settleScopedLorebookMutationOperations(operations, { status: 'accepted' })
     return
   }
@@ -2849,9 +2558,6 @@ function queueReplacement(
     )
   } catch (error) {
     pendingReplacements.delete(key)
-    pendingEntryEditKeys.delete(key)
-    flushedEntryEditSnapshots.delete(key)
-    flushedEntryEditClearSnapshots.delete(key)
     if (!hasLorebookProjectionEpochChanged(effectiveProjectionEpochs)) {
       rollbackLorebookReplacement(scope, rollbackPrevious, attemptedEntries)
     }
@@ -2877,15 +2583,6 @@ function queueReplacement(
   }
   if (existingProjectionIsCurrent) existing?.settlementCleanup?.()
   trackPendingLorebookReplacementSettlement(pending, scope)
-  if (effectiveSource === 'entry') {
-    pendingEntryEditKeys.add(key)
-    flushedEntryEditSnapshots.delete(key)
-    flushedEntryEditClearSnapshots.delete(key)
-  } else {
-    pendingEntryEditKeys.delete(key)
-    flushedEntryEditSnapshots.delete(key)
-    flushedEntryEditClearSnapshots.delete(key)
-  }
   pendingReplacements.set(key, pending)
   if (correctionOnly) {
     runPendingReplacement(key)
@@ -2903,9 +2600,6 @@ function trackPendingLorebookReplacementSettlement(
     if (pendingReplacements.get(pending.key)?.outbox.mutationId !== pending.outbox.mutationId) return
     if (pending.timer) clearTimeout(pending.timer)
     pendingReplacements.delete(pending.key)
-    pendingEntryEditKeys.delete(pending.key)
-    flushedEntryEditSnapshots.delete(pending.key)
-    flushedEntryEditClearSnapshots.delete(pending.key)
 
     if (settlement === 'accepted') {
       clearAcceptedLorebookIdentityDirty(pending)
@@ -2922,10 +2616,8 @@ function trackPendingLorebookReplacementSettlement(
   })
 }
 
-function isLorebookCollectionReplacementSource(
-  source: LorebookReplacementSource | undefined,
-): source is 'collection' | 'watchedCollection' {
-  return source === 'collection' || source === 'watchedCollection'
+function isLorebookCollectionReplacementSource(source: LorebookReplacementSource | undefined): source is 'collection' {
+  return source === 'collection'
 }
 
 export function flushPendingServerBackedLorebookPatches(options: ServerCommandTransportOptions = {}): void {
@@ -2954,13 +2646,7 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
   pendingReplacements.delete(key)
-  const watchedEntries =
-    pending.source === 'watchedCollection' ? resolveLorebookCollectionFromKey(key)?.entries : undefined
-  if (
-    hasLorebookProjectionEpochChanged(pending.projectionEpochs) ||
-    (pending.source === 'watchedCollection' && !hasStableUniqueLorebookEntryIds(watchedEntries))
-  ) {
-    pendingEntryEditKeys.delete(key)
+  if (hasLorebookProjectionEpochChanged(pending.projectionEpochs)) {
     // Projection replacement only proves that this page's optimistic baseline
     // is stale. The encrypted intent remains pending until its exact mutation id
     // is accepted/discarded or bootstrap replays it.
@@ -2968,23 +2654,6 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
       status: 'queued',
     })
     return
-  }
-  if (pending.source === 'entry') {
-    pendingEntryEditKeys.delete(key)
-    const snapshot = currentLorebookCollectionSnapshotForKey(key)
-    if (snapshot === null) {
-      flushedEntryEditSnapshots.delete(key)
-      flushedEntryEditClearSnapshots.delete(key)
-    } else {
-      flushedEntryEditSnapshots.set(key, snapshot)
-      if (key.startsWith('chat:')) {
-        const chatId = key.slice('chat:'.length)
-        const chat = findChat(chatId)
-        if (chat) {
-          characterScopeLocalLoreSnapshots.set(chatId, { entries: chat.localLore ?? [], snapshot })
-        }
-      }
-    }
   }
   pending.settlementCleanup?.()
   pending.settlementCleanup = undefined
@@ -3119,31 +2788,6 @@ function clearLorebookEntryAttempt(attempt: PendingLorebookEntryAttempt): void {
   if (index !== -1) pendingLorebookEntryAttempts.splice(index, 1)
 }
 
-function scheduleFlushedEntrySuppressionClear(key: string, snapshot: string): void {
-  if (flushedEntryEditClearSnapshots.get(key) === snapshot) return
-  flushedEntryEditClearSnapshots.set(key, snapshot)
-  queueMicrotask(() => {
-    if (flushedEntryEditSnapshots.get(key) === snapshot) {
-      flushedEntryEditSnapshots.delete(key)
-    }
-    if (flushedEntryEditClearSnapshots.get(key) === snapshot) {
-      flushedEntryEditClearSnapshots.delete(key)
-    }
-  })
-}
-
-function reconcileFlushedEntrySuppressions(currentSnapshots: Map<string, string>): void {
-  for (const [key, flushedSnapshot] of flushedEntryEditSnapshots) {
-    const currentSnapshot = currentSnapshots.get(key)
-    if (currentSnapshot === flushedSnapshot) {
-      scheduleFlushedEntrySuppressionClear(key, flushedSnapshot)
-    } else {
-      flushedEntryEditSnapshots.delete(key)
-      flushedEntryEditClearSnapshots.delete(key)
-    }
-  }
-}
-
 function rollbackLorebookReplacement(
   scope: DiscreteLorebookEditScope,
   snapshot: LorebookReplacementSnapshot,
@@ -3165,13 +2809,13 @@ export function rollbackCharacterLorebookReplacement(
 }
 
 function rollbackServerBackedLorebooks(snapshot: LorebookStateSnapshot): void {
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     restoreLorebookState(snapshot)
   })
 }
 
 function rollbackServerBackedGlobalLorebooks(snapshot: GlobalLorebookStateSnapshot): void {
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     restoreGlobalLorebookState(snapshot)
   })
 }
@@ -3181,7 +2825,7 @@ function rollbackGlobalLorebookListEntry(rollbackEntry: GlobalLorebookListRollba
   if (!canApplyGlobalLorebookListRollback(rollbackEntry)) return
   const selectedLorebookId = currentSelectedGlobalLorebookId()
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       if (!canApplyGlobalLorebookListRollback(rollbackEntry, lorebooks)) return
@@ -3216,7 +2860,7 @@ function rollbackDeletedGlobalLorebook(
       const canRestoreRow = rollbackEntry ? canApplyGlobalLorebookListRollback(rollbackEntry, lorebooks) : false
       if (!canRestoreRow) return
 
-      withSuppressedLorebookWatcher(() => {
+      applyLorebookOwnerMutation(() => {
         restoredRow =
           applyAttemptedKeyedListRollback<GlobalLorebook, string>({
             list: lorebooks,
@@ -3250,7 +2894,7 @@ function canApplyGlobalLorebookListRollback(
 function rollbackGlobalLorebookName(rollback: GlobalLorebookNameRollback): void {
   if (!canApplyGlobalLorebookNameRollback(rollback)) return
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       if (!canApplyGlobalLorebookNameRollback(rollback, lorebooks)) return
@@ -3281,7 +2925,7 @@ function rollbackGlobalLorebookOrder(rollback: GlobalLorebookOrderRollback): voi
   if (!liveIds || !sameStringArray(liveIds, rollback.attemptedIds)) return
   const selectedLorebookId = currentSelectedGlobalLorebookId()
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       const currentIds = globalLorebookStableIds(lorebooks)
@@ -3302,7 +2946,7 @@ function rollbackGlobalLorebookOrder(rollback: GlobalLorebookOrderRollback): voi
 function rollbackGlobalLorebookSelection(rollback: GlobalLorebookSelectionRollback): void {
   if (!canApplyGlobalLorebookSelectionRollback(rollback)) return
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       if (!canApplyGlobalLorebookSelectionRollback(rollback)) return
       restoreGlobalLorebookSelection(rollback)
@@ -3432,7 +3076,7 @@ function rollbackServerBackedLorebookEntry(snapshot: LorebookEntryStateSnapshot,
     return
   }
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     restoreLorebookEntryState(snapshot)
   })
 }
@@ -3479,7 +3123,7 @@ function rollbackLorebookEntryByAttempt(snapshot: LorebookEntryStateSnapshot, at
     if (changedFields.length === 0) return
 
     let restoredFields: LorebookEntryDirtyField[] = []
-    withSuppressedLorebookWatcher(() => {
+    applyLorebookOwnerMutation(() => {
       withTrustedResourceWrite(() => {
         const target = resolveLorebookCollectionFromKey(snapshot.scopeKey)
         const liveEntry = target?.entries.find((entry) => entry.id === entryId)
@@ -3553,7 +3197,7 @@ function applyScopedLorebookKeyedRollback(scopeKey: string, rollbackEntry: Loreb
   const target = resolveLorebookCollectionFromKey(scopeKey)
   if (!target || !canApplyLorebookKeyedRollback(target.entries, rollbackEntry)) return
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
       if (!liveTarget) return
@@ -3583,7 +3227,7 @@ function rollbackLorebookCollectionReorder(
   const liveIds = target ? lorebookEntryIds(target.entries) : null
   if (!liveIds || !sameStringArray(liveIds, attemptedIds)) return
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
       if (!liveTarget) return
@@ -3609,7 +3253,7 @@ function rollbackLorebookCollectionFullReplace(
   const target = resolveLorebookCollectionFromKey(scopeKey)
   if (!target || snapshotJson(target.entries) !== snapshotJson(attemptedEntries)) return
 
-  withSuppressedLorebookWatcher(() => {
+  applyLorebookOwnerMutation(() => {
     withTrustedResourceWrite(() => {
       const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
       if (!liveTarget || snapshotJson(liveTarget.entries) !== snapshotJson(attemptedEntries)) return
@@ -3697,15 +3341,8 @@ function lorebookEntryKey(entry: loreBook): string | null {
   return isStableCommandId(entry.id) ? entry.id : null
 }
 
-function withSuppressedLorebookWatcher(fn: () => void): void {
-  suppressRollbackDispatch = true
-  try {
-    fn()
-  } finally {
-    queueMicrotask(() => {
-      suppressRollbackDispatch = false
-    })
-  }
+function applyLorebookOwnerMutation(fn: () => void): void {
+  fn()
 }
 
 function isLorebookEntryStateSnapshot(snapshot: LorebookReplacementSnapshot): snapshot is LorebookEntryStateSnapshot {
@@ -3862,11 +3499,6 @@ function resolveLorebookCollectionFromKey(scopeKey: string): { entries: loreBook
     return resolveLorebookCollection({ kind: 'module', moduleId })
   }
   return null
-}
-
-function currentLorebookCollectionSnapshotForKey(scopeKey: string): string | null {
-  const collection = resolveLorebookCollectionFromKey(scopeKey)
-  return collection ? snapshotJson(collection.entries ?? []) : null
 }
 
 function parseSnapshotJson(snapshot: string): unknown {

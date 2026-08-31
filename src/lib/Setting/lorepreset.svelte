@@ -11,7 +11,6 @@
     deleteGlobalLorebookByIdWithOutcome,
     renameGlobalLorebookById,
     subscribeGlobalLorebookDeleteStates,
-    watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   import {
     lorebookPageIndexFromSnapshot,
@@ -109,13 +108,6 @@
     return subscribeGlobalLorebookDeleteStates((states) => {
       globalLorebookDeleteStates = new Map(states.map((state) => [state.lorebookId, state]))
     })
-  })
-
-  $effect(() => {
-    // This modal only edits the global lorebook list, so scope change detection
-    // to it instead of scanning every character/chat/module per keystroke.
-    const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'global' } })
-    return () => stopLorebooks()
   })
 </script>
 

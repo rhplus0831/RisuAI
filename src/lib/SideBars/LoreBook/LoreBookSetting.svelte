@@ -19,8 +19,6 @@
   import {
     replaceCharacterLorebookCollectionWithOutcome,
     replaceChatLorebookCollectionWithOutcome,
-    watchServerBackedLorebooks,
-    type LorebookWatchScope,
     type ScopedLorebookMutationOperation,
   } from 'src/ts/server/lorebookBridge.svelte'
   import { alertError, alertNormal } from 'src/ts/alert'
@@ -193,15 +191,6 @@
   async function retryCharacterLorebookHydration() {
     await hydrateActiveCharacterLorebook({ force: true })
   }
-
-  $effect(() => {
-    // Global mode edits the global lorebook list; character mode edits the
-    // selected character's globalLore and its chats' localLore. Scope change
-    // detection to whichever this panel actually edits.
-    const scope: LorebookWatchScope = globalMode ? { kind: 'global' } : { kind: 'character' }
-    const stopLorebooks = watchServerBackedLorebooks({ scope })
-    return () => stopLorebooks()
-  })
 
   function isAllCharacterLoreAlwaysActive() {
     const globalLore = selectedCharacter()?.globalLore
