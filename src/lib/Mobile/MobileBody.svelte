@@ -4,7 +4,7 @@
 
   interface MobileSelectedCharacterInput {
     ownerCharacters: readonly character[]
-    ownerReady: boolean
+    ownerStatus: 'idle' | 'loading' | 'ready' | 'error'
     ownerSelectedIndex: number
     compatibilitySelectedIndex: number
     readCompatibilityCharacters: () => readonly character[]
@@ -12,14 +12,15 @@
 
   export function resolveMobileSelectedCharacter({
     ownerCharacters,
-    ownerReady,
+    ownerStatus,
     ownerSelectedIndex,
     compatibilitySelectedIndex,
     readCompatibilityCharacters,
   }: MobileSelectedCharacterInput): character | undefined {
-    if (ownerReady) {
+    if (ownerStatus === 'ready') {
       return selectCharacterOwner(ownerCharacters, ownerSelectedIndex)
     }
+    if (ownerStatus !== 'idle' && ownerStatus !== 'loading') return undefined
 
     const compatibilityCharacters = readCompatibilityCharacters()
     const compatibilityCandidate = compatibilityCharacters[compatibilitySelectedIndex]
@@ -63,7 +64,7 @@
   let selectedMobileCharacter = $derived(
     resolveMobileSelectedCharacter({
       ownerCharacters: charactersResourceState.characters,
-      ownerReady: charactersResourceState.status === 'ready',
+      ownerStatus: charactersResourceState.status,
       ownerSelectedIndex: charactersResourceState.currentChar,
       compatibilitySelectedIndex: $selectedCharID,
       readCompatibilityCharacters: () =>

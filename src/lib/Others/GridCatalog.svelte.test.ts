@@ -450,13 +450,13 @@ describe('GridCatalog derived lists', () => {
     gridAction('list', 'fallback-character', 'open').click()
     expect(routerSpies.navigate).toHaveBeenCalledWith('/character/fallback-character/fallback-chat')
 
+    charactersResourceState.characters = [
+      makeCharacter({ chaId: 'resident-character', name: 'Resident Character' }),
+    ] as any
     charactersResourceState.status = 'error'
     await tick()
     expect(gridRows('list')).toEqual([])
 
-    charactersResourceState.characters = [
-      makeCharacter({ chaId: 'resident-character', name: 'Resident Character' }),
-    ] as any
     charactersResourceState.status = 'loading'
     await tick()
     expect(listHeadings('list')).toEqual(['Resident Character'])
@@ -467,7 +467,7 @@ describe('GridCatalog derived lists', () => {
     expect(gridRows('list')).toEqual([])
   })
 
-  it('fails prefetch, navigation, and mutations closed for duplicate character owner ids', async () => {
+  it('fails the ready catalog closed for duplicate character owner ids', async () => {
     setDatabaseLite({
       language: 'en',
       characters: [
@@ -486,16 +486,10 @@ describe('GridCatalog derived lists', () => {
 
     mountCatalog()
     await clickCatalogTab('list')
-    const activeRow = rowForCharacterId('list', 'duplicate-character')
-    activeRow.dispatchEvent(new Event('pointerenter'))
-    gridAction('list', 'duplicate-character', 'open').click()
-    gridAction('list', 'duplicate-character', 'delete').click()
-    await tick()
+    expect(gridRows('list')).toEqual([])
 
     await clickCatalogTab('trash')
-    gridAction('trash', 'duplicate-character', 'restore').click()
-    gridAction('trash', 'duplicate-character', 'delete-permanent').click()
-    await tick()
+    expect(gridRows('trash')).toEqual([])
 
     expect(routerSpies.navigate).not.toHaveBeenCalled()
     expect(routeResourceSpies.prefetchCharacterRouteResource).not.toHaveBeenCalled()
@@ -537,6 +531,7 @@ describe('GridCatalog derived lists', () => {
       language: 'en',
       characters: [makeCharacter({ name: 'Legacy Trash', trashTime: 20 })],
     } as any)
+    charactersResourceState.status = 'loading'
     mountCatalog()
     await clickCatalogTab('trash')
 

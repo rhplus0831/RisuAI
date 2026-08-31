@@ -56,7 +56,7 @@
   }
 
   function gridCatalogCharacterKey(char: GridCatalogCharacter) {
-    return char.chaId ? `${char.chaId}:${char.index}` : `legacy-${char.index}`
+    return char.chaId ?? `legacy-${char.index}`
   }
 </script>
 
@@ -192,7 +192,12 @@
   }
 
   function readCharacterOwners(): readonly Database['characters'][number][] {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
+    if (charactersResourceState.status === 'ready') {
+      for (const character of charactersResourceState.characters) {
+        if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return []
+      }
+      return charactersResourceState.characters
+    }
     if (charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading') {
       return charactersResourceState.characters.length > 0
         ? charactersResourceState.characters
@@ -202,6 +207,7 @@
   }
 
   function readCatalogLanguage(): string | undefined {
+    if (settingsResourceState.status === 'error') return undefined
     const status = settingsResourceState.groupStatuses.language ?? 'idle'
     if (status === 'ready') return settingsResourceState.value.language as string | undefined
     if (status === 'idle' || status === 'loading') return getDatabase().language
@@ -228,6 +234,11 @@
     if (char.chaId) return uniqueCharacterOwner(char.chaId)
     const character = readCharacterOwners()[char.index]
     return character && !character.chaId ? { character, index: char.index } : undefined
+  }
+
+  function gridCatalogRenderKey(char: GridCatalogCharacter): string {
+    if (charactersResourceState.status === 'ready') return gridCatalogCharacterKey(char)
+    return char.chaId ? `${char.chaId}:${char.index}` : gridCatalogCharacterKey(char)
   }
 
   function isSelectedCatalogCharacter(char: GridCatalogCharacter): boolean {
@@ -373,7 +384,7 @@
     {#if selected === 0}
       <div class="w-full flex justify-center" data-risu-grid-list data-risu-list-kind="grid">
         <div class="flex flex-wrap gap-2 w-full justify-center">
-          {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
+          {#each catalogCharacters.active as char (gridCatalogRenderKey(char))}
             <div
               class="flex items-center text-textcolor"
               data-risu-grid-character-row
@@ -417,7 +428,7 @@
       </div>
     {:else if selected === 1}
       <div class="contents" data-risu-grid-list data-risu-list-kind="list">
-        {#each catalogCharacters.active as char (gridCatalogCharacterKey(char))}
+        {#each catalogCharacters.active as char (gridCatalogRenderKey(char))}
           <div
             class="flex p-2 border border-darkborderc rounded-md mb-2"
             data-risu-grid-character-row
@@ -478,7 +489,7 @@
     {:else if selected === 2}
       <div class="contents" data-risu-grid-list data-risu-list-kind="trash">
         <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
-        {#each catalogCharacters.trash as char (gridCatalogCharacterKey(char))}
+        {#each catalogCharacters.trash as char (gridCatalogRenderKey(char))}
           <div
             class="flex p-2 border border-darkborderc rounded-md mb-2"
             data-risu-grid-character-row

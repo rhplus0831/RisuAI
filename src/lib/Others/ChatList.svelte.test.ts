@@ -474,7 +474,7 @@ describe('ChatList DOM contract harness', () => {
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
   })
 
-  it('fails closed on character owner errors and duplicate chat ids', async () => {
+  it('fails closed on character owner errors and duplicate or missing chat ids', async () => {
     const chara = seedModalDatabase()
     withTrustedResourceWrite(() => {
       getDatabase().characters.push({
@@ -484,6 +484,22 @@ describe('ChatList DOM contract harness', () => {
       })
     })
 
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    const missingIdOwner = seedModalDatabase()
+    missingIdOwner.chats[0].id = ''
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    seedModalDatabase()
+    charactersResourceState.rowStatuses['char-a'] = 'error'
     component = mount(ChatList, { target, props: { close: vi.fn() } })
     await tick()
     expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
@@ -881,6 +897,7 @@ describe('ChatList DOM contract harness', () => {
     const chara = seedModalDatabase()
     chara.chatPage = 0
     removeCharacterId(chara)
+    charactersResourceState.status = 'loading'
     chatListMocks.setServerCommandsEnabled(true)
     const command = chatListMocks.createDeferredSelectCommand()
     const close = vi.fn()

@@ -236,6 +236,31 @@ describe('BookmarkList hydration and navigation', () => {
     expect(target.textContent).not.toContain(language.noBookmarks)
   })
 
+  it('hydrates bookmarked metadata when no resident transcript owner exists', async () => {
+    const hydration = deferred()
+    seedBookmarkDatabase(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].message = undefined as never
+    })
+    bookmarkMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      await hydration.promise
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].message = [
+          { chatId: 'message-old', role: 'user', data: 'Older bookmarked message' },
+        ]
+      })
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+
+    expect(bookmarkMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-a', { strict: true })
+    expect(target.querySelector('[role="status"]')?.textContent).toBe(language.loading)
+
+    hydration.resolve()
+    await vi.waitFor(() => expect(target.querySelector('[data-risu-bookmark-id="message-old"]')).not.toBeNull())
+  })
+
   it('routes a bookmark jump through the chat-message navigation queue and closes', async () => {
     seedBookmarkDatabase(true)
     component = mount(BookmarkList, { target })
@@ -492,7 +517,42 @@ describe('BookmarkList hydration and navigation', () => {
     unmount(component)
     component = undefined
     seedBookmarkDatabase(true)
+    charactersResourceState.rowStatuses['char-a'] = 'error'
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+
+    unmount(component)
+    component = undefined
+    seedBookmarkDatabase(true)
     charactersResourceState.status = 'error'
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+  })
+
+  it('fails closed on duplicate bookmark and message stable ids', async () => {
+    seedBookmarkDatabase(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].bookmarks = ['message-old', 'message-old']
+    })
+
+    component = mount(BookmarkList, { target })
+    await tick()
+    expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()
+    expect(bookmarkMocks.hydrateChatMessages).not.toHaveBeenCalled()
+
+    unmount(component)
+    component = undefined
+    seedBookmarkDatabase(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].message.push({
+        chatId: 'message-old',
+        role: 'char',
+        data: 'Duplicate stable message id',
+      } as never)
+    })
+
     component = mount(BookmarkList, { target })
     await tick()
     expect(target.querySelector('[data-risu-bookmark-id]')).toBeNull()

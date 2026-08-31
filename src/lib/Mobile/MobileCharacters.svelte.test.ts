@@ -7,8 +7,14 @@ const mobileCharacterMocks = vi.hoisted(() => ({
     currentChar: -1,
     status: 'ready' as 'idle' | 'ready',
   },
-  settingsResourceState: { value: { language: 'en' } },
+  settingsResourceState: {
+    value: { language: 'en' },
+    groupStatuses: { language: 'ready' },
+    status: 'ready' as 'error' | 'ready',
+  },
   legacyCharacters: [] as Array<Record<string, unknown>>,
+  legacyLanguage: 'en',
+  readCompatibilityDatabase: vi.fn(),
 }))
 
 const characterActionSpies = vi.hoisted(() => ({
@@ -24,7 +30,13 @@ vi.mock('src/ts/server/resourceState.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/resourceState.svelte')>()),
   charactersResourceState: mobileCharacterMocks.charactersResourceState,
   settingsResourceState: mobileCharacterMocks.settingsResourceState,
-  getResourceDatabase: vi.fn(() => ({ characters: mobileCharacterMocks.legacyCharacters })),
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = mobileCharacterMocks.charactersResourceState.characters.filter(
+      (character) => character.chaId === characterId,
+    )
+    return matches.length === 1 ? matches[0] : undefined
+  },
+  getResourceDatabase: mobileCharacterMocks.readCompatibilityDatabase,
 }))
 
 vi.mock('src/ts/characters', () => ({
@@ -60,6 +72,9 @@ beforeEach(() => {
   MobileSearch.set('')
   mobileCharacterMocks.charactersResourceState.currentChar = 0
   mobileCharacterMocks.charactersResourceState.status = 'ready'
+  mobileCharacterMocks.settingsResourceState.groupStatuses.language = 'ready'
+  mobileCharacterMocks.settingsResourceState.value.language = 'en'
+  mobileCharacterMocks.settingsResourceState.status = 'ready'
   mobileCharacterMocks.charactersResourceState.characters = [
     {
       chaId: 'character-a',
@@ -73,6 +88,11 @@ beforeEach(() => {
     },
   ]
   mobileCharacterMocks.legacyCharacters = []
+  mobileCharacterMocks.legacyLanguage = 'en'
+  mobileCharacterMocks.readCompatibilityDatabase.mockImplementation(() => ({
+    characters: mobileCharacterMocks.legacyCharacters,
+    language: mobileCharacterMocks.legacyLanguage,
+  }))
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -117,6 +137,7 @@ describe('MobileCharacters actions', () => {
     row.click()
     expect(routerActionSpies.navigate).toHaveBeenCalledWith('/character/character-a/chat-a')
     expect(characterActionSpies.changeChar).not.toHaveBeenCalled()
+    expect(mobileCharacterMocks.readCompatibilityDatabase).not.toHaveBeenCalled()
 
     create.click()
     expect(characterActionSpies.addCharacter).toHaveBeenCalledOnce()
@@ -162,6 +183,7 @@ describe('MobileCharacters actions', () => {
     component = mount(MobileCharacters, { target })
     await tick()
 
+    expect(target.querySelector('[data-risu-mobile-character-row]')).toBeNull()
     target.querySelector<HTMLButtonElement>('[data-risu-mobile-character-action="open"]')?.click()
 
     expect(routerActionSpies.navigate).not.toHaveBeenCalled()
@@ -199,5 +221,39 @@ describe('MobileCharacters actions', () => {
     target.querySelector<HTMLButtonElement>('[data-risu-mobile-character-action="open"]')?.click()
 
     expect(routerActionSpies.navigate).toHaveBeenCalledWith('/character/legacy-character/legacy-chat')
+  })
+
+  it('fails owner errors closed without reading character compatibility', async () => {
+    mobileCharacterMocks.charactersResourceState.characters = []
+    mobileCharacterMocks.charactersResourceState.status = 'error' as never
+    mobileCharacterMocks.legacyCharacters = [
+      {
+        chaId: 'stale-character',
+        name: 'Stale character',
+        image: '',
+        chats: [],
+      },
+    ]
+
+    component = mount(MobileCharacters, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-mobile-character-row]')).toBeNull()
+    expect(mobileCharacterMocks.readCompatibilityDatabase).not.toHaveBeenCalled()
+  })
+
+  it('fails settings errors closed to the English relative-time locale', async () => {
+    mobileCharacterMocks.settingsResourceState.status = 'error'
+    mobileCharacterMocks.settingsResourceState.groupStatuses.language = 'error'
+    mobileCharacterMocks.legacyLanguage = 'ko'
+    mobileCharacterMocks.charactersResourceState.characters[0].lastInteraction = Date.now() - 120_000
+
+    component = mount(MobileCharacters, { target })
+    await tick()
+
+    expect(target.querySelector('[data-risu-mobile-character-ago]')?.textContent).toBe(
+      new Intl.RelativeTimeFormat('en', { style: 'short' }).format(-2, 'minute'),
+    )
+    expect(mobileCharacterMocks.readCompatibilityDatabase).not.toHaveBeenCalled()
   })
 })

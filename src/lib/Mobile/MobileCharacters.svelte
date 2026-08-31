@@ -23,6 +23,7 @@
   import { selectedCharID } from 'src/ts/stores.svelte'
   import {
     charactersResourceState,
+    getCharacterResourceOwner,
     getResourceDatabase,
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
@@ -34,7 +35,7 @@
   import { language } from 'src/lang'
   import { onMount } from 'svelte'
   import { prefetchCharacterRouteResource } from 'src/ts/server/routeResourceLoader'
-  import type { MobileCharacterSummary } from './mobileCharacterRows'
+  import type { MobileCharacterRow, MobileCharacterSummary } from './mobileCharacterRows'
 
   interface Props {
     endGrid?: () => void
@@ -44,7 +45,7 @@
 
   let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
   let relativeTimeNow = $state(Date.now())
-  let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(settingsResourceState.value.language))
+  let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(readMobileLanguageOwner()))
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
   let selectedCharacterIndex = $derived(
@@ -83,16 +84,34 @@
 
   function readCharacterOwners(): readonly MobileCharacterSummary[] {
     const ownedCharacters = charactersResourceState.characters
-    if (ownedCharacters.length > 0 || charactersResourceState.status === 'ready') {
+    if (charactersResourceState.status === 'ready') {
+      for (const character of ownedCharacters) {
+        if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) return []
+      }
       return ownedCharacters as MobileCharacterSummary[]
     }
-    // Compatibility is limited to the pre-readiness empty state. Once the
-    // owner resource has rows (including during a refresh), keep rendering
-    // that resident projection rather than switching sources.
-    return (getResourceDatabase().characters ?? []) as MobileCharacterSummary[]
+    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return []
+    // Compatibility is limited to idle/loading. Once that projection has
+    // resident rows, keep rendering it rather than switching sources.
+    return (
+      ownedCharacters.length > 0 ? ownedCharacters : (getResourceDatabase().characters ?? [])
+    ) as MobileCharacterSummary[]
+  }
+
+  function readMobileLanguageOwner(): unknown {
+    if (settingsResourceState.status === 'error') return undefined
+    const status = settingsResourceState.groupStatuses.language ?? 'idle'
+    if (status === 'ready') return settingsResourceState.value.language
+    if (status === 'idle' || status === 'loading') return getResourceDatabase().language
+    return undefined
   }
 
   function uniqueCharacterOwner(characters: readonly MobileCharacterSummary[], characterId: string) {
+    if (charactersResourceState.status === 'ready') {
+      const character = getCharacterResourceOwner(characterId) as MobileCharacterSummary | undefined
+      const index = character ? charactersResourceState.characters.indexOf(character) : -1
+      return character && index >= 0 ? { character, index } : undefined
+    }
     let owner: { character: MobileCharacterSummary; index: number } | undefined
     for (const [index, character] of characters.entries()) {
       if (character.chaId !== characterId) continue
@@ -106,10 +125,15 @@
     if (row.index !== selectedCharacterIndex) return false
     return !row.chaId || uniqueCharacterOwner(readCharacterOwners(), row.chaId)?.index === row.index
   }
+
+  function mobileCharacterRenderKey(row: MobileCharacterRow): string {
+    if (charactersResourceState.status === 'ready') return row.chaId ?? 'invalid-ready-character'
+    return row.chaId ? `${row.chaId}:${row.index}` : mobileCharacterRowKey(row)
+  }
 </script>
 
 <div class="flex flex-col items-center w-full overflow-y-auto h-full">
-  {#each visibleMobileCharacterRows as char (char.chaId ? `${char.chaId}:${char.index}` : mobileCharacterRowKey(char))}
+  {#each visibleMobileCharacterRows as char (mobileCharacterRenderKey(char))}
     <button
       class="flex p-2 border-t-darkborderc gap-2 w-full"
       class:border-t={char.sortedIndex !== 0}

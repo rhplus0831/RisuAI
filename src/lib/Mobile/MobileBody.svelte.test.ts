@@ -13,7 +13,7 @@ describe('MobileBody character owner boundary', () => {
 
     const selectedCharacter = resolveMobileSelectedCharacter({
       ownerCharacters: [character('char-b', 'Other'), owner],
-      ownerReady: true,
+      ownerStatus: 'ready',
       ownerSelectedIndex: 1,
       compatibilitySelectedIndex: -1,
       readCompatibilityCharacters,
@@ -30,7 +30,7 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [],
-        ownerReady: false,
+        ownerStatus: 'idle',
         ownerSelectedIndex: -1,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters: () => [aggregate],
@@ -41,7 +41,7 @@ describe('MobileBody character owner boundary', () => {
   it('does not render a chat before readiness when compatibility has no selection', () => {
     const selectedCharacter = resolveMobileSelectedCharacter({
       ownerCharacters: [],
-      ownerReady: false,
+      ownerStatus: 'loading',
       ownerSelectedIndex: 0,
       compatibilitySelectedIndex: -1,
       readCompatibilityCharacters: () => [character('char-a', 'Aggregate')],
@@ -58,7 +58,7 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [character('char-b', 'Other'), owner],
-        ownerReady: false,
+        ownerStatus: 'loading',
         ownerSelectedIndex: -1,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters: () => [aggregate],
@@ -73,7 +73,7 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [shell],
-        ownerReady: false,
+        ownerStatus: 'idle',
         ownerSelectedIndex: -1,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters: () => [aggregate],
@@ -87,7 +87,7 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [shell],
-        ownerReady: true,
+        ownerStatus: 'ready',
         ownerSelectedIndex: 0,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters: () => [character('char-a', 'Aggregate')],
@@ -101,7 +101,7 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [character('char-a', 'First'), character('char-a', 'Second')],
-        ownerReady: true,
+        ownerStatus: 'ready',
         ownerSelectedIndex: 0,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters,
@@ -114,7 +114,7 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [],
-        ownerReady: false,
+        ownerStatus: 'idle',
         ownerSelectedIndex: -1,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters: () => [character('char-a', 'First'), character('char-a', 'Second')],
@@ -126,11 +126,26 @@ describe('MobileBody character owner boundary', () => {
     expect(
       resolveMobileSelectedCharacter({
         ownerCharacters: [character('char-a', 'First'), character('char-a', 'Second')],
-        ownerReady: false,
+        ownerStatus: 'loading',
         ownerSelectedIndex: -1,
         compatibilitySelectedIndex: 0,
         readCompatibilityCharacters: () => [character('char-a', 'Aggregate')],
       }),
     ).toBeUndefined()
+  })
+
+  it('fails closed on owner errors without reading aggregate compatibility', () => {
+    const readCompatibilityCharacters = vi.fn(() => [character('char-a', 'Aggregate')])
+
+    expect(
+      resolveMobileSelectedCharacter({
+        ownerCharacters: [character('char-a', 'Resident owner')],
+        ownerStatus: 'error',
+        ownerSelectedIndex: 0,
+        compatibilitySelectedIndex: 0,
+        readCompatibilityCharacters,
+      }),
+    ).toBeUndefined()
+    expect(readCompatibilityCharacters).not.toHaveBeenCalled()
   })
 })

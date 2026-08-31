@@ -53,7 +53,10 @@
 
   function uniqueCharacterOwner(characterId) {
     if (!characterId) return undefined
-    if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
+    if (charactersResourceState.status === 'ready') {
+      if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+      return getCharacterResourceOwner(characterId)
+    }
     let owner
     for (const candidate of readCharacterOwners()) {
       if (candidate?.chaId !== characterId) continue
@@ -68,7 +71,9 @@
     const owners = readCharacterOwners()
     const candidate = owners[selectedIndex]
     if (candidate?.chaId) return uniqueCharacterOwner(candidate.chaId)
-    return candidate
+    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+      ? candidate
+      : undefined
   }
 
   function selectedCharacterIndex() {
@@ -111,7 +116,8 @@
   })
 
   function characterChatIdsAreUnique(character) {
-    const stableChatIds = (character.chats ?? []).map((chat) => chat?.id).filter(Boolean)
+    const stableChatIds = (character.chats ?? []).map((chat) => chat?.id)
+    if (stableChatIds.some((chatId) => typeof chatId !== 'string' || chatId.length === 0)) return false
     if (new Set(stableChatIds).size !== stableChatIds.length) return false
     const rows = readCharacterOwners()
     return stableChatIds.every(
@@ -585,7 +591,7 @@
           </div>
         {/each}
       </div>
-      {#each renderedCharacter?.chats ?? [] as chat, i}
+      {#each renderedCharacter?.chats ?? [] as chat, i (chat.id)}
         <div
           data-risu-chat-id={chat.id ?? ''}
           data-risu-chat-idx={i}
