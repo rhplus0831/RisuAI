@@ -37,9 +37,11 @@ const mocks = vi.hoisted(() => {
     db: {
       characters: [
         {
+          chaId: 'escapes-character',
           chatPage: 0,
           chats: [
             {
+              id: 'escapes-chat',
               scriptstate: varStorage,
             },
           ],

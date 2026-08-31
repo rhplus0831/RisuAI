@@ -1,6 +1,12 @@
 import { writable } from 'svelte/store'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
+import { selectedCharID } from '../../../stores.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  settingsResourceState,
+} from '../../../server/resourceState.svelte'
 
 //#region module mocks
 
@@ -11,11 +17,13 @@ const mocks = vi.hoisted(() => {
   const db = {
     characters: [
       {
+        chaId: 'history-character',
         chatPage: 0,
         firstMessage: 'FIRST',
         alternateGreetings: [] as string[],
         chats: [
           {
+            id: 'history-chat',
             fmIndex: -1,
             scriptstate: {},
             message: [
@@ -62,6 +70,15 @@ vi.mock(import('../../../stores.svelte'), () => {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  selectedCharID.set(0)
+  charactersResourceState.characters = []
+  charactersResourceState.currentChar = -1
+  charactersResourceState.status = 'idle'
+  settingsResourceState.value = {}
+  settingsResourceState.status = 'idle'
+  collectionsResourceState.values = {}
+  collectionsResourceState.statuses = {}
+  collectionsResourceState.status = 'idle'
 })
 
 describe('history CBS functions shallow-spread', () => {
@@ -132,5 +149,77 @@ describe('history CBS functions shallow-spread', () => {
     expect(JSON.parse(risuChatParser('{{history::-1}}'))).toEqual([])
     expect(JSON.parse(risuChatParser('{{history::1.5}}'))).toEqual([])
     expect(JSON.parse(risuChatParser('{{history::many}}'))).toEqual([])
+  })
+
+  test('ready parser history follows unique character, chat, transcript, and scriptstate owners', () => {
+    charactersResourceState.characters = [
+      {
+        chaId: 'owner-character-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'owner-chat-a',
+            message: [{ role: 'char', data: 'non-selected owner', chatId: 'owner-message-a' }],
+            scriptstate: {},
+          },
+        ],
+      },
+      {
+        chaId: 'owner-character-b',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'owner-chat-b',
+            message: [{ role: 'char', data: 'selected owner history', chatId: 'owner-message-b' }],
+            scriptstate: { $owner: 'ready' },
+          },
+        ],
+      },
+    ] as never
+    charactersResourceState.currentChar = 1
+    charactersResourceState.status = 'ready'
+    settingsResourceState.value = { username: 'Owner user' }
+    settingsResourceState.status = 'ready'
+    collectionsResourceState.status = 'ready'
+
+    expect(JSON.parse(risuChatParser('{{history::1}}'))).toEqual(['selected owner history'])
+
+    charactersResourceState.characters.push({
+      chaId: 'owner-character-c',
+      chatPage: 0,
+      chats: [{ id: 'owner-chat-b', message: [{ role: 'char', data: 'duplicate leak' }], scriptstate: {} }],
+    } as never)
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
+  })
+
+  test('owner errors do not fall back to compatibility history', () => {
+    charactersResourceState.status = 'error'
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
+  })
+
+  test('ready parser history fails closed on missing and duplicate transcript stable ids', () => {
+    charactersResourceState.characters = [
+      {
+        chaId: 'stable-id-character',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'stable-id-chat',
+            message: [{ role: 'char', data: 'missing id' }],
+            scriptstate: {},
+          },
+        ],
+      },
+    ] as never
+    charactersResourceState.currentChar = 0
+    charactersResourceState.status = 'ready'
+
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
+
+    charactersResourceState.characters[0].chats[0].message = [
+      { role: 'char', data: 'first duplicate', chatId: 'duplicate-message' },
+      { role: 'char', data: 'second duplicate', chatId: 'duplicate-message' },
+    ] as never
+    expect(risuChatParser('{{history::1}}')).toBe('{{history::1}}')
   })
 })

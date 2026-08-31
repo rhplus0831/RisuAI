@@ -2,17 +2,33 @@ import { writable } from 'svelte/store'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LLMModel } from '../../model/modellist'
 import { clearAdditionalAssetCachesForTests, ParseMarkdown, type simpleCharacterArgument } from '../parser.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  settingsResourceState,
+} from '../../server/resourceState.svelte'
 
 const mocks = vi.hoisted(() => ({
   db: {
     assetMaxDifference: 4,
     characters: [] as Array<{ chaId?: string }>,
     customQuotes: false,
+    enabledModules: ['module-owner'],
     hideAllImages: false,
+    modules: [] as Array<{
+      id: string
+      name: string
+      description: string
+      assets: [string, string, string][]
+    }>,
+    promptPresets: [],
+    personas: [],
+    agentPresets: [],
   },
   getFileSrc: vi.fn<(path: string) => Promise<string>>(),
   moduleAssets: [] as [string, string, string][],
   processScriptFull: vi.fn(async (_char: unknown, data: string) => ({ data, emoChanged: false })),
+  requestServerDisplaySource: vi.fn(async () => ({ status: 'fallback' as const, reason: 'test' })),
   modelInfo: {
     id: 'test-model',
     name: 'Test Model',
@@ -60,6 +76,10 @@ vi.mock(import('../../process/scripts'), () => ({
   processScriptFull: mocks.processScriptFull,
 }))
 
+vi.mock(import('../../server/displaySources'), () => ({
+  requestServerDisplaySource: mocks.requestServerDisplaySource,
+}))
+
 vi.mock(import('../../model/modellist'), () => ({
   getModelInfo: () => mocks.modelInfo,
 }))
@@ -91,9 +111,21 @@ beforeEach(() => {
   clearAdditionalAssetCachesForTests()
   mocks.db.assetMaxDifference = 4
   mocks.db.characters = []
+  mocks.db.modules = []
   mocks.moduleAssets = []
   mocks.getFileSrc.mockReset().mockImplementation(async (path) => `/resolved/${path}`)
   mocks.processScriptFull.mockReset().mockImplementation(async (_char, data) => ({ data, emoChanged: false }))
+  mocks.requestServerDisplaySource.mockClear()
+  charactersResourceState.characters = []
+  charactersResourceState.currentChar = -1
+  charactersResourceState.status = 'idle'
+  settingsResourceState.value = {}
+  settingsResourceState.status = 'idle'
+  settingsResourceState.groupStatuses = {}
+  settingsResourceState.standaloneStatuses = {}
+  collectionsResourceState.values = {}
+  collectionsResourceState.statuses = {}
+  collectionsResourceState.status = 'idle'
 })
 
 describe('additional asset resolution cache', () => {
@@ -112,6 +144,14 @@ describe('additional asset resolution cache', () => {
   it('invalidates character and module asset entries after in-place tuple changes', async () => {
     const character = simpleCharacter('mutable-character', [['portrait', 'character-old', 'png']])
     mocks.moduleAssets = [['frame', 'module-old', 'png']]
+    mocks.db.modules = [
+      {
+        id: 'module-owner',
+        name: 'Module owner',
+        description: '',
+        assets: mocks.moduleAssets,
+      },
+    ]
 
     await expect(ParseMarkdown('{{raw::portrait}} {{raw::frame}}', character, 'back')).resolves.toContain(
       '/resolved/character-old',
@@ -147,5 +187,89 @@ describe('additional asset resolution cache', () => {
     await expect(hanielParse).resolves.toContain('/resolved/haniel-concurrent')
     lucyRead.resolve('/resolved/lucy-concurrent')
     await expect(lucyParse).resolves.toContain('/resolved/lucy-concurrent')
+  })
+
+  it('uses ready module and generation-context owners instead of compatibility rows', async () => {
+    mocks.db.modules = [
+      {
+        id: 'module-owner',
+        name: 'Compatibility module',
+        description: '',
+        assets: [['frame', 'compatibility-frame', 'png']],
+      },
+    ]
+    charactersResourceState.characters = [
+      {
+        chaId: 'owner-character',
+        type: 'character',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'owner-chat',
+            message: [{ role: 'char', data: 'owner row', chatId: 'owner-message' }],
+            scriptstate: {},
+          },
+        ],
+      },
+    ] as never
+    charactersResourceState.currentChar = 0
+    charactersResourceState.status = 'ready'
+    settingsResourceState.value = { enabledModules: ['module-owner'], agentPresets: [] }
+    settingsResourceState.status = 'ready'
+    settingsResourceState.groupStatuses.modules = 'ready'
+    collectionsResourceState.values = {
+      modules: [
+        {
+          id: 'module-owner',
+          name: 'Owner module',
+          description: '',
+          assets: [['frame', 'owner-frame', 'png']],
+        },
+        {
+          id: 'module-generation',
+          name: 'Generation module',
+          description: '',
+          assets: [['generation', 'generation-frame', 'png']],
+        },
+      ],
+      promptPresets: [],
+      personas: [],
+    } as never
+    collectionsResourceState.statuses = {
+      modules: 'ready',
+      promptPresets: 'ready',
+      personas: 'ready',
+    }
+    collectionsResourceState.status = 'ready'
+
+    const output = await ParseMarkdown('{{raw::frame}}', simpleCharacter('owner-character'), 'back', 0)
+
+    expect(output).toContain('/resolved/owner-frame')
+    expect(output).not.toContain('compatibility-frame')
+    expect(mocks.requestServerDisplaySource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: 'owner-chat',
+        messageId: 'owner-message',
+        index: 0,
+      }),
+    )
+
+    const generationOutput = await ParseMarkdown(
+      '{{raw::generation}}',
+      {
+        type: 'character',
+        chaId: 'owner-character',
+        chatPage: 0,
+        chats: [{ id: 'generation-chat', message: [], scriptstate: {} }],
+        modules: ['module-generation'],
+        additionalAssets: [],
+        emotionImages: [],
+        customscript: [],
+        triggerscript: [],
+      } as never,
+      'back',
+      0,
+    )
+    expect(generationOutput).toContain('/resolved/generation-frame')
   })
 })

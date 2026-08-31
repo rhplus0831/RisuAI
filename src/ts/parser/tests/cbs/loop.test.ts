@@ -42,9 +42,12 @@ beforeEach(() => {
   testDatabaseState.db = {
     characters: [
       {
+        chaId: 'loop-character',
         chatPage: 0,
         chats: [
           {
+            id: 'loop-chat',
+            message: [],
             scriptstate: {},
           },
         ],
@@ -53,6 +56,7 @@ beforeEach(() => {
     ],
     globalChatVariables: {},
     templateDefaultVariables: '',
+    currentChar: 0,
   }
   resetChatVariables()
 })

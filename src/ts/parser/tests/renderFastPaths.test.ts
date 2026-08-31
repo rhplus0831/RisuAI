@@ -2,6 +2,7 @@ import { writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from '../../../lang'
 import { ParseMarkdown, parseThoughtsAndTools, risuChatParser, trimMarkdown } from '../parser.svelte'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -46,6 +47,10 @@ const toolCallHtml = (payload: string) =>
 beforeEach(() => {
   mocks.db.paragraphBreakBySentences = false
   mocks.db.paragraphBreakSentenceCount = 3
+  settingsResourceState.value = {}
+  settingsResourceState.status = 'idle'
+  settingsResourceState.groupStatuses = {}
+  settingsResourceState.standaloneStatuses = {}
 })
 
 afterEach(() => {
@@ -73,6 +78,24 @@ describe('ParseMarkdown sentence paragraph mode gating', () => {
     )
     await expect(ParseMarkdown(input, null, 'pretranslate')).resolves.toBe(input)
     await expect(ParseMarkdown(input, null, 'back')).resolves.toBe(input)
+  })
+
+  it('uses ready display settings and never falls back after a settings error', async () => {
+    const input = 'First sentence. Second sentence.'
+    settingsResourceState.value = {
+      paragraphBreakBySentences: true,
+      paragraphBreakSentenceCount: 1,
+    }
+    settingsResourceState.status = 'ready'
+    settingsResourceState.groupStatuses.display = 'ready'
+
+    await expect(ParseMarkdown(input, null, 'notrim')).resolves.toContain(
+      '<p>First sentence.</p>\n<p>Second sentence.</p>',
+    )
+
+    mocks.db.paragraphBreakBySentences = true
+    settingsResourceState.groupStatuses.display = 'error'
+    await expect(ParseMarkdown(input, null, 'notrim')).resolves.not.toContain('<p>First sentence.</p>\n<p>')
   })
 })
 

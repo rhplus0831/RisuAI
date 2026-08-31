@@ -36,9 +36,17 @@ vi.mock(import('../../../stores.svelte'), () => {
 beforeEach(() => {
   vi.resetAllMocks()
   testDatabaseState.db = {
-    characters: [{ chatPage: 0, chats: [{ scriptstate: {} }], defaultVariables: '' }],
+    characters: [
+      {
+        chaId: 'each-character',
+        chatPage: 0,
+        chats: [{ id: 'each-chat', message: [], scriptstate: {} }],
+        defaultVariables: '',
+      },
+    ],
     globalChatVariables: {},
     templateDefaultVariables: '',
+    currentChar: 0,
   }
   resetChatVariables()
 })

@@ -1,10 +1,11 @@
 import fc from 'fast-check'
 import { writable } from 'svelte/store'
-import { expect, test, vi } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
 import { registerRisuChatParserMatcher } from '../../risuChatParser'
-import { cbs, trimVarPrefix, validCBSArgProp } from './lib'
+import { cbs, validCBSArgProp } from './lib'
 import { PHASE9_CBS_COMPATIBILITY_CORPUS } from '../../../../../test/fixtures/phase9CompatibilityCorpus'
+import { charactersResourceState, settingsResourceState } from '../../../server/resourceState.svelte'
 
 //#region module mocks
 
@@ -24,27 +25,19 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
   getFileSrc: () => Promise.resolve(''),
 }))
 
-/** Returns accessed key as the value. */
 const mocks = vi.hoisted(() => {
-  const varStorage = new Proxy({} as Record<string, unknown>, {
-    get(target, prop) {
-      if (Reflect.has(target, prop)) {
-        return Reflect.get(target, prop)
-      }
-      if (prop === '$missingDefault') {
-        return undefined
-      }
-      return trimVarPrefix(prop)
-    },
-  })
+  const varStorage = {} as Record<string, unknown>
 
   return {
     db: {
       characters: [
         {
+          chaId: 'strings-character',
           chatPage: 0,
           chats: [
             {
+              id: 'strings-chat',
+              message: [],
               scriptstate: varStorage,
             },
           ],
@@ -71,7 +64,17 @@ vi.mock(import('../../../stores.svelte'), () => {
 
 const validCBSArgPropLong = validCBSArgProp.filter((s) => s.length > 1)
 
+beforeEach(() => {
+  charactersResourceState.characters = mocks.db.characters as never
+  charactersResourceState.currentChar = 0
+  charactersResourceState.status = 'ready'
+  settingsResourceState.value = mocks.db as never
+  settingsResourceState.status = 'ready'
+})
+
 const quickParse = (op: string, ...args: (string | number)[]) => risuChatParser(cbs(op, ...args.map(String)))
+
+const ownerScriptstate = () => charactersResourceState.characters[0].chats[0].scriptstate as Record<string, unknown>
 
 test.each(PHASE9_CBS_COMPATIBILITY_CORPUS)('shared Phase 9 corpus: $name', ({ input, expected }) => {
   expect(risuChatParser(input)).toBe(expected)
@@ -208,19 +211,19 @@ test('capitalize, lower, upper', () => {
 })
 
 test('setdefaultvar installs a missing browser chat variable without replacing existing values', () => {
-  delete mocks.varStorage.$missingDefault
+  delete ownerScriptstate().$missingDefault
 
   expect(risuChatParser('{{setdefaultvar::missingDefault::fallback}}', { runVar: true })).toBe('')
-  expect(mocks.varStorage.$missingDefault).toBe('fallback')
+  expect(ownerScriptstate().$missingDefault).toBe('fallback')
   expect(risuChatParser('{{setdefaultvar::missingDefault::replacement}}', { runVar: true })).toBe('')
-  expect(mocks.varStorage.$missingDefault).toBe('fallback')
+  expect(ownerScriptstate().$missingDefault).toBe('fallback')
 })
 
 test("setdefaultvar replaces the browser chat variable 'null' sentinel", () => {
-  mocks.varStorage.$nullDefault = 'null'
+  ownerScriptstate().$nullDefault = 'null'
 
   expect(risuChatParser('{{setdefaultvar::nullDefault::fallback}}', { runVar: true })).toBe('')
-  expect(mocks.varStorage.$nullDefault).toBe('fallback')
+  expect(ownerScriptstate().$nullDefault).toBe('fallback')
 })
 
 test('reverse', () => {

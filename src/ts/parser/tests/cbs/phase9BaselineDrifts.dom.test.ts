@@ -54,7 +54,17 @@ describe('Phase 9 baseline-drift decisions — current browser parser', () => {
         chats: ReturnType<typeof phase9DriftChat>[]
       },
     ])
-    state.database.characters[0].chats = [phase9DriftChat(fixtures.historyWindow.messages)]
+    const historyChat = phase9DriftChat(fixtures.historyWindow.messages)
+    state.database.characters[0].chats = [
+      {
+        ...historyChat,
+        id: 'phase9-history-chat',
+        message: historyChat.message.map((message, index) => ({
+          ...message,
+          chatId: `phase9-history-message-${index}`,
+        })),
+      },
+    ]
 
     expect(JSON.parse(risuChatParser(fixtures.historyWindow.input))).toEqual(fixtures.historyWindow.currentExpected)
     expect(risuChatParser(fixtures.reverse.input)).toBe(fixtures.reverse.currentExpected)

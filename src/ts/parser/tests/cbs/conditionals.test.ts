@@ -37,9 +37,12 @@ const mocks = vi.hoisted(() => {
     db: {
       characters: [
         {
+          chaId: 'conditionals-character',
           chatPage: 0,
           chats: [
             {
+              id: 'conditionals-chat',
+              message: [],
               scriptstate: varStorage,
             },
           ],
@@ -64,7 +67,13 @@ vi.mock(import('../../../stores.svelte'), () => {
 //#endregion
 
 const template = (op: string, body: string) => `0 {{${op}}}${body}{{/}} 9`
-const quickParse = (...args: Parameters<typeof template>) => risuChatParser(template(...args))
+const testChatVariables = {
+  getChatVar: (key: string) => key,
+  setChatVar: () => undefined,
+  getGlobalChatVar: (key: string) => key.replace(/^toggle_/u, ''),
+}
+const quickParse = (...args: Parameters<typeof template>) =>
+  risuChatParser(template(...args), { chatVariables: testChatVariables })
 
 const indentedBody = `
 

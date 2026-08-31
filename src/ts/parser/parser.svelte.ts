@@ -2,15 +2,16 @@ import DOMPurify from 'dompurify'
 import markdownit from 'markdown-it'
 import { sha256Hex } from '../sha256Fallback'
 import {
-  getCurrentCharacter,
-  getCurrentChat,
   getDatabase,
+  type Chat,
+  type Database,
   type character,
   type customscript,
+  type loreBook,
   type triggerscript,
 } from '../storage/database.svelte'
 import versionInfo from '../../../version.json'
-import { CurrentTriggerIdStore } from '../stores.svelte'
+import { CurrentTriggerIdStore, selectedCharID } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
@@ -19,14 +20,13 @@ import { requestServerDisplaySource, type DisplaySourcePriority } from '../serve
 import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
 import { get } from 'svelte/store'
 import css, { type CssAtRuleAST } from '@adobe/css-tools'
-import { selectedCharID } from '../stores.svelte'
 import { calcString } from '../process/infunctions'
 import { safeStructuredClone } from '../polyfill'
 import { pickHashRand, replaceAsync } from '../util'
-import { findCharacterbyId } from '../characterState'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { getInlayAssetBlob, type InlayAsset } from '../process/files/inlays'
-import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules'
+import type { RisuModule } from '../process/modules'
+import { resolveActiveModuleStates } from '../moduleActivation'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang'
@@ -50,6 +50,19 @@ import {
   type CbsConditions,
 } from './risuChatParserHelpers'
 import { insertSentenceParagraphBreaks } from './sentenceBreaks'
+import {
+  SERVER_COLLECTION_NAMES,
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerSnapshot,
+  getChatScriptstateOwnerSnapshot,
+  settingsResourceState,
+  type ServerResourceStatus,
+} from '../server/resourceState.svelte'
+import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
+import { SERVER_SETTINGS_GROUP_BY_KEY } from '../server/settingsGroups'
+import { SERVER_STANDALONE_SETTING_NAMES } from '@risuai/protocol/standalone-settings'
 
 export { dateTimeFormat, makeArray, parseArray, parseDict, risuEscape, risuUnescape }
 export type { CbsConditions }
@@ -80,8 +93,273 @@ const mdHighlight = markdownit({
 md.disable(['code'])
 mdHighlight.disable(['code'])
 
+function nonBlankStableId(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function canUseCompatibility(status: string): boolean {
+  return status === 'idle' || status === 'loading'
+}
+
+function compatibilityParserDatabase(): Database {
+  return getDatabase()
+}
+
+function uniqueCharacterOwner(characters: readonly character[], characterId: string): character | undefined {
+  let owner: character | undefined
+  for (const candidate of characters) {
+    if (candidate?.chaId !== characterId) continue
+    if (owner) return undefined
+    owner = candidate
+  }
+  return owner
+}
+
+function selectedCharacterOwner(characters: readonly character[], selectedIndex: number): character | undefined {
+  const candidate = characters[selectedIndex]
+  return nonBlankStableId(candidate?.chaId) && uniqueCharacterOwner(characters, candidate.chaId) === candidate
+    ? candidate
+    : undefined
+}
+
+function uniqueChatOwner(
+  characters: readonly character[],
+  selectedCharacter: character,
+  chatId: string,
+): Chat | undefined {
+  let owner: { character: character; chat: Chat } | undefined
+  for (const characterOwner of characters) {
+    for (const chatOwner of characterOwner.chats ?? []) {
+      if (chatOwner?.id !== chatId) continue
+      if (owner) return undefined
+      owner = { character: characterOwner, chat: chatOwner }
+    }
+  }
+  return owner?.character === selectedCharacter ? owner.chat : undefined
+}
+
+function selectedChatOwner(characters: readonly character[], characterOwner: character): Chat | undefined {
+  const candidate = characterOwner.chats?.[characterOwner.chatPage]
+  const owner = nonBlankStableId(candidate?.id) ? uniqueChatOwner(characters, characterOwner, candidate.id) : undefined
+  return owner && transcriptHasUniqueStableIds(owner.message ?? []) ? owner : undefined
+}
+
+function transcriptHasUniqueStableIds(messages: readonly { chatId?: unknown }[]): boolean {
+  const messageIds = new Set<string>()
+  for (const message of messages) {
+    if (!nonBlankStableId(message?.chatId) || messageIds.has(message.chatId)) return false
+    messageIds.add(message.chatId)
+  }
+  return true
+}
+
+function readySelectedCharacterOwner(): character | undefined {
+  if (charactersResourceState.status !== 'ready') return undefined
+  const candidate = selectedCharacterOwner(charactersResourceState.characters, charactersResourceState.currentChar)
+  if (!candidate?.chaId) return undefined
+  return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
+}
+
+function readySelectedChatOwner(characterOwner: character): Chat | undefined {
+  const chatOwner = selectedChatOwner(charactersResourceState.characters, characterOwner)
+  if (!chatOwner?.id || !characterOwner.chaId) return undefined
+  const metadataOwner = getChatMetadataOwnerSnapshot(characterOwner.chaId, chatOwner.id)
+  const scriptstateOwner = getChatScriptstateOwnerSnapshot(characterOwner.chaId, chatOwner.id)
+  const transcriptOwner = getChatMessageOwnerState(chatOwner.id)
+  if (
+    !metadataOwner ||
+    !scriptstateOwner ||
+    !transcriptOwner ||
+    !transcriptHasUniqueStableIds(transcriptOwner.messages)
+  )
+    return undefined
+
+  return {
+    ...chatOwner,
+    ...metadataOwner.metadata,
+    message: transcriptOwner.messages,
+    scriptstate: scriptstateOwner.scriptstate,
+  } as Chat
+}
+
+function compatibilitySelectedContext(database: Database): { character: character; chat?: Chat } | undefined {
+  const characterOwner = selectedCharacterOwner(database.characters ?? [], get(selectedCharID))
+  if (!characterOwner) return undefined
+  return {
+    character: characterOwner,
+    chat: selectedChatOwner(database.characters ?? [], characterOwner),
+  }
+}
+
+function parserSelectedContext(): { character: character; chat?: Chat } | undefined {
+  if (charactersResourceState.status === 'ready') {
+    const characterOwner = readySelectedCharacterOwner()
+    if (!characterOwner) return undefined
+    return { character: characterOwner, chat: readySelectedChatOwner(characterOwner) }
+  }
+  if (!canUseCompatibility(charactersResourceState.status)) return undefined
+  return compatibilitySelectedContext(compatibilityParserDatabase())
+}
+
+function parserSelectedCharacterIndex(): number {
+  if (charactersResourceState.status === 'ready') {
+    return readySelectedCharacterOwner() ? charactersResourceState.currentChar : -1
+  }
+  if (!canUseCompatibility(charactersResourceState.status)) return -1
+  const database = compatibilityParserDatabase()
+  return compatibilitySelectedContext(database) ? get(selectedCharID) : -1
+}
+
+function parserCharacterOwnerById(characterId: string): character | undefined {
+  const normalizedCharacterId = characterId.trim()
+  if (!normalizedCharacterId) return undefined
+  if (charactersResourceState.status === 'ready') {
+    return getCharacterResourceOwner(normalizedCharacterId)
+  }
+  if (!canUseCompatibility(charactersResourceState.status)) return undefined
+  return uniqueCharacterOwner(compatibilityParserDatabase().characters ?? [], normalizedCharacterId)
+}
+
+function projectSelectedCharacter(
+  characters: readonly character[],
+  selectedIndex: number,
+  context: { character: character; chat?: Chat } | undefined,
+): character[] {
+  if (!context || characters[selectedIndex] !== context.character) return []
+  if (!context.chat) {
+    return characters.map((characterOwner, index) =>
+      index === selectedIndex ? { ...characterOwner, chats: [] } : characterOwner,
+    )
+  }
+  const selectedChatIndex = context.character.chats?.findIndex((chatOwner) => chatOwner.id === context.chat?.id) ?? -1
+  if (selectedChatIndex < 0) {
+    return characters.map((characterOwner, index) =>
+      index === selectedIndex ? { ...characterOwner, chats: [] } : characterOwner,
+    )
+  }
+  const chats = context.character.chats?.map((chatOwner, index) =>
+    index === selectedChatIndex ? context.chat! : chatOwner,
+  )
+  return characters.map((characterOwner, index) =>
+    index === selectedIndex ? { ...characterOwner, chats: chats ?? [] } : characterOwner,
+  )
+}
+
+const standaloneSettingNames = new Set<string>(SERVER_STANDALONE_SETTING_NAMES)
+
+function parserSettingOwnerStatus(key: keyof Database): ServerResourceStatus {
+  if (settingsResourceState.status === 'error') return 'error'
+  const group = SERVER_SETTINGS_GROUP_BY_KEY[String(key)]
+  if (group) {
+    return (
+      settingsResourceState.groupStatuses[group] ??
+      (canUseCompatibility(settingsResourceState.status) ? settingsResourceState.status : 'idle')
+    )
+  }
+  if (standaloneSettingNames.has(String(key))) {
+    return (
+      settingsResourceState.standaloneStatuses[key as keyof typeof settingsResourceState.standaloneStatuses] ??
+      (canUseCompatibility(settingsResourceState.status) ? settingsResourceState.status : 'idle')
+    )
+  }
+  return settingsResourceState.status
+}
+
+function parserSettingsProjection(): Partial<Database> {
+  if (settingsResourceState.status === 'error') return {}
+  const ownerValues = settingsResourceState.value as Partial<Database>
+  const compatibilityValues = canUseCompatibility(settingsResourceState.status)
+    ? compatibilityParserDatabase()
+    : undefined
+  const settings = { ...(compatibilityValues ?? ownerValues) }
+  const keys = new Set<keyof Database>([
+    ...(Object.keys(settings) as (keyof Database)[]),
+    ...(Object.keys(ownerValues) as (keyof Database)[]),
+  ])
+  for (const key of keys) {
+    const status = parserSettingOwnerStatus(key)
+    if (status === 'ready') {
+      if (Object.prototype.hasOwnProperty.call(ownerValues, key)) settings[key] = ownerValues[key] as never
+      else delete settings[key]
+    } else if (status === 'error') {
+      delete settings[key]
+    }
+  }
+  return settings
+}
+
+function parserRuntimeDatabase(): Database {
+  let compatibilityDatabase: Database | undefined
+  const compatibility = () => (compatibilityDatabase ??= compatibilityParserDatabase())
+  const database = parserSettingsProjection()
+
+  for (const collectionName of SERVER_COLLECTION_NAMES) {
+    const status = collectionsResourceState.statuses[collectionName]
+    if (status === 'ready') {
+      database[collectionName] = collectionsResourceState.values[collectionName] as never
+    } else if (status === 'error' || !canUseCompatibility(collectionsResourceState.status)) {
+      delete database[collectionName]
+    } else {
+      database[collectionName] = compatibility()[collectionName] as never
+    }
+  }
+
+  if (charactersResourceState.status === 'ready') {
+    database.characters = projectSelectedCharacter(
+      charactersResourceState.characters,
+      charactersResourceState.currentChar,
+      parserSelectedContext(),
+    )
+  } else if (canUseCompatibility(charactersResourceState.status)) {
+    const compatibilityDatabase = compatibility()
+    database.characters = projectSelectedCharacter(
+      compatibilityDatabase.characters ?? [],
+      get(selectedCharID),
+      compatibilitySelectedContext(compatibilityDatabase),
+    )
+  } else {
+    database.characters = []
+  }
+
+  database.modules ??= []
+  database.promptPresets ??= []
+  database.personas ??= []
+  database.agentPresets ??= []
+  database.enabledModules ??= []
+  return database as Database
+}
+
+function parserSetting<K extends keyof Database>(key: K): Database[K] | undefined {
+  const status = parserSettingOwnerStatus(key)
+  if (status === 'ready') {
+    return (settingsResourceState.value as Partial<Database>)[key] as Database[K] | undefined
+  }
+  if (canUseCompatibility(status)) {
+    return canUseCompatibility(settingsResourceState.status)
+      ? compatibilityParserDatabase()[key]
+      : ((settingsResourceState.value as Partial<Database>)[key] as Database[K] | undefined)
+  }
+  return undefined
+}
+
+function parserModules(context = parserSelectedContext()): RisuModule[] {
+  return resolveActiveModuleStates(parserRuntimeDatabase(), context?.character, context?.chat).map(
+    (state) => state.module as RisuModule,
+  )
+}
+
+function parserModuleLorebooks(): loreBook[] {
+  return parserModules().flatMap((moduleOwner) => moduleOwner.lorebook ?? [])
+}
+
+function parserModuleAssets(context: { character: character | undefined; chat: Chat | undefined }) {
+  return parserModules(
+    context.character ? { character: context.character, ...(context.chat ? { chat: context.chat } : {}) } : undefined,
+  ).flatMap((moduleOwner) => moduleOwner.assets ?? [])
+}
+
 registerRisuChatParserCBS({
-  getDatabase: getDatabase,
+  getDatabase: parserRuntimeDatabase,
   getUserName: getUserName,
   getPersonaPrompt: getPersonaPrompt,
   risuChatParser: risuChatParser,
@@ -94,15 +372,13 @@ registerRisuChatParserCBS({
   getGlobalChatVar: getGlobalChatVar,
   calcString: calcString,
   dateTimeFormat: dateTimeFormat,
-  getModules: getModules,
-  getModuleLorebooks: getModuleLorebooks,
+  getModules: parserModules,
+  getModuleLorebooks: parserModuleLorebooks,
   pickHashRand: pickHashRand,
-  getSelectedCharID: () => {
-    return get(selectedCharID)
-  },
+  getSelectedCharID: parserSelectedCharacterIndex,
   getModelInfo: getModelInfo,
   getModelContext: (role) => {
-    const profile = resolveModelProfile({ database: getDatabase(), role })
+    const profile = resolveModelProfile({ database: parserRuntimeDatabase(), role })
     return {
       modelId: profile.modelId,
       requestModel: profile.requestModel,
@@ -130,7 +406,7 @@ DOMPurify.addHook('uponSanitizeElement', (node: HTMLElement, data) => {
   }
   if (data.tagName === 'img') {
     // Hide external images when hideAllImages is enabled
-    if (getDatabase().hideAllImages) {
+    if (parserSetting('hideAllImages')) {
       const src = node.getAttribute('src') || ''
       // Replace with placeholder if it's an external/loaded image
       if (src && !src.startsWith('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP')) {
@@ -155,7 +431,7 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
   switch (data.attrName) {
     case 'style': {
       // Remove background-image URLs when hideAllImages is enabled
-      if (getDatabase().hideAllImages && data.attrValue) {
+      if (parserSetting('hideAllImages') && data.attrValue) {
         // Remove background-image property from inline styles
         data.attrValue = data.attrValue.replace(/background(-image)?:\s*url\([^)]*\);?/gi, '')
         // Also remove background property if it contains url()
@@ -200,10 +476,13 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 })
 
 function renderMarkdown(md: markdownit, data: string) {
-  const db = getDatabase()
+  const customQuotes = parserSetting('customQuotes')
+  const customQuotesData = parserSetting('customQuotesData')
+  const unformatQuotes = parserSetting('unformatQuotes')
+  const blockquoteStyling = parserSetting('blockquoteStyling')
   let quotes = ['“', '”', '‘', '’']
-  if (db.customQuotes) {
-    quotes = db.customQuotesData ?? quotes
+  if (customQuotes) {
+    quotes = customQuotesData ?? quotes
   }
   data = data.replace(/\$\$(.*?)\$\$/gs, (match: string, content: string) => {
     try {
@@ -225,10 +504,10 @@ function renderMarkdown(md: markdownit, data: string) {
   })
   let text = risuUnescape(md.render(data.replace(/“|”/g, '"').replace(/‘|’/g, "'")))
 
-  if (db.unformatQuotes) {
+  if (unformatQuotes) {
     text = text.replace(/\uE9b0/gu, quotes[0]).replace(/\uE9b1/gu, quotes[1])
     text = text.replace(/\uE9b2/gu, quotes[2]).replace(/\uE9b3/gu, quotes[3])
-  } else if (db.blockquoteStyling) {
+  } else if (blockquoteStyling) {
     text = text
       .replace(/\uE9b0(.+?)\uE9b1/gmu, (full, content) => {
         content = content
@@ -529,10 +808,22 @@ function buildAssetResolutionContext(
 }
 
 function moduleAssetsForCharacter(char: simpleCharacterArgument | character): [string, string, string][] {
-  const contextCharacter =
-    char.type === 'simple' ? getDatabase().characters?.find((candidate) => candidate?.chaId === char.chaId) : char
-  const contextChat = contextCharacter?.chats?.[contextCharacter.chatPage]
-  return getModuleAssets({ character: contextCharacter, chat: contextChat })
+  const ownerCharacter = parserCharacterOwnerById(char.chaId)
+  const contextCharacter = char.type === 'simple' ? ownerCharacter : char
+  const rows =
+    charactersResourceState.status === 'ready'
+      ? charactersResourceState.characters
+      : canUseCompatibility(charactersResourceState.status)
+        ? (compatibilityParserDatabase().characters ?? [])
+        : []
+  const contextChat = contextCharacter
+    ? contextCharacter === ownerCharacter
+      ? charactersResourceState.status === 'ready'
+        ? readySelectedChatOwner(contextCharacter)
+        : selectedChatOwner(rows, contextCharacter)
+      : selectedChatOwner([contextCharacter], contextCharacter)
+    : undefined
+  return parserModuleAssets({ character: contextCharacter, chat: contextChat })
 }
 
 function assetResolutionSignature(
@@ -580,7 +871,9 @@ async function parseAdditionalAssets(
   arg: { ch: number },
   context: AssetResolutionContext,
 ) {
-  const assetWidth = getDatabase().assetWidth
+  const assetWidth = parserSetting('assetWidth')
+  const hideAllImages = parserSetting('hideAllImages') === true
+  const legacyMediaFindings = parserSetting('legacyMediaFindings') === true
   const assetWidthString = (assetWidth && assetWidth !== -1) || assetWidth === 0 ? `max-width:${assetWidth}rem;` : ''
 
   const { assetPaths, emotionPaths } = context
@@ -593,7 +886,7 @@ async function parseAdditionalAssets(
 
     // Skip image-related assets when hideAllImages is enabled
     // raw and path are also included as they're used in CSS background-image
-    if (getDatabase().hideAllImages && imageCBS.includes(type)) {
+    if (hideAllImages && imageCBS.includes(type)) {
       return '' // Hide the image asset
     }
 
@@ -621,7 +914,7 @@ async function parseAdditionalAssets(
     let match = assetPaths?.[name]
 
     if (!match) {
-      if (getDatabase().legacyMediaFindings) {
+      if (legacyMediaFindings) {
         return ''
       }
 
@@ -678,10 +971,8 @@ async function parseAdditionalAssets(
   })
 
   if (needsSourceAccess) {
-    const chara = getCurrentCharacter()
-    if (chara.image) {
-    }
-    data = data.replace(/\uE9b4CHAR\uE9b4/g, chara.image ? await getFileSrc(chara.image) : '')
+    const chara = parserSelectedContext()?.character
+    data = data.replace(/\uE9b4CHAR\uE9b4/g, chara?.image ? await getFileSrc(chara.image) : '')
 
     data = data.replace(/\uE9b4USER\uE9b4/g, getUserIcon() ? await getFileSrc(getUserIcon()) : '')
   }
@@ -707,7 +998,8 @@ function getClosestMatch(char: simpleCharacterArgument | character, name: string
     }
   }
 
-  if (closestDist > getDatabase().assetMaxDifference) {
+  const assetMaxDifference = parserSetting('assetMaxDifference')
+  if (typeof assetMaxDifference !== 'number' || closestDist > assetMaxDifference) {
     return null
   }
 
@@ -846,7 +1138,7 @@ async function parseInlayAssets(data: string) {
       switch (cached?.type) {
         case 'image':
           // Hide inlay images when hideAllImages is enabled
-          if (getDatabase().hideAllImages) {
+          if (parserSetting('hideAllImages')) {
             data = data.replace(inlay, '')
             break
           }
@@ -971,7 +1263,7 @@ export async function ParseMarkdown(
 ) {
   let firstParsed = ''
   const additionalAssetMode = mode === 'back' ? 'back' : 'normal'
-  let char = typeof charArg === 'string' ? findCharacterbyId(charArg) : charArg
+  let char = typeof charArg === 'string' ? parserCharacterOwnerById(charArg) : charArg
   const assetResolutionContext = char ? getAssetResolutionContext(char) : null
 
   if (char && assetResolutionContext) {
@@ -988,7 +1280,7 @@ export async function ParseMarkdown(
   }
 
   if (char) {
-    const currentChat = getCurrentChat()
+    const currentChat = parserSelectedContext()?.chat
     const messageId = displayTarget.messageId ?? (chatID >= 0 ? currentChat?.message?.[chatID]?.chatId : undefined)
     const currentTriggerId = get(CurrentTriggerIdStore)
     const hasBrowserOnlyTriggerContext = currentTriggerId !== null && currentTriggerId !== 'null'
@@ -1035,9 +1327,8 @@ export async function ParseMarkdown(
   data = parseThoughtsAndTools(data)
 
   if (mode === 'normal' || mode === 'notrim') {
-    const database = getDatabase()
-    if (database.paragraphBreakBySentences ?? false) {
-      data = insertSentenceParagraphBreaks(data, database.paragraphBreakSentenceCount ?? 3)
+    if (parserSetting('paragraphBreakBySentences') ?? false) {
+      data = insertSentenceParagraphBreaks(data, parserSetting('paragraphBreakSentenceCount') ?? 3)
     }
   }
 
@@ -1291,7 +1582,7 @@ function decodeStyle(text: string) {
         compress: true,
       })}</style>`
     } catch (error) {
-      if (getDatabase().returnCSSError) {
+      if (parserSetting('returnCSSError')) {
         return `CSS ERROR: ${error}`
       }
       return ''
