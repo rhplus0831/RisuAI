@@ -7013,7 +7013,7 @@ async function preparePersonaMutationAcknowledgement(
       ) {
         return undefined
       }
-      expectedSelectedPersonaId = input.mirrorLegacyProfile ? input.targetPersonaId : beforeSelectedPersonaId
+      expectedSelectedPersonaId = input.targetPersonaId
       expectedCollectionWritten = true
       expectedLegacyProfileProjection = input.mirrorLegacyProfile
       if (
@@ -7084,11 +7084,7 @@ async function preparePersonaMutationAcknowledgement(
     }
   }
 
-  const beforeSelectedIndex = beforeSelectedPersonaId === null ? -1 : beforePersonaIds.indexOf(beforeSelectedPersonaId)
-  const attemptedSelectedIndex =
-    expectedSelectedPersonaId === null ? -1 : attemptedPersonaIds.indexOf(expectedSelectedPersonaId)
-  const expectedSettingsWritten =
-    expectedLegacyProfileProjection || (input.operation !== 'create' && attemptedSelectedIndex !== beforeSelectedIndex)
+  const expectedSettingsWritten = true
   const expectedLegacyProfile = expectedLegacyProfileProjection
   if (
     acknowledgement.attemptedSelectedPersonaId !== expectedSelectedPersonaId ||

@@ -4779,16 +4779,15 @@ describe('server command API adapter', () => {
     ])
   })
 
-  it('keeps persona delete reconciliation authoritative while acknowledging other structural mutations', async () => {
+  it('acknowledges stable structural persona owners while keeping delete cascade reconciliation authoritative', async () => {
     const profileA = { name: 'A', icon: 'asset-a', personaPrompt: 'Prompt A', note: 'Note A' }
     const profileB = { name: 'B', icon: 'asset-b', personaPrompt: 'Prompt B', note: 'Note B' }
     const personaA = { id: 'persona-a', ...profileA }
     const personaB = { id: 'persona-b', ...profileB }
-    const [idsAB, collectionAB, collectionB, collectionBA, profileBDigest] = await Promise.all([
+    const [idsAB, collectionAB, collectionB, profileBDigest] = await Promise.all([
       sha256Hex(serializePersonaIdsDigestInput(['persona-a', 'persona-b'])),
       sha256Hex(serializePersonaCollectionDigestInput([personaA, personaB])),
       sha256Hex(serializePersonaCollectionDigestInput([personaB])),
-      sha256Hex(serializePersonaCollectionDigestInput([personaB, personaA])),
       sha256Hex(serializePersonaProfileDigestInput(profileB)),
     ])
     const commandFetch = makeCommandFetch((url) => {
@@ -4803,8 +4802,8 @@ describe('server command API adapter', () => {
           selectedPersonaId: 'persona-b',
           collectionWritten: false,
           settingsWritten: true,
-          legacyProfileProjectionApplied: true,
-          legacyProfileDigest: profileBDigest,
+          legacyProfileProjectionApplied: false,
+          legacyProfileDigest: null,
         }
       }
       if (url.endsWith('/personas/reorder')) {
@@ -4813,8 +4812,8 @@ describe('server command API adapter', () => {
           event: { type: 'persona.reordered', revision: 5, resource: 'persona' },
           personaMutationCertificate: 'persona-mutation-v1',
           operation: 'reorder',
-          personaProjectionDigest: collectionBA,
-          selectedPersonaId: 'persona-a',
+          personaProjectionDigest: collectionAB,
+          selectedPersonaId: 'persona-b',
           collectionWritten: true,
           settingsWritten: true,
           legacyProfileProjectionApplied: false,
@@ -4846,8 +4845,8 @@ describe('server command API adapter', () => {
         selectedPersonaId: 'persona-b',
         collectionWritten: true,
         settingsWritten: true,
-        legacyProfileProjectionApplied: true,
-        legacyProfileDigest: profileBDigest,
+        legacyProfileProjectionApplied: false,
+        legacyProfileDigest: null,
       }
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
@@ -4859,7 +4858,7 @@ describe('server command API adapter', () => {
     await createPersonaCommand({
       baseRevision: 1,
       persona: personaB,
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
       optimisticAcknowledgement: {
         operation: 'create',
         collectionProjectionEpoch: 10,
@@ -4871,8 +4870,8 @@ describe('server command API adapter', () => {
         attemptedSelectedPersonaId: 'persona-b',
         collectionWritten: true,
         settingsWritten: true,
-        legacyProfileProjectionExpected: true,
-        attemptedLegacyProfile: profileB,
+        legacyProfileProjectionExpected: false,
+        attemptedLegacyProfile: null,
       },
     })
     await deletePersonaCommand({
@@ -4899,7 +4898,7 @@ describe('server command API adapter', () => {
     await selectPersonaCommand({
       baseRevision: 3,
       personaId: 'persona-b',
-      mirrorLegacyProfile: true,
+      mirrorLegacyProfile: false,
       saveCurrent: false,
       optimisticAcknowledgement: {
         operation: 'select',
@@ -4908,26 +4907,26 @@ describe('server command API adapter', () => {
         beforePersonaIds: ['persona-a', 'persona-b'],
         attemptedPersonaIds: ['persona-a', 'persona-b'],
         attemptedPersonas: [{ ...personaA, displayName: 'Unsent unrelated edit' }, personaB],
-        beforeSelectedPersonaId: 'persona-a',
+        beforeSelectedPersonaId: 'persona-b',
         attemptedSelectedPersonaId: 'persona-b',
         collectionWritten: false,
         settingsWritten: true,
-        legacyProfileProjectionExpected: true,
-        attemptedLegacyProfile: profileB,
+        legacyProfileProjectionExpected: false,
+        attemptedLegacyProfile: null,
       },
     })
     await reorderPersonasCommand({
       baseRevision: 4,
-      personaIds: ['persona-b', 'persona-a'],
+      personaIds: ['persona-a', 'persona-b'],
       optimisticAcknowledgement: {
         operation: 'reorder',
         collectionProjectionEpoch: 13,
         settingsProjectionEpoch: 23,
         beforePersonaIds: ['persona-a', 'persona-b'],
-        attemptedPersonaIds: ['persona-b', 'persona-a'],
-        attemptedPersonas: [personaB, personaA],
-        beforeSelectedPersonaId: 'persona-a',
-        attemptedSelectedPersonaId: 'persona-a',
+        attemptedPersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonas: [personaA, personaB],
+        beforeSelectedPersonaId: 'persona-b',
+        attemptedSelectedPersonaId: 'persona-b',
         collectionWritten: true,
         settingsWritten: true,
         legacyProfileProjectionExpected: false,
@@ -4996,6 +4995,7 @@ describe('server command API adapter', () => {
       { ...exactResponse, legacyProfileDigest: 'f'.repeat(64) },
       { ...exactResponse, event: { ...exactResponse.event, resource: 'settings' } },
       exactResponse,
+      exactResponse,
     ]
     let responseIndex = 0
     const commandFetch = makeCommandFetch(() => responses[responseIndex++])
@@ -5026,11 +5026,15 @@ describe('server command API adapter', () => {
         mirrorLegacyProfile: true,
         saveCurrent: true,
         optimisticAcknowledgement:
-          index === responses.length - 1 ? { ...acknowledgement, collectionWritten: false } : acknowledgement,
+          index === responses.length - 1
+            ? { ...acknowledgement, settingsWritten: false }
+            : index === responses.length - 2
+              ? { ...acknowledgement, collectionWritten: false }
+              : acknowledgement,
       })
     }
 
-    expect(observedEffectCounts).toEqual([0, 0, 0, 0])
+    expect(observedEffectCounts).toEqual([0, 0, 0, 0, 0])
   })
 
   it('exposes an exact persona PATCH acknowledgement without serializing optimistic proof', async () => {
