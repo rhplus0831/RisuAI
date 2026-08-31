@@ -1,6 +1,6 @@
 # Phase 4: Prompt, Lorebook, And Script-Definition Ownership
 
-Status: dependency-blocked.
+Status: complete through `793b2db73`, `975ce3217`, and `f62d5878c`.
 
 Depends on: Phase 1 owner APIs and Workstream 2 canonical-owner closeout for
 each resource family.

@@ -2,8 +2,9 @@
 
 Date: 2026-08-31
 
-Status: active. Phases 0 through 2 are complete through `aaf66b75d`; Phase 3
-runtime migration is dependency-gated per resource family.
+Status: complete. Phases 0-7 are closed; production aggregate consumers and
+bridge families are zero, retained seams have final classifications, and the
+owner-gap matrix is closed.
 
 ## Goal
 
@@ -16,12 +17,11 @@ It deliberately preserves command-event invalidation and authenticated
 authoritative reads. Replay-safe event deltas are a separate, inactive
 workstream.
 
-[`status.md`](status.md) owns the current consumer and dependency cursors. This
-plan does not make the aggregate facade non-authoritative retroactively; current
-runtime behavior remains documented by [`STRUCTURE.md`](../../../STRUCTURE.md),
-the server-resource guide, and the client-runtime guide until slices land.
+[`status.md`](status.md) owns the final consumer and dependency cursors. Current
+runtime behavior is documented by [`STRUCTURE.md`](../../../STRUCTURE.md), the
+server-resource guide, and the client-runtime guide.
 
-## Opening Baseline
+## Historical Opening Baseline
 
 - `src/ts/server/resourceState.svelte.ts` composes explicit settings,
   collection, and character projections; selected chat/message, prompt,
@@ -102,11 +102,10 @@ recorded owner API gaps into narrow, tested foundations.
 | --- | --- | --- |
 | Opening Fastify code anchor | `c0df82d5240a29a33efa5995e08cc970e0147573` | Code state inspected for plan activation. |
 | Workstream 1 Phase 0 gate | `b01e88b03461753afe8f573029ce2e5ab47892ef` | Phase 0 inventory uses the shared mandatory architecture-gate conventions. |
-| Workstream 1 contract releases | Per family, not established | Blocks matching owner API/runtime migration. |
-| Workstream 2 model owner | Not released | Blocks model compatibility consumer retirement. |
-| Workstream 2 prompt owner | Not released | Blocks prompt-template bridge retirement. |
-| Workstream 2 translator/smaller owners | Not released | Blocks matching resource-family retirement. |
-| Workstream 4 prerequisites | Not released | Event deltas remain inactive and are never required for this plan. |
+| Workstream 1 contract releases | Released; archived at `377a3610b` | Shared schemas and pure contracts are complete. |
+| Workstream 2 persisted owners | Released; archived at `1f99b445c` | Model, prompt, translator, persona, Hypa, repair, and interchange dependencies are resolved. |
+| Workstream 3 infrastructure closeout | `f6dca576c` | Aggregate facade, guard/trusted-write, bridge, and flush terminology/infrastructure are retired. |
+| Workstream 4 prerequisites | Not activated | Event deltas remain optional, out of scope, and unnecessary for this workstream's authoritative-read model. |
 
 Exact consumer counts and per-family releases live in [`status.md`](status.md).
 

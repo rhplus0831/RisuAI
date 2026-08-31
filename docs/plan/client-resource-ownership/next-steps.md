@@ -2,45 +2,23 @@
 
 Date: 2026-08-31
 
-## Current Best Task
+## Closed Workstream
 
-Advance the next Workstream 1 character/chat contract family. Prefer selected
-character detail plus order/selection metadata before chat transcripts or
-mutation bodies, then open exactly one matching owner-consumer slice.
+Phases 0-7 are complete. There is no remaining resource-family or infrastructure
+slice. Preserve both JSON inventories beside this plan when archiving it under
+`.archived-docs/architecture-and-migration/`, then update their canonical paths
+and the matrix's embedded baseline path in the architecture gate.
 
-## Released Character-Summary Scope
+## Retained Follow-Up Triggers
 
-- Workstream 1 released the summary payload at `159b6eccf`.
-- Workstream 2 released singular character/chat/message/Hypa row ownership at
-  `7cb62afa8`; embedded copies are pre-extraction recovery only.
-- The mobile renderer needs summary fields only. Preserve stable-id navigation,
-  search/sort/trash filtering, relative time, shell rows, and selection revision
-  fencing.
-- Keep character/chat bridges, the aggregate facade, detail/transcript
-  hydration, commands, drafts, and generation paths unchanged.
-- The mobile renderer completed this bounded migration at `3b74261c1`.
-
-## Released Dependency
-
-- `lorebookPageOwner` is complete at `e751edc69`.
-- The standalone read is released at `33d1643ae`, durable command at
-  `3f275e9dc`, and route relation at `6a6d0ac1f`.
-- The page pointer is an already-singular settings row. Broader lorebook bodies,
-  prompt/model/translator owners, and bridge removal remain held.
-- Page consumers migrated at `aaf66b75d`; the plugin/database replica and cold
-  prompt fallback are explicit compatibility holds, not normal owner reads.
-
-## Not First
-
-- Do not replace `getDatabase()` with a common snapshot or common epoch.
-- Do not migrate a production consumer before its complete owner contract and
-  Workstream 1/2 cursors exist.
-- Do not remove trusted writes, write guards, bridges, or lifecycle flushes.
-- Do not widen the shell/bootstrap/resource payload.
-- Do not add event deltas.
-
-## Handoff
-
-Release the next character/chat contract family in Workstream 1 before
-migrating another production consumer. Leave all bridges unchanged until
-end-to-end continuity and rollback proof exists.
+- Remove the aggregate character endpoint only after path-only telemetry records
+  zero supported-client requests for 30 consecutive days.
+- Remove observer rollout controls only after deployment telemetry meets the
+  archived promotion/removal thresholds.
+- Keep the test-only aggregate adapter out of production imports; its 4,221
+  fixture references remain guarded by the 9-policy inventory.
+- Do not rename persisted compatibility protocol keys without a separately
+  versioned migration.
+- Treat broad typecheck, full-suite, browser-matrix, payload, and performance
+  reruns as user/CI responsibilities; focused closeout evidence is recorded in
+  [`latest-verification.md`](latest-verification.md).

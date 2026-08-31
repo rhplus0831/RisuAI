@@ -1,6 +1,6 @@
 # Phase 6: Facade And Bridge Infrastructure Removal
 
-Status: dependency-blocked.
+Status: complete through `f6dca576c`.
 
 Depends on: Phase 0 inventory proves zero production consumer for every removed
 facility and Phases 2-5 are complete.

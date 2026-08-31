@@ -1,6 +1,6 @@
 # Phase 5: Broad Settings And Shell Ownership
 
-Status: dependency-blocked.
+Status: complete through `bdb8a55c3`.
 
 Depends on: all narrower settings/resource owner paths and matching Workstream
 1/2 releases.

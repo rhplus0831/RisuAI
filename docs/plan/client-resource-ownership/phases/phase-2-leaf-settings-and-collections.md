@@ -1,7 +1,7 @@
 # Phase 2: Leaf Settings And Collection Resources
 
-Status: complete for the released standalone `loreBookPage` pointer at
-`aaf66b75d`.
+Status: complete; the initial `loreBookPage` slice closed at `aaf66b75d` and all
+remaining leaf consumers are explicit owners at the final candidate.
 
 Depends on: Phase 1 owner APIs and per-family Workstream 1/2 releases.
 

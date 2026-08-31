@@ -2,102 +2,60 @@
 
 Date: 2026-08-31
 
-This is the mutable execution router. Stable scope lives in [`PLAN.md`](PLAN.md),
-phase detail in [`phases/`](phases/README.md), the next slice in
-[`next-steps.md`](next-steps.md), and exact proof in
+This is the final execution record. Stable scope lives in [`PLAN.md`](PLAN.md),
+phase detail in [`phases/`](phases/README.md), retained operational boundaries
+in [`next-steps.md`](next-steps.md), and exact proof in
 [`latest-verification.md`](latest-verification.md).
 
-## Current Snapshot
+## Final Snapshot
 
-- Plan state: Active; Phases 0 through 2 are complete. The first runtime
-  consumer family and the first character-summary consumer have migrated.
-- Current phase: [Phase 3 character and chat ownership](phases/phase-3-character-and-chat-ownership.md),
-  active with the next family dependency-blocked.
-- Active slice: none. The mobile character-summary renderer is complete at
-  `3b74261c1`; broader detail/chat/message consumers remain dependency-blocked.
-- Opening Fastify code anchor: `c0df82d5240a29a33efa5995e08cc970e0147573`.
-- Phase 0 implementation: `0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f`.
-- Runtime changes through Phase 2: `lorebookPageOwner` now owns normal page
-  reads and explicit stable-id selection. Lorebook collections/bodies and their
-  bridge remain unchanged; named plugin and cold-flow compatibility holds are
-  closed-world probed.
-- Phase 3 runtime change: the mobile character renderer reads the explicit
-  character-summary and settings resource states, uses summary `chatCount` and
-  `activeChatId`, and retains the legacy shell fallback without touching any
-  bridge or chat hydration path.
-- Latest implementation: mobile character-summary migration at `3b74261c1`; see
-  [`latest-verification.md`](latest-verification.md).
-
-## Inventory Cursor
-
-- 9,888 exact compatibility references grouped into 326 consumer records and 56
-  resource-family/role policies.
-- Lanes: 3,313 production, 6 server, and 6,569 test references.
-- Families: broad settings/shell 1,046; character/chat 1,767; compatibility
-  infrastructure 2,062; cross-cutting 1,423; leaf settings/collections 1,854;
-  lorebook 615; model/translator 474; prompt template 311; script definition
-  336.
-- Six bridge families remain: settings, character, chat, lorebook, prompt
-  template, and script definition.
-- Twenty temporary-seam rows retain the character aggregate endpoint and
-  observer-shell rollout markers.
+- Plan state: Complete; Phases 0-7 closed.
+- Final implementation/inventory candidate: `993222d82`.
+- Current-guide reconciliation: `27c41103d`.
+- Production aggregate database consumers: 0.
+- Bridge families: 0.
+- Test-fixture compatibility inventory: 4,221 exact references across 30 groups
+  and 9 reviewed policies.
+- Owner API gap matrix: 9 complete or not-applicable rows; no open gap.
+- Retained seam markers: 20, all reviewed and classified.
 
 ## Dependency Cursors
 
-| Resource family | Workstream 1 contract | Workstream 2 owner | Workstream 3 state |
+| Resource family | Workstream 1 | Workstream 2 | Final Workstream 3 state |
 | --- | --- | --- | --- |
-| Inventory/gates | Phase 0 convention released at `b01e88b03` | Not required for read-only inventory | Complete at `0432b32ba`. |
-| Lorebook page standalone pointer | Standalone setting at `33d1643ae`; durable operation at `3f275e9dc`; route metadata at `6a6d0ac1f` | Already-singular settings row; lorebook bodies remain held | Consumer migration complete at `aaf66b75d`; explicit plugin/database and cold-flow compatibility probes retained. |
-| Leaf settings/collections | Per owner pending | Per family pending or already singular, to prove | Runtime blocked. |
-| Character/chat | Character-summary read contract released at `159b6eccf`; remaining resource/command contracts pending | Character/chat/message/Hypa row owners released at `7cb62afa8`; pre-extraction fallback retained | Mobile summary consumer complete at `3b74261c1`; broader consumers blocked. |
-| Prompt templates | Prompt contract pending | Phase 3 not released | Runtime blocked. |
-| Lorebook/script definitions | Per owner pending | Phase 0/4 disposition as applicable | Runtime blocked. |
-| Broad settings/shell | Shell read contract released at `159b6eccf`; settings/command contracts pending | Relevant settings owners pending | Runtime blocked. |
-| Facade/bridge infrastructure | All families | All releases/holds resolved | Removal blocked. |
-
-## Opening Research Snapshot
-
-- Explicit resource projections, targeted reads, invalidation, hydration, outbox,
-  and command helpers already exist, but the compatibility facade remains a
-  common composition and mutation surface.
-- Six built-in bridge families and the pending bridge flush registry are covered
-  by structural compatibility tests.
-- Trusted-write calls are widespread in owner/bridge tests and still appear in
-  runtime modules such as prompt preset override handling.
-- Current architecture docs explicitly describe the facade, resource write
-  guard, bridges, and authoritative-refresh fallback, providing a baseline to
-  update only as phases land.
-- Broad/temporary seams include the aggregate character read and the observer
-  shell rollout flag/override; Phase 7 owns final decisions.
+| Shared owner contracts | Archived at `377a3610b` | Per-family releases archived at `1f99b445c` | Complete. |
+| Leaf settings and collections | Released | Canonical owners released | Explicit production consumers; test-only aggregate adapter retained. |
+| Character/chat/transcript | Released | Stable persisted rows released | Explicit detail, selection, chat, transcript, hydration, and mutation owners. |
+| Prompt templates | Released | Modern preset owner released | Explicit hydration, draft, mutation, and assembly owners. |
+| Lorebooks/scripts | Released | Stable-id/repair boundaries released | Explicit scoped owners and lifecycle registration. |
+| Broad settings/shell/runtime | Released | Canonical settings owners released | Exact owner sets; no any-resource production epoch or facade. |
+| Facade/bridge infrastructure | All dependencies resolved | All dependencies resolved | Removed through `f6dca576c`. |
 
 ## Phase Router
 
-| Phase | Status | Opens when |
+| Phase | Status | Release |
 | ---: | --- | --- |
-| [0. Consumer/facade/bridge inventory](phases/phase-0-consumer-facade-and-bridge-inventory.md) | Complete | Closed at `0432b32ba`. |
-| [1. Resource-owner foundation](phases/phase-1-resource-owner-foundation.md) | Complete | Closed at `e751edc69`. |
-| [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Complete | Closed the released lorebook-page pointer at `aaf66b75d`. |
-| [3. Character/chat](phases/phase-3-character-and-chat-ownership.md) | Active | Mobile character-summary consumer complete; next family contract blocked. |
-| [4. Prompt/lorebook/scripts](phases/phase-4-prompt-lorebook-and-script-ownership.md) | Blocked | Workstream 2 canonical owner closes per family. |
-| [5. Broad settings/shell](phases/phase-5-broad-settings-and-shell-ownership.md) | Blocked | Narrow owner paths exist for all remaining consumers. |
-| [6. Facade/bridge removal](phases/phase-6-facade-and-bridge-removal.md) | Blocked | Inventory reaches zero for all compatibility infrastructure. |
-| [7. Seams/verification/closeout](phases/phase-7-temporary-seams-verification-and-closeout.md) | Queued | Phases 0-6 satisfy exit gates. |
+| [0. Consumer/facade/bridge inventory](phases/phase-0-consumer-facade-and-bridge-inventory.md) | Complete | `0432b32ba` |
+| [1. Resource-owner foundation](phases/phase-1-resource-owner-foundation.md) | Complete | `e751edc69` |
+| [2. Leaf settings/collections](phases/phase-2-leaf-settings-and-collections.md) | Complete | `aaf66b75d` through final candidate |
+| [3. Character/chat](phases/phase-3-character-and-chat-ownership.md) | Complete | Through `1b3638a1a` |
+| [4. Prompt/lorebook/scripts](phases/phase-4-prompt-lorebook-and-script-ownership.md) | Complete | `793b2db73`, `975ce3217`, `f62d5878c` |
+| [5. Broad settings/shell](phases/phase-5-broad-settings-and-shell-ownership.md) | Complete | Through `bdb8a55c3` |
+| [6. Facade/bridge removal](phases/phase-6-facade-and-bridge-removal.md) | Complete | `79e4b4b06`, `185e6f36a`, `f6dca576c` |
+| [7. Seams/verification/closeout](phases/phase-7-temporary-seams-verification-and-closeout.md) | Complete | `993222d82`, `27c41103d` |
 
-## Blockers And Risks
+## Retained Boundaries
 
-- Runtime phases are blocked per family until Workstream 1 contracts and
-  Workstream 2 canonical-owner releases are recorded. The character-summary
-  family now satisfies both cursors.
-- A broad helper or common subscription can recreate the aggregate facade under
-  a new name; Phase 1 API review must reject it.
-- Removing bridges before draft/rollback/reload proof risks data loss.
-- Character/chat and prompt/lorebook/script editors have lazy bodies and
-  generation fences that a simple store migration may miss.
-- Endpoint removal requires payload/startup measurement and explicit external or
-  compatibility classification.
+- `composeResourceDatabaseSnapshot()` is a detached materializer used only for
+  interchange, browser-smoke diagnostics, and the test-only adapter. It is not
+  production reactive state or mutation authority.
+- `/api/v1/characters/aggregate` is retained external compatibility. First-party
+  production code uses narrow owners; removal waits for 30 consecutive days of
+  zero supported-client path telemetry.
+- Observer-shell markers are retained deployment controls. Removal waits for the
+  archived rollout thresholds; the smoke-only session override is ignored in
+  production.
+- The persisted `settings:bridge` outbox key is a wire/storage compatibility key,
+  not a live bridge family.
 
-## Start Here
-
-Use [`next-steps.md`](next-steps.md). Release the next narrow character/chat
-contract family before migrating another consumer, retaining all bridges until
-their matching contracts and owner APIs are released.
+No execution blocker remains. The intact workstream is ready for archival.

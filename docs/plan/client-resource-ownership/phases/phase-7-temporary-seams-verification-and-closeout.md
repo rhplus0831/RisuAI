@@ -1,6 +1,7 @@
 # Phase 7: Temporary Seams, Verification, And Closeout
 
-Status: queued.
+Status: complete at `993222d82` with current-guide reconciliation at
+`27c41103d`.
 
 Depends on: Phases 0-6 complete.
 

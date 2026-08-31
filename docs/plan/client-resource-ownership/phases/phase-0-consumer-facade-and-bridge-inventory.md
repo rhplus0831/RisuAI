@@ -34,7 +34,7 @@ growing.
 Focused gate tests, existing facade/guard/bridge/resource structural tests,
 affected tests, typechecks if orchestration changes, formatting, and diff checks.
 
-Active slice: [Facade and bridge consumer baseline](slices/phase-0-consumer-facade-and-bridge-inventory/facade-and-bridge-consumer-baseline.md).
+Opening slice: [Facade and bridge consumer baseline](slices/phase-0-consumer-facade-and-bridge-inventory/facade-and-bridge-consumer-baseline.md).
 
 ## Result
 

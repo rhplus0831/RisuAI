@@ -3,6 +3,7 @@
 The phase files translate [`PLAN.md`](../PLAN.md) into bounded outcomes.
 [`status.md`](../status.md) owns live consumer counts and per-family dependency
 cursors.
+All eight phases are complete.
 
 ## Execution Order
 

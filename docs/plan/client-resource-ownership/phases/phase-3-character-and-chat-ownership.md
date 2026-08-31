@@ -1,6 +1,6 @@
 # Phase 3: Character And Chat Ownership
 
-Status: active for character summaries; remaining families dependency-blocked.
+Status: complete through `1b3638a1a`.
 
 Depends on: Phase 1 owner APIs and matching Workstream 1/2 contract/owner
 releases.
