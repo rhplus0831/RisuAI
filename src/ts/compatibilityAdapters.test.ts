@@ -38,7 +38,7 @@ import {
 } from './chatCommands'
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { charactersResourceState, getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type Chat, type character, type Database } from './storage/database.svelte'
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
@@ -485,7 +485,7 @@ describe('compatibility adapters', () => {
 
     expect(testDatabaseState.db.characters).toHaveLength(2)
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as { currentChar?: number }).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
 
     const characterId = testDatabaseState.db.characters[1].chaId
     resolveCreate(
@@ -498,7 +498,7 @@ describe('compatibility adapters', () => {
 
     await expect(creating).resolves.toMatchObject({ status: 'accepted', characterId, index: 1 })
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as { currentChar?: number }).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
   })
 
   it('returns failed without an index and removes the provisional scratch character after rejection', async () => {
@@ -525,7 +525,7 @@ describe('compatibility adapters', () => {
     expect(outcome).not.toHaveProperty('index')
     expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as { currentChar?: number }).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
   })
 
   it('selects characters without formatting the guarded server projection', async () => {
@@ -674,7 +674,7 @@ describe('compatibility adapters', () => {
     await vi.waitFor(() => {
       expect(get(selectedCharID)).toBe(0)
     })
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(testDatabaseState.db.characters[1].lastInteraction).toBe(1234)
     expect(testDatabaseState.db.characters[1].name).toBe('Char B')
   })

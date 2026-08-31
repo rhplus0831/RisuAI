@@ -191,7 +191,7 @@ describe('changeChar shell selection freshness', () => {
     await drainServerCommandExecutionForTests()
 
     expect(get(selectedCharID)).toBe(-1)
-    expect((testDatabaseState.db as any).currentChar).toBe(-1)
+    expect(charactersResourceState.currentChar).toBe(-1)
     expect(selectedCharacterCommandIds(calls)).toEqual([])
   })
 
@@ -208,7 +208,7 @@ describe('changeChar shell selection freshness', () => {
       await changeChar(1)
 
       expect(get(selectedCharID)).toBe(1)
-      expect((testDatabaseState.db as any).currentChar).toBe(1)
+      expect(charactersResourceState.currentChar).toBe(1)
       await drainServerCommandExecutionForTests()
       expect(selectedCharacterCommandIds(calls)).toEqual(['char-b'])
     } finally {
@@ -250,7 +250,7 @@ describe('changeChar shell selection freshness', () => {
 
     await changeChar(1)
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
 
     characterRow.resolve(
       jsonResponse({
@@ -264,7 +264,7 @@ describe('changeChar shell selection freshness', () => {
     expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
     expect(testDatabaseState.db.characters[0].name).toBe('Hydrated A')
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
     await vi.waitFor(() => {
       expect(selectedCharacterCommandIds(calls)).toContain('char-b')
     })
@@ -275,14 +275,14 @@ describe('changeChar shell selection freshness', () => {
     const characterRow = deferred<Response>()
     const calls = stubChangeCharFetch(characterRow.promise)
     selectedCharID.set(1)
-    ;(testDatabaseState.db as any).currentChar = 1
+    charactersResourceState.currentChar = 1
 
     const pendingSelection = changeChar(0)
     await waitForCharacterRowFetch(calls)
 
     charactersResourceState.characters.reverse()
     selectedCharID.set(0)
-    ;(testDatabaseState.db as any).currentChar = 0
+    charactersResourceState.currentChar = 0
     characterRow.resolve(
       jsonResponse({
         revision: 10,
@@ -296,7 +296,7 @@ describe('changeChar shell selection freshness', () => {
     expect(testDatabaseState.db.characters[1].chaId).toBe('char-a')
     expect(testDatabaseState.db.characters[1].name).toBe('Hydrated A')
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
     await vi.waitFor(() => {
       expect(selectedCharacterCommandIds(calls)).toContain('char-a')
     })
@@ -306,14 +306,14 @@ describe('changeChar shell selection freshness', () => {
     const characterRow = deferred<Response>()
     const calls = stubChangeCharFetch(characterRow.promise)
     selectedCharID.set(1)
-    ;(testDatabaseState.db as any).currentChar = 1
+    charactersResourceState.currentChar = 1
 
     const pendingSelection = changeChar(0)
     await waitForCharacterRowFetch(calls)
 
     testDatabaseState.db.characters = [testDatabaseState.db.characters[1]]
     selectedCharID.set(0)
-    ;(testDatabaseState.db as any).currentChar = 0
+    charactersResourceState.currentChar = 0
     characterRow.resolve(
       jsonResponse({
         revision: 10,
@@ -326,7 +326,7 @@ describe('changeChar shell selection freshness', () => {
 
     expect(testDatabaseState.db.characters.map((candidate) => candidate.chaId)).toEqual(['char-b'])
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(selectedCharacterCommandIds(calls)).not.toContain('char-a')
   })
 })
@@ -365,7 +365,7 @@ describe('addCharacter import navigation freshness', () => {
         fullCharacter('char-a', 'Character A'),
         fullCharacter('tail-char', 'Tail Character'),
       ]
-      ;(testDatabaseState.db as any).currentChar = 1
+      charactersResourceState.currentChar = 1
       selectedCharID.set(1)
       return imported
     })
@@ -373,7 +373,7 @@ describe('addCharacter import navigation freshness', () => {
     await addCharacter()
 
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(importedCharacterId).toBeTruthy()
     expect(testDatabaseState.db.characters[0].chaId).toBe(importedCharacterId)
     await vi.waitFor(() => {
@@ -403,13 +403,13 @@ describe('addCharacter import navigation freshness', () => {
     })
 
     testDatabaseState.db.characters.push(fullCharacter('imported-char', 'Imported'))
-    ;(testDatabaseState.db as any).currentChar = 1
+    charactersResourceState.currentChar = 1
     selectedCharID.set(1)
     importResult.resolve({ status: 'accepted', characterId: 'imported-char' })
     await pendingAdd
 
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
     expect(selectedCharacterCommandIds(calls)).not.toContain('imported-char')
   })
 
@@ -444,7 +444,7 @@ describe('addCharacter import navigation freshness', () => {
 
     expect(testDatabaseState.db.characters).toHaveLength(2)
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(selectedCharacterCommandIds(calls)).toEqual([])
 
     const characterId = testDatabaseState.db.characters[1].chaId
@@ -458,7 +458,7 @@ describe('addCharacter import navigation freshness', () => {
     await adding
 
     expect(get(selectedCharID)).toBe(1)
-    expect((testDatabaseState.db as any).currentChar).toBe(1)
+    expect(charactersResourceState.currentChar).toBe(1)
     await vi.waitFor(() => {
       expect(selectedCharacterCommandIds(calls)).toContain(characterId)
     })
@@ -501,7 +501,7 @@ describe('addCharacter import navigation freshness', () => {
     expect(importOutcome!).not.toHaveProperty('characterId')
     expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-a'])
     expect(get(selectedCharID)).toBe(0)
-    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(charactersResourceState.currentChar).toBe(0)
     expect(selectedCharacterCommandIds(calls)).toEqual([])
   })
 })
