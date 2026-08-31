@@ -1,5 +1,4 @@
 import { untrack } from 'svelte'
-import { getServerResourceApplyEpoch } from '../server/resourceWriteGuard.svelte'
 import { subscribeServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
 import {
   appliedLocalEffectAcknowledgesSettingDraft,
@@ -8,7 +7,7 @@ import {
 import type { SettingContext, SettingItem } from './types'
 import {
   UNINITIALIZED,
-  getDeferredSettingDatabaseOwnershipEpoch,
+  getSettingOwnerProjectionToken,
   getSettingValue,
   getSettingWriteOwnerKey,
   reassertSettingValue,
@@ -40,9 +39,7 @@ export function createSettingInputDraft<T>(
   let suppressDraftDispatch = false
   let previousDraftDispatchSnapshot = snapshotJson(initialValue)
   let previousServerSnapshot = snapshotJson(initialValue)
-  let previousOwnerKey = untrack(() => getSettingWriteOwnerKey(getItem(), getContext()))
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
-  let previousDatabaseOwnershipEpoch = getDeferredSettingDatabaseOwnershipEpoch()
+  let previousOwnerToken = untrack(() => getSettingOwnerProjectionToken(getItem(), getContext()))
   let dirtyResourceEpoch: number | null = null
   let dirtyOwnerKey: string | null = null
   let dirtyRootKey: string | null = null
@@ -53,26 +50,25 @@ export function createSettingInputDraft<T>(
     const item = getItem()
     const context = getContext()
     const ownerKey = getSettingWriteOwnerKey(item, context)
-    const resourceApplyEpoch = getServerResourceApplyEpoch()
-    const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
-    const databaseOwnershipEpoch = getDeferredSettingDatabaseOwnershipEpoch()
-    const databaseOwnershipChanged = databaseOwnershipEpoch !== previousDatabaseOwnershipEpoch
-    const ownerChanged = ownerKey !== previousOwnerKey
+    const ownerToken = getSettingOwnerProjectionToken(item, context)
+    const ownerProjectionChanged = ownerToken.projectionEpoch !== previousOwnerToken.projectionEpoch
+    const ownerReset = ownerToken.resetEpoch !== previousOwnerToken.resetEpoch
+    const ownerChanged = ownerKey !== previousOwnerToken.ownerKey
     const serverValue = getSettingValue(item, context) as T
     const serverSnapshot = snapshotJson(serverValue)
     const draftSnapshot = snapshotJson(draft.value)
 
-    if (databaseOwnershipChanged || ownerChanged) {
+    if (ownerReset || ownerChanged) {
       clearDirty()
       if (serverSnapshot !== draftSnapshot) replaceDraftValue(serverValue)
     } else if (serverSnapshot === draftSnapshot) {
       // Equality can come from this draft's own optimistic write. Only the
       // owner/value-specific local-effect listener can acknowledge it.
       dirtyResourceEpoch = null
-    } else if (resourceApplyChanged && dirty) {
-      dirtyResourceEpoch = resourceApplyEpoch
+    } else if (ownerProjectionChanged && dirty) {
+      dirtyResourceEpoch = ownerToken.projectionEpoch
       untrack(() => reassertSettingValue(item, draft.value, context))
-    } else if (dirty && dirtyResourceEpoch === resourceApplyEpoch) {
+    } else if (dirty && dirtyResourceEpoch === ownerToken.projectionEpoch) {
       // Some effective values live in a selected preset row. Reasserting their
       // DB fallback does not change that getter, so keep the control draft until
       // the preset mirror or a newer projection settles it.
@@ -81,9 +77,7 @@ export function createSettingInputDraft<T>(
       replaceDraftValue(serverValue)
     }
 
-    previousOwnerKey = ownerKey
-    previousResourceApplyEpoch = resourceApplyEpoch
-    previousDatabaseOwnershipEpoch = databaseOwnershipEpoch
+    previousOwnerToken = ownerToken
     previousServerSnapshot = serverSnapshot
   })
 
@@ -134,7 +128,7 @@ export function createSettingInputDraft<T>(
       dirtyRootKey = result.queued ? result.rootKey : null
       dirtyPath = result.queued ? result.path : []
       dirtySplitPresetProjection = result.splitPresetProjection
-      previousOwnerKey = result.ownerKey
+      previousOwnerToken = getSettingOwnerProjectionToken(item, context)
       previousServerSnapshot = snapshotJson(getSettingValue(item, context))
     })
   })

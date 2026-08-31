@@ -105,12 +105,13 @@ import {
 import {
   applySettingsResource,
   applySettingsGroupResource,
+  applySettingsPatchLocalEffect,
   captureSettingsGroupProjectionEpoch,
   getResourceDatabase,
   hasSettingsGroupProjectionEpochChanged,
   replaceResourceDatabase,
 } from '../server/resourceState.svelte'
-import { setResourceWriteGuardEnabled, withServerResourceApply } from '../server/resourceWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { notifyServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { language } from 'src/lang'
@@ -616,9 +617,9 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().guiHTML).toBe('local final')
     expect(calls).toEqual([])
 
-    withServerResourceApply(() => {
-      getResourceDatabase().guiHTML = 'server intermediate'
-    })
+    applySettingsGroupResource({ revision: 1, group: 'display', settings: { guiHTML: 'server intermediate' } }, [
+      'guiHTML',
+    ])
     flushSync()
 
     expect(input.value).toBe('local final')
@@ -659,9 +660,7 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().guiHTML).toBe('queued')
 
     clearDeferredSettingWrites()
-    withServerResourceApply(() => {
-      applySettingsResource({ revision: 1, settings: { guiHTML: 'restored' } })
-    })
+    applySettingsResource({ revision: 1, settings: { guiHTML: 'restored' } })
     flushSync()
 
     expect(input.value).toBe('restored')
@@ -696,14 +695,10 @@ describe('server-backed data-driven settings', () => {
     setSettingValue(item, true, ctx)
     await vi.waitFor(() => expect(calls.some((call) => call.url === '/api/v1/commands/settings/display')).toBe(true))
 
-    withServerResourceApply(() => {
-      applySettingsResource({ revision: 4, settings: { notification: false } })
-    })
+    applySettingsResource({ revision: 4, settings: { notification: false } })
     expect(getResourceDatabase().notification).toBe(true)
 
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 4, group: 'display', settings: { notification: false } }, ['notification'])
-    })
+    applySettingsGroupResource({ revision: 4, group: 'display', settings: { notification: false } }, ['notification'])
     expect(getResourceDatabase().notification).toBe(true)
 
     patchResponse.resolve(
@@ -739,23 +734,15 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().roundIcons).toBe(true)
     expect(settingAlertMocks.alertError).not.toHaveBeenCalled()
 
-    withServerResourceApply(() => {
-      applySettingsResource({ revision: 4, settings: { roundIcons: false } })
-    })
+    applySettingsResource({ revision: 4, settings: { roundIcons: false } })
     expect(getResourceDatabase().roundIcons).toBe(true)
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 4, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
-    })
+    applySettingsGroupResource({ revision: 4, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
     expect(getResourceDatabase().roundIcons).toBe(true)
 
     const mutationId = durableSettingState.dispatches[0].handle.mutationId
     publishDurableSettingSettlement(mutationId, 'accepted')
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 5, group: 'display', settings: { roundIcons: true } }, ['roundIcons'])
-    })
-    withServerResourceApply(() => {
-      applySettingsGroupResource({ revision: 6, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
-    })
+    applySettingsGroupResource({ revision: 5, group: 'display', settings: { roundIcons: true } }, ['roundIcons'])
+    applySettingsGroupResource({ revision: 6, group: 'display', settings: { roundIcons: false } }, ['roundIcons'])
     expect(getResourceDatabase().roundIcons).toBe(false)
   })
 
@@ -809,7 +796,6 @@ describe('server-backed data-driven settings', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
 
-    withServerResourceApply(() => {})
     notifyServerCommandLocalEffectApplied(
       {
         type: 'settings.updated',
@@ -826,9 +812,7 @@ describe('server-backed data-driven settings', () => {
       },
     )
     flushSync()
-    withServerResourceApply(() => {
-      getResourceDatabase().guiHTML = 'B'
-    })
+    applySettingsGroupResource({ revision: 5, group: 'display', settings: { guiHTML: 'B' } }, ['guiHTML'])
     flushSync()
 
     expect(input.value).toBe('C')
@@ -859,8 +843,11 @@ describe('server-backed data-driven settings', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
 
-    withServerResourceApply(() => {
-      getResourceDatabase().deeplOptions = { key: 'canonical key', freeApi: false }
+    applySettingsPatchLocalEffect({
+      revision: 5,
+      group: 'language',
+      attemptedPatch: { deeplOptions: { key: 'attempted key', freeApi: false } },
+      settings: { deeplOptions: { key: 'canonical key', freeApi: false } },
     })
     notifyServerCommandLocalEffectApplied(
       {
@@ -942,15 +929,13 @@ describe('server-backed data-driven settings', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     flushSync()
     unmount(component)
-    withServerResourceApply(() =>
-      applySettingsGroupResource(
-        {
-          revision: 4,
-          group: 'display',
-          settings: { guiHTML: 'server intermediate' },
-        },
-        ['guiHTML'],
-      ),
+    applySettingsGroupResource(
+      {
+        revision: 4,
+        group: 'display',
+        settings: { guiHTML: 'server intermediate' },
+      },
+      ['guiHTML'],
     )
     expect(hasSettingsGroupProjectionEpochChanged('display', intentEpoch)).toBe(true)
     expect(getResourceDatabase().guiHTML).toBe('local final')

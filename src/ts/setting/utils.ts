@@ -1,5 +1,6 @@
 import type { SettingItem, SettingContext } from './types'
-import { flushPendingSplitPresetPatch, getDatabase } from '../storage/database.svelte'
+import type { Database } from '../storage/databaseTypes'
+import { flushPendingSplitPresetPatch } from '../storage/database.svelte'
 import { language } from 'src/lang'
 import { alertError } from '../alert'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
@@ -19,8 +20,12 @@ import {
   settingsGroupForKey,
   type ServerCommandTransportOptions,
 } from '../server/commands'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import { captureSettingsPatchProjectionEpochs } from '../server/resourceState.svelte'
+import {
+  captureCollectionProjectionEpoch,
+  captureSettingsGroupProjectionEpoch,
+  captureSettingsPatchProjectionEpochs,
+  settingsResourceState,
+} from '../server/resourceState.svelte'
 import type { SettingsGroupProjectionEpochs } from '../server/settingsGroups'
 import {
   registerPendingBridgeOwnershipResetter,
@@ -134,8 +139,8 @@ interface PendingDeferredServerSettingAttempt {
 
 const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite>()
 const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[] = []
+const deferredSettingOwnerResetEpochs = new Map<string, number>()
 let nextDeferredServerSettingAttemptSequence = 0
-let deferredSettingDatabaseOwnershipEpoch = 0
 registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
 registerPendingBridgeOwnershipResetter('setting-renderer-inputs', resetDeferredSettingWritesForDatabaseReplacement)
 registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
@@ -180,18 +185,19 @@ export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
   if (promptOverrideValue.found) return promptOverrideValue.value
 
   if (item.getValue) {
-    return item.getValue(getDatabase(), ctx)
+    const settings = currentSettingsOwner(item)
+    return settings ? item.getValue(settings, ctx) : undefined
   }
   if (item.bindPath) {
     const parts = item.bindPath.split('.')
-    let value: any = getDatabase()
+    let value: any = currentSettingsOwner(item)
     for (const part of parts) {
       value = value?.[part]
     }
     return value
   }
   if (item.bindKey) {
-    return (getDatabase() as any)[item.bindKey]
+    return currentSettingsOwner(item)?.[item.bindKey]
   }
   return undefined
 }
@@ -206,7 +212,7 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
     ? captureSettingsPatchProjectionEpochs({ [commandPatch.key]: previousRoot })
     : undefined
 
-  writeLocalSettingValue(item, newValue, ctx)
+  if (!writeLocalSettingValue(item, newValue, ctx)) return
 
   const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue, ctx)
 
@@ -256,7 +262,15 @@ export function setDeferredSettingValue(
   const optimisticProjectionEpochs =
     target?.kind === 'server' ? captureSettingsPatchProjectionEpochs({ [target.rootKey]: previousRoot }) : undefined
 
-  writeLocalSettingValue(item, newValue, ctx)
+  if (!writeLocalSettingValue(item, newValue, ctx)) {
+    return {
+      ownerKey: target?.ownerKey ?? localSettingOwnerKey(item),
+      queued: false,
+      rootKey: target?.rootKey ?? settingRootKey(item),
+      path: deferredSettingPath(item),
+      splitPresetProjection: target?.kind === 'promptOverride' ? 'presetRow' : 'selectedSettings',
+    }
+  }
 
   if (!target) {
     return {
@@ -296,6 +310,37 @@ export function getSettingWriteOwnerKey(item: SettingItem, ctx: SettingContext):
   return resolveDeferredSettingTarget(item, ctx)?.ownerKey ?? localSettingOwnerKey(item)
 }
 
+export interface SettingOwnerProjectionToken {
+  ownerKey: string
+  projectionEpoch: number
+  resetEpoch: number
+}
+
+/** Exact projection/reset token for one renderer-owned settings root or split-preset row. */
+export function getSettingOwnerProjectionToken(item: SettingItem, ctx: SettingContext): SettingOwnerProjectionToken {
+  const target = resolveDeferredSettingTarget(item, ctx)
+  const ownerKey = target?.ownerKey ?? localSettingOwnerKey(item)
+  let projectionEpoch = 0
+
+  if (target?.kind === 'preset') {
+    projectionEpoch = captureCollectionProjectionEpoch(
+      target.target.kind === 'model' ? 'modelPresets' : 'promptPresets',
+    )
+  } else if (target?.kind === 'promptOverride') {
+    projectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+  } else {
+    const rootKey = target?.rootKey ?? settingRootKey(item)
+    const group = rootKey ? settingsGroupForKey(rootKey) : null
+    if (group) projectionEpoch = captureSettingsGroupProjectionEpoch(group)
+  }
+
+  return {
+    ownerKey,
+    projectionEpoch,
+    resetEpoch: deferredSettingOwnerResetEpochs.get(ownerKey) ?? 0,
+  }
+}
+
 export function flushDeferredSettingWrites(options: ServerCommandTransportOptions = {}): void {
   for (const ownerKey of [...pendingDeferredSettingWrites.keys()]) {
     dispatchDeferredSettingWrite(ownerKey, options)
@@ -306,12 +351,19 @@ export function clearDeferredSettingWrites(): void {
   clearDeferredSettingWriteState(true)
 }
 
-function resetDeferredSettingWritesForDatabaseReplacement(): void {
+/** Explicit ownership-reset hook for replacement-database adoption. */
+export function resetDeferredSettingWritesForDatabaseReplacement(): void {
   clearDeferredSettingWriteState(false)
 }
 
 function clearDeferredSettingWriteState(acknowledgeOutbox: boolean): void {
-  deferredSettingDatabaseOwnershipEpoch += 1
+  const retiredOwnerKeys = new Set([
+    ...pendingDeferredSettingWrites.keys(),
+    ...pendingDeferredServerSettingAttempts.map((attempt) => attempt.ownerKey),
+  ])
+  for (const ownerKey of retiredOwnerKeys) {
+    deferredSettingOwnerResetEpochs.set(ownerKey, (deferredSettingOwnerResetEpochs.get(ownerKey) ?? 0) + 1)
+  }
   for (const pending of pendingDeferredSettingWrites.values()) {
     clearTimeout(pending.timer)
     if (acknowledgeOutbox && pending.outbox) void acknowledgePendingMutation(pending.outbox)
@@ -320,16 +372,11 @@ function clearDeferredSettingWriteState(acknowledgeOutbox: boolean): void {
   for (const attempt of [...pendingDeferredServerSettingAttempts]) clearDeferredServerSettingAttempt(attempt)
 }
 
-export function getDeferredSettingDatabaseOwnershipEpoch(): number {
-  return deferredSettingDatabaseOwnershipEpoch
-}
-
-function writeLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
-  withTrustedResourceWrite(() => {
-    setLocalSettingValue(item, newValue, ctx)
-  })
+function writeLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): boolean {
+  if (!setLocalSettingValue(item, newValue, ctx)) return false
 
   item.onChange?.(newValue, ctx)
+  return true
 }
 
 function resolveDeferredSettingTarget(item: SettingItem, ctx: SettingContext): DeferredSettingTarget | null {
@@ -369,15 +416,13 @@ function resolveDeferredServerSettingTarget(rootKey: string): DeferredServerSett
 
 function currentDeferredSettingTargetValue(target: DeferredSettingTarget): unknown {
   if (target.kind === 'server') {
-    return cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
+    return cloneJsonValue(currentSettingsOwnerRoot(target.rootKey))
   }
   if (target.kind === 'promptOverride') {
     return currentPromptPresetModelOverrideMirrorValue(target.target)
   }
   const value = currentTopLevelPresetFieldMirrorValue(target.target)
-  return value === undefined
-    ? cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
-    : value
+  return value === undefined ? cloneJsonValue(currentSettingsOwnerRoot(target.rootKey)) : value
 }
 
 function queueDeferredSettingWrite(
@@ -402,7 +447,7 @@ function queueDeferredSettingWrite(
     value: cloneJsonValue(value),
   })
 
-  let desiredRoot = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
+  let desiredRoot = cloneJsonValue(currentSettingsOwnerRoot(target.rootKey))
   for (const edit of edits.values()) {
     desiredRoot = applyDeferredSettingEdit(desiredRoot, edit)
   }
@@ -655,7 +700,9 @@ function rollbackDeferredServerSetting(
   previousRoot: unknown,
   edits: Map<string, DeferredSettingEdit>,
 ): void {
-  const currentRoot = (getDatabase() as unknown as Record<string, unknown>)[target.rootKey]
+  const settings = currentSettingsOwnerForRoot(target.rootKey)
+  if (!settings) return
+  const currentRoot = settings[target.rootKey]
   let restoredRoot = cloneJsonValue(currentRoot)
   const restoredRuntimeEffects: NonNullable<DeferredSettingEdit['runtimeEffect']>[] = []
   let changed = false
@@ -671,9 +718,7 @@ function rollbackDeferredServerSetting(
   }
 
   if (!changed) return
-  withTrustedResourceWrite(() => {
-    ;(getDatabase() as unknown as Record<string, unknown>)[target.rootKey] = restoredRoot
-  })
+  settings[target.rootKey] = restoredRoot
   for (const { ctx, item } of restoredRuntimeEffects) {
     item.onChange?.(getSettingValue(item, ctx), ctx)
   }
@@ -708,7 +753,7 @@ function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown
 
   if (item.bindPath) {
     const key = item.bindPath.split('.')[0]
-    return mirrorTopLevelPresetField(key, cloneJsonValue((getDatabase() as any)[key]))
+    return mirrorTopLevelPresetField(key, cloneJsonValue(currentSettingsOwnerRoot(key)))
   }
 
   const key = item.bindKey ?? serverPatchKeyForItem(item)
@@ -726,7 +771,7 @@ function getPromptPresetOverrideSettingValue(
     const parts = item.bindPath.split('.')
     const rootKey = parts[0]
     if (!promptPresetModelOverrideFieldForDatabaseKey(rootKey)) return { found: false }
-    let value: any = currentPromptPresetModelOverrideValue(rootKey, (getDatabase() as any)[rootKey])
+    let value: any = currentPromptPresetModelOverrideValue(rootKey, currentSettingsOwnerRoot(rootKey))
     for (const part of parts.slice(1)) {
       value = value?.[part]
     }
@@ -737,7 +782,7 @@ function getPromptPresetOverrideSettingValue(
   if (!key || !promptPresetModelOverrideFieldForDatabaseKey(String(key))) return { found: false }
   return {
     found: true,
-    value: currentPromptPresetModelOverrideValue(String(key), (getDatabase() as any)[key]),
+    value: currentPromptPresetModelOverrideValue(String(key), currentSettingsOwnerRoot(String(key))),
   }
 }
 
@@ -752,7 +797,7 @@ function mirrorPromptPresetOverrideSettingValue(
   if (item.bindPath) {
     const rootKey = item.bindPath.split('.')[0]
     if (!promptPresetModelOverrideFieldForDatabaseKey(rootKey)) return null
-    return mirrorPromptPresetModelOverrideField(rootKey, cloneJsonValue((getDatabase() as any)[rootKey]))
+    return mirrorPromptPresetModelOverrideField(rootKey, cloneJsonValue(currentSettingsOwnerRoot(rootKey)))
   }
 
   const key = item.bindKey ?? serverPatchKeyForItem(item)
@@ -760,19 +805,22 @@ function mirrorPromptPresetOverrideSettingValue(
   return mirrorPromptPresetModelOverrideField(String(key), newValue)
 }
 
-function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
+function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): boolean {
+  const settings = currentSettingsOwner(item)
+  if (!settings) return false
   if (item.setValue) {
-    item.setValue(getDatabase(), newValue, ctx)
+    item.setValue(settings, newValue, ctx)
   } else if (item.bindPath) {
     const parts = item.bindPath.split('.')
-    let obj: any = getDatabase()
+    let obj: any = settings
     for (let i = 0; i < parts.length - 1; i++) {
       obj = obj[parts[i]] ??= {}
     }
     obj[parts[parts.length - 1]] = newValue
   } else if (item.bindKey) {
-    ;(getDatabase() as any)[item.bindKey] = newValue
+    settings[item.bindKey] = newValue
   }
+  return true
 }
 
 function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb: () => unknown } | null {
@@ -784,7 +832,7 @@ function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb
     if (!group) return null
     return {
       key: rootKey,
-      valueFromDb: () => cloneJsonValue((getDatabase() as any)[rootKey]),
+      valueFromDb: () => cloneJsonValue(currentSettingsOwnerRoot(rootKey)),
     }
   }
 
@@ -795,8 +843,28 @@ function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb
 
   return {
     key: String(key),
-    valueFromDb: () => cloneJsonValue((getDatabase() as any)[key]),
+    valueFromDb: () => cloneJsonValue(currentSettingsOwnerRoot(String(key))),
   }
+}
+
+function currentSettingsOwner(item: SettingItem): Database | null {
+  const rootKey = settingRootKey(item)
+  const settings = currentSettingsOwnerForRoot(rootKey)
+  return settings as unknown as Database | null
+}
+
+function currentSettingsOwnerForRoot(rootKey: string | null): Record<string, unknown> | null {
+  if (settingsResourceState.status === 'error') return null
+  if (rootKey) {
+    const group = settingsGroupForKey(rootKey)
+    if (group && settingsResourceState.groupStatuses[group] !== 'ready') return null
+  }
+  if (!rootKey && settingsResourceState.status !== 'ready') return null
+  return settingsResourceState.value as Record<string, unknown>
+}
+
+function currentSettingsOwnerRoot(rootKey: string): unknown {
+  return currentSettingsOwnerForRoot(rootKey)?.[rootKey]
 }
 
 function rollbackLocalSetting(
