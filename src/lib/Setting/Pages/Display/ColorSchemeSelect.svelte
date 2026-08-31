@@ -1,6 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     changeColorScheme,
     colorSchemeList,
@@ -14,6 +14,12 @@
 
     return `background: conic-gradient(from 45deg, ${bgcolor} 0deg 90deg, ${darkbg} 90deg 180deg, ${borderc} 180deg 270deg, ${selected} 270deg 360deg);`
   }
+
+  let displaySettings = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' ? settingsResourceState.value : undefined,
+  )
+  let selectedScheme = $derived(displaySettings?.colorSchemeName)
+  let customScheme = $derived(displaySettings?.customColorScheme ?? defaultColorScheme)
 </script>
 
 <span class="text-textcolor mt-4">{language.colorScheme}</span>
@@ -22,10 +28,11 @@
   role="group"
   aria-label={language.colorScheme}>
   {#each colorSchemeList as scheme}
-    {@const selected = getDatabase().colorSchemeName === scheme}
+    {@const selected = selectedScheme === scheme}
     {@const label = language.colorSchemePresetNames[scheme]}
     <button
       type="button"
+      disabled={!displaySettings}
       class="risu-card relative flex min-h-28 flex-col items-center justify-center gap-2 pt-6 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-borderc"
       class:border-borderc={selected}
       class:bg-selected={selected}
@@ -46,11 +53,12 @@
 
   <button
     type="button"
+    disabled={!displaySettings}
     class="risu-card relative flex min-h-28 flex-col items-center justify-center gap-2 pt-6 text-center transition-colors hover:bg-darkbutton focus:outline-hidden focus:ring-2 focus:ring-borderc"
-    class:border-borderc={getDatabase().colorSchemeName === 'custom'}
-    class:bg-selected={getDatabase().colorSchemeName === 'custom'}
-    class:border-darkborderc={getDatabase().colorSchemeName !== 'custom'}
-    aria-pressed={getDatabase().colorSchemeName === 'custom'}
+    class:border-borderc={selectedScheme === 'custom'}
+    class:bg-selected={selectedScheme === 'custom'}
+    class:border-darkborderc={selectedScheme !== 'custom'}
+    aria-pressed={selectedScheme === 'custom'}
     aria-label={language.colorSchemePresetNames.custom}
     title={language.colorSchemePresetNames.custom}
     onclick={() => changeColorScheme('custom')}>
@@ -59,8 +67,7 @@
       {language.colorSchemePresetNames.custom}
     </span>
     <span class="palette-wheel relative h-14 w-14 overflow-hidden rounded-full shadow-sm" aria-hidden="true">
-      <span class="palette-wheel-fill" style={paletteStyle(getDatabase().customColorScheme ?? defaultColorScheme)}
-      ></span>
+      <span class="palette-wheel-fill" style={paletteStyle(customScheme)}></span>
     </span>
   </button>
 </div>

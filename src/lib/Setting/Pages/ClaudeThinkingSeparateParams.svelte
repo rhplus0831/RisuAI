@@ -1,9 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import { getModelInfo } from 'src/ts/model/modellist'
-  import { normalizeModelRole, resolveModelForRole } from '@risuai/shared-core/model-roles'
-  import { LLMFlags } from 'src/ts/model/types'
+  import { LLMFlags, type LLMModel } from 'src/ts/model/types'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
@@ -11,23 +8,13 @@
 
   let {
     value = $bindable(),
-    paramKey,
+    modelInfo,
   }: {
     value: SeparateParameters
-    paramKey?: string
+    modelInfo?: LLMModel
   } = $props()
 
-  let effectiveModel = $derived.by(() => {
-    if (!paramKey) return resolveModelForRole(getDatabase(), 'chatAux')
-    const role = normalizeModelRole(paramKey)
-    if (role) {
-      return resolveModelForRole(getDatabase(), role)
-    }
-    return paramKey
-  })
-  let modelInfo = $derived(getModelInfo(effectiveModel))
-
-  let hasXHighEffort = $derived(modelInfo.flags.includes(LLMFlags.claudeXHighEffort))
+  let hasXHighEffort = $derived(modelInfo?.flags.includes(LLMFlags.claudeXHighEffort) ?? false)
 
   let adaptiveThinkingEffortOptions = $derived([
     { value: 'low', label: 'Low' },

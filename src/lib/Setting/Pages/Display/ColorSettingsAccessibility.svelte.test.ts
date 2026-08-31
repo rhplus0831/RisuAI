@@ -25,7 +25,12 @@ const darkPalette = vi.hoisted(
 )
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => colorSettingsState.database,
+  settingsResourceState: {
+    get value() {
+      return colorSettingsState.database
+    },
+    groupStatuses: { display: 'ready' },
+  },
 }))
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => colorSettingsState.database,

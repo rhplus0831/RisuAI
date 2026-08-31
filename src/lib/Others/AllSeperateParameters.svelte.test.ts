@@ -6,7 +6,10 @@ const separateParameterMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: () => ({}),
+  settingsResourceState: {
+    value: {},
+    groupStatuses: { providers: 'ready', runtime: 'ready', advanced: 'ready' },
+  },
 }))
 
 vi.mock('src/ts/model/modellist', () => ({

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { language } from 'src/lang'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
@@ -16,14 +16,17 @@
   } from 'src/ts/server/pushNotificationSetting'
   import type { DisablePushNotificationCleanupStep } from 'src/ts/server/pushNotifications'
 
-  let notificationChecked = $state(getDatabase().notification)
+  let displaySettings = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' ? settingsResourceState.value : undefined,
+  )
+  let notificationChecked = $state(false)
 
   onMount(() => {
     void initializePushNotificationCoordinator()
   })
 
   $effect(() => {
-    notificationChecked = getDatabase().notification
+    notificationChecked = displaySettings?.notification === true
   })
 
   function enableFailureMessage(result: PushNotificationEnableFailure): string {
@@ -99,6 +102,7 @@
 <div class="mt-2">
   <Check
     bind:check={notificationChecked}
+    disabled={!displaySettings}
     name={language.notification}
     onChange={(nextValue) => {
       if (

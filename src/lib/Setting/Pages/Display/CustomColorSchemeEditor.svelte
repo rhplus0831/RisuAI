@@ -1,8 +1,9 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import {
     changeColorSchemeType,
+    defaultColorScheme,
     exportColorScheme,
     importColorScheme,
     updateCustomColorScheme,
@@ -23,19 +24,24 @@
     ['textcolor2', 'Text Color 2'],
   ] as const
 
+  let displaySettings = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' ? settingsResourceState.value : undefined,
+  )
+  let customColorScheme = $derived(displaySettings?.customColorScheme ?? defaultColorScheme)
+
   function setColorSchemeValue(key: (typeof colors)[number][0], value: string) {
     updateCustomColorScheme({
-      ...getDatabase().customColorScheme,
+      ...customColorScheme,
       [key]: value,
     })
   }
 </script>
 
-{#if getDatabase().colorSchemeName === 'custom'}
+{#if displaySettings?.colorSchemeName === 'custom'}
   <div class="border border-darkborderc p-2 m-2 rounded-md">
     <SelectInput
       className="mt-2"
-      value={getDatabase().customColorScheme.type}
+      value={customColorScheme.type}
       onchange={(e) => {
         changeColorSchemeType((e.target as HTMLInputElement).value as 'light' | 'dark')
       }}>
@@ -48,7 +54,7 @@
         <input
           type="color"
           class="native-color-input"
-          value={getDatabase().customColorScheme[color[0]]}
+          value={customColorScheme[color[0]]}
           aria-label={color[1]}
           oninput={(event) => setColorSchemeValue(color[0], event.currentTarget.value)} />
         <span class="ml-2">{color[1]}</span>

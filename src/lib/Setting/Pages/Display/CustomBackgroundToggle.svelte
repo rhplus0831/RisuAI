@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { saveImage } from 'src/ts/storage/database.svelte'
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { selectSingleFile } from 'src/ts/filePicker'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
@@ -12,6 +12,12 @@
 
   const customBackgroundOperationGuard = createLatestOperationGuard<'customBackground'>()
   let uploadPending = $state(false)
+  let displaySettings = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' ? settingsResourceState.value : undefined,
+  )
+  let customBackground = $derived(
+    typeof displaySettings?.customBackground === 'string' ? displaySettings.customBackground : '',
+  )
 
   normalizeLegacyCustomBackgroundSetting()
   onDestroy(() => {
@@ -27,18 +33,20 @@
 
 <div class="flex items-center mt-2">
   <Check
-    check={uploadPending || getDatabase().customBackground !== ''}
+    check={uploadPending || customBackground !== ''}
+    disabled={!displaySettings}
     onChange={async (check) => {
+      if (!displaySettings) return
       const token = customBackgroundOperationGuard.issue('customBackground')
-      const previousBackground = getDatabase().customBackground
+      const previousBackground = customBackground
       let fileSelected = false
       const isCurrentUpload = () =>
-        customBackgroundOperationGuard.isLatest(token) && getDatabase().customBackground === previousBackground
+        customBackgroundOperationGuard.isLatest(token) && customBackground === previousBackground
 
       try {
         if (!check) {
           uploadPending = false
-          if (getDatabase().customBackground !== '') {
+          if (customBackground !== '') {
             applyServerBackedSetting('customBackground', '')
           }
           return

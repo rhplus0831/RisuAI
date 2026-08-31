@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Help from './Help.svelte'
   import { language } from 'src/lang'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
@@ -37,48 +37,61 @@
     guardedImport?: GuardedSeperateParametersImport
   } = $props()
 
-  let effectiveModel = $derived.by(() => {
-    if (!paramKey) return resolveModelForRole(getDatabase(), 'chatAux')
-    const role = normalizeModelRole(paramKey)
-    if (role) {
-      return resolveModelForRole(getDatabase(), role)
-    }
-    return paramKey
+  let modelCatalog = $derived({
+    customModels:
+      settingsResourceState.groupStatuses.providers === 'ready' ? settingsResourceState.value.customModels : undefined,
+    enableCustomFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready' ? settingsResourceState.value.enableCustomFlags : false,
+    customFlags:
+      settingsResourceState.groupStatuses.advanced === 'ready' ? settingsResourceState.value.customFlags : undefined,
   })
-  let modelInfo = $derived(getModelInfo(effectiveModel))
-  let hasTemperature = $derived(modelInfo.parameters.includes('temperature'))
-  let hasReasoningEffort = $derived(
-    modelInfo.parameters.includes('reasoning_effort') ||
-      modelInfo.parameters.includes('reasoning_effort_min_medium') ||
-      modelInfo.parameters.includes('reasoning_effort_none') ||
-      modelInfo.parameters.includes('reasoning_effort_xhigh'),
+  let effectiveModel = $derived.by(() => {
+    const role = normalizeModelRole(paramKey ?? 'chatAux')
+    if (!role) return paramKey ?? ''
+    if (settingsResourceState.groupStatuses.providers !== 'ready') return ''
+    if (role !== 'chatMain' && role !== 'chatAux' && settingsResourceState.groupStatuses.runtime !== 'ready') return ''
+    return resolveModelForRole(settingsResourceState.value, role)
+  })
+  let modelInfo = $derived(
+    effectiveModel &&
+      (!effectiveModel.startsWith('xcustom:::') || settingsResourceState.groupStatuses.providers === 'ready')
+      ? getModelInfo(effectiveModel, modelCatalog)
+      : undefined,
   )
-  let hasVerbosity = $derived(modelInfo.parameters.includes('verbosity'))
+  let modelParameters = $derived(modelInfo?.parameters ?? [])
+  let hasTemperature = $derived(modelParameters.includes('temperature'))
+  let hasReasoningEffort = $derived(
+    modelParameters.includes('reasoning_effort') ||
+      modelParameters.includes('reasoning_effort_min_medium') ||
+      modelParameters.includes('reasoning_effort_none') ||
+      modelParameters.includes('reasoning_effort_xhigh'),
+  )
+  let hasVerbosity = $derived(modelParameters.includes('verbosity'))
   const verbosityOptions = [
     { value: 0, label: 'Low' },
     { value: 1, label: 'Medium' },
     { value: 2, label: 'High' },
   ]
   let reasoningEffortOptions = $derived([
-    ...(!modelInfo.parameters.includes('reasoning_effort_min_medium')
+    ...(!modelParameters.includes('reasoning_effort_min_medium')
       ? [
           {
             value: -1,
-            label: modelInfo.parameters.includes('reasoning_effort_none') ? 'None' : 'Minimal',
+            label: modelParameters.includes('reasoning_effort_none') ? 'None' : 'Minimal',
           },
         ]
       : []),
-    ...(!modelInfo.parameters.includes('reasoning_effort_min_medium') ? [{ value: 0, label: 'Low' }] : []),
+    ...(!modelParameters.includes('reasoning_effort_min_medium') ? [{ value: 0, label: 'Low' }] : []),
     { value: 1, label: 'Medium' },
     { value: 2, label: 'High' },
-    ...(modelInfo.parameters.includes('reasoning_effort_xhigh') ? [{ value: 3, label: 'XHigh' }] : []),
+    ...(modelParameters.includes('reasoning_effort_xhigh') ? [{ value: 3, label: 'XHigh' }] : []),
   ])
 
   $effect(() => {
-    if (!modelInfo.parameters.includes('reasoning_effort_xhigh') && value.reasoning_effort === 3) {
+    if (!modelParameters.includes('reasoning_effort_xhigh') && value.reasoning_effort === 3) {
       value.reasoning_effort = 2
     }
-    if (modelInfo.parameters.includes('reasoning_effort_min_medium') && (value.reasoning_effort ?? 1) < 1) {
+    if (modelParameters.includes('reasoning_effort_min_medium') && (value.reasoning_effort ?? 1) < 1) {
       value.reasoning_effort = 1
     }
   })
@@ -204,7 +217,7 @@
   bind:value={value.presence_penalty}
   disableable
   ariaLabel={language.modelProfiles.runtimeFields.presencePenalty} />
-<ClaudeThinkingSeparateParams bind:value {paramKey} />
+<ClaudeThinkingSeparateParams bind:value {modelInfo} />
 {#if hasReasoningEffort}
   <span class="text-textcolor">{language.modelProfiles.runtimeFields.reasoningEffort}</span>
   <SegmentedControl bind:value={value.reasoning_effort} options={reasoningEffortOptions} />

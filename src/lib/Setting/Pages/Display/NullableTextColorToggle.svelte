@@ -1,6 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
@@ -11,7 +11,10 @@
   }
 
   let { field, labelKey, defaultColor }: Props = $props()
-  let currentValue = $derived(getDatabase()[field])
+  let displaySettings = $derived(
+    settingsResourceState.groupStatuses.display === 'ready' ? settingsResourceState.value : undefined,
+  )
+  let currentValue = $derived(displaySettings?.[field])
 </script>
 
 {#if currentValue}
@@ -37,6 +40,7 @@
   <div class="flex items-center mt-2">
     <Check
       check={false}
+      disabled={!displaySettings}
       onChange={() => {
         applyServerBackedSetting(field, defaultColor)
       }}
