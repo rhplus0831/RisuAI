@@ -2,18 +2,15 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const assetInputMocks = vi.hoisted(() => ({
-  database: {
-    characters: [] as Array<Record<string, unknown>>,
-  },
   characters: [] as Array<Record<string, unknown>>,
   getFileSrc: vi.fn(async (assetId: string) => `/api/v1/assets/${assetId}`),
   owner: undefined as unknown,
+  rowStatuses: {} as Record<string, string>,
   status: 'idle' as string,
   setCharacterByIndex: vi.fn(),
 }))
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => assetInputMocks.database,
   setCharacterByIndex: assetInputMocks.setCharacterByIndex,
 }))
 
@@ -38,6 +35,10 @@ vi.mock('src/ts/characterState', () => ({
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
   charactersResourceState: assetInputMocks,
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = assetInputMocks.characters.filter((character) => character.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  },
 }))
 
 vi.mock('src/ts/filePicker', () => ({
@@ -62,6 +63,7 @@ afterEach(() => {
   assetInputMocks.owner = undefined
   assetInputMocks.status = 'idle'
   assetInputMocks.characters = []
+  assetInputMocks.rowStatuses = {}
 })
 
 describe('AssetInput', () => {
@@ -74,7 +76,6 @@ describe('AssetInput', () => {
       additionalAssets: [videoAsset, audioAsset],
     }
     const onSelect = vi.fn()
-    assetInputMocks.database.characters = [currentCharacter]
     target = document.createElement('div')
     document.body.appendChild(target)
 
@@ -117,7 +118,6 @@ describe('AssetInput', () => {
         ['second.png', sharedAssetId, 'png'],
       ],
     }
-    assetInputMocks.database.characters = [currentCharacter]
     target = document.createElement('div')
     document.body.appendChild(target)
 
@@ -152,7 +152,6 @@ describe('AssetInput', () => {
       chaId: 'character-a',
       additionalAssets: [['owner.png', 'owner-asset-id', 'png']],
     }
-    assetInputMocks.database.characters = [aggregateCharacter]
     assetInputMocks.characters = [ownerCharacter]
     assetInputMocks.owner = ownerCharacter
     assetInputMocks.status = 'ready'
@@ -192,6 +191,29 @@ describe('AssetInput', () => {
       target,
       props: {
         currentCharacter: duplicateCharacter as any,
+        onSelect: vi.fn(),
+      },
+    })
+    await tick()
+
+    expect(target.querySelectorAll('button')).toHaveLength(0)
+    expect(assetInputMocks.getFileSrc).not.toHaveBeenCalled()
+  })
+
+  it('fails closed instead of rendering the compatibility prop after a resource error', async () => {
+    const currentCharacter = {
+      type: 'character',
+      chaId: 'character-a',
+      additionalAssets: [['compatibility.png', 'compatibility-asset-id', 'png']],
+    }
+    assetInputMocks.status = 'error'
+    target = document.createElement('div')
+    document.body.appendChild(target)
+
+    component = mount(AssetInput, {
+      target,
+      props: {
+        currentCharacter: currentCharacter as any,
         onSelect: vi.fn(),
       },
     })

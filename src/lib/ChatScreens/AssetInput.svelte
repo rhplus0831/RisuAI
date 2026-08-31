@@ -1,12 +1,12 @@
 <script lang="ts">
   import { FileMusicIcon, PlusIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { getDatabase, setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
+  import { setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { selectMultipleFile } from 'src/ts/filePicker'
-  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
+  import { getSelectedCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
   import {
     appendFreshCharacterAdditionalAssets,
     beginCharacterAdditionalAssetUpload,
@@ -23,12 +23,34 @@
   }
 
   const { currentCharacter, onSelect }: Props = $props()
-  // Resource ownership is authoritative once the character list is ready. A
-  // missing owner then deliberately fails closed (including duplicate IDs);
-  // the prop remains a bootstrap-only compatibility fallback.
-  let assetCharacter = $derived(
-    getSelectedCharacterOwner() ?? (charactersResourceState.status === 'ready' ? undefined : currentCharacter),
-  )
+
+  function stableCharacterId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
+  function selectedAssetCharacterOwner(): character | undefined {
+    const status = charactersResourceState.status
+    if (status === 'ready') {
+      const owner = getSelectedCharacterOwner()
+      if (!stableCharacterId(owner?.chaId) || charactersResourceState.rowStatuses[owner.chaId] === 'error') {
+        return undefined
+      }
+      return owner
+    }
+    if (status !== 'idle' && status !== 'loading') return undefined
+
+    const owner = getSelectedCharacterOwner()
+    if (stableCharacterId(owner?.chaId) && charactersResourceState.rowStatuses[owner.chaId] !== 'error') return owner
+    if (!stableCharacterId(currentCharacter?.chaId)) return undefined
+    const matches = charactersResourceState.characters.filter(
+      (candidate) => candidate?.chaId === currentCharacter.chaId,
+    )
+    if (matches.length > 1) return undefined
+    if (charactersResourceState.rowStatuses[currentCharacter.chaId] === 'error') return undefined
+    return matches[0] ?? currentCharacter
+  }
+
+  let assetCharacter = $derived(selectedAssetCharacterOwner())
   const QUICK_ADD_ADDITIONAL_ASSET_EXTENSIONS = ['png', 'webp', 'mp4', 'mp3', 'gif']
   type SelectedAdditionalAssetFile = NonNullable<Awaited<ReturnType<typeof selectMultipleFile>>>[number]
 
@@ -63,25 +85,31 @@
     index: number
     character: character | undefined
   } {
-    const characters =
-      charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
-    const index = characters.findIndex((candidate) => candidate.chaId === characterId)
-    return {
-      index,
-      character: selectCharacterOwner(characters, index),
+    const status = charactersResourceState.status
+    if (status === 'ready') {
+      const character = getCharacterResourceOwner(characterId)
+      if (!character || charactersResourceState.rowStatuses[characterId] === 'error') {
+        return { index: -1, character: undefined }
+      }
+      return { index: charactersResourceState.characters.indexOf(character), character }
     }
-  }
+    if (status !== 'idle' && status !== 'loading') return { index: -1, character: undefined }
 
-  function selectedAdditionalAssetUploadCharacter(): character | undefined {
-    if (charactersResourceState.status === 'ready') return getSelectedCharacterOwner()
-    return selectCharacterOwner(getDatabase().characters, $selectedCharID)
+    const matches = charactersResourceState.characters
+      .map((character, index) => ({ character, index }))
+      .filter(({ character }) => character?.chaId === characterId)
+    if (matches.length === 1 && charactersResourceState.rowStatuses[characterId] !== 'error') return matches[0]
+    if (matches.length > 1 || assetCharacter?.chaId !== characterId) {
+      return { index: -1, character: undefined }
+    }
+    return { index: $selectedCharID, character: assetCharacter }
   }
 
   function quickAddAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
     const live = findAdditionalAssetUploadCharacter(operation.characterId)
 
     return {
-      currentCharacterId: selectedAdditionalAssetUploadCharacter()?.chaId,
+      currentCharacterId: assetCharacter?.chaId,
       rowCharacterId: live.character?.chaId ?? null,
       additionalAssets: live.character?.additionalAssets,
     }
@@ -118,7 +146,7 @@
     const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
       operation,
       freshness: {
-        currentCharacterId: selectedAdditionalAssetUploadCharacter()?.chaId,
+        currentCharacterId: assetCharacter?.chaId,
         rowCharacterId: live.character?.chaId ?? null,
         additionalAssets: live.character?.additionalAssets,
       },

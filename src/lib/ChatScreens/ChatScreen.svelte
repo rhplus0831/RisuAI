@@ -2,18 +2,23 @@
   export function resolveSelectedCharacterForDisplay<T>(
     owner: T | undefined,
     resourceStatus: string,
-    aggregate: T | undefined,
+    compatibilityOwner: T | undefined,
   ): T | undefined {
     if (resourceStatus === 'ready') return owner
-    if (resourceStatus === 'idle' || resourceStatus === 'loading') return aggregate
+    if (resourceStatus === 'idle' || resourceStatus === 'loading') return compatibilityOwner
     return undefined
   }
 </script>
 
 <script lang="ts">
-  import { getCustomBackground, getEmotionForCharacter, getSelectedCharacterOwner } from '../../ts/characterState'
+  import {
+    getCustomBackground,
+    getEmotionForCharacter,
+    getSelectedCharacterOwner,
+    selectCharacterOwner,
+  } from '../../ts/characterState'
 
-  import { getDatabase, isServerCharacterShell, type Database } from 'src/ts/storage/database.svelte'
+  import { isServerCharacterShell, type Database, type character } from 'src/ts/storage/database.svelte'
   import {
     charactersResourceState,
     getChatMetadataOwnerState,
@@ -42,35 +47,43 @@
   let openModuleList = $state(false)
   let openBardWiki = $state(false)
   let bardWikiChatId = $state<string | null>(null)
-  let selectedCharacterIndex = $derived(
-    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID,
-  )
   let selectedCharacter = $derived.by(() => {
-    if (selectedCharacterIndex < 0) return undefined
     const status = charactersResourceState.status
-    const aggregate =
-      status === 'idle' || status === 'loading' ? getDatabase().characters?.[selectedCharacterIndex] : undefined
-    return resolveSelectedCharacterForDisplay(
+    const character = resolveSelectedCharacterForDisplay(
       status === 'ready' ? getSelectedCharacterOwner() : undefined,
       status,
-      aggregate,
+      status === 'idle' || status === 'loading'
+        ? selectCharacterOwner(charactersResourceState.characters, $selectedCharID)
+        : undefined,
     )
+    if (character?.chaId && charactersResourceState.rowStatuses[character.chaId] === 'error') return undefined
+    return character
   })
-  let selectedChatId = $derived.by(() => {
-    const chatId = selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id
-    if (!chatId) return null
-    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)?.chatId ?? null
-    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return null
 
-    const characterRows =
-      charactersResourceState.characters.length > 0
-        ? charactersResourceState.characters
-        : (getDatabase().characters ?? [])
-    const matchCount = characterRows.reduce(
+  function stableId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
+  function uniqueSelectedChatId(characterOwner: character | undefined): string | null {
+    const characterId = characterOwner?.chaId
+    const chatId = characterOwner?.chats?.[characterOwner.chatPage]?.id
+    if (!stableId(characterId) || !stableId(chatId)) return null
+    if (charactersResourceState.characters.filter((character) => character?.chaId === characterId).length !== 1) {
+      return null
+    }
+    const matchCount = charactersResourceState.characters.reduce(
       (count, character) => count + (character.chats ?? []).filter((chat) => chat?.id === chatId).length,
       0,
     )
     return matchCount === 1 ? chatId : null
+  }
+
+  let selectedChatId = $derived.by(() => {
+    const chatId = uniqueSelectedChatId(selectedCharacter)
+    if (!chatId) return null
+    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)?.chatId ?? null
+    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return null
+    return chatId
   })
   let selectedCharacterShellId = $derived(
     isServerCharacterShell(selectedCharacter) ? (selectedCharacter?.chaId ?? null) : null,
@@ -96,7 +109,7 @@
   function readDisplaySettings(): Partial<Database> {
     const status = settingsResourceState.groupStatuses.display ?? 'idle'
     if (status === 'ready') return settingsResourceState.value as Partial<Database>
-    if (status === 'idle' || status === 'loading') return getDatabase()
+    if (status === 'idle' || status === 'loading') return settingsResourceState.value as Partial<Database>
     return {}
   }
 

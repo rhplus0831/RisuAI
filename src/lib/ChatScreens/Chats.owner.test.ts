@@ -6,15 +6,17 @@ const source = fs.readFileSync(path.resolve('src/lib/ChatScreens/Chats.svelte'),
 
 describe('Chats owner reads', () => {
   it('keeps metadata fallback pre-ready and fails closed for ready/error ambiguity', () => {
-    expect(source).toContain("if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)")
+    expect(source).toContain('const characterOwner = getCharacterResourceOwner(characterId)')
+    expect(source).toContain("charactersResourceState.rowStatuses[characterId] === 'error'")
+    expect(source).toContain('chatMatches.length === 1 ? getChatMetadataOwnerState(chatId) : undefined')
     expect(source).toContain(
       "if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined",
     )
-    expect(source).toContain(
-      'if (charactersResourceState.characters.length > 0 && !getChatMetadataOwnerState(chatId)) return undefined',
-    )
+    expect(source).toContain('characterMatches.length !== 1')
+    expect(source).toContain('globalChatMatches === 1')
     expect(source).toContain('getChatMetadataOwnerState(chatId)')
     expect(source).not.toContain('preferChatMetadataOwner')
+    expect(source).not.toContain('getDatabase')
   })
 
   it('reads display and scrolling settings through their owner groups', () => {
@@ -25,5 +27,6 @@ describe('Chats owner reads', () => {
     expect(source).not.toContain('database.showMemoryLimit')
     expect(source).not.toContain('database.autoScrollToNewMessage')
     expect(source).not.toContain('database.alwaysScrollToNewMessage')
+    expect(source).not.toContain('getDatabase')
   })
 })

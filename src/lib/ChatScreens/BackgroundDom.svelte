@@ -1,9 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { ParseMarkdown, risuChatParser } from 'src/ts/parser/parser.svelte'
-  import { getSelectedCharacterOwner } from 'src/ts/characterState'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
-  import { getDatabase, type character } from 'src/ts/storage/database.svelte'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState, getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
+  import type { character } from 'src/ts/storage/database.svelte'
   import {
     moduleBackgroundEmbedding,
     ReloadGUIPointer,
@@ -17,7 +17,7 @@
   } from 'src/ts/process/regexDisplayReload'
 
   interface BackgroundParseInput {
-    selectedId: number
+    characterId: string
     ownerKey: string
     characterKey: string
     html: string
@@ -25,18 +25,42 @@
     reloadKey: string
   }
 
-  function backgroundOwnerKey(selectedId: number, selectedCharacter: character | undefined) {
-    return JSON.stringify({ selectedId, chaId: selectedCharacter?.chaId ?? '' })
+  function stableId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
   }
 
-  function backgroundCharacterSignature(selectedId: number, selectedCharacter: character | undefined) {
-    if (!selectedCharacter) {
-      return JSON.stringify({ selectedId })
+  function selectedBackgroundCharacterOwner(): character | undefined {
+    const status = charactersResourceState.status
+    if (status === 'ready') {
+      const owner = getSelectedCharacterOwner()
+      if (!stableId(owner?.chaId) || charactersResourceState.rowStatuses[owner.chaId] === 'error') return undefined
+      return owner
     }
+    if (status !== 'idle' && status !== 'loading') return undefined
+
+    const owner = getSelectedCharacterOwner()
+    if (stableId(owner?.chaId) && charactersResourceState.rowStatuses[owner.chaId] !== 'error') return owner
+    const compatibilityOwner = selectCharacterOwner(charactersResourceState.characters, selIdState.selId)
+    if (
+      stableId(compatibilityOwner?.chaId) &&
+      charactersResourceState.rowStatuses[compatibilityOwner.chaId] !== 'error'
+    ) {
+      return compatibilityOwner
+    }
+    return undefined
+  }
+
+  function selectedBackgroundChatId(selectedCharacter: character | undefined): string | undefined {
+    const chatId = selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id
+    if (!stableId(chatId)) return undefined
+    return getChatMetadataOwnerState(chatId)?.chatId === chatId ? chatId : undefined
+  }
+
+  function backgroundCharacterSignature(selectedCharacter: character | undefined) {
+    if (!selectedCharacter) return ''
 
     return JSON.stringify({
-      selectedId,
-      chaId: selectedCharacter.chaId ?? '',
+      chaId: selectedCharacter.chaId,
       name: selectedCharacter.name ?? '',
       nickname: selectedCharacter.nickname ?? '',
       desc: selectedCharacter.desc ?? '',
@@ -50,17 +74,12 @@
 
   let backgroundHTML = $state('')
   let backgroundCharacterKey = $state('')
-  let selectedCharacter = $derived(
-    getSelectedCharacterOwner() ??
-      (charactersResourceState.status === 'ready'
-        ? undefined
-        : (getDatabase().characters?.[selIdState.selId] as character | undefined)),
-  )
+  let selectedCharacter = $derived(selectedBackgroundCharacterOwner())
+  let selectedChatId = $derived(selectedBackgroundChatId(selectedCharacter))
 
   $effect(() => {
-    const selectedId = selIdState.selId
     const nextHTML = selectedCharacter?.backgroundHTML ?? ''
-    const nextCharacterKey = backgroundCharacterSignature(selectedId, selectedCharacter)
+    const nextCharacterKey = backgroundCharacterSignature(selectedCharacter)
 
     if (backgroundHTML !== nextHTML) {
       backgroundHTML = nextHTML
@@ -74,13 +93,13 @@
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: selectedCharacter?.chaId,
-      chatId: selectedCharacter?.chats?.[selectedCharacter.chatPage]?.id,
+      chatId: selectedChatId,
     }),
   )
   let backgroundReloadKey = $derived(`${$ReloadGUIPointer}|${$VariableReloadGUIPointer}|${regexDisplayReloadToken}`)
-  let backgroundOwner = $derived(backgroundOwnerKey(selIdState.selId, selectedCharacter))
+  let backgroundOwner = $derived(selectedCharacter?.chaId ?? '')
   let backgroundParseInput: BackgroundParseInput = $derived({
-    selectedId: selIdState.selId,
+    characterId: selectedCharacter?.chaId ?? '',
     ownerKey: backgroundOwner,
     characterKey: backgroundCharacterKey,
     html: backgroundHTML,
@@ -109,7 +128,7 @@
 
   let parsedBackground = $derived.by(() => {
     const input = backgroundParseInput
-    if (input.selectedId < 0 || (!input.html && !input.moduleEmbedding)) {
+    if (!input.characterId || (!input.html && !input.moduleEmbedding)) {
       latestBackgroundParseInput = input
       return Promise.resolve('')
     }
@@ -119,7 +138,7 @@
 </script>
 
 {#if backgroundParseInput.html || backgroundParseInput.moduleEmbedding}
-  {#if backgroundParseInput.selectedId > -1}
+  {#if backgroundParseInput.characterId}
     <div class="absolute top-0 left-0 w-full h-full">
       {#await parsedBackground}
         {@html pendingBackground}

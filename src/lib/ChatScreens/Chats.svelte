@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy, tick, untrack } from 'svelte'
-  import { getDatabase, type character, type Database, type Message } from 'src/ts/storage/database.svelte'
+  import type { character, Database, Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characterImage'
   import { ReloadChatPointer } from 'src/ts/stores.svelte'
@@ -43,6 +43,7 @@
   import { activateDisplaySourceChat, releaseDisplaySourceChat } from 'src/ts/server/displaySources'
   import {
     charactersResourceState,
+    getCharacterResourceOwner,
     getChatMetadataOwnerState,
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
@@ -94,22 +95,46 @@
 
   function legacyChatMetadataFallback(): ReturnType<typeof projectChatMetadata> | undefined {
     if (!chatId) return undefined
-    const chats = currentCharacter.chats?.filter((candidate) => candidate?.id === chatId) ?? []
-    return chats.length === 1 ? projectChatMetadata(chatId, chats[0]) : undefined
+    const characterId = currentCharacter.chaId
+    if (typeof characterId !== 'string' || characterId.trim().length === 0) return undefined
+
+    const rows = charactersResourceState.characters
+    if (rows.length > 0) {
+      if (charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+      const characterMatches = rows.filter((candidate) => candidate?.chaId === characterId)
+      if (characterMatches.length !== 1) return undefined
+      const chatMatches = characterMatches[0].chats?.filter((candidate) => candidate?.id === chatId) ?? []
+      const globalChatMatches = rows.reduce(
+        (count, character) => count + (character.chats ?? []).filter((candidate) => candidate?.id === chatId).length,
+        0,
+      )
+      return chatMatches.length === 1 && globalChatMatches === 1
+        ? projectChatMetadata(chatId, chatMatches[0])
+        : undefined
+    }
+
+    const compatibilityChats = currentCharacter.chats?.filter((candidate) => candidate?.id === chatId) ?? []
+    return compatibilityChats.length === 1 ? projectChatMetadata(chatId, compatibilityChats[0]) : undefined
   }
 
   let currentChatMetadata = $derived.by(() => {
     if (!chatId) return undefined
-    if (charactersResourceState.status === 'ready') return getChatMetadataOwnerState(chatId)
+    if (charactersResourceState.status === 'ready') {
+      const characterId = currentCharacter.chaId
+      if (typeof characterId !== 'string' || characterId.trim().length === 0) return undefined
+      const characterOwner = getCharacterResourceOwner(characterId)
+      if (!characterOwner || charactersResourceState.rowStatuses[characterId] === 'error') return undefined
+      const chatMatches = characterOwner.chats?.filter((candidate) => candidate?.id === chatId) ?? []
+      return chatMatches.length === 1 ? getChatMetadataOwnerState(chatId) : undefined
+    }
     if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
-    if (charactersResourceState.characters.length > 0 && !getChatMetadataOwnerState(chatId)) return undefined
     return legacyChatMetadataFallback()
   })
 
   function readSettingsGroup(group: 'display' | 'sidebar'): Partial<Database> {
     const status = settingsResourceState.groupStatuses[group] ?? 'idle'
     if (status === 'ready') return settingsResourceState.value as Partial<Database>
-    if (status === 'idle' || status === 'loading') return getDatabase()
+    if (status === 'idle' || status === 'loading') return settingsResourceState.value as Partial<Database>
     return {}
   }
 

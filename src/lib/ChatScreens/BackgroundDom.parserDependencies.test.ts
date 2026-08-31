@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '../../ts/storage/database.svelte'
 
 const backgroundParserMocks = vi.hoisted(() => ({
-  getDatabase: vi.fn(),
   ParseMarkdown: vi.fn(async (html: string) => `markdown:${html}`),
   risuChatParser: vi.fn(
     (
@@ -30,7 +29,6 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
 }))
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: backgroundParserMocks.getDatabase,
   reapplyPendingPresetProjections: () => {},
 }))
 
@@ -63,8 +61,6 @@ import {
 } from '../../ts/stores.svelte'
 import { RegexDisplayReloadPointer } from '../../ts/process/regexDisplayReload'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
-
-backgroundParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -184,6 +180,26 @@ describe('BackgroundDom parser dependencies', () => {
       charactersResourceState.characters[0],
       { ...charactersResourceState.characters[0] },
     ]
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+  })
+
+  it('fails closed when the character owner or selected row enters error', async () => {
+    seedDatabase()
+    charactersResourceState.status = 'error'
+    component = mount(BackgroundDom, { target })
+    await settle()
+
+    expect(backgroundParserMocks.risuChatParser).not.toHaveBeenCalled()
+    expect(target.textContent).toBe('')
+
+    unmount(component)
+    component = undefined
+    seedDatabase()
+    charactersResourceState.rowStatuses['background-dom-character'] = 'error'
     component = mount(BackgroundDom, { target })
     await settle()
 

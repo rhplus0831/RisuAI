@@ -6,16 +6,40 @@
     getAgentPresetProgressPercent,
     type ActiveAgentPresetProgress,
   } from 'src/ts/process/agentPresetProgress'
-  import { getSelectedCharacterOwner } from 'src/ts/characterState'
-  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { getSelectedCharacterOwner, selectCharacterOwner } from 'src/ts/characterState'
+  import { charactersResourceState, getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
+  import type { character } from 'src/ts/storage/database.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
+  function stableId(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0
+  }
+
+  function selectedProgressCharacterOwner(): character | undefined {
+    const status = charactersResourceState.status
+    if (status === 'ready') {
+      const owner = getSelectedCharacterOwner()
+      if (!stableId(owner?.chaId) || charactersResourceState.rowStatuses[owner.chaId] === 'error') return undefined
+      return owner
+    }
+    if (status !== 'idle' && status !== 'loading') return undefined
+    const owner =
+      getSelectedCharacterOwner() ?? selectCharacterOwner(charactersResourceState.characters, $selectedCharID)
+    if (!stableId(owner?.chaId) || charactersResourceState.rowStatuses[owner.chaId] === 'error') return undefined
+    return owner
+  }
+
   let activeChatId = $derived.by(() => {
-    const character =
-      getSelectedCharacterOwner() ??
-      (charactersResourceState.status === 'ready' ? undefined : getDatabase().characters?.[$selectedCharID])
-    return character?.chats?.[character.chatPage]?.id ?? ''
+    const character = selectedProgressCharacterOwner()
+    const chatId = character?.chats?.[character.chatPage]?.id
+    if (!stableId(chatId)) return ''
+    const matches = charactersResourceState.characters.reduce(
+      (count, candidate) => count + (candidate.chats ?? []).filter((chat) => chat?.id === chatId).length,
+      0,
+    )
+    if (matches !== 1) return ''
+    if (charactersResourceState.status === 'ready' && getChatMetadataOwnerState(chatId)?.chatId !== chatId) return ''
+    return chatId
   })
   let progress = $derived.by(() => {
     return $agentPresetProgress.find((entry) => entry.chatId === activeChatId) ?? null
