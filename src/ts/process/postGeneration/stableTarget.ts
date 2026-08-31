@@ -1,5 +1,6 @@
-import { getDatabase, type Chat, type Message, type character } from '../../storage/database.svelte'
-import { getChatMessageOwnerState } from '../../server/chatMessageHydration.svelte'
+import { mutateChatWithScopedCommand } from '../../chatCommands'
+import type { Chat, Message, character } from '../../storage/database.svelte'
+import { getChatTranscriptOwnerState } from '../../server/chatTranscriptOwner'
 import { charactersResourceState, getCharacterResourceOwner } from '../../server/resourceState.svelte'
 
 export interface StablePostGenerationChatTarget {
@@ -47,19 +48,14 @@ export function stablePostGenerationMessageTarget(
 export function resolveStablePostGenerationChat(
   target: StablePostGenerationChatTarget | null | undefined,
 ): StablePostGenerationChatResolution | null {
-  if (!target) return null
-  const ready = charactersResourceState.status === 'ready'
-  if (!ready && charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return null
-  const characters = ready ? charactersResourceState.characters : getDatabase().characters
-  if (!Array.isArray(characters)) return null
-  const character = ready
-    ? getCharacterResourceOwner(target.characterId)
-    : characters.find((candidate) => candidate?.chaId === target.characterId)
+  if (!target || charactersResourceState.status !== 'ready') return null
+  const characters = charactersResourceState.characters
+  const character = getCharacterResourceOwner(target.characterId)
   if (!character) return null
   const characterIndex = characters.indexOf(character)
   if (characterIndex < 0) return null
   const chatMatches = (character.chats ?? []).filter((candidate) => candidate?.id === target.chatId)
-  if (ready && chatMatches.length !== 1) return null
+  if (chatMatches.length !== 1) return null
   const chat = chatMatches[0]
   const chatIndex = chat ? character.chats.indexOf(chat) : -1
   return chat && chatIndex >= 0 ? { character, chat, characterIndex, chatIndex } : null
@@ -71,15 +67,54 @@ export function resolveStablePostGenerationMessage(
   if (!target) return null
   const resolution = resolveStablePostGenerationChat(target)
   if (!resolution) return null
-  const ready = charactersResourceState.status === 'ready'
-  const ownerMessages = ready ? getChatMessageOwnerState(target.chatId)?.messages : resolution.chat.message
+  const ownerMessages = getChatTranscriptOwnerState(target.chatId)?.messages
   if (!ownerMessages) return null
   const ownerMatches = ownerMessages.filter((candidate) => candidate?.chatId === target.messageId)
-  if (ready && ownerMatches.length !== 1) return null
-  const messageMatches = (resolution.chat.message ?? []).filter((candidate) => candidate?.chatId === target.messageId)
-  if (ready && messageMatches.length !== 1) return null
-  const messageIndex = resolution.chat.message?.indexOf(messageMatches[0]) ?? -1
+  if (ownerMatches.length !== 1) return null
+  const messageIndex = ownerMessages.indexOf(ownerMatches[0])
   if (messageIndex < 0) return null
-  const message = resolution.chat.message[messageIndex]
+  const message = ownerMessages[messageIndex]
   return message ? { ...resolution, message, messageIndex } : null
+}
+
+/**
+ * Apply and durably persist one post-generation chat mutation through the
+ * stable character/chat owner. The command wrapper owns queued retention and
+ * failed rollback; the callback rechecks ids at apply time so navigation or a
+ * reordered character list cannot retarget the write.
+ */
+export function mutateStablePostGenerationChat(
+  target: StablePostGenerationChatTarget | null | undefined,
+  mutate: (chat: Chat, character: character) => boolean | void,
+): boolean {
+  const resolution = resolveStablePostGenerationChat(target)
+  if (!resolution || !target) return false
+
+  let mutated = false
+  const applied = mutateChatWithScopedCommand(
+    (chat, character) => {
+      if (character.chaId !== target.characterId || chat.id !== target.chatId) return
+      const transcriptOwner = getChatTranscriptOwnerState(target.chatId)
+      if (!transcriptOwner) return
+      chat.message = transcriptOwner.messages
+      if (mutate(chat, character) === false) return
+      mutated = true
+    },
+    { selectedChar: resolution.characterIndex, selectedChat: resolution.chatIndex },
+  )
+  return applied && mutated
+}
+
+/** Stable-id message variant of mutateStablePostGenerationChat. */
+export function mutateStablePostGenerationMessage(
+  target: StablePostGenerationMessageTarget | null | undefined,
+  mutate: (message: Message, chat: Chat, character: character) => void,
+): boolean {
+  if (!target) return false
+  return mutateStablePostGenerationChat(target, (chat, character) => {
+    const matches = (chat.message ?? []).filter((candidate) => candidate?.chatId === target.messageId)
+    if (matches.length !== 1) return false
+    mutate(matches[0], chat, character)
+    return true
+  })
 }

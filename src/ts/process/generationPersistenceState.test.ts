@@ -55,17 +55,16 @@ import { registerGenerationOperationsRuntime, registerRecoveredEffectsRuntime } 
 import { charactersResourceState } from '../server/resourceState.svelte'
 
 function seedMessages(messages: Message[]): void {
-  persistenceStateMocks.database = {
-    characters: [
-      {
-        type: 'character',
-        chaId: 'character-a',
-        name: 'Ada',
-        chatPage: 0,
-        chats: [{ id: 'chat-a', message: messages }],
-      },
-    ],
+  const character = {
+    type: 'character',
+    chaId: 'character-a',
+    name: 'Ada',
+    chatPage: 0,
+    chats: [{ id: 'chat-a', message: messages }],
   }
+  persistenceStateMocks.database = { characters: [character] }
+  charactersResourceState.characters = [character as unknown as (typeof charactersResourceState.characters)[number]]
+  charactersResourceState.status = 'ready'
 }
 
 function currentMessages(): Message[] {

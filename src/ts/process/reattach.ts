@@ -1,7 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
 import type { ActiveGenerationJob, GenerationOperationProjection, ServerBootstrapRuntime } from '../server/bootstrap'
-import { getDatabase } from '../storage/database.svelte'
 import type { ActiveChatTarget } from '../chatCommands'
 import type { GenerationReattachOutcome } from './generationReattachOutcome'
 import { setGenerationFinalizationPersistences } from './generationPersistenceState'
@@ -15,6 +14,7 @@ import { subscribeBrowserLifecycleRecovery } from '../server/lifecycleRecovery'
 import { setCachedServerCommandRevision } from '../server/commands'
 import { reportSendChatError } from './sendChatErrors'
 import { stablePostGenerationChatTarget } from './postGeneration/stableTarget'
+import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
 import {
   getChatHydrationRuntime,
   getGenerationOperationsRuntime,
@@ -471,13 +471,17 @@ export function isChatGenerationKnown(chatId: string | null | undefined): boolea
 }
 
 function openChatTarget(): ActiveChatTarget | null {
-  const selectedChar = get(selectedCharID)
+  if (charactersResourceState.status !== 'ready') return null
+  const selectedChar =
+    charactersResourceState.selectionRevision === null ? get(selectedCharID) : charactersResourceState.currentChar
   if (selectedChar < 0) return null
-  const character = getDatabase().characters?.[selectedChar]
-  if (!character) return null
+  const candidate = charactersResourceState.characters[selectedChar]
+  if (!candidate?.chaId) return null
+  const character = getCharacterResourceOwner(candidate.chaId)
+  if (!character || character !== candidate) return null
   const chatPage = character.chatPage ?? 0
   const chat = character.chats?.[chatPage]
-  if (!chat) return null
+  if (!chat?.id || character.chats.filter((candidate) => candidate.id === chat.id).length !== 1) return null
   return {
     selectedCharID: selectedChar,
     chatPage,

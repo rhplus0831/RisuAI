@@ -6,7 +6,6 @@ import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
 import type { StreamMessageProjection } from './streamResponse'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import {
   type Chat,
   type MessageGenerationInfo,
@@ -16,6 +15,8 @@ import {
 import { settingsResourceState } from '../../server/resourceState.svelte'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 import {
+  mutateStablePostGenerationChat,
+  mutateStablePostGenerationMessage,
   resolveStablePostGenerationChat,
   resolveStablePostGenerationMessage,
   stablePostGenerationChatTarget,
@@ -153,40 +154,35 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
         resendChat = true
       }
       let inlayr: ReturnType<typeof runInlayScreen> | undefined
-      withTrustedResourceWrite(() => {
-        const chatResolution = resolveStablePostGenerationChat(stableChatTarget)
-        if (!chatResolution) return
+      mutateStablePostGenerationChat(stableChatTarget, (chat, character) => {
         if (streamTrigger.triggerChat) {
-          chatResolution.character.chats[chatResolution.chatIndex] = streamTrigger.triggerChat
+          const chatIndex = character.chats.indexOf(chat)
+          if (chatIndex < 0 || streamTrigger.triggerChat.id !== chat.id) return false
+          character.chats[chatIndex] = streamTrigger.triggerChat
         }
-        const messageTarget = stablePostGenerationMessageTarget(
-          stableChatTarget?.characterId,
-          stableChatTarget?.chatId,
-          outputMessageId,
-        )
-        const messageResolution = resolveStablePostGenerationMessage(messageTarget)
-        if (!messageResolution) return
-        currentChat = messageResolution.chat
-        inlayr = runInlayScreen(currentChar, messageResolution.message.data)
-        messageResolution.message.data = inlayr.text
+        return true
+      })
+      const messageTarget = stablePostGenerationMessageTarget(
+        stableChatTarget?.characterId,
+        stableChatTarget?.chatId,
+        outputMessageId,
+      )
+      mutateStablePostGenerationMessage(messageTarget, (message, chat) => {
+        currentChat = chat
+        inlayr = runInlayScreen(currentChar, message.data)
+        message.data = inlayr.text
       })
       if (inlayr?.promise) {
         const t = await inlayr.promise
-        withTrustedResourceWrite(() => {
-          const messageTarget = stablePostGenerationMessageTarget(
-            stableChatTarget?.characterId,
-            stableChatTarget?.chatId,
-            outputMessageId,
-          )
-          const messageResolution = resolveStablePostGenerationMessage(messageTarget)
-          if (!messageResolution) return
-          currentChat = messageResolution.chat
-          messageResolution.message.data = t
+        mutateStablePostGenerationMessage(messageTarget, (message, chat) => {
+          currentChat = chat
+          message.data = t
         })
       }
       if (
-        settingsResourceState.status === 'ready' &&
-        (settingsResourceState.value as Record<string, unknown>).ttsAutoSpeech &&
+        settingsResourceState.status !== 'error' &&
+        settingsResourceState.groupStatuses.media === 'ready' &&
+        settingsResourceState.value.ttsAutoSpeech === true &&
         !suppressStreamingTts
       ) {
         await sayTTS(currentChar, result)
@@ -223,11 +219,12 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
         runCurrentChatFunction,
       })
       if (nonStreamTrigger.triggerChat) {
-        withTrustedResourceWrite(() => {
-          const resolution = resolveStablePostGenerationChat(stableChatTarget)
-          if (!resolution) return
-          resolution.character.chats[resolution.chatIndex] = nonStreamTrigger.triggerChat!
+        mutateStablePostGenerationChat(stableChatTarget, (chat, character) => {
+          const chatIndex = character.chats.indexOf(chat)
+          if (chatIndex < 0 || nonStreamTrigger.triggerChat!.id !== chat.id) return false
+          character.chats[chatIndex] = nonStreamTrigger.triggerChat!
           currentChat = nonStreamTrigger.triggerChat!
+          return true
         })
       } else {
         currentChat = nonStreamTrigger.chat
@@ -248,9 +245,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
     if (messageResolution && messageTarget) {
       await evaluateIgp({
         promptTemplate:
-          settingsResourceState.status === 'ready'
-            ? String((settingsResourceState.value as Record<string, unknown>).igpPrompt ?? '')
-            : '',
+          settingsResourceState.status === 'ready' ? String(settingsResourceState.value.igpPrompt ?? '') : '',
         abortSignal,
         target: {
           ...messageTarget,

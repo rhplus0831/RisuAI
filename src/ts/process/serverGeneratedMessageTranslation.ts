@@ -1,6 +1,5 @@
 import type { MessageTranslation } from '../storage/database.svelte'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
-import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
+import { applyMessageTranslationLocalEffect } from '../server/chatMessageHydration.svelte'
 import { beginActiveMessageTranslation, publishSettledMessageTranslation } from '../server/messageTranslationJobs'
 import { consumeServerOwnedGeneratedMessageEligibility } from './generatedMessageTranslationEligibility'
 import type { ServerChatPostGeneration } from '@risuai/protocol/generation-sse'
@@ -24,16 +23,7 @@ export function applyEmbeddedGeneratedMessageTranslation(
 ): boolean {
   const parsed = rawMessageTranslation(translation)
   if (!parsed || !chatId || !messageId) return false
-  let applied = false
-  withTrustedResourceWrite(() => {
-    const matches =
-      getChatMessageOwnerState(chatId)?.messages.filter((candidate) => candidate.chatId === messageId) ?? []
-    if (matches.length !== 1) return
-    const message = matches[0]
-    message.translation = { ...parsed }
-    applied = true
-  })
-  return applied
+  return applyMessageTranslationLocalEffect(chatId, messageId, parsed)
 }
 
 /**

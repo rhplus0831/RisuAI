@@ -1,7 +1,10 @@
 import { alertError } from '../alert'
-import { mutateChatWithScopedCommand } from '../chatCommands'
-import { getDatabase, type Message, type MessageGenerationInfo } from '../storage/database.svelte'
+import { ensureMessageId } from '../chatCommands'
+import { settingsResourceState } from '../server/resourceState.svelte'
+import type { Message, MessageGenerationInfo } from '../storage/database.svelte'
 import {
+  mutateStablePostGenerationChat,
+  mutateStablePostGenerationMessage,
   resolveStablePostGenerationChat,
   resolveStablePostGenerationMessage,
   stablePostGenerationMessageTarget,
@@ -15,7 +18,11 @@ export interface SendChatErrorContext {
 }
 
 export function reportSendChatError(error: string, ctx: SendChatErrorContext): void {
-  if (!getDatabase().inlayErrorResponse) {
+  if (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.advanced !== 'ready' ||
+    settingsResourceState.value.inlayErrorResponse !== true
+  ) {
     alertError(error)
     return
   }
@@ -36,34 +43,23 @@ export function reportSendChatError(error: string, ctx: SendChatErrorContext): v
     }
 
     const suffix = `\n\`\`\`risuerror\n${error}\n\`\`\``
-    let wroteTarget = false
-    const applied = mutateChatWithScopedCommand(
-      (chat, character) => {
-        if (character.chaId !== ctx.target?.characterId || chat.id !== ctx.target.chatId) return
-        const messages = chat.message
-        if (messageTarget) {
-          const targetMessage = messages.find((message) => message.chatId === messageTarget.messageId)
-          if (targetMessage?.role !== 'char') return
-          targetMessage.data += suffix
-          wroteTarget = true
-          return
-        }
-
-        const m: Message = {
-          role: 'char',
-          data: `\`\`\`risuerror\n${error}\n\`\`\``,
-          time: Date.now(),
-        }
-        m.saying = resolution.character.chaId
-        if (ctx.generationInfo) {
-          m.generationInfo = ctx.generationInfo
-        }
-        messages.push(m)
-        wroteTarget = true
-      },
-      { selectedChar: resolution.characterIndex, selectedChat: resolution.chatIndex },
-    )
-    if (!applied || !wroteTarget) {
+    const applied = messageTarget
+      ? mutateStablePostGenerationMessage(messageTarget, (message) => {
+          if (message.role !== 'char') return
+          message.data += suffix
+        })
+      : mutateStablePostGenerationChat(ctx.target, (chat) => {
+          const message: Message = {
+            role: 'char',
+            data: `\`\`\`risuerror\n${error}\n\`\`\``,
+            time: Date.now(),
+            saying: resolution.character.chaId,
+            ...(ctx.generationInfo ? { generationInfo: ctx.generationInfo } : {}),
+          }
+          ensureMessageId(message)
+          chat.message.push(message)
+        })
+    if (!applied) {
       alertError(error)
     }
     return

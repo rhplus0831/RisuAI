@@ -17,6 +17,9 @@ const h = vi.hoisted(() => {
         fn(value)
         return () => subs.delete(fn)
       },
+      current() {
+        return value
+      },
     }
   }
   return {
@@ -95,6 +98,25 @@ vi.mock('../../storage/database.svelte', () => ({
   getDatabase: () => h.database,
 }))
 
+vi.mock('../../server/resourceState.svelte', () => ({
+  charactersResourceState: {
+    status: 'ready',
+    get characters() {
+      return (h.database.characters as Array<{ chaId: string }> | undefined) ?? []
+    },
+    get currentChar() {
+      return h.selectedCharID.current()
+    },
+    selectionRevision: null,
+  },
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = ((h.database.characters as Array<{ chaId: string }> | undefined) ?? []).filter(
+      (character) => character.chaId === characterId,
+    )
+    return matches.length === 1 ? matches[0] : undefined
+  },
+}))
+
 vi.mock('../../server/bootstrap', () => ({
   fetchServerBootstrapReadOnly: h.fetchRuntimeJobs,
 }))
@@ -161,9 +183,8 @@ import {
 } from '../generationRuntimeBridge'
 
 function openChat(chatId: string): void {
-  h.database = {
-    characters: [{ chaId: 'char-a', chatPage: 0, chats: [{ id: chatId, message: [] }] }],
-  }
+  const characters = [{ chaId: 'char-a', chatPage: 0, chats: [{ id: chatId, message: [] }] }]
+  h.database = { characters }
   h.selectedCharID.set(0)
 }
 

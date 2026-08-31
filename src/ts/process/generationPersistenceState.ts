@@ -2,11 +2,10 @@ import { get, writable } from 'svelte/store'
 import type { Writable } from 'svelte/store'
 import { createSubscriber } from 'svelte/reactivity'
 import { registerRetainedChatProjection } from '../server/chatRetainedProjection'
+import { getChatTranscriptOwnerState } from '../server/chatTranscriptOwner'
 import type { GenerationFinalizationProjectionFence, GenerationFinalizationState } from '../server/bootstrap'
-import { getDatabase, type Message, type character } from '../storage/database.svelte'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import type { Message } from '../storage/database.svelte'
 import { getGenerationOperationsRuntime, getRecoveredEffectsRuntime } from './generationRuntimeBridge'
-import { charactersResourceState, getCharacterResourceOwner } from '../server/resourceState.svelte'
 
 export interface QueuedGenerationPersistence {
   chatId: string
@@ -195,51 +194,34 @@ function messageMatches(left: Message | undefined, right: Message | undefined): 
   return sameStructuredValue(left, right)
 }
 
-function characterRowsForGenerationPersistence(): readonly character[] {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
-}
-
 function findChatMessages(chatId: string): Message[] | null {
-  const matches = characterRowsForGenerationPersistence()
-    .flatMap((character) => {
-      if (charactersResourceState.status === 'ready') {
-        if (!character.chaId || getCharacterResourceOwner(character.chaId) !== character) return []
-      }
-      return character.chats ?? []
-    })
-    .filter((chat) => chat.id === chatId)
-  if (matches?.length !== 1) return null
-  return matches[0].message ?? null
+  return getChatTranscriptOwnerState(chatId)?.messages ?? null
 }
 
 function reapplyGenerationFinalizationProjection(entry: QueuedGenerationPersistence): void {
   const message = entry.provisionalMessage
   const fence = entry.projectionFence
   if (!message || !fence) return
-  withTrustedResourceWrite(() => {
-    const messages = findChatMessages(entry.chatId)
-    if (!messages) return
-    if (
-      messages.some(
-        (candidate) =>
-          candidate.generationInfo?.generationId === entry.generationId ||
-          (candidate.chatId === entry.messageId && messageMatches(candidate, message)),
-      )
-    ) {
-      return
-    }
-    if (messages.length !== fence.transcriptLength) return
-    const tail = messages.at(-1)
-    if (fence.kind === 'target-tail') {
-      if (!messageMatches(tail, fence.target.message)) return
-      messages[messages.length - 1] = structuredClone(message)
-      return
-    }
-    if (fence.tail ? !messageMatches(tail, fence.tail.message) : tail !== undefined) return
-    messages.push(structuredClone(message))
-  })
+  const messages = findChatMessages(entry.chatId)
+  if (!messages) return
+  if (
+    messages.some(
+      (candidate) =>
+        candidate.generationInfo?.generationId === entry.generationId ||
+        (candidate.chatId === entry.messageId && messageMatches(candidate, message)),
+    )
+  ) {
+    return
+  }
+  if (messages.length !== fence.transcriptLength) return
+  const tail = messages.at(-1)
+  if (fence.kind === 'target-tail') {
+    if (!messageMatches(tail, fence.target.message)) return
+    messages[messages.length - 1] = structuredClone(message)
+    return
+  }
+  if (fence.tail ? !messageMatches(tail, fence.tail.message) : tail !== undefined) return
+  messages.push(structuredClone(message))
 }
 
 /** Replace the writer-scoped bootstrap projection and retain its safe provisional rows across hydration. */

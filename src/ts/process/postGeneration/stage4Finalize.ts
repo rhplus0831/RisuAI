@@ -1,6 +1,5 @@
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import type { MessageGenerationInfo } from '../../storage/database.svelte'
-import { resolveStablePostGenerationMessage, type StablePostGenerationMessageTarget } from './stableTarget'
+import { mutateStablePostGenerationMessage, type StablePostGenerationMessageTarget } from './stableTarget'
 
 export interface StageTimings {
   stage1Start: number
@@ -28,9 +27,8 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
     generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
     generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
   }
-  withTrustedResourceWrite(() => {
-    const resolution = resolveStablePostGenerationMessage(target)
-    if (!resolution?.message.generationInfo) return
-    resolution.message.generationInfo = generationInfo
+  mutateStablePostGenerationMessage(target, (message) => {
+    if (!message.generationInfo) return
+    message.generationInfo = generationInfo
   })
 }

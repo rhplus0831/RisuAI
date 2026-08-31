@@ -1,7 +1,11 @@
 import type { Chat, character } from '../../storage/database.svelte'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
+import { getChatMessageOwnerState } from '../../server/chatMessageHydration.svelte'
 import { runTrigger } from '../triggers'
-import { resolveStablePostGenerationChat, type StablePostGenerationChatTarget } from './stableTarget'
+import {
+  mutateStablePostGenerationChat,
+  resolveStablePostGenerationChat,
+  type StablePostGenerationChatTarget,
+} from './stableTarget'
 
 export interface ApplyOutputTriggerOptions {
   currentChar: character
@@ -19,14 +23,17 @@ export interface ApplyOutputTriggerResult {
 export async function applyOutputTrigger(opts: ApplyOutputTriggerOptions): Promise<ApplyOutputTriggerResult> {
   const { currentChar, currentChat, target, runCurrentChatFunction } = opts
   let chat = currentChat
-  withTrustedResourceWrite(() => {
-    const resolution = resolveStablePostGenerationChat(target)
-    if (!resolution) return
-    const updatedChat = runCurrentChatFunction(resolution.chat)
-    resolution.character.chats[resolution.chatIndex] = updatedChat
+  const applied = mutateStablePostGenerationChat(target, (ownerChat, character) => {
+    const messages = ownerChat.id ? getChatMessageOwnerState(ownerChat.id)?.messages : undefined
+    if (!messages) return false
+    const updatedChat = runCurrentChatFunction({ ...ownerChat, message: messages })
+    const chatIndex = character.chats.indexOf(ownerChat)
+    if (chatIndex < 0 || updatedChat.id !== ownerChat.id) return false
+    character.chats[chatIndex] = updatedChat
     chat = updatedChat
+    return true
   })
-  if (!resolveStablePostGenerationChat(target)) {
+  if (!applied || !resolveStablePostGenerationChat(target)) {
     return { chat, triggerChat: null, resendChat: false }
   }
   const triggerResult = await runTrigger(currentChar, 'output', { chat })

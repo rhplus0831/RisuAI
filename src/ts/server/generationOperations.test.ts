@@ -52,6 +52,15 @@ vi.mock('./commands', () => ({
   withDirectServerCommandEventReconciliation: operationMocks.withDirectReconciliation,
 }))
 vi.mock('./resourceState.svelte', () => ({ captureChatBodyProjectionEpoch: () => 12 }))
+vi.mock('./chatTranscriptOwner', () => ({
+  getChatTranscriptOwnerState: () => ({
+    characterId: 'character-a',
+    chatId: 'chat-a',
+    messages: [],
+    projectionEpoch: 12,
+    resourceLoaded: true,
+  }),
+}))
 vi.mock('./pendingMutationOutbox', () => ({
   beginPendingMutationDispatch: operationMocks.beginDispatch,
   discardPendingMutation: operationMocks.discard,

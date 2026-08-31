@@ -31,9 +31,21 @@ const state = vi.hoisted(() => ({
       },
     ],
   },
+  ownerCharacters: [] as Array<Record<string, any>>,
 }))
 
 vi.mock('../storage/database.svelte', () => ({ getDatabase: () => state.db }))
+vi.mock('../activeChatGenerationSettings', () => ({
+  resolveActiveChatGenerationSettings: ({ target }: { target: { characterId: string; chatId: string } }) => {
+    const character = state.ownerCharacters.find((candidate) => candidate.chaId === target.characterId)
+    const chat = character?.chats.find((candidate: { id?: string }) => candidate.id === target.chatId)
+    return {
+      character,
+      chat,
+      db: { ...state.db, characters: state.ownerCharacters },
+    }
+  },
+}))
 vi.mock('../plugins/chatOutputListeners', () => ({
   chatOutputListeners: new Set([vi.fn()]),
   isChatOutputRuntimeReady: () => state.pluginRuntimeReady,
@@ -41,7 +53,14 @@ vi.mock('../plugins/chatOutputListeners', () => ({
     state.order.push('plugin_output')
   }),
 }))
-const hydration = vi.hoisted(() => ({ hydrateChatMessages: vi.fn(async () => undefined) }))
+const hydration = vi.hoisted(() => ({
+  hydrateChatMessages: vi.fn(async () => undefined),
+  getChatMessageOwnerState: vi.fn((chatId: string) => {
+    const chats = state.ownerCharacters.flatMap((character) => character.chats ?? [])
+    const matches = chats.filter((chat) => chat.id === chatId)
+    return matches.length === 1 ? { messages: matches[0].message, projectionEpoch: 0 } : undefined
+  }),
+}))
 vi.mock('../server/chatMessageHydration.svelte', () => hydration)
 vi.mock('./postGeneration/igp', () => ({
   evaluateIgp: vi.fn(async () => {
@@ -124,19 +143,21 @@ beforeEach(() => {
     },
   ]
   state.order = []
+  state.ownerCharacters = structuredClone(state.db.characters)
   state.pluginRuntimeReady = true
   ledger.calls = []
   ledger.receipts.clear()
   ledger.unavailableKinds.clear()
   hydration.hydrateChatMessages.mockReset()
   hydration.hydrateChatMessages.mockResolvedValue(undefined)
-  charactersResourceState.characters = []
-  charactersResourceState.status = 'idle'
+  charactersResourceState.characters = state.ownerCharacters as never
+  charactersResourceState.status = 'ready'
   settingsResourceState.value = {
     igpPrompt: state.db.igpPrompt,
     emotionProcesser: state.db.emotionProcesser,
   } as never
   settingsResourceState.status = 'ready'
+  settingsResourceState.groupStatuses = { media: 'ready', advanced: 'ready' }
 })
 
 afterEach(() => {
@@ -144,6 +165,7 @@ afterEach(() => {
   charactersResourceState.status = 'idle'
   settingsResourceState.value = {}
   settingsResourceState.status = 'idle'
+  settingsResourceState.groupStatuses = {}
 })
 
 describe('late recovered generation effects', () => {
@@ -191,7 +213,8 @@ describe('late recovered generation effects', () => {
       ...state.db,
       characters: [{ ...aggregate, chats: [{ ...aggregate.chats[0], message: [] }] }],
     }
-    charactersResourceState.characters = [owner as never]
+    state.ownerCharacters = [owner]
+    charactersResourceState.characters = state.ownerCharacters as never
     charactersResourceState.status = 'ready'
 
     await expect(reconcileRecoveredGenerationEffects(ref)).resolves.toEqual({

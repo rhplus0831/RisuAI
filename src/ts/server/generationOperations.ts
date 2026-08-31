@@ -48,7 +48,6 @@ import {
 import { recordGenerationRecoveryEvent } from './protocolDiagnostics'
 import { registerGenerationOperationsRuntime } from '../process/generationRuntimeBridge'
 import { canGenerate } from '../startupReadiness'
-import { captureChatBodyProjectionEpoch } from './resourceState.svelte'
 
 const GENERATION_OPERATIONS_ENDPOINT = '/api/v1/generation-operations'
 const UUID_V4_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
@@ -515,7 +514,14 @@ export async function stageAcceptedSendGenerationOperation(input: {
     await discardPendingMutation(handle)
     return optimistic
   }
-  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(input.target.chatId)
+  const { getChatTranscriptOwnerState } = await import('./chatTranscriptOwner')
+  const transcriptOwner = getChatTranscriptOwnerState(input.target.chatId)
+  if (!transcriptOwner) {
+    optimistic.rollback()
+    await discardPendingMutation(handle)
+    return { status: 'error', error: 'The active chat transcript owner is unavailable.' }
+  }
+  const optimisticChatBodyProjectionEpoch = transcriptOwner.projectionEpoch
   trackLocalGenerationOperation(operationId, input.target, optimistic.rollback)
   return {
     target: { ...input.target },

@@ -1,6 +1,6 @@
-import { getDatabase, type Message, type character } from '../storage/database.svelte'
+import type { Message, character } from '../storage/database.svelte'
 import { chatOutputListeners, isChatOutputRuntimeReady, runChatOutputListeners } from '../plugins/chatOutputListeners'
-import { hydrateChatMessages } from '../server/chatMessageHydration.svelte'
+import { getChatMessageOwnerState, hydrateChatMessages } from '../server/chatMessageHydration.svelte'
 import type { PendingGenerationEffect } from '../server/bootstrap'
 import { evaluateIgp } from './postGeneration/igp'
 import { loadAndTrimCharEmotion } from './postGeneration/charEmotionStore'
@@ -17,6 +17,7 @@ import {
 } from './generationEffectLedger'
 import type { ServerGenerationEffectLedgerRef } from '@risuai/protocol/generation-sse'
 import type { ActiveChatTarget } from '../chatCommands'
+import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
 import { registerRecoveredEffectsRuntime } from './generationRuntimeBridge'
 import {
   charactersResourceState,
@@ -27,8 +28,8 @@ import {
 let bootstrapPendingEffects: PendingGenerationEffect[] = []
 
 interface RecoveredGenerationResolution {
-  character: NonNullable<ReturnType<typeof getDatabase>['characters']>[number]
-  chat: NonNullable<ReturnType<typeof getDatabase>['characters']>[number]['chats'][number]
+  character: character
+  chat: character['chats'][number]
   message: Message
   characterIndex: number
   chatIndex: number
@@ -108,9 +109,7 @@ export async function reconcileRecoveredGenerationEffects(
   const igp = await runLedgeredGenerationEffect(ref, 'igp', 'late_recovery', async () => {
     const resolution = resolveGeneration(ref)
     const promptTemplate =
-      settingsResourceState.status === 'ready'
-        ? String((settingsResourceState.value as Record<string, unknown>).igpPrompt ?? '')
-        : ''
+      settingsResourceState.status === 'ready' ? String(settingsResourceState.value.igpPrompt ?? '') : ''
     if (!resolution || !promptTemplate.trim()) return skippedGenerationEffect('not_configured')
     const updated = await evaluateIgp({
       promptTemplate,
@@ -137,8 +136,9 @@ export async function reconcileRecoveredGenerationEffects(
     if (resolution.character.viewScreen === 'emotion') {
       const { tempEmotion, charemotions } = loadAndTrimCharEmotion(resolution.character.chaId)
       if (
-        settingsResourceState.status === 'ready' &&
-        (settingsResourceState.value as Record<string, unknown>).emotionProcesser === 'embedding'
+        settingsResourceState.status !== 'error' &&
+        settingsResourceState.groupStatuses.media === 'ready' &&
+        settingsResourceState.value.emotionProcesser === 'embedding'
       ) {
         await runEmotionEmbeddingFallback({
           result: completionText,
@@ -147,14 +147,17 @@ export async function reconcileRecoveredGenerationEffects(
           charemotions,
         })
       } else {
+        const generationDatabase = resolveRecoveredGenerationDatabase(resolution)
+        if (!generationDatabase) return skippedGenerationEffect('current_state_not_applicable')
         await runEmotionLlmFallback({
+          database: generationDatabase,
           result: completionText,
           currentChar: resolution.character,
           abortSignal: new AbortController().signal,
           throwError: (error) => console.error(error),
           emotionPrompt2:
-            settingsResourceState.status === 'ready'
-              ? ((settingsResourceState.value as Record<string, unknown>).emotionPrompt2 as string | undefined)
+            settingsResourceState.status !== 'error' && settingsResourceState.groupStatuses.advanced === 'ready'
+              ? settingsResourceState.value.emotionPrompt2
               : undefined,
           tempEmotion,
           charemotions,
@@ -186,6 +189,17 @@ function terminalReceipt(status: string): boolean {
   return status === 'completed' || status === 'skipped' || status === 'already_receipted'
 }
 
+function resolveRecoveredGenerationDatabase(resolution: RecoveredGenerationResolution) {
+  const target: ActiveChatTarget = {
+    selectedCharID: resolution.characterIndex,
+    chatPage: resolution.chatIndex,
+    characterId: resolution.character.chaId,
+    chatId: resolution.chat.id,
+  }
+  const state = resolveActiveChatGenerationSettings({ target })
+  return state.character?.chaId === target.characterId && state.chat?.id === target.chatId ? state.db : null
+}
+
 function legacyGenerationEffectRef(
   resolution: RecoveredGenerationResolution,
 ): ServerGenerationEffectLedgerRef | undefined {
@@ -212,23 +226,20 @@ function legacyGenerationEffectRef(
  * is ready. The aggregate remains a startup compatibility projection only.
  */
 function characterRowsForRecovery(): readonly character[] {
-  return charactersResourceState.status === 'ready'
-    ? charactersResourceState.characters
-    : (getDatabase().characters ?? [])
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
 }
 
 function characterOwnerAt(index: number): character | undefined {
   const rows = characterRowsForRecovery()
   const candidate = rows[index]
   if (!candidate?.chaId) return undefined
-  return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(candidate.chaId) : candidate
+  return getCharacterResourceOwner(candidate.chaId)
 }
 
 function characterOwnerById(characterId: string): character | undefined {
   if (!characterId) return undefined
-  if (charactersResourceState.status === 'ready') return getCharacterResourceOwner(characterId)
-  const matches = characterRowsForRecovery().filter((candidate) => candidate?.chaId === characterId)
-  return matches.length === 1 ? matches[0] : undefined
+  if (charactersResourceState.status !== 'ready') return undefined
+  return getCharacterResourceOwner(characterId)
 }
 
 function uniqueChatOwner(character: character | undefined, chatId: string): ChatOwner | undefined {
@@ -247,21 +258,30 @@ function resolveGeneration(ref: ServerGenerationEffectLedgerRef): RecoveredGener
   const resolutions: RecoveredGenerationResolution[] = []
   for (let characterIndex = 0; characterIndex < characters.length; characterIndex++) {
     const character = characters[characterIndex]
-    if (
-      charactersResourceState.status === 'ready' &&
-      (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character)
-    ) {
+    if (!character?.chaId || getCharacterResourceOwner(character.chaId) !== character) {
       continue
     }
     if (ref.characterId && character.chaId !== ref.characterId) continue
     for (let chatIndex = 0; chatIndex < (character.chats?.length ?? 0); chatIndex++) {
       const chat = character.chats[chatIndex]
       if (ref.chatId && chat.id !== ref.chatId) continue
-      const messageIndex = chat.message?.findIndex((message) => message.chatId === ref.messageId) ?? -1
+      if (!chat.id) continue
+      const messages = getChatMessageOwnerState(chat.id)?.messages
+      if (!messages) continue
+      const matches = messages.filter((message) => message.chatId === ref.messageId)
+      if (matches.length !== 1) continue
+      const messageIndex = messages.indexOf(matches[0])
       if (messageIndex < 0) continue
-      const message = chat.message[messageIndex]
+      const message = messages[messageIndex]
       if (message.role !== 'char' || message.generationInfo?.generationId !== ref.generationId) continue
-      resolutions.push({ character, chat, message, characterIndex, chatIndex, messageIndex })
+      resolutions.push({
+        character,
+        chat: { ...chat, message: messages },
+        message,
+        characterIndex,
+        chatIndex,
+        messageIndex,
+      })
     }
   }
   return resolutions.length === 1 ? resolutions[0] : undefined
@@ -283,15 +303,18 @@ function findAcceptedAssistant(
       : undefined
   if (!chatOwner) return undefined
   const { chat, chatIndex } = chatOwner
-  const acceptedMatches = chat.message
+  if (!chat.id) return undefined
+  const messages = getChatMessageOwnerState(chat.id)?.messages
+  if (!messages) return undefined
+  const acceptedMatches = messages
     .map((message, index) => ({ message, index }))
     .filter(({ message }) => message.chatId === acceptedMessageId && message.role === 'user')
   if (acceptedMatches.length !== 1) return undefined
   const acceptedIndex = acceptedMatches[0].index
   const messageIndex = acceptedIndex + 1
-  const message = chat.message[messageIndex]
+  const message = messages[messageIndex]
   if (acceptedIndex < 0 || message?.role !== 'char') return undefined
-  return { character, chat, message, characterIndex, chatIndex, messageIndex }
+  return { character, chat: { ...chat, message: messages }, message, characterIndex, chatIndex, messageIndex }
 }
 
 registerRecoveredEffectsRuntime({

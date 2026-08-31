@@ -10,6 +10,23 @@ vi.mock('../server/resourceState.svelte', () => ({
   captureChatBodyProjectionEpoch: () => 23,
 }))
 
+vi.mock('../server/chatTranscriptOwner', () => ({
+  getChatTranscriptOwnerState: () => ({
+    characterId: 'character-a',
+    chatId: 'chat-a',
+    messages: [
+      {
+        role: 'char',
+        data: 'authoritative model text',
+        chatId: 'message-a',
+        generationInfo: { generationId: 'generation-a' },
+      },
+    ],
+    projectionEpoch: 23,
+    resourceLoaded: true,
+  }),
+}))
+
 vi.mock('../server/commands', () => ({
   runServerCommand: async (input: { command: (baseRevision: number) => Promise<unknown> }) => {
     const revision = commandMocks.baseRevisions.shift() ?? 99

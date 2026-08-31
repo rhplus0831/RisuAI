@@ -1,12 +1,13 @@
 import { type MessageGenerationInfo, type MessagePresetInfo, type character } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
-import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { settingsResourceState } from '../../server/resourceState.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import type { requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 import { sayTTS } from '../tts'
 import {
+  mutateStablePostGenerationChat,
+  mutateStablePostGenerationMessage,
   resolveStablePostGenerationChat,
   resolveStablePostGenerationMessage,
   stablePostGenerationMessageTarget,
@@ -66,8 +67,14 @@ export async function applyNonStreamResponse(
   let emoChanged = false
   const mrerolls: string[] = []
   let outputMessageId: string | undefined
-  const settings =
-    settingsResourceState.status === 'ready' ? (settingsResourceState.value as Record<string, unknown>) : undefined
+  const removeIncompleteResponse =
+    settingsResourceState.status !== 'error' &&
+    settingsResourceState.groupStatuses.runtime === 'ready' &&
+    settingsResourceState.value.removeIncompleteResponse === true
+  const ttsAutoSpeech =
+    settingsResourceState.status !== 'error' &&
+    settingsResourceState.groupStatuses.media === 'ready' &&
+    settingsResourceState.value.ttsAutoSpeech === true
 
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
@@ -88,7 +95,7 @@ export async function applyNonStreamResponse(
       if (!liveMessage) break
       result2 = await runEditOutput(liveMessage.data + mess, msgIndex)
     }
-    if (settings?.removeIncompleteResponse) {
+    if (removeIncompleteResponse) {
       result2.data = trimUntilPunctuation(result2.data)
     }
     result = result2.data
@@ -96,11 +103,11 @@ export async function applyNonStreamResponse(
     result = inlayResult.text
     emoChanged = result2.emoChanged
     if (i === 0 && arg.continue) {
-      withTrustedResourceWrite(() => {
-        const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, targetMessageId)
-        const resolution = resolveStablePostGenerationMessage(messageTarget)
-        if (!resolution) return
-        resolution.chat.message[resolution.messageIndex] = {
+      const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, targetMessageId)
+      const applied = mutateStablePostGenerationMessage(messageTarget, (message, chat) => {
+        const messageIndex = chat.message.indexOf(message)
+        if (messageIndex < 0) return
+        chat.message[messageIndex] = {
           role: 'char',
           data: result,
           saying: currentChar.chaId,
@@ -109,21 +116,18 @@ export async function applyNonStreamResponse(
           promptInfo,
           chatId: targetMessageId,
         }
-        outputMessageId = targetMessageId
       })
+      if (applied) outputMessageId = targetMessageId
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        withTrustedResourceWrite(() => {
-          const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, targetMessageId)
-          const resolution = resolveStablePostGenerationMessage(messageTarget)
-          if (resolution) resolution.message.data = p
+        mutateStablePostGenerationMessage(messageTarget, (message) => {
+          message.data = p
         })
       }
     } else if (i === 0) {
-      withTrustedResourceWrite(() => {
-        const resolution = resolveStablePostGenerationChat(target)
-        if (!resolution || !generationId) return
-        resolution.chat.message.push({
+      const applied = mutateStablePostGenerationChat(target, (chat) => {
+        if (!generationId || chat.message.some((message) => message.chatId === generationId)) return false
+        chat.message.push({
           role: msg[0],
           data: result,
           saying: currentChar.chaId,
@@ -132,25 +136,24 @@ export async function applyNonStreamResponse(
           promptInfo,
           chatId: generationId,
         })
-        outputMessageId = generationId
+        return true
       })
+      if (applied) outputMessageId = generationId
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        withTrustedResourceWrite(() => {
-          const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, generationId)
-          const resolution = resolveStablePostGenerationMessage(messageTarget)
-          if (resolution) resolution.message.data = p
+        const messageTarget = stablePostGenerationMessageTarget(target?.characterId, target?.chatId, generationId)
+        mutateStablePostGenerationMessage(messageTarget, (message) => {
+          message.data = p
         })
       }
       mrerolls.push(result)
     } else {
       mrerolls.push(result)
     }
-    withTrustedResourceWrite(() => {
-      const resolution = resolveStablePostGenerationChat(target)
-      if (resolution) resolution.character.reloadKeys += 1
+    mutateStablePostGenerationChat(target, (_chat, character) => {
+      character.reloadKeys += 1
     })
-    if (settings?.ttsAutoSpeech) {
+    if (ttsAutoSpeech) {
       await sayTTS(currentChar, result)
     }
   }
