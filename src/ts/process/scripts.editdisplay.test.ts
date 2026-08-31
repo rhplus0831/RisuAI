@@ -570,6 +570,28 @@ describe('editdisplay render path logging', () => {
     expect(result.data).toBe('GLOBAL')
   })
 
+  it.each(['idle', 'loading'] as const)(
+    'does not read retained global scripts while the settings owner is %s',
+    async (status) => {
+      const char = seedDb()
+      ;(settingsResourceState.value as any).globalscript = [
+        {
+          comment: 'retained-global-regex',
+          type: 'editdisplay',
+          in: 'GLOBAL',
+          out: 'stale',
+          flag: 'g',
+          ableFlag: true,
+        },
+      ]
+      settingsResourceState.groupStatuses.advanced = status
+
+      const result = await processScriptFull(char, 'GLOBAL', 'editdisplay', 0)
+
+      expect(result.data).toBe('GLOBAL')
+    },
+  )
+
   it('fails closed for an errored prompt-preset collection owner', async () => {
     const char = seedDb()
     ;(char.chats[0] as any).generationSettings = { promptPresetId: 'prompt-stale' }
@@ -594,6 +616,34 @@ describe('editdisplay render path logging', () => {
 
     expect(result.data).toBe('PROMPT')
   })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not read retained prompt presets while the collection owner is %s',
+    async (status) => {
+      const char = seedDb()
+      ;(char.chats[0] as any).generationSettings = { promptPresetId: 'prompt-retained' }
+      collectionsResourceState.values.promptPresets = [
+        {
+          id: 'prompt-retained',
+          presetRegex: [
+            {
+              comment: 'retained-prompt-regex',
+              type: 'editdisplay',
+              in: 'PROMPT',
+              out: 'stale',
+              flag: 'g',
+              ableFlag: true,
+            },
+          ],
+        },
+      ]
+      collectionsResourceState.statuses.promptPresets = status
+
+      const result = await processScriptFull(char, 'PROMPT', 'editdisplay', 0)
+
+      expect(result.data).toBe('PROMPT')
+    },
+  )
 
   it('resolves module regex from the explicit owner projection', async () => {
     const char = seedDb()
@@ -621,6 +671,37 @@ describe('editdisplay render path logging', () => {
 
     expect(result.data).toBe('module')
   })
+
+  it.each(['idle', 'loading'] as const)(
+    'does not activate modules while the selected-persona owner is %s',
+    async (status) => {
+      const char = seedDb()
+      char.modules = ['module-retained']
+      collectionsResourceState.values.modules = [
+        {
+          id: 'module-retained',
+          name: 'Retained module',
+          description: '',
+          regex: [
+            {
+              comment: 'retained-module-regex',
+              type: 'editdisplay',
+              in: 'MODULE',
+              out: 'stale',
+              flag: 'g',
+              ableFlag: true,
+            },
+          ],
+        },
+      ]
+      collectionsResourceState.statuses.modules = 'ready'
+      settingsResourceState.standaloneStatuses.selectedPersonaId = status
+
+      const result = await processScriptFull(char, 'MODULE', 'editdisplay', 0)
+
+      expect(result.data).toBe('MODULE')
+    },
+  )
 
   it('does not fall back to global regex when the active chat selected prompt has none', async () => {
     const char = seedDb()

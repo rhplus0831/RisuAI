@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { CharEmotion, selectedCharID, VariableReloadGUIPointer } from '../stores.svelte'
-import { getDatabase, type character, type customscript, type Database, type Chat } from '../storage/database.svelte'
+import type { character, customscript, Database, Chat } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
@@ -47,7 +47,6 @@ function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined
   const status = settingsResourceState.groupStatuses[group] ?? 'idle'
   if (settingsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 
@@ -55,7 +54,6 @@ function collectionOwner<Name extends ServerCollectionName>(name: Name): Databas
   const status = collectionsResourceState.statuses[name] ?? 'idle'
   if (collectionsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
-  if (status === 'idle' || status === 'loading') return getDatabase()[name]
   return undefined
 }
 
@@ -63,7 +61,6 @@ function standaloneSettingsOwner(): Partial<Database> | undefined {
   const status = settingsResourceState.standaloneStatuses.selectedPersonaId ?? 'idle'
   if (settingsResourceState.status === 'error' || status === 'error') return undefined
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  if (status === 'idle' || status === 'loading') return getDatabase()
   return undefined
 }
 
