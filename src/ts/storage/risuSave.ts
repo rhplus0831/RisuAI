@@ -1,8 +1,6 @@
 import { Packr, Unpackr, decode } from 'msgpackr/index-no-eval'
 import * as fflate from 'fflate'
-import { getDatabase, presetTemplate, type Database } from './database.svelte'
-import { forageStorage } from '../globalApi.svelte'
-import { isFastifyServer } from 'src/ts/platform'
+import { presetTemplate, type Database } from './database.svelte'
 
 const packr = new Packr({
   useRecords: false,
@@ -13,15 +11,6 @@ const unpackr = new Unpackr({
   useRecords: false,
 })
 
-const disableRemoteSaving = () => {
-  try {
-    const db = getDatabase()
-    return !db.enableRemoteSaving
-  } catch (error) {
-    return true
-  }
-}
-const checkedRemoteExistence = new Set<string>()
 const magicHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7])
 const magicCompressedHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 8])
 const magicStreamCompressedHeader = new Uint8Array([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 9])
@@ -38,14 +27,6 @@ async function checkCompressionStreams() {
     //@ts-expect-error polyfill DecompressionStream type is incompatible with globalThis.DecompressionStream
     globalThis.DecompressionStream = makeDecompressionStream(TransformStream)
   }
-}
-
-async function storageHasItem(key: string): Promise<boolean> {
-  const storage = forageStorage as typeof forageStorage & { hasItem?: (key: string) => Promise<boolean> }
-  if (typeof storage.hasItem === 'function') {
-    return await storage.hasItem(key)
-  }
-  return (await forageStorage.keys()).includes(key)
 }
 
 export function encodeRisuSaveLegacy(data: any, compression: 'noCompression' | 'compression' = 'noCompression') {
@@ -109,11 +90,6 @@ type EncodeBlockArg = {
   type: RisuSaveType
   name: string
   cache?: boolean
-  skipRemoteSaving?: boolean
-}
-
-type EncodeBlockOption = {
-  remote: 'none' | 'prefer' | 'force'
 }
 
 export class RisuSaveEncoder {
@@ -124,10 +100,9 @@ export class RisuSaveEncoder {
     data: Database,
     arg: {
       compression?: boolean
-      skipRemoteSavingOnCharacters?: boolean
     } = {},
   ) {
-    const { compression = false, skipRemoteSavingOnCharacters = true } = arg
+    const { compression = false } = arg
     this.compression = compression
     let obj: Record<any, any> = {}
     let keys = Object.keys(data)
@@ -173,18 +148,12 @@ export class RisuSaveEncoder {
       name: 'pluginStorage',
     })
     for (const character of data.characters) {
-      this.blocks[character.chaId] = await this.encodeBlock(
-        {
-          compression,
-          data: JSON.stringify(character),
-          type: RisuSaveType.CHARACTER_WITH_CHAT,
-          name: character.chaId,
-          skipRemoteSaving: skipRemoteSavingOnCharacters,
-        },
-        {
-          remote: 'prefer',
-        },
-      )
+      this.blocks[character.chaId] = await this.encodeBlock({
+        compression,
+        data: JSON.stringify(character),
+        type: RisuSaveType.CHARACTER_WITH_CHAT,
+        name: character.chaId,
+      })
     }
     this.blocks['config'] = await this.encodeBlock({
       compression,
@@ -216,31 +185,21 @@ export class RisuSaveEncoder {
     for (const character of data.characters) {
       const index = toSave.character.indexOf(character.chaId)
       if (index !== -1) {
-        this.blocks[character.chaId] = await this.encodeBlock(
-          {
-            compression: this.compression,
-            data: JSON.stringify(character),
-            type: RisuSaveType.CHARACTER_WITH_CHAT,
-            name: character.chaId,
-          },
-          {
-            remote: 'prefer',
-          },
-        )
+        this.blocks[character.chaId] = await this.encodeBlock({
+          compression: this.compression,
+          data: JSON.stringify(character),
+          type: RisuSaveType.CHARACTER_WITH_CHAT,
+          name: character.chaId,
+        })
         savedId.add(character.chaId)
         toSave.character.splice(index, 1)
       } else if (!this.blocks[character.chaId]) {
-        this.blocks[character.chaId] = await this.encodeBlock(
-          {
-            compression: this.compression,
-            data: JSON.stringify(character),
-            type: RisuSaveType.CHARACTER_WITH_CHAT,
-            name: character.chaId,
-          },
-          {
-            remote: 'prefer',
-          },
-        )
+        this.blocks[character.chaId] = await this.encodeBlock({
+          compression: this.compression,
+          data: JSON.stringify(character),
+          type: RisuSaveType.CHARACTER_WITH_CHAT,
+          name: character.chaId,
+        })
         savedId.add(character.chaId)
       }
     }
@@ -332,10 +291,7 @@ export class RisuSaveEncoder {
     return arrayBuf
   }
 
-  async encodeBlock(arg: EncodeBlockArg, option: EncodeBlockOption = { remote: 'none' }) {
-    if (!isFastifyServer && (option.remote === 'force' || (option.remote === 'prefer' && !disableRemoteSaving()))) {
-      return await this.encodeRemoteBlock(arg)
-    }
+  async encodeBlock(arg: EncodeBlockArg) {
     return await this.encodeRawBlock(arg)
   }
 
@@ -364,35 +320,6 @@ export class RisuSaveEncoder {
     buf.set(new Uint8Array(lengthBuf), 3 + nameBuf.length)
     buf.set(databuf, 7 + nameBuf.length)
     return buf
-  }
-
-  async encodeRemoteBlock(arg: EncodeBlockArg) {
-    console.log(`Encoding remote block: ${arg.name}`)
-    const encoded = new TextEncoder().encode(arg.data)
-    const fileName = `remotes/${arg.name}.local.bin`
-
-    if (arg.skipRemoteSaving && checkedRemoteExistence.has(arg.name) === false) {
-      const fileExists = await storageHasItem(fileName)
-      if (!fileExists) {
-        console.log(`Remote file ${fileName} does not exist, disabling skipRemoteSaving for this block.`)
-        arg.skipRemoteSaving = false
-      }
-      checkedRemoteExistence.add(arg.name)
-    }
-
-    if (!arg.skipRemoteSaving) {
-      await forageStorage.setItem(fileName, encoded)
-    }
-    return await this.encodeBlock({
-      compression: false,
-      data: JSON.stringify({
-        v: 1,
-        type: arg.type,
-        name: arg.name,
-      }),
-      type: RisuSaveType.REMOTE,
-      name: arg.name,
-    })
   }
 }
 
@@ -517,23 +444,7 @@ export class RisuSaveDecoder {
               type: RisuSaveType
               name: string
             } = JSON.parse(this.blocks[key].content)
-            const fileName = `remotes/${remoteInfo.name}.local.bin`
-            let remoteData: Uint8Array | null = null
             console.warn(`RisuSave remote block ${remoteInfo.name} is not available in server-backed web mode.`)
-            break
-
-            if (!remoteData) {
-              console.warn(`Remote file ${fileName} not found.`)
-              break
-            }
-            const decoded = new TextDecoder().decode(remoteData)
-
-            this.blocks.push({
-              name: remoteInfo.name,
-              type: remoteInfo.type,
-              compression: false,
-              content: decoded,
-            })
             break
           }
           case RisuSaveType.ROOT_COMPONENT: {
