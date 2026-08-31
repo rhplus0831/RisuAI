@@ -1,7 +1,16 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import type { Database } from 'src/ts/storage/database.svelte'
 import { resolveModelProfile, type ResolvedModelProfile } from 'src/ts/model/modelProfileResolver'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
-type GenerationModelDatabase = ReturnType<typeof getDatabase>
+type GenerationModelDatabase = Database
+
+function getGenerationModelDatabase(): GenerationModelDatabase {
+  const status = settingsResourceState.groupStatuses.providers ?? 'idle'
+  if (settingsResourceState.status !== 'error' && status === 'ready') {
+    return settingsResourceState.value as Database
+  }
+  throw new Error('Generation model settings owner unavailable')
+}
 
 function getLegacyGenerationModelString(db: GenerationModelDatabase, name?: string): string {
   const selectedModel = name ?? db.aiModel
@@ -44,7 +53,7 @@ function getProfileGenerationModelString(profile: ResolvedModelProfile): string 
 }
 
 export function getGenerationModelString(name?: string) {
-  const db = getDatabase()
+  const db = getGenerationModelDatabase()
   if (name !== undefined) return getLegacyGenerationModelString(db, name)
 
   const profile = resolveModelProfile({ database: db })
