@@ -3,7 +3,6 @@
   import { tokenizeAccurate } from '../../ts/tokenizer'
   import {
     saveImage as saveAsset,
-    getDatabase,
     isServerCharacterShell,
     type character,
     type customscript,
@@ -173,9 +172,6 @@
   function readEditorSettingsGroup(group: SettingsGroup): Partial<Database> {
     const status = settingsResourceState.groupStatuses[group] ?? 'idle'
     if (status === 'ready') return settingsResourceState.value as Partial<Database>
-    // Startup compatibility only. Once an owner reports an error, its missing
-    // value is authoritative and stale aggregate settings must stay hidden.
-    if (status === 'idle' || status === 'loading') return getDatabase()
     return {}
   }
 
@@ -619,22 +615,11 @@
   }
 
   function characterOwnerAt(index: number): character | undefined {
-    if (index < 0) return undefined
-    if (charactersResourceState.status === 'ready') {
-      const candidate = charactersResourceState.characters[index]
-      if (!stableOwnerId(candidate?.chaId) || charactersResourceState.rowStatuses[candidate.chaId] === 'error') {
-        return undefined
-      }
-      return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
-    }
-    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
-
-    // Pre-owner startup compatibility. Even here, authorize the positional row
-    // through its stable unique id before exposing it to the editor.
-    const characters = getDatabase().characters ?? []
-    const candidate = characters[index]
+    if (index < 0 || charactersResourceState.status !== 'ready') return undefined
+    const candidate = charactersResourceState.characters[index]
     if (!stableOwnerId(candidate?.chaId)) return undefined
-    return characters.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+    if (charactersResourceState.rowStatuses[candidate.chaId] === 'error') return undefined
+    return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
   }
 
   function selectedCharacterOwner(): character | undefined {

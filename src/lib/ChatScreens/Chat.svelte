@@ -77,7 +77,6 @@
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
   import {
-    getDatabase,
     type Chat,
     type Database,
     type Message,
@@ -86,7 +85,7 @@
     type character as Character,
   } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
-  import { HideIconStore, ReloadGUIPointer, VariableReloadGUIPointer, selIdState } from '../../ts/stores.svelte'
+  import { HideIconStore, ReloadGUIPointer, VariableReloadGUIPointer } from '../../ts/stores.svelte'
   import AutoresizeArea from '../UI/GUI/TextAreaResizable.svelte'
   import ChatBody from './ChatBody.svelte'
   import PopupButton from '../UI/PopupButton.svelte'
@@ -178,29 +177,12 @@
   let translationEditOperation = 0
   let activeRawTranslationRequestTarget: RawTranslationTarget | null = $state(null)
   let bodyRoot: HTMLElement | null = $state(null)
-  function isCharacterOwnerPreReady(): boolean {
-    return charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-  }
-
-  // Explicit startup compatibility only. Ready/error character reads never
-  // consult the aggregate projection.
-  function preReadyCharacterRows(): readonly Character[] {
-    return isCharacterOwnerPreReady() ? (getDatabase().characters ?? []) : []
-  }
-
   function characterRowsForRead(): readonly Character[] {
-    if (charactersResourceState.status === 'ready') return charactersResourceState.characters
-    return preReadyCharacterRows()
+    return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
   }
 
   function selectedCharacterReadOwner(): Character | undefined {
-    if (charactersResourceState.status === 'ready') return getSelectedCharacterOwner()
-    if (!isCharacterOwnerPreReady()) return undefined
-
-    const characters = preReadyCharacterRows()
-    const candidate = characters[selIdState.selId]
-    if (!candidate?.chaId) return undefined
-    return characters.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+    return charactersResourceState.status === 'ready' ? getSelectedCharacterOwner() : undefined
   }
 
   interface CharacterChatOwner {
@@ -223,40 +205,26 @@
       }
     }
     if (!owner) return undefined
-    if (charactersResourceState.status !== 'ready') return owner
     if (getCharacterResourceOwner(owner.character.chaId) !== owner.character) return undefined
     if (!getChatMetadataOwnerState(chatId)) return undefined
     if (!getChatMetadataOwnerSnapshot(owner.character.chaId, chatId)) return undefined
     return owner
   }
 
-  // This is the retained mutable compatibility bridge for drafts, optimistic
-  // writes, and trigger results. Identity is authorized by the explicit owners
-  // above before a live aggregate object is exposed for those mutations.
+  // This retained mutable bridge is restricted to ready, uniquely identified
+  // character/chat owners while its remaining writes move to commands.
   function mutableChatBridgeRows(): readonly Character[] {
-    return getDatabase().characters ?? []
+    return characterRowsForRead()
   }
 
   function mutableCharacterBridgeById(characterId: string): Character | undefined {
-    if (!characterId || charactersResourceState.status === 'error') return undefined
-    if (charactersResourceState.status === 'ready' && !getCharacterResourceOwner(characterId)) return undefined
-    const matches = mutableChatBridgeRows().filter((candidate) => candidate?.chaId === characterId)
-    return matches.length === 1 ? matches[0] : undefined
+    if (!characterId || charactersResourceState.status !== 'ready') return undefined
+    return getCharacterResourceOwner(characterId)
   }
 
   function mutableChatBridgeById(characterId: string, chatId: string): CharacterChatOwner | undefined {
     const readOwner = uniqueChatReadOwner(chatId)
-    if (!readOwner || readOwner.character.chaId !== characterId) return undefined
-    const characters = mutableChatBridgeRows()
-    const character = mutableCharacterBridgeById(characterId)
-    if (!character) return undefined
-    const matches: CharacterChatOwner[] = []
-    for (const candidateCharacter of characters) {
-      for (const candidateChat of candidateCharacter.chats ?? []) {
-        if (candidateChat?.id === chatId) matches.push({ character: candidateCharacter, chat: candidateChat })
-      }
-    }
-    return matches.length === 1 && matches[0].character === character ? matches[0] : undefined
+    return readOwner?.character.chaId === characterId ? readOwner : undefined
   }
 
   function mutableActiveChatBridge(): CharacterChatOwner | undefined {
@@ -270,10 +238,6 @@
   function readSettingsGroup(group: SettingsGroup): Partial<Database> {
     const status = settingsResourceState.groupStatuses[group] ?? 'idle'
     if (status === 'ready') return settingsResourceState.value as Partial<Database>
-    if (status === 'error' || settingsResourceState.status === 'error') return {}
-    // Explicit startup compatibility only. Owner errors and ready-but-missing
-    // settings remain authoritative and never revive aggregate values.
-    if (status === 'idle' || status === 'loading') return getDatabase()
     return {}
   }
 
@@ -965,53 +929,26 @@
     bookmarkNames: Record<string, string>,
   ): boolean {
     if (!previous.chat) return false
-    if (charactersResourceState.status === 'ready') {
-      if (!previous.characterId || !previous.chatId) return false
-      const character = getCharacterResourceOwner(previous.characterId)
-      const chatMatches = character?.chats?.filter((candidate) => candidate.id === previous.chatId) ?? []
-      if (chatMatches.length !== 1) return false
-      const messageMatches =
-        getChatMessageOwnerState(previous.chatId)?.messages.filter((candidate) => candidate.chatId === messageId) ?? []
-      if (messageMatches.length !== 1) return false
-      const ownerSnapshot = getChatMetadataOwnerSnapshot(previous.characterId, previous.chatId)
-      if (!ownerSnapshot) return false
-      if (JSON.stringify(ownerSnapshot.metadata.bookmarks ?? []) !== JSON.stringify(previous.chat.bookmarks ?? [])) {
-        return false
-      }
-      if (
-        JSON.stringify(ownerSnapshot.metadata.bookmarkNames ?? {}) !== JSON.stringify(previous.chat.bookmarkNames ?? {})
-      ) {
-        return false
-      }
-      const applied = applyChatMetadataOwnerPatch(previous.characterId, previous.chatId, {
-        bookmarks: [...bookmarks],
-        bookmarkNames: { ...bookmarkNames },
-      })
-      if (applied) syncServerBackedChatMetadataBaselines()
-      return applied
+    if (!previous.characterId || !previous.chatId || charactersResourceState.status !== 'ready') return false
+    const character = getCharacterResourceOwner(previous.characterId)
+    const chatMatches = character?.chats?.filter((candidate) => candidate.id === previous.chatId) ?? []
+    if (chatMatches.length !== 1) return false
+    const messageMatches =
+      getChatMessageOwnerState(previous.chatId)?.messages.filter((candidate) => candidate.chatId === messageId) ?? []
+    if (messageMatches.length !== 1) return false
+    const ownerSnapshot = getChatMetadataOwnerSnapshot(previous.characterId, previous.chatId)
+    if (!ownerSnapshot) return false
+    if (JSON.stringify(ownerSnapshot.metadata.bookmarks ?? []) !== JSON.stringify(previous.chat.bookmarks ?? [])) {
+      return false
     }
-    if (!isCharacterOwnerPreReady()) return false
-
-    let applied = false
-    withTrustedResourceWrite(() => {
-      const characters = mutableChatBridgeRows()
-      const characterMatches = previous.characterId
-        ? characters.filter((candidate) => candidate.chaId === previous.characterId)
-        : [characters[previous.selectedCharID]].filter(Boolean)
-      if (characterMatches.length !== 1) return
-      const character = characterMatches[0]
-      const chatMatches = previous.chatId
-        ? (character.chats ?? []).filter((candidate) => candidate.id === previous.chatId)
-        : [character.chats?.[character.chatPage ?? 0]].filter(Boolean)
-      if (chatMatches.length !== 1) return
-      const liveChat = chatMatches[0]
-      const messageMatches = (liveChat.message ?? []).filter((candidate) => candidate.chatId === messageId)
-      if (messageMatches.length !== 1) return
-      if (JSON.stringify(liveChat.bookmarks ?? []) !== JSON.stringify(previous.chat?.bookmarks ?? [])) return
-      if (JSON.stringify(liveChat.bookmarkNames ?? {}) !== JSON.stringify(previous.chat?.bookmarkNames ?? {})) return
-      liveChat.bookmarks = [...bookmarks]
-      liveChat.bookmarkNames = { ...bookmarkNames }
-      applied = true
+    if (
+      JSON.stringify(ownerSnapshot.metadata.bookmarkNames ?? {}) !== JSON.stringify(previous.chat.bookmarkNames ?? {})
+    ) {
+      return false
+    }
+    const applied = applyChatMetadataOwnerPatch(previous.characterId, previous.chatId, {
+      bookmarks: [...bookmarks],
+      bookmarkNames: { ...bookmarkNames },
     })
     if (applied) syncServerBackedChatMetadataBaselines()
     return applied
@@ -1039,8 +976,7 @@
   function currentLiveMessage(): Message | null {
     const chat = currentLiveChat()
     if (!chat?.id || idx < 0) return null
-    const messages =
-      charactersResourceState.status === 'ready' ? getChatMessageOwnerState(chat.id)?.messages : chat.message
+    const messages = getChatMessageOwnerState(chat.id)?.messages
     if (!messages) return null
     const candidate = messages[idx]
     return candidate?.chatId && messages.filter((message) => message.chatId === candidate.chatId).length === 1
@@ -1064,8 +1000,7 @@
 
   function chatMessagesForRead(chat: Chat): Message[] | undefined {
     if (!chat.id) return undefined
-    if (charactersResourceState.status === 'ready') return getChatMessageOwnerState(chat.id)?.messages
-    return isCharacterOwnerPreReady() ? chat.message : undefined
+    return getChatMessageOwnerState(chat.id)?.messages
   }
 
   function automaticTranslationRequestEnabled(): boolean {
@@ -1145,20 +1080,7 @@
         chatMessagesForRead(owner.chat)?.filter((candidate) => candidate.chatId === target.messageId) ?? []
       return matches.length === 1 ? matches[0] : null
     }
-    if (!isCharacterOwnerPreReady()) return null
-    const matches: Message[] = []
-
-    for (const character of characterRowsForRead()) {
-      for (const chat of character.chats ?? []) {
-        for (const candidate of chat.message ?? []) {
-          if (candidate.chatId === target.messageId) {
-            matches.push(candidate)
-          }
-        }
-      }
-    }
-
-    return matches.length === 1 ? matches[0] : null
+    return null
   }
 
   function translationScopedSnapshot(target: TranslationMessageTarget): ReturnType<typeof currentChatScopedSnapshot> {
@@ -1168,19 +1090,7 @@
       chatId: undefined,
       chat: undefined,
     }
-    let owner = target.chatId ? uniqueChatReadOwner(target.chatId) : undefined
-    if (!owner && !target.chatId && isCharacterOwnerPreReady()) {
-      const matches: CharacterChatOwner[] = []
-      for (const character of characterRowsForRead()) {
-        for (const chat of character.chats ?? []) {
-          if ((chat.message ?? []).filter((candidate) => candidate.chatId === target.messageId).length !== 1) continue
-          if (!chat.id) continue
-          const uniqueOwner = uniqueChatReadOwner(chat.id)
-          if (uniqueOwner?.chat === chat) matches.push(uniqueOwner)
-        }
-      }
-      owner = matches.length === 1 ? matches[0] : undefined
-    }
+    const owner = target.chatId ? uniqueChatReadOwner(target.chatId) : undefined
     if (!owner?.character.chaId || !owner.chat.id) return emptySnapshot
     const messages = chatMessagesForRead(owner.chat)
     if (!messages || messages.filter((candidate) => candidate.chatId === target.messageId).length !== 1) {
