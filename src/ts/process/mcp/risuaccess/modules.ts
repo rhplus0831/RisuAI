@@ -9,7 +9,7 @@ import {
   currentLorebookCollectionScopedSnapshot,
   dispatchReplaceModuleLorebooks,
   ensureClientLorebookEntryIds,
-} from 'src/ts/server/lorebookBridge.svelte'
+} from 'src/ts/server/lorebookOwner.svelte'
 import {
   dispatchReplaceModuleScripts,
   dispatchReplaceModuleTriggers,

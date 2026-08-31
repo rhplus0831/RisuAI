@@ -1,7 +1,7 @@
 import type { ServerCommandTransportOptions } from './commands'
 import { flushPendingSettingsOwnerMutations } from './settingsOwner.svelte'
 import { flushPendingCharacterDraftPatches } from './characterDraft.svelte'
-import { flushPendingServerBackedLorebookPatches } from './lorebookBridge.svelte'
+import { flushPendingLorebookOwnerMutations } from './lorebookOwner.svelte'
 import { flushPendingPromptTemplatePatches } from './promptTemplateMutations.svelte'
 import { flushPendingScriptDefinitionMutations } from './scriptDefinitionOwner.svelte'
 import { flushRegisteredPendingBridgePatches } from './pendingBridgeFlushRegistry'
@@ -10,7 +10,7 @@ export function flushAllPendingBridgePatches(options: ServerCommandTransportOpti
   flushRegisteredPendingBridgePatches(options)
   flushPendingSettingsOwnerMutations(options)
   flushPendingCharacterDraftPatches(options)
-  flushPendingServerBackedLorebookPatches(options)
+  flushPendingLorebookOwnerMutations(options)
   flushPendingPromptTemplatePatches(options)
   flushPendingScriptDefinitionMutations(options)
 }

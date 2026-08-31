@@ -19,7 +19,7 @@ import {
   startChatMessageHydration,
   stopChatMessageHydration,
 } from './chatMessageHydration.svelte'
-import { markCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
+import { markCharacterLorebookHydrated, resetLorebookHydration } from './lorebookOwner.svelte'
 import {
   clearGenerationPersistence,
   getGenerationFinalizationPersistencesForChat,

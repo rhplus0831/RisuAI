@@ -7,7 +7,7 @@ import {
 import { clearCharacterShellHydrationState } from './server/characterShellHydration.svelte'
 import { resetChatHydration } from './server/chatMessageHydration.svelte'
 import { clearAppliedServerResourceRevision, clearCachedServerCommandRevision } from './server/commands'
-import { resetLorebookHydration } from './server/lorebookBridge.svelte'
+import { resetLorebookHydration } from './server/lorebookOwner.svelte'
 import { lorebookPageOwner } from './server/lorebookPageOwner.svelte'
 import { resetPromptTemplateHydration } from './server/promptTemplateHydration'
 import { clearResourceCache } from './server/resourceCache'

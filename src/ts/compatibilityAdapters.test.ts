@@ -44,7 +44,7 @@ import { isServerCharacterShell, type Chat, type character, type Database } from
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { recoverColdStorageCharacter } from './process/coldstorage.svelte'
-import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookBridge.svelte'
+import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookOwner.svelte'
 
 const testDatabaseState = {
   get db() {

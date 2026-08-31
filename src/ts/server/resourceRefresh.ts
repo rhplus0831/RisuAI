@@ -28,7 +28,7 @@ import {
   recordCanonicalLorebookCollections,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
-} from './lorebookBridge.svelte'
+} from './lorebookOwner.svelte'
 import {
   charactersResourceState,
   resetServerResourceRevisionFencesForDatabaseReplacement,

@@ -47,7 +47,7 @@ vi.mock('./chatMessageHydration.svelte', () => ({
 vi.mock('./characterShellHydration.svelte', () => ({
   hydrateSelectedCharacterShell: sideEffects.hydrateSelectedCharacter,
 }))
-vi.mock('./lorebookBridge.svelte', () => ({
+vi.mock('./lorebookOwner.svelte', () => ({
   applyServerCharacterLorebookResource: vi.fn(() => true),
   markCharacterLorebookHydrated: vi.fn(),
   recordCanonicalCharacterLorebookScopes: vi.fn(),

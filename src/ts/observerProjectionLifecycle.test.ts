@@ -36,7 +36,7 @@ import {
   readResourceCacheSnapshots,
   sha256JsonValue,
 } from './server/resourceCache'
-import { isCharacterLorebookHydrated, markCharacterLorebookHydrated } from './server/lorebookBridge.svelte'
+import { isCharacterLorebookHydrated, markCharacterLorebookHydrated } from './server/lorebookOwner.svelte'
 import { isPromptTemplateHydrated, markPromptTemplateProjectionApplied } from './server/promptTemplateHydration'
 import { getResourceDatabase, replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
 import { setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'

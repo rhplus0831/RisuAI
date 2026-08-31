@@ -165,7 +165,6 @@ export const legacyDomTestFiles = [
   'src/ts/server/displaySources.test.ts',
   'src/ts/server/durableMutationTerminalRejection.test.ts',
   'src/ts/server/lifecycleRecovery.test.ts',
-  'src/ts/server/lorebookBridge.test.ts',
   'src/ts/server/promptTemplateHydration.test.ts',
   'src/ts/server/pushNotifications.test.ts',
   'src/ts/server/resourceRefresh.test.ts',

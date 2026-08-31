@@ -255,8 +255,12 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
     expect(preMismatchSource).toContain('!targetChanged')
   })
 
-  it('routes global rollback dispatchers through suppressed helpers', () => {
-    const source = readSource('src/ts/server/lorebookBridge.svelte.ts')
+  it('routes global rollback dispatchers through explicit owner helpers', () => {
+    const source = readSource('src/ts/server/lorebookOwner.svelte.ts')
+    expect(source).not.toContain('getResourceDatabase')
+    expect(source).not.toContain('withTrustedResourceWrite')
+    expect(source).not.toContain('withSuppressedLorebookWatcher')
+    expect(source).toContain('collectionsResourceState.values.loreBook')
     const createDispatcher = exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')
     expect(createDispatcher).toContain("hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)")
     expect(createDispatcher).toContain('rollbackGlobalLorebookListEntry(rollbackEntry)')
@@ -276,18 +280,16 @@ describe('static architecture gate: lorebook bridge boundaries', () => {
 
     const globalCreateRollback = localFunctionSource(source, 'rollbackGlobalLorebookListEntry')
     expect(globalCreateRollback).toContain('canApplyGlobalLorebookListRollback(rollbackEntry)')
-    expect(globalCreateRollback).toContain('withSuppressedLorebookWatcher')
     expect(globalCreateRollback).toContain('applyAttemptedKeyedListRollback')
     const globalNameRollback = localFunctionSource(source, 'rollbackGlobalLorebookName')
     expect(globalNameRollback).toContain('canApplyGlobalLorebookNameRollback(rollback)')
-    expect(globalNameRollback).toContain('withSuppressedLorebookWatcher')
     expect(globalNameRollback).toContain('applyAttemptedFieldRollback')
     expect(localFunctionSource(source, 'rollbackGlobalLorebookOrder')).toContain(
       'sameStringArray(liveIds, rollback.attemptedIds)',
     )
   })
 
-  it('routes lorepreset create, rename, and delete writes through bridge helpers', () => {
+  it('routes lorepreset create, rename, and delete writes through owner helpers', () => {
     const source = readSource('src/lib/Setting/lorepreset.svelte')
     expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentGlobalLorebookStateSnapshot')

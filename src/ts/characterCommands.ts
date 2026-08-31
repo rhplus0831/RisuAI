@@ -17,7 +17,7 @@ import {
 } from './server/commands'
 import { charactersResourceState, getCharacterResourceOwner } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
-import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte'
+import { recordHydratedCharacterLorebooks } from './server/lorebookOwner.svelte'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import {
   isPendingMutationProjectionFenceCurrent,

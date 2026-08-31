@@ -20,7 +20,7 @@ import {
   replaceChatLorebookCollectionWithOutcome,
   replaceGlobalLorebookEntryCollectionWithOutcome,
   type ScopedLorebookMutationOperation,
-} from '../server/lorebookBridge.svelte'
+} from '../server/lorebookOwner.svelte'
 import { lorebookEntriesForOriginalRisuExport } from '../agentLorebookInputs'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 import { risuChatParser } from '../parser/parser.svelte'

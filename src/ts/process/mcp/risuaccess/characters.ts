@@ -20,7 +20,7 @@ import {
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
   replaceCharacterLorebookCollectionFull,
-} from 'src/ts/server/lorebookBridge.svelte'
+} from 'src/ts/server/lorebookOwner.svelte'
 import {
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,

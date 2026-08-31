@@ -15,7 +15,7 @@
     replaceChatLorebookCollectionWithOutcome,
     replaceGlobalLorebookEntryCollectionWithOutcome,
     type ScopedLorebookMutationOperation,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
   import {
     findScopedLorebookCollectionMutationUiState,
     scopedLorebookMutationUiStates,

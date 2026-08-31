@@ -160,7 +160,7 @@ import {
   dispatchReplaceModuleLorebooks,
   dispatchUpdateGlobalLorebook,
   flushPendingLorebookEntryDraftEdit,
-  flushPendingServerBackedLorebookPatches,
+  flushPendingLorebookOwnerMutations,
   mergeLorebookEntryProjectionDraft,
   markCharacterLorebookHydrated,
   normalizeClientLorebookEntryIds,
@@ -170,7 +170,7 @@ import {
   replaceChatLorebookCollectionWithOutcome,
   replaceModuleLorebookCollectionDraft,
   resetLorebookHydration,
-  resetServerBackedLorebookBridgeForTests,
+  resetLorebookOwnerForTests,
   restoreLorebookEntryState,
   restoreLorebookState,
   renameGlobalLorebook,
@@ -180,7 +180,7 @@ import {
   setActiveChatLorebookLocalActivationWithOutcome,
   setChatLorebookLocalActivationWithOutcome,
   subscribeLorebookEntryDraftRollbacks,
-} from './lorebookBridge.svelte'
+} from './lorebookOwner.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 type Entry = {
@@ -301,7 +301,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  resetServerBackedLorebookBridgeForTests()
+  resetLorebookOwnerForTests()
   vi.useRealTimers()
   selectedCharID.set(-1)
   recorded.commands.length = 0
@@ -1542,7 +1542,7 @@ describe('lorebook editor entry draft scope', () => {
         },
       ],
     })
-    flushPendingServerBackedLorebookPatches({ keepalive: true })
+    flushPendingLorebookOwnerMutations({ keepalive: true })
     await vi.advanceTimersByTimeAsync(0)
 
     const cmds = characterEntryCommands()

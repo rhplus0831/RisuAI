@@ -49,7 +49,7 @@ vi.mock('../../filePicker', () => {
 import { safeStructuredClone } from '../../polyfill'
 import { addLorebook, addLorebookFolder, exportLoreBook, importLoreBook } from '../lorebook.svelte'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { resetLorebookHydration } from '../../server/lorebookBridge.svelte'
+import { resetLorebookHydration } from '../../server/lorebookOwner.svelte'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { getDatabase, setDatabaseLite } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'

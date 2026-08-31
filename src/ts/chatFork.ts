@@ -1,6 +1,6 @@
 import { v4 } from 'uuid'
 import type { Chat } from './storage/database.svelte'
-import { ensureClientLorebookEntryIds } from './server/lorebookBridge.svelte'
+import { ensureClientLorebookEntryIds } from './server/lorebookOwner.svelte'
 
 interface RekeyClonedChatOptions {
   createId?: () => string

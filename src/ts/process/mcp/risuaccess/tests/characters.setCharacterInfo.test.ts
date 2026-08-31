@@ -24,7 +24,7 @@ import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
-import { resetLorebookHydration } from 'src/ts/server/lorebookBridge.svelte'
+import { resetLorebookHydration } from 'src/ts/server/lorebookOwner.svelte'
 import { SERVER_CHARACTER_SHELL_MARKER, type character } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { seedCloneCostDb } from 'src/ts/__tests__/cloneCostHarness'

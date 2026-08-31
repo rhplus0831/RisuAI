@@ -266,7 +266,7 @@ vi.mock('./server/chatMessageHydration.svelte', () => ({
   resetChatHydration: vi.fn(),
 }))
 
-vi.mock('./server/lorebookBridge.svelte', () => ({
+vi.mock('./server/lorebookOwner.svelte', () => ({
   ensureClientLorebookEntryIds: (entries: Array<{ id?: string }>) => ensureUniqueTestIds(entries, 'lore'),
   recordHydratedCharacterLorebooks: vi.fn(),
   resetLorebookHydration: vi.fn(),

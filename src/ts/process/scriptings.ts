@@ -42,7 +42,7 @@ import {
   dispatchReplaceChatLorebooks,
   ensureClientLorebookEntryIds,
   scopedLorebookStateSnapshot,
-} from '../server/lorebookBridge.svelte'
+} from '../server/lorebookOwner.svelte'
 import {
   charactersResourceState,
   getCharacterResourceOwner,

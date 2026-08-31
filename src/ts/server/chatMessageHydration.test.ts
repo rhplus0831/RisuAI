@@ -54,7 +54,7 @@ import {
   isCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
-} from './lorebookBridge.svelte'
+} from './lorebookOwner.svelte'
 import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
 import {
   getRerollBuffer,

@@ -86,7 +86,7 @@ import {
   isCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
-} from './server/lorebookBridge.svelte'
+} from './server/lorebookOwner.svelte'
 import {
   prepareOpenChatGenerationReattach,
   setActiveGenerationReattachReadinessPredicate,

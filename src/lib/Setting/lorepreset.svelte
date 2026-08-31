@@ -11,14 +11,14 @@
     deleteGlobalLorebookByIdWithOutcome,
     renameGlobalLorebookById,
     subscribeGlobalLorebookDeleteStates,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
   import {
     lorebookPageIndexFromSnapshot,
     lorebookPageOwner,
     lorebookPageOwnerState,
   } from 'src/ts/server/lorebookPageOwner.svelte'
   let editMode = $state(false)
-  /** @type {Map<string, import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState>} */
+  /** @type {Map<string, import('src/ts/server/lorebookOwner.svelte').GlobalLorebookDeleteState>} */
   let globalLorebookDeleteStates = $state(new Map())
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
@@ -84,12 +84,12 @@
     return mutation.status !== 'idle' && mutation.lorebookId === lorebookId ? mutation.status : undefined
   }
 
-  /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState | undefined} state */
+  /** @param {import('src/ts/server/lorebookOwner.svelte').GlobalLorebookDeleteState | undefined} state */
   function isDeletePending(state) {
     return state?.status === 'deleting' || state?.status === 'queued'
   }
 
-  /** @param {import('src/ts/server/lorebookBridge.svelte').GlobalLorebookDeleteState} state */
+  /** @param {import('src/ts/server/lorebookOwner.svelte').GlobalLorebookDeleteState} state */
   function deleteStatusText(state) {
     if (state.status === 'deleting') return language.globalLorebookDelete.deleting
     if (state.status === 'queued') return language.globalLorebookDelete.queued

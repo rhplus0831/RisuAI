@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ScopedLorebookMutationOperation, ScopedLorebookMutationSettlement } from './lorebookBridge.svelte'
+import type { ScopedLorebookMutationOperation, ScopedLorebookMutationSettlement } from './lorebookOwner.svelte'
 import {
   findScopedLorebookCollectionMutationUiState,
   findScopedLorebookLocalActivationMutationUiState,

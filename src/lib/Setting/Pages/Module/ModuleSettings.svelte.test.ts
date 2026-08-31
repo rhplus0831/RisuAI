@@ -58,11 +58,10 @@ const moduleDraftStoreSpies = vi.hoisted(() => {
   }
 })
 
-const lorebookBridgeSpies = vi.hoisted(() => ({
+const lorebookOwnerSpies = vi.hoisted(() => ({
   applyLorebookEntryDraftEdit: vi.fn(() => false),
   flushPendingLorebookEntryDraftEdit: vi.fn(),
   replaceModuleLorebookCollectionDraft: vi.fn(() => false),
-  watchServerBackedLorebooks: vi.fn(() => () => {}),
 }))
 
 const scriptDefinitionOwnerSpies = vi.hoisted(() => ({
@@ -95,9 +94,9 @@ vi.mock('src/ts/moduleCommands', async (importActual) => ({
   saveGlobalModuleDraftWithOutcome: moduleCommandSpies.saveGlobalModuleDraft,
 }))
 vi.mock('src/ts/server/moduleEditorDraftStore', () => moduleDraftStoreSpies)
-vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
-  ...lorebookBridgeSpies,
+vi.mock('src/ts/server/lorebookOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/lorebookOwner.svelte')>()),
+  ...lorebookOwnerSpies,
 }))
 vi.mock('src/ts/server/scriptDefinitionOwner.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/scriptDefinitionOwner.svelte')>()),
@@ -703,10 +702,9 @@ describe('ModuleSettings derived module rows', () => {
 
     expect(getDatabase().modules[1]).toEqual(liveBeforeEdit)
     expect(moduleCommandSpies.saveGlobalModuleDraft).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.applyLorebookEntryDraftEdit).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.watchServerBackedLorebooks).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.applyLorebookEntryDraftEdit).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
     expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
 
     unmount(component!)
@@ -743,7 +741,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(savedModule.regex[0]).toMatchObject({ type: 'editinput', in: '', out: '' })
     expect(savedModule.trigger).toHaveLength(1)
     expect(savedModule.trigger[0]).toMatchObject({ type: 'start' })
-    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
     expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
   })
 
@@ -754,7 +752,7 @@ describe('ModuleSettings derived module rows', () => {
     await addNestedModuleDraftRows()
 
     expect(moduleCommandSpies.createGlobalModule).not.toHaveBeenCalled()
-    expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
+    expect(lorebookOwnerSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
     expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
 
     await clickModuleSurfaceAction('submit-create')

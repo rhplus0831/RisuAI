@@ -62,14 +62,14 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
+vi.mock('src/ts/server/lorebookOwner.svelte', () => ({
   applyServerCharacterLorebookResource: vi.fn(() => true),
   createGlobalLorebook: lorepresetMocks.createGlobalLorebook,
   deleteGlobalLorebook: lorepresetMocks.deleteGlobalLorebook,
   deleteGlobalLorebookById: lorepresetMocks.deleteGlobalLorebookById,
   deleteGlobalLorebookWithOutcome: lorepresetMocks.deleteGlobalLorebookWithOutcome,
   deleteGlobalLorebookByIdWithOutcome: lorepresetMocks.deleteGlobalLorebookByIdWithOutcome,
-  flushPendingServerBackedLorebookPatches: vi.fn(async () => {}),
+  flushPendingLorebookOwnerMutations: vi.fn(async () => {}),
   isCharacterLorebookHydrated: vi.fn(() => true),
   isCharacterLorebookMutationReady: vi.fn(() => true),
   markCharacterLorebookHydrated: vi.fn(),
@@ -84,7 +84,6 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
       if (lorepresetMocks.deleteStateListener === listener) lorepresetMocks.deleteStateListener = null
     }
   },
-  watchServerBackedLorebooks: vi.fn(() => () => {}),
 }))
 
 import Lorepreset from './lorepreset.svelte'

@@ -17,7 +17,7 @@ const editorActions = vi.hoisted(() => ({
   importLoreBook: vi.fn(),
 }))
 
-const bridgeActions = vi.hoisted(() => ({
+const lorebookOwnerActions = vi.hoisted(() => ({
   replaceCharacterLorebookCollectionWithOutcome: vi.fn(),
   replaceChatLorebookCollectionWithOutcome: vi.fn(),
 }))
@@ -96,11 +96,10 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', async (importActual) => ({
   isCharacterLorebookHydrationPending: () => hydration.pending,
 }))
 
-vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
-  replaceCharacterLorebookCollectionWithOutcome: bridgeActions.replaceCharacterLorebookCollectionWithOutcome,
-  replaceChatLorebookCollectionWithOutcome: bridgeActions.replaceChatLorebookCollectionWithOutcome,
-  watchServerBackedLorebooks: () => () => {},
+vi.mock('src/ts/server/lorebookOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/lorebookOwner.svelte')>()),
+  replaceCharacterLorebookCollectionWithOutcome: lorebookOwnerActions.replaceCharacterLorebookCollectionWithOutcome,
+  replaceChatLorebookCollectionWithOutcome: lorebookOwnerActions.replaceChatLorebookCollectionWithOutcome,
 }))
 
 vi.mock('src/ts/server/characterDraft.svelte', async (importActual) => ({
@@ -143,7 +142,7 @@ beforeEach(() => {
   hydration.pending = false
   hydration.retry.mockClear()
   for (const action of Object.values(editorActions)) action.mockClear()
-  for (const action of Object.values(bridgeActions)) action.mockReset()
+  for (const action of Object.values(lorebookOwnerActions)) action.mockReset()
   for (const alert of Object.values(alertSpies)) alert.mockClear()
   resetScopedLorebookMutationUiStateForTests()
   setDatabaseLite({
@@ -287,7 +286,7 @@ describe('lorebook editor action accessibility', () => {
     characterToggle.click()
     await tick()
 
-    expect(bridgeActions.replaceCharacterLorebookCollectionWithOutcome).toHaveBeenCalledWith('owner-character', [
+    expect(lorebookOwnerActions.replaceCharacterLorebookCollectionWithOutcome).toHaveBeenCalledWith('owner-character', [
       { alwaysActive: true },
     ])
   })
@@ -331,7 +330,7 @@ describe('lorebook editor action accessibility', () => {
     )!
     expect(chatToggle.disabled).toBe(true)
     chatToggle.click()
-    expect(bridgeActions.replaceChatLorebookCollectionWithOutcome).not.toHaveBeenCalled()
+    expect(lorebookOwnerActions.replaceChatLorebookCollectionWithOutcome).not.toHaveBeenCalled()
   })
 })
 
@@ -428,7 +427,7 @@ describe('scoped lorebook persistence outcomes', () => {
       ],
     } as any)
     const deferred = deferredOperation('character:character-a')
-    bridgeActions.replaceCharacterLorebookCollectionWithOutcome.mockReturnValueOnce(deferred.operation)
+    lorebookOwnerActions.replaceCharacterLorebookCollectionWithOutcome.mockReturnValueOnce(deferred.operation)
     component = mount(LoreBookSetting, { target })
     await tick()
 

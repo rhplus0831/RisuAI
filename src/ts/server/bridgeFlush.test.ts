@@ -21,8 +21,8 @@ vi.mock('./characterDraft.svelte', () => ({
   }),
 }))
 
-vi.mock('./lorebookBridge.svelte', () => ({
-  flushPendingServerBackedLorebookPatches: vi.fn((options: unknown) => {
+vi.mock('./lorebookOwner.svelte', () => ({
+  flushPendingLorebookOwnerMutations: vi.fn((options: unknown) => {
     calls.lorebook.push(options)
   }),
 }))

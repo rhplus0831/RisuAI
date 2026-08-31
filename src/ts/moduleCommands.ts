@@ -58,7 +58,7 @@ import {
 } from './server/pendingMutationOutbox'
 import { moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
-import { ensureClientLorebookEntryIds, flushPendingServerBackedLorebookPatches } from './server/lorebookBridge.svelte'
+import { ensureClientLorebookEntryIds, flushPendingLorebookOwnerMutations } from './server/lorebookOwner.svelte'
 import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
@@ -795,7 +795,7 @@ export async function dispatchDeleteModule(
   if (!canUseServerCommands()) return { status: 'failed', result: { status: 'unavailable' } }
   flushPendingSettingsOwnerMutations()
   flushPendingCharacterDraftPatches()
-  flushPendingServerBackedLorebookPatches()
+  flushPendingLorebookOwnerMutations()
   flushPendingScriptDefinitionMutations()
   const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null

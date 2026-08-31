@@ -12,7 +12,7 @@
   import {
     ensureClientLorebookEntryIds as ensureImportedLorebookEntryIds,
     replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
   import { collectionsResourceState as moduleImportCollections } from 'src/ts/server/resourceState.svelte'
   import {
     applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft,
@@ -164,7 +164,7 @@
     ensureClientLorebookEntryIds,
     flushPendingLorebookEntryDraftEdit,
     replaceModuleLorebookCollectionDraft,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
   import {
     applyModuleScriptDefinitionDraft,
     ensureClientScriptDefinitionIds,

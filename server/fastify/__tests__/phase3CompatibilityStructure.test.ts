@@ -227,15 +227,7 @@ interface BridgeClassification {
   outcomes: readonly string[]
 }
 
-const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = [
-  {
-    file: 'lorebookBridge.svelte.ts',
-    flusher: 'flushPendingServerBackedLorebookPatches',
-    registrationId: 'lorebook',
-    commands: ['global/character/chat/module lorebook mutations'],
-    outcomes: ['accepted', 'queued-retained', 'failed-owner-scoped-rollback'],
-  },
-]
+const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = []
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {

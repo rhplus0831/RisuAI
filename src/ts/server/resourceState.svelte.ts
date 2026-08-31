@@ -3412,17 +3412,17 @@ function resourceDatabaseKeys(): string[] {
 
 function setResourceDatabaseField(property: string, value: unknown): void {
   if (property === 'characters') {
-    charactersResourceState.characters = value as character[]
+    charactersResourceState.characters = cloneJsonValue(value) as character[]
     charactersResourceState.status = 'ready'
     advanceCharacterListProjectionEpoch()
     return
   }
   if (isServerCollectionName(property)) {
-    collectionsResourceState.values[property] = value as never
+    collectionsResourceState.values[property] = cloneJsonValue(value) as never
     collectionsResourceState.statuses[property] = 'ready'
     return
   }
-  ;(settingsResourceState.value as Record<string, unknown>)[property] = value
+  ;(settingsResourceState.value as Record<string, unknown>)[property] = cloneJsonValue(value)
   settingsResourceState.status = 'ready'
   mirrorCharacterPointerField(property, value)
   noteSettingsPointerValueWrite(property)
@@ -3452,7 +3452,7 @@ function deleteResourceDatabaseField(property: string): void {
 
 function mirrorCharacterPointerField(property: string, value: unknown): void {
   if (property === 'characterOrder' && Array.isArray(value)) {
-    charactersResourceState.characterOrder = value as Database['characterOrder']
+    charactersResourceState.characterOrder = cloneJsonValue(value) as Database['characterOrder']
   }
   if (property === 'currentChar' && Number.isInteger(value)) {
     charactersResourceState.currentChar = value as number

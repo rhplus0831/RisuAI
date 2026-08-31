@@ -147,7 +147,7 @@ vi.mock('../moduleCommands', () => ({
   createGlobalModule,
 }))
 
-vi.mock('../server/lorebookBridge.svelte', () => ({
+vi.mock('../server/lorebookOwner.svelte', () => ({
   currentLorebookStateSnapshot: vi.fn(() => ({ loreBook: [], characters: [], modules: [] })),
   currentLorebookCollectionScopedSnapshot,
   dispatchReplaceCharacterLorebooks,

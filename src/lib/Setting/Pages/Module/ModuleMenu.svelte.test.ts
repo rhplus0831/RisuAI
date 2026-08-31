@@ -28,7 +28,7 @@ import ModuleMenu from './ModuleMenu.svelte'
 import { language } from 'src/lang'
 import type { RisuModule } from 'src/ts/process/modules'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
-import { resetServerBackedLorebookBridgeForTests } from 'src/ts/server/lorebookBridge.svelte'
+import { resetLorebookOwnerForTests } from 'src/ts/server/lorebookOwner.svelte'
 import {
   collectionsResourceState,
   getResourceDatabase as getDatabase,
@@ -113,7 +113,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  resetServerBackedLorebookBridgeForTests()
+  resetLorebookOwnerForTests()
   setDatabaseLite({} as any)
 })
 

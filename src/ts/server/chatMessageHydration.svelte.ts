@@ -15,7 +15,7 @@ import {
   isCharacterLorebookMutationReady,
   markCharacterLorebookHydrated,
   recordCanonicalCharacterLorebookScopes,
-} from './lorebookBridge.svelte'
+} from './lorebookOwner.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
   fetchServerBulkCharacterLorebooks,

@@ -210,7 +210,7 @@ vi.mock('./server/characterShellHydration.svelte', () => ({
   startSelectedCharacterShellHydration: characterHydrationApi.startSelected,
   stopSelectedCharacterShellHydration: characterHydrationApi.stopSelected,
 }))
-vi.mock('./server/lorebookBridge.svelte', () => lorebookApi)
+vi.mock('./server/lorebookOwner.svelte', () => lorebookApi)
 vi.mock('./server/promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: promptTemplateApi.ensure,
   hasPromptTemplateOwnerProjectionEpochChanged: promptTemplateApi.hasOwnerEpochChanged,

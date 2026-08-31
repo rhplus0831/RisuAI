@@ -30,7 +30,7 @@ import {
   dispatchUpdateChatNoteScoped,
   type ChatScriptstateSnapshot,
 } from '../chatCommands'
-import { replaceCharacterLorebookCollectionWithOutcome } from '../server/lorebookBridge.svelte'
+import { replaceCharacterLorebookCollectionWithOutcome } from '../server/lorebookOwner.svelte'
 import {
   applyChatMetadataOwnerPatch,
   applyChatScriptstateOwnerValue,

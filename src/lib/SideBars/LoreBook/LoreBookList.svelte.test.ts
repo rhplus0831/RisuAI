@@ -185,7 +185,7 @@ vi.mock('src/ts/alert', () => ({
   alertNormal: lorebookListMocks.alertNormal,
 }))
 
-vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
+vi.mock('src/ts/server/lorebookOwner.svelte', () => ({
   applyLorebookEntryDraftEdit: lorebookListMocks.applyLorebookEntryDraftEdit,
   applyLorebookEntryDraftRollback: vi.fn((draft: loreBook) => ({ draft, restoredFields: [] })),
   applyServerCharacterLorebookResource: vi.fn(() => true),

@@ -20,7 +20,7 @@
     replaceCharacterLorebookCollectionWithOutcome,
     replaceChatLorebookCollectionWithOutcome,
     type ScopedLorebookMutationOperation,
-  } from 'src/ts/server/lorebookBridge.svelte'
+  } from 'src/ts/server/lorebookOwner.svelte'
   import { alertError, alertNormal } from 'src/ts/alert'
   import {
     findScopedLorebookCollectionMutationUiState,

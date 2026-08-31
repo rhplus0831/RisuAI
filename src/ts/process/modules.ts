@@ -28,7 +28,7 @@ import {
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
   rollbackCharacterLorebookReplacement,
-} from '../server/lorebookBridge.svelte'
+} from '../server/lorebookOwner.svelte'
 import {
   acknowledgeCharacterScriptDefinitionStructuralWrite,
   beginCharacterScriptDefinitionStructuralWrite,

@@ -27,13 +27,13 @@ import {
   globalLorebookListIdsNeedNormalization,
   markCharacterLorebookHydrated,
   replaceGlobalLorebookEntryCollection,
-  resetServerBackedLorebookBridgeForTests,
+  resetLorebookOwnerForTests,
   resetLorebookHydration,
   restoreGlobalLorebookState,
   restoreLorebookState,
   restoreScopedLorebookState,
   scopedLorebookStateSnapshot,
-} from './lorebookBridge.svelte'
+} from './lorebookOwner.svelte'
 import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, globalLorebookOwnerMutationKey } from './lorebookMutationKeys'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
@@ -89,7 +89,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  resetServerBackedLorebookBridgeForTests()
+  resetLorebookOwnerForTests()
   setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
@@ -386,7 +386,7 @@ describe('lorebook durable generation ordering', () => {
       })
       expect(staged[0].handle.mutationId).not.toBe(staged[1].handle.mutationId)
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -492,7 +492,7 @@ describe('lorebook durable generation ordering', () => {
         ])
       })
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -583,7 +583,7 @@ describe('lorebook durable generation ordering', () => {
       })
       expect(calls).not.toContain('/api/v1/commands/lorebooks/book-create-revert/entries')
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -722,7 +722,7 @@ describe('lorebook durable generation ordering', () => {
       ])
       expect(await listPendingMutations()).toEqual([])
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -859,7 +859,7 @@ describe('lorebook durable generation ordering', () => {
       expect(getGlobalLorebookDeleteState('book-delete-rollback')).toBeNull()
       expect(await listPendingMutations()).toEqual([])
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -932,7 +932,7 @@ describe('lorebook durable generation ordering', () => {
       })
       expect(await listPendingMutations()).toEqual([])
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -1022,7 +1022,7 @@ describe('lorebook durable generation ordering', () => {
       ])
       expect(await listPendingMutations()).toEqual([])
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -1167,7 +1167,7 @@ describe('lorebook durable generation ordering', () => {
           headers: { 'content-type': 'application/json' },
         }),
       )
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -1272,7 +1272,7 @@ describe('lorebook durable generation ordering', () => {
       expect((getDatabase().loreBook as any[]).map((book) => book.id)).not.toContain('book-delete-rename')
       expect(await listPendingMutations()).toEqual([])
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
@@ -1420,7 +1420,7 @@ describe('lorebook durable generation ordering', () => {
       expect((getDatabase().loreBook as any[])[getDatabase().loreBookPage]?.id).toBe('book-select-c')
       expect(await listPendingMutations()).toEqual([])
     } finally {
-      resetServerBackedLorebookBridgeForTests()
+      resetLorebookOwnerForTests()
       await Promise.resolve()
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()

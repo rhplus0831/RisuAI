@@ -67,7 +67,7 @@ import {
 } from './server/realmImport'
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
 import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
-import { ensureClientLorebookEntryIds } from './server/lorebookBridge.svelte'
+import { ensureClientLorebookEntryIds } from './server/lorebookOwner.svelte'
 import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
