@@ -75,6 +75,8 @@ import {
   markSettingsGroupAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
+  getHypaV3PresetOwnerStateSnapshot,
+  updateHypaV3PresetOwnerState,
   restoreChatFolderMetadataOwnerSnapshot,
   restoreChatMetadataOwnerSnapshot,
   resetServerResourceRevisionFencesForDatabaseReplacement,
@@ -853,6 +855,80 @@ describe('resource-scoped database state', () => {
     expect(getPersonaOwnerStateSnapshot()).toBeNull()
     expect(updatePersonaOwnerState((draft) => draft.personas.reverse())).toBe(false)
     expect(composeResourceDatabaseSnapshot()).toEqual(before)
+  })
+
+  it('mutates stable Hypa V3 selection and derives its numeric compatibility projection atomically', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        hypaV3Presets: [
+          { id: 'hypa-a', name: 'A', settings: {} },
+          { id: 'hypa-b', name: 'B', settings: {} },
+        ],
+        selectedHypaV3PresetId: 'hypa-b',
+        hypaV3PresetId: 1,
+      } as never,
+      3,
+    )
+
+    expect(getHypaV3PresetOwnerStateSnapshot()).toMatchObject({
+      selectedHypaV3PresetId: 'hypa-b',
+      hypaV3PresetId: 1,
+    })
+    expect(
+      updateHypaV3PresetOwnerState((draft) => {
+        draft.hypaV3Presets = [draft.hypaV3Presets[1], draft.hypaV3Presets[0]]
+      }),
+    ).toBe(true)
+    expect(getHypaV3PresetOwnerStateSnapshot()).toMatchObject({
+      selectedHypaV3PresetId: 'hypa-b',
+      hypaV3PresetId: 0,
+    })
+    expect(getResourceDatabase()).toMatchObject({ selectedHypaV3PresetId: 'hypa-b', hypaV3PresetId: 0 })
+  })
+
+  it.each([
+    { label: 'missing stable selection', selectedHypaV3PresetId: undefined, hypaV3PresetId: 1 },
+    { label: 'unknown stable selection', selectedHypaV3PresetId: 'missing', hypaV3PresetId: 1 },
+    { label: 'conflicting numeric projection', selectedHypaV3PresetId: 'hypa-b', hypaV3PresetId: 0 },
+  ])('fails the Hypa V3 owner closed for $label', ({ selectedHypaV3PresetId, hypaV3PresetId }) => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        hypaV3Presets: [
+          { id: 'hypa-a', name: 'A', settings: {} },
+          { id: 'hypa-b', name: 'B', settings: {} },
+        ],
+        ...(selectedHypaV3PresetId === undefined ? {} : { selectedHypaV3PresetId }),
+        hypaV3PresetId,
+      } as never,
+      3,
+    )
+
+    const before = composeResourceDatabaseSnapshot()
+    expect(getHypaV3PresetOwnerStateSnapshot()).toBeNull()
+    expect(updateHypaV3PresetOwnerState((draft) => draft.hypaV3Presets.reverse())).toBe(false)
+    expect(composeResourceDatabaseSnapshot()).toEqual(before)
+  })
+
+  it('fails the Hypa V3 owner closed for duplicate preset ids', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        hypaV3Presets: [
+          { id: 'hypa-a', name: 'A', settings: {} },
+          { id: 'hypa-a', name: 'Duplicate', settings: {} },
+        ],
+        selectedHypaV3PresetId: 'hypa-a',
+        hypaV3PresetId: 0,
+      } as never,
+      3,
+    )
+
+    expect(getHypaV3PresetOwnerStateSnapshot()).toBeNull()
   })
 
   it('fences an accepted persona PATCH after a later optimistic delete removed the row', () => {

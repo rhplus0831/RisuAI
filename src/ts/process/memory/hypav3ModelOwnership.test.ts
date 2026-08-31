@@ -2,7 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Database } from '../../storage/database.svelte'
-import { resolveHypaV3ResponseTokenReservation } from './hypav3'
+import { getCurrentHypaV3Preset, resolveHypaV3ResponseTokenReservation } from './hypav3'
+import { replaceResourceDatabase } from '../../server/resourceState.svelte'
 
 function database(overrides: Partial<Database> = {}): Database {
   return {
@@ -45,7 +46,56 @@ describe('HypaV3 model ownership', () => {
     expect(resolveHypaV3ResponseTokenReservation(db)).toBe(128)
   })
 
-  it('retains the flat response budget for an explicit legacy selection', () => {
-    expect(resolveHypaV3ResponseTokenReservation(database({ maxResponse: 640 }))).toBe(640)
+  it('uses the canonical profile default instead of a flat compatibility budget', () => {
+    expect(resolveHypaV3ResponseTokenReservation(database({ maxResponse: 640 }))).toBe(500)
+  })
+
+  it('resolves the current preset from stable identity instead of a conflicting numeric projection', () => {
+    replaceResourceDatabase(
+      database({
+        hypaV3Presets: [
+          { id: 'preset-a', name: 'Alpha', settings: {} },
+          { id: 'preset-b', name: 'Beta', settings: {} },
+        ],
+        selectedHypaV3PresetId: 'preset-b',
+        hypaV3PresetId: 1,
+      } as Partial<Database>),
+    )
+
+    expect(getCurrentHypaV3Preset().name).toBe('Beta')
+  })
+
+  it.each([
+    { label: 'missing stable selection', selectedHypaV3PresetId: undefined, hypaV3PresetId: 1 },
+    { label: 'unknown stable selection', selectedHypaV3PresetId: 'missing', hypaV3PresetId: 1 },
+    { label: 'conflicting numeric projection', selectedHypaV3PresetId: 'preset-b', hypaV3PresetId: 0 },
+  ])('fails current-preset resolution closed for $label', ({ selectedHypaV3PresetId, hypaV3PresetId }) => {
+    replaceResourceDatabase(
+      database({
+        hypaV3Presets: [
+          { id: 'preset-a', name: 'Alpha', settings: {} },
+          { id: 'preset-b', name: 'Beta', settings: {} },
+        ],
+        ...(selectedHypaV3PresetId === undefined ? {} : { selectedHypaV3PresetId }),
+        hypaV3PresetId,
+      } as Partial<Database>),
+    )
+
+    expect(() => getCurrentHypaV3Preset()).toThrow('Preset not found. Please select a valid preset.')
+  })
+
+  it('fails current-preset resolution closed for duplicate preset ids', () => {
+    replaceResourceDatabase(
+      database({
+        hypaV3Presets: [
+          { id: 'duplicate', name: 'Alpha', settings: {} },
+          { id: 'duplicate', name: 'Beta', settings: {} },
+        ],
+        selectedHypaV3PresetId: 'duplicate',
+        hypaV3PresetId: 0,
+      } as Partial<Database>),
+    )
+
+    expect(() => getCurrentHypaV3Preset()).toThrow('Preset not found. Please select a valid preset.')
   })
 })

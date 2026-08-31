@@ -161,6 +161,7 @@ vi.mock('./commands', () => ({
       'globalscript',
       'hypaV3PresetId',
       'hypaV3Presets',
+      'selectedHypaV3PresetId',
       'maxContext',
       'maxResponse',
       'notification',
@@ -341,6 +342,7 @@ function setupSettings(settings: Record<string, unknown>): void {
 
 function hypaPreset(name: string, settings: Record<string, unknown> = {}): HypaV3Preset {
   return {
+    id: name.toLocaleLowerCase(),
     name,
     settings: {
       summarizationPrompt: `${name} prompt`,
@@ -426,6 +428,28 @@ describe('settingsBridge coalescing', () => {
     expect(testDatabaseState.db.textTheme).toBe('restored')
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.patches).toEqual([])
+    stop()
+  })
+
+  it('persists stable Hypa selection drafts with their derived numeric projection', async () => {
+    setupSettings({
+      hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+      selectedHypaV3PresetId: 'alpha',
+      hypaV3PresetId: 0,
+    })
+    const { draft, stop } = await createSettingDraft<string | null>('selectedHypaV3PresetId', null)
+
+    draft.value = 'beta'
+    await flushAndSettle()
+
+    expect(testDatabaseState.db.selectedHypaV3PresetId).toBe('beta')
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(1)
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      {
+        selectedHypaV3PresetId: 'beta',
+      },
+    ])
     stop()
   })
 
@@ -746,11 +770,13 @@ describe('settingsBridge coalescing', () => {
     recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
 
     applyServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      selectedHypaV3PresetId: 'imported',
       hypaV3PresetId: 1,
     })
     await flushAndSettle()
@@ -840,12 +866,14 @@ describe('settingsBridge coalescing', () => {
     recorded.patchResults.push(persistence.promise)
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
 
     let settled = false
     const result = persistServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      selectedHypaV3PresetId: 'imported',
       hypaV3PresetId: 1,
     }).then((outcome) => {
       settled = true
@@ -859,6 +887,7 @@ describe('settingsBridge coalescing', () => {
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([
       {
         hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+        selectedHypaV3PresetId: 'imported',
         hypaV3PresetId: 1,
       },
     ])
@@ -871,11 +900,13 @@ describe('settingsBridge coalescing', () => {
     recorded.patchResults.push({ status: 'error', error: 'failed' })
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
 
     const outcome = await persistServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      selectedHypaV3PresetId: 'imported',
       hypaV3PresetId: 1,
     })
 
@@ -890,11 +921,13 @@ describe('settingsBridge coalescing', () => {
     recorded.patchResults.push({ status: 'error', error: 'temporarily unavailable' })
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
 
     const outcome = await persistServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Imported')],
+      selectedHypaV3PresetId: 'imported',
       hypaV3PresetId: 1,
     })
 
@@ -946,6 +979,8 @@ describe('settingsBridge coalescing', () => {
   it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+      selectedHypaV3PresetId: 'alpha',
+      hypaV3PresetId: 0,
     })
 
     applyServerBackedSettingsPatch({
@@ -971,6 +1006,8 @@ describe('settingsBridge coalescing', () => {
   it('keeps a failed Hypa V3 appended preset when that row changed after dispatch', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha')],
+      selectedHypaV3PresetId: 'alpha',
+      hypaV3PresetId: 0,
     })
 
     applyServerBackedSettingsPatch({
@@ -995,6 +1032,8 @@ describe('settingsBridge coalescing', () => {
   it('restores only the failed Hypa V3 renamed row while preserving sibling edits', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+      selectedHypaV3PresetId: 'alpha',
+      hypaV3PresetId: 0,
     })
     const renamedAlpha = { ...hypaPreset('Alpha'), name: 'Alpha renamed' }
 
@@ -1020,11 +1059,13 @@ describe('settingsBridge coalescing', () => {
   it('reinserts a failed Hypa V3 deleted preset at its prior index and restores attempted-matching selection', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Gamma')],
+      selectedHypaV3PresetId: 'beta',
       hypaV3PresetId: 1,
     })
 
     applyServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Gamma')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
     await Promise.resolve()
@@ -1044,20 +1085,24 @@ describe('settingsBridge coalescing', () => {
       hypaPreset('Later local'),
     ])
     expect(testDatabaseState.db.hypaV3PresetId).toBe(1)
+    expect(testDatabaseState.db.selectedHypaV3PresetId).toBe('beta')
   })
 
   it('rebases newer live Hypa V3 selection when a failed delete rollback reinserts before it', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Gamma'), hypaPreset('Delta')],
+      selectedHypaV3PresetId: 'beta',
       hypaV3PresetId: 1,
     })
 
     applyServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Delta')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
     await Promise.resolve()
 
+    testDatabaseState.db.selectedHypaV3PresetId = 'delta'
     testDatabaseState.db.hypaV3PresetId = 2
     recorded.patches[0].rollback?.()
 
@@ -1068,16 +1113,19 @@ describe('settingsBridge coalescing', () => {
       hypaPreset('Delta'),
     ])
     expect(testDatabaseState.db.hypaV3PresetId).toBe(3)
+    expect(testDatabaseState.db.selectedHypaV3PresetId).toBe('delta')
   })
 
   it('does not duplicate a failed Hypa V3 deleted preset when an equivalent row is already live', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta'), hypaPreset('Gamma')],
+      selectedHypaV3PresetId: 'beta',
       hypaV3PresetId: 1,
     })
 
     applyServerBackedSettingsPatch({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Gamma')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
     await Promise.resolve()
@@ -1090,18 +1138,19 @@ describe('settingsBridge coalescing', () => {
     expect(testDatabaseState.db.hypaV3PresetId).toBe(0)
   })
 
-  it('keeps selection-only Hypa V3 preset id patches on the generic rollback path', async () => {
+  it('rejects numeric-only Hypa V3 selection patches', async () => {
     setupSettings({
       hypaV3Presets: [hypaPreset('Alpha'), hypaPreset('Beta')],
+      selectedHypaV3PresetId: 'alpha',
       hypaV3PresetId: 0,
     })
 
     applyServerBackedSettingsPatch({ hypaV3PresetId: 1 })
     await Promise.resolve()
 
-    recorded.patches[0].rollback?.()
-
+    expect(recorded.patches).toEqual([])
     expect(testDatabaseState.db.hypaV3PresetId).toBe(0)
+    expect(testDatabaseState.db.selectedHypaV3PresetId).toBe('alpha')
     expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Beta')])
   })
 

@@ -39,6 +39,7 @@ import {
   type ServerStandaloneSettingPayload,
 } from '@risuai/protocol/standalone-settings'
 import { projectChatMetadata, type ChatMetadataOwnerState } from './chatMetadataOwner'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -705,6 +706,85 @@ export const charactersResourceState = $state<CharactersResourceState>({
   error: null,
   rowErrors: {},
 })
+
+export interface HypaV3PresetOwnerStateSnapshot {
+  hypaV3Presets: Database['hypaV3Presets']
+  selectedHypaV3PresetId: string | null
+  /** Derived compatibility projection. Never use this field as preset identity. */
+  hypaV3PresetId: number
+}
+
+export type HypaV3PresetOwnerStateDraft = Omit<HypaV3PresetOwnerStateSnapshot, 'hypaV3PresetId'>
+
+/**
+ * Read the canonical Hypa V3 preset collection and stable selection together.
+ * Missing, duplicate, unknown, or numerically inconsistent owners fail closed;
+ * normal reads never repair rows or fall back to the numeric projection.
+ */
+export function getHypaV3PresetOwnerStateSnapshot(): HypaV3PresetOwnerStateSnapshot | null {
+  if (hypaV3PresetOwnerHasResourceError()) return null
+
+  const hypaV3Presets = collectionsResourceState.values.hypaV3Presets
+  const settings = settingsResourceState.value as Record<string, unknown>
+  if (!Array.isArray(hypaV3Presets) || !isUniquePresetCollection(hypaV3Presets)) return null
+
+  const selectedHypaV3PresetId = settings.selectedHypaV3PresetId
+  if (selectedHypaV3PresetId !== null && !nonEmptyString(selectedHypaV3PresetId)) return null
+  const hypaV3PresetId = hypaV3PresetIndexFromStableId({ selectedHypaV3PresetId, hypaV3Presets })
+  if (
+    (hypaV3Presets.length === 0 ? selectedHypaV3PresetId !== null || hypaV3PresetId !== -1 : hypaV3PresetId === -1) ||
+    settings.hypaV3PresetId !== hypaV3PresetId
+  ) {
+    return null
+  }
+
+  return {
+    hypaV3Presets: cloneJsonValue(hypaV3Presets) as Database['hypaV3Presets'],
+    selectedHypaV3PresetId,
+    hypaV3PresetId,
+  }
+}
+
+/**
+ * Apply one optimistic Hypa V3 owner mutation atomically. The callback edits a
+ * detached draft with stable identity only; commit derives the numeric
+ * compatibility projection from the resulting unique collection.
+ */
+export function updateHypaV3PresetOwnerState(mutator: (draft: HypaV3PresetOwnerStateDraft) => boolean | void): boolean {
+  const current = getHypaV3PresetOwnerStateSnapshot()
+  if (!current) return false
+
+  const draft: HypaV3PresetOwnerStateDraft = {
+    hypaV3Presets: cloneJsonValue(current.hypaV3Presets),
+    selectedHypaV3PresetId: current.selectedHypaV3PresetId,
+  }
+  if (mutator(draft) === false || !isUniquePresetCollection(draft.hypaV3Presets)) return false
+  if (draft.selectedHypaV3PresetId !== null && !nonEmptyString(draft.selectedHypaV3PresetId)) return false
+
+  const hypaV3PresetId = hypaV3PresetIndexFromStableId(draft)
+  if (
+    draft.hypaV3Presets.length === 0
+      ? draft.selectedHypaV3PresetId !== null || hypaV3PresetId !== -1
+      : hypaV3PresetId === -1
+  ) {
+    return false
+  }
+
+  collectionsResourceState.values.hypaV3Presets = cloneJsonValue(draft.hypaV3Presets)
+  const settings = settingsResourceState.value as Record<string, unknown>
+  settings.selectedHypaV3PresetId = draft.selectedHypaV3PresetId
+  settings.hypaV3PresetId = hypaV3PresetId
+  markResourceDatabaseChanged()
+  return true
+}
+
+function hypaV3PresetOwnerHasResourceError(): boolean {
+  return (
+    settingsResourceState.status === 'error' ||
+    settingsResourceState.groupStatuses.memory === 'error' ||
+    collectionsResourceState.statuses.hypaV3Presets === 'error'
+  )
+}
 
 export interface PersonaOwnerStateSnapshot {
   personas: Database['personas']

@@ -42,8 +42,16 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
 
       let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
       if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
-      if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
-      if (key === 'hypaV3Presets' || key === 'hypaModel') {
+      if (key === 'hypaV3Presets') {
+        value = clone(otherBotMocks.hypaPresets).map((preset: Record<string, unknown>, index: number) => ({
+          id: typeof preset.id === 'string' ? preset.id : `hypa-test-${index}`,
+          ...preset,
+        }))
+      }
+      if (key === 'selectedHypaV3PresetId') {
+        value = otherBotMocks.hypaPresets.length > 0 ? (otherBotMocks.hypaPresets[0].id ?? 'hypa-test-0') : null
+      }
+      if (key === 'hypaV3Presets' || key === 'selectedHypaV3PresetId' || key === 'hypaModel') {
         const valueStore = writable(value)
         const reactiveValue = fromStore(valueStore)
         const draft = {
@@ -97,6 +105,14 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       otherBotMocks.drafts.set(key, draft)
       return draft
     },
+    applyServerBackedSettingsPatch: (patch: Record<string, unknown>) => {
+      for (const [key, value] of Object.entries(patch)) {
+        const draft = otherBotMocks.drafts.get(key)
+        if (!draft) continue
+        if (draft.project) draft.project(value)
+        else draft.value = structuredClone(value)
+      }
+    },
     persistServerBackedSettingsPatch: otherBotMocks.persistServerBackedSettingsPatch,
     watchServerBackedSettings: otherBotMocks.watchServerBackedSettings,
   }
@@ -133,7 +149,13 @@ vi.mock('src/ts/tokenizer', () => ({
 }))
 
 vi.mock('src/ts/process/memory/hypav3', () => ({
-  createHypaV3Preset: vi.fn((name = 'Default', settings = {}) => ({ name, settings })),
+  createHypaV3Preset: vi.fn((name = 'Default', settings = {}) => ({
+    id: `hypa-created-${String(name)
+      .toLocaleLowerCase()
+      .replaceAll(/[^a-z0-9]+/g, '-')}`,
+    name,
+    settings,
+  })),
 }))
 
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
@@ -649,9 +671,13 @@ describe('OtherBotSettings Hypa preset import', () => {
     await vi.waitFor(() => expect(otherBotMocks.persistServerBackedSettingsPatch).toHaveBeenCalledOnce())
 
     const importPatch = otherBotMocks.persistServerBackedSettingsPatch.mock.calls[0][0] as Record<string, any>
-    expect(Object.keys(importPatch).sort()).toEqual(['hypaV3PresetId', 'hypaV3Presets'])
+    expect(Object.keys(importPatch).sort()).toEqual(['hypaV3PresetId', 'hypaV3Presets', 'selectedHypaV3PresetId'])
     expect(importPatch).toMatchObject({
-      hypaV3Presets: [{ name: 'Existing' }, { name: 'Imported', settings: { queryChatCount: 5 } }],
+      hypaV3Presets: [
+        { id: 'hypa-test-0', name: 'Existing' },
+        { id: 'hypa-created-imported', name: 'Imported', settings: { queryChatCount: 5 } },
+      ],
+      selectedHypaV3PresetId: 'hypa-created-imported',
       hypaV3PresetId: 1,
     })
     expect(uploadButton?.disabled).toBe(true)
@@ -676,7 +702,11 @@ describe('OtherBotSettings Hypa preset import', () => {
     otherBotMocks.persistServerBackedSettingsPatch.mockImplementationOnce(async (patch) => {
       projectSettingsPatch(patch as Record<string, unknown>)
       await tick()
-      projectSettingsPatch({ hypaV3Presets: originalPresets, hypaV3PresetId: 0 })
+      projectSettingsPatch({
+        hypaV3Presets: originalPresets,
+        selectedHypaV3PresetId: originalPresets[0]?.id ?? 'hypa-test-0',
+        hypaV3PresetId: 0,
+      })
       return 'failed'
     })
     component = mount(OtherBotSettings, { target })

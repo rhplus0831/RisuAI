@@ -26,9 +26,11 @@ import {
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
   captureSettingsPatchProjectionEpochs,
+  getHypaV3PresetOwnerStateSnapshot,
   hasSettingsGroupProjectionEpochChanged,
   isSettingsGroupAcknowledgementTainted,
   markSettingsGroupAcknowledgementTainted,
+  updateHypaV3PresetOwnerState,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, type SettingsGroup, type SettingsGroupProjectionEpochs } from './settingsGroups'
 import {
@@ -54,6 +56,7 @@ import {
 } from './pendingMutationOutbox'
 import { registerPendingBridgeOwnershipResetter, registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
 import { registerPendingSettingsProjectionOverlay } from './settingsPendingProjection'
+import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -337,16 +340,33 @@ export function createServerBackedSettingDraft<T>(
         return
       }
       const attempted = cloneDraftValue(draft.value)
-      const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
+      const previous = cloneJsonValue(currentSettingValue(key, fallback))
       if (!wasDirty) dirtyBaseline = cloneDraftValue(currentSettingValue(key, fallback))
       const presetTarget = resolveTopLevelPresetFieldMirrorTarget(key)
-      withTrustedResourceWrite(() => {
-        // Re-read the resource database inside the callback: the trusted write opens a
-        // copy-on-write working proxy, so an alias captured earlier still points
-        // at the read-only projection and would throw on write.
-        const target = getDatabase() as unknown as Record<string, unknown>
-        target[key] = attempted
-      })
+      if (key === 'hypaV3Presets' || key === 'selectedHypaV3PresetId') {
+        if (
+          !updateHypaV3PresetOwnerState((owner) => {
+            if (key === 'hypaV3Presets') {
+              owner.hypaV3Presets = cloneJsonValue(attempted) as typeof owner.hypaV3Presets
+            } else {
+              owner.selectedHypaV3PresetId = attempted as string | null
+            }
+          })
+        ) {
+          dirty = false
+          dirtyOwnerKey = null
+          draft.value = cloneDraftValue(previous as T)
+          return
+        }
+      } else {
+        withTrustedResourceWrite(() => {
+          // Re-read the resource database inside the callback: the trusted write opens a
+          // copy-on-write working proxy, so an alias captured earlier still points
+          // at the read-only projection and would throw on write.
+          const target = getDatabase() as unknown as Record<string, unknown>
+          target[key] = attempted
+        })
+      }
       const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
       dirtyOwnerKey =
         mirroredToPreset && presetTarget
@@ -379,6 +399,16 @@ function reassertDirtySettingDraftValue<T>(key: string, value: T): void {
   if (!settingsGroupForKey(key)) return
 
   withSuppressedSettingsWatcher(() => {
+    if (key === 'hypaV3Presets' || key === 'selectedHypaV3PresetId') {
+      updateHypaV3PresetOwnerState((owner) => {
+        if (key === 'hypaV3Presets') {
+          owner.hypaV3Presets = cloneJsonValue(value) as typeof owner.hypaV3Presets
+        } else {
+          owner.selectedHypaV3PresetId = value as string | null
+        }
+      })
+      return
+    }
     withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       target[key] = cloneJsonValue(value)
@@ -629,39 +659,97 @@ interface PreparedServerBackedSettingsPatch {
 }
 
 function prepareServerBackedSettingsPatch(patch: SettingsPatch): PreparedServerBackedSettingsPatch | null {
+  const normalizedPatch = normalizeHypaV3PresetOwnerPatch(patch)
+  if (!normalizedPatch) return null
   const commandPatch: SettingsPatch = {}
   const previous: SettingsPatch = {}
   const attempted: SettingsPatch = {}
 
   const currentSettings = getDatabase() as unknown as Record<string, unknown>
-  for (const [key, value] of Object.entries(patch)) {
+  const currentHypaOwner = getHypaV3PresetOwnerStateSnapshot()
+  for (const [key, value] of Object.entries(normalizedPatch)) {
     if (!settingsGroupForKey(key) || value === undefined) continue
-    const currentValue = currentSettings[key]
+    const currentValue = HYPA_V3_PRESET_OWNER_KEYS.includes(key as never)
+      ? currentHypaOwner?.[key as keyof typeof currentHypaOwner]
+      : currentSettings[key]
     if (snapshotJson(currentValue) === snapshotJson(value)) continue
     previous[key] = cloneJsonValue(currentValue)
     attempted[key] = cloneJsonValue(value)
     commandPatch[key] = cloneJsonValue(value)
   }
 
+  if (hasOwnKey(commandPatch, 'selectedHypaV3PresetId') && !hasOwnKey(commandPatch, 'hypaV3PresetId')) {
+    previous.hypaV3PresetId = cloneJsonValue(currentHypaOwner?.hypaV3PresetId)
+    attempted.hypaV3PresetId = cloneJsonValue(normalizedPatch.hypaV3PresetId)
+    commandPatch.hypaV3PresetId = cloneJsonValue(normalizedPatch.hypaV3PresetId)
+  }
+  if (hasOwnKey(commandPatch, 'hypaV3PresetId') && !hasOwnKey(commandPatch, 'selectedHypaV3PresetId')) {
+    previous.selectedHypaV3PresetId = cloneJsonValue(currentHypaOwner?.selectedHypaV3PresetId)
+    attempted.selectedHypaV3PresetId = cloneJsonValue(normalizedPatch.selectedHypaV3PresetId)
+    commandPatch.selectedHypaV3PresetId = cloneJsonValue(normalizedPatch.selectedHypaV3PresetId)
+  }
+
   if (Object.keys(commandPatch).length === 0) return null
   return { commandPatch, previous, attempted }
 }
 
-function applyOptimisticServerBackedSettingsPatch(commandPatch: SettingsPatch): void {
+function normalizeHypaV3PresetOwnerPatch(patch: SettingsPatch): SettingsPatch | null {
+  const writesOwner = HYPA_V3_PRESET_OWNER_KEYS.some((key) => hasOwnKey(patch, key))
+  if (!writesOwner) return patch
+  if (hasOwnKey(patch, 'hypaV3PresetId') && !hasOwnKey(patch, 'selectedHypaV3PresetId')) return null
+
+  const current = getHypaV3PresetOwnerStateSnapshot()
+  if (!current) return null
+  const hypaV3Presets = hasOwnKey(patch, 'hypaV3Presets') ? patch.hypaV3Presets : current.hypaV3Presets
+  const selectedHypaV3PresetId = hasOwnKey(patch, 'selectedHypaV3PresetId')
+    ? patch.selectedHypaV3PresetId
+    : current.selectedHypaV3PresetId
+  if (!Array.isArray(hypaV3Presets)) return null
+  const hypaV3PresetId = hypaV3PresetIndexFromStableId({ hypaV3Presets, selectedHypaV3PresetId })
+  if (
+    (hypaV3Presets.length === 0 ? selectedHypaV3PresetId !== null || hypaV3PresetId !== -1 : hypaV3PresetId === -1) ||
+    (hasOwnKey(patch, 'hypaV3PresetId') && patch.hypaV3PresetId !== hypaV3PresetId)
+  ) {
+    return null
+  }
+
+  return {
+    ...patch,
+    selectedHypaV3PresetId,
+    hypaV3PresetId,
+  }
+}
+
+function applyOptimisticServerBackedSettingsPatch(commandPatch: SettingsPatch): boolean {
+  let applied = true
   withSuppressedSettingsWatcher(() => {
+    const writesHypaOwner = HYPA_V3_PRESET_OWNER_KEYS.some((key) => hasOwnKey(commandPatch, key))
+    if (writesHypaOwner) {
+      applied = updateHypaV3PresetOwnerState((owner) => {
+        if (hasOwnKey(commandPatch, 'hypaV3Presets')) {
+          owner.hypaV3Presets = cloneJsonValue(commandPatch.hypaV3Presets) as typeof owner.hypaV3Presets
+        }
+        if (hasOwnKey(commandPatch, 'selectedHypaV3PresetId')) {
+          owner.selectedHypaV3PresetId = commandPatch.selectedHypaV3PresetId as string | null
+        }
+      })
+    }
+    const genericPatch = Object.fromEntries(
+      Object.entries(commandPatch).filter(([key]) => !HYPA_V3_PRESET_OWNER_KEYS.includes(key as never)),
+    )
+    if (Object.keys(genericPatch).length === 0) return
     withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
-      for (const [key, value] of Object.entries(commandPatch)) {
-        target[key] = cloneJsonValue(value)
-      }
+      for (const [key, value] of Object.entries(genericPatch)) target[key] = cloneJsonValue(value)
     })
   })
+  return applied
 }
 
 export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   const prepared = prepareServerBackedSettingsPatch(patch)
   if (!prepared) return
-  applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)
+  if (!applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)) return
 
   // Fold an immediate write into any same-field debounce. This stages one
   // absolute successor before reserving the command queue, so a remotely
@@ -690,7 +778,7 @@ export async function persistServerBackedSettingsPatchWithSettlement(
   const prepared = prepareServerBackedSettingsPatch(patch)
   if (!prepared) return { status: 'accepted' }
   const projectionEpochs = captureSettingsPatchProjectionEpochs(prepared.commandPatch)
-  applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)
+  if (!applyOptimisticServerBackedSettingsPatch(prepared.commandPatch)) return { status: 'failed' }
 
   const reportFailure = createSettingsSaveFailureReporter()
   const intent = settingsPatchDurableIntent(prepared.commandPatch)
@@ -1691,53 +1779,66 @@ function withSuppressedSettingsWatcher(fn: () => void): void {
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
   let runtimeProjectionKeys: string[] = []
-  withTrustedResourceWrite(() => {
-    const target = getDatabase() as unknown as Record<string, unknown>
-    const genericPrevious: SettingsPatch = { ...previous }
-    const genericAttempted: SettingsPatch = { ...attempted }
-
-    rollbackHypaV3Presets(target, genericPrevious, genericAttempted)
-    runtimeProjectionKeys = applyAttemptedFieldRollback({
-      target,
-      previous: genericPrevious,
-      attempted: genericAttempted,
+  const genericPrevious: SettingsPatch = { ...previous }
+  const genericAttempted: SettingsPatch = { ...attempted }
+  rollbackHypaV3PresetOwner(genericPrevious, genericAttempted)
+  if (Object.keys(genericAttempted).length > 0) {
+    withTrustedResourceWrite(() => {
+      const target = getDatabase() as unknown as Record<string, unknown>
+      runtimeProjectionKeys = applyAttemptedFieldRollback({
+        target,
+        previous: genericPrevious,
+        attempted: genericAttempted,
+      })
     })
-  })
+  }
   applySettingsRuntimeProjectionEffects(runtimeProjectionKeys)
 }
 
-function rollbackHypaV3Presets(
-  target: Record<string, unknown>,
-  previous: SettingsPatch,
-  attempted: SettingsPatch,
-): void {
-  if (!hasOwnKey(attempted, 'hypaV3Presets')) return
+const HYPA_V3_PRESET_OWNER_KEYS = ['hypaV3Presets', 'selectedHypaV3PresetId', 'hypaV3PresetId'] as const
 
-  const rollbackResult = rollbackHypaV3PresetRows({
-    target,
-    previousPresets: previous.hypaV3Presets,
-    attemptedPresets: attempted.hypaV3Presets,
-    livePresets: target.hypaV3Presets,
-  })
+function rollbackHypaV3PresetOwner(previous: SettingsPatch, attempted: SettingsPatch): void {
+  if (!HYPA_V3_PRESET_OWNER_KEYS.some((key) => hasOwnKey(attempted, key))) return
 
-  const shouldRestoreAttemptedSelection =
-    rollbackResult.rolledBack &&
-    hasOwnKey(attempted, 'hypaV3PresetId') &&
-    hasOwnKey(previous, 'hypaV3PresetId') &&
-    isJsonSnapshotEqual(target.hypaV3PresetId, attempted.hypaV3PresetId)
+  const current = getHypaV3PresetOwnerStateSnapshot()
+  if (current) {
+    const target: Record<string, unknown> = {
+      hypaV3Presets: current.hypaV3Presets,
+      selectedHypaV3PresetId: current.selectedHypaV3PresetId,
+      hypaV3PresetId: current.hypaV3PresetId,
+    }
+    const writesPresets = hasOwnKey(attempted, 'hypaV3Presets')
+    const rollbackResult = writesPresets
+      ? rollbackHypaV3PresetRows({
+          target,
+          previousPresets: previous.hypaV3Presets,
+          attemptedPresets: attempted.hypaV3Presets,
+          livePresets: current.hypaV3Presets,
+        })
+      : { rolledBack: false }
+    const selectionAttemptStillLive =
+      hasOwnKey(attempted, 'selectedHypaV3PresetId') &&
+      hasOwnKey(previous, 'selectedHypaV3PresetId') &&
+      hasOwnKey(attempted, 'hypaV3PresetId') &&
+      hasOwnKey(previous, 'hypaV3PresetId') &&
+      isJsonSnapshotEqual(current.selectedHypaV3PresetId, attempted.selectedHypaV3PresetId) &&
+      isJsonSnapshotEqual(current.hypaV3PresetId, attempted.hypaV3PresetId)
 
-  if (!shouldRestoreAttemptedSelection && rollbackResult.insertedIndex !== undefined) {
-    rebaseHypaV3PresetIdAfterInsert(target, rollbackResult.insertedIndex)
+    if (selectionAttemptStillLive && (!writesPresets || rollbackResult.rolledBack)) {
+      target.selectedHypaV3PresetId = cloneJsonValue(previous.selectedHypaV3PresetId)
+    }
+    if (rollbackResult.rolledBack || (!writesPresets && selectionAttemptStillLive)) {
+      updateHypaV3PresetOwnerState((draft) => {
+        draft.hypaV3Presets = cloneJsonValue(target.hypaV3Presets) as typeof draft.hypaV3Presets
+        draft.selectedHypaV3PresetId = target.selectedHypaV3PresetId as string | null
+      })
+    }
   }
 
-  if (shouldRestoreAttemptedSelection) {
-    target.hypaV3PresetId = cloneJsonValue(previous.hypaV3PresetId)
+  for (const key of HYPA_V3_PRESET_OWNER_KEYS) {
+    delete previous[key]
+    delete attempted[key]
   }
-
-  delete previous.hypaV3Presets
-  delete attempted.hypaV3Presets
-  delete previous.hypaV3PresetId
-  delete attempted.hypaV3PresetId
 }
 
 function rollbackHypaV3PresetRows(input: {
@@ -1823,14 +1924,6 @@ function rollbackHypaV3PresetDelete(
   nextPresets.splice(insertedIndex, 0, cloneJsonValue(removedRow))
   target.hypaV3Presets = nextPresets
   return { rolledBack: true, insertedIndex }
-}
-
-function rebaseHypaV3PresetIdAfterInsert(target: Record<string, unknown>, insertedIndex: number): void {
-  const liveId = target.hypaV3PresetId
-  if (typeof liveId !== 'number' || !Number.isFinite(liveId)) return
-  if (liveId < insertedIndex) return
-
-  target.hypaV3PresetId = liveId + 1
 }
 
 function findHypaV3PresetRemovedIndex(previousPresets: unknown[], attemptedPresets: unknown[]): number {
@@ -2001,6 +2094,11 @@ function hasOwnKey(value: object, key: string): boolean {
 }
 
 function currentSettingValue<T>(key: string, fallback: T): T {
+  if (HYPA_V3_PRESET_OWNER_KEYS.includes(key as never)) {
+    const owner = getHypaV3PresetOwnerStateSnapshot()
+    if (!owner) return fallback
+    return cloneJsonValue(owner[key as keyof typeof owner]) as T
+  }
   const target = getDatabase() as unknown as Record<string, unknown> | undefined
   const value = target?.[key]
   return value === undefined ? fallback : (value as T)

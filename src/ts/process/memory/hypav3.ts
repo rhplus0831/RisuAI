@@ -17,6 +17,7 @@ import {
   type LocalMemoryJobHandle,
 } from 'src/ts/server/memoryJobProjection.svelte'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
+import { getHypaV3PresetOwnerStateSnapshot } from 'src/ts/server/resourceState.svelte'
 
 export interface HypaV3Preset {
   id: string
@@ -1570,8 +1571,8 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
 }
 
 export function getCurrentHypaV3Preset(): HypaV3Preset {
-  const db = getDatabase()
-  const preset = db.hypaV3Presets?.[db.hypaV3PresetId]
+  const owner = getHypaV3PresetOwnerStateSnapshot()
+  const preset = owner?.hypaV3Presets[owner.hypaV3PresetId]
 
   if (!preset) {
     throw new Error('Preset not found. Please select a valid preset.')

@@ -27,6 +27,7 @@
   import { getCharToken } from 'src/ts/tokenizer'
   import { resolveEffectivePromptTemplate } from '@risuai/shared-core/effective-prompt-template'
   import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
+  import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
   import { createHypaV3Preset, type HypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
@@ -34,7 +35,11 @@
   // reload contract, while the exact-patch helper owns atomic Hypa imports.
   // Both retire with the settings bridge after their narrow command/draft
   // replacements land; neither is used for normal owner reads in this page.
-  import { createServerBackedSettingDraft, persistServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    applyServerBackedSettingsPatch,
+    createServerBackedSettingDraft,
+    persistServerBackedSettingsPatch,
+  } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
   import { providerOperationCredential, requestProviderOperation } from 'src/ts/server/providerOperations'
   import { createLatestOperationGuard, type LatestOperationToken } from 'src/ts/server/staleStateGuards'
@@ -107,7 +112,7 @@
   const emotionProcesserDraft = createServerBackedSettingDraft<string>('emotionProcesser', 'submodel')
   const hypaV3Draft = createServerBackedSettingDraft<boolean>('hypaV3', false)
   const hypaV3PresetsDraft = createServerBackedSettingDraft<HypaV3Preset[]>('hypaV3Presets', [])
-  const hypaV3PresetIdDraft = createServerBackedSettingDraft<number>('hypaV3PresetId', 0)
+  const selectedHypaV3PresetIdDraft = createServerBackedSettingDraft<string | null>('selectedHypaV3PresetId', null)
   const hypaModelDraft = createServerBackedSettingDraft<string>('hypaModel', 'MiniLM')
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
   const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>('hypaCustomSettings', {
@@ -121,17 +126,37 @@
   interface HypaV3PresetTarget {
     collection: HypaV3Preset[]
     preset: HypaV3Preset
+    presetId: string
     selection: number
+  }
+
+  function selectedHypaV3PresetIndex(): number {
+    return hypaV3PresetIndexFromStableId({
+      hypaV3Presets: hypaV3PresetsDraft.value,
+      selectedHypaV3PresetId: selectedHypaV3PresetIdDraft.value,
+    })
+  }
+
+  function applyHypaV3PresetOwnerPatch(hypaV3Presets: HypaV3Preset[], selectedHypaV3PresetId: string | null): boolean {
+    const hypaV3PresetId = hypaV3PresetIndexFromStableId({ hypaV3Presets, selectedHypaV3PresetId })
+    if (hypaV3Presets.length === 0 ? selectedHypaV3PresetId !== null : hypaV3PresetId === -1) return false
+    applyServerBackedSettingsPatch({
+      hypaV3Presets,
+      selectedHypaV3PresetId,
+      hypaV3PresetId,
+    })
+    return true
   }
 
   function captureHypaV3PresetTarget(): HypaV3PresetTarget | null {
     const collection = hypaV3PresetsDraft.value
-    const selection = hypaV3PresetIdDraft.value
+    const presetId = selectedHypaV3PresetIdDraft.value
+    const selection = selectedHypaV3PresetIndex()
     const preset = collection?.[selection]
 
-    if (!preset) return null
+    if (!preset || !presetId) return null
 
-    return { collection, preset, selection }
+    return { collection, preset, presetId, selection }
   }
 
   function stillOwnsHypaV3PresetTarget(target: HypaV3PresetTarget): boolean {
@@ -139,7 +164,8 @@
 
     return (
       currentCollection === target.collection &&
-      hypaV3PresetIdDraft.value === target.selection &&
+      selectedHypaV3PresetIdDraft.value === target.presetId &&
+      selectedHypaV3PresetIndex() === target.selection &&
       currentCollection[target.selection] === target.preset
     )
   }
@@ -158,6 +184,7 @@
       const presets = [...hypaV3PresetsDraft.value, newPreset]
       const persistence = await persistServerBackedSettingsPatch({
         hypaV3Presets: presets,
+        selectedHypaV3PresetId: newPreset.id,
         hypaV3PresetId: presets.length - 1,
       })
       if (!componentAlive) return
@@ -195,7 +222,7 @@
 
   // HypaV3
   $effect(() => {
-    const settings = hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings
+    const settings = hypaV3PresetsDraft.value?.[selectedHypaV3PresetIndex()]?.settings
     const currentValue = settings?.similarMemoryRatio
 
     if (!currentValue) return
@@ -212,7 +239,7 @@
   })
 
   $effect(() => {
-    const settings = hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings
+    const settings = hypaV3PresetsDraft.value?.[selectedHypaV3PresetIndex()]?.settings
     const currentValue = settings?.recentMemoryRatio
 
     if (!currentValue) return
@@ -1476,9 +1503,9 @@
       <select
         aria-label={`${language.HypaMemory} V3 ${language.presets}`}
         class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
-        bind:value={hypaV3PresetIdDraft.value}>
-        {#each hypaV3PresetsDraft.value as preset, i}
-          <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
+        bind:value={selectedHypaV3PresetIdDraft.value}>
+        {#each hypaV3PresetsDraft.value as preset}
+          <option class="bg-darkbg appearance-none" value={preset.id}>{preset.name}</option>
         {/each}
       </select>
 
@@ -1492,15 +1519,16 @@
             const presets = [...hypaV3PresetsDraft.value]
 
             presets.push(newPreset)
-            hypaV3PresetsDraft.value = presets
-            hypaV3PresetIdDraft.value = presets.length - 1
+            if (!applyHypaV3PresetOwnerPatch(presets, newPreset.id)) {
+              alertError('Unable to update the Hypa V3 preset owner.')
+            }
           }}>
           <PlusIcon size={24} />
         </button>
 
         <button
           type="button"
-          aria-label={`${language.edit}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
+          aria-label={`${language.edit}: ${hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             const target = captureHypaV3PresetTarget()
@@ -1517,14 +1545,16 @@
 
             const presets = [...hypaV3PresetsDraft.value]
             presets[target.selection] = { ...target.preset, name: newName }
-            hypaV3PresetsDraft.value = presets
+            if (!applyHypaV3PresetOwnerPatch(presets, target.presetId)) {
+              alertError('Unable to update the Hypa V3 preset owner.')
+            }
           }}>
           <PencilIcon size={24} />
         </button>
 
         <button
           type="button"
-          aria-label={`${language.remove}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
+          aria-label={`${language.remove}: ${hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             const target = captureHypaV3PresetTarget()
@@ -1541,8 +1571,9 @@
 
             const presets = [...hypaV3PresetsDraft.value]
             presets.splice(target.selection, 1)
-            hypaV3PresetIdDraft.value = 0
-            hypaV3PresetsDraft.value = presets
+            if (!applyHypaV3PresetOwnerPatch(presets, presets[0]?.id ?? null)) {
+              alertError('Unable to update the Hypa V3 preset owner.')
+            }
           }}>
           <TrashIcon size={24} />
         </button>
@@ -1551,7 +1582,7 @@
 
         <button
           type="button"
-          aria-label={`${language.export}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
+          aria-label={`${language.export}: ${hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             try {
@@ -1562,8 +1593,11 @@
                 return
               }
 
-              const id = hypaV3PresetIdDraft.value
-              const preset = presets[id]
+              const preset = presets[selectedHypaV3PresetIndex()]
+              if (!preset) {
+                alertError('There must be least one preset.')
+                return
+              }
               const bytesExport = Buffer.from(
                 JSON.stringify({
                   type: 'risu',
@@ -1592,8 +1626,8 @@
         </button>
       </div>
 
-      {#if hypaV3PresetsDraft.value?.[hypaV3PresetIdDraft.value]?.settings}
-        {@const settings = hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value].settings}
+      {#if hypaV3PresetsDraft.value?.[selectedHypaV3PresetIndex()]?.settings}
+        {@const settings = hypaV3PresetsDraft.value[selectedHypaV3PresetIndex()].settings}
 
         <span class="text-textcolor">{language.SuperMemory} {language.model}</span>
         <SelectInput
