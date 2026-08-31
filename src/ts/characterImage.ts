@@ -1,11 +1,15 @@
-import { getDatabase } from './storage/database.svelte'
 import { getFileSrc } from './fileSource'
+import { settingsResourceState } from './server/resourceState.svelte'
+
+function shouldHideAllImages(): boolean {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (settingsResourceState.status === 'error' || status === 'error') return true
+  return settingsResourceState.value.hideAllImages === true
+}
 
 export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain' | 'lgcss') {
-  const db = getDatabase()
-
   // Return placeholder when hideAllImages is enabled
-  if (db.hideAllImages) {
+  if (shouldHideAllImages()) {
     if (type === 'plain') {
       return '/none.webp'
     }

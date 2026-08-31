@@ -29,6 +29,8 @@ vi.mock('./characters', () => ({
 
 vi.mock('./globalApi.svelte', () => ({
   changeChatTo: routerMocks.changeChatTo,
+  downloadFile: vi.fn(),
+  saveAsset: vi.fn(),
 }))
 
 vi.mock('./playground', () => ({
@@ -608,6 +610,57 @@ describe('router character route freshness', () => {
     await router.applyRouteToStores(get(router.currentRoute))
 
     expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-b')
+    expect(get(stores.botMakerMode)).toBe(false)
+  })
+
+  it.each(['idle', 'loading'] as const)(
+    'uses the explicit aggregate compatibility seam while character owners are %s',
+    async (status) => {
+      const router = await importRouterAt('/character/char-a/chat-a')
+      const stores = await import('./stores.svelte')
+      const { charactersResourceState, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+      replaceResourceDatabase({
+        characters: [
+          {
+            chaId: 'char-a',
+            chatPage: 0,
+            chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+          },
+        ],
+      } as any)
+      stores.selectedCharID.set(0)
+      routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+      router.setCharacterSidebarViewMode('character')
+      stores.botMakerMode.set(false)
+      charactersResourceState.status = status
+
+      await router.applyRouteToStores(get(router.currentRoute))
+
+      expect(get(stores.botMakerMode)).toBe(true)
+    },
+  )
+
+  it('fails closed instead of restoring a sidebar view from an errored character owner', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const stores = await import('./stores.svelte')
+    const { charactersResourceState, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+    router.setCharacterSidebarViewMode('character')
+    stores.botMakerMode.set(false)
+    charactersResourceState.status = 'error'
+
+    await router.applyRouteToStores(get(router.currentRoute))
+
     expect(get(stores.botMakerMode)).toBe(false)
   })
 

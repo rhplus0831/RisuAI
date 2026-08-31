@@ -13,11 +13,18 @@ export function selectCharacterOwner(characters: readonly character[], selectedI
 }
 
 export function getSelectedCharacterOwner(): character | undefined {
+  if (charactersResourceState.status === 'error') return undefined
   return selectCharacterOwner(charactersResourceState.characters, charactersResourceState.currentChar)
 }
 
 function characterOwnerRows(): readonly character[] {
-  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : getDatabase().characters
+  const status = charactersResourceState.status
+  if (status === 'ready') return charactersResourceState.characters
+  // Explicit bootstrap compatibility: pre-owner callers may still publish the
+  // aggregate while character resources are idle or loading. Owner errors must
+  // never fall back to that potentially stale projection.
+  if (status === 'idle' || status === 'loading') return getDatabase().characters ?? []
+  return []
 }
 
 export async function getCustomBackground(db: unknown) {
@@ -92,7 +99,12 @@ export async function getEmotion(
   chaEmotion: { [key: string]: [string, string, number][] },
   type: 'contain' | 'plain' | 'css',
 ) {
+  const status = charactersResourceState.status
   const currentChar =
-    charactersResourceState.status === 'ready' ? getSelectedCharacterOwner() : db.characters[get(selectedCharID)]
+    status === 'ready'
+      ? getSelectedCharacterOwner()
+      : status === 'idle' || status === 'loading'
+        ? db.characters[get(selectedCharID)]
+        : undefined
   return getEmotionForCharacter(currentChar, chaEmotion, type)
 }

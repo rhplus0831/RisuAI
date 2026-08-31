@@ -10,6 +10,7 @@ vi.mock('./process/modules', () => ({
 
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
 import { selectFileByDom } from './filePicker'
+import { settingsResourceState } from './server/resourceState.svelte'
 
 beforeEach(() => {
   testDatabaseState.db = { allowAllExtentionFiles: false } as never
@@ -41,5 +42,37 @@ describe('selectFileByDom', () => {
 
     await expect(selection).resolves.toEqual([])
     expect(input!.isConnected).toBe(false)
+  })
+
+  it('accepts every extension only from a ready advanced-settings owner', async () => {
+    testDatabaseState.db = { allowAllExtentionFiles: true } as never
+
+    const selection = selectFileByDom(['png'])
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(input?.accept).toBe('*')
+    input!.dispatchEvent(new Event('cancel'))
+    await expect(selection).resolves.toEqual([])
+  })
+
+  it.each(['loading', 'error'] as const)('restricts extensions when the advanced owner is %s', async (status) => {
+    testDatabaseState.db = { allowAllExtentionFiles: true } as never
+    settingsResourceState.groupStatuses.advanced = status
+
+    const selection = selectFileByDom(['png'])
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(input?.accept).toBe('.png')
+    input!.dispatchEvent(new Event('cancel'))
+    await expect(selection).resolves.toEqual([])
+  })
+
+  it('restricts extensions when the settings owner is in error', async () => {
+    testDatabaseState.db = { allowAllExtentionFiles: true } as never
+    settingsResourceState.status = 'error'
+
+    const selection = selectFileByDom(['png'])
+    const input = document.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(input?.accept).toBe('.png')
+    input!.dispatchEvent(new Event('cancel'))
+    await expect(selection).resolves.toEqual([])
   })
 })

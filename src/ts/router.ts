@@ -1,6 +1,6 @@
 import { tick } from 'svelte'
 import { get, writable } from 'svelte/store'
-import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { getDatabase } from './storage/database.svelte'
 import {
   CharEmotion,
   CustomGUISettingMenuStore,
@@ -399,11 +399,25 @@ function restoreCharacterSidebarViewMode(
   isFresh: () => boolean,
 ): void {
   if (!isFresh() || !characterSidebarViewStateMatches(route)) return
-  const selectedCharacter =
-    charactersResourceState.status === 'ready'
-      ? charactersResourceState.characters[get(selectedCharID)]
-      : getDatabase().characters?.[get(selectedCharID)]
+  const selectedCharacter = selectedCharacterForSidebarRestore()
   if (selectedCharacter?.chaId === route.chaId) botMakerMode.set(true)
+}
+
+function selectedCharacterForSidebarRestore() {
+  const status = charactersResourceState.status
+  if (status === 'ready') {
+    const selectedIndex =
+      charactersResourceState.selectionRevision === null ? get(selectedCharID) : charactersResourceState.currentChar
+    const candidate = charactersResourceState.characters[selectedIndex]
+    if (!candidate?.chaId) return undefined
+    return charactersResourceState.characters.filter((character) => character.chaId === candidate.chaId).length === 1
+      ? candidate
+      : undefined
+  }
+  // Explicit bootstrap compatibility only. A resource error fails closed
+  // instead of restoring sidebar state from a stale aggregate projection.
+  if (status === 'idle' || status === 'loading') return getDatabase().characters?.[get(selectedCharID)]
+  return undefined
 }
 
 function characterSidebarViewStateMatches(route: Extract<AppRoute, { kind: 'character' }>): boolean {
