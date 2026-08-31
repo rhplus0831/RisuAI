@@ -124,9 +124,11 @@ generation operations consume the narrow capabilities directly.
     detail, active chat, and selected prompt owner declared by the chat-generation
     runtime surface. Publish `chat-ready`; `canGenerate` becomes true only when
     these dependencies and plugins are coherent. A localized generation-recovery
-    failure keeps the shell available and exposes an app-level Retry action that
-    reruns only the failed recovery step. Selection changes rerun fenced hydration,
-    and a specific character/chat failure remains localized.
+    failure keeps the shell available and exposes app-level actions to retry only
+    the failed recovery step or permanently skip its remaining client effects so
+    generation can continue. Skipping does not remove the persisted reply or
+    composer drafts. Selection changes rerun fenced hydration, and a specific
+    character/chat failure remains localized.
 12. Update error handling and show one-time nightly or insecure-origin warnings.
     Reselect the persisted character, install store/module effects and DOM
     observers, register dynamic models, reconcile the projected notification

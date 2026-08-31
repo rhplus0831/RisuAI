@@ -4,6 +4,8 @@ export const languageVietnamese = {
       'Ứng dụng không thể hoàn tất việc khôi phục lần tạo trước. Tin nhắn mới đang bị tạm dừng nhưng bản nháp của bạn vẫn được giữ lại.',
     retry: 'Thử khôi phục lại',
     retrying: 'Đang thử khôi phục lại…',
+    discard: 'Bỏ qua khôi phục',
+    discarding: 'Đang bỏ qua khôi phục…',
   },
   acceptedSendRecovery: {
     generationFailed:

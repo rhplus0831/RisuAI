@@ -61,6 +61,23 @@ export async function reconcilePendingRecoveredGenerationEffects(): Promise<void
   bootstrapPendingEffects = []
 }
 
+/** Permanently skip the unfinished client effects so later generations are no longer gated by them. */
+export async function discardPendingRecoveredGenerationEffects(): Promise<void> {
+  for (const effect of bootstrapPendingEffects) {
+    if (effect.kind === 'generated_translation') {
+      throw new Error(`Server-owned generation effect cannot be discarded by the client: ${effect.kind}`)
+    }
+    const ref = generationEffectRefFromPending(effect)
+    const result = await runLedgeredGenerationEffect(ref, effect.kind, 'late_recovery', () =>
+      skippedGenerationEffect('user_discarded_recovery'),
+    )
+    if (!terminalReceipt(result.status)) {
+      throw new Error(`Generation effect could not be discarded for ${effect.generationId}: ${effect.kind}`)
+    }
+  }
+  bootstrapPendingEffects = []
+}
+
 export async function reconcileAcceptedSendGenerationEffects(
   target: ActiveChatTarget,
   acceptedMessageId: string,

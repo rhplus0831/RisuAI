@@ -184,6 +184,7 @@ import {
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
 import { updateHeightMode } from './gui/heightMode'
 import {
+  discardPendingRecoveredGenerationEffects,
   reconcilePendingRecoveredGenerationEffects,
   setPendingRecoveredGenerationEffects,
 } from './process/recoveredGenerationEffects'
@@ -497,10 +498,13 @@ async function settleStartupPluginRuntime(startupAttemptId: number): Promise<boo
   }
 }
 
-async function settleStartupGenerationRecovery(startupAttemptId: number): Promise<boolean> {
+async function settleStartupGenerationRecovery(
+  startupAttemptId: number,
+  recovery: () => Promise<void> = reconcilePendingRecoveredGenerationEffects,
+): Promise<boolean> {
   startupGenerationRecoveryReady = false
   try {
-    await runStartupStep('generation-recovery', reconcilePendingRecoveredGenerationEffects)
+    await runStartupStep('generation-recovery', recovery)
     startupGenerationRecoveryReady = true
     settleStartupGenerationRecoveryReadiness(true)
     return true
@@ -518,6 +522,19 @@ export function retryGenerationRecoveryStartup(): Promise<boolean> {
   return retryStartupCapability('canGenerate', async () => {
     const startupAttemptId = beginStartupAttempt()
     const generationRecoveryReady = await settleStartupGenerationRecovery(startupAttemptId)
+    completeStartupAttempt(startupAttemptId)
+    return generationRecoveryReady
+  })
+}
+
+/** Permanently skip unfinished recovered effects and reopen generation. */
+export function discardGenerationRecoveryStartup(): Promise<boolean> {
+  return retryStartupCapability('canGenerate', async () => {
+    const startupAttemptId = beginStartupAttempt()
+    const generationRecoveryReady = await settleStartupGenerationRecovery(
+      startupAttemptId,
+      discardPendingRecoveredGenerationEffects,
+    )
     completeStartupAttempt(startupAttemptId)
     return generationRecoveryReady
   })

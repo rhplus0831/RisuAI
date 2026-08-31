@@ -104,6 +104,7 @@ vi.mock('./generationEffectLedger', async (importOriginal) => {
 })
 
 import {
+  discardPendingRecoveredGenerationEffects,
   reconcilePendingRecoveredGenerationEffects,
   reconcileAcceptedSendGenerationEffects,
   reconcileRecoveredGenerationEffects,
@@ -289,6 +290,78 @@ describe('late recovered generation effects', () => {
     ledger.unavailableKinds.clear()
     await expect(reconcilePendingRecoveredGenerationEffects()).resolves.toBeUndefined()
     expect(ledger.receipts.has('plugin_output')).toBe(true)
+  })
+
+  it('permanently skips pending recovery effects without running their callbacks', async () => {
+    setPendingRecoveredGenerationEffects([
+      {
+        ledgerVersion: 1,
+        databaseLineage: 'lineage-a',
+        keyType: 'operation',
+        keyId: 'operation-a',
+        kind: 'plugin_output',
+        effectClass: 'durable',
+        operationId: 'operation-a',
+        generationId: 'generation-a',
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        status: 'pending',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+      {
+        ledgerVersion: 1,
+        databaseLineage: 'lineage-a',
+        keyType: 'operation',
+        keyId: 'operation-a',
+        kind: 'igp',
+        effectClass: 'durable',
+        operationId: 'operation-a',
+        generationId: 'generation-a',
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        status: 'pending',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+    ])
+
+    await expect(discardPendingRecoveredGenerationEffects()).resolves.toBeUndefined()
+    await expect(reconcilePendingRecoveredGenerationEffects()).resolves.toBeUndefined()
+
+    expect(state.order).toEqual([])
+    expect(ledger.calls).toEqual(['late_recovery:plugin_output', 'late_recovery:igp'])
+    expect(hydration.hydrateChatMessages).not.toHaveBeenCalled()
+  })
+
+  it('retains pending recovery effects when discard cannot receipt one', async () => {
+    setPendingRecoveredGenerationEffects([
+      {
+        ledgerVersion: 1,
+        databaseLineage: 'lineage-a',
+        keyType: 'operation',
+        keyId: 'operation-a',
+        kind: 'plugin_output',
+        effectClass: 'durable',
+        operationId: 'operation-a',
+        generationId: 'generation-a',
+        characterId: 'character-a',
+        chatId: 'chat-a',
+        messageId: 'message-a',
+        status: 'pending',
+        createdAt: '2026-08-25T00:00:00.000Z',
+        updatedAt: '2026-08-25T00:00:00.000Z',
+      },
+    ])
+    ledger.unavailableKinds.add('plugin_output')
+
+    await expect(discardPendingRecoveredGenerationEffects()).rejects.toThrow('Generation effect could not be discarded')
+
+    ledger.unavailableKinds.clear()
+    await expect(discardPendingRecoveredGenerationEffects()).resolves.toBeUndefined()
+    expect(ledger.calls).toEqual(['late_recovery:plugin_output', 'late_recovery:plugin_output'])
   })
 
   it('derives a generation-keyed ledger reference for pre-ref compatibility transcripts', async () => {

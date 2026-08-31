@@ -248,7 +248,7 @@ describe('changeLanguage same-code cache', () => {
     }
   })
 
-  it('defines generation recovery retry copy in every language pack', async () => {
+  it('defines generation recovery action copy in every language pack', async () => {
     const {
       languageChinese,
       languageChineseTraditional,
@@ -272,6 +272,8 @@ describe('changeLanguage same-code cache', () => {
         failed: expect.any(String),
         retry: expect.any(String),
         retrying: expect.any(String),
+        discard: expect.any(String),
+        discarding: expect.any(String),
       })
     }
   })

@@ -94,6 +94,7 @@ const runtimeApi = vi.hoisted(() => ({
   configureGenerationOperationProtocol: vi.fn(),
 }))
 const recoveredGenerationApi = vi.hoisted(() => ({
+  discardPendingRecoveredGenerationEffects: vi.fn(async () => undefined),
   reconcilePendingRecoveredGenerationEffects: vi.fn(async () => undefined),
   setPendingRecoveredGenerationEffects: vi.fn(),
 }))
@@ -335,6 +336,7 @@ import {
   calculateServerResourceReconnectDelayMs,
   createGlobalErrorHandlers,
   currentGlobalPromptTemplateOwnerId,
+  discardGenerationRecoveryStartup,
   loadData,
   loadWebInitialDatabase,
   retryGenerationRecoveryStartup,
@@ -501,6 +503,7 @@ beforeEach(() => {
   clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
+  recoveredGenerationApi.discardPendingRecoveredGenerationEffects.mockReset().mockResolvedValue(undefined)
   recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects.mockReset().mockResolvedValue(undefined)
   recoveredGenerationApi.setPendingRecoveredGenerationEffects.mockReset()
   activeWriterApi.adoptPendingOwner.mockClear()
@@ -1006,6 +1009,26 @@ describe('API-backed client bootstrap', () => {
       },
       failures: {},
       completedSteps: expect.arrayContaining(['generation-recovery', 'chat-readiness', 'background-readiness']),
+    })
+  })
+
+  it('discards a localized generation recovery failure and reopens generation', async () => {
+    recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects.mockRejectedValueOnce(
+      new Error('generation effects unavailable'),
+    )
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await loadData()
+
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    await expect(discardGenerationRecoveryStartup()).resolves.toBe(true)
+
+    expect(recoveredGenerationApi.reconcilePendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+    expect(recoveredGenerationApi.discardPendingRecoveredGenerationEffects).toHaveBeenCalledOnce()
+    expect(getStartupCoordinatorSnapshot()).toMatchObject({
+      capabilities: { canGenerate: true },
+      failures: {},
+      completedSteps: expect.arrayContaining(['generation-recovery']),
     })
   })
 

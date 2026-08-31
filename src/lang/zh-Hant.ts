@@ -3,6 +3,8 @@ export const languageChineseTraditional = {
     failed: '應用程式無法完成先前生成作業的復原。新訊息已暫停，但你的草稿仍會保留。',
     retry: '重試復原',
     retrying: '正在重試復原…',
+    discard: '放棄復原',
+    discarding: '正在放棄復原…',
   },
   acceptedSendRecovery: {
     generationFailed: '訊息已儲存，但無法開始產生回覆。請只重試回覆，不要再次傳送訊息。',

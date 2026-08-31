@@ -91,7 +91,7 @@
   let aprilFoolsPage = $state(0)
   let keepingSessionAlive = $state(false)
   let retryingPluginRuntime = $state(false)
-  let retryingGenerationRecovery = $state(false)
+  let generationRecoveryAction = $state<'idle' | 'retrying' | 'discarding'>('idle')
   let canApplyRoutes = $derived($startupCoordinatorStore.capabilities.canApplyRoutes)
   let pluginStartupFailed = $derived($startupCoordinatorStore.failures.pluginsReady !== undefined)
   let pluginRuntimeFailed = $derived($pluginRuntimeStateStore.phase === 'error')
@@ -163,13 +163,24 @@
   }
 
   async function retryGenerationRecovery(): Promise<void> {
-    if (retryingGenerationRecovery) return
-    retryingGenerationRecovery = true
+    if (generationRecoveryAction !== 'idle') return
+    generationRecoveryAction = 'retrying'
     try {
       const { retryGenerationRecoveryStartup } = await import('./ts/bootstrap')
       await retryGenerationRecoveryStartup()
     } finally {
-      retryingGenerationRecovery = false
+      generationRecoveryAction = 'idle'
+    }
+  }
+
+  async function discardGenerationRecovery(): Promise<void> {
+    if (generationRecoveryAction !== 'idle') return
+    generationRecoveryAction = 'discarding'
+    try {
+      const { discardGenerationRecoveryStartup } = await import('./ts/bootstrap')
+      await discardGenerationRecoveryStartup()
+    } finally {
+      generationRecoveryAction = 'idle'
     }
   }
 
@@ -376,21 +387,39 @@
     </div>
   {:else if $startupCoordinatorStore.capabilities.canRenderShell && generationRecoveryStartupFailed}
     <div
-      class="fixed top-3 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+      class="fixed top-3 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
       role="status"
       aria-live="polite"
       data-generation-recovery-status>
-      <span>{language.generationRecovery.failed}</span>
-      <button
-        type="button"
-        class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
-        disabled={retryingGenerationRecovery}
-        onclick={(event) => {
-          event.stopPropagation()
-          void retryGenerationRecovery()
-        }}>
-        {retryingGenerationRecovery ? language.generationRecovery.retrying : language.generationRecovery.retry}
-      </button>
+      <span class="min-w-0 flex-1">{language.generationRecovery.failed}</span>
+      <div class="flex max-w-full flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+          data-generation-recovery-retry
+          disabled={generationRecoveryAction !== 'idle'}
+          onclick={(event) => {
+            event.stopPropagation()
+            void retryGenerationRecovery()
+          }}>
+          {generationRecoveryAction === 'retrying'
+            ? language.generationRecovery.retrying
+            : language.generationRecovery.retry}
+        </button>
+        <button
+          type="button"
+          class="shrink-0 rounded border border-yellow-700 px-3 py-1.5 disabled:cursor-wait disabled:opacity-60"
+          data-generation-recovery-discard
+          disabled={generationRecoveryAction !== 'idle'}
+          onclick={(event) => {
+            event.stopPropagation()
+            void discardGenerationRecovery()
+          }}>
+          {generationRecoveryAction === 'discarding'
+            ? language.generationRecovery.discarding
+            : language.generationRecovery.discard}
+        </button>
+      </div>
     </div>
   {/if}
   {#if aprilFools && $startupCoordinatorStore.capabilities.canApplyRoutes}

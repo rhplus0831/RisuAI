@@ -23,6 +23,8 @@ export const languageEnglish = {
       'The app could not finish recovering a previous generation. New messages are paused, but your drafts are preserved.',
     retry: 'Retry recovery',
     retrying: 'Retrying recovery…',
+    discard: 'Discard recovery',
+    discarding: 'Discarding recovery…',
   },
   loadingCharacter: 'Loading character…',
   characterDataLoadFailed: 'Character data could not be loaded.',
