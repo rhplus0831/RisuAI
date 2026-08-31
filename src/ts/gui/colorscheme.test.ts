@@ -6,7 +6,10 @@ const colorSchemeMocks = vi.hoisted(() => ({
   database: {} as any,
   downloadFile: vi.fn(),
   selectSingleFile: vi.fn(),
-  setDatabase: vi.fn(),
+  settingsResourceState: {
+    value: {} as any,
+    groupStatuses: { display: 'ready' },
+  },
   stores: {
     customCSS: createTestStore(''),
     safeMode: createTestStore(false),
@@ -40,7 +43,10 @@ vi.mock('../globalApi.svelte', () => ({
 
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => colorSchemeMocks.database,
-  setDatabase: colorSchemeMocks.setDatabase,
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: colorSchemeMocks.settingsResourceState,
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -132,6 +138,8 @@ beforeEach(() => {
     colorScheme: scheme('aaa'),
     customColorScheme: scheme('aaa'),
   } as any
+  colorSchemeMocks.settingsResourceState.value = colorSchemeMocks.database
+  colorSchemeMocks.settingsResourceState.groupStatuses.display = 'ready'
   colorSchemeMocks.alertError.mockReset()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockReset()
   colorSchemeMocks.downloadFile.mockReset()
@@ -177,6 +185,30 @@ describe('custom color scheme persistence', () => {
     exportColorScheme()
 
     expect(colorSchemeMocks.downloadFile).toHaveBeenCalledWith('colorScheme.json', JSON.stringify(custom))
+  })
+
+  it('uses only the compatibility projection while the display owner is loading', () => {
+    const compatibility = scheme('eee')
+    colorSchemeMocks.database.customColorScheme = compatibility
+    colorSchemeMocks.settingsResourceState.value = { customColorScheme: scheme('fff') }
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'loading'
+
+    exportColorScheme()
+
+    expect(colorSchemeMocks.downloadFile).toHaveBeenCalledWith('colorScheme.json', JSON.stringify(compatibility))
+  })
+
+  it('fails closed when the display owner is in error', () => {
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'error'
+    document.documentElement.style.removeProperty('--risu-theme-bgcolor')
+
+    updateColorScheme()
+    exportColorScheme()
+    changeColorScheme('custom')
+
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-bgcolor')).toBe('')
+    expect(colorSchemeMocks.downloadFile).not.toHaveBeenCalled()
+    expect(colorSchemeMocks.applyServerBackedSettingsPatch).not.toHaveBeenCalled()
   })
 })
 
@@ -314,6 +346,7 @@ describe('legacy built-in color scheme migration', () => {
       colorSchemeName: 'nature',
       colorScheme: { ...builtInColorSchemes.nature, textcolor2: '#4d908e' },
     }
+    colorSchemeMocks.settingsResourceState.value = colorSchemeMocks.database
 
     updateColorScheme()
 

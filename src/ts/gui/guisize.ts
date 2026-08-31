@@ -1,12 +1,21 @@
 import { writable } from 'svelte/store'
-import { getDatabase } from '../storage/database.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
 
 export let textAreaSize = writable(0)
 export let sideBarSize = writable(0)
 export let textAreaTextSize = writable(0)
 
+function displaySettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
 export function updateGuisize() {
-  let db = getDatabase()
+  const db = displaySettingsOwner()
+  if (!db) return
   const root = document.querySelector(':root') as HTMLElement
   if (!root) {
     return

@@ -1,5 +1,16 @@
+import { get } from 'svelte/store'
 import { moduleUpdate } from '../process/modules'
-import { getResourceDatabase } from '../server/resourceState.svelte'
+import { getSelectedCharacterOwner, selectCharacterOwner } from '../characterState'
+import { getDatabase, type Chat, type character, type Database } from '../storage/database.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+  settingsResourceState,
+  type ServerCollectionName,
+} from '../server/resourceState.svelte'
+import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
 import { selectedCharID, selIdState } from './coreStores.svelte'
 
 // This effect used to register its dependency on the modules array via a
@@ -22,6 +33,17 @@ export function resolveUniquePromptPreset(
   return matches.length === 1 ? matches[0] : undefined
 }
 
+export function resolveUniqueAgentPreset(
+  agentPresets: readonly { id?: unknown }[] | undefined,
+  agentPresetId: unknown,
+): { id?: unknown; enabled?: unknown; moduleIntergration?: unknown } | undefined {
+  if (!Array.isArray(agentPresets) || typeof agentPresetId !== 'string' || agentPresetId.trim() === '') {
+    return undefined
+  }
+  const matches = agentPresets.filter((preset) => preset?.id === agentPresetId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 export function readModuleUpdateSignals(modules: readonly ModuleUpdateSignalSource[] | undefined): void {
   if (!modules) return
   void modules.length
@@ -41,6 +63,59 @@ function isServerCharacterShellRow(character: unknown): boolean {
   )
 }
 
+function settingsGroupOwner(group: SettingsGroup): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses[group] ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
+function collectionOwner<Name extends ServerCollectionName>(name: Name): Database[Name] | undefined {
+  const status = collectionsResourceState.statuses[name] ?? 'idle'
+  if (status === 'ready') return collectionsResourceState.values[name] as Database[Name] | undefined
+  if (status === 'idle' || status === 'loading') return getDatabase()[name]
+  return undefined
+}
+
+function selectedRuntimeCharacterOwner(): character | undefined {
+  const status = charactersResourceState.status
+  if (status === 'ready') {
+    const owner = getSelectedCharacterOwner()
+    return owner?.chaId && getCharacterResourceOwner(owner.chaId) === owner ? owner : undefined
+  }
+  if (status === 'idle' || status === 'loading') {
+    return selectCharacterOwner(getDatabase().characters ?? [], get(selectedCharID))
+  }
+  return undefined
+}
+
+function selectedRuntimeChatOwner(character: character | undefined): Chat | undefined {
+  const candidate = character?.chats?.[character.chatPage]
+  if (!candidate?.id) return undefined
+  if (charactersResourceState.status === 'ready') {
+    return getChatMetadataOwnerState(candidate.id)?.chatId === candidate.id ? candidate : undefined
+  }
+  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return undefined
+
+  let owner: Chat | undefined
+  for (const candidateCharacter of getDatabase().characters ?? []) {
+    for (const chat of candidateCharacter.chats ?? []) {
+      if (chat?.id !== candidate.id) continue
+      if (owner) return undefined
+      owner = chat
+    }
+  }
+  return owner === candidate ? owner : undefined
+}
+
+function runtimeOwnerFailed(): boolean {
+  if (charactersResourceState.status === 'error') return true
+  if (['modules', 'advanced', 'agents'].some((group) => settingsResourceState.groupStatuses[group] === 'error')) {
+    return true
+  }
+  return ['modules', 'promptPresets'].some((name) => collectionsResourceState.statuses[name] === 'error')
+}
+
 let disposeRuntimeEffects: (() => void) | null = null
 
 export function installStoreRuntimeEffects(): () => void {
@@ -48,10 +123,11 @@ export function installStoreRuntimeEffects(): () => void {
 
   const stopRoot = $effect.root(() => {
     const unsubscribeSelectedCharacter = selectedCharID.subscribe(() => {
-      const database = getResourceDatabase()
-      if (database.characters?.[selIdState.selId]) {
-        if (database.hypaV3 && database.hypaV3Presets?.[database.hypaV3PresetId]?.settings?.alwaysToggleOn) {
-          const character = database.characters[selIdState.selId]
+      const character = selectedRuntimeCharacterOwner()
+      if (character) {
+        const memorySettings = settingsGroupOwner('memory')
+        const hypaV3Presets = collectionOwner('hypaV3Presets')
+        if (memorySettings?.hypaV3 && hypaV3Presets?.[memorySettings.hypaV3PresetId]?.settings?.alwaysToggleOn) {
           if (!isServerCharacterShellRow(character) && !character.supaMemory && character.chaId) {
             const characterId = character.chaId
             void import('../characterCommands').then(({ setCharacterSupaMemory }) => {
@@ -63,33 +139,37 @@ export function installStoreRuntimeEffects(): () => void {
     })
 
     $effect(() => {
-      const database = getResourceDatabase()
-      const character = database.characters?.[selIdState.selId]
-      const chat = character?.chats?.[character.chatPage]
-      const selectedPromptPreset = resolveUniquePromptPreset(
-        database.promptPresets,
-        chat?.generationSettings?.promptPresetId,
-      )
+      void selIdState.selId
+      if (runtimeOwnerFailed()) return
+      const character = selectedRuntimeCharacterOwner()
+      const chat = selectedRuntimeChatOwner(character)
+      const promptPresets = collectionOwner('promptPresets')
+      const modules = collectionOwner('modules')
+      const moduleSettings = settingsGroupOwner('modules')
+      const advancedSettings = settingsGroupOwner('advanced')
+      const agentSettings = settingsGroupOwner('agents')
+      if (!promptPresets || !modules || !moduleSettings || !advancedSettings || !agentSettings) return
+      const selectedPromptPreset = resolveUniquePromptPreset(promptPresets, chat?.generationSettings?.promptPresetId)
       const effectiveAgentPresetId = Object.prototype.hasOwnProperty.call(
         chat?.generationSettings ?? {},
         'agentPresetId',
       )
         ? chat?.generationSettings?.agentPresetId
-        : database.agentPresetDefaultId
-      const selectedAgentPreset = database.agentPresets?.find((preset) => preset.id === effectiveAgentPresetId)
-      readModuleUpdateSignals(database.modules)
-      database.enabledModules
-      database.enabledModules?.length
+        : agentSettings.agentPresetDefaultId
+      const selectedAgentPreset = resolveUniqueAgentPreset(agentSettings.agentPresets, effectiveAgentPresetId)
+      readModuleUpdateSignals(modules)
+      moduleSettings.enabledModules
+      moduleSettings.enabledModules?.length
       chat?.modules?.length
       chat?.generationSettings?.promptPresetId
       chat?.generationSettings?.agentPresetId
       selectedPromptPreset?.moduleIntergration
-      database.agentPresetDefaultId
+      agentSettings.agentPresetDefaultId
       selectedAgentPreset?.enabled
       selectedAgentPreset?.moduleIntergration
       character?.hideChatIcon
       character?.backgroundHTML
-      database.moduleIntergration
+      advancedSettings.moduleIntergration
       moduleUpdate()
     })
 

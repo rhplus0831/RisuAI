@@ -5,10 +5,18 @@ const animationState = vi.hoisted(() => ({
     animationSpeed: 0.4,
     reducedMotion: false,
   },
+  settingsResourceState: {
+    value: {} as Record<string, unknown>,
+    groupStatuses: { display: 'ready' },
+  },
 }))
 
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => animationState.database,
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: animationState.settingsResourceState,
 }))
 
 import { updateReducedMotion } from './animation'
@@ -16,6 +24,8 @@ import { updateReducedMotion } from './animation'
 beforeEach(() => {
   animationState.database.animationSpeed = 0.4
   animationState.database.reducedMotion = false
+  animationState.settingsResourceState.value = animationState.database
+  animationState.settingsResourceState.groupStatuses.display = 'ready'
   document.documentElement.classList.remove('risu-reduced-motion')
   document.documentElement.style.removeProperty('--risu-animation-speed')
 })
@@ -50,5 +60,18 @@ describe('app reduced motion preference', () => {
 
     expect(document.documentElement.classList.contains('risu-reduced-motion')).toBe(true)
     expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('0.01ms')
+  })
+
+  it('uses loading compatibility settings and fails closed after a display-owner error', () => {
+    animationState.settingsResourceState.value = { animationSpeed: 9, reducedMotion: true }
+    animationState.settingsResourceState.groupStatuses.display = 'loading'
+    animationState.database.animationSpeed = 0.2
+    updateReducedMotion()
+    expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('0.2s')
+
+    animationState.settingsResourceState.groupStatuses.display = 'error'
+    animationState.database.animationSpeed = 0.8
+    updateReducedMotion()
+    expect(document.documentElement.style.getPropertyValue('--risu-animation-speed')).toBe('0.2s')
   })
 })

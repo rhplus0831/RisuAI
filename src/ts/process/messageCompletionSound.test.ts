@@ -5,8 +5,17 @@ const resourceDatabase = vi.hoisted(() => ({
   playMessageOnTranslateEnd: false,
 }))
 
+const settingsResourceState = vi.hoisted(() => ({
+  value: resourceDatabase,
+  groupStatuses: { display: 'ready' },
+}))
+
 vi.mock('../server/resourceState.svelte', () => ({
-  getResourceDatabase: () => resourceDatabase,
+  settingsResourceState,
+}))
+
+vi.mock('../storage/database.svelte', () => ({
+  getDatabase: () => resourceDatabase,
 }))
 
 vi.mock('../../etc/send.mp3', () => ({ default: 'send.mp3' }))
@@ -214,6 +223,8 @@ let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   resourceDatabase.playMessage = false
   resourceDatabase.playMessageOnTranslateEnd = false
+  settingsResourceState.value = resourceDatabase
+  settingsResourceState.groupStatuses.display = 'ready'
   webAudioControl.decodeDeferred = null
   webAudioControl.decodeError = null
   webAudioControl.resumeError = null
@@ -469,6 +480,20 @@ describe('completion sound Web Audio lifecycle', () => {
     resourceDatabase.playMessage = true
     expect(playMessageCompletionSoundIfEnabled()).toBe(true)
     await vi.waitFor(() => expect(StubAudioContext.instances[0]?.sources).toHaveLength(1))
+  })
+
+  it('uses compatibility settings only while loading and fails closed on display-owner error', async () => {
+    const { playMessageCompletionSoundIfEnabled } = await loadCompletionSoundModule()
+    resourceDatabase.playMessage = true
+    settingsResourceState.value = { playMessage: false, playMessageOnTranslateEnd: false }
+    settingsResourceState.groupStatuses.display = 'loading'
+
+    expect(playMessageCompletionSoundIfEnabled()).toBe(true)
+    await vi.waitFor(() => expect(StubAudioContext.instances[0]?.sources).toHaveLength(1))
+
+    settingsResourceState.groupStatuses.display = 'error'
+    expect(playMessageCompletionSoundIfEnabled()).toBe(false)
+    expect(StubAudioContext.instances[0].sources).toHaveLength(1)
   })
 })
 

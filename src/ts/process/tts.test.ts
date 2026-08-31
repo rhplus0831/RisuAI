@@ -12,6 +12,15 @@ const testState = vi.hoisted(() => ({
   requestTtsSynthesis: vi.fn(),
   translateVox: vi.fn(),
   runVITS: vi.fn(),
+  settingsResourceState: {
+    value: {} as any,
+    groupStatuses: { media: 'ready', providers: 'ready' },
+  },
+  charactersResourceState: {
+    characters: [] as character[],
+    currentChar: -1,
+    status: 'ready',
+  },
 }))
 
 vi.mock('../alert', () => ({
@@ -24,8 +33,21 @@ vi.mock('../globalApi.svelte', () => ({
 }))
 
 vi.mock('../storage/database.svelte', () => ({
-  getCurrentCharacter: () => testState.currentCharacter,
   getDatabase: () => testState.db,
+}))
+
+vi.mock('../characterState', () => ({
+  getSelectedCharacterOwner: () => testState.currentCharacter,
+  selectCharacterOwner: (characters: character[], selectedIndex: number) => {
+    const candidate = characters[selectedIndex]
+    if (!candidate?.chaId) return undefined
+    return characters.filter((character) => character?.chaId === candidate.chaId).length === 1 ? candidate : undefined
+  },
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  charactersResourceState: testState.charactersResourceState,
+  settingsResourceState: testState.settingsResourceState,
 }))
 
 vi.mock('../server/providerOperations', () => ({
@@ -230,6 +252,12 @@ beforeEach(() => {
     elevenLabKey: 'eleven-key',
     huggingfaceKey: 'hf-key',
   }
+  testState.settingsResourceState.value = testState.db
+  testState.settingsResourceState.groupStatuses.media = 'ready'
+  testState.settingsResourceState.groupStatuses.providers = 'ready'
+  testState.charactersResourceState.characters = []
+  testState.charactersResourceState.currentChar = -1
+  testState.charactersResourceState.status = 'ready'
   testState.currentCharacter = null
   testState.loadAsset.mockResolvedValue(new Uint8Array([9, 8, 7]))
   testState.runTranslator.mockResolvedValue('translated text')
@@ -271,6 +299,47 @@ describe('Web Speech voice catalog', () => {
     await sayTTS(makeCharacter({ ttsMode: 'webspeech' }), 'hello')
 
     expect(testState.alertError).not.toHaveBeenCalled()
+  })
+})
+
+describe('TTS resource ownership', () => {
+  it('uses the ready selected-character owner when no character is supplied', async () => {
+    testState.currentCharacter = makeCharacter({ ttsSpeech: 'owned-voice' })
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio())
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(undefined as never, 'owned text')
+
+    expect(testState.requestTtsSynthesis.mock.calls[0][0]).toMatchObject({
+      operation: 'elevenlabs.synthesize',
+      input: { text: 'owned text', voiceId: 'owned-voice' },
+    })
+  })
+
+  it('uses compatibility settings only while a group is loading', async () => {
+    testState.settingsResourceState.groupStatuses.media = 'loading'
+    testState.settingsResourceState.value = { elevenLabKey: 'stale-owner-key' }
+    testState.db.elevenLabKey = 'compatibility-key'
+    testState.requestProviderOperation.mockResolvedValueOnce({ voices: [] })
+    const { getElevenTTSVoices } = await importTTS()
+
+    await expect(getElevenTTSVoices()).resolves.toEqual([])
+    expect(testState.requestProviderOperation).toHaveBeenCalledWith('elevenlabs.voices', {
+      credential: { source: 'provided', apiKey: 'compatibility-key' },
+    })
+  })
+
+  it('fails closed for settings and character owner errors', async () => {
+    testState.settingsResourceState.groupStatuses.media = 'error'
+    testState.currentCharacter = makeCharacter()
+    testState.charactersResourceState.status = 'error'
+    const { getElevenTTSVoices, sayTTS } = await importTTS()
+
+    await expect(getElevenTTSVoices()).resolves.toEqual([])
+    await sayTTS(undefined as never, 'do not synthesize')
+
+    expect(testState.requestProviderOperation).not.toHaveBeenCalled()
+    expect(testState.requestTtsSynthesis).not.toHaveBeenCalled()
   })
 })
 
@@ -573,6 +642,7 @@ describe('sayTTS AudioContext lifecycle', () => {
       NAIApiKey: '__RISU_SECRET_MASKED__',
       openAIKey: '__RISU_SECRET_MASKED__',
     }
+    testState.settingsResourceState.value = testState.db
     testState.requestTtsSynthesis.mockResolvedValue(ttsAudio())
     const { sayTTS } = await importTTS()
 

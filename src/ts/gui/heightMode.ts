@@ -1,4 +1,12 @@
-import { getDatabase } from '../storage/database.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
+
+function displaySettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
 
 export function resolveHeightModeCssValue(heightMode: unknown): string {
   switch (heightMode) {
@@ -20,5 +28,7 @@ export function resolveHeightModeCssValue(heightMode: unknown): string {
 
 export function updateHeightMode(): void {
   if (typeof document === 'undefined') return
-  document.documentElement.style.setProperty('--risu-height-size', resolveHeightModeCssValue(getDatabase().heightMode))
+  const settings = displaySettingsOwner()
+  if (!settings) return
+  document.documentElement.style.setProperty('--risu-height-size', resolveHeightModeCssValue(settings.heightMode))
 }

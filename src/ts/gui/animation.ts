@@ -1,7 +1,16 @@
-import { getDatabase } from '../storage/database.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
+
+function displaySettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
 
 export function updateAnimationSpeed() {
-  const db = getDatabase()
+  const db = displaySettingsOwner()
+  if (!db) return
   document.documentElement.style.setProperty(
     '--risu-animation-speed',
     db.reducedMotion ? '0.01ms' : db.animationSpeed + 's',
@@ -9,6 +18,8 @@ export function updateAnimationSpeed() {
 }
 
 export function updateReducedMotion() {
-  document.documentElement.classList.toggle('risu-reduced-motion', getDatabase().reducedMotion === true)
+  const settings = displaySettingsOwner()
+  if (!settings) return
+  document.documentElement.classList.toggle('risu-reduced-motion', settings.reducedMotion === true)
   updateAnimationSpeed()
 }

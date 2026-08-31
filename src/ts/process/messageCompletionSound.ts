@@ -1,5 +1,6 @@
 import sendSound from '../../etc/send.mp3'
-import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
 
 type CompletionAudioUnlockState = 'idle' | 'unlocking' | 'unlocked' | 'failed'
 
@@ -29,9 +30,16 @@ function getAudioContextConstructor(): AudioContextConstructor | null {
   return typeof AudioContext === 'undefined' ? null : AudioContext
 }
 
+function displaySettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
 function completionAudioIsEnabled(): boolean {
-  const database = getDatabase()
-  return database.playMessage || database.playMessageOnTranslateEnd
+  const settings = displaySettingsOwner()
+  return settings?.playMessage === true || settings?.playMessageOnTranslateEnd === true
 }
 
 function readPlaybackError(error: unknown): { name: string; message: string } {
@@ -387,7 +395,10 @@ export function playCompletionDing(): void {
 
 /** Play the user-configured ding for one successfully completed chat generation. */
 export function playMessageCompletionSoundIfEnabled(): boolean {
-  if (!getDatabase().playMessage || (getAudioContextConstructor() === null && typeof Audio === 'undefined')) {
+  if (
+    displaySettingsOwner()?.playMessage !== true ||
+    (getAudioContextConstructor() === null && typeof Audio === 'undefined')
+  ) {
     return false
   }
 

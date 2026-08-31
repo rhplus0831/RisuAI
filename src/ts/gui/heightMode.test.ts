@@ -1,9 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const database = vi.hoisted(() => ({ heightMode: 'normal' }))
+const heightModeState = vi.hoisted(() => ({
+  database: { heightMode: 'normal' },
+  settingsResourceState: {
+    value: { heightMode: 'normal' },
+    groupStatuses: { display: 'ready' },
+  },
+}))
 
 vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => database,
+  getDatabase: () => heightModeState.database,
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: heightModeState.settingsResourceState,
 }))
 
 import { resolveHeightModeCssValue, updateHeightMode } from './heightMode'
@@ -27,12 +37,25 @@ describe('height mode runtime projection', () => {
   })
 
   it('replaces a previous viewport override when the persisted mode changes', () => {
-    database.heightMode = 'vh'
+    heightModeState.settingsResourceState.groupStatuses.display = 'ready'
+    heightModeState.settingsResourceState.value.heightMode = 'vh'
     updateHeightMode()
     expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100vh')
 
-    database.heightMode = 'normal'
+    heightModeState.settingsResourceState.value.heightMode = 'normal'
     updateHeightMode()
     expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100%')
+  })
+
+  it('uses loading compatibility and leaves the last value intact on owner error', () => {
+    heightModeState.settingsResourceState.groupStatuses.display = 'loading'
+    heightModeState.database.heightMode = 'dvh'
+    updateHeightMode()
+    expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100dvh')
+
+    heightModeState.settingsResourceState.groupStatuses.display = 'error'
+    heightModeState.database.heightMode = 'vh'
+    updateHeightMode()
+    expect(document.documentElement.style.getPropertyValue('--risu-height-size')).toBe('100dvh')
   })
 })

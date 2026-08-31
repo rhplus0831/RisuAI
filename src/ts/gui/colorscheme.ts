@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import { getDatabase, setDatabase } from '../storage/database.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { BufferToText } from '../util'
 import { selectSingleFile } from '../filePicker'
@@ -18,6 +18,7 @@ import {
   type ColorSchemeImportOperation,
 } from '../server/colorSchemeImport'
 import { language } from 'src/lang'
+import { settingsResourceState } from '../server/resourceState.svelte'
 
 export interface ColorScheme {
   bgcolor: string
@@ -272,11 +273,20 @@ export const colorSchemePresets = builtInColorSchemes
 
 export const colorSchemeList = Object.keys(builtInColorSchemes) as (keyof typeof builtInColorSchemes)[]
 
+function displaySettingsOwner(): Partial<Database> | undefined {
+  const status = settingsResourceState.groupStatuses.display ?? 'idle'
+  if (status === 'ready') return settingsResourceState.value as Partial<Database>
+  if (status === 'idle' || status === 'loading') return getDatabase()
+  return undefined
+}
+
 export function changeColorScheme(colorScheme: string) {
   try {
     const patch: Record<string, unknown> = { colorSchemeName: colorScheme }
     if (colorScheme === 'custom') {
-      patch.colorScheme = safeStructuredClone(getDatabase().customColorScheme ?? defaultColorScheme)
+      const settings = displaySettingsOwner()
+      if (!settings) return
+      patch.colorScheme = safeStructuredClone(settings.customColorScheme ?? defaultColorScheme)
     } else {
       patch.colorScheme = safeStructuredClone(builtInColorSchemes[colorScheme])
     }
@@ -285,9 +295,11 @@ export function changeColorScheme(colorScheme: string) {
   } catch (error) {}
 }
 
-export function updateCustomColorScheme(customColorScheme: ColorScheme = getDatabase().customColorScheme) {
+export function updateCustomColorScheme(customColorScheme?: ColorScheme) {
   try {
-    const scheme = safeStructuredClone(customColorScheme ?? defaultColorScheme)
+    const settings = customColorScheme ? undefined : displaySettingsOwner()
+    if (!customColorScheme && !settings) return
+    const scheme = safeStructuredClone(customColorScheme ?? settings?.customColorScheme ?? defaultColorScheme)
     applyServerBackedSettingsPatch({
       customColorScheme: scheme,
       colorScheme: safeStructuredClone(scheme),
@@ -299,7 +311,8 @@ export function updateCustomColorScheme(customColorScheme: ColorScheme = getData
 
 export function updateColorScheme() {
   try {
-    let db = getDatabase()
+    const db = displaySettingsOwner()
+    if (!db) return
 
     let colorScheme = db.colorScheme
 
@@ -334,8 +347,10 @@ export function updateColorScheme() {
 
 export function changeColorSchemeType(type: 'light' | 'dark') {
   try {
+    const settings = displaySettingsOwner()
+    if (!settings) return
     updateCustomColorScheme({
-      ...getDatabase().customColorScheme,
+      ...settings.customColorScheme,
       type,
     })
     updateTextThemeAndCSS()
@@ -343,12 +358,15 @@ export function changeColorSchemeType(type: 'light' | 'dark') {
 }
 
 export function exportColorScheme() {
-  const json = JSON.stringify(getDatabase().customColorScheme)
+  const settings = displaySettingsOwner()
+  if (!settings) return
+  const json = JSON.stringify(settings.customColorScheme)
   downloadFile('colorScheme.json', json)
 }
 
-function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness {
-  const db = getDatabase()
+function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness | undefined {
+  const db = displaySettingsOwner()
+  if (!db) return undefined
   return {
     colorSchemeName: db.colorSchemeName,
     colorScheme: db.colorScheme,
@@ -357,7 +375,9 @@ function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness {
 }
 
 export async function importColorScheme() {
-  const target = captureColorSchemeImportTarget(currentColorSchemeImportFreshness())
+  const initialFreshness = currentColorSchemeImportFreshness()
+  if (!initialFreshness) return
+  const target = captureColorSchemeImportTarget(initialFreshness)
   let operation: ColorSchemeImportOperation | null = null
   const beginImport = () => {
     operation ??= beginColorSchemeImport(target)
@@ -381,9 +401,11 @@ export async function importColorScheme() {
       return
     }
 
+    const freshness = currentColorSchemeImportFreshness()
+    if (!freshness) return
     const patch = resolveFreshColorSchemeImportPatch({
       operation,
-      freshness: currentColorSchemeImportFreshness(),
+      freshness,
       colorScheme,
     })
     if (!patch) {
@@ -394,7 +416,8 @@ export async function importColorScheme() {
     applyServerBackedSettingsPatch(patch)
     updateColorScheme()
   } catch (e) {
-    if (operation && isFreshColorSchemeImport(operation, currentColorSchemeImportFreshness())) {
+    const freshness = currentColorSchemeImportFreshness()
+    if (operation && freshness && isFreshColorSchemeImport(operation, freshness)) {
       alertError('Invalid color scheme')
     }
     return
@@ -406,7 +429,8 @@ export async function importColorScheme() {
 }
 
 export function updateTextThemeAndCSS() {
-  const db = getDatabase()
+  const db = displaySettingsOwner()
+  if (!db) return
   const root = document.querySelector(':root') as HTMLElement
   if (!root) {
     return
