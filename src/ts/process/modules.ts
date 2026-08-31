@@ -420,6 +420,14 @@ export async function readModule(
     const maxRetries = 3
     const totalAssets = module.assets?.length ?? 0
     let completed = 0
+    let reportedCompleted = -1
+
+    const reportCompleted = (nextCompleted: number) => {
+      const boundedCompleted = Math.max(0, Math.min(totalAssets, nextCompleted))
+      if (boundedCompleted <= reportedCompleted) return
+      reportedCompleted = boundedCompleted
+      alertWait(`Loading... (Adding Assets ${reportedCompleted} / ${totalAssets})`)
+    }
 
     type AssetTask = {
       index: number
@@ -446,15 +454,19 @@ export async function readModule(
         } catch (error) {
           throw new Error(`Failed to decode module asset ${task.index + 1}`, { cause: error })
         }
-        alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
       }
 
+      reportCompleted(completed)
       try {
+        const completedBeforeBatch = completed
         const savedAssetIds = await saveAssets(
           decodedTasks.map((task) => ({
             data: task.decoded,
             fileName: task.fileName,
           })),
+          {
+            onProgress: (batchCompleted) => reportCompleted(completedBeforeBatch + batchCompleted),
+          },
         )
         for (let i = 0; i < decodedTasks.length; i++) {
           // Preserve the module asset's declared filename (the [2] slot of
@@ -466,7 +478,7 @@ export async function readModule(
       } catch (error) {
         failed.push(...decodedTasks.map((task) => task.task))
       }
-      alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
+      reportCompleted(completed)
       return failed
     }
 

@@ -131,6 +131,17 @@ export interface AssetSaveInput {
   fileName?: string
 }
 
+export type AssetSaveProgressCallback = (completed: number, total: number) => void
+
+export interface SaveAssetsOptions {
+  /**
+   * Reports inputs whose asset ids have been confirmed by the server. Supplying
+   * a callback uses independently acknowledged uploads so progress never gets
+   * ahead of persistence inside an otherwise opaque bulk request.
+   */
+  onProgress?: AssetSaveProgressCallback
+}
+
 interface PreparedServerAssetUpload {
   assetId: string
   data: Uint8Array
@@ -160,7 +171,10 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
   return uploadServerAsset(data, fileExtension)
 }
 
-export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<string[]> {
+export async function saveAssets(
+  assets: readonly AssetSaveInput[],
+  options: SaveAssetsOptions = {},
+): Promise<string[]> {
   if (assets.length === 0) return []
   const prepared = await prepareServerAssetUploads(assets)
   const missingIds = await findMissingServerAssetIds(prepared.map((asset) => asset.assetId))
@@ -172,14 +186,32 @@ export async function saveAssets(assets: readonly AssetSaveInput[]): Promise<str
     missingUploads.push(asset)
   }
 
-  for (const batch of chunkServerAssetUploads(missingUploads)) {
-    const uploadedIds = await uploadServerAssetsBatch(batch)
-    for (const [index, uploadedId] of uploadedIds.entries()) {
-      const expectedId = batch[index]?.assetId
-      if (uploadedId !== expectedId) {
-        throw new Error(`Server bulk asset upload returned unexpected asset id: ${uploadedId}`)
+  if (options.onProgress) {
+    const inputCountsByAssetId = new Map<string, number>()
+    for (const asset of prepared) {
+      inputCountsByAssetId.set(asset.assetId, (inputCountsByAssetId.get(asset.assetId) ?? 0) + 1)
+    }
+
+    let completed = 0
+    for (const [assetId, inputCount] of inputCountsByAssetId) {
+      if (!missingIds.has(assetId)) {
+        completed += inputCount
       }
     }
+    if (completed > 0) {
+      options.onProgress(completed, assets.length)
+    }
+
+    await uploadServerAssetsIndividually(missingUploads, (uploadedId) => {
+      completed += inputCountsByAssetId.get(uploadedId) ?? 0
+      options.onProgress?.(completed, assets.length)
+    })
+    return prepared.map((asset) => asset.assetId)
+  }
+
+  for (const batch of chunkServerAssetUploads(missingUploads)) {
+    const uploadedIds = await uploadServerAssetsBatch(batch)
+    validateServerAssetUploadIds(batch, uploadedIds)
   }
 
   return prepared.map((asset) => asset.assetId)
@@ -271,6 +303,49 @@ function chunkServerAssetUploads(assets: readonly PreparedServerAssetUpload[]): 
   }
   flush()
   return chunks
+}
+
+async function uploadServerAssetsIndividually(
+  assets: readonly PreparedServerAssetUpload[],
+  onUploaded: (assetId: string) => void,
+): Promise<void> {
+  let nextIndex = 0
+  let failed = false
+  let firstError: unknown
+  const workerCount = Math.min(SERVER_ASSET_HASH_CONCURRENCY, assets.length)
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (!failed) {
+        const index = nextIndex
+        nextIndex += 1
+        if (index >= assets.length) return
+        const asset = assets[index]
+        try {
+          const uploadedIds = await uploadServerAssetsBatch([asset])
+          validateServerAssetUploadIds([asset], uploadedIds)
+          onUploaded(uploadedIds[0])
+        } catch (error) {
+          failed = true
+          firstError = error
+        }
+      }
+    }),
+  )
+  if (failed) {
+    throw firstError
+  }
+}
+
+function validateServerAssetUploadIds(
+  expectedAssets: readonly PreparedServerAssetUpload[],
+  uploadedIds: readonly string[],
+): void {
+  for (const [index, uploadedId] of uploadedIds.entries()) {
+    const expectedId = expectedAssets[index]?.assetId
+    if (uploadedId !== expectedId) {
+      throw new Error(`Server bulk asset upload returned unexpected asset id: ${uploadedId}`)
+    }
+  }
 }
 
 async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUpload[]): Promise<string[]> {

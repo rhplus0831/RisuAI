@@ -42,6 +42,12 @@ requests time out after five minutes; transient rate-limit responses honor
 `Retry-After` and retry the affected request up to three times. These contracts
 are named by the `SERVER_ASSET_*` constants in `src/ts/globalApi.svelte.ts` and
 guarded by `src/ts/globalApi.saveAssets.test.ts`.
+Callers that supply `saveAssets()` progress reporting opt into independently
+acknowledged missing-asset uploads with the same four-worker bound. Progress
+counts an input only after its id is confirmed by an existence probe or its
+upload response, so module-import progress cannot get ahead of persistence in
+an opaque bulk request. Callers without a progress callback retain the compact
+bulk-upload path.
 Uploads are authenticated and active-writer guarded. Asset metadata is outside
 the revisioned application-resource domain: uploads return the current domain
 revision but do not bump it or emit a command event. Re-uploading existing

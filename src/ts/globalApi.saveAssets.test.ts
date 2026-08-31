@@ -50,6 +50,14 @@ function responseJson(value: unknown, status = 200, headers: Record<string, stri
   })
 }
 
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 async function readRequestJson(init?: RequestInit): Promise<unknown> {
   if (typeof init?.body !== 'string') {
     throw new Error('Expected JSON request body')
@@ -137,6 +145,53 @@ describe('saveAssets server bulk upload', () => {
       ],
     })
     expect(Array.from(bulkBody.bytes)).toEqual([...missingAsset, ...otherMissingAsset])
+  })
+
+  it('reports inputs only as their server uploads are acknowledged', async () => {
+    const pendingUploads = new Map<string, ReturnType<typeof createDeferred<Response>>>()
+    const progress: Array<[number, number]> = []
+    vi.mocked(fetch).mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      fetchCalls.push({ input, init })
+      if (input === '/api/v1/assets/exists') {
+        return responseJson({ missing: [missingId, otherMissingId] })
+      }
+      if (input === '/api/v1/assets') {
+        if (!(init?.body instanceof ArrayBuffer)) {
+          throw new Error('Expected single asset upload bytes')
+        }
+        const firstByte = new Uint8Array(init.body)[0]
+        const assetId = firstByte === missingAsset[0] ? missingId : otherMissingId
+        const pending = createDeferred<Response>()
+        pendingUploads.set(assetId, pending)
+        return pending.promise
+      }
+      throw new Error(`Unexpected fetch: ${String(input)}`)
+    })
+
+    const saving = saveAssets(
+      [{ data: presentAsset }, { data: missingAsset }, { data: missingAsset }, { data: otherMissingAsset }],
+      { onProgress: (completed, total) => progress.push([completed, total]) },
+    )
+
+    await vi.waitFor(() => expect(pendingUploads.size).toBe(2))
+    expect(progress).toEqual([[1, 4]])
+
+    pendingUploads.get(missingId)?.resolve(responseJson({ assetId: missingId }))
+    await vi.waitFor(() =>
+      expect(progress).toEqual([
+        [1, 4],
+        [3, 4],
+      ]),
+    )
+
+    pendingUploads.get(otherMissingId)?.resolve(responseJson({ assetId: otherMissingId }))
+    await expect(saving).resolves.toEqual([presentId, missingId, missingId, otherMissingId])
+    expect(progress).toEqual([
+      [1, 4],
+      [3, 4],
+      [4, 4],
+    ])
+    expect(fetchCalls.map((call) => call.input)).toEqual(['/api/v1/assets/exists', '/api/v1/assets', '/api/v1/assets'])
   })
 
   it('batches large existence probes to stay within the public endpoint limit', async () => {

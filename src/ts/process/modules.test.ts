@@ -468,7 +468,9 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: 'portrait.webp' }])
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: 'portrait.webp' }], {
+      onProgress: expect.any(Function),
+    })
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         id: expect.not.stringMatching(/^old-id$/),
@@ -480,7 +482,7 @@ describe('module imports', () => {
     expect(alertNormal).toHaveBeenCalled()
   })
 
-  it('does not count decoded module assets before the batch upload completes', async () => {
+  it('reports each module asset only after its upload completes', async () => {
     const assets = [new Uint8Array([1]), new Uint8Array([2]), new Uint8Array([3])]
     const save = createDeferred<string[]>()
     saveAssets.mockReturnValueOnce(save.promise)
@@ -500,10 +502,19 @@ describe('module imports', () => {
     const importPromise = importModule()
     await vi.waitFor(() => expect(saveAssets).toHaveBeenCalledOnce())
 
+    expect(alertWait.mock.calls.map(([message]) => message)).toEqual(['Loading... (Adding Assets 0 / 3)'])
+    expect(createGlobalModule).not.toHaveBeenCalled()
+
+    const progress = saveAssets.mock.calls[0][1].onProgress
+    progress(1, 3)
+    progress(2, 3)
+    progress(3, 3)
+
     expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
       'Loading... (Adding Assets 0 / 3)',
-      'Loading... (Adding Assets 0 / 3)',
-      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 1 / 3)',
+      'Loading... (Adding Assets 2 / 3)',
+      'Loading... (Adding Assets 3 / 3)',
     ])
     expect(createGlobalModule).not.toHaveBeenCalled()
 
@@ -512,8 +523,8 @@ describe('module imports', () => {
 
     expect(alertWait.mock.calls.map(([message]) => message)).toEqual([
       'Loading... (Adding Assets 0 / 3)',
-      'Loading... (Adding Assets 0 / 3)',
-      'Loading... (Adding Assets 0 / 3)',
+      'Loading... (Adding Assets 1 / 3)',
+      'Loading... (Adding Assets 2 / 3)',
       'Loading... (Adding Assets 3 / 3)',
     ])
   })
@@ -612,7 +623,9 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: '' }])
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(assetData), fileName: '' }], {
+      onProgress: expect.any(Function),
+    })
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Imported module',
@@ -640,7 +653,9 @@ describe('module imports', () => {
 
     await importModule()
 
-    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(avifData), fileName: 'asset.avif' }])
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(avifData), fileName: 'asset.avif' }], {
+      onProgress: expect.any(Function),
+    })
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Imported module',
@@ -693,9 +708,10 @@ describe('module imports', () => {
 
     expect(alertError).not.toHaveBeenCalled()
     expect(alertConfirm).toHaveBeenCalled()
-    expect(saveAssets).toHaveBeenCalledWith([
-      { data: Buffer.from(new Uint8Array([7, 8, 9])), fileName: 'portrait.webp' },
-    ])
+    expect(saveAssets).toHaveBeenCalledWith(
+      [{ data: Buffer.from(new Uint8Array([7, 8, 9])), fileName: 'portrait.webp' }],
+      { onProgress: expect.any(Function) },
+    )
     expect(createGlobalModule).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'MCP module',
