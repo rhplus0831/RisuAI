@@ -1,31 +1,21 @@
 import type { ServerCommandTransportOptions } from './commands'
-import { flushPendingSettingsOwnerMutations } from './settingsOwner.svelte'
-import { flushPendingCharacterDraftPatches } from './characterDraft.svelte'
-import { flushPendingLorebookOwnerMutations } from './lorebookOwner.svelte'
-import { flushPendingPromptTemplatePatches } from './promptTemplateMutations.svelte'
-import { flushPendingScriptDefinitionMutations } from './scriptDefinitionOwner.svelte'
-import { flushRegisteredPendingBridgePatches } from './pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from './pendingOwnerMutationRegistry'
 
-export function flushAllPendingBridgePatches(options: ServerCommandTransportOptions = {}): void {
-  flushRegisteredPendingBridgePatches(options)
-  flushPendingSettingsOwnerMutations(options)
-  flushPendingCharacterDraftPatches(options)
-  flushPendingLorebookOwnerMutations(options)
-  flushPendingPromptTemplatePatches(options)
-  flushPendingScriptDefinitionMutations(options)
+export function flushPendingOwnerMutationsForLifecycle(options: ServerCommandTransportOptions = {}): void {
+  flushRegisteredPendingOwnerMutations(options)
 }
 
 let lifecycleListenerRefs = 0
 let stopLifecycleListeners: (() => void) | null = null
 
-export function startBridgePatchLifecycleFlush(): () => void {
+export function startOwnerMutationLifecycleFlush(): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') {
     return () => {}
   }
 
   lifecycleListenerRefs += 1
   if (!stopLifecycleListeners) {
-    const flushForLifecycle = () => flushAllPendingBridgePatches({ keepalive: true })
+    const flushForLifecycle = () => flushPendingOwnerMutationsForLifecycle({ keepalive: true })
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flushForLifecycle()
     }

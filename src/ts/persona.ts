@@ -23,7 +23,7 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
+import { registerPendingOwnerMutationFlusher } from './server/pendingOwnerMutationRegistry'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
 import {
   acknowledgePendingMutation,
@@ -1641,7 +1641,7 @@ function selectedPersonaUpdateDurableIntent(personaId: string, patch: PersonaSna
   }
 }
 
-registerPendingBridgePatchFlusher('selected-persona-profile', (options) => {
+registerPendingOwnerMutationFlusher('selected-persona-profile', (options) => {
   void flushPendingSelectedPersonaUpdate(options)
 })
 

@@ -50,7 +50,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
-import { registerPendingBridgeOwnershipResetter, registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import { registerPendingOwnerResetter, registerPendingOwnerMutationFlusher } from './pendingOwnerMutationRegistry'
 import { registerPendingSettingsProjectionOverlay } from './settingsPendingProjection'
 import { hypaV3PresetIndexFromStableId } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 
@@ -1093,8 +1093,8 @@ export function flushPendingSettingsOwnerMutations(options: ServerCommandTranspo
   }
 }
 
-registerPendingBridgePatchFlusher('settings', flushPendingSettingsOwnerMutations)
-registerPendingBridgeOwnershipResetter('settings', resetSettingsOwnerForDatabaseReplacement)
+registerPendingOwnerMutationFlusher('settings', flushPendingSettingsOwnerMutations)
+registerPendingOwnerResetter('settings', resetSettingsOwnerForDatabaseReplacement)
 
 /** Drop projections, timers, and attempts owned by the database that was replaced. */
 export function resetSettingsOwnerForDatabaseReplacement(): void {

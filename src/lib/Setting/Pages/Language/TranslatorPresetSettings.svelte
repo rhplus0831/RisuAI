@@ -38,7 +38,7 @@
     type TranslatorPresetPatchOptimisticAcknowledgement,
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
-  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
+  import { registerPendingOwnerMutationFlusher } from 'src/ts/server/pendingOwnerMutationRegistry'
   import {
     dispatchDurableMutation,
     registerDurableMutationSettlementListener,
@@ -1903,7 +1903,7 @@
     })
   })
 
-  const unregisterPendingTranslatorPresetFlush = registerPendingBridgePatchFlusher(
+  const unregisterPendingTranslatorPresetFlush = registerPendingOwnerMutationFlusher(
     `translator-preset-settings:${nextTranslatorPresetFlushId++}`,
     (options) => {
       void flushPendingTranslatorPresetUpdates(options)

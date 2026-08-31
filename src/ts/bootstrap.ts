@@ -49,7 +49,7 @@ import {
   peekActiveWriterSessionId,
 } from './server/activeWriterSession'
 import { observerShellLifecycleStore, setObserverShellLifecycleMode } from './observerShellLifecycle.svelte'
-import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
+import { startOwnerMutationLifecycleFlush } from './server/ownerMutationLifecycle'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { applyGenerationOperationBootstrap, configureGenerationOperationProtocol } from './server/generationOperations'
 import { configureDisplaySourceProtocol } from './server/displaySources'
@@ -255,7 +255,7 @@ const SERVER_RESOURCE_RECONNECT_JITTER_RATIO = 0.2
 const SERVER_RESOURCE_EVENT_STALE_TIMEOUT_MS = 60_000
 
 let serverResourceEventSubscription: { unsubscribe: () => void } | null = null
-let stopBridgePatchLifecycleFlush: (() => void) | null = null
+let stopOwnerMutationLifecycleFlush: (() => void) | null = null
 // Serializes resource invalidation so the applied revision cursor advances in
 // command-event order.
 let serverResourceSyncChain: Promise<void> = Promise.resolve()
@@ -860,8 +860,8 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     setActiveGreetingTranslations(runtime.activeGreetingTranslations ?? [])
     startActiveMessageTranslationRefresh()
     startActiveGreetingTranslationRefresh()
-    stopBridgePatchLifecycleFlush?.()
-    stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
+    stopOwnerMutationLifecycleFlush?.()
+    stopOwnerMutationLifecycleFlush = startOwnerMutationLifecycleFlush()
   })
   await runWriterStep('writer-event-subscription', async () => {
     serverResourceRuntimeReplayEnabled = false
@@ -928,8 +928,8 @@ export function stopServerResourceEvents() {
   teardownServerResourceSubscription()
   stopServerResourceRecoveryListeners?.()
   stopServerResourceRecoveryListeners = null
-  stopBridgePatchLifecycleFlush?.()
-  stopBridgePatchLifecycleFlush = null
+  stopOwnerMutationLifecycleFlush?.()
+  stopOwnerMutationLifecycleFlush = null
   stopStartupChatReadinessSync?.()
   stopStartupChatReadinessSync = null
   setActiveChatReadinessRefreshHook(null)

@@ -84,7 +84,7 @@ token before applying its first slice, so even a partial failed apply cannot
 later acknowledge stale optimism.
 
 The destructive all-chat reset uses `dispatchResetChatsWithOutcome()` in
-`src/ts/chatCommands.ts`. It first flushes registered bridge patches, stages
+`src/ts/chatCommands.ts`. It first flushes registered owner mutations, stages
 the allowlisted character-owned `PUT` intent, applies one optimistic replacement
 chat, and retains or rolls back that projection according to the normal
 `accepted`/`queued`/`failed` outcome. The low-level `resetChatsCommand()`
@@ -248,12 +248,12 @@ Tests for resource guards, hydration, event invalidation, or watcher changes
 that affect rendered state should follow the visible-state policy in
 `testing-and-operations.md`.
 
-## Bridge Watchers
+## Owner Mutation Lifecycles
 
-| File                               | Role                                                                                                                                                                                 |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bridgeFlush.ts`                   | Directly imports and flushes every built-in bridge on `pagehide` / hidden visibility with `keepalive`, then also invokes registered extension owners.                                 |
-| `pendingBridgeFlushRegistry.ts`    | Registers bridge flush/reset callbacks for owner-targeted calls and dynamically loaded owners. Most built-in bridges register here as well as being covered by `bridgeFlush.ts`.      |
+| File                              | Role                                                                                                                                                                                   |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ownerMutationLifecycle.ts`       | Flushes every registered, loaded owner on `pagehide` / hidden visibility with `keepalive`; it does not import feature owners into bootstrap.                                            |
+| `pendingOwnerMutationRegistry.ts` | Registers owner flush/reset callbacks for targeted structural calls, lifecycle durability, and database-ownership replacement.                                                          |
 | `settingsOwner.svelte.ts`          | Explicit group-owned drafts and patches through `PATCH /commands/settings/:group`, with equality-noop suppression, exact projection fences, durable receipts, and field-scoped rollback. |
 | `lorebookBridge.svelte.ts`         | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
 | `scriptDefinitionOwner.svelte.ts`  | Explicit character/module definition owner mutations plus the global-script settings draft watcher; compact create/update/delete/reorder classification, projection fencing, and full-replacement fallback. |
@@ -261,8 +261,8 @@ that affect rendered state should follow the visible-state policy in
 Common requirements are to capture snapshots, suppress no-op updates, respect
 the appropriate resource epoch or revision gate, debounce noisy edits, stage
 durable intent before dispatch, send the narrowest field/row mutation available,
-and use trusted optimistic writes only in helpers that intentionally update
-local resource state before the server response. Retryable failures retain the
+and update optimistic state only through explicit owner helpers before the
+server response. Retryable failures retain the
 encrypted intent and its optimistic projection for replay. Terminal rejection
 rolls back only when the attempted value still owns the target; the
 non-durable fallback uses the ordinary rollback path. Multi-command watcher

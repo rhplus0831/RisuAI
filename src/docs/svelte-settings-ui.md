@@ -132,7 +132,7 @@ local side effect, stages encrypted durable intent, and dispatches through the
 explicit settings owner. Continuous controls are briefly delayed and coalesced
 by `src/ts/server/settingsOwner.svelte.ts`.
 
-`src/ts/server/pendingBridgeFlushRegistry.ts` lets navigation, structural
+`src/ts/server/pendingOwnerMutationRegistry.ts` lets navigation, structural
 actions, and page exit flush queued owner patches before another operation can
 overtake them. Retryable failures retain durable intent and the optimistic
 projection. Terminal or non-durable failures roll back only attempted fields

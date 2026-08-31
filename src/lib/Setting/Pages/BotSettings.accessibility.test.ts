@@ -125,7 +125,7 @@ describe('BotSettings direct form control names', () => {
 
 describe('BotSettings pending prompt persistence', () => {
   it('registers its 250ms prompt draft with the lifecycle flusher and forwards keepalive transport options', () => {
-    expect(source).toContain('registerPendingBridgePatchFlusher(')
+    expect(source).toContain('registerPendingOwnerMutationFlusher(')
     expect(source).toContain('flushPendingPromptFieldPatch(options: ServerCommandTransportOptions = {})')
     expect(source).toContain('options.keepalive,')
     expect(source).toContain('unregisterPendingPromptFieldFlush()')

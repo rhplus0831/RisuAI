@@ -28,9 +28,9 @@ import {
 } from '../server/resourceState.svelte'
 import type { SettingsGroupProjectionEpochs } from '../server/settingsGroups'
 import {
-  registerPendingBridgeOwnershipResetter,
-  registerPendingBridgePatchFlusher,
-} from '../server/pendingBridgeFlushRegistry'
+  registerPendingOwnerResetter,
+  registerPendingOwnerMutationFlusher,
+} from '../server/pendingOwnerMutationRegistry'
 import {
   currentTopLevelPresetFieldMirrorValue,
   mirrorTopLevelPresetField,
@@ -141,8 +141,8 @@ const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite
 const pendingDeferredServerSettingAttempts: PendingDeferredServerSettingAttempt[] = []
 const deferredSettingOwnerResetEpochs = new Map<string, number>()
 let nextDeferredServerSettingAttemptSequence = 0
-registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
-registerPendingBridgeOwnershipResetter('setting-renderer-inputs', resetDeferredSettingWritesForDatabaseReplacement)
+registerPendingOwnerMutationFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
+registerPendingOwnerResetter('setting-renderer-inputs', resetDeferredSettingWritesForDatabaseReplacement)
 registerPendingSettingsProjectionOverlay((target, allowedKeys) => {
   const converged: PendingDeferredServerSettingAttempt[] = []
   for (const attempt of [...pendingDeferredServerSettingAttempts]) {

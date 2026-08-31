@@ -60,7 +60,7 @@ import {
   type ModelPreset,
   type PromptPreset,
 } from './database.svelte'
-import { flushRegisteredPendingBridgePatches } from '../server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from '../server/pendingOwnerMutationRegistry'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -3682,7 +3682,7 @@ describe('preset command rollback', () => {
     const calls = stubSuccessfulSplitPresetCommands()
 
     updatePromptPreset(0, { name: 'Prompt before pagehide' })
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
 
     const command = await waitForPresetCommand(calls, '/prompt-presets/prompt-a')
     expect(command.body.patch).toEqual({ name: 'Prompt before pagehide' })

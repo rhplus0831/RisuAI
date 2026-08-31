@@ -39,6 +39,28 @@ describe('static architecture gate: explicit resource owners', () => {
     expect(resources).not.toContain('withResourceDatabaseWrite')
     expect(bootstrap).not.toContain('setResourceWriteGuardEnabled')
     expect(existsSync(resolve(process.cwd(), 'src/ts/server/resourceWriteGuard.svelte.ts'))).toBe(false)
+    expect(existsSync(resolve(process.cwd(), 'src/ts/server/pendingBridgeFlushRegistry.ts'))).toBe(false)
+    expect(existsSync(resolve(process.cwd(), 'src/ts/server/bridgeFlush.ts'))).toBe(false)
+  })
+
+  it('flushes loaded owner mutations without importing feature owners into bootstrap', () => {
+    const lifecycle = readSource('src/ts/server/ownerMutationLifecycle.ts')
+    expect(lifecycle).toContain('flushRegisteredPendingOwnerMutations(options)')
+    expect(lifecycle).not.toContain("from './settingsOwner.svelte'")
+    expect(lifecycle).not.toContain("from './characterDraft.svelte'")
+    expect(lifecycle).not.toContain("from './lorebookOwner.svelte'")
+    expect(lifecycle).not.toContain("from './promptTemplateMutations.svelte'")
+    expect(lifecycle).not.toContain("from './scriptDefinitionOwner.svelte'")
+
+    for (const file of [
+      'src/ts/server/settingsOwner.svelte.ts',
+      'src/ts/server/characterDraft.svelte.ts',
+      'src/ts/server/lorebookOwner.svelte.ts',
+      'src/ts/server/promptTemplateMutations.svelte.ts',
+      'src/ts/server/scriptDefinitionOwner.svelte.ts',
+    ]) {
+      expect(readSource(file)).toContain('registerPendingOwnerMutationFlusher(')
+    }
   })
 })
 

@@ -262,7 +262,7 @@ import { language } from 'src/lang'
 import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
 import { dispatchSelectPluginProvider } from 'src/ts/pluginCommands'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
 import { resetServerResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
 import {
   beginPendingMutationDispatch,
@@ -595,7 +595,7 @@ describe('BotSettings pending prompt persistence', () => {
 
     expect(botSettingsMocks.patchInputs).toHaveLength(0)
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
     await Promise.resolve()
 
     expect(botSettingsMocks.patchInputs).toEqual([

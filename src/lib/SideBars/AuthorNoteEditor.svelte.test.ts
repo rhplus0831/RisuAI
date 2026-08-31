@@ -84,7 +84,7 @@ vi.mock('../Others/Help.svelte', async () => {
 import AuthorNoteEditor from './AuthorNoteEditor.svelte'
 import AuthorNoteEditorTestHost from './AuthorNoteEditor.testHost.svelte'
 import type { character } from 'src/ts/storage/database.svelte'
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -240,7 +240,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
     textarea.value = 'draft before pagehide'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
 
     expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledOnce()
     expect(authorNoteMocks.dispatchStagedChatNoteMutation).toHaveBeenCalledWith(

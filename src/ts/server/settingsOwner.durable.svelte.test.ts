@@ -134,7 +134,7 @@ import {
   type PendingMutationOutboxEntry,
 } from './pendingMutationOutbox'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from './settingsMutationKey'
-import { resetRegisteredPendingBridgeOwnershipState } from './pendingBridgeFlushRegistry'
+import { resetRegisteredOwnerState } from './pendingOwnerMutationRegistry'
 import {
   applyServerBackedSettingsPatch,
   createServerBackedSettingDraft,
@@ -247,7 +247,7 @@ describe('settings owner durable marker ordering', () => {
         writerEpoch: 7,
         databaseLineage: 'database-restored',
         requestedWriterWasActive: true,
-        onOwnershipChange: resetRegisteredPendingBridgeOwnershipState,
+        onOwnershipChange: resetRegisteredOwnerState,
       }),
     ).resolves.toEqual({ discarded: 1 })
 

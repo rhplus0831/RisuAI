@@ -7,8 +7,8 @@ const ownershipSpies = vi.hoisted(() => ({
   preparePendingMutationOutbox: vi.fn(),
   markReplacementDatabaseOwnershipRefreshed: vi.fn(),
 }))
-const bridgeResetSpies = vi.hoisted(() => ({
-  resetRegisteredPendingBridgeOwnershipState: vi.fn(),
+const ownerResetSpies = vi.hoisted(() => ({
+  resetRegisteredOwnerState: vi.fn(),
 }))
 const settlementSpies = vi.hoisted(() => ({
   countRegisteredDurableMutationSettlements: vi.fn(() => 0),
@@ -31,8 +31,8 @@ vi.mock('./replacementDatabaseOwnership', async (importActual) => {
   }
 })
 
-vi.mock('./pendingBridgeFlushRegistry', () => ({
-  resetRegisteredPendingBridgeOwnershipState: bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState,
+vi.mock('./pendingOwnerMutationRegistry', () => ({
+  resetRegisteredOwnerState: ownerResetSpies.resetRegisteredOwnerState,
 }))
 
 vi.mock('../process/legacyMemoryMigrationNotice', () => ({
@@ -136,7 +136,7 @@ beforeEach(() => {
     return { discarded: 0 }
   })
   ownershipSpies.markReplacementDatabaseOwnershipRefreshed.mockReset()
-  bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState.mockReset()
+  ownerResetSpies.resetRegisteredOwnerState.mockReset()
   settlementSpies.countRegisteredDurableMutationSettlements.mockClear()
   settlementSpies.discardRegisteredDurableMutationSettlements.mockReset()
 })
@@ -207,7 +207,7 @@ describe('server backup helpers', () => {
       onOwnershipChange: expect.any(Function),
       ...replacementOwnership,
     })
-    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).toHaveBeenCalledOnce()
+    expect(ownerResetSpies.resetRegisteredOwnerState).toHaveBeenCalledOnce()
     expect(ownershipSpies.markReplacementDatabaseOwnershipRefreshed).not.toHaveBeenCalled()
     expect(backupFetch.calls).toHaveLength(1)
     expect(backupFetch.calls[0]).toMatchObject({
@@ -220,7 +220,7 @@ describe('server backup helpers', () => {
   it('retires old bridge state before asynchronous ownership preparation finishes', async () => {
     const preparation = deferred<{ discarded: number }>()
     const order: string[] = []
-    bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState.mockImplementationOnce(() => {
+    ownerResetSpies.resetRegisteredOwnerState.mockImplementationOnce(() => {
       order.push('reset')
     })
     ownershipSpies.preparePendingMutationOutbox.mockImplementationOnce((input) => {
@@ -500,7 +500,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       onOwnershipChange: expect.any(Function),
       ...replacementOwnership,
     })
-    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).toHaveBeenCalledOnce()
+    expect(ownerResetSpies.resetRegisteredOwnerState).toHaveBeenCalledOnce()
     expect(ownershipSpies.markReplacementDatabaseOwnershipRefreshed).not.toHaveBeenCalled()
     expect(backupFetch.calls).toHaveLength(1)
     // The upload carries auth but no explicit content-type (the browser sets the
@@ -554,7 +554,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       error: 'This backup contains 1 unsupported group character. The active database was not changed.',
     })
     expect(ownershipSpies.preparePendingMutationOutbox).not.toHaveBeenCalled()
-    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).not.toHaveBeenCalled()
+    expect(ownerResetSpies.resetRegisteredOwnerState).not.toHaveBeenCalled()
     expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).not.toHaveBeenCalled()
   })
 
@@ -575,7 +575,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       error: 'raw server fallback that the UI must not display',
     })
     expect(ownershipSpies.preparePendingMutationOutbox).not.toHaveBeenCalled()
-    expect(bridgeResetSpies.resetRegisteredPendingBridgeOwnershipState).not.toHaveBeenCalled()
+    expect(ownerResetSpies.resetRegisteredOwnerState).not.toHaveBeenCalled()
     expect(resourceRefreshSpies.forceServerDatabaseReplacementRefresh).not.toHaveBeenCalled()
   })
 

@@ -93,8 +93,8 @@ generation operations consume the narrow capabilities directly.
    its dependency-ordered commands. Secure contexts use a non-extractable
    WebCrypto key; plain-HTTP contexts use a separately stored raw AES key and
    the fallback cipher. Startup stops if retryable or unreadable rows remain.
-5. Enable the resource write guard and load only
-   `GET /api/v1/resources/shell`. The exact version-1 response contains one
+5. Load `GET /api/v1/resources/shell` into the explicit settings and character
+   owners. The exact version-1 response contains one
    revision, allowlisted initial visual/account/sidebar settings, and the
    versioned character-summary projection at that same revision. It excludes
    collections, provider credentials, selected detail, prompt bodies, chats,
@@ -107,7 +107,7 @@ generation operations consume the narrow capabilities directly.
    so. Marker-bearing summaries remain distinct from full character rows.
 7. Seed generation operations/jobs, writer-scoped generation-finalization and
    pending-effect state, and separate message/greeting translation recovery;
-   install bridge flushing and the hydration runtimes, then subscribe to server
+   install owner-mutation lifecycle flushing and the hydration runtimes, then subscribe to server
    events from the coherently applied shell revision. Only an accepted
    subscription publishes `writer-ready`, which makes ordinary commands and
    persistence-capable route effects available. The shell was already visible

@@ -37,6 +37,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
+import { registerPendingOwnerMutationFlusher } from './pendingOwnerMutationRegistry'
 
 /**
  * Prompt-template editor projection helpers.
@@ -866,6 +867,8 @@ export function flushPendingPromptTemplatePatches(options: ServerCommandTranspor
   }
   runPendingPromptSettingsPatch(options)
 }
+
+registerPendingOwnerMutationFlusher('prompt-template', flushPendingPromptTemplatePatches)
 
 /** Stage only prompt-item drafts owned by the explicitly named presets. */
 export function flushPendingPromptTemplateOwnerPatches(

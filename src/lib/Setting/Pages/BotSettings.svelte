@@ -71,7 +71,7 @@
     type ServerCommandTransportOptions,
     type SettingsPatch,
   } from 'src/ts/server/commands'
-  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
+  import { registerPendingOwnerMutationFlusher } from 'src/ts/server/pendingOwnerMutationRegistry'
   import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
   import { SETTINGS_BRIDGE_MUTATION_KEY } from 'src/ts/server/settingsMutationKey'
   import {
@@ -165,7 +165,7 @@
     revision: number | null
   }
   const unsettledPromptFieldPatches: PromptFieldPatchAttempt[] = []
-  const unregisterPendingPromptFieldFlush = registerPendingBridgePatchFlusher(
+  const unregisterPendingPromptFieldFlush = registerPendingOwnerMutationFlusher(
     `bot-settings-prompt-fields:${nextBotSettingsFlushId++}`,
     flushPendingPromptFieldPatch,
   )

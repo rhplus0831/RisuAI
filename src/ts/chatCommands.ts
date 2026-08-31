@@ -92,7 +92,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './server/pendingMutationOutbox'
-import { flushRegisteredPendingBridgePatch } from './server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutation } from './server/pendingOwnerMutationRegistry'
 import {
   characterOwnerMutationKey,
   chatFolderResourceOwnerMutationKey,
@@ -2511,7 +2511,7 @@ export async function dispatchResetChatsWithOutcome(
   chat: Chat,
   previous: ChatStateSnapshot,
 ): Promise<ChatMutationOutcome> {
-  flushRegisteredPendingBridgePatch('chat-metadata', {})
+  flushRegisteredPendingOwnerMutation('chat-metadata', {})
   await flushPendingCharacterChatNoteOwnerMutations(characterId)
   const attemptedChat = cloneJsonValue(chat)
   const body = freezeDurableChatRequestBody({ chat: toChatSnapshot(attemptedChat) })
@@ -4271,7 +4271,7 @@ export async function dispatchDeleteChatWithOutcome(
   previous: ChatStateSnapshot,
 ): Promise<ChatMutationOutcome | undefined> {
   if (!canUseServerCommands()) return
-  flushRegisteredPendingBridgePatch('chat-metadata', {})
+  flushRegisteredPendingOwnerMutation('chat-metadata', {})
   await flushPendingChatNoteOwnerMutation(chatId)
   const rollback = chatDeleteRollbackFromState(chatId, previous)
   const optimisticRowEpoch = rollback?.characterId
@@ -4809,7 +4809,7 @@ export function dispatchDeleteChatFolderWithOutcome(
   previous: ChatStateSnapshot,
 ): Promise<ChatMutationOutcome> | undefined {
   if (!canUseServerCommands()) return
-  flushRegisteredPendingBridgePatch('chat-metadata', {})
+  flushRegisteredPendingOwnerMutation('chat-metadata', {})
   const rollback = chatFolderDeleteRollbackFromState(folderId, previous)
   const optimisticRowEpoch = rollback?.characterId
     ? captureCharacterRowProjectionEpoch(rollback.characterId)

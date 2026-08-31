@@ -16,7 +16,7 @@ import {
 } from './server/commands'
 import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInput } from './personaMutationCertificate'
 
-import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from './server/pendingOwnerMutationRegistry'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -503,7 +503,7 @@ describe('persona ID read and command preparation', () => {
       }),
     )
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
     await flushPendingSelectedPersonaUpdate()
 
     expect(fetch).toHaveBeenCalledTimes(2)

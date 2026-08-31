@@ -291,7 +291,7 @@ import {
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
 import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
@@ -2556,7 +2556,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     expect(commandSpies.updateInputs).toHaveLength(0)
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
     await flushMicrotasks()
 
     expect(commandSpies.updateInputs).toEqual([

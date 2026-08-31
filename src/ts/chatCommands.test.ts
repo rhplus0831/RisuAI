@@ -147,7 +147,7 @@ import {
 } from './server/pendingMutationOutbox'
 import { replayPendingMutations } from './server/pendingMutationReplay'
 import { dispatchDurableMutation } from './server/durableMutationDispatch'
-import { registerPendingBridgePatchFlusher } from './server/pendingBridgeFlushRegistry'
+import { registerPendingOwnerMutationFlusher } from './server/pendingOwnerMutationRegistry'
 import { PERSONA_SELECTION_MUTATION_KEY } from './server/personaMutationKeys'
 import { reapplyRetainedChatBodyProjections } from './server/chatRetainedProjection'
 import { acknowledgeCreatedChatTranscriptLocalEffect, resetChatHydration } from './server/chatMessageHydration.svelte'
@@ -6791,7 +6791,7 @@ describe('scriptstate-scoped var dispatch', () => {
       note: 'fallback note',
     })
     let pendingNote = true
-    const unregisterNoteFlusher = registerPendingBridgePatchFlusher('test-author-note-fallback', (options) => {
+    const unregisterNoteFlusher = registerPendingOwnerMutationFlusher('test-author-note-fallback', (options) => {
       if (!pendingNote) return
       pendingNote = false
       void dispatchStagedChatNoteMutation(noteMutation, noteRollback!, options)

@@ -17,7 +17,7 @@
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import { getAuthorNoteDefaultText } from 'src/ts/utilState'
   import type { ServerCommandTransportOptions } from 'src/ts/server/commands'
-  import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
+  import { registerPendingOwnerMutationFlusher } from 'src/ts/server/pendingOwnerMutationRegistry'
   import { acknowledgePendingMutation } from 'src/ts/server/pendingMutationOutbox'
 
   import Help from '../Others/Help.svelte'
@@ -145,7 +145,7 @@
     }
   })
 
-  const unregisterPendingAuthorNoteFlush = registerPendingBridgePatchFlusher(
+  const unregisterPendingAuthorNoteFlush = registerPendingOwnerMutationFlusher(
     `author-note-editor:${nextAuthorNoteEditorFlushId++}`,
     flushPendingAuthorNoteSave,
   )

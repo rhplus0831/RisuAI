@@ -148,10 +148,10 @@ import { fetchServerLegacyPreset } from '../server/hydrationReads'
 import { canUseServerResourceReads } from '../server/resourceReads'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from '../server/chatGenerationSettingsResourceGuard'
 import {
-  flushRegisteredPendingBridgePatch,
-  registerPendingBridgeOwnershipResetter,
-  registerPendingBridgePatchFlusher,
-} from '../server/pendingBridgeFlushRegistry'
+  flushRegisteredPendingOwnerMutation,
+  registerPendingOwnerResetter,
+  registerPendingOwnerMutationFlusher,
+} from '../server/pendingOwnerMutationRegistry'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from '../server/durableMutationDispatch'
 import {
   MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
@@ -1151,8 +1151,8 @@ export function flushPendingSplitPresetPatches(options: ServerCommandTransportOp
   }
 }
 
-registerPendingBridgePatchFlusher('split-preset-fields', flushPendingSplitPresetPatches)
-registerPendingBridgeOwnershipResetter('preset-mutations', resetPendingPresetMutationsForDatabaseReplacement)
+registerPendingOwnerMutationFlusher('split-preset-fields', flushPendingSplitPresetPatches)
+registerPendingOwnerResetter('preset-mutations', resetPendingPresetMutationsForDatabaseReplacement)
 
 function splitPresetPatchPayload(
   fields: Map<string, SplitPresetPatchFieldAttempt>,
@@ -5496,7 +5496,7 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
     const id = canonicalBotPresetIndexById(targetPresetId)
     if (id < 0 || !botPresetHasHydratedSettings(legacyPresetOwner()[id])) return
     if (canUseServerCommands()) {
-      flushRegisteredPendingBridgePatch('settings', {})
+      flushRegisteredPendingOwnerMutation('settings', {})
     }
     const previousSelectedId = botPresetSelectedId(legacyPresetOwner(), db.botPresetsId)
     const previousSettings = snapshotSetPresetSettings(db)
@@ -5716,7 +5716,7 @@ function deletePresetByIds(presetId: string, selectPresetId: string, apply: bool
     if (id < 0 || selectedBeforeDelete < 0) return []
     if (apply && !botPresetHasHydratedSettings(legacyPresetOwner()[selectedBeforeDelete])) return []
     const durable = canUseServerCommands()
-    if (durable) flushRegisteredPendingBridgePatch('settings', {})
+    if (durable) flushRegisteredPendingOwnerMutation('settings', {})
     const previousPreset = safeStructuredClone(legacyPresetOwner()[id])
     const previousSelectedId = botPresetSelectedId(legacyPresetOwner(), db.botPresetsId)
     const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
@@ -5945,7 +5945,7 @@ export function deleteModelPreset(id: number, selectIndex = 0): Promise<PresetMu
     const selectModelPresetId = nextSelectedPreset?.id
     if (!modelPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
     flushPendingSplitPresetPatches()
-    flushRegisteredPendingBridgePatch('settings', {})
+    flushRegisteredPendingOwnerMutation('settings', {})
     const deleteIntent: DurableMutationIntent = {
       version: 1,
       dependencyKeys: splitPresetMutationDependencyKeys(
@@ -6039,7 +6039,7 @@ export function selectModelPreset(id: number): Promise<PresetMutationOutcome> {
     if (previousSelectedId === modelPresetId) return Promise.resolve({ status: 'accepted' })
     flushPendingSplitPresetPatches()
     if (canUseServerCommands()) {
-      flushRegisteredPendingBridgePatch('settings', {})
+      flushRegisteredPendingOwnerMutation('settings', {})
     }
     settingsOwnerRecord().modelPresetsId = id
     applyModelPresetFieldsToDatabase(db, modelPresetOwner()[id])
@@ -6507,7 +6507,7 @@ export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetM
     if (!promptPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
     flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
-    flushRegisteredPendingBridgePatch('settings', {})
+    flushRegisteredPendingOwnerMutation('settings', {})
     const deleteIntent: DurableMutationIntent = {
       version: 1,
       dependencyKeys: splitPresetMutationDependencyKeys(
@@ -6608,7 +6608,7 @@ export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
     flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
     if (canUseServerCommands()) {
-      flushRegisteredPendingBridgePatch('settings', {})
+      flushRegisteredPendingOwnerMutation('settings', {})
     }
     settingsOwnerRecord().promptPresetsId = id
     applyPromptPresetFieldsToDatabase(db, promptPresetOwner()[id])

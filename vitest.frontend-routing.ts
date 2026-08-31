@@ -159,7 +159,7 @@ export const legacyDomTestFiles = [
   'src/ts/process/triggers.regexMemo.test.ts',
   'src/ts/router.test.ts',
   'src/ts/server/activeWriterSession.test.ts',
-  'src/ts/server/bridgeFlush.test.ts',
+  'src/ts/server/ownerMutationLifecycle.test.ts',
   'src/ts/server/characterShellHydration.test.ts',
   'src/ts/server/chatMessageHydration.test.ts',
   'src/ts/server/displaySources.test.ts',

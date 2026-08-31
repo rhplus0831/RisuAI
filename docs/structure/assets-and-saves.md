@@ -443,6 +443,6 @@ recovers a valid prior journal first and refuses unjournaled `.old`/`.tmp`
 scratch paths rather than overwriting a possible sole surviving copy.
 
 Restore and bundle import call `adoptReplacementDatabaseOwnership()` before a
-complete refresh. A changed lineage/writer epoch retires the old projection,
-pending bridge ownership, and registered mutation settlements before the outbox
-admits writes against the replacement database.
+complete refresh. A changed lineage/writer epoch retires the old owner state
+and registered mutation settlements before the outbox admits writes against the
+replacement database.

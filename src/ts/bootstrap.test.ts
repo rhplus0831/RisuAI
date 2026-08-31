@@ -94,7 +94,7 @@ const runtimeApi = vi.hoisted(() => ({
   configureGenerationOperationProtocol: vi.fn(),
 }))
 
-const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
+const ownerMutationLifecycleApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
 const pendingMutationApi = vi.hoisted(() => ({
   count: vi.fn(),
   flushAcknowledgements: vi.fn(),
@@ -220,8 +220,8 @@ vi.mock('./server/promptTemplateHydration', () => ({
   peekPromptTemplateOwnerRevision: promptTemplateApi.peekOwnerRevision,
   resetPromptTemplateHydration: promptTemplateApi.reset,
 }))
-vi.mock('./server/bridgeFlush', () => ({
-  startBridgePatchLifecycleFlush: bridgeApi.start,
+vi.mock('./server/ownerMutationLifecycle', () => ({
+  startOwnerMutationLifecycleFlush: ownerMutationLifecycleApi.start,
 }))
 vi.mock('./server/pendingMutationReplay', () => ({
   replayPendingMutations: pendingMutationApi.replay,
@@ -232,9 +232,9 @@ vi.mock('./server/pendingMutationOutbox', () => ({
   readSinglePendingMutationOwner: pendingMutationApi.readOwner,
   stagePendingMutation: vi.fn(),
 }))
-vi.mock('./server/pendingBridgeFlushRegistry', async (importActual) => {
-  const actual = await importActual<typeof import('./server/pendingBridgeFlushRegistry')>()
-  return { ...actual, resetRegisteredPendingBridgeOwnershipState: ownershipApi.reset }
+vi.mock('./server/pendingOwnerMutationRegistry', async (importActual) => {
+  const actual = await importActual<typeof import('./server/pendingOwnerMutationRegistry')>()
+  return { ...actual, resetRegisteredOwnerState: ownershipApi.reset }
 })
 vi.mock('./server/durableMutationDispatch', () => ({
   countRegisteredDurableMutationSettlements: ownershipApi.count,
@@ -503,7 +503,7 @@ beforeEach(() => {
   ownershipApi.reset.mockReset()
   eventApi.subscriptions = []
   hydrationApi.readinessRefreshHook = null
-  bridgeApi.start.mockReturnValue(bridgeApi.stop)
+  ownerMutationLifecycleApi.start.mockReturnValue(ownerMutationLifecycleApi.stop)
   pendingMutationApi.flushAcknowledgements.mockReset()
   pendingMutationApi.flushAcknowledgements.mockResolvedValue(undefined)
   pendingMutationApi.count.mockReset()
@@ -5456,11 +5456,11 @@ describe('API-backed client bootstrap', () => {
     expect(activeWriterApi.enterTakeover).toHaveBeenCalledOnce()
   })
 
-  it('stops the resource event subscription and bridge flush', async () => {
+  it('stops the resource event subscription and owner mutation lifecycle', async () => {
     await loadWebInitialDatabase()
     stopServerResourceEvents()
     expect(eventApi.unsubscribe).toHaveBeenCalledTimes(1)
-    expect(bridgeApi.stop).toHaveBeenCalledTimes(1)
+    expect(ownerMutationLifecycleApi.stop).toHaveBeenCalledTimes(1)
   })
 })
 

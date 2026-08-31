@@ -55,7 +55,7 @@ import {
 } from './staleStateGuards'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
 import { GLOBAL_LOREBOOK_SELECTION_MUTATION_KEY, globalLorebookOwnerMutationKey } from './lorebookMutationKeys'
-import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import { registerPendingOwnerMutationFlusher } from './pendingOwnerMutationRegistry'
 import {
   acknowledgePendingMutation,
   isPendingMutationCurrent,
@@ -2629,7 +2629,7 @@ export function flushPendingLorebookOwnerMutations(options: ServerCommandTranspo
   }
 }
 
-registerPendingBridgePatchFlusher('lorebook', flushPendingLorebookOwnerMutations)
+registerPendingOwnerMutationFlusher('lorebook', flushPendingLorebookOwnerMutations)
 
 function lorebookOwnerMutationKey(scope: DiscreteLorebookEditScope): string {
   switch (scope.kind) {

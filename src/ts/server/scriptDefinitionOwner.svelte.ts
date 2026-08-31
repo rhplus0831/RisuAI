@@ -38,7 +38,7 @@ import {
   type ScriptDefinitionMutationPlan,
 } from './scriptDefinitionMutations'
 import { dispatchDurableMutation, registerDurableMutationSettlementListener } from './durableMutationDispatch'
-import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import { registerPendingOwnerMutationFlusher } from './pendingOwnerMutationRegistry'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
@@ -1656,7 +1656,7 @@ export function flushPendingScriptDefinitionMutations(options: ServerCommandTran
   }
 }
 
-registerPendingBridgePatchFlusher('script-definition', flushPendingScriptDefinitionMutations)
+registerPendingOwnerMutationFlusher('script-definition', flushPendingScriptDefinitionMutations)
 
 function scriptDefinitionOwnerMutationKey(key: string, mutation: QueuedScriptDefinitionMutation): string {
   switch (mutation.kind) {

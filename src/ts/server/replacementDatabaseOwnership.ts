@@ -3,7 +3,7 @@ import {
   countRegisteredDurableMutationSettlements,
   discardRegisteredDurableMutationSettlements,
 } from './durableMutationDispatch'
-import { resetRegisteredPendingBridgeOwnershipState } from './pendingBridgeFlushRegistry'
+import { resetRegisteredOwnerState } from './pendingOwnerMutationRegistry'
 import { preparePendingMutationOutbox } from './pendingMutationOutbox'
 
 export interface ReplacementDatabaseOwnership {
@@ -85,7 +85,7 @@ export async function adoptReplacementDatabaseOwnership(
       ownershipChanged = true
       pendingReplacementRefreshOwnershipKey = replacementOwnershipKey(ownership)
       locallyDiscarded = countRegisteredDurableMutationSettlements()
-      resetRegisteredPendingBridgeOwnershipState()
+      resetRegisteredOwnerState()
       discardRegisteredDurableMutationSettlements()
     },
   })

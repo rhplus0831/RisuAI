@@ -22,7 +22,7 @@ import {
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { dispatchDurableMutation } from './durableMutationDispatch'
-import { registerPendingBridgePatchFlusher } from './pendingBridgeFlushRegistry'
+import { registerPendingOwnerMutationFlusher } from './pendingOwnerMutationRegistry'
 import {
   acknowledgePendingMutation,
   stagePendingMutation,
@@ -386,7 +386,7 @@ export function flushPendingCharacterDraftPatches(options: ServerCommandTranspor
   }
 }
 
-registerPendingBridgePatchFlusher('character-draft', flushPendingCharacterDraftPatches)
+registerPendingOwnerMutationFlusher('character-draft', flushPendingCharacterDraftPatches)
 
 function runPendingCharacterPatch(characterId: string, options: ServerCommandTransportOptions = {}): void {
   const commandPatch = pendingPatches.get(characterId)

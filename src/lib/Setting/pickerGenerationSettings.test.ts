@@ -97,7 +97,7 @@ import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 
-import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import { flushRegisteredPendingOwnerMutations } from 'src/ts/server/pendingOwnerMutationRegistry'
 import {
   clearPendingMutationOutbox,
   listPendingMutations,
@@ -701,7 +701,7 @@ describe('generation settings picker mode', () => {
     expect(target.querySelector('[data-risu-row-id="preset-a"]')).toBeNull()
     expect(close).not.toHaveBeenCalled()
 
-    flushRegisteredPendingBridgePatches({})
+    flushRegisteredPendingOwnerMutations({})
     await waitForCommandFetches(calls)
     expect(calls).toContainEqual(
       expect.objectContaining({
@@ -729,7 +729,7 @@ describe('generation settings picker mode', () => {
     expect(getDatabase().promptPresets[1].archived).toBe(false)
     expect(target.querySelector('[data-risu-row-id="preset-b"]')).toBeNull()
 
-    flushRegisteredPendingBridgePatches({})
+    flushRegisteredPendingOwnerMutations({})
     await waitForCommandFetches(calls)
     expect(calls).toContainEqual(
       expect.objectContaining({
@@ -783,7 +783,7 @@ describe('generation settings picker mode', () => {
     await tick()
     expect(exportedName).toBe('Renamed before pagehide')
 
-    flushRegisteredPendingBridgePatches({ keepalive: true })
+    flushRegisteredPendingOwnerMutations({ keepalive: true })
 
     await waitForFetchCount(calls, 2)
     const patchCalls = calls.filter(
@@ -816,7 +816,7 @@ describe('generation settings picker mode', () => {
     await tick()
     expect(input!.value).toBe('Renamed Model Preset')
 
-    flushRegisteredPendingBridgePatches({})
+    flushRegisteredPendingOwnerMutations({})
     await waitForFetchCount(calls, 2)
     expect(calls).toContainEqual(
       expect.objectContaining({
@@ -876,7 +876,7 @@ describe('generation settings picker mode', () => {
         await tick()
         expect(input!.value).toBe(rejectedName)
 
-        flushRegisteredPendingBridgePatches({})
+        flushRegisteredPendingOwnerMutations({})
         await waitForFetchCount(calls, 2)
         response.resolve(jsonResponse({ error: 'preset no longer exists' }, 404))
 
@@ -918,7 +918,7 @@ describe('generation settings picker mode', () => {
       expect(input).toBeTruthy()
       input!.value = 'Queued prompt name'
       input!.dispatchEvent(new Event('input', { bubbles: true }))
-      flushRegisteredPendingBridgePatches({})
+      flushRegisteredPendingOwnerMutations({})
 
       await vi.waitFor(() => expect(alertSpies.alertNormal).toHaveBeenCalledWith(language.presetRenameQueued))
       expect(target.querySelector('[data-risu-preset-rename-status]')).toBeNull()
@@ -971,12 +971,12 @@ describe('generation settings picker mode', () => {
         ])
       })
 
-      flushRegisteredPendingBridgePatches({})
+      flushRegisteredPendingOwnerMutations({})
       await vi.waitFor(async () => {
         expect(await listPendingMutations()).toEqual([])
       })
     } finally {
-      flushRegisteredPendingBridgePatches({})
+      flushRegisteredPendingOwnerMutations({})
       await clearPendingMutationOutbox()
       resetPendingMutationOutboxForTests()
     }
