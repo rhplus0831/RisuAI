@@ -1,10 +1,9 @@
-import { getDatabase, type Chat, type character } from 'src/ts/storage/database.svelte'
+import type { Chat, character } from 'src/ts/storage/database.svelte'
 import { HypaProcesser } from '../memory/hypamemory'
 import { getUserName } from 'src/ts/utilState'
 
 export async function additionalInformations(char: character, chats: Chat) {
   const processer = new HypaProcesser()
-  const db = getDatabase()
 
   const info = char.additionalText
   if (info) {

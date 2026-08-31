@@ -10,9 +10,14 @@ import {
   isActiveChatTargetFresh,
   type ActiveChatTarget,
 } from 'src/ts/chatCommands'
-import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
+import { getChatMessageOwnerState, hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
 import { coordinateAcceptedChatSend } from '../acceptedSendCoordinator.svelte'
 import { canUseGenerationOperationProtocol } from 'src/ts/server/generationOperations'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  getChatMetadataOwnerState,
+} from 'src/ts/server/resourceState.svelte'
 
 type sendTextFileArg = {
   file: string
@@ -27,6 +32,19 @@ type sendPDFFileArg = {
 const poExtractedNoteMarker = /^#\. Notes? =/
 
 function messagesForCapturedTarget(target: ActiveChatTarget): Message[] | null {
+  if (charactersResourceState.status === 'error') return null
+  if (charactersResourceState.status === 'ready') {
+    if (!target.characterId || !target.chatId) return null
+    const character = getCharacterResourceOwner(target.characterId)
+    if (!character) return null
+    const chats = character.chats?.filter((candidate) => candidate?.id === target.chatId) ?? []
+    if (chats.length !== 1 || !getChatMetadataOwnerState(target.chatId)) return null
+    return getChatMessageOwnerState(target.chatId)?.messages ?? null
+  }
+
+  if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return null
+  // Bootstrap/public compatibility seam for legacy targets without resident
+  // split owners. Owner errors never fall back to the aggregate transcript.
   const characters = getDatabase().characters ?? []
   const character = target.characterId
     ? characters.find((candidate) => candidate.chaId === target.characterId)

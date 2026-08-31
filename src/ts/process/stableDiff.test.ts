@@ -12,6 +12,11 @@ const state = vi.hoisted(() => ({
   requestImageGeneration: vi.fn(),
   readImage: vi.fn(),
   requestChatData: vi.fn(),
+  settingsResourceState: {
+    value: {} as any,
+    status: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+    groupStatuses: {} as Record<string, 'idle' | 'loading' | 'ready' | 'error'>,
+  },
 }))
 
 vi.mock('../alert', () => ({
@@ -26,6 +31,10 @@ vi.mock('../globalApi.svelte', () => ({
 
 vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => state.db,
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  settingsResourceState: state.settingsResourceState,
 }))
 
 vi.mock('../stores.svelte', () => ({
@@ -110,9 +119,52 @@ beforeEach(() => {
   vi.clearAllMocks()
   state.charEmotionValue = {}
   state.db = {}
+  state.settingsResourceState.value = {}
+  state.settingsResourceState.status = 'idle'
+  state.settingsResourceState.groupStatuses = {}
 })
 
 describe('stableDiff image-generation hygiene', () => {
+  it('uses the ready image-settings owner instead of a stale aggregate provider', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: 'stale-key',
+      dallEQuality: 'standard',
+    }
+    state.settingsResourceState.status = 'ready'
+    state.settingsResourceState.groupStatuses = { account: 'ready', media: 'ready', providers: 'ready' }
+    state.settingsResourceState.value = {
+      sdProvider: 'kei',
+      account: { token: '__RISU_SECRET_MASKED__' },
+    }
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,owner')
+
+    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe('data:image/png;base64,owner')
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
+      {
+        provider: 'kei',
+        credential: { source: 'stored' },
+        prompt: 'prompt',
+      },
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('fails closed instead of using the aggregate after a settings owner error', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: 'stale-key',
+      dallEQuality: 'standard',
+    }
+    state.settingsResourceState.status = 'ready'
+    state.settingsResourceState.groupStatuses = { media: 'error' }
+
+    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe(false)
+    expect(state.requestImageGeneration).not.toHaveBeenCalled()
+  })
+
   it('resolves a saved NovelAI I2I asset only when constructing the provider request', async () => {
     const char = makeCharacter()
     seedNovelAiDb({
@@ -271,6 +323,7 @@ describe('stableDiff image-generation hygiene', () => {
         bias: {},
         useStreaming: false,
         noMultiGen: true,
+        database: state.db,
       },
       'otherAx',
       abortController.signal,

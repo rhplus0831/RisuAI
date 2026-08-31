@@ -1,6 +1,25 @@
 import type { OpenAIChat } from './index.svelte'
-import { getDatabase } from '../storage/database.svelte'
+import { settingsResourceState } from '../server/resourceState.svelte'
+import { getDatabase, type Database } from '../storage/database.svelte'
 import { getUserName } from '../utilState'
+
+type StringlizeSettings = Pick<Database, 'autoSuggestPrefix' | 'ooba' | 'username'>
+
+function currentStringlizeSettings(): Partial<StringlizeSettings> {
+  if (settingsResourceState.status === 'error') return {}
+  if (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading') {
+    // Public/bootstrap compatibility seam. Normal request formatting reads the
+    // split settings owner below; an owner error never returns stale aggregate data.
+    return getDatabase()
+  }
+
+  const owner = settingsResourceState.value as Partial<StringlizeSettings>
+  return {
+    autoSuggestPrefix: owner.autoSuggestPrefix,
+    ...(settingsResourceState.groupStatuses.providers === 'error' ? {} : { ooba: owner.ooba }),
+    ...(settingsResourceState.groupStatuses.account === 'error' ? {} : { username: owner.username }),
+  }
+}
 
 export function multiChatReplacer() {}
 
@@ -40,10 +59,11 @@ export function stringlizeChatOba(
   characterName: string,
   suggesting: boolean,
   continued: boolean,
+  settings: Partial<StringlizeSettings> = currentStringlizeSettings(),
 ) {
-  const db = getDatabase()
   let resultString: string[] = []
-  let { systemPrefix, userPrefix, assistantPrefix, seperator } = db.ooba.formating
+  const formatting = settings.ooba?.formating
+  let { systemPrefix, userPrefix, assistantPrefix, seperator } = formatting ?? {}
   systemPrefix = systemPrefix ?? ''
   userPrefix = userPrefix ?? ''
   assistantPrefix = assistantPrefix ?? ''
@@ -68,7 +88,7 @@ export function stringlizeChatOba(
       prefix = appendWhitespace(systemPrefix, seperator)
       name = ''
     }
-    if (db.ooba.formating.useName) {
+    if (formatting?.useName) {
       console.log(name)
       resultString.push(prefix + name + form.content)
     } else {
@@ -76,15 +96,17 @@ export function stringlizeChatOba(
     }
   }
   if (!continued) {
-    if (db.ooba.formating.useName) {
+    if (formatting?.useName) {
       if (suggesting) {
-        resultString.push(appendWhitespace(assistantPrefix, seperator) + `${getUserName()}:\n` + db.autoSuggestPrefix)
+        resultString.push(
+          appendWhitespace(assistantPrefix, seperator) + `${getUserName()}:\n` + (settings.autoSuggestPrefix ?? ''),
+        )
       } else {
         resultString.push(assistantPrefix + `${characterName}:`)
       }
     } else {
       if (suggesting) {
-        resultString.push(appendWhitespace(assistantPrefix, seperator) + `\n` + db.autoSuggestPrefix)
+        resultString.push(appendWhitespace(assistantPrefix, seperator) + `\n` + (settings.autoSuggestPrefix ?? ''))
       } else {
         resultString.push(assistantPrefix)
       }
@@ -98,14 +120,16 @@ const userStrings = ['user', 'human', 'input', 'inst', 'instruction']
 function toTitleCase(s: string) {
   return s[0].toUpperCase() + s.slice(1).toLowerCase()
 }
-export function getStopStrings(suggesting: boolean = false) {
-  const db = getDatabase()
-  let { userPrefix, seperator } = db.ooba.formating
+export function getStopStrings(
+  suggesting: boolean = false,
+  settings: Partial<StringlizeSettings> = currentStringlizeSettings(),
+) {
+  let { userPrefix, seperator } = settings.ooba?.formating ?? {}
   if (!seperator) {
     seperator = '\n'
   }
-  const { username } = db
-  const stopStrings = ['GPT4 User', '</s>', '<|end', '<|im_end', userPrefix, `${username}:`]
+  const username = settings.username ?? ''
+  const stopStrings = ['GPT4 User', '</s>', '<|end', '<|im_end', userPrefix ?? '', `${username}:`]
   if (suggesting) {
     stopStrings.push('\n\n')
   }
@@ -144,7 +168,6 @@ export function unstringlizeChat(text: string, formated: OpenAIChat[], char: str
 export function getUnstringlizerChunks(formated: OpenAIChat[], char: string, mode: 'ain' | 'normal' = 'normal') {
   let chunks: string[] = ['system note:', 'system:', 'system note：', 'system：']
   let charNames: string[] = []
-  const db = getDatabase()
   if (char) {
     charNames.push(char)
     if (mode === 'ain') {
@@ -193,7 +216,6 @@ export function getUnstringlizerChunks(formated: OpenAIChat[], char: string, mod
 
 export function stringlizeAINChat(formated: OpenAIChat[], char: string, continued: boolean) {
   let resultString: string[] = []
-  const db = getDatabase()
 
   for (const form of formated) {
     console.log(form)
@@ -271,7 +293,6 @@ function extractAINOutputStrings(inputString: string, characters: string[]) {
 }
 
 export function unstringlizeAIN(data: string, formated: OpenAIChat[], char: string = '') {
-  const db = getDatabase()
   const chunksResult = getUnstringlizerChunks(formated, char, 'ain')
   const chunks = chunksResult.chunks
   let result: ['char' | 'user', string][] = []

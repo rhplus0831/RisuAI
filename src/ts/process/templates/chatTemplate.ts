@@ -1,9 +1,13 @@
 import { Template } from '@huggingface/jinja'
 import { get } from 'svelte/store'
 import type { OpenAIChat } from '../index.svelte'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  getCharacterResourceOwner,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import { getUserName } from 'src/ts/utilState'
 
 export const chatTemplates = {
@@ -32,9 +36,18 @@ export const applyChatTemplate = (
   arg: {
     type?: string
     custom?: string
+    settings?: Pick<Database, 'instructChatTemplate' | 'JinjaTemplate'>
   } = {},
 ) => {
-  const db = getDatabase()
+  const providerStatus = settingsResourceState.groupStatuses.providers ?? settingsResourceState.status
+  const compatibilityDatabase = () => getDatabase()
+  const settings: Partial<Pick<Database, 'instructChatTemplate' | 'JinjaTemplate'>> =
+    arg.settings ??
+    (providerStatus === 'error' || settingsResourceState.status === 'error'
+      ? {}
+      : providerStatus === 'ready'
+        ? settingsResourceState.value
+        : compatibilityDatabase())
   const selectedIndex = get(selectedCharID)
   const selectedCandidate = charactersResourceState.characters[selectedIndex]
   const currentChar =
@@ -42,13 +55,16 @@ export const applyChatTemplate = (
       ? selectedCandidate?.chaId
         ? getCharacterResourceOwner(selectedCandidate.chaId)
         : undefined
-      : db.characters?.[selectedIndex]
-  const type = arg.type ?? db.instructChatTemplate
+      : charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
+        ? compatibilityDatabase().characters?.[selectedIndex]
+        : undefined
+  const type = arg.type ?? settings.instructChatTemplate
   if (!type) {
     throw new Error('Template type is not set')
   }
   let clonedMessages = safeStructuredClone(messages)
-  const template = type === 'jinja' ? new Template(arg.custom ?? db.JinjaTemplate) : new Template(chatTemplates[type])
+  const template =
+    type === 'jinja' ? new Template(arg.custom ?? settings.JinjaTemplate ?? '') : new Template(chatTemplates[type])
   let formatedMessages: {
     role: 'user' | 'assistant' | 'system'
     content: string

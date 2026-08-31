@@ -18,6 +18,12 @@ import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
 import { uploadServerAssetBytes } from 'src/ts/server/assets'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 
+const settingsOwnerState = vi.hoisted(() => ({
+  value: {} as Record<string, unknown>,
+  status: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+  groupStatuses: {} as Record<string, 'idle' | 'loading' | 'ready' | 'error'>,
+}))
+
 //#region module mocks
 
 /** Server asset upload stub: returns a deterministic asset id from content bytes. */
@@ -181,6 +187,10 @@ vi.mock(import('src/ts/storage/database.svelte'), () => ({
   getDatabase: vi.fn(),
 }))
 
+vi.mock(import('src/ts/server/resourceState.svelte'), () => ({
+  settingsResourceState: settingsOwnerState,
+}))
+
 vi.mock(
   import('src/ts/util'),
   () =>
@@ -245,6 +255,9 @@ beforeEach(() => {
   serverAssetStore.clear()
   catalogStore.clear()
   catalogRevision = 0
+  settingsOwnerState.value = {}
+  settingsOwnerState.status = 'idle'
+  settingsOwnerState.groupStatuses = {}
 })
 
 describe('supportsInlayImage', () => {
@@ -261,6 +274,16 @@ describe('supportsInlayImage', () => {
 
     expect(supportsInlayImage()).toBe(true)
     expect(getModelInfo).toHaveBeenCalledWith('legacy-vision')
+  })
+
+  test('fails closed instead of using the legacy fallback after an owner error', () => {
+    settingsOwnerState.status = 'ready'
+    settingsOwnerState.groupStatuses.providers = 'error'
+    vi.mocked(getDatabase).mockReturnValue({ aiModel: 'legacy-vision' } as never)
+
+    expect(supportsInlayImage()).toBe(false)
+    expect(getDatabase).not.toHaveBeenCalled()
+    expect(getModelInfo).not.toHaveBeenCalled()
   })
 })
 

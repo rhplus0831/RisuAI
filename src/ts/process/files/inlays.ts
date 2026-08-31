@@ -23,6 +23,7 @@ import {
   type ServerInlayCatalogEntry,
 } from '../../server/inlayCatalog'
 import { fetchServerInlayCatalog } from '../../server/resourceReads'
+import { settingsResourceState } from '../../server/resourceState.svelte'
 
 export type InlayAsset = {
   data?: string | Blob
@@ -578,7 +579,13 @@ export async function removeInlayAsset(id: string) {
 }
 
 export function supportsInlayImage(modelInfo?: Pick<LLMModel, 'flags'>) {
-  const flags = modelInfo?.flags ?? getModelInfo(getDatabase().aiModel).flags
+  if (modelInfo) return modelInfo.flags.includes(LLMFlags.hasImageInput)
+
+  const providerStatus = settingsResourceState.groupStatuses.providers ?? settingsResourceState.status
+  if (providerStatus === 'error' || settingsResourceState.status === 'error') return false
+  // Public compatibility seam for context-free callers. Normal request
+  // shaping supplies request-scoped model flags and never reaches this read.
+  const flags = getModelInfo(getDatabase().aiModel).flags
   return flags.includes(LLMFlags.hasImageInput)
 }
 

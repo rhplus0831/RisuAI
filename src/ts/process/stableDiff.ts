@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { language } from '../../lang'
-import { getDatabase, type character } from '../storage/database.svelte'
+import { getDatabase, type character, type Database } from '../storage/database.svelte'
 import { requestChatData } from './request/request'
 import { alertError } from '../alert'
 import { fetchNative, globalFetch, readImage } from '../globalApi.svelte'
@@ -8,10 +8,29 @@ import { CharEmotion } from '../stores.svelte'
 import type { OpenAIChat } from './index.svelte'
 import random from 'lodash/random'
 import { imageGenerationCredential, requestImageGeneration } from '../server/imageGeneration'
+import { settingsResourceState } from '../server/resourceState.svelte'
 import type { ImageGenerationRequest } from '@risuai/protocol/image-generation-operation'
 
 interface ImageGenerationOptions {
   signal?: AbortSignal
+  /** Coherent settings owner snapshot captured by an owning caller. */
+  database?: Database
+}
+
+const IMAGE_GENERATION_SETTINGS_GROUPS = ['account', 'media', 'providers'] as const
+
+function imageGenerationSettingsOwner(explicit?: Database): Database | null {
+  if (explicit) return explicit
+  if (settingsResourceState.status === 'error') return null
+  if (IMAGE_GENERATION_SETTINGS_GROUPS.some((group) => settingsResourceState.groupStatuses[group] === 'error')) {
+    return null
+  }
+  if (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading') {
+    // Public/bootstrap compatibility seam. Once split settings are resident,
+    // image generation never reacquires the mutable aggregate.
+    return getDatabase({ snapshot: true })
+  }
+  return settingsResourceState.value as unknown as Database
 }
 
 const REFERENCE_IMAGE_LOAD_TIMEOUT_MS = 10_000
@@ -203,9 +222,9 @@ export async function loadStableDiffReferenceImageForTests(
 }
 
 export async function stableDiff(currentChar: character, prompt: string, options: ImageGenerationOptions = {}) {
-  let db = getDatabase()
+  const db = imageGenerationSettingsOwner(options.database)
 
-  if (db.sdProvider === '') {
+  if (!db || db.sdProvider === '') {
     alertError(language.errors.stableDiffusionNotConfigured)
     return false
   }
@@ -232,6 +251,7 @@ export async function stableDiff(currentChar: character, prompt: string, options
       bias: {},
       useStreaming: false,
       noMultiGen: true,
+      database: db,
     },
     'otherAx',
     options.signal,
@@ -255,7 +275,7 @@ export async function stableDiff(currentChar: character, prompt: string, options
   const genPrompt = currentChar.newGenData.prompt.replaceAll('{{slot}}', r)
   const neg = currentChar.newGenData.negative
 
-  return await generateAIImage(genPrompt, currentChar, neg, '', options)
+  return await generateAIImage(genPrompt, currentChar, neg, '', { ...options, database: db })
 }
 
 export async function generateAIImage(
@@ -265,7 +285,8 @@ export async function generateAIImage(
   returnSdData: string,
   options: ImageGenerationOptions = {},
 ): Promise<string | false> {
-  const db = getDatabase()
+  const db = imageGenerationSettingsOwner(options.database)
+  if (!db) return false
   if (isImageGenerationAborted(options.signal)) {
     return false
   }

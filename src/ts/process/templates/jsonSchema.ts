@@ -1,6 +1,29 @@
 import { risuChatParser } from 'src/ts/parser/parser.svelte'
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
 import { jsonOutputTrimmer } from 'src/ts/util'
+
+type JSONSchemaSettings = Pick<Database, 'jsonSchema' | 'strictJsonSchema'>
+
+function currentJSONSchemaSettings(): Partial<JSONSchemaSettings> {
+  const status = settingsResourceState.groupStatuses.prompt ?? settingsResourceState.status
+  if (status === 'error' || settingsResourceState.status === 'error') return {}
+  if (
+    (status === 'idle' || status === 'loading') &&
+    (settingsResourceState.status === 'idle' || settingsResourceState.status === 'loading')
+  ) {
+    // Public/bootstrap compatibility seam. Owner failures deliberately do not
+    // read the aggregate prompt projection.
+    return getDatabase()
+  }
+  return settingsResourceState.value as Partial<JSONSchemaSettings>
+}
+
+function resolveSchemaInput(schema: string | undefined, settings: Partial<JSONSchemaSettings>): string {
+  const resolved = schema ?? settings.jsonSchema
+  if (typeof resolved !== 'string' || !resolved.trim()) throw new Error('JSON schema is unavailable')
+  return resolved
+}
 
 export function convertInterfaceToSchema(int: string) {
   if (!int.startsWith('interface ') && !int.startsWith('export interface ')) {
@@ -120,18 +143,22 @@ export function convertInterfaceToSchema(int: string) {
   return schema
 }
 
-export function getOpenAIJSONSchema(schema?: string) {
-  const db = getDatabase()
+export function getOpenAIJSONSchema(
+  schema?: string,
+  settings: Partial<JSONSchemaSettings> = currentJSONSchemaSettings(),
+) {
   return {
     name: 'format',
-    strict: db.strictJsonSchema,
-    schema: convertInterfaceToSchema(schema ?? db.jsonSchema),
+    strict: settings.strictJsonSchema ?? true,
+    schema: convertInterfaceToSchema(resolveSchemaInput(schema, settings)),
   }
 }
 
-export function getGeneralJSONSchema(schema?: string, excludes: string[] = []) {
-  const db = getDatabase()
-
+export function getGeneralJSONSchema(
+  schema?: string,
+  excludes: string[] = [],
+  settings: Partial<JSONSchemaSettings> = currentJSONSchemaSettings(),
+) {
   function process(data: any) {
     const keys = Object.keys(data)
     for (const key of keys) {
@@ -145,7 +172,7 @@ export function getGeneralJSONSchema(schema?: string, excludes: string[] = []) {
     return data
   }
 
-  const d = convertInterfaceToSchema(schema ?? db.jsonSchema)
+  const d = convertInterfaceToSchema(resolveSchemaInput(schema, settings))
   return process(d)
 }
 

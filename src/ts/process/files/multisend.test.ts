@@ -44,6 +44,12 @@ const testState = vi.hoisted(() => {
     similaritySearchSpy: vi.fn(),
     getDocumentSpy: vi.fn(),
     hydrateChatMessagesSpy: vi.fn(async () => {}),
+    charactersResourceState: {
+      status: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+      get characters() {
+        return databaseState.db.characters
+      },
+    },
     setRunTrustedWrite(fn: typeof runTrustedWrite) {
       runTrustedWrite = fn
     },
@@ -70,6 +76,17 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
   },
   setResourceDatabaseWriteGuardEnabled: vi.fn(),
   withResourceDatabaseWrite: <T>(callback: () => T): T => callback(),
+  charactersResourceState: testState.charactersResourceState,
+  getCharacterResourceOwner: (characterId: string) => {
+    const matches = testState.databaseState.db.characters.filter((candidate) => candidate.chaId === characterId)
+    return matches.length === 1 ? matches[0] : undefined
+  },
+  getChatMetadataOwnerState: (chatId: string) => {
+    const matches = testState.databaseState.db.characters.flatMap((character) =>
+      character.chats.filter((chat: any) => chat.id === chatId),
+    )
+    return matches.length === 1 ? { chatId } : undefined
+  },
 }))
 
 vi.mock('src/ts/storage/fastifyStorage', () => ({
@@ -95,6 +112,12 @@ vi.mock('src/ts/chatCommands', async (importActual) => {
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   hydrateChatMessages: testState.hydrateChatMessagesSpy,
+  getChatMessageOwnerState: (chatId: string) => {
+    const matches = testState.databaseState.db.characters.flatMap((character) =>
+      character.chats.filter((chat: any) => chat.id === chatId),
+    )
+    return matches.length === 1 ? { messages: matches[0].message } : undefined
+  },
 }))
 
 vi.mock('../acceptedSendCoordinator.svelte', () => ({
@@ -274,6 +297,7 @@ beforeEach(() => {
   testState.setRunTrustedWrite(withTrustedResourceWrite)
   testState.setAppendCurrentChatUserMessageOverride(undefined)
   resetChatState()
+  testState.charactersResourceState.status = 'ready'
   testState.coordinateAcceptedChatSendSpy.mockReset().mockImplementation(testState.completeAcceptedChatSend)
   testState.downloadFileSpy.mockReset()
   testState.selectMultipleFileSpy.mockReset()
@@ -458,6 +482,22 @@ describe('postChatFile file-send handling', () => {
     })
 
     expect(testState.hydrateChatMessagesSpy).toHaveBeenCalledWith('chat-1', { force: true, strict: true })
+    expect(results).toEqual([])
+    expect(testState.downloadFileSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not read a stale aggregate transcript after the character owner errors', async () => {
+    testState.coordinateAcceptedChatSendSpy.mockImplementationOnce(async (input) => {
+      await testState.completeAcceptedChatSend(input)
+      testState.charactersResourceState.status = 'error'
+      return { status: 'generated' }
+    })
+
+    const results = await postChatFile({
+      name: 'owner-error.po',
+      data: textBytes('msgid "source text"\nmsgstr ""'),
+    })
+
     expect(results).toEqual([])
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
