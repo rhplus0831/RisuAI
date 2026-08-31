@@ -12,7 +12,6 @@ import {
   defaultMainPrompt,
 } from './defaultPrompts'
 import { alertError, alertNormal, alertSelect } from '../alert'
-import { registerAlertDatabaseAccessor } from '../alertDatabase'
 import { selectSingleFile } from '../filePicker'
 import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
@@ -304,6 +303,43 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+function settingsOwnerRecord(): Record<string, unknown> {
+  return settingsResourceState.value as unknown as Record<string, unknown>
+}
+
+function legacyPresetOwner(): botPreset[] {
+  const presets = collectionsResourceState.values.botPresets
+  if (Array.isArray(presets)) return presets as botPreset[]
+  collectionsResourceState.values.botPresets = []
+  return collectionsResourceState.values.botPresets as botPreset[]
+}
+
+function assignLegacyPresetOwner(presets: botPreset[]): void {
+  collectionsResourceState.values.botPresets = presets
+}
+
+function modelPresetOwner(): ModelPreset[] {
+  const presets = collectionsResourceState.values.modelPresets
+  if (Array.isArray(presets)) return presets as ModelPreset[]
+  collectionsResourceState.values.modelPresets = []
+  return collectionsResourceState.values.modelPresets as ModelPreset[]
+}
+
+function assignModelPresetOwner(presets: ModelPreset[]): void {
+  collectionsResourceState.values.modelPresets = presets
+}
+
+function promptPresetOwner(): PromptPreset[] {
+  const presets = collectionsResourceState.values.promptPresets
+  if (Array.isArray(presets)) return presets as PromptPreset[]
+  collectionsResourceState.values.promptPresets = []
+  return collectionsResourceState.values.promptPresets as PromptPreset[]
+}
+
+function assignPromptPresetOwner(presets: PromptPreset[]): void {
+  collectionsResourceState.values.promptPresets = presets
+}
+
 function normalizeBotPresetIds(data: Pick<Database, 'botPresets' | 'botPresetsId'>) {
   if (!Array.isArray(data.botPresets)) {
     data.botPresets = []
@@ -374,6 +410,38 @@ export function botPresetIdsNeedNormalization(data: Pick<Database, 'botPresets' 
   return data.botPresetsId !== normalizedBotPresetsId(data.botPresets.length, data.botPresetsId)
 }
 
+function legacyPresetNormalizationView(): Pick<Database, 'botPresets' | 'botPresetsId'> {
+  return {
+    botPresets: legacyPresetOwner(),
+    botPresetsId: Number(settingsOwnerRecord().botPresetsId ?? -1),
+  }
+}
+
+function legacyPresetOwnerIdsNeedNormalization(): boolean {
+  return botPresetIdsNeedNormalization(legacyPresetNormalizationView())
+}
+
+function normalizeLegacyPresetOwner(): void {
+  const owner = legacyPresetNormalizationView()
+  normalizeBotPresetIds(owner)
+  assignLegacyPresetOwner(owner.botPresets)
+  settingsOwnerRecord().botPresetsId = owner.botPresetsId
+}
+
+function normalizeSplitPresetOwners(): void {
+  const owner: Pick<Database, 'modelPresets' | 'modelPresetsId' | 'promptPresets' | 'promptPresetsId'> = {
+    modelPresets: modelPresetOwner(),
+    modelPresetsId: Number(settingsOwnerRecord().modelPresetsId ?? -1),
+    promptPresets: promptPresetOwner(),
+    promptPresetsId: Number(settingsOwnerRecord().promptPresetsId ?? -1),
+  }
+  normalizeSplitPresetIds(owner)
+  assignModelPresetOwner(owner.modelPresets)
+  assignPromptPresetOwner(owner.promptPresets)
+  settingsOwnerRecord().modelPresetsId = owner.modelPresetsId
+  settingsOwnerRecord().promptPresetsId = owner.promptPresetsId
+}
+
 function normalizedBotPresetsId(presetCount: number, selected: unknown): number {
   if (!Number.isInteger(selected)) return presetCount > 0 ? 0 : -1
 
@@ -384,7 +452,7 @@ function normalizedBotPresetsId(presetCount: number, selected: unknown): number 
 }
 
 function presetIdAt(index: number): string | null {
-  const presets = getDatabase().botPresets
+  const presets = legacyPresetOwner()
   if (!Number.isInteger(index) || index < 0 || !Array.isArray(presets) || index >= presets.length) {
     return null
   }
@@ -438,7 +506,7 @@ export async function ensureBotPresetHydratedById(presetId: string): Promise<boo
   const presetIndex = canonicalBotPresetIndexById(presetId)
   if (presetIndex < 0) return false
 
-  const preset = getDatabase().botPresets[presetIndex]
+  const preset = legacyPresetOwner()[presetIndex]
   if (!presetNeedsHydration(preset)) return true
   if (!canUseServerResourceReads()) return false
 
@@ -459,17 +527,17 @@ export async function ensureBotPresetHydratedById(presetId: string): Promise<boo
     }
     if (isOlderThanRevision(result.revision, baselineRevision)) {
       const currentIndex = canonicalBotPresetIndexById(presetId)
-      return currentIndex >= 0 && botPresetHasHydratedSettings(getDatabase().botPresets[currentIndex])
+      return currentIndex >= 0 && botPresetHasHydratedSettings(legacyPresetOwner()[currentIndex])
     }
-    return withTrustedResourceWrite(() => {
+    return (() => {
       const currentIndex = canonicalBotPresetIndexById(presetId)
       if (currentIndex < 0) return false
-      if (snapshotJson(getDatabase().botPresets[currentIndex]) !== targetSnapshot) {
-        return botPresetHasHydratedSettings(getDatabase().botPresets[currentIndex])
+      if (snapshotJson(legacyPresetOwner()[currentIndex]) !== targetSnapshot) {
+        return botPresetHasHydratedSettings(legacyPresetOwner()[currentIndex])
       }
-      getDatabase().botPresets[currentIndex] = result.preset as unknown as botPreset
+      legacyPresetOwner()[currentIndex] = result.preset as unknown as botPreset
       return true
-    })
+    })()
   })().finally(() => {
     if (presetHydrationInFlight.get(presetId) === request) {
       presetHydrationInFlight.delete(presetId)
@@ -482,7 +550,7 @@ export async function ensureBotPresetHydratedById(presetId: string): Promise<boo
 
 function canonicalBotPresetIndexById(presetId: string): number {
   if (typeof presetId !== 'string' || presetId.trim() === '') return -1
-  const presets = getDatabase().botPresets
+  const presets = legacyPresetOwner()
   if (!Array.isArray(presets)) return -1
   let targetIndex = -1
   const seen = new Set<string>()
@@ -963,7 +1031,7 @@ function captureSplitPresetProjectionFields(
   patch: Record<string, unknown>,
 ): Map<string, SplitPresetPatchFieldAttempt> {
   const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
-  const database = getDatabase() as unknown as Record<string, unknown>
+  const database = settingsOwnerRecord()
   for (const fieldName of splitPresetProjectionFieldNames(kind, patch)) {
     const previousPresent = Object.prototype.hasOwnProperty.call(database, fieldName)
     const previousValue = safeStructuredClone(database[fieldName])
@@ -1015,7 +1083,7 @@ function recordSplitPresetProjectionFields(
   previousFields: Map<string, SplitPresetPatchFieldAttempt>,
 ): void {
   if (!pending) return
-  const database = getDatabase() as unknown as Record<string, unknown>
+  const database = settingsOwnerRecord()
   for (const [fieldName, previousField] of previousFields) {
     const attemptedPresent = Object.prototype.hasOwnProperty.call(database, fieldName)
     const existing = pending.projectionFields.get(fieldName)
@@ -1411,7 +1479,7 @@ function rebaseSplitPresetPatchFields(
 }
 
 function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     const collectionName = attempt.kind === 'model' ? 'modelPresets' : 'promptPresets'
     if (!hasCollectionProjectionEpochChanged(collectionName, attempt.collectionProjectionEpoch)) {
       const presets = splitPresetList(attempt.kind)
@@ -1442,7 +1510,7 @@ function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): v
     if (hasSettingsProjectionEpochChanged(attempt.settingsProjectionEpoch)) return
     if (currentSplitPresetSelectedId(attempt.kind) !== attempt.presetId) return
     if (attempt.kind === 'model' && currentSplitPresetSelectedId('prompt') !== attempt.selectedPromptPresetId) return
-    const database = getDatabase() as unknown as Record<string, unknown>
+    const database = settingsOwnerRecord()
     for (const [fieldName, field] of attempt.projectionFields) {
       if (
         attempt.kind === 'prompt' &&
@@ -1469,7 +1537,7 @@ function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): v
         delete database[fieldName]
       }
     }
-  })
+  })()
 }
 
 function botPresetIds(list: botPreset[]): string[] {
@@ -1477,19 +1545,18 @@ function botPresetIds(list: botPreset[]): string[] {
 }
 
 function currentBotPresetSelectedId(): string | null {
-  return botPresetSelectedId(getDatabase())
+  return botPresetSelectedId(legacyPresetOwner(), settingsOwnerRecord().botPresetsId)
 }
 
-function botPresetSelectedId(db: Database): string | null {
-  const selectedIndex = db.botPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(db.botPresets)) return null
-  return db.botPresets[selectedIndex]?.id ?? null
+function botPresetSelectedId(presets: botPreset[], selectedIndex: unknown): string | null {
+  if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return null
+  return presets[selectedIndex as number]?.id ?? null
 }
 
 function restoreBotPresetSelectionToId(presetId: string | null): void {
-  const list = getDatabase().botPresets
+  const list = legacyPresetOwner()
   const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
-  getDatabase().botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
+  settingsOwnerRecord().botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
 }
 
 function botPresetFieldRollbackFromPatch(
@@ -1527,11 +1594,10 @@ function saveCurrentPresetLocalWithRollback(options: { apply?: boolean } = {}): 
   rollback: BotPresetFieldRollback | null
   sparseBaseline: LegacyPresetSparseSaveBaseline | null
 } {
-  const db = getDatabase()
-  const sparseBaselineEligible = !botPresetIdsNeedNormalization(db)
-  normalizeBotPresetIds(db)
-  const baselineIndex = db.botPresetsId
-  const previousLivePreset = db.botPresets[baselineIndex] ?? null
+  const sparseBaselineEligible = !legacyPresetOwnerIdsNeedNormalization()
+  normalizeLegacyPresetOwner()
+  const baselineIndex = Number(settingsOwnerRecord().botPresetsId ?? -1)
+  const previousLivePreset = legacyPresetOwner()[baselineIndex] ?? null
   const previousPreset = previousLivePreset ? safeStructuredClone(previousLivePreset) : null
   const sparseBaseline =
     sparseBaselineEligible && previousLivePreset && botPresetHasHydratedSettings(previousLivePreset)
@@ -1698,25 +1764,23 @@ function legacyPresetPatchOptimisticAcknowledgement(input: {
 
 function rollbackBotPresetFields(rollback: BotPresetFieldRollback | null): void {
   if (!rollback) return
-  withTrustedResourceWrite(() => {
-    const index = getDatabase().botPresets.findIndex((preset) => preset?.id === rollback.presetId)
+  ;(() => {
+    const index = legacyPresetOwner().findIndex((preset) => preset?.id === rollback.presetId)
     if (index < 0) return
 
     const rolledBack = applyAttemptedFieldRollback({
-      target: getDatabase().botPresets[index] as unknown as Record<string, unknown>,
+      target: legacyPresetOwner()[index] as unknown as Record<string, unknown>,
       previous: rollback.previous,
       attempted: rollback.attempted,
       deleteMissingPrevious: true,
     })
-    if (rolledBack.length > 0) {
-      getDatabase().botPresets = getDatabase().botPresets
-    }
-  })
+    if (rolledBack.length === 0) return
+  })()
 }
 
 function rollbackBotPresetReorder(previousPresetIds: string[], attemptedPresetIds: string[]): void {
-  withTrustedResourceWrite(() => {
-    const list = getDatabase().botPresets
+  ;(() => {
+    const list = legacyPresetOwner()
     if (!stringArraysEqual(botPresetIds(list), attemptedPresetIds)) return
 
     const selectedId = currentBotPresetSelectedId()
@@ -1730,37 +1794,37 @@ function rollbackBotPresetReorder(previousPresetIds: string[], attemptedPresetId
     const restored = previousPresetIds.map((id) => liveRowsById.get(id))
     if (restored.some((preset) => !preset)) return
 
-    getDatabase().botPresets = restored as botPreset[]
+    assignLegacyPresetOwner(restored as botPreset[])
     restoreBotPresetSelectionToId(selectedId)
-  })
+  })()
 }
 
 function rollbackBotPresetSelection(rollback: BotPresetSelectionRollback): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     if (!rollback.attemptedSelectedId) return
     if (currentBotPresetSelectedId() !== rollback.attemptedSelectedId) return
 
     if (rollback.previousSettings && rollback.attemptedSettings) {
       applyAttemptedFieldRollback({
-        target: getDatabase() as unknown as Record<string, unknown>,
+        target: settingsOwnerRecord(),
         previous: rollback.previousSettings as Record<string, unknown>,
         attempted: rollback.attemptedSettings as Record<string, unknown>,
         keys: SET_PRESET_ROLLBACK_KEYS,
       })
     }
     restoreBotPresetSelectionToId(rollback.previousSelectedId)
-  })
+  })()
 }
 
 function splitPresetList(kind: SplitPresetKind): SplitPresetRow[] {
-  return (kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets) as SplitPresetRow[]
+  return (kind === 'model' ? modelPresetOwner() : promptPresetOwner()) as SplitPresetRow[]
 }
 
 function assignSplitPresetList(kind: SplitPresetKind, list: SplitPresetRow[]): void {
   if (kind === 'model') {
-    getDatabase().modelPresets = list as ModelPreset[]
+    assignModelPresetOwner(list as ModelPreset[])
   } else {
-    getDatabase().promptPresets = list as PromptPreset[]
+    assignPromptPresetOwner(list as PromptPreset[])
   }
 }
 
@@ -1769,21 +1833,22 @@ function splitPresetIds(list: SplitPresetRow[]): string[] {
 }
 
 function currentSplitPresetSelectedId(kind: SplitPresetKind): string | null {
-  return splitPresetSelectedId(getDatabase(), kind)
+  return splitPresetSelectedId(
+    splitPresetList(kind),
+    kind === 'model' ? settingsOwnerRecord().modelPresetsId : settingsOwnerRecord().promptPresetsId,
+  )
 }
 
-function splitPresetSelectedId(db: Database, kind: SplitPresetKind): string | null {
-  const list = kind === 'model' ? db.modelPresets : db.promptPresets
-  const selectedIndex = kind === 'model' ? db.modelPresetsId : db.promptPresetsId
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(list)) return null
-  return list[selectedIndex]?.id ?? null
+function splitPresetSelectedId(list: SplitPresetRow[], selectedIndex: unknown): string | null {
+  if (!Number.isInteger(selectedIndex) || (selectedIndex as number) < 0) return null
+  return list[selectedIndex as number]?.id ?? null
 }
 
 function setSplitPresetSelectedIndex(kind: SplitPresetKind, index: number): void {
   if (kind === 'model') {
-    getDatabase().modelPresetsId = index
+    settingsOwnerRecord().modelPresetsId = index
   } else {
-    getDatabase().promptPresetsId = index
+    settingsOwnerRecord().promptPresetsId = index
   }
 }
 
@@ -1794,7 +1859,7 @@ function restoreSplitPresetSelectionToId(kind: SplitPresetKind, presetId: string
 }
 
 function rollbackSplitPresetListEntry(kind: SplitPresetKind, entry: SplitPresetListRollbackEntry): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     const list = splitPresetList(kind)
     const selectedId = currentSplitPresetSelectedId(kind)
     const rolledBack = applyAttemptedKeyedListRollback<SplitPresetRow, string>({
@@ -1806,7 +1871,7 @@ function rollbackSplitPresetListEntry(kind: SplitPresetKind, entry: SplitPresetL
 
     assignSplitPresetList(kind, list)
     restoreSplitPresetSelectionToId(kind, selectedId)
-  })
+  })()
 }
 
 function rollbackSplitPresetCreate(kind: SplitPresetKind, attemptedPreset: SplitPresetRow): void {
@@ -1824,7 +1889,7 @@ function rollbackSplitPresetReorder(
   previousPresetIds: string[],
   attemptedPresetIds: string[],
 ): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     const list = splitPresetList(kind)
     if (!stringArraysEqual(splitPresetIds(list), attemptedPresetIds)) return
 
@@ -1841,31 +1906,31 @@ function rollbackSplitPresetReorder(
 
     assignSplitPresetList(kind, restored as SplitPresetRow[])
     restoreSplitPresetSelectionToId(kind, selectedId)
-  })
+  })()
 }
 
 function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     if (!rollback.attemptedSelectedId) return
     if (currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) return
 
     applyAttemptedFieldRollback({
-      target: getDatabase() as unknown as Record<string, unknown>,
+      target: settingsOwnerRecord(),
       previous: rollback.previousSettings as Record<string, unknown>,
       attempted: rollback.attemptedSettings as Record<string, unknown>,
       keys: SET_PRESET_ROLLBACK_KEYS,
     })
     restoreSplitPresetSelectionToId(rollback.kind, rollback.previousSelectedId)
-  })
+  })()
 }
 
 function presetRowList(kind: PresetRowKind): PresetRow[] {
-  return kind === 'legacy' ? getDatabase().botPresets : splitPresetList(kind)
+  return kind === 'legacy' ? legacyPresetOwner() : splitPresetList(kind)
 }
 
 function assignPresetRowList(kind: PresetRowKind, list: PresetRow[]): void {
   if (kind === 'legacy') {
-    getDatabase().botPresets = list as botPreset[]
+    assignLegacyPresetOwner(list as botPreset[])
     return
   }
   assignSplitPresetList(kind, list as SplitPresetRow[])
@@ -1876,7 +1941,7 @@ function currentPresetRowSelectedId(kind: PresetRowKind): string | null {
 }
 
 function restorePresetRowSelectionToId(kind: PresetRowKind, presetId: string | null): void {
-  const list = kind === 'legacy' ? getDatabase().botPresets : splitPresetList(kind)
+  const list = kind === 'legacy' ? legacyPresetOwner() : splitPresetList(kind)
   if (!Array.isArray(list)) return
   if (kind === 'legacy') {
     restoreBotPresetSelectionToId(presetId)
@@ -2086,7 +2151,7 @@ function changedPresetRowFieldStates(
 }
 
 function applyPresetRowTransition(entry: PresetRowMutationEntry, from: PresetRow | null, to: PresetRow | null): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     const list = presetRowList(entry.kind)
     const selectedId = currentPresetRowSelectedId(entry.kind)
     if (from && to) {
@@ -2122,7 +2187,7 @@ function applyPresetRowTransition(entry: PresetRowMutationEntry, from: PresetRow
     if (changed.length === 0) return
     assignPresetRowList(entry.kind, list)
     restorePresetRowSelectionToId(entry.kind, selectedId)
-  })
+  })()
 }
 
 function rollbackPresetRowMutationAttempt(attempt: PresetRowMutationAttempt): void {
@@ -2260,7 +2325,7 @@ function applySplitPresetPatchProjection(attempt: PendingSplitPresetPatch | Disp
   const settingsWereReplaced = hasSettingsProjectionEpochChanged(attempt.settingsProjectionEpoch)
   if (currentSplitPresetSelectedId(attempt.kind) === attempt.presetId) {
     if (attempt.kind !== 'model' || currentSplitPresetSelectedId('prompt') === attempt.selectedPromptPresetId) {
-      const database = getDatabase() as unknown as Record<string, unknown>
+      const database = settingsOwnerRecord()
       for (const [fieldName, field] of attempt.projectionFields) {
         if (settingsWereReplaced) {
           field.previousPresent = Object.prototype.hasOwnProperty.call(database, fieldName)
@@ -2339,7 +2404,7 @@ function reapplyPendingPresetProjectionsMutable(): void {
       if (operation.attempt.selection) {
         selectedIds[operation.attempt.selection.kind] = operation.attempt.selection.attemptedSelectedId
         if (operation.attempt.selection.attemptedSettings) {
-          const database = getDatabase() as unknown as Record<string, unknown>
+          const database = settingsOwnerRecord()
           for (const [fieldName, value] of Object.entries(operation.attempt.selection.attemptedSettings)) {
             database[fieldName] = safeStructuredClone(value)
           }
@@ -2372,7 +2437,7 @@ function reapplyPendingPresetProjectionsMutable(): void {
 
 /** Reassert optimistic preset mutations after an authoritative resource slice is replaced. */
 export function reapplyPendingPresetProjections(): void {
-  withTrustedResourceWrite(reapplyPendingPresetProjectionsMutable)
+  reapplyPendingPresetProjectionsMutable()
 }
 
 export function resetPendingPresetMutationsForDatabaseReplacement(): void {
@@ -3782,60 +3847,38 @@ export function getDatabase(options: getDatabaseOptions = {}): Database {
   return getResourceDatabase(options)
 }
 
-registerAlertDatabaseAccessor(getDatabase)
-
 export function getCurrentCharacter(options: getDatabaseOptions = {}): character {
-  const db = getDatabase(options)
-  if (!db.characters) {
-    db.characters = []
-  }
-  const char = db.characters?.[get(selectedCharID)]
-  return char
+  const character = charactersResourceState.characters[get(selectedCharID)]
+  return options.snapshot ? safeStructuredClone(character) : character
 }
 
 export function setCurrentCharacter(char: character, options: { dispatchServerCommand?: boolean } = {}) {
-  withTrustedResourceWrite(() => {
-    const shouldDispatch = options.dispatchServerCommand ?? true
-    const index = get(selectedCharID)
-    const previousState = shouldDispatch && canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
-    const previousCharacter =
-      previousState && getDatabase().characters ? $state.snapshot(getDatabase().characters[index]) : undefined
+  const shouldDispatch = options.dispatchServerCommand ?? true
+  const index = get(selectedCharID)
+  const previousState = shouldDispatch && canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
+  const previousCharacter = previousState ? $state.snapshot(charactersResourceState.characters[index]) : undefined
 
-    if (!getDatabase().characters) {
-      getDatabase().characters = []
-    }
-    getDatabase().characters[index] = char
-    markLocalCharacterProjectionMutation()
-    if (previousState) {
-      dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
-    }
-  })
+  charactersResourceState.characters[index] = char
+  markLocalCharacterProjectionMutation()
+  if (previousState) {
+    dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
+  }
 }
 
 export function getCharacterByIndex(index: number, options: getDatabaseOptions = {}): character {
-  const db = getDatabase(options)
-  if (!db.characters) {
-    db.characters = []
-  }
-  const char = db.characters?.[index]
-  return char
+  const character = charactersResourceState.characters[index]
+  return options.snapshot ? safeStructuredClone(character) : character
 }
 
 export function setCharacterByIndex(index: number, char: character) {
-  withTrustedResourceWrite(() => {
-    const previousState = canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
-    const previousCharacter =
-      previousState && getDatabase().characters ? $state.snapshot(getDatabase().characters[index]) : undefined
+  const previousState = canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
+  const previousCharacter = previousState ? $state.snapshot(charactersResourceState.characters[index]) : undefined
 
-    if (!getDatabase().characters) {
-      getDatabase().characters = []
-    }
-    getDatabase().characters[index] = char
-    markLocalCharacterProjectionMutation()
-    if (previousState) {
-      dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
-    }
-  })
+  charactersResourceState.characters[index] = char
+  markLocalCharacterProjectionMutation()
+  if (previousState) {
+    dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
+  }
 }
 
 export function getCurrentChat() {
@@ -3844,19 +3887,17 @@ export function getCurrentChat() {
 }
 
 export function setCurrentChat(chat: Chat) {
-  withTrustedResourceWrite(() => {
-    // Replacing the active chat row only mutates that one chat, so the scoped
-    // snapshot's single-chat clone serves as both the diff baseline and the
-    // rollback — never a deep clone of the whole characters array.
-    const previousState = canUseServerCommands() ? currentChatScopedSnapshot() : null
-    const char = getCurrentCharacter()
-    const previousChat = previousState?.chat
-    char.chats[char.chatPage] = chat
-    setCurrentCharacter(char, { dispatchServerCommand: false })
-    if (previousState) {
-      dispatchCompatibleChatUpdateScoped(previousChat, chat, previousState)
-    }
-  })
+  // Replacing the active chat row only mutates that one chat, so the scoped
+  // snapshot's single-chat clone serves as both the diff baseline and the
+  // rollback — never a deep clone of the whole characters array.
+  const previousState = canUseServerCommands() ? currentChatScopedSnapshot() : null
+  const char = getCurrentCharacter()
+  const previousChat = previousState?.chat
+  char.chats[char.chatPage] = chat
+  setCurrentCharacter(char, { dispatchServerCommand: false })
+  if (previousState) {
+    dispatchCompatibleChatUpdateScoped(previousChat, chat, previousState)
+  }
 }
 
 export interface DynamicOutput {
@@ -5169,17 +5210,17 @@ export const defaultSdDataFunc = () => {
 }
 
 function saveCurrentPresetLocal(apply = true) {
-  let db = getDatabase()
-  normalizeBotPresetIds(db)
-  let pres = db.botPresets
+  let db = settingsResourceState.value as Database
+  normalizeLegacyPresetOwner()
+  let pres = legacyPresetOwner()
 
-  if (db.botPresetsId === -1) {
+  if (settingsOwnerRecord().botPresetsId === -1) {
     return null
   }
-  pres[db.botPresetsId].id ??= createClientPresetId()
+  pres[settingsOwnerRecord().botPresetsId].id ??= createClientPresetId()
   const savedPreset: botPreset = {
-    id: pres[db.botPresetsId].id,
-    name: pres[db.botPresetsId].name,
+    id: pres[settingsOwnerRecord().botPresetsId].id,
+    name: pres[settingsOwnerRecord().botPresetsId].name,
     apiType: db.apiType,
     openAIKey: db.openAIKey,
     localNetworkMode: db.localNetworkMode,
@@ -5248,7 +5289,7 @@ function saveCurrentPresetLocal(apply = true) {
     customFlags: safeStructuredClone(db.customFlags),
     enableCustomFlags: db.enableCustomFlags,
     regex: db.presetRegex,
-    image: pres?.[db.botPresetsId]?.image ?? '',
+    image: pres?.[settingsOwnerRecord().botPresetsId]?.image ?? '',
     reasonEffort: db.reasoningEffort ?? 0,
     thinkingTokens: db.thinkingTokens ?? null,
     thinkingType: db.thinkingType ?? 'budget',
@@ -5270,20 +5311,20 @@ function saveCurrentPresetLocal(apply = true) {
 }
 
 function applyCurrentPresetSnapshot(savedPreset: botPreset): void {
-  const db = getDatabase()
-  let pres = db.botPresets
+  const db = settingsResourceState.value as Database
+  let pres = legacyPresetOwner()
   if (!Array.isArray(pres)) pres = []
   //if out of bounds, create a new preset
-  if (db.botPresetsId >= pres.length) {
+  if (settingsOwnerRecord().botPresetsId >= pres.length) {
     pres.push(savedPreset)
   } else {
-    pres[db.botPresetsId] = savedPreset
+    pres[settingsOwnerRecord().botPresetsId] = savedPreset
   }
-  db.botPresets = pres
+  assignLegacyPresetOwner(pres)
 }
 
 export function saveCurrentPreset() {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     const { savedPreset, rollback, sparseBaseline } = saveCurrentPresetLocalWithRollback({ apply: false })
     if (!savedPreset?.id) return []
     const commandPatch = legacyPresetSaveCommandPatch(savedPreset, sparseBaseline)
@@ -5305,7 +5346,7 @@ export function saveCurrentPreset() {
         : null
     applyCurrentPresetSnapshot((acknowledgedPreset ?? savedPreset) as botPreset)
     const presetIndex = canonicalBotPresetIndexById(savedPreset.id)
-    const livePreset = presetIndex >= 0 ? getDatabase().botPresets[presetIndex] : undefined
+    const livePreset = presetIndex >= 0 ? legacyPresetOwner()[presetIndex] : undefined
     const optimisticAcknowledgement =
       wirePatch && acknowledgedPreset && livePreset
         ? legacyPresetPatchOptimisticAcknowledgement({
@@ -5343,21 +5384,21 @@ export function saveCurrentPreset() {
         markCollectionAcknowledgementTainted('botPresets')
       },
     )
-  })
+  })()
 }
 
 export function copyPreset(id: number) {
-  const target = withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
-    const preset = db.botPresets[id]
+  const target = (() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
+    const preset = legacyPresetOwner()[id]
     return preset?.id
       ? {
           presetId: preset.id,
           hydrated: botPresetHasHydratedSettings(preset),
         }
       : null
-  })
+  })()
   if (!target) return
   if (!target.hydrated) {
     void ensureBotPresetHydratedById(target.presetId).then((hydrated) => {
@@ -5369,21 +5410,21 @@ export function copyPreset(id: number) {
 }
 
 function copyPresetById(sourcePresetId: string): void {
-  withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
+  ;(() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
     const initialSourceIndex = canonicalBotPresetIndexById(sourcePresetId)
-    if (initialSourceIndex < 0 || !botPresetHasHydratedSettings(db.botPresets[initialSourceIndex])) return []
+    if (initialSourceIndex < 0 || !botPresetHasHydratedSettings(legacyPresetOwner()[initialSourceIndex])) return []
     const { rollback: saveCurrentRollback } = saveCurrentPresetLocalWithRollback()
-    normalizeBotPresetIds(db)
+    normalizeLegacyPresetOwner()
     const sourceIndex = canonicalBotPresetIndexById(sourcePresetId)
-    const sourcePreset = sourceIndex >= 0 ? db.botPresets[sourceIndex] : undefined
+    const sourcePreset = sourceIndex >= 0 ? legacyPresetOwner()[sourceIndex] : undefined
     if (!botPresetHasHydratedSettings(sourcePreset)) return []
     const newPres = safeStructuredClone(sourcePreset)
     if (!newPres?.id) return []
     newPres.id = createClientPresetId()
     newPres.name += ' Copy'
-    db.botPresets.push(newPres)
+    legacyPresetOwner().push(newPres)
     const attemptedCopy = safeStructuredClone(newPres)
     const entries: PresetRowMutationEntry[] = [
       {
@@ -5395,7 +5436,7 @@ function copyPresetById(sourcePresetId: string): void {
     ]
     if (saveCurrentRollback) {
       const savedSourceIndex = canonicalBotPresetIndexById(saveCurrentRollback.presetId)
-      const savedSourcePreset = savedSourceIndex >= 0 ? db.botPresets[savedSourceIndex] : undefined
+      const savedSourcePreset = savedSourceIndex >= 0 ? legacyPresetOwner()[savedSourceIndex] : undefined
       if (savedSourcePreset) {
         entries.unshift(
           legacyPresetEntryFromFieldRollback(
@@ -5431,7 +5472,7 @@ function copyPresetById(sourcePresetId: string): void {
         saveCurrent: true,
       }),
     )
-  })
+  })()
 }
 
 let legacyPresetSelectionIntent = 0
@@ -5446,12 +5487,12 @@ export function isLegacyPresetSelectionIntentCurrent(intent: number): boolean {
 
 export function changeToPreset(id = 0, savecurrent = true) {
   const intent = beginLegacyPresetSelectionIntent()
-  const target = withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
-    const preset = db.botPresets[id]
+  const target = (() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
+    const preset = legacyPresetOwner()[id]
     return preset?.id ? { presetId: preset.id, hydrated: botPresetHasHydratedSettings(preset) } : null
-  })
+  })()
   if (!target) return
   if (!target.hydrated) {
     void ensureBotPresetHydratedById(target.presetId).then((hydrated) => {
@@ -5465,34 +5506,34 @@ export function changeToPreset(id = 0, savecurrent = true) {
 }
 
 function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent: number): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     if (!isLegacyPresetSelectionIntentCurrent(intent)) return
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
     const id = canonicalBotPresetIndexById(targetPresetId)
-    if (id < 0 || !botPresetHasHydratedSettings(db.botPresets[id])) return
+    if (id < 0 || !botPresetHasHydratedSettings(legacyPresetOwner()[id])) return
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
     }
-    const previousSelectedId = botPresetSelectedId(db)
+    const previousSelectedId = botPresetSelectedId(legacyPresetOwner(), db.botPresetsId)
     const previousSettings = snapshotSetPresetSettings(db)
     const saveCurrentRollback = savecurrent ? saveCurrentPresetLocalWithRollback().rollback : null
-    normalizeBotPresetIds(db)
+    normalizeLegacyPresetOwner()
     const resolvedIndex = canonicalBotPresetIndexById(targetPresetId)
-    const newPres = resolvedIndex >= 0 ? db.botPresets[resolvedIndex] : undefined
+    const newPres = resolvedIndex >= 0 ? legacyPresetOwner()[resolvedIndex] : undefined
     if (!botPresetHasHydratedSettings(newPres)) return
-    db.botPresetsId = resolvedIndex
+    settingsOwnerRecord().botPresetsId = resolvedIndex
     setPreset(db, newPres)
     const selectionRollback: BotPresetSelectionRollback = {
       previousSelectedId,
-      attemptedSelectedId: botPresetSelectedId(db),
+      attemptedSelectedId: botPresetSelectedId(legacyPresetOwner(), db.botPresetsId),
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
     const entries: PresetRowMutationEntry[] = []
     if (saveCurrentRollback) {
       const savedPresetIndex = canonicalBotPresetIndexById(saveCurrentRollback.presetId)
-      const savedPreset = savedPresetIndex >= 0 ? db.botPresets[savedPresetIndex] : undefined
+      const savedPreset = savedPresetIndex >= 0 ? legacyPresetOwner()[savedPresetIndex] : undefined
       if (savedPreset) {
         entries.push(
           legacyPresetEntryFromFieldRollback(saveCurrentRollback, safeStructuredClone(savedPreset), savedPresetIndex),
@@ -5543,17 +5584,16 @@ function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent
         rollbackBotPresetFields(saveCurrentRollback)
       },
     )
-  })
+  })()
 }
 
 export function createPreset(preset: botPreset) {
-  withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
+  ;(() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
-    db.botPresets.push(newPreset)
-    db.botPresets = db.botPresets
+    legacyPresetOwner().push(newPreset)
     const attemptedPreset = safeStructuredClone(newPreset)
     const entry: PresetRowMutationEntry = {
       kind: 'legacy',
@@ -5579,20 +5619,20 @@ export function createPreset(preset: botPreset) {
         preset: safeStructuredClone(attemptedPreset) as unknown as PresetSnapshot,
       }),
     )
-  })
+  })()
 }
 
 export function updatePreset(id: number, patch: Partial<botPreset>) {
-  withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    const normalizedIds = !botPresetIdsNeedNormalization(db)
-    normalizeBotPresetIds(db)
-    const presetId = db.botPresets[id]?.id
+  ;(() => {
+    const db = settingsResourceState.value as Database
+    const normalizedIds = !legacyPresetOwnerIdsNeedNormalization()
+    normalizeLegacyPresetOwner()
+    const presetId = legacyPresetOwner()[id]?.id
     if (!presetId) return []
-    const acknowledgementEligible = normalizedIds && botPresetHasHydratedSettings(db.botPresets[id])
+    const acknowledgementEligible = normalizedIds && botPresetHasHydratedSettings(legacyPresetOwner()[id])
     const attempted = safeStructuredClone(patch)
     delete attempted.id
-    const currentPreset = db.botPresets[id] as unknown as Record<string, unknown>
+    const currentPreset = legacyPresetOwner()[id] as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(attempted)) {
       if (
         Object.prototype.hasOwnProperty.call(currentPreset, key) &&
@@ -5609,18 +5649,18 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
     const rollback = botPresetFieldRollbackFromPatch(
       presetId,
-      db.botPresets[id] as unknown as Record<string, unknown>,
+      legacyPresetOwner()[id] as unknown as Record<string, unknown>,
       attempted as unknown as Record<string, unknown>,
     )
-    Object.assign(db.botPresets[id], attempted)
+    Object.assign(legacyPresetOwner()[id], attempted)
     const optimisticAcknowledgement = wirePatch
       ? legacyPresetPatchOptimisticAcknowledgement({
-          preset: db.botPresets[id] as unknown as Record<string, unknown>,
+          preset: legacyPresetOwner()[id] as unknown as Record<string, unknown>,
           wirePatch,
           collectionProjectionEpoch,
         })
       : null
-    const entry = legacyPresetEntryFromFieldRollback(rollback, safeStructuredClone(db.botPresets[id]), id)
+    const entry = legacyPresetEntryFromFieldRollback(rollback, safeStructuredClone(legacyPresetOwner()[id]), id)
     const attempt = createPresetRowMutationAttempt([entry])
     const durableIntent: DurableMutationIntent = {
       version: 1,
@@ -5647,21 +5687,21 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
         markCollectionAcknowledgementTainted('botPresets')
       },
     )
-  })
+  })()
 }
 
 export function deletePreset(id: number, selectIndex = 0, apply = true) {
   const intent = beginLegacyPresetSelectionIntent()
-  const target = withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
-    if (db.botPresets.length <= 1) return null
-    const presetId = db.botPresets[id]?.id
+  const target = (() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
+    if (legacyPresetOwner().length <= 1) return null
+    const presetId = legacyPresetOwner()[id]?.id
     if (!presetId) return null
     const nextSelectedPreset =
-      db.botPresets[selectIndex]?.id === presetId
-        ? db.botPresets.find((preset) => preset.id !== presetId)
-        : db.botPresets[selectIndex]
+      legacyPresetOwner()[selectIndex]?.id === presetId
+        ? legacyPresetOwner().find((preset) => preset.id !== presetId)
+        : legacyPresetOwner()[selectIndex]
     return nextSelectedPreset?.id
       ? {
           presetId,
@@ -5669,7 +5709,7 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
           selectPresetHydrated: botPresetHasHydratedSettings(nextSelectedPreset),
         }
       : null
-  })
+  })()
   if (!target) return
   if (apply && !target.selectPresetHydrated) {
     void ensureBotPresetHydratedById(target.selectPresetId).then((hydrated) => {
@@ -5683,35 +5723,35 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
 }
 
 function deletePresetByIds(presetId: string, selectPresetId: string, apply: boolean, intent: number): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     if (!isLegacyPresetSelectionIntentCurrent(intent)) return
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
-    if (db.botPresets.length <= 1) return []
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
+    if (legacyPresetOwner().length <= 1) return []
     const id = canonicalBotPresetIndexById(presetId)
     const selectedBeforeDelete = canonicalBotPresetIndexById(selectPresetId)
     if (id < 0 || selectedBeforeDelete < 0) return []
-    if (apply && !botPresetHasHydratedSettings(db.botPresets[selectedBeforeDelete])) return []
+    if (apply && !botPresetHasHydratedSettings(legacyPresetOwner()[selectedBeforeDelete])) return []
     const durable = canUseServerCommands()
     if (durable) flushRegisteredPendingBridgePatch('settings', {})
-    const previousPreset = safeStructuredClone(db.botPresets[id])
-    const previousSelectedId = botPresetSelectedId(db)
+    const previousPreset = safeStructuredClone(legacyPresetOwner()[id])
+    const previousSelectedId = botPresetSelectedId(legacyPresetOwner(), db.botPresetsId)
     const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
-    let botPresets = db.botPresets
+    let botPresets = legacyPresetOwner()
     botPresets.splice(id, 1)
-    db.botPresets = botPresets
-    const selectedIndex = selectPresetId ? db.botPresets.findIndex((preset) => preset.id === selectPresetId) : -1
+    assignLegacyPresetOwner(botPresets)
+    const selectedIndex = selectPresetId ? legacyPresetOwner().findIndex((preset) => preset.id === selectPresetId) : -1
     if (selectedIndex >= 0) {
-      db.botPresetsId = selectedIndex
+      settingsOwnerRecord().botPresetsId = selectedIndex
       if (apply) {
-        setPreset(db, db.botPresets[selectedIndex])
+        setPreset(db, legacyPresetOwner()[selectedIndex])
       }
-    } else if (db.botPresetsId >= db.botPresets.length) {
-      db.botPresetsId = db.botPresets.length - 1
+    } else if (settingsOwnerRecord().botPresetsId >= legacyPresetOwner().length) {
+      settingsOwnerRecord().botPresetsId = legacyPresetOwner().length - 1
     }
     const selectionRollback: BotPresetSelectionRollback = {
       previousSelectedId,
-      attemptedSelectedId: botPresetSelectedId(db),
+      attemptedSelectedId: botPresetSelectedId(legacyPresetOwner(), db.botPresetsId),
       ...(apply && previousSettings
         ? {
             previousSettings,
@@ -5766,40 +5806,47 @@ function deletePresetByIds(presetId: string, selectPresetId: string, apply: bool
         saveCurrent: false,
       }),
     )
-  })
+  })()
 }
 
 export function reorderPresets(fromIndex: number, toIndex: number) {
-  withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
+  ;(() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
     if (fromIndex === toIndex) return []
-    if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.botPresets.length || toIndex > db.botPresets.length) {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= legacyPresetOwner().length ||
+      toIndex > legacyPresetOwner().length
+    ) {
       return []
     }
 
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    const previousPresetIds = botPresetIds(db.botPresets)
-    const previousSelectedPresetId = botPresetSelectedId(db)
-    let botPresets = [...db.botPresets]
+    const previousPresetIds = botPresetIds(legacyPresetOwner())
+    const previousSelectedPresetId = botPresetSelectedId(legacyPresetOwner(), db.botPresetsId)
+    let botPresets = [...legacyPresetOwner()]
     const movedItem = botPresets.splice(fromIndex, 1)[0]
     if (!movedItem) return []
 
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     botPresets.splice(adjustedToIndex, 0, movedItem)
 
-    const currentId = db.botPresetsId
+    const currentId = settingsOwnerRecord().botPresetsId
     if (currentId === fromIndex) {
-      db.botPresetsId = adjustedToIndex
+      settingsOwnerRecord().botPresetsId = adjustedToIndex
     } else if (fromIndex < currentId && adjustedToIndex >= currentId) {
-      db.botPresetsId = currentId - 1
+      settingsOwnerRecord().botPresetsId = currentId - 1
     } else if (fromIndex > currentId && adjustedToIndex <= currentId) {
-      db.botPresetsId = currentId + 1
+      settingsOwnerRecord().botPresetsId = currentId + 1
     }
 
-    db.botPresets = botPresets
-    const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    assignLegacyPresetOwner(botPresets)
+    const presetIds = legacyPresetOwner()
+      .map((preset) => preset.id)
+      .filter((id): id is string => !!id)
     const optimisticAcknowledgement = presetReorderOptimisticAcknowledgement({
       presetKind: 'legacy',
       collectionProjectionEpoch,
@@ -5807,7 +5854,7 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
       beforePresetIds: previousPresetIds,
       attemptedPresetIds: presetIds,
       beforeSelectedPresetId: previousSelectedPresetId,
-      attemptedSelectedPresetId: botPresetSelectedId(db),
+      attemptedSelectedPresetId: botPresetSelectedId(legacyPresetOwner(), db.botPresetsId),
     })
     const attempt = createPresetReorderMutationAttempt('legacy', previousPresetIds, presetIds)
     const durableIntent: DurableMutationIntent = {
@@ -5829,19 +5876,18 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
         markSettingsAcknowledgementTainted()
       },
     )
-  })
+  })()
 }
 
 export function createModelPreset(preset: ModelPreset): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
     flushPendingSplitPresetPatchesForKind('model')
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)
-    db.modelPresets.push(newPreset)
-    db.modelPresets = db.modelPresets
+    modelPresetOwner().push(newPreset)
     const entry: PresetRowMutationEntry = {
       kind: 'model',
       key: newPreset.id,
@@ -5871,25 +5917,25 @@ export function createModelPreset(preset: ModelPreset): Promise<PresetMutationOu
         preset: safeStructuredClone(attemptedPreset) as unknown as ModelPresetSnapshot,
       }),
     )
-  })
+  })()
 }
 
 export function updateModelPreset(id: number, patch: Partial<ModelPreset>): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    const modelPresetId = db.modelPresets[id]?.id
+  return (() => {
+    const db = settingsResourceState.value as Database
+    const modelPresetId = modelPresetOwner()[id]?.id
     if (!modelPresetId) return Promise.resolve({ status: 'failed' })
     const attempted = omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch))
     const previousProjectionFields = captureSplitPresetProjectionFields('model', attempted as Record<string, unknown>)
     const pending = queueSplitPresetPatch(
       'model',
       modelPresetId,
-      db.modelPresets[id] as unknown as Record<string, unknown>,
+      modelPresetOwner()[id] as unknown as Record<string, unknown>,
       attempted as Record<string, unknown>,
     )
-    Object.assign(db.modelPresets[id], attempted)
-    if (db.modelPresetsId === id) {
-      applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
+    Object.assign(modelPresetOwner()[id], attempted)
+    if (settingsOwnerRecord().modelPresetsId === id) {
+      applyModelPresetFieldsToDatabase(db, modelPresetOwner()[id])
     }
     recordSplitPresetProjectionFields(pending, previousProjectionFields)
     const outcome = pending
@@ -5897,22 +5943,22 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>): Prom
       : Promise.resolve<PresetMutationOutcome>({ status: 'accepted' })
     if (pending) schedulePendingSplitPresetPatch(pending)
     return outcome
-  })
+  })()
 }
 
 export function deleteModelPreset(id: number, selectIndex = 0): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
-    if (db.modelPresets.length <= 1) return Promise.resolve({ status: 'failed' })
-    const modelPresetId = db.modelPresets[id]?.id
-    const previousPreset = db.modelPresets[id] ? safeStructuredClone(db.modelPresets[id]) : null
-    const previousSelectedId = splitPresetSelectedId(db, 'model')
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
+    if (modelPresetOwner().length <= 1) return Promise.resolve({ status: 'failed' })
+    const modelPresetId = modelPresetOwner()[id]?.id
+    const previousPreset = modelPresetOwner()[id] ? safeStructuredClone(modelPresetOwner()[id]) : null
+    const previousSelectedId = splitPresetSelectedId(modelPresetOwner(), db.modelPresetsId)
     const previousSettings = snapshotSetPresetSettings(db)
     const nextSelectedPreset =
-      db.modelPresets[selectIndex]?.id === modelPresetId
-        ? db.modelPresets.find((preset) => preset.id !== modelPresetId)
-        : db.modelPresets[selectIndex]
+      modelPresetOwner()[selectIndex]?.id === modelPresetId
+        ? modelPresetOwner().find((preset) => preset.id !== modelPresetId)
+        : modelPresetOwner()[selectIndex]
     const selectModelPresetId = nextSelectedPreset?.id
     if (!modelPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
     flushPendingSplitPresetPatches()
@@ -5933,16 +5979,15 @@ export function deleteModelPreset(id: number, selectIndex = 0): Promise<PresetMu
         },
       ],
     }
-    db.modelPresets.splice(id, 1)
-    db.modelPresets = db.modelPresets
+    modelPresetOwner().splice(id, 1)
     const selectedIndex = selectModelPresetId
-      ? db.modelPresets.findIndex((preset) => preset.id === selectModelPresetId)
+      ? modelPresetOwner().findIndex((preset) => preset.id === selectModelPresetId)
       : -1
-    db.modelPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.modelPresetsId, db.modelPresets.length - 1)
-    applyModelPresetFieldsToDatabase(db, db.modelPresets[db.modelPresetsId])
-    const replacementPreset = db.modelPresets[db.modelPresetsId]
+    settingsOwnerRecord().modelPresetsId =
+      selectedIndex >= 0 ? selectedIndex : Math.min(settingsOwnerRecord().modelPresetsId, modelPresetOwner().length - 1)
+    applyModelPresetFieldsToDatabase(db, modelPresetOwner()[settingsOwnerRecord().modelPresetsId])
+    const replacementPreset = modelPresetOwner()[settingsOwnerRecord().modelPresetsId]
     const referenceCascade = optimisticallyRehomeGenerationReferences({
-      getDatabase: () => getDatabase(),
       kind: 'modelPreset',
       deletedId: modelPresetId,
       replacement: replacementPreset?.id
@@ -5952,7 +5997,7 @@ export function deleteModelPreset(id: number, selectIndex = 0): Promise<PresetMu
     const selectionRollback: SplitPresetSelectionRollback = {
       kind: 'model',
       previousSelectedId,
-      attemptedSelectedId: splitPresetSelectedId(db, 'model'),
+      attemptedSelectedId: splitPresetSelectedId(modelPresetOwner(), db.modelPresetsId),
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
@@ -5992,33 +6037,33 @@ export function deleteModelPreset(id: number, selectIndex = 0): Promise<PresetMu
           selectModelPresetId,
         }),
       () => {
-        if (getDatabase().modelPresets.filter((preset) => preset.id === modelPresetId).length === 1) {
+        if (modelPresetOwner().filter((preset) => preset.id === modelPresetId).length === 1) {
           referenceCascade.rollback()
         }
       },
     )
-  })
+  })()
 }
 
 export function selectModelPreset(id: number): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
-    const previousSelectedId = splitPresetSelectedId(db, 'model')
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
+    const previousSelectedId = splitPresetSelectedId(modelPresetOwner(), db.modelPresetsId)
     const previousSettings = snapshotSetPresetSettings(db)
-    const modelPresetId = db.modelPresets[id]?.id
+    const modelPresetId = modelPresetOwner()[id]?.id
     if (!modelPresetId) return Promise.resolve({ status: 'failed' })
     if (previousSelectedId === modelPresetId) return Promise.resolve({ status: 'accepted' })
     flushPendingSplitPresetPatches()
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
     }
-    db.modelPresetsId = id
-    applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
+    settingsOwnerRecord().modelPresetsId = id
+    applyModelPresetFieldsToDatabase(db, modelPresetOwner()[id])
     const selectionRollback: SplitPresetSelectionRollback = {
       kind: 'model',
       previousSelectedId,
-      attemptedSelectedId: splitPresetSelectedId(db, 'model'),
+      attemptedSelectedId: splitPresetSelectedId(modelPresetOwner(), db.modelPresetsId),
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
@@ -6051,31 +6096,37 @@ export function selectModelPreset(id: number): Promise<PresetMutationOutcome> {
     return dispatchPresetRowMutation(prepared, attempt, (baseRevision) =>
       selectModelPresetCommand({ baseRevision, modelPresetId }),
     )
-  })
+  })()
 }
 
 export function reorderModelPresets(fromIndex: number, toIndex: number): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
     if (fromIndex === toIndex) return Promise.resolve({ status: 'accepted' })
-    if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.modelPresets.length || toIndex > db.modelPresets.length) {
+    if (fromIndex < 0 || toIndex < 0 || fromIndex >= modelPresetOwner().length || toIndex > modelPresetOwner().length) {
       return Promise.resolve({ status: 'failed' })
     }
     flushPendingSplitPresetPatchesForKind('model')
     const dependencyKeys = activeSplitPresetOwnerMutationKeys(['model'])
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('modelPresets')
     const settingsProjectionEpoch = captureSettingsProjectionEpoch()
-    const previousPresetIds = splitPresetIds(db.modelPresets)
-    const previousSelectedPresetId = splitPresetSelectedId(db, 'model')
-    const modelPresets = [...db.modelPresets]
+    const previousPresetIds = splitPresetIds(modelPresetOwner())
+    const previousSelectedPresetId = splitPresetSelectedId(modelPresetOwner(), db.modelPresetsId)
+    const modelPresets = [...modelPresetOwner()]
     const movedItem = modelPresets.splice(fromIndex, 1)[0]
     if (!movedItem) return Promise.resolve({ status: 'failed' })
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     modelPresets.splice(adjustedToIndex, 0, movedItem)
-    db.modelPresetsId = movedSelectedIndex(db.modelPresetsId, fromIndex, adjustedToIndex)
-    db.modelPresets = modelPresets
-    const modelPresetIds = db.modelPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    settingsOwnerRecord().modelPresetsId = movedSelectedIndex(
+      settingsOwnerRecord().modelPresetsId,
+      fromIndex,
+      adjustedToIndex,
+    )
+    assignModelPresetOwner(modelPresets)
+    const modelPresetIds = modelPresetOwner()
+      .map((preset) => preset.id)
+      .filter((id): id is string => !!id)
     const optimisticAcknowledgement = presetReorderOptimisticAcknowledgement({
       presetKind: 'model',
       collectionProjectionEpoch,
@@ -6083,7 +6134,7 @@ export function reorderModelPresets(fromIndex: number, toIndex: number): Promise
       beforePresetIds: previousPresetIds,
       attemptedPresetIds: modelPresetIds,
       beforeSelectedPresetId: previousSelectedPresetId,
-      attemptedSelectedPresetId: splitPresetSelectedId(db, 'model'),
+      attemptedSelectedPresetId: splitPresetSelectedId(modelPresetOwner(), db.modelPresetsId),
     })
     const attempt = createPresetReorderMutationAttempt('model', previousPresetIds, modelPresetIds)
     const durableIntent: DurableMutationIntent = {
@@ -6112,20 +6163,19 @@ export function reorderModelPresets(fromIndex: number, toIndex: number): Promise
         markSettingsAcknowledgementTainted()
       },
     )
-  })
+  })()
 }
 
 export function createPromptPreset(preset: PromptPreset): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
     flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(preset)
     normalizePromptTemplateRecord(newPreset)
     newPreset.id ??= createClientPresetId()
     const attemptedPreset = safeStructuredClone(newPreset)
-    db.promptPresets.push(newPreset)
-    db.promptPresets = db.promptPresets
+    promptPresetOwner().push(newPreset)
     const entry: PresetRowMutationEntry = {
       kind: 'prompt',
       key: newPreset.id,
@@ -6155,7 +6205,7 @@ export function createPromptPreset(preset: PromptPreset): Promise<PresetMutation
         preset: safeStructuredClone(attemptedPreset) as unknown as PromptPresetSnapshot,
       }),
     )
-  })
+  })()
 }
 
 export type PresetImportOutcome = 'applied' | 'failed' | 'queued'
@@ -6196,14 +6246,14 @@ interface ImportedSplitPresetDispatchOutcome {
 }
 
 function projectImportedSplitPresets(attempts: readonly ImportedSplitPresetDefinition[]): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     for (const attempt of attempts) {
       const list = splitPresetList(attempt.kind)
       if (list.some((preset) => preset?.id === attempt.preset.id)) continue
       list.push(safeStructuredClone(attempt.preset))
       assignSplitPresetList(attempt.kind, list)
     }
-  })
+  })()
 }
 
 function reapplyRetainedImportedSplitPreset(attempt: StagedImportedSplitPreset): void {
@@ -6369,21 +6419,21 @@ async function dispatchImportedSplitPresetBatch(
 }
 
 export async function addImportedPromptPreset(preset: PromptPreset): Promise<PresetImportOutcome> {
-  const attemptedPreset = withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
+  const attemptedPreset = (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
     flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(promptPresetExportPayload(preset)) as PromptPreset
     newPreset.id ??= createClientPresetId()
     return safeStructuredClone(newPreset)
-  })
+  })()
   return dispatchImportedSplitPresetBatch([{ kind: 'prompt', preset: attemptedPreset }])
 }
 
 export async function addImportedLegacyPreset(preset: botPreset): Promise<PresetImportOutcome> {
-  const imported = withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
+  const imported = (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
     flushPendingSplitPresetPatches()
     const importedName = typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : 'Imported'
     const modelPreset = createExtractedModelPreset(preset, {
@@ -6403,7 +6453,7 @@ export async function addImportedLegacyPreset(preset: botPreset): Promise<Preset
       modelPreset: safeStructuredClone(modelPreset),
       promptPreset: safeStructuredClone(promptPreset),
     }
-  })
+  })()
   return dispatchImportedSplitPresetBatch([
     { kind: 'model', preset: imported.modelPreset },
     { kind: 'prompt', preset: imported.promptPreset },
@@ -6411,9 +6461,9 @@ export async function addImportedLegacyPreset(preset: botPreset): Promise<Preset
 }
 
 export function updatePromptPreset(id: number, patch: Partial<PromptPreset>): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    const promptPresetId = db.promptPresets[id]?.id
+  return (() => {
+    const db = settingsResourceState.value as Database
+    const promptPresetId = promptPresetOwner()[id]?.id
     if (!promptPresetId) return Promise.resolve({ status: 'failed' })
     const attempted = normalizePromptPresetPatchAliases(omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch)))
     normalizePromptTemplateRecord(attempted)
@@ -6421,12 +6471,12 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>): Pr
     const pending = queueSplitPresetPatch(
       'prompt',
       promptPresetId,
-      db.promptPresets[id] as unknown as Record<string, unknown>,
+      promptPresetOwner()[id] as unknown as Record<string, unknown>,
       attempted as Record<string, unknown>,
     )
-    Object.assign(db.promptPresets[id], attempted)
-    if (db.promptPresetsId === id) {
-      applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
+    Object.assign(promptPresetOwner()[id], attempted)
+    if (settingsOwnerRecord().promptPresetsId === id) {
+      applyPromptPresetFieldsToDatabase(db, promptPresetOwner()[id])
     }
     recordSplitPresetProjectionFields(pending, previousProjectionFields)
     const outcome = pending
@@ -6434,7 +6484,7 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>): Pr
       : Promise.resolve<PresetMutationOutcome>({ status: 'accepted' })
     if (pending) schedulePendingSplitPresetPatch(pending)
     return outcome
-  })
+  })()
 }
 
 function omitUndefinedSplitPresetPatchValues<T extends Record<string, unknown>>(patch: T): T {
@@ -6458,18 +6508,18 @@ function jsonSnapshot(value: unknown): string {
 }
 
 export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
-    if (db.promptPresets.length <= 1) return Promise.resolve({ status: 'failed' })
-    const promptPresetId = db.promptPresets[id]?.id
-    const previousPreset = db.promptPresets[id] ? safeStructuredClone(db.promptPresets[id]) : null
-    const previousSelectedId = splitPresetSelectedId(db, 'prompt')
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
+    if (promptPresetOwner().length <= 1) return Promise.resolve({ status: 'failed' })
+    const promptPresetId = promptPresetOwner()[id]?.id
+    const previousPreset = promptPresetOwner()[id] ? safeStructuredClone(promptPresetOwner()[id]) : null
+    const previousSelectedId = splitPresetSelectedId(promptPresetOwner(), db.promptPresetsId)
     const previousSettings = snapshotSetPresetSettings(db)
     const nextSelectedPreset =
-      db.promptPresets[selectIndex]?.id === promptPresetId
-        ? db.promptPresets.find((preset) => preset.id !== promptPresetId)
-        : db.promptPresets[selectIndex]
+      promptPresetOwner()[selectIndex]?.id === promptPresetId
+        ? promptPresetOwner().find((preset) => preset.id !== promptPresetId)
+        : promptPresetOwner()[selectIndex]
     const selectPromptPresetId = nextSelectedPreset?.id
     if (!promptPresetId || !previousPreset) return Promise.resolve({ status: 'failed' })
     flushPendingPromptTemplatePatches()
@@ -6491,16 +6541,17 @@ export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetM
         },
       ],
     }
-    db.promptPresets.splice(id, 1)
-    db.promptPresets = db.promptPresets
+    promptPresetOwner().splice(id, 1)
     const selectedIndex = selectPromptPresetId
-      ? db.promptPresets.findIndex((preset) => preset.id === selectPromptPresetId)
+      ? promptPresetOwner().findIndex((preset) => preset.id === selectPromptPresetId)
       : -1
-    db.promptPresetsId = selectedIndex >= 0 ? selectedIndex : Math.min(db.promptPresetsId, db.promptPresets.length - 1)
-    applyPromptPresetFieldsToDatabase(db, db.promptPresets[db.promptPresetsId])
-    const replacementPreset = db.promptPresets[db.promptPresetsId]
+    settingsOwnerRecord().promptPresetsId =
+      selectedIndex >= 0
+        ? selectedIndex
+        : Math.min(settingsOwnerRecord().promptPresetsId, promptPresetOwner().length - 1)
+    applyPromptPresetFieldsToDatabase(db, promptPresetOwner()[settingsOwnerRecord().promptPresetsId])
+    const replacementPreset = promptPresetOwner()[settingsOwnerRecord().promptPresetsId]
     const referenceCascade = optimisticallyRehomeGenerationReferences({
-      getDatabase: () => getDatabase(),
       kind: 'promptPreset',
       deletedId: promptPresetId,
       replacement: replacementPreset?.id
@@ -6510,7 +6561,7 @@ export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetM
     const selectionRollback: SplitPresetSelectionRollback = {
       kind: 'prompt',
       previousSelectedId,
-      attemptedSelectedId: splitPresetSelectedId(db, 'prompt'),
+      attemptedSelectedId: splitPresetSelectedId(promptPresetOwner(), db.promptPresetsId),
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
@@ -6550,21 +6601,21 @@ export function deletePromptPreset(id: number, selectIndex = 0): Promise<PresetM
           selectPromptPresetId,
         }),
       () => {
-        if (getDatabase().promptPresets.filter((preset) => preset.id === promptPresetId).length === 1) {
+        if (promptPresetOwner().filter((preset) => preset.id === promptPresetId).length === 1) {
           referenceCascade.rollback()
         }
       },
     )
-  })
+  })()
 }
 
 export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
-    const previousSelectedId = splitPresetSelectedId(db, 'prompt')
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
+    const previousSelectedId = splitPresetSelectedId(promptPresetOwner(), db.promptPresetsId)
     const previousSettings = snapshotSetPresetSettings(db)
-    const promptPresetId = db.promptPresets[id]?.id
+    const promptPresetId = promptPresetOwner()[id]?.id
     if (!promptPresetId) return Promise.resolve({ status: 'failed' })
     if (previousSelectedId === promptPresetId) return Promise.resolve({ status: 'accepted' })
     // Flush row edits while their owner is still selected. Once the selection
@@ -6576,12 +6627,12 @@ export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
     if (canUseServerCommands()) {
       flushRegisteredPendingBridgePatch('settings', {})
     }
-    db.promptPresetsId = id
-    applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
+    settingsOwnerRecord().promptPresetsId = id
+    applyPromptPresetFieldsToDatabase(db, promptPresetOwner()[id])
     const selectionRollback: SplitPresetSelectionRollback = {
       kind: 'prompt',
       previousSelectedId,
-      attemptedSelectedId: splitPresetSelectedId(db, 'prompt'),
+      attemptedSelectedId: splitPresetSelectedId(promptPresetOwner(), db.promptPresetsId),
       previousSettings,
       attemptedSettings: snapshotSetPresetSettings(db),
     }
@@ -6618,28 +6669,39 @@ export function selectPromptPreset(id: number): Promise<PresetMutationOutcome> {
       () => {},
       { retryConflictWhile: () => currentSplitPresetSelectedId('prompt') === promptPresetId },
     )
-  })
+  })()
 }
 
 export function reorderPromptPresets(fromIndex: number, toIndex: number): Promise<PresetMutationOutcome> {
-  return withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeSplitPresetIds(db)
+  return (() => {
+    const db = settingsResourceState.value as Database
+    normalizeSplitPresetOwners()
     if (fromIndex === toIndex) return Promise.resolve({ status: 'accepted' })
-    if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.promptPresets.length || toIndex > db.promptPresets.length) {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= promptPresetOwner().length ||
+      toIndex > promptPresetOwner().length
+    ) {
       return Promise.resolve({ status: 'failed' })
     }
     flushPendingSplitPresetPatchesForKind('prompt')
     const dependencyKeys = activeSplitPresetOwnerMutationKeys(['prompt'])
-    const previousPresetIds = splitPresetIds(db.promptPresets)
-    const promptPresets = [...db.promptPresets]
+    const previousPresetIds = splitPresetIds(promptPresetOwner())
+    const promptPresets = [...promptPresetOwner()]
     const movedItem = promptPresets.splice(fromIndex, 1)[0]
     if (!movedItem) return Promise.resolve({ status: 'failed' })
     const adjustedToIndex = fromIndex < toIndex ? toIndex - 1 : toIndex
     promptPresets.splice(adjustedToIndex, 0, movedItem)
-    db.promptPresetsId = movedSelectedIndex(db.promptPresetsId, fromIndex, adjustedToIndex)
-    db.promptPresets = promptPresets
-    const promptPresetIds = db.promptPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    settingsOwnerRecord().promptPresetsId = movedSelectedIndex(
+      settingsOwnerRecord().promptPresetsId,
+      fromIndex,
+      adjustedToIndex,
+    )
+    assignPromptPresetOwner(promptPresets)
+    const promptPresetIds = promptPresetOwner()
+      .map((preset) => preset.id)
+      .filter((id): id is string => !!id)
     const attempt = createPresetReorderMutationAttempt('prompt', previousPresetIds, promptPresetIds)
     const durableIntent: DurableMutationIntent = {
       version: 1,
@@ -6659,19 +6721,19 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number): Promis
         promptPresetIds: [...promptPresetIds],
       }),
     )
-  })
+  })()
 }
 
 let legacyPresetExtractionIntent = 0
 
 export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' | 'prompt') {
   const intent = ++legacyPresetExtractionIntent
-  const target = withTrustedResourceWrite(() => {
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
-    const preset = db.botPresets[id]
+  const target = (() => {
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
+    const preset = legacyPresetOwner()[id]
     return preset?.id ? { presetId: preset.id, hydrated: botPresetHasHydratedSettings(preset) } : null
-  })
+  })()
   if (!target) return
   if (!target.hydrated) {
     void ensureBotPresetHydratedById(target.presetId).then((hydrated) => {
@@ -6685,19 +6747,19 @@ export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' 
 }
 
 function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'prompt', intent: number): void {
-  withTrustedResourceWrite(() => {
+  ;(() => {
     if (intent !== legacyPresetExtractionIntent) return
-    const db = getDatabase()
-    normalizeBotPresetIds(db)
-    normalizeSplitPresetIds(db)
+    const db = settingsResourceState.value as Database
+    normalizeLegacyPresetOwner()
+    normalizeSplitPresetOwners()
     const id = canonicalBotPresetIndexById(presetId)
     if (id < 0) return []
-    const preset = db.botPresets[id]
+    const preset = legacyPresetOwner()[id]
     if (!botPresetHasHydratedSettings(preset)) return []
     flushPendingSplitPresetPatches()
     const dependencyKeys = activeSplitPresetOwnerMutationKeys(['model', 'prompt'])
     const previousPreset = safeStructuredClone(preset)
-    const previousSelectedId = botPresetSelectedId(db)
+    const previousSelectedId = botPresetSelectedId(legacyPresetOwner(), db.botPresetsId)
     const legacyName = typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'Legacy'
     let attemptedModelPreset: ModelPreset | null = null
     let attemptedPromptPreset: PromptPreset | null = null
@@ -6707,9 +6769,9 @@ function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'p
         id: createClientPresetId(),
         name: `${legacyName} Model`,
       }) as ModelPreset
-      const existing = findEquivalentModelPreset(db.modelPresets, modelPreset)
+      const existing = findEquivalentModelPreset(modelPresetOwner(), modelPreset)
       if (!existing) {
-        db.modelPresets.push(modelPreset)
+        modelPresetOwner().push(modelPreset)
         attemptedModelPreset = safeStructuredClone(modelPreset)
       }
     }
@@ -6719,18 +6781,18 @@ function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'p
         id: createClientPresetId(),
         name: `${legacyName} Prompt`,
       }) as PromptPreset
-      db.promptPresets.push(promptPreset)
+      promptPresetOwner().push(promptPreset)
       attemptedPromptPreset = safeStructuredClone(promptPreset)
     }
 
-    db.botPresets.splice(id, 1)
-    db.botPresets = db.botPresets
-    db.modelPresets = db.modelPresets
-    db.promptPresets = db.promptPresets
-    db.botPresetsId = normalizedBotPresetsId(db.botPresets.length, db.botPresetsId)
+    legacyPresetOwner().splice(id, 1)
+    settingsOwnerRecord().botPresetsId = normalizedBotPresetsId(
+      legacyPresetOwner().length,
+      settingsOwnerRecord().botPresetsId,
+    )
     const selectionRollback: BotPresetSelectionRollback = {
       previousSelectedId,
-      attemptedSelectedId: botPresetSelectedId(db),
+      attemptedSelectedId: botPresetSelectedId(legacyPresetOwner(), db.botPresetsId),
     }
     const entries: PresetRowMutationEntry[] = [
       {
@@ -6785,7 +6847,7 @@ function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'p
         mode,
       }),
     )
-  })
+  })()
 }
 
 function movedSelectedIndex(currentId: number, fromIndex: number, adjustedToIndex: number): number {
@@ -6806,7 +6868,7 @@ const PROMPT_PRESET_DATABASE_KEY_OVERRIDES: Record<string, string> = {}
 
 export function applyModelPresetFieldsToDatabase(db: Database, preset: ModelPreset | undefined): void {
   applySplitPresetFieldsToDatabase(db, preset, MODEL_PRESET_FIELDS, MODEL_PRESET_DATABASE_KEY_OVERRIDES)
-  applyPromptPresetFieldsToDatabase(db, db.promptPresets?.[db.promptPresetsId])
+  applyPromptPresetFieldsToDatabase(db, promptPresetOwner()?.[settingsOwnerRecord().promptPresetsId])
   normalizeModelRoleSettings(db)
   normalizeModelProfileSettings(db, 'projection')
   db.fallbackModels = normalizeLegacyFallbackModels(db.fallbackModels)
@@ -6854,11 +6916,16 @@ function applySplitPresetFieldsToDatabase(
   for (const field of fields) {
     if (!Object.prototype.hasOwnProperty.call(preset, field)) continue
     const databaseKey = databaseKeyOverrides[field] ?? field
-    target[databaseKey] = normalizeSplitPresetAppliedValue(
+    const value = normalizeSplitPresetAppliedValue(
       databaseKey,
       safeStructuredClone(preset[field]),
       normalizeModelProfiles(target.modelProfiles),
     )
+    if (isServerCollectionName(databaseKey)) {
+      collectionsResourceState.values[databaseKey] = value as never
+    } else {
+      target[databaseKey] = value
+    }
   }
 }
 
@@ -7022,8 +7089,7 @@ import type { OpenAIChat } from '../process/index.svelte'
 import type { Loadout } from '../loadout'
 
 export async function downloadPreset(id: number, type: 'json' | 'risupreset' | 'return' = 'json') {
-  let db = getDatabase()
-  const promptPresetId = db.promptPresets?.[id]?.id
+  const promptPresetId = promptPresetOwner()?.[id]?.id
   if (typeof promptPresetId === 'string' && promptPresetId.trim() !== '') {
     // Prompt-preset list resources contain metadata shells. Export is a
     // background consumer, so hydrate this explicit owner before taking the
@@ -7036,15 +7102,14 @@ export async function downloadPreset(id: number, type: 'json' | 'risupreset' | '
       alertError(language.errors.promptTemplateUnavailable)
       return
     }
-    db = getDatabase()
-    const hydratedIndex = db.promptPresets.findIndex((preset) => preset?.id === promptPresetId)
+    const hydratedIndex = promptPresetOwner().findIndex((preset) => preset?.id === promptPresetId)
     if (hydratedIndex < 0) {
       alertError(language.errors.promptTemplateUnavailable)
       return
     }
     id = hydratedIndex
   }
-  let pres = promptPresetExportPayload(safeStructuredClone(db.promptPresets[id]))
+  let pres = promptPresetExportPayload(safeStructuredClone(promptPresetOwner()[id]))
   pres.openAIKey = ''
   pres.forceReplaceUrl = ''
   pres.forceReplaceUrl2 = ''
