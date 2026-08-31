@@ -1208,7 +1208,7 @@ describe('first-run database seed', () => {
     const before = readAllDatabaseRows(harness.dataDir)
     harness.commandEvents.clear()
 
-    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+    const bootstrap = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
@@ -10468,7 +10468,7 @@ describe('chat record and folder commands', () => {
     expect(bootstrap.resourceDatabase.characters[0].chats[0].generationSettings).toBeUndefined()
   })
 
-  it('normalizes malformed stored chat generation settings on bootstrap', async () => {
+  it('returns malformed stored chat generation settings without repairing persisted rows', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDatabase(harness.app, assertion, {
       modelPresets: [{ id: 'model-a', name: 'Model A' }],
@@ -10515,6 +10515,7 @@ describe('chat record and folder commands', () => {
         unsupported: 'drop-me',
       },
     })
+    const damagedRows = readAllDatabaseRows(harness.dataDir)
 
     const bootstrap = await injectComposedResourceDatabase(harness.app, {
       method: 'GET',
@@ -10528,19 +10529,31 @@ describe('chat record and folder commands', () => {
     }>
     expect(chats[0].generationSettings).toEqual({
       configured: true,
+      personaId: 123,
       modelPresetId: 'model-a',
       promptPresetId: 'prompt-a',
       togglePresetId: 'missing-is-valid',
-      sidebarToggles: { valid: 'on' },
+      jailbreakToggle: 'bad',
+      sidebarToggles: { valid: 'on', invalid: 1, '': 'blank-key' },
+      unsupported: 'drop-me',
     })
     expect(Object.keys(chats[0].generationSettings ?? {}).sort()).toEqual([
       'configured',
+      'jailbreakToggle',
       'modelPresetId',
+      'personaId',
       'promptPresetId',
       'sidebarToggles',
       'togglePresetId',
+      'unsupported',
     ])
-    expect(chats[1].generationSettings).toBeUndefined()
+    expect(chats[1].generationSettings).toEqual({
+      personaId: 123,
+      jailbreakToggle: 'bad',
+      sidebarToggles: { invalid: false },
+      unsupported: 'drop-me',
+    })
+    expect(readAllDatabaseRows(harness.dataDir)).toEqual(damagedRows)
   })
 
   it('leaves chat generation settings unchanged when global persona and preset selections move', async () => {

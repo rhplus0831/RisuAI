@@ -52,6 +52,20 @@ let harness: Harness
 let assertion: string
 let revision: number
 
+function readAllDatabaseRows(): Record<string, unknown[]> {
+  const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as Array<{
+      name: string
+    }>
+    return Object.fromEntries(
+      tables.map(({ name }) => [name, sqlite.prepare(`SELECT * FROM "${name}" ORDER BY rowid`).all() as unknown[]]),
+    )
+  } finally {
+    sqlite.close()
+  }
+}
+
 beforeEach(async () => {
   harness = await startHarness()
   ;({ assertion } = await setupAuthedClient(harness.app))
@@ -884,7 +898,7 @@ describe('authenticated resource read routes', () => {
     expect(unknownGroup.json().error).toBe('settings_group_not_found')
   })
 
-  it('retains the aggregate root prompt template when the selected modern preset pointer is malformed', async () => {
+  it('rejects a malformed selected prompt pointer without changing any persisted row', async () => {
     const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
@@ -894,6 +908,7 @@ describe('authenticated resource read routes', () => {
     } finally {
       sqlite.close()
     }
+    const damagedRows = readAllDatabaseRows()
 
     const aggregate = await harness.app.inject({
       method: 'GET',
@@ -901,17 +916,11 @@ describe('authenticated resource read routes', () => {
       headers: authHeaders(),
     })
 
-    expect(aggregate.statusCode).toBe(200)
-    expect(aggregate.json().collections.promptPresets).toEqual([
-      { id: 'prompt-a', name: 'Prompt A' },
-      { id: 'prompt-empty', name: 'Prompt Empty' },
-    ])
-    expect(aggregate.json().collections.promptTemplate).toEqual([
-      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
-    ])
+    expect(aggregate.statusCode).toBe(500)
+    expect(readAllDatabaseRows()).toEqual(damagedRows)
   })
 
-  it('retains the root projection and rejects dedicated hydration when modern preset ids are duplicated', async () => {
+  it('rejects duplicate modern preset ids without changing any persisted row', async () => {
     const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
       sqlite
@@ -920,24 +929,23 @@ describe('authenticated resource read routes', () => {
     } finally {
       sqlite.close()
     }
+    const damagedRows = readAllDatabaseRows()
 
     const aggregate = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/collections',
       headers: authHeaders(),
     })
-    expect(aggregate.statusCode).toBe(200)
-    expect(aggregate.json().collections.promptTemplate).toEqual([
-      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
-    ])
+    expect(aggregate.statusCode).toBe(500)
+    expect(readAllDatabaseRows()).toEqual(damagedRows)
 
     const hydration = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/prompt-presets/prompt-a/template',
       headers: authHeaders(),
     })
-    expect(hydration.statusCode).toBe(409)
-    expect(hydration.json().error).toBe('prompt_preset_ambiguous')
+    expect(hydration.statusCode).toBe(500)
+    expect(readAllDatabaseRows()).toEqual(damagedRows)
   })
 
   it('preserves and hydrates the selected default-scaffold fallback from the root template', async () => {

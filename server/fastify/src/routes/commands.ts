@@ -5919,6 +5919,7 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
+          character.chatFolders = []
           character.chatPage = initialChat ? 0 : -1
           characters.push(character)
           updateCharacterOrderForPatchedRow(target, character.chaId, character)
@@ -5972,6 +5973,7 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
+          character.chatFolders = []
           character.chatPage = initialChat ? 0 : -1
           characters.push(character)
           updateCharacterOrderForPatchedRow(target, character.chaId, character)

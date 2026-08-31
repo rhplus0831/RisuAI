@@ -33,25 +33,42 @@ import {
   loadCharacterLorebookHydrations,
   loadCharacterSelectionProjection,
   loadCharacterSummariesForRead,
-  loadCharacterRowsForRead,
   loadChatHydration,
   loadChatHydrationRange,
   loadChatHydrations,
   loadGenerationChatHydration,
   listInlayCatalogEntries,
-  loadPersistedDatabaseFields,
   loadPresetHydration,
-  loadSettingsFromSqlite,
-  loadSettingsWithTranslatorPresetsFromSqlite,
-  loadSingleCharacterRowForRead,
   ValidationError,
 } from '../repository.js'
 import { listSourceValidGreetingTranslations } from '../translation/greetingTranslationStore.js'
 import { resolveRawMessageTranslatorIdentity } from '../translation/rawMessageTranslation.js'
-import { ensureCharacterChats, readChatId } from '../commands/chats.js'
-import type { CharacterRecord } from '../commands/characters.js'
+import {
+  readChatFolderId,
+  readChatId,
+  readStrictCharacterChatFolders,
+  requireStrictChatLocation,
+  selectedChatIdStrict,
+  type ChatRecord,
+} from '../commands/chats.js'
+import { readStrictCharacterRecord, type CharacterRecord } from '../commands/characters.js'
+import { ensureTranslatorPresetCollection } from '../commands/translatorPresets.js'
 
 const PLUGIN_STORAGE_COLLECTION = 'pluginCustomStorage' as const
+const PLUGIN_STORAGE_EMPTY_SENTINEL = '__risu_internal_plugin_custom_storage_empty__'
+const COLLECTION_TABLES = {
+  modules: 'modules',
+  plugins: 'plugins',
+  modelPresets: 'model_presets',
+  promptPresets: 'prompt_presets',
+  botPresets: 'bot_presets',
+  promptTemplate: 'prompt_templates',
+  personas: 'personas',
+  loadouts: 'loadouts',
+  loreBook: 'lore_books',
+  translatorPresets: 'translator_presets',
+  hypaV3Presets: 'hypa_v3_presets',
+} as const
 const READABLE_COLLECTION_NAMES = [...COLLECTION_FIELDS, PLUGIN_STORAGE_COLLECTION] as const
 type ReadableCollectionName = (typeof READABLE_COLLECTION_NAMES)[number]
 const READABLE_COLLECTION_NAME_SET = new Set<string>(READABLE_COLLECTION_NAMES)
@@ -76,8 +93,212 @@ const LEGACY_BOT_PRESET_SHELL_FIELDS = [
 ] as const
 const DEFAULT_SHELL_DATABASE = createInitialDatabase()
 
+function readSettingsWithoutRepair(db: DatabaseSync): Record<string, unknown> | null {
+  const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+  if (!row) return null
+  const settings = JSON.parse(row.data_json) as unknown
+  if (!isRecord(settings)) throw new ValidationError('settings row must be an object')
+  validateNoInlineModelProfileSecrets(settings, 'settings')
+  return settings
+}
+
+function validateNoInlineModelProfileSecrets(owner: Record<string, unknown>, label: string): void {
+  if (!Array.isArray(owner.modelProfiles)) return
+  owner.modelProfiles.forEach((candidate, index) => {
+    if (!isRecord(candidate) || !isRecord(candidate.providerOptions)) return
+    const providerOptions = candidate.providerOptions
+    if (Object.prototype.hasOwnProperty.call(providerOptions, 'apiKey')) {
+      throw new ValidationError(`${label}.modelProfiles[${index}].providerOptions.apiKey must use providerCredentials`)
+    }
+    if (
+      isRecord(providerOptions.vertex) &&
+      (Object.prototype.hasOwnProperty.call(providerOptions.vertex, 'clientEmail') ||
+        Object.prototype.hasOwnProperty.call(providerOptions.vertex, 'privateKey'))
+    ) {
+      throw new ValidationError(
+        `${label}.modelProfiles[${index}].providerOptions.vertex credentials must use providerCredentials`,
+      )
+    }
+  })
+}
+
+function loadCollectionRowsWithoutRepair(db: DatabaseSync, tableName: string): unknown[] | null {
+  const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as Array<{
+    data_json: string
+  }>
+  return rows.length > 0 ? rows.map(({ data_json }) => JSON.parse(data_json)) : null
+}
+
+function loadPluginStorageWithoutRepair(db: DatabaseSync): Record<string, unknown> | null {
+  const rows = db.prepare('SELECT key, value_json FROM plugin_custom_storage').all() as Array<{
+    key: string
+    value_json: string
+  }>
+  if (rows.length === 0) return null
+  const storage: Record<string, unknown> = {}
+  for (const row of rows) {
+    if (row.key === PLUGIN_STORAGE_EMPTY_SENTINEL) continue
+    storage[row.key] = JSON.parse(row.value_json)
+  }
+  return storage
+}
+
+function validateStrictCollection(name: keyof typeof COLLECTION_TABLES, value: unknown): asserts value is unknown[] {
+  if (!Array.isArray(value)) throw new ValidationError(`${name} must be an array`)
+  const idKey = name === 'plugins' ? 'name' : 'id'
+  const seen = new Set<string>()
+  value.forEach((candidate, index) => {
+    if (!isRecord(candidate)) throw new ValidationError(`${name}[${index}] must be an object`)
+    const id = candidate[idKey]
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ValidationError(`${name}[${index}].${idKey} must be a non-empty string`)
+    }
+    if (seen.has(id)) throw new ValidationError(`Duplicate ${name} id: ${id}`)
+    seen.add(id)
+    validateNoInlineModelProfileSecrets(candidate, `${name}[${index}]`)
+    if (name === 'hypaV3Presets') {
+      if (typeof candidate.name !== 'string') {
+        throw new ValidationError(`hypaV3Presets[${index}].name must be a string`)
+      }
+      if (!isRecord(candidate.settings)) {
+        throw new ValidationError(`hypaV3Presets[${index}].settings must be an object`)
+      }
+    }
+  })
+}
+
+function loadDatabaseFieldsWithoutRepair(db: DatabaseSync, fieldKeys: readonly string[]): Record<string, unknown> {
+  const settings = readSettingsWithoutRepair(db)
+  const fields: Record<string, unknown> = {}
+  for (const key of fieldKeys) {
+    if (key === 'pluginCustomStorage') {
+      const storage = loadPluginStorageWithoutRepair(db)
+      if (storage !== null) fields.pluginCustomStorage = storage
+      else if (!settings || !Object.prototype.hasOwnProperty.call(settings, key)) fields.pluginCustomStorage = {}
+      else if (isRecord(settings[key])) fields.pluginCustomStorage = settings[key]
+      else throw new ValidationError('pluginCustomStorage must be an object')
+      continue
+    }
+
+    const tableName = COLLECTION_TABLES[key as keyof typeof COLLECTION_TABLES]
+    if (tableName !== undefined) {
+      const tableValue = loadCollectionRowsWithoutRepair(db, tableName)
+      const value =
+        tableValue ??
+        (settings && Object.prototype.hasOwnProperty.call(settings, key)
+          ? settings[key]
+          : key === 'promptTemplate'
+            ? undefined
+            : [])
+      if (value !== undefined) {
+        validateStrictCollection(key as keyof typeof COLLECTION_TABLES, value)
+        fields[key] = value
+      }
+      continue
+    }
+
+    if (settings && Object.prototype.hasOwnProperty.call(settings, key)) fields[key] = settings[key]
+  }
+  return fields
+}
+
+function readStrictCharacterChats(character: CharacterRecord): ChatRecord[] {
+  if (!Array.isArray(character.chats)) throw new ValidationError('character.chats must be an array')
+  const folders = readStrictCharacterChatFolders(character)
+  const folderIds = new Set(folders.map(({ id }) => id))
+  const chats = character.chats as ChatRecord[]
+  const seen = new Set<string>()
+  chats.forEach((candidate, index) => {
+    if (!isRecord(candidate)) throw new ValidationError(`character.chats[${index}] must be an object`)
+    const id = readChatId(candidate.id, `character.chats[${index}].id`)
+    if (seen.has(id)) throw new ValidationError(`Duplicate chat id: ${id}`)
+    seen.add(id)
+    requireStrictChatLocation([character], id)
+    if (candidate.folderId !== undefined && candidate.folderId !== null) {
+      const folderId = readChatFolderId(candidate.folderId, `chat ${id}.folderId`)
+      if (!folderIds.has(folderId)) throw new ValidationError(`Unknown chat folder id: ${folderId}`)
+    }
+  })
+  selectedChatIdStrict(character)
+  return chats
+}
+
+function loadCharacterRowsWithoutRepair(db: DatabaseSync): CharacterRecord[] {
+  const characterRows = db.prepare('SELECT id, data_json FROM characters ORDER BY position').all() as Array<{
+    id: string
+    data_json: string
+  }>
+  const chatRows = db
+    .prepare('SELECT id, character_id, data_json FROM chats ORDER BY character_id, position')
+    .all() as Array<{ id: string; character_id: string; data_json: string }>
+  const chatsByCharacter = new Map<string, Array<{ id: string; chat: ChatRecord }>>()
+  for (const row of chatRows) {
+    const chat = JSON.parse(row.data_json) as unknown
+    if (!isRecord(chat)) throw new ValidationError(`Chat row must be an object: ${row.id}`)
+    if (chat.id !== row.id) throw new ValidationError(`chat.id must match chat row id: ${row.id}`)
+    const list = chatsByCharacter.get(row.character_id) ?? []
+    list.push({ id: row.id, chat: chat as ChatRecord })
+    chatsByCharacter.set(row.character_id, list)
+  }
+
+  const characters = characterRows.map((row) =>
+    assembleCharacterForRead(row.id, row.data_json, chatsByCharacter.get(row.id) ?? []),
+  )
+  if (readSettingsWithoutRepair(db)?.enableLorebookStubs === true) {
+    for (const character of characters) delete character.globalLore
+  }
+  return characters
+}
+
+function loadSingleCharacterWithoutRepair(db: DatabaseSync, characterId: string): CharacterRecord | null {
+  const row = db.prepare('SELECT id, data_json FROM characters WHERE id = ?').get(characterId) as
+    | { id: string; data_json: string }
+    | undefined
+  if (!row) return null
+  const chatRows = db
+    .prepare('SELECT id, data_json FROM chats WHERE character_id = ? ORDER BY position')
+    .all(characterId) as Array<{ id: string; data_json: string }>
+  const character = assembleCharacterForRead(
+    row.id,
+    row.data_json,
+    chatRows.map(({ id, data_json }) => {
+      const chat = JSON.parse(data_json) as unknown
+      if (!isRecord(chat)) throw new ValidationError(`Chat row must be an object: ${id}`)
+      if (chat.id !== id) throw new ValidationError(`chat.id must match chat row id: ${id}`)
+      return { id, chat: chat as ChatRecord }
+    }),
+  )
+  if (readSettingsWithoutRepair(db)?.enableLorebookStubs === true) delete character.globalLore
+  return character
+}
+
+function assembleCharacterForRead(
+  characterId: string,
+  dataJson: string,
+  chatRows: readonly { id: string; chat: ChatRecord }[],
+): CharacterRecord {
+  const parsed = JSON.parse(dataJson) as unknown
+  const character = readStrictCharacterRecord(parsed, characterId)
+  character.chats = chatRows.map(({ chat }) => chat)
+  const chats = readStrictCharacterChats(character)
+  for (const chat of chats) {
+    chat.message = []
+    delete chat.hypaV3Data
+  }
+  return character
+}
+
+function loadSettingsWithTranslatorPresetsWithoutRepair(db: DatabaseSync): Record<string, unknown> | null {
+  const settings = readSettingsWithoutRepair(db)
+  if (settings === null) return null
+  const presets = loadCollectionRowsWithoutRepair(db, COLLECTION_TABLES.translatorPresets)
+  if (presets !== null) settings.translatorPresets = presets
+  ensureTranslatorPresetCollection(settings)
+  return settings
+}
+
 function normalizeSettingsForRead(db: DatabaseSync): Record<string, unknown> {
-  const persistedSettings = loadSettingsFromSqlite(db) ?? {}
+  const persistedSettings = readSettingsWithoutRepair(db) ?? {}
   const normalizedSettings = structuredClone(persistedSettings)
   const shellSettings = Object.fromEntries(
     SERVER_SHELL_SETTINGS_KEYS.map((key) => [key, structuredClone(DEFAULT_SHELL_DATABASE[key])]),
@@ -221,7 +442,7 @@ export function registerResourceReadRoutes(
       }
       const setting = req.params.setting as ServerStandaloneSettingName
       const { revision } = getSchemaState(db)
-      const persisted = loadPersistedDatabaseFields(db, dataDir, [setting])
+      const persisted = loadDatabaseFieldsWithoutRepair(db, [setting])
       const present = Object.prototype.hasOwnProperty.call(persisted, setting)
       return metricResourceResponse(
         req,
@@ -426,8 +647,8 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/characters/aggregate', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
-    const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsForRead(db, dataDir) })
+    const settings = loadDatabaseFieldsWithoutRepair(db, ['characterOrder', 'currentChar'])
+    const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsWithoutRepair(db) })
     return metricResourceResponse(req, reply, 'characters', revision, {
       revision,
       characters: characterEnvelope.characters,
@@ -442,8 +663,8 @@ export function registerResourceReadRoutes(
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
     }
     const { revision } = getSchemaState(db)
-    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
-    const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsForRead(db, dataDir) })
+    const settings = loadDatabaseFieldsWithoutRepair(db, ['characterOrder', 'currentChar'])
+    const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsWithoutRepair(db) })
     const substitution = substituteCachedArray(characterEnvelope.characters, cacheRequest.hashes.get('characters'))
     return metricResourceResponse(
       req,
@@ -464,7 +685,7 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/characters', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    const settings = loadDatabaseFieldsWithoutRepair(db, ['characterOrder', 'currentChar'])
     return metricResourceResponse(req, reply, 'characters', revision, {
       version: SERVER_CHARACTER_SUMMARY_VERSION,
       revision,
@@ -480,7 +701,7 @@ export function registerResourceReadRoutes(
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
     }
     const { revision } = getSchemaState(db)
-    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    const settings = loadDatabaseFieldsWithoutRepair(db, ['characterOrder', 'currentChar'])
     const substitution = substituteCachedArray(loadCharacterSummariesForRead(db), cacheRequest.hashes.get('characters'))
     return metricResourceResponse(
       req,
@@ -502,7 +723,7 @@ export function registerResourceReadRoutes(
   app.get('/api/v1/characters/order', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder'])
+    const settings = loadDatabaseFieldsWithoutRepair(db, ['characterOrder'])
     const payload: ServerCharacterOrderResource = {
       revision,
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
@@ -533,7 +754,7 @@ export function registerResourceReadRoutes(
 
   app.get<{ Params: { id: string } }>('/api/v1/characters/:id', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
-    const character = loadSingleCharacterRowForRead(db, dataDir, req.params.id)
+    const character = loadSingleCharacterWithoutRepair(db, req.params.id)
     if (!character) {
       reply.code(404).send({
         error: 'character_not_found',
@@ -558,7 +779,7 @@ export function registerResourceReadRoutes(
     { exposeHeadRoute: false },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
-      const character = loadSingleCharacterRowForRead(db, dataDir, req.params.characterId)
+      const character = loadSingleCharacterWithoutRepair(db, req.params.characterId)
       if (!character) {
         reply.code(404).send({
           error: 'character_not_found',
@@ -573,13 +794,13 @@ export function registerResourceReadRoutes(
         reply.code(400).send({ error: error instanceof Error ? error.message : String(error) })
         return
       }
-      const chat = ensureCharacterChats(character as CharacterRecord).find((candidate) => candidate.id === chatId)
+      const chat = readStrictCharacterChats(character as CharacterRecord).find((candidate) => candidate.id === chatId)
       if (!chat) {
         reply.code(404).send({ error: 'chat_not_found', reason: `Chat not found for character: ${chatId}` })
         return
       }
       const { revision } = getSchemaState(db)
-      const settings = loadSettingsWithTranslatorPresetsFromSqlite(db)
+      const settings = loadSettingsWithTranslatorPresetsWithoutRepair(db)
       let settingsHash: string | null = null
       if (settings !== null) {
         try {
@@ -951,7 +1172,7 @@ function loadPromptPresetTemplateForRead(
   dataDir: string,
   promptPresetId: string,
 ): PromptPresetTemplateReadResult {
-  const fields = loadPersistedDatabaseFields(db, dataDir, [
+  const fields = loadDatabaseFieldsWithoutRepair(db, [
     'promptPresets',
     'promptPresetsId',
     'promptTemplate',
@@ -1151,7 +1372,7 @@ function cacheMetricFields(substitution: CacheSubstitutionResult): Record<string
 
 function loadCollections(
   db: DatabaseSync,
-  dataDir: string,
+  _dataDir: string,
   names: readonly ReadableCollectionName[],
   options: { suppressSelectedPromptTemplateProjection?: boolean } = {},
 ): Record<string, unknown> {
@@ -1159,12 +1380,20 @@ function loadCollections(
     options.suppressSelectedPromptTemplateProjection &&
     names.includes('promptPresets') &&
     names.includes('promptTemplate')
-  const collections = loadPersistedDatabaseFields(
+  const collections = loadDatabaseFieldsWithoutRepair(
     db,
-    dataDir,
     readsSelectedPromptPreset ? [...names, 'promptPresetsId'] : names,
   )
   const selectedPromptPresetIndex = collections.promptPresetsId
+  if (
+    readsSelectedPromptPreset &&
+    (!Number.isInteger(selectedPromptPresetIndex) ||
+      (selectedPromptPresetIndex as number) < 0 ||
+      !Array.isArray(collections.promptPresets) ||
+      (selectedPromptPresetIndex as number) >= collections.promptPresets.length)
+  ) {
+    throw new ValidationError('promptPresetsId must select an existing prompt preset')
+  }
   delete collections.promptPresetsId
 
   if (Array.isArray(collections.promptPresets)) {
