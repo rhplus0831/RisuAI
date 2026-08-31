@@ -36,7 +36,7 @@ import {
   ensureClientTriggerDefinitionIds,
   rejectCharacterScriptDefinitionStructuralWrite,
   rollbackScopedScriptDefinitionReplacement,
-} from '../server/scriptDefinitionBridge.svelte'
+} from '../server/scriptDefinitionOwner.svelte'
 import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,

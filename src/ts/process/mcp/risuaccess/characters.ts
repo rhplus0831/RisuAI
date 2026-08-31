@@ -26,7 +26,7 @@ import {
   dispatchReplaceCharacterTriggers,
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
-} from 'src/ts/server/scriptDefinitionBridge.svelte'
+} from 'src/ts/server/scriptDefinitionOwner.svelte'
 import { isServerCharacterShell, type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'

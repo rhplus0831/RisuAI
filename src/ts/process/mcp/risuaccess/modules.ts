@@ -15,7 +15,7 @@ import {
   dispatchReplaceModuleTriggers,
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
-} from 'src/ts/server/scriptDefinitionBridge.svelte'
+} from 'src/ts/server/scriptDefinitionOwner.svelte'
 import { currentGlobalModuleStateSnapshot, dispatchModuleInfoPatch, sanitizeModulePatch } from 'src/ts/moduleCommands'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'

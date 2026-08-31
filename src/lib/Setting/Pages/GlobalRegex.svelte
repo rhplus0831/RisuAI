@@ -9,8 +9,8 @@
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import {
     ensureClientScriptDefinitionIds,
-    watchServerBackedScriptDefinitions,
-  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+    watchGlobalScriptOwnerDraft,
+  } from 'src/ts/server/scriptDefinitionOwner.svelte'
   import { onDestroy } from 'svelte'
 
   const globalScriptDraft = createServerBackedSettingDraft(
@@ -23,7 +23,7 @@
       normalizeDraft: ensureClientScriptDefinitionIds,
     },
   )
-  const stopWatchingGlobalScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'globalScripts' } })
+  const stopWatchingGlobalScripts = watchGlobalScriptOwnerDraft()
   onDestroy(stopWatchingGlobalScripts)
 </script>
 

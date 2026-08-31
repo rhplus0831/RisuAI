@@ -34,7 +34,7 @@ import {
 } from './acceptedSendRecoveryState'
 import { refreshActiveGenerationJobsFromBootstrap } from './reattach'
 import { reconcileAcceptedSendGenerationEffects } from './recoveredGenerationEffects'
-import { waitForPendingCharacterScriptDefinitionSave } from '../server/scriptDefinitionBridge.svelte'
+import { waitForPendingCharacterScriptDefinitionSave } from '../server/scriptDefinitionOwner.svelte'
 
 export {
   acceptedSendRecoveries,

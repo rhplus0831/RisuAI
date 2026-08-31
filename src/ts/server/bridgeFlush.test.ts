@@ -33,8 +33,8 @@ vi.mock('./promptTemplateMutations.svelte', () => ({
   }),
 }))
 
-vi.mock('./scriptDefinitionBridge.svelte', () => ({
-  flushPendingServerBackedScriptDefinitionPatches: vi.fn((options: unknown) => {
+vi.mock('./scriptDefinitionOwner.svelte', () => ({
+  flushPendingScriptDefinitionMutations: vi.fn((options: unknown) => {
     calls.scriptDefinition.push(options)
   }),
 }))

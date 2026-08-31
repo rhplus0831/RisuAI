@@ -18,7 +18,7 @@
     applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft,
     ensureClientScriptDefinitionIds as ensureImportedScriptDefinitionIds,
     ensureClientTriggerDefinitionIds as ensureImportedTriggerDefinitionIds,
-  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  } from 'src/ts/server/scriptDefinitionOwner.svelte'
 
   function cloneModuleImportValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
@@ -170,8 +170,7 @@
     applyModuleScriptDefinitionDraft,
     ensureClientScriptDefinitionIds,
     ensureClientTriggerDefinitionIds,
-    watchServerBackedScriptDefinitions,
-  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  } from 'src/ts/server/scriptDefinitionOwner.svelte'
   import {
     appendFreshModuleAssets,
     beginModuleAssetUpload,
@@ -227,17 +226,6 @@
     if (draftOnly) return
     const stopLorebooks = watchServerBackedLorebooks({ scope: { kind: 'module', moduleId } })
     return () => stopLorebooks()
-  })
-
-  $effect(() => {
-    // This panel only edits the open module's regex/trigger definitions, so
-    // scope change detection to that one module. Reading currentModule.id here
-    // re-runs the effect (restarting the watcher with a fresh baseline) when the
-    // user opens a different module.
-    const moduleId = currentModule?.id ?? ''
-    if (draftOnly) return
-    const stopScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'module', moduleId } })
-    return () => stopScripts()
   })
 
   function snapshotModuleScriptDraft(moduleId = currentModule?.id ?? null): string {

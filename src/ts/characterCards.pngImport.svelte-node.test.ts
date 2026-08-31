@@ -272,7 +272,7 @@ vi.mock('./server/lorebookBridge.svelte', () => ({
   resetLorebookHydration: vi.fn(),
 }))
 
-vi.mock('./server/scriptDefinitionBridge.svelte', () => ({
+vi.mock('./server/scriptDefinitionOwner.svelte', () => ({
   ensureClientScriptDefinitionIds: (entries: Array<{ id?: string }>) => ensureUniqueTestIds(entries, 'script'),
   ensureClientTriggerDefinitionIds: (entries: Array<{ id?: string }>) => ensureUniqueTestIds(entries, 'trigger'),
 }))

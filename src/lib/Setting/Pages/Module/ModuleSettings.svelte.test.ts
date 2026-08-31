@@ -65,9 +65,8 @@ const lorebookBridgeSpies = vi.hoisted(() => ({
   watchServerBackedLorebooks: vi.fn(() => () => {}),
 }))
 
-const scriptDefinitionBridgeSpies = vi.hoisted(() => ({
+const scriptDefinitionOwnerSpies = vi.hoisted(() => ({
   applyModuleScriptDefinitionDraft: vi.fn(() => false),
-  watchServerBackedScriptDefinitions: vi.fn(() => () => {}),
 }))
 
 const alertSpies = vi.hoisted(() => ({
@@ -100,9 +99,9 @@ vi.mock('src/ts/server/lorebookBridge.svelte', async (importActual) => ({
   ...(await importActual<typeof import('src/ts/server/lorebookBridge.svelte')>()),
   ...lorebookBridgeSpies,
 }))
-vi.mock('src/ts/server/scriptDefinitionBridge.svelte', async (importActual) => ({
-  ...(await importActual<typeof import('src/ts/server/scriptDefinitionBridge.svelte')>()),
-  ...scriptDefinitionBridgeSpies,
+vi.mock('src/ts/server/scriptDefinitionOwner.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('src/ts/server/scriptDefinitionOwner.svelte')>()),
+  ...scriptDefinitionOwnerSpies,
 }))
 vi.mock('src/ts/alert', () => alertSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
@@ -708,8 +707,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(lorebookBridgeSpies.flushPendingLorebookEntryDraftEdit).not.toHaveBeenCalled()
     expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
     expect(lorebookBridgeSpies.watchServerBackedLorebooks).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.watchServerBackedScriptDefinitions).not.toHaveBeenCalled()
+    expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
 
     unmount(component!)
     component = undefined
@@ -746,7 +744,7 @@ describe('ModuleSettings derived module rows', () => {
     expect(savedModule.trigger).toHaveLength(1)
     expect(savedModule.trigger[0]).toMatchObject({ type: 'start' })
     expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
   })
 
   it('keeps nested collections in create drafts until the create command', async () => {
@@ -757,7 +755,7 @@ describe('ModuleSettings derived module rows', () => {
 
     expect(moduleCommandSpies.createGlobalModule).not.toHaveBeenCalled()
     expect(lorebookBridgeSpies.replaceModuleLorebookCollectionDraft).not.toHaveBeenCalled()
-    expect(scriptDefinitionBridgeSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
+    expect(scriptDefinitionOwnerSpies.applyModuleScriptDefinitionDraft).not.toHaveBeenCalled()
 
     await clickModuleSurfaceAction('submit-create')
 

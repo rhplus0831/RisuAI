@@ -300,7 +300,7 @@ import {
   settingsResourceState,
 } from 'src/ts/server/resourceState.svelte'
 import { language } from 'src/lang'
-import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionBridge.svelte'
+import { CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS } from 'src/ts/server/scriptDefinitionOwner.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

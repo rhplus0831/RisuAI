@@ -242,13 +242,6 @@ const BRIDGE_CLASSIFICATION: readonly BridgeClassification[] = [
     commands: ['global/character/chat/module lorebook mutations'],
     outcomes: ['accepted', 'queued-retained', 'failed-owner-scoped-rollback'],
   },
-  {
-    file: 'scriptDefinitionBridge.svelte.ts',
-    flusher: 'flushPendingServerBackedScriptDefinitionPatches',
-    registrationId: 'script-definition',
-    commands: ['character/module script and trigger mutations'],
-    outcomes: ['saved', 'queued-retained', 'failed-owner-scoped-rollback'],
-  },
 ]
 
 afterEach(() => {

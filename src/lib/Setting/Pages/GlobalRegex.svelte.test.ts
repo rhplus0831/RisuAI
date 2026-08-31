@@ -19,9 +19,9 @@ vi.mock('src/ts/process/scripts', () => ({
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
   createServerBackedSettingDraft: (_key: string, fallback: unknown) => ({ value: fallback }),
 }))
-vi.mock('src/ts/server/scriptDefinitionBridge.svelte', () => ({
+vi.mock('src/ts/server/scriptDefinitionOwner.svelte', () => ({
   ensureClientScriptDefinitionIds: (scripts: unknown) => scripts,
-  watchServerBackedScriptDefinitions: () => vi.fn(),
+  watchGlobalScriptOwnerDraft: () => vi.fn(),
 }))
 
 import GlobalRegex from './GlobalRegex.svelte'

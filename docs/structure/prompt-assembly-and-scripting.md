@@ -209,7 +209,7 @@ results use a bounded LRU and namespace changes clear both in-flight and
 completed deduplication state.
 
 Character-sidebar script and trigger edits have an earlier 300 ms trailing
-draft debounce in `scriptDefinitionBridge.svelte.ts`, before cloning, diffing,
+draft debounce in `scriptDefinitionOwner.svelte.ts`, before cloning, diffing,
 outbox staging, or network dispatch. Display activation flushes that draft and
 waits for final durable settlement before advancing its owner token; a failed
 save leaves the old display active. Send/continue/regenerate also flush the

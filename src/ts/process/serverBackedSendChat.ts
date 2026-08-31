@@ -68,7 +68,7 @@ import {
   type GenerationDisplayProjectionRef,
 } from './generationDisplayProjection.svelte'
 import { updateChatGenerationActivityMetadata } from './generationActivity.svelte'
-import { waitForPendingCharacterScriptDefinitionSave } from '../server/scriptDefinitionBridge.svelte'
+import { waitForPendingCharacterScriptDefinitionSave } from '../server/scriptDefinitionOwner.svelte'
 
 export interface ServerBackedStageTimings {
   stage1Start: number

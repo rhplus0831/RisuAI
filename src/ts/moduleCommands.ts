@@ -62,8 +62,8 @@ import { ensureClientLorebookEntryIds, flushPendingServerBackedLorebookPatches }
 import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
-  flushPendingServerBackedScriptDefinitionPatches,
-} from './server/scriptDefinitionBridge.svelte'
+  flushPendingScriptDefinitionMutations,
+} from './server/scriptDefinitionOwner.svelte'
 import { flushPendingServerBackedSettingsPatch } from './server/settingsBridge.svelte'
 import { flushPendingCharacterDraftPatches } from './server/characterDraft.svelte'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
@@ -796,7 +796,7 @@ export async function dispatchDeleteModule(
   flushPendingServerBackedSettingsPatch()
   flushPendingCharacterDraftPatches()
   flushPendingServerBackedLorebookPatches()
-  flushPendingServerBackedScriptDefinitionPatches()
+  flushPendingScriptDefinitionMutations()
   const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
   const intent: DurableMutationIntent = {

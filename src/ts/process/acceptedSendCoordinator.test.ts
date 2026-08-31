@@ -32,7 +32,7 @@ vi.mock('../activeChatGenerationSettings', () => ({
 }))
 
 vi.mock('../persona', () => ({ flushPendingSelectedPersonaUpdate: vi.fn(async () => undefined) }))
-vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
+vi.mock('../server/scriptDefinitionOwner.svelte', () => ({
   waitForPendingCharacterScriptDefinitionSave: coordinatorMocks.waitForPendingCharacterScriptDefinitionSave,
 }))
 vi.mock('../alert', () => ({ alertConfirm: coordinatorMocks.alertConfirm, alertError: coordinatorMocks.alertError }))

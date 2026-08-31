@@ -2,7 +2,6 @@ import { untrack } from 'svelte'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
 import { type Database, type character, type customscript, type triggerscript } from '../storage/database.svelte'
-import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
   mutateGlobalScriptsCommand,
@@ -21,15 +20,16 @@ import {
   type ServerCommandTransportOptions,
   type TriggerDefinitionSnapshot,
 } from './commands'
-import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import {
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
-  getResourceDatabase as getDatabase,
+  charactersResourceState,
+  collectionsResourceState,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
+  settingsResourceState,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import {
@@ -47,14 +47,34 @@ import {
 } from './pendingMutationOutbox'
 import { characterOwnerMutationKey, moduleOwnerMutationKey } from './resourceOwnerMutationKeys'
 
+function characterDefinitionOwners(): character[] {
+  return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []
+}
+
+function moduleDefinitionOwners(): RisuModule[] {
+  if (collectionsResourceState.statuses.modules !== 'ready') return []
+  const modules = collectionsResourceState.values.modules
+  return Array.isArray(modules) ? (modules as RisuModule[]) : []
+}
+
+function scriptSettingsOwner(): Record<string, unknown> | null {
+  return settingsResourceState.groupStatuses.advanced === 'ready'
+    ? (settingsResourceState.value as unknown as Record<string, unknown>)
+    : null
+}
+
+function withScriptDefinitionOwnerWrite<T>(write: () => T): T {
+  return write()
+}
+
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
   modules: RisuModule[]
 }
 
 /**
- * A scoped rollback that restores only the changed row's scripts/triggers, used
- * by the watcher hot path so a failed replacement does not need the whole
+ * A scoped rollback that restores only the changed owner row's scripts/triggers,
+ * so a failed replacement does not need the whole
  * characters+modules snapshot. The `scripts`/`triggers` value is the pre-edit
  * array (the collected per-key snapshots are always arrays, so an empty/missing
  * field restores to `[]`).
@@ -74,9 +94,9 @@ export type ScopedScriptDefinitionAttempt =
   | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
 
 /**
- * Rollback accepted by the dispatch functions. The watcher passes a scoped
- * single-row rollback; the rarer discrete callers (module apply, MCP edits) keep
- * passing the full `ScriptDefinitionStateSnapshot`.
+ * Rollback accepted by the dispatch functions. Owner drafts pass a scoped
+ * single-row rollback; rarer multi-owner operations keep passing the full
+ * `ScriptDefinitionStateSnapshot`.
  */
 export type ScriptDefinitionRollback = ScriptDefinitionStateSnapshot | ScopedScriptDefinitionRollback
 
@@ -161,11 +181,6 @@ export interface CharacterScriptDefinitionStructuralWriteAttempt {
   readonly key: string
 }
 
-interface AbsorbedStructuralSnapshot {
-  snapshot: string
-  expiry: ReturnType<typeof setTimeout>
-}
-
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
 const pendingCharacterScriptDefinitionDrafts = new Map<string, PendingCharacterScriptDefinitionDraft>()
 const trackedScriptDefinitionDispatches = new Map<string, Set<TrackedScriptDefinitionDispatch>>()
@@ -175,51 +190,24 @@ const structuralWriteAttempts = new WeakMap<
   CharacterScriptDefinitionStructuralWriteAttempt,
   DispatchedScriptDefinitionAttempt
 >()
-const absorbedStructuralSnapshots = new Map<string, AbsorbedStructuralSnapshot>()
-let suppressRollbackDispatch = false
 
 export const CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS = 300
 
-// Mirror of the selected character id as $state so a `character`-scoped watcher
-// re-runs (and re-subscribes to the newly selected character's scripts) when the
-// user switches characters while the panel stays mounted. A bare
-// `get(selectedCharID)` read would not re-run the effect on a switch, which could
-// drop the first edit made to the newly selected character.
-let selectedCharMirror = $state(-1)
-
-/**
- * Restrict the watcher's change-detection scan to the mounting panel's rows so a
- * single script keystroke does not re-stringify every character's and module's
- * scripts/triggers on every reactive fire.
- *
- * - `all` (default): the original whole-DB scan (every character + every module).
- * - `globalScripts`: only the Global Regex settings page.
- * - `character`: only the selected character's customscript/triggerscript (the
- *   CharConfig sidebar).
- * - `module`: only the open module's regex/trigger (the module `ModuleMenu`).
- */
-export type ScriptDefinitionWatchScope =
-  | { kind: 'all' }
-  | { kind: 'globalScripts' }
-  | { kind: 'character' }
-  | { kind: 'module'; moduleId: string }
-
-export interface WatchServerBackedScriptDefinitionsOptions {
-  delayMs?: number
-  scope?: ScriptDefinitionWatchScope
-}
-
 export function currentScriptDefinitionStateSnapshot(): ScriptDefinitionStateSnapshot {
   return {
-    characters: cloneJsonValue(getDatabase().characters ?? []),
-    modules: cloneJsonValue((getDatabase().modules ?? []) as RisuModule[]),
+    characters: cloneJsonValue(characterDefinitionOwners()),
+    modules: cloneJsonValue(moduleDefinitionOwners()),
   }
 }
 
 export function restoreScriptDefinitionState(snapshot: ScriptDefinitionStateSnapshot): void {
-  withTrustedResourceWrite(() => {
-    getDatabase().characters = cloneJsonValue(snapshot.characters)
-    getDatabase().modules = cloneJsonValue(snapshot.modules) as Database['modules']
+  withScriptDefinitionOwnerWrite(() => {
+    if (charactersResourceState.status === 'ready') {
+      charactersResourceState.characters = cloneJsonValue(snapshot.characters)
+    }
+    if (collectionsResourceState.statuses.modules === 'ready') {
+      collectionsResourceState.values.modules = cloneJsonValue(snapshot.modules) as Database['modules']
+    }
   })
 }
 
@@ -236,7 +224,7 @@ export function scheduleCharacterScriptDefinitionDraft(
   delayMs = CHARACTER_SCRIPT_DEFINITION_SAVE_DELAY_MS,
 ): boolean {
   if (!characterId) return false
-  if (!getDatabase().characters?.some((candidate) => candidate.chaId === characterId)) return false
+  if (!characterDefinitionOwners().some((candidate) => candidate.chaId === characterId)) return false
 
   successfulScriptDefinitionFinalOutcomeKeys.delete(`characterScripts:${characterId}`)
   successfulScriptDefinitionFinalOutcomeKeys.delete(`characterTriggers:${characterId}`)
@@ -312,7 +300,7 @@ export function applyCharacterScriptDefinitionDraft(
   delayMs = 250,
 ): boolean {
   if (!characterId) return false
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  const character = characterDefinitionOwners().find((candidate) => candidate.chaId === characterId)
   if (!character) return false
 
   const previousScripts = cloneJsonValue(character.customscript ?? [])
@@ -325,9 +313,8 @@ export function applyCharacterScriptDefinitionDraft(
   const triggersChanged = snapshotJson(previousTriggers) !== snapshotJson(nextTriggers)
   let applied = false
 
-  suppressRollbackDispatch = true
-  withTrustedResourceWrite(() => {
-    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+  withScriptDefinitionOwnerWrite(() => {
+    const target = characterDefinitionOwners().find((candidate) => candidate.chaId === characterId)
     if (!target) return
     if (scriptsChanged || hadScriptsField) {
       target.customscript = cloneJsonValue(nextScripts)
@@ -336,9 +323,6 @@ export function applyCharacterScriptDefinitionDraft(
       target.triggerscript = cloneJsonValue(nextTriggers)
     }
     applied = true
-  })
-  queueMicrotask(() => {
-    suppressRollbackDispatch = false
   })
 
   if (applied && scriptsChanged) {
@@ -397,8 +381,7 @@ export function applyModuleScriptDefinitionDraft(
   const shouldAssignTriggers = triggersChanged || hadLiveTriggersField || hadDraftTriggersField
   let applied = false
 
-  suppressRollbackDispatch = true
-  withTrustedResourceWrite(() => {
+  withScriptDefinitionOwnerWrite(() => {
     const targetLiveModule = findModule(moduleId)
     const targetDraftModule = currentModule?.id === moduleId ? currentModule : null
     if (!targetLiveModule && !targetDraftModule) return
@@ -412,9 +395,6 @@ export function applyModuleScriptDefinitionDraft(
       if (shouldAssignTriggers) targetDraftModule.trigger = cloneJsonValue(nextTriggers)
     }
     applied = true
-  })
-  queueMicrotask(() => {
-    suppressRollbackDispatch = false
   })
 
   if (!applied) return false
@@ -628,19 +608,6 @@ export function beginCharacterScriptDefinitionStructuralWrite(
   })
   state.unsettled.push(attempt)
 
-  // The structural PUT already carries this exact full snapshot. Absorb only
-  // the matching watcher observation; a newer local value falls through and is
-  // queued normally.
-  const existingAbsorption = absorbedStructuralSnapshots.get(key)
-  if (existingAbsorption) clearTimeout(existingAbsorption.expiry)
-  const absorption: AbsorbedStructuralSnapshot = {
-    snapshot: snapshotJson(definitions),
-    expiry: setTimeout(() => {
-      if (absorbedStructuralSnapshots.get(key) === absorption) absorbedStructuralSnapshots.delete(key)
-    }, 0),
-  }
-  absorbedStructuralSnapshots.set(key, absorption)
-
   const handle: CharacterScriptDefinitionStructuralWriteAttempt = Object.freeze({ key })
   structuralWriteAttempts.set(handle, attempt)
   return handle
@@ -665,175 +632,32 @@ export function rejectCharacterScriptDefinitionStructuralWrite(
   settleScriptDefinitionAttempt(attempt, false)
 }
 
-export function watchServerBackedScriptDefinitions(
-  options: WatchServerBackedScriptDefinitionsOptions = {},
-): () => void {
+export function watchGlobalScriptOwnerDraft(options: { delayMs?: number } = {}): () => void {
   if (!canUseServerCommands()) return () => {}
   const delayMs = options.delayMs ?? 250
-  const scope: ScriptDefinitionWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
-  let previousSnapshots = new Map<string, string>()
-  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
-
-  // A character-scoped watcher must re-run when the selected character changes,
-  // so mirror the store into the $state the collector reads. Other scopes do not
-  // read the mirror, so they never re-fire on a selection change.
-  const unsubscribeSelected =
-    scope.kind === 'character'
-      ? selectedCharID.subscribe((value) => {
-          selectedCharMirror = value
-        })
-      : null
+  let previousSnapshot = ''
+  let previousProjectionEpoch = captureSettingsGroupProjectionEpoch('advanced')
 
   const stop = $effect.root(() => {
     $effect(() => {
-      const resourceApplyEpoch = getServerResourceApplyEpoch()
-      // The per-key stringify map is the only change-detection input and the only
-      // per-fire clone: each value is one row's small scripts/triggers array, not
-      // the whole characters+modules graph (which carries hydrated histories).
-      const currentSnapshots = collectScriptDefinitionCollectionSnapshots(scope)
+      const projectionEpoch = captureSettingsGroupProjectionEpoch('advanced')
+      const scripts = currentGlobalScriptsForWatchedCommand()
+      const currentSnapshot = scripts ? snapshotJson(scripts) : ''
 
-      if (suppressRollbackDispatch || !initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
-        reconcileAdoptedStructuralScriptDefinitionSnapshots(currentSnapshots, delayMs)
+      if (!initialized || projectionEpoch !== previousProjectionEpoch) {
         initialized = true
-        previousResourceApplyEpoch = resourceApplyEpoch
-        previousSnapshots = currentSnapshots
+        previousProjectionEpoch = projectionEpoch
+        previousSnapshot = currentSnapshot
         return
       }
-
-      for (const [key, snapshot] of currentSnapshots) {
-        const previousSnapshot = previousSnapshots.get(key)
-        if (previousSnapshot === undefined) continue
-        if (snapshot === previousSnapshot) continue
-        if (consumeStructuralScriptDefinitionSnapshot(key, snapshot)) continue
-        // Build the rollback lazily from the prior per-key snapshot string, so a
-        // failed replacement restores only this row — no whole-collection clone.
-        untrack(() => dispatchWatchedReplacement(key, previousSnapshot, delayMs))
-      }
-
-      previousSnapshots = currentSnapshots
+      if (!scripts || currentSnapshot === previousSnapshot) return
+      untrack(() => queueWatchedGlobalScripts(previousSnapshot, delayMs))
+      previousSnapshot = currentSnapshot
     })
   })
 
-  return () => {
-    unsubscribeSelected?.()
-    stop()
-  }
-}
-
-function consumeStructuralScriptDefinitionSnapshot(key: string, snapshot: string): boolean {
-  const expected = absorbedStructuralSnapshots.get(key)
-  if (!expected) return false
-  clearTimeout(expected.expiry)
-  absorbedStructuralSnapshots.delete(key)
-  return expected.snapshot === snapshot
-}
-
-function reconcileAdoptedStructuralScriptDefinitionSnapshots(
-  snapshots: ReadonlyMap<string, string>,
-  delayMs: number,
-): void {
-  for (const [key, snapshot] of snapshots) {
-    const expected = absorbedStructuralSnapshots.get(key)
-    if (!expected) continue
-    clearTimeout(expected.expiry)
-    absorbedStructuralSnapshots.delete(key)
-    if (expected.snapshot !== snapshot) {
-      untrack(() => dispatchWatchedReplacement(key, expected.snapshot, delayMs))
-    }
-  }
-}
-
-function dispatchWatchedReplacement(key: string, previousSnapshot: string, delayMs: number): void {
-  if (key === 'globalScripts') {
-    if (currentGlobalScriptsForWatchedCommand()) {
-      queueWatchedGlobalScripts(previousSnapshot, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('characterScripts:')) {
-    const characterId = key.slice('characterScripts:'.length)
-    if (currentCharacterScriptsForWatchedCommand(characterId)) {
-      queueWatchedCharacterScripts(characterId, previousSnapshot, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('characterTriggers:')) {
-    const characterId = key.slice('characterTriggers:'.length)
-    if (currentCharacterTriggersForWatchedCommand(characterId)) {
-      queueWatchedCharacterTriggers(characterId, previousSnapshot, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('moduleScripts:')) {
-    const moduleId = key.slice('moduleScripts:'.length)
-    if (currentModuleScriptsForWatchedCommand(moduleId)) {
-      queueWatchedModuleScripts(moduleId, previousSnapshot, delayMs)
-    }
-    return
-  }
-  if (key.startsWith('moduleTriggers:')) {
-    const moduleId = key.slice('moduleTriggers:'.length)
-    if (currentModuleTriggersForWatchedCommand(moduleId)) {
-      queueWatchedModuleTriggers(moduleId, previousSnapshot, delayMs)
-    }
-  }
-}
-
-/**
- * Build the change-detection snapshot map for the watcher's scope. Exported for
- * the clone-cost regression test, which asserts a scoped fire stringifies
- * only the mounting panel's rows (O(panel scope)) instead of every character's
- * and module's scripts/triggers (O(all scripts in the DB)). Collections without
- * stable scope IDs and stable unique script/trigger IDs are left out of the
- * watcher baseline.
- */
-export function collectScriptDefinitionCollectionSnapshots(
-  scope: ScriptDefinitionWatchScope = { kind: 'all' },
-): Map<string, string> {
-  const snapshots = new Map<string, string>()
-
-  if (scope.kind === 'globalScripts') {
-    const scripts = getDatabase().globalscript
-    if (Array.isArray(scripts)) snapshots.set('globalScripts', snapshotJson(scripts))
-    return snapshots
-  }
-
-  if (scope.kind === 'character') {
-    // Track only the selected character's rows. Reading the $state mirror (not a
-    // bare get()) re-runs the effect on a character switch, so the first edit to
-    // the newly selected character is never dropped.
-    const characters = getDatabase().characters ?? []
-    const stableCharacterIds = uniqueStableCharacterIds(characters)
-    const character = characters[selectedCharMirror]
-    if (character?.chaId && stableCharacterIds.has(character.chaId)) {
-      collectCharacterScriptDefinitionSnapshots(snapshots, character)
-    }
-    return snapshots
-  }
-
-  if (scope.kind === 'module') {
-    const modules = (getDatabase().modules ?? []) as RisuModule[]
-    const stableModuleIds = uniqueStableModuleIds(modules)
-    const module = modules.find((candidate) => candidate.id === scope.moduleId)
-    if (module?.id && stableModuleIds.has(module.id)) collectModuleScriptDefinitionSnapshots(snapshots, module)
-    return snapshots
-  }
-
-  const stableCharacterIds = uniqueStableCharacterIds(getDatabase().characters ?? [])
-  for (const character of getDatabase().characters ?? []) {
-    if (character.chaId && stableCharacterIds.has(character.chaId)) {
-      collectCharacterScriptDefinitionSnapshots(snapshots, character)
-    }
-  }
-  const modules = (getDatabase().modules ?? []) as RisuModule[]
-  const stableModuleIds = uniqueStableModuleIds(modules)
-  for (const module of modules) {
-    if (module.id && stableModuleIds.has(module.id)) {
-      collectModuleScriptDefinitionSnapshots(snapshots, module)
-    }
-  }
-  return snapshots
+  return stop
 }
 
 export type ScriptDefinitionDirtyFieldsById = Map<string, Set<string>>
@@ -996,24 +820,6 @@ function scriptDefinitionRowId(row: ScriptDefinitionRow | undefined): string | n
 
 function scriptDefinitionRowAsRecord(row: ScriptDefinitionRow): ScriptDefinitionRowRecord {
   return row as unknown as ScriptDefinitionRowRecord
-}
-
-function collectCharacterScriptDefinitionSnapshots(snapshots: Map<string, string>, character: character): void {
-  if (hasStableUniqueScriptDefinitionIds(character.customscript)) {
-    snapshots.set(`characterScripts:${character.chaId}`, snapshotJson(character.customscript))
-  }
-  if (hasStableUniqueTriggerDefinitionIds(character.triggerscript)) {
-    snapshots.set(`characterTriggers:${character.chaId}`, snapshotJson(character.triggerscript))
-  }
-}
-
-function collectModuleScriptDefinitionSnapshots(snapshots: Map<string, string>, module: RisuModule): void {
-  if (module.id && hasStableUniqueScriptDefinitionIds(module.regex)) {
-    snapshots.set(`moduleScripts:${module.id}`, snapshotJson(module.regex))
-  }
-  if (module.id && hasStableUniqueTriggerDefinitionIds(module.trigger)) {
-    snapshots.set(`moduleTriggers:${module.id}`, snapshotJson(module.trigger))
-  }
 }
 
 function queueReplacement(
@@ -1275,7 +1081,7 @@ function queueWatchedGlobalScripts(previousSnapshot: string, delayMs: number): v
     {
       kind: 'globalScripts',
       scripts: previousScripts,
-      hadScriptsField: Object.prototype.hasOwnProperty.call(getDatabase(), 'globalscript'),
+      hadScriptsField: Object.prototype.hasOwnProperty.call(scriptSettingsOwner() ?? {}, 'globalscript'),
     },
     (rollback, plan, options = {}) =>
       runGlobalScriptsDefinitionCommand(
@@ -1295,150 +1101,6 @@ function queueWatchedGlobalScripts(previousSnapshot: string, delayMs: number): v
       targetId: 'globalscript',
       finalDefinitions: scriptPayload,
       validateCurrent: () => currentGlobalScriptsForWatchedCommand() !== null,
-    },
-  )
-}
-
-function queueWatchedCharacterScripts(characterId: string, previousSnapshot: string, delayMs: number): void {
-  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
-  const scripts = currentCharacterScriptsForWatchedCommand(characterId)
-  if (!scripts) return
-  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
-  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-  queueReplacement(
-    `characterScripts:${characterId}`,
-    {
-      kind: 'characterScripts',
-      characterId,
-      scripts: parseSnapshotArray<customscript>(previousSnapshot),
-    },
-    (rollback, plan, options = {}) =>
-      runCharacterScriptsDefinitionCommand(
-        characterId,
-        scriptPayload,
-        attemptedScripts,
-        rollback,
-        optimisticRowEpoch,
-        plan,
-        options,
-      ),
-    delayMs,
-    { characterId, epoch: optimisticRowEpoch },
-    undefined,
-    undefined,
-    {
-      kind: 'characterScripts',
-      targetId: characterId,
-      finalDefinitions: scriptPayload,
-      validateCurrent: () => currentCharacterScriptsForWatchedCommand(characterId) !== null,
-    },
-  )
-}
-
-function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: string, delayMs: number): void {
-  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
-  const triggers = currentCharacterTriggersForWatchedCommand(characterId)
-  if (!triggers) return
-  const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
-  const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
-  queueReplacement(
-    `characterTriggers:${characterId}`,
-    {
-      kind: 'characterTriggers',
-      characterId,
-      triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
-    },
-    (rollback, plan, options = {}) =>
-      runCharacterTriggersDefinitionCommand(
-        characterId,
-        triggerPayload,
-        attemptedTriggers,
-        rollback,
-        optimisticRowEpoch,
-        plan,
-        options,
-      ),
-    delayMs,
-    { characterId, epoch: optimisticRowEpoch },
-    undefined,
-    undefined,
-    {
-      kind: 'characterTriggers',
-      targetId: characterId,
-      finalDefinitions: triggerPayload,
-      validateCurrent: () => currentCharacterTriggersForWatchedCommand(characterId) !== null,
-    },
-  )
-}
-
-function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, delayMs: number): void {
-  const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
-  const scripts = currentModuleScriptsForWatchedCommand(moduleId)
-  if (!scripts) return
-  const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
-  const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-  queueReplacement(
-    `moduleScripts:${moduleId}`,
-    {
-      kind: 'moduleScripts',
-      moduleId,
-      scripts: parseSnapshotArray<customscript>(previousSnapshot),
-    },
-    (rollback, plan, options = {}) =>
-      runModuleScriptsDefinitionCommand(
-        moduleId,
-        scriptPayload,
-        attemptedScripts,
-        rollback,
-        optimisticCollectionEpoch,
-        plan,
-        options,
-      ),
-    delayMs,
-    undefined,
-    optimisticCollectionEpoch,
-    undefined,
-    {
-      kind: 'moduleScripts',
-      targetId: moduleId,
-      finalDefinitions: scriptPayload,
-      validateCurrent: () => currentModuleScriptsForWatchedCommand(moduleId) !== null,
-    },
-  )
-}
-
-function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, delayMs: number): void {
-  const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
-  const triggers = currentModuleTriggersForWatchedCommand(moduleId)
-  if (!triggers) return
-  const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
-  const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
-  queueReplacement(
-    `moduleTriggers:${moduleId}`,
-    {
-      kind: 'moduleTriggers',
-      moduleId,
-      triggers: parseSnapshotArray<triggerscript>(previousSnapshot),
-    },
-    (rollback, plan, options = {}) =>
-      runModuleTriggersDefinitionCommand(
-        moduleId,
-        triggerPayload,
-        attemptedTriggers,
-        rollback,
-        optimisticCollectionEpoch,
-        plan,
-        options,
-      ),
-    delayMs,
-    undefined,
-    optimisticCollectionEpoch,
-    undefined,
-    {
-      kind: 'moduleTriggers',
-      targetId: moduleId,
-      finalDefinitions: triggerPayload,
-      validateCurrent: () => currentModuleTriggersForWatchedCommand(moduleId) !== null,
     },
   )
 }
@@ -1985,7 +1647,7 @@ function trackPendingScriptDefinitionSettlement(pending: PendingCollectionReplac
   })
 }
 
-export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
+export function flushPendingScriptDefinitionMutations(options: ServerCommandTransportOptions = {}): void {
   for (const characterId of Array.from(pendingCharacterScriptDefinitionDrafts.keys())) {
     flushPendingCharacterScriptDefinitionDraft(characterId)
   }
@@ -1994,7 +1656,7 @@ export function flushPendingServerBackedScriptDefinitionPatches(options: ServerC
   }
 }
 
-registerPendingBridgePatchFlusher('script-definition', flushPendingServerBackedScriptDefinitionPatches)
+registerPendingBridgePatchFlusher('script-definition', flushPendingScriptDefinitionMutations)
 
 function scriptDefinitionOwnerMutationKey(key: string, mutation: QueuedScriptDefinitionMutation): string {
   switch (mutation.kind) {
@@ -2120,24 +1782,10 @@ function rollbackServerBackedScriptDefinitions(
   rollback: ScriptDefinitionRollback,
   attempted?: ScopedScriptDefinitionAttempt,
 ): void {
-  suppressRollbackDispatch = true
-  let suppressUntilMicrotask = true
-  try {
-    if ('kind' in rollback) {
-      const restored = restoreScopedScriptDefinition(rollback, attempted)
-      if (!restored) {
-        suppressRollbackDispatch = false
-        suppressUntilMicrotask = false
-      }
-    } else {
-      restoreScriptDefinitionState(rollback)
-    }
-  } finally {
-    if (suppressUntilMicrotask) {
-      queueMicrotask(() => {
-        suppressRollbackDispatch = false
-      })
-    }
+  if ('kind' in rollback) {
+    restoreScopedScriptDefinition(rollback, attempted)
+  } else {
+    restoreScriptDefinitionState(rollback)
   }
 }
 
@@ -2155,25 +1803,29 @@ function restoreScopedScriptDefinition(
   rollback: ScopedScriptDefinitionRollback,
   attempted?: ScopedScriptDefinitionAttempt,
 ): boolean {
-  return withTrustedResourceWrite(() => {
+  return withScriptDefinitionOwnerWrite(() => {
     switch (rollback.kind) {
       case 'globalScripts': {
         if (
           attempted &&
           (attempted.kind !== 'globalScripts' ||
-            snapshotJson(getDatabase().globalscript) !== snapshotJson(attempted.scripts))
+            snapshotJson(scriptSettingsOwner()?.globalscript) !== snapshotJson(attempted.scripts))
         ) {
           return false
         }
         if (rollback.hadScriptsField === false) {
-          delete (getDatabase() as Partial<Database>).globalscript
+          const settings = scriptSettingsOwner()
+          if (!settings) return false
+          delete settings.globalscript
         } else {
-          getDatabase().globalscript = cloneJsonValue(rollback.scripts)
+          const settings = scriptSettingsOwner()
+          if (!settings) return false
+          settings.globalscript = cloneJsonValue(rollback.scripts)
         }
         return true
       }
       case 'characterScripts': {
-        const character = getDatabase().characters?.find((candidate) => candidate.chaId === rollback.characterId)
+        const character = characterDefinitionOwners().find((candidate) => candidate.chaId === rollback.characterId)
         if (!character) return false
         if (
           attempted &&
@@ -2191,7 +1843,7 @@ function restoreScopedScriptDefinition(
         return true
       }
       case 'characterTriggers': {
-        const character = getDatabase().characters?.find((candidate) => candidate.chaId === rollback.characterId)
+        const character = characterDefinitionOwners().find((candidate) => candidate.chaId === rollback.characterId)
         if (!character) return false
         if (
           attempted &&
@@ -2209,9 +1861,7 @@ function restoreScopedScriptDefinition(
         return true
       }
       case 'moduleScripts': {
-        const module = ((getDatabase().modules ?? []) as RisuModule[]).find(
-          (candidate) => candidate.id === rollback.moduleId,
-        )
+        const module = moduleDefinitionOwners().find((candidate) => candidate.id === rollback.moduleId)
         if (!module) return false
         if (
           attempted &&
@@ -2225,9 +1875,7 @@ function restoreScopedScriptDefinition(
         return true
       }
       case 'moduleTriggers': {
-        const module = ((getDatabase().modules ?? []) as RisuModule[]).find(
-          (candidate) => candidate.id === rollback.moduleId,
-        )
+        const module = moduleDefinitionOwners().find((candidate) => candidate.id === rollback.moduleId)
         if (!module) return false
         if (
           attempted &&
@@ -2259,42 +1907,12 @@ function parseSnapshotArray<T>(snapshot: string): T[] {
 }
 
 function currentGlobalScriptsForWatchedCommand(): customscript[] | null {
-  const scripts = getDatabase().globalscript
+  const scripts = scriptSettingsOwner()?.globalscript
   return hasStableUniqueScriptDefinitionIds(scripts) ? scripts : null
 }
 
-function currentCharacterScriptsForWatchedCommand(characterId: string): customscript[] | null {
-  if (!uniqueStableCharacterIds(getDatabase().characters ?? []).has(characterId)) return null
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-  if (!character || !hasStableUniqueScriptDefinitionIds(character.customscript)) return null
-  return character.customscript
-}
-
-function currentCharacterTriggersForWatchedCommand(characterId: string): triggerscript[] | null {
-  if (!uniqueStableCharacterIds(getDatabase().characters ?? []).has(characterId)) return null
-  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
-  if (!character || !hasStableUniqueTriggerDefinitionIds(character.triggerscript)) return null
-  return character.triggerscript
-}
-
-function currentModuleScriptsForWatchedCommand(moduleId: string): customscript[] | null {
-  const modules = (getDatabase().modules ?? []) as RisuModule[]
-  if (!uniqueStableModuleIds(modules).has(moduleId)) return null
-  const module = modules.find((candidate) => candidate.id === moduleId)
-  if (!module || !hasStableUniqueScriptDefinitionIds(module.regex)) return null
-  return module.regex
-}
-
-function currentModuleTriggersForWatchedCommand(moduleId: string): triggerscript[] | null {
-  const modules = (getDatabase().modules ?? []) as RisuModule[]
-  if (!uniqueStableModuleIds(modules).has(moduleId)) return null
-  const module = modules.find((candidate) => candidate.id === moduleId)
-  if (!module || !hasStableUniqueTriggerDefinitionIds(module.trigger)) return null
-  return module.trigger
-}
-
 function findModule(moduleId: string): RisuModule | undefined {
-  return ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
+  return moduleDefinitionOwners().find((candidate) => candidate.id === moduleId)
 }
 
 function isStableCommandId(value: unknown): value is string {
@@ -2319,24 +1937,6 @@ function hasStableUniqueScriptDefinitionIds(scripts: unknown): scripts is custom
 function hasStableUniqueTriggerDefinitionIds(triggers: unknown): triggers is triggerscript[] {
   if (!Array.isArray(triggers)) return false
   return hasStableUniqueCommandIds(triggers.map((trigger) => (trigger as { id?: unknown }).id))
-}
-
-function uniqueStableCharacterIds(characters: readonly character[]): Set<string> {
-  const counts = new Map<string, number>()
-  for (const character of characters) {
-    if (!isStableCommandId(character.chaId)) continue
-    counts.set(character.chaId, (counts.get(character.chaId) ?? 0) + 1)
-  }
-  return new Set([...counts].filter(([, count]) => count === 1).map(([id]) => id))
-}
-
-function uniqueStableModuleIds(modules: readonly RisuModule[]): Set<string> {
-  const counts = new Map<string, number>()
-  for (const module of modules) {
-    if (!isStableCommandId(module.id)) continue
-    counts.set(module.id, (counts.get(module.id) ?? 0) + 1)
-  }
-  return new Set([...counts].filter(([, count]) => count === 1).map(([id]) => id))
 }
 
 function cloneJsonValue<T>(value: T): T {

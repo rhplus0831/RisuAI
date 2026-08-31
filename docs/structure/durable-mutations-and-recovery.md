@@ -256,7 +256,7 @@ that affect rendered state should follow the visible-state policy in
 | `pendingBridgeFlushRegistry.ts`    | Registers bridge flush/reset callbacks for owner-targeted calls and dynamically loaded owners. Most built-in bridges register here as well as being covered by `bridgeFlush.ts`.      |
 | `settingsBridge.svelte.ts`         | Debounced settings groups through `PATCH /commands/settings/:group`, equality-noop suppression, rollback-aware patches.                                                              |
 | `lorebookBridge.svelte.ts`         | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
-| `scriptDefinitionBridge.svelte.ts` | Global/character/module script and trigger watchers; compact create/update/delete/reorder classification, response-digest checks, projection fencing, and full-replacement fallback. |
+| `scriptDefinitionOwner.svelte.ts`  | Explicit character/module definition owner mutations plus the global-script settings draft watcher; compact create/update/delete/reorder classification, projection fencing, and full-replacement fallback. |
 
 Common requirements are to capture snapshots, suppress no-op updates, respect
 the appropriate resource epoch or revision gate, debounce noisy edits, stage

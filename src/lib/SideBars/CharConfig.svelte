@@ -106,7 +106,7 @@
     mergeScriptDefinitionProjectionRows,
     scheduleCharacterScriptDefinitionDraft,
     waitForPendingCharacterScriptDefinitionSave,
-  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  } from 'src/ts/server/scriptDefinitionOwner.svelte'
   import { canUseServerCommands, subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'

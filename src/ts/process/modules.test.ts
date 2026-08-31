@@ -157,7 +157,7 @@ vi.mock('../server/lorebookBridge.svelte', () => ({
   rollbackCharacterLorebookReplacement,
 }))
 
-vi.mock('../server/scriptDefinitionBridge.svelte', () => ({
+vi.mock('../server/scriptDefinitionOwner.svelte', () => ({
   acknowledgeCharacterScriptDefinitionStructuralWrite,
   beginCharacterScriptDefinitionStructuralWrite,
   currentScriptDefinitionStateSnapshot: vi.fn(() => ({ characters: [], modules: [] })),

@@ -3,7 +3,7 @@ import { flushPendingServerBackedSettingsPatch } from './settingsBridge.svelte'
 import { flushPendingCharacterDraftPatches } from './characterDraft.svelte'
 import { flushPendingServerBackedLorebookPatches } from './lorebookBridge.svelte'
 import { flushPendingPromptTemplatePatches } from './promptTemplateMutations.svelte'
-import { flushPendingServerBackedScriptDefinitionPatches } from './scriptDefinitionBridge.svelte'
+import { flushPendingScriptDefinitionMutations } from './scriptDefinitionOwner.svelte'
 import { flushRegisteredPendingBridgePatches } from './pendingBridgeFlushRegistry'
 
 export function flushAllPendingBridgePatches(options: ServerCommandTransportOptions = {}): void {
@@ -12,7 +12,7 @@ export function flushAllPendingBridgePatches(options: ServerCommandTransportOpti
   flushPendingCharacterDraftPatches(options)
   flushPendingServerBackedLorebookPatches(options)
   flushPendingPromptTemplatePatches(options)
-  flushPendingServerBackedScriptDefinitionPatches(options)
+  flushPendingScriptDefinitionMutations(options)
 }
 
 let lifecycleListenerRefs = 0

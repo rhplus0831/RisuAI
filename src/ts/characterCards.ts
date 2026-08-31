@@ -71,7 +71,7 @@ import { ensureClientLorebookEntryIds } from './server/lorebookBridge.svelte'
 import {
   ensureClientScriptDefinitionIds,
   ensureClientTriggerDefinitionIds,
-} from './server/scriptDefinitionBridge.svelte'
+} from './server/scriptDefinitionOwner.svelte'
 import { serverAssetIdFromReference } from './server/assets'
 import {
   charactersResourceState,
