@@ -370,11 +370,16 @@ describe('static architecture gate: prompt-template dispatch boundaries', () => 
     expect(devTool).toContain('resolveEffectivePromptTemplate(getDatabase()).promptTemplate')
   })
 
-  it('does not redispatch PromptSettings drafts after accepting projection changes', () => {
+  it('routes PromptSettings fields through owner-backed drafts without aggregate projection writes', () => {
     const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
-    expect(source).toContain('let previousDraftDispatchSnapshot = snapshotJson(initialValue)')
-    expect(source).toContain('previousDraftDispatchSnapshot = serverSnapshot')
-    expect(source).toContain('if (snapshot === previousDraftDispatchSnapshot) return')
+    expect(source).toContain('createServerBackedSettingDraft(key, fallback)')
+    expect(source).toContain('createPromptPresetModelOverrideDraft(key, fallback)')
+    expect(source).toContain('settingsResourceState.value.showUnrecommended')
+    expect(source).toContain('collectionsResourceState.values.promptPresets')
+    expect(source).not.toContain('getResourceDatabase')
+    expect(source).not.toContain('getDatabase')
+    expect(source).not.toContain('getServerResourceApplyEpoch')
+    expect(source).not.toContain('withTrustedResourceWrite')
   })
 
   it('does not redispatch prompt preset model overrides after accepting projection changes', () => {
@@ -393,15 +398,15 @@ describe('static architecture gate: prompt-template dispatch boundaries', () => 
   it('keeps PromptSettings row edits on item commands after template-id repair', () => {
     const source = readSource('src/lib/Setting/Pages/PromptSettings.svelte')
     expect(source).toContain('queuePromptPresetTemplateIdServerSync(ownerId)')
-    expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, promptItem)')
-    expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, currentItem)')
+    expect(source).toContain('applyPromptItemProjectionWrite(promptTemplateDraft.value, itemId, ownerId)')
     expect(source).toContain('queueRowPatch(projectionFence, null)')
     expect(source).toContain('armPendingPromptItemProjectionUpdate(')
     expect(source).toContain('queuePromptItemProjectionUpdate(')
-    expect(source).toContain('syncSelectedPromptPresetTemplateProjection(templates)')
+    expect(source).toContain('writePromptTemplateOwnerDraft(templates, ownerId)')
+    expect(source).toContain('collectionsResourceState.values.promptTemplate = nextTemplate')
     expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')
     expect(source).toContain('markPromptTemplateOwnerAcknowledgementTainted(ownerId)')
-    expect(source).toContain('markPromptTemplateOwnerAcknowledgementTainted(currentPromptTemplateOwnerId())')
+    expect(source).toContain('ensurePromptTemplateDraftIds(currentPromptTemplateOwnerId())')
   })
 })
 

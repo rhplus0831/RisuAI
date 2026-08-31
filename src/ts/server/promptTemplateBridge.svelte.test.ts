@@ -94,6 +94,41 @@ const commandMocks = vi.hoisted(() => ({
     kind: 'updateModelPreset',
     ...args,
   })),
+  patchServerBackedSettings: vi.fn(
+    async (args: {
+      patch: Record<string, unknown>
+      acknowledgeOptimistic?: boolean
+      optimisticProjectionEpochs?: Record<string, number>
+      rollback?: () => void
+      keepalive?: boolean
+      mutationId?: string
+      databaseLineage?: string
+      failureRollbackDisposition?: (result: { status: string; error?: string }) => 'retain' | 'rollback'
+    }) => {
+      const built = {
+        kind: 'patchServerBackedSettings',
+        patch: args.patch,
+        acknowledgeOptimistic: args.acknowledgeOptimistic,
+        optimisticProjectionEpochs: args.optimisticProjectionEpochs,
+      }
+      commandState.commands.push({
+        built,
+        rollback: args.rollback,
+        ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+      })
+      commandState.transports.push({
+        mutationId: args.mutationId,
+        databaseLineage: args.databaseLineage,
+      })
+      const queuedResult = commandState.runResults.shift()
+      const result = queuedResult ? await queuedResult : { status: 'ok', revision: 1 }
+      if (result.status !== 'ok' && args.failureRollbackDisposition?.(result) !== 'retain') args.rollback?.()
+      return result
+    },
+  ),
+  patchSettingsObjectFieldsCommand: vi.fn(async () => ({ status: 'unavailable' })),
+  completeOnboardingCommand: vi.fn(async () => ({ status: 'unavailable' })),
+  settingsGroupForKey: () => 'prompt',
   enablePromptItemsCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'enablePromptItems',
     ...args,
@@ -236,11 +271,6 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  createServerBackedSettingDraft: vi.fn((_key: string, fallback: unknown) => ({ value: fallback })),
-  watchServerBackedSettings: vi.fn(() => () => {}),
-}))
-
 vi.mock('./promptTemplateHydration', () => ({
   capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
   clonePromptTemplateSelectedFallback: hydrationState.cloneSelectedFallback,
@@ -280,6 +310,7 @@ import {
 } from './resourceState.svelte'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
 import { language } from 'src/lang'
+import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 import {
   createPromptItemCommand,
   deletePromptItemCommand,
@@ -541,7 +572,6 @@ async function editPromptSettingsTextInput(target: HTMLElement, value: string, i
 
 async function applyPromptSettingsProjection(apply: () => void): Promise<void> {
   apply()
-  resourceDatabase.current = { ...(getResourceDatabase() as unknown as Record<string, unknown>) }
   resourceGuardState.epoch += 1
   await tick()
   await flushMicrotasks()
@@ -575,6 +605,7 @@ beforeEach(() => {
   commandMocks.enablePromptItemsCommand.mockClear()
   commandMocks.updatePromptPresetCommand.mockClear()
   commandMocks.updateModelPresetCommand.mockClear()
+  commandMocks.patchServerBackedSettings.mockClear()
   commandMocks.runServerCommand.mockClear()
   hydrationState.setHydrated(true)
   hydrationState.setOwner(null)
@@ -2864,11 +2895,10 @@ describe('flushPendingPromptTemplatePatches', () => {
 
       expect(commandState.commands).toHaveLength(1)
       expect(commandState.commands[0].built).toEqual({
-        kind: 'patchPromptSettings',
-        baseRevision: 1,
+        kind: 'patchServerBackedSettings',
         patch: { customPromptTemplateToggle: 'local dirty' },
         acknowledgeOptimistic: true,
-        optimisticProjectionEpoch: projectionEpoch,
+        optimisticProjectionEpochs: { prompt: projectionEpoch },
       })
     } finally {
       if (component) await unmount(component)
@@ -2925,10 +2955,9 @@ describe('flushPendingPromptTemplatePatches', () => {
 
       expect(commandState.commands).toHaveLength(1)
       expect(commandState.commands[0].built).toMatchObject({
-        kind: 'patchPromptSettings',
-        baseRevision: 1,
+        kind: 'patchServerBackedSettings',
         acknowledgeOptimistic: true,
-        optimisticProjectionEpoch: expect.any(Number),
+        optimisticProjectionEpochs: { prompt: expect.any(Number) },
         patch: {
           promptSettings: {
             postEndInnerFormat: 'local format',
@@ -2957,6 +2986,15 @@ describe('flushPendingPromptTemplatePatches', () => {
       await applyPromptSettingsProjection(() => {
         ;(getResourceDatabase() as unknown as Record<string, unknown>).customPromptTemplateToggle = 'local accepted'
       })
+      notifyServerCommandLocalEffectApplied(
+        {} as never,
+        {
+          kind: 'settingsPatch',
+          attemptedPatch: { customPromptTemplateToggle: 'local accepted' },
+          settings: { customPromptTemplateToggle: 'local accepted' },
+        } as never,
+      )
+      await flushMicrotasks()
       await applyPromptSettingsProjection(() => {
         ;(getResourceDatabase() as unknown as Record<string, unknown>).customPromptTemplateToggle = 'server later'
       })
@@ -2976,7 +3014,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     }
   })
 
-  it('PromptSettings reasserts a stale projection only into the captured prompt preset owner', async () => {
+  it('PromptSettings adopts a newly selected prompt preset setting owner without projecting the prior draft', async () => {
     seedPromptSettings({
       customPromptTemplateToggle: 'server A',
       promptPresetsId: 0,
@@ -3004,13 +3042,13 @@ describe('flushPendingPromptTemplatePatches', () => {
       await applyPromptSettingsProjection(() => {
         getResourceDatabase().promptPresetsId = 1
         getResourceDatabase().promptPresets = [
-          { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: 'stale A' },
+          { id: 'preset-a', name: 'Preset A', customPromptTemplateToggle: 'server A refreshed' },
           { id: 'preset-b', name: 'Preset B', customPromptTemplateToggle: 'server B' },
         ]
         getResourceDatabase().customPromptTemplateToggle = 'server B'
       })
 
-      expect(getResourceDatabase().promptPresets[0].customPromptTemplateToggle).toBe('dirty A')
+      expect(getResourceDatabase().promptPresets[0].customPromptTemplateToggle).toBe('server A refreshed')
       expect(getResourceDatabase().promptPresets[1].customPromptTemplateToggle).toBe('server B')
       expect(getResourceDatabase().customPromptTemplateToggle).toBe('server B')
       expect(promptSettingsTextarea(target).value).toBe('server B')
