@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FASTIFY_TOKENIZER_OPTIONS } from './model/tokenizerOptions'
+import type { Database } from './storage/databaseTypes'
 
 const moduleState = vi.hoisted(() => {
   const LLMTokenizer = {
@@ -20,17 +21,27 @@ const moduleState = vi.hoisted(() => {
     Cohere: 'Cohere',
   } as const
 
+  const db = {
+    aiModel: 'google-default',
+    customTokenizer: '',
+    currentPluginProvider: '',
+    googleClaudeTokenizing: true,
+    google: { accessToken: 'test-google-key' },
+    modelProfiles: [{ id: 'default-profile', name: 'Default', modelId: 'google-default' }] as Array<
+      Record<string, unknown>
+    >,
+    modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'default-profile' } } as Record<string, unknown>,
+    modelRuntimeDefaults: {} as Record<string, unknown>,
+    useTokenizerCaching: false,
+  }
+
   return {
-    db: {
-      aiModel: 'google-default',
-      customTokenizer: '',
-      currentPluginProvider: '',
-      googleClaudeTokenizing: true,
-      google: { accessToken: 'test-google-key' },
-      modelProfiles: [] as Array<Record<string, unknown>>,
-      modelRoleProfiles: {} as Record<string, unknown>,
-      modelRuntimeDefaults: {} as Record<string, unknown>,
-      useTokenizerCaching: false,
+    db,
+    getDatabaseMock: vi.fn(() => db),
+    settingsResourceState: {
+      value: {} as Record<string, unknown>,
+      status: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+      error: null as string | null,
     },
     requestProviderOperationMock: vi.fn(),
     providerOperationCredentialMock: vi.fn(() => ({ source: 'stored' as const })),
@@ -45,7 +56,11 @@ const moduleState = vi.hoisted(() => {
 
 vi.mock('./storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(() => null),
-  getDatabase: vi.fn(() => moduleState.db),
+  getDatabase: moduleState.getDatabaseMock,
+}))
+
+vi.mock('./server/resourceState.svelte', () => ({
+  settingsResourceState: moduleState.settingsResourceState,
 }))
 
 vi.mock('./model/modellist', () => ({
@@ -104,9 +119,13 @@ describe('Google Cloud tokenizer cache', () => {
     moduleState.db.aiModel = 'google-default'
     moduleState.db.useTokenizerCaching = false
     moduleState.db.googleClaudeTokenizing = true
-    moduleState.db.modelProfiles = []
-    moduleState.db.modelRoleProfiles = {}
+    moduleState.db.modelProfiles = [{ id: 'default-profile', name: 'Default', modelId: 'google-default' }]
+    moduleState.db.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'default-profile' } }
     moduleState.db.modelRuntimeDefaults = {}
+    moduleState.getDatabaseMock.mockClear()
+    moduleState.settingsResourceState.value = {}
+    moduleState.settingsResourceState.status = 'idle'
+    moduleState.settingsResourceState.error = null
     moduleState.requestProviderOperationMock.mockReset()
     moduleState.providerOperationCredentialMock.mockClear()
     moduleState.requestProviderOperationMock.mockImplementation(async (_operation, options) => {
@@ -135,10 +154,12 @@ describe('Google Cloud tokenizer cache', () => {
   it('GoogleCloud cache keys keep model and text boundaries collision-safe', async () => {
     const { tokenize } = await loadTokenizer()
 
-    moduleState.db.aiModel = 'google-a'
+    moduleState.db.modelProfiles = [{ id: 'profile-a', name: 'Profile A', modelId: 'google-a' }]
+    moduleState.db.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'profile-a' } }
     await expect(tokenize('ab')).resolves.toBe(tokenCountFor('ab', 'c'))
 
-    moduleState.db.aiModel = 'google-b'
+    moduleState.db.modelProfiles = [{ id: 'profile-b', name: 'Profile B', modelId: 'google-b' }]
+    moduleState.db.modelRoleProfiles = { chatMain: { mode: 'profile', profileId: 'profile-b' } }
     await expect(tokenize('a')).resolves.toBe(tokenCountFor('a', 'bc'))
 
     expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(2)
@@ -164,6 +185,50 @@ describe('Google Cloud tokenizer cache', () => {
       'c',
       'bc',
     ])
+  })
+
+  it('uses the ready settings owner without reading the aggregate database', async () => {
+    const { tokenize } = await loadTokenizer()
+    moduleState.settingsResourceState.value = {
+      ...moduleState.db,
+      modelProfiles: [{ id: 'owner-profile', name: 'Owner', modelId: 'google-a' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'owner-profile' } },
+    }
+    moduleState.settingsResourceState.status = 'ready'
+
+    await expect(tokenize('owner prompt')).resolves.toBe(tokenCountFor('owner prompt', 'c'))
+
+    expect(moduleState.getDatabaseMock).not.toHaveBeenCalled()
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledWith('google.count-tokens', {
+      credential: { source: 'stored' },
+      input: { modelId: 'c', text: 'owner prompt' },
+    })
+  })
+
+  it('fails closed when the settings owner is in error', async () => {
+    const { tokenize } = await loadTokenizer()
+    moduleState.settingsResourceState.status = 'error'
+    moduleState.settingsResourceState.error = 'settings unavailable'
+
+    await expect(tokenize('stale prompt')).rejects.toThrow('Tokenizer settings owner unavailable')
+    expect(moduleState.getDatabaseMock).not.toHaveBeenCalled()
+    expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps an explicit captured settings snapshot usable after owner state changes', async () => {
+    const { tokenize } = await loadTokenizer()
+    const database = {
+      ...moduleState.db,
+      modelProfiles: [{ id: 'captured-profile', name: 'Captured', modelId: 'google-b' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'captured-profile' } },
+    }
+    moduleState.settingsResourceState.status = 'error'
+    moduleState.settingsResourceState.error = 'newer refresh failed'
+
+    await expect(tokenize('captured prompt', database as unknown as Database)).resolves.toBe(
+      tokenCountFor('captured prompt', 'bc'),
+    )
+    expect(moduleState.getDatabaseMock).not.toHaveBeenCalled()
   })
 
   it('GoogleCloud token cache evicts oldest entries and refills with the same count', async () => {

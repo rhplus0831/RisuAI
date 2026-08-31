@@ -582,6 +582,7 @@ describe('setupSendChatContext - promptInfo seed', () => {
         makeChar({
           chats: [
             makeChat({
+              id: 'chat-prompt-name',
               generationSettings: {
                 configured: true,
                 personaId: 'persona-a',
@@ -653,6 +654,7 @@ describe('setupSendChatContext - promptInfo seed', () => {
           modules: ['character-module'],
           chats: [
             makeChat({
+              id: 'chat-prompt-toggles',
               modules: ['chat-module'],
               generationSettings: {
                 configured: true,
@@ -741,6 +743,31 @@ describe('setupSendChatContext - tokenizer + maxContextTokens', () => {
       chatAdditionalTokens: 3,
       useName: 'name',
       profile: { modelId: 'claude-sonnet-4-6' },
+    })
+  })
+
+  it('pins an explicit generation database snapshot into the chat tokenizer', () => {
+    seedDb()
+    const database = {
+      ...testDatabaseState.db,
+      maxContext: 7000,
+      modelProfiles: [
+        {
+          id: 'captured-main',
+          name: 'Captured Main',
+          modelId: 'google-a',
+          runtimeOptions: { maxContext: 18000 },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'captured-main' } },
+    } as Database
+
+    const ctx = setupSendChatContext({ chatProcessIndex: -1, database })
+
+    expect(ctx.maxContextTokens).toBe(18000)
+    expect(ctx.tokenizer).toMatchObject({
+      database,
+      profile: { modelId: 'google-a' },
     })
   })
 })

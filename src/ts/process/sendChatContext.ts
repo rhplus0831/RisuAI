@@ -4,12 +4,13 @@ import { alertToast } from '../alert'
 import {
   changeToPreset,
   getDatabase,
+  type Database,
   type MessagePresetInfo,
   type Message,
   type character,
 } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
-import { ChatTokenizer, resolveMainTokenizerProfile } from '../tokenizer'
+import { ChatTokenizer, resolveMainTokenizerProfile, resolveTokenizerDatabaseSnapshot } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
 import {
   dispatchCharacterOwnedDurableBatch,
@@ -154,6 +155,7 @@ export function setupSendChatContext(args: {
   chatAdditonalTokens?: number
   writeMaintenance?: boolean
   target?: ActiveChatTarget | null
+  database?: Database
 }): SendChatContextResult {
   const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens, writeMaintenance = true, target } = args
   const serverBacked = canUseServerCommands()
@@ -300,7 +302,7 @@ export function setupSendChatContext(args: {
   const selectedChat = resolveSendChatIndex(nowChatroom, target)
 
   const promptInfo = createInitialPromptInfo(serverBacked, target)
-  const database = getDatabase()
+  const database = args.database ?? resolveTokenizerDatabaseSnapshot()
   const mainProfile = resolveMainTokenizerProfile(database)
   const mainModelId = mainProfile.modelId
 
@@ -317,6 +319,7 @@ export function setupSendChatContext(args: {
     mainModelId.startsWith('gpt') ? 'noName' : 'name',
     mainProfile,
     resolveModelProfileTokenizerSelection(database, mainProfile),
+    database,
   )
   const maxContextTokens = mainProfile.runtimeOptions.maxContext ?? database.maxContext
 
