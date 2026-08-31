@@ -181,12 +181,12 @@
       "damagedDatabaseBehavior": "Security scrub may run at migration/import/recovery boundaries, never as unrelated command repair.",
       "historicalFixture": "server/fastify/__tests__/commands.test.ts",
       "provenance": "Repository security repair fixtures and archived compatibility decision for stale inline secrets.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "versioned migration/import security normalization",
       "migrationPhase": "Phase 1 foundation and Phase 5 repair boundary",
       "oldReaderOrExporter": "repairPersistedModelProfileInlineSecretsInSqlite",
       "rollbackProof": "Transactional migration rollback plus restore fixture with masked exports.",
-      "workstream3Cursor": "Hold model-profile owner release until secret normalization is migration-owned.",
+      "workstream3Cursor": "Released: inline-secret normalization is confined to migration/import/recovery security boundaries.",
       "probes": [
         {
           "path": "server/fastify/src/repository.ts",
@@ -218,7 +218,7 @@
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "legacy username/userIcon/personaPrompt/userNote projection and selectedPersona index",
       "rollbackProof": "Persona collection and selected-profile mutation fixtures preserve row identity and rollback ordering.",
-      "workstream3Cursor": "Release persona row consumers after Phase 4 alias and pointer dispositions close.",
+      "workstream3Cursor": "Released: persona rows and selectedPersonaId own normal reads and writes.",
       "reviewTriggers": [
         "Any normal persona/profile read outside the persona row owner or its explicit selected-profile projection.",
         "Any command that mints or rewrites persona ids during ordinary render, selection, or reload."
@@ -240,7 +240,7 @@
           "path": "src/ts/server/resourceState.svelte.ts",
           "kind": "text",
           "value": "collectionsResourceState.values.personas",
-          "expectedCount": 2
+          "expectedCount": 6
         }
       ]
     },
@@ -262,12 +262,12 @@
       "damagedDatabaseBehavior": "Do not reconcile stale scalar aliases with unrelated rows during ordinary commands.",
       "historicalFixture": "src/ts/persona.test.ts",
       "provenance": "Selected persona profile projection and stale-field rollback fixtures.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "selected persona row fields name, icon, personaPrompt, and note",
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "database username/userIcon/personaPrompt/userNote settings aliases",
       "rollbackProof": "Selected-persona projection fixtures preserve scalar aliases through accepted, queued, and failed row writes.",
-      "workstream3Cursor": "Import/export-only hold: retire scalar aliases after Phase 4 import/export and selected-persona reload proof passes.",
+      "workstream3Cursor": "Released: normal persona consumers use stable-id rows; scalar aliases remain only at explicit compatibility/interchange projections.",
       "reviewTriggers": [
         "Any normal render/generation reader that treats username, userIcon, personaPrompt, or userNote as independent truth.",
         "Any write that updates a scalar alias without a selected persona row projection or an explicit import/export boundary."
@@ -290,8 +290,8 @@
     {
       "id": "persona-selected-pointer",
       "family": "persona",
-      "surface": "numeric selectedPersona pointer",
-      "currentOwner": "selected persona row selection bridge",
+      "surface": "derived numeric selectedPersona compatibility pointer",
+      "currentOwner": "stable selectedPersonaId owner with a derived numeric projection",
       "roles": [
         "read",
         "write",
@@ -305,12 +305,12 @@
       "damagedDatabaseBehavior": "Ordinary selection does not renumber or mint rows; repair remains explicit.",
       "historicalFixture": "src/ts/persona.test.ts",
       "provenance": "Selected persona id, stale selection, and rollback ordering fixtures.",
-      "disposition": "temporary",
+      "disposition": "explicit-compatibility",
       "targetOwner": "stable selected persona id with a derived numeric UI pointer",
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "database.selectedPersona numeric index",
       "rollbackProof": "Selection fixtures retain the selected stable id across reorder, delete, reload, and failed mutation paths.",
-      "workstream3Cursor": "Explicit hold: do not retire the numeric pointer until selected-persona reload, import/export, and plugin boundaries have a stable-id contract.",
+      "workstream3Cursor": "Released: selectedPersonaId is canonical across reload and commands; selectedPersona is retained as a derived interchange/plugin projection.",
       "reviewTriggers": [
         "Any new consumer persisting or comparing selectedPersona as canonical identity instead of selectedPersonaId.",
         "Any reorder/delete path that changes the pointer without proving stable selected-id preservation."
@@ -320,13 +320,13 @@
           "path": "src/ts/persona.ts",
           "kind": "identifier",
           "value": "selectedPersonaId",
-          "expectedCount": 23
+          "expectedCount": 76
         },
         {
           "path": "server/fastify/src/commands/personas.ts",
           "kind": "identifier",
           "value": "selectedPersonaId",
-          "expectedCount": 4
+          "expectedCount": 5
         }
       ]
     },
@@ -352,7 +352,7 @@
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "hypaV3Settings/supaMemoryPrompt/supaMemoryKey aliases and numeric hypaV3PresetId",
       "rollbackProof": "HypaV3 settings and memory-job fixtures preserve selected preset behavior across reload and failed writes.",
-      "workstream3Cursor": "Release HypaV3 preset consumers after alias and selection-pointer dispositions close.",
+      "workstream3Cursor": "Released: HypaV3 preset rows and selectedHypaV3PresetId own normal reads and writes.",
       "reviewTriggers": [
         "Any normal memory UI/job reader that prefers hypaV3Settings or scalar aliases when a selected preset exists.",
         "Any preset mutation that repairs or rewrites sibling preset rows during an ordinary settings operation."
@@ -400,12 +400,12 @@
       "damagedDatabaseBehavior": "Do not repair scalar aliases from arbitrary preset rows during ordinary memory execution.",
       "historicalFixture": "server/fastify/__tests__/memoryLegacyImport.test.ts",
       "provenance": "Legacy memory settings import and selected HypaV3 preset compatibility behavior.",
-      "disposition": "migrate",
+      "disposition": "import-only",
       "targetOwner": "selected hypaV3Presets[].settings fields",
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "databaseDefaults and storage initialization aliases for supaMemoryKey/supaMemoryPrompt/hypaV3Settings",
       "rollbackProof": "Legacy import fixtures retain alias values while canonical preset settings are selected and persisted.",
-      "workstream3Cursor": "Import/export-only hold: remove ordinary alias fallback after legacy memory import and export parity is recorded.",
+      "workstream3Cursor": "Released: normal memory execution uses the selected preset owner; aliases remain import/default synthesis inputs only.",
       "reviewTriggers": [
         "Any new ordinary memory reader of hypaV3Settings, supaMemoryPrompt, or supaMemoryKey outside default/import alias code.",
         "Any change to alias synthesis that changes selected preset settings or provider-secret masking."
@@ -434,8 +434,8 @@
     {
       "id": "hypa-v3-selected-pointer",
       "family": "memory",
-      "surface": "numeric hypaV3PresetId selection pointer",
-      "currentOwner": "HypaV3 preset selection bridge",
+      "surface": "derived numeric hypaV3PresetId compatibility pointer",
+      "currentOwner": "stable selectedHypaV3PresetId owner with a derived numeric projection",
       "roles": [
         "read",
         "write",
@@ -449,12 +449,12 @@
       "damagedDatabaseBehavior": "Memory execution does not renumber or mint presets while resolving a pointer.",
       "historicalFixture": "src/lib/Setting/Pages/OtherBotSettings.svelte",
       "provenance": "HypaV3 preset selection, add/delete, import, export, and settings draft flows.",
-      "disposition": "temporary",
+      "disposition": "explicit-compatibility",
       "targetOwner": "stable selected HypaV3 preset id with a derived collection index",
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "database.hypaV3PresetId numeric index",
       "rollbackProof": "Preset selection fixtures preserve the selected row across add/delete/import and failed persistence.",
-      "workstream3Cursor": "Explicit hold: do not retire the numeric pointer until HypaV3 settings reload and import/export use stable selection identity.",
+      "workstream3Cursor": "Released: selectedHypaV3PresetId is canonical across reload and commands; hypaV3PresetId is a validated derived projection.",
       "reviewTriggers": [
         "Any new consumer comparing hypaV3PresetId as canonical identity rather than the selected preset row.",
         "Any preset delete/import path that changes the pointer without proving selected-row preservation."
@@ -463,7 +463,7 @@
         {
           "path": "src/lib/Setting/Pages/OtherBotSettings.svelte",
           "kind": "text",
-          "value": "const hypaV3PresetIdDraft",
+          "value": "const selectedHypaV3PresetIdDraft",
           "expectedCount": 1
         },
         {
@@ -497,7 +497,7 @@
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "toLoadoutSnapshot and legacy preset-name/reference fields in loadout payloads",
       "rollbackProof": "Loadout mutation fixtures preserve exact attempted snapshots and selective rollback across concurrent projections.",
-      "workstream3Cursor": "Explicit hold: retain the snapshot adapter until loadout/import/export and cross-family reference ownership are dispositioned.",
+      "workstream3Cursor": "Released: the snapshot is an explicit command/interchange DTO and normal reads use stable loadout owners.",
       "reviewTriggers": [
         "Any change to toLoadoutSnapshot that drops, rewrites, or derives a cross-family field without an updated rollback fixture.",
         "Any loadout apply path that writes a mirrored family outside its declared durable mutation step."
@@ -513,7 +513,7 @@
           "path": "server/fastify/src/commands/loadouts.ts",
           "kind": "identifier",
           "value": "ensureLoadoutCollection",
-          "expectedCount": 2
+          "expectedCount": 1
         },
         {
           "path": "src/ts/server/loadoutCanonical.ts",
@@ -545,7 +545,7 @@
       "migrationPhase": "Phase 4 translator and smaller mirrors",
       "oldReaderOrExporter": "database.lastLoadedLoadoutName and loadout touch response projection",
       "rollbackProof": "Touch fixtures preserve lastLoadedLoadoutName only when the attempted row and projection fence remain current.",
-      "workstream3Cursor": "Explicit hold: retain last-touched compatibility until loadout touch, reload, backup, and cross-resource projection semantics are closed.",
+      "workstream3Cursor": "Released: the retained field is owned by the explicit touch command and guarded settings-owner projection.",
       "reviewTriggers": [
         "Any write to lastLoadedLoadoutName outside the explicit loadout touch command or its guarded rollback.",
         "Any change to touch co-write range, projection fences, or settings reload precedence without command-range tests."
@@ -554,8 +554,8 @@
         {
           "path": "src/ts/loadout.ts",
           "kind": "text",
-          "value": "getDatabase().lastLoadedLoadoutName",
-          "expectedCount": 7
+          "value": "replaceSettingsOwnerFields({ lastLoadedLoadoutName",
+          "expectedCount": 1
         },
         {
           "path": "server/fastify/src/routes/commands.ts",
@@ -593,7 +593,7 @@
       "migrationPhase": "Phase 3 prompt-template ownership",
       "oldReaderOrExporter": "resolveEffectivePromptTemplate with current explicit compatibility branches",
       "rollbackProof": "Retain old top-level/table reader until restart, generation, and export proofs pass.",
-      "workstream3Cursor": "Release prompt bridge migration only after Phase 3 closes.",
+      "workstream3Cursor": "Released: editor, hydration, generation, loadout, and commands resolve uniquely selected modern preset owners.",
       "probes": [
         {
           "path": "server/fastify/src/commands/splitPresets.ts",
@@ -612,8 +612,8 @@
     {
       "id": "prompt-top-level-projection",
       "family": "prompt-template",
-      "surface": "aggregate database.promptTemplate compatibility projection",
-      "currentOwner": "aggregate settings/resource compatibility facade",
+      "surface": "legacy/default database.promptTemplate compatibility owner",
+      "currentOwner": "explicit root prompt-template owner outside selected modern presets",
       "roles": [
         "read",
         "write",
@@ -627,12 +627,12 @@
       "damagedDatabaseBehavior": "Do not recreate this projection from stale data during unrelated commands.",
       "historicalFixture": "test/compat-harness/fixture.ts",
       "provenance": "Pinned compatibility fixture and prompt parity tests for null, empty, stale, and selected owners.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "selected modern prompt preset body",
       "migrationPhase": "Phase 3 prompt-template ownership",
       "oldReaderOrExporter": "top-level promptTemplate reader retained for supported old saves/export",
       "rollbackProof": "Keep pre-migration backup and top-level reader until prompt output/restart/export parity passes.",
-      "workstream3Cursor": "Hold prompt-template bridge removal until Phase 3 release.",
+      "workstream3Cursor": "Released: selected modern presets own normal prompt bodies; the root owner remains only for legacy/default scaffolds.",
       "probes": [
         {
           "path": "server/fastify/src/repository.ts",
@@ -651,8 +651,8 @@
     {
       "id": "prompt-sqlite-mirror",
       "family": "prompt-template",
-      "surface": "prompt_templates SQLite collection",
-      "currentOwner": "repository single-collection table wrappers",
+      "surface": "prompt_templates SQLite legacy/default root collection",
+      "currentOwner": "repository wrappers for the explicit root compatibility owner",
       "roles": [
         "read",
         "write",
@@ -665,12 +665,12 @@
       "damagedDatabaseBehavior": "Corrupt SQLite remains a database recovery concern, not a prompt command repair.",
       "historicalFixture": "server/fastify/__tests__/commandCollectionRange.test.ts",
       "provenance": "Command range/write-table fixtures prove current table ownership and mutation range.",
-      "disposition": "migrate",
-      "targetOwner": "prompt_presets rows containing canonical template bodies",
+      "disposition": "explicit-compatibility",
+      "targetOwner": "prompt_presets rows for selected modern bodies; prompt_templates only for the explicit root owner",
       "migrationPhase": "Phase 3 then Phase 6 obsolete storage cleanup",
       "oldReaderOrExporter": "prompt_templates table reader and backup allowlist",
       "rollbackProof": "Retain the table and old reader through post-migration restart/export proof.",
-      "workstream3Cursor": "Hold prompt resource bridge removal until table migration closes.",
+      "workstream3Cursor": "Released: the table cannot supersede a selected modern prompt-preset body and remains backup-compatible root storage only.",
       "probes": [
         {
           "path": "server/fastify/src/repository.ts",
@@ -732,12 +732,12 @@
       "damagedDatabaseBehavior": "Never repairs or selects a sibling preset while resolving.",
       "historicalFixture": "server/fastify/__tests__/templates.test.ts",
       "provenance": "Cross-runtime prompt precedence and stale-mirror parity cases.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "canonical modern-preset resolver with no top-level runtime fallback",
       "migrationPhase": "Phase 3 prompt-template ownership",
       "oldReaderOrExporter": "resolveEffectivePromptTemplate legacy fallback branch",
       "rollbackProof": "Differential prompt output fixtures preserve the old resolver until migration proof passes.",
-      "workstream3Cursor": "Hold prompt generation consumer migration until canonical resolver release.",
+      "workstream3Cursor": "Released: modern preset ownership is canonical; the top-level branch remains the explicit legacy/default fallback.",
       "probes": [
         {
           "path": "packages/shared-core/src/effectivePromptTemplate.ts",
@@ -769,7 +769,7 @@
       "migrationPhase": "Phase 4 translator ownership",
       "oldReaderOrExporter": "legacy scalar normalization remains until migration fixtures pass",
       "rollbackProof": "Retain scalar fields and selected index through restart/translation/export proof.",
-      "workstream3Cursor": "Release translator facade consumers after Phase 4 closes.",
+      "workstream3Cursor": "Released: normal translation and authoring use stable-id preset pipelines.",
       "probes": [
         {
           "path": "server/fastify/src/commands/translatorPresets.ts",
@@ -803,12 +803,12 @@
       "damagedDatabaseBehavior": "Ordinary preset selection must not synchronize these mirrors after Phase 4.",
       "historicalFixture": "src/ts/translator/pipeline.test.ts",
       "provenance": "Legacy scalar resolution fixture from supported pre-preset translator state.",
-      "disposition": "migrate",
+      "disposition": "import-only",
       "targetOwner": "selected translator preset first enabled step",
       "migrationPhase": "Phase 4 translator ownership",
       "oldReaderOrExporter": "legacy scalar import/export projection",
       "rollbackProof": "Keep scalars until migrated translation output and legacy export parity pass.",
-      "workstream3Cursor": "Hold translator settings facade retirement until Phase 4 release.",
+      "workstream3Cursor": "Released: translatorPrompt and translatorMaxResponse are consumed only when importing a database without canonical presets.",
       "probes": [
         {
           "path": "server/fastify/src/commands/translatorPresets.ts",
@@ -833,8 +833,8 @@
     {
       "id": "translator-selected-index",
       "family": "translator",
-      "surface": "numeric database.translatorPresetId and chat-scoped stable-id binding",
-      "currentOwner": "aggregate selection index plus chat metadata binding",
+      "surface": "stable database.translatorPresetId and chat-scoped stable-id binding",
+      "currentOwner": "stable global preset id plus chat metadata binding",
       "roles": [
         "read",
         "write",
@@ -842,18 +842,18 @@
         "import",
         "export"
       ],
-      "currentPrecedence": "Chat stable-id binding wins when present; otherwise numeric global index selects the preset.",
+      "currentPrecedence": "Chat stable-id binding wins when present; otherwise the stable global preset id selects the preset.",
       "missingBehavior": "Falls back to the first preset/default pipeline.",
       "malformedBehavior": "Invalid numeric index normalizes to zero; unknown chat binding is cleared by owned delete behavior.",
       "damagedDatabaseBehavior": "Do not renumber or mint preset ids during ordinary translation.",
       "historicalFixture": "server/fastify/__tests__/commands.test.ts",
       "provenance": "Translator selection/delete/chat-binding command fixtures.",
-      "disposition": "migrate",
+      "disposition": "canonical",
       "targetOwner": "stable global selected translator preset id plus explicit chat binding",
       "migrationPhase": "Phase 4 translator ownership",
       "oldReaderOrExporter": "numeric index reader and legacy export projection",
       "rollbackProof": "Retain ordered presets and index until stable-id restart/export proof passes.",
-      "workstream3Cursor": "Hold translator selection facade retirement until stable-id migration closes.",
+      "workstream3Cursor": "Released: numeric inputs are normalized at migration/import, while normal commands require a stable preset id.",
       "probes": [
         {
           "path": "server/fastify/src/commands/translatorPresets.ts",
@@ -873,24 +873,24 @@
       "id": "translator-selection-mirror-sync",
       "family": "translator",
       "surface": "syncSelectedTranslatorPresetToLegacyFields",
-      "currentOwner": "translator selection mutation helper",
+      "currentOwner": "import/migration-only translator compatibility normalizer",
       "roles": [
         "write",
         "repair",
         "export"
       ],
-      "currentPrecedence": "After selection, first-step prompt/max response overwrite legacy scalar mirrors.",
+      "currentPrecedence": "Only a legacy database missing canonical presets synthesizes the first preset and scalar compatibility projection.",
       "missingBehavior": "No synchronization occurs when the selected preset is missing.",
       "malformedBehavior": "Relies on normalized preset rows before synchronization.",
       "damagedDatabaseBehavior": "Must not repair unrelated translator records during selection after Phase 4.",
       "historicalFixture": "server/fastify/__tests__/commands.test.ts",
       "provenance": "Selection command tests pin current scalar synchronization behavior.",
-      "disposition": "remove",
+      "disposition": "import-only",
       "targetOwner": "legacy export adapter reconstructs scalars from the canonical selected step",
       "migrationPhase": "Phase 4 translator ownership",
       "oldReaderOrExporter": "syncSelectedTranslatorPresetToLegacyFields retained until migration and export proof",
       "rollbackProof": "Re-enable mirror sync while scalar fields remain readable during staged rollout.",
-      "workstream3Cursor": "Release translator bridge only after mirror sync removal passes.",
+      "workstream3Cursor": "Released: ordinary selection commands do not synchronize legacy scalars; the helper remains import/migration-only.",
       "probes": [
         {
           "path": "server/fastify/src/commands/translatorPresets.ts",
@@ -903,25 +903,25 @@
     {
       "id": "command-ensure-collections",
       "family": "repair",
-      "surface": "ensureModelPresetCollection, ensurePromptPresetCollection, ensurePromptTemplateCollection, and ensureTranslatorPresetCollection",
-      "currentOwner": "ordinary command helpers",
+      "surface": "preset collection validators plus explicit import/extraction normalizers",
+      "currentOwner": "strict ordinary command reads and bounded compatibility actions",
       "roles": [
         "read",
         "write",
         "repair"
       ],
-      "currentPrecedence": "Commands currently normalize/mint sibling collection state before applying their declared mutation.",
-      "missingBehavior": "Helpers create default/empty collections and stable identifiers.",
-      "malformedBehavior": "Supported damaged shapes normalize; unsupported shapes may be replaced or rejected by helper-specific policy.",
-      "damagedDatabaseBehavior": "Move repair to migration/import/explicit recovery; normal commands become validate-only outside target range.",
+      "currentPrecedence": "Ordinary commands validate canonical rows; explicit import, onboarding, and legacy extraction may normalize only their declared compatibility payload.",
+      "missingBehavior": "Ordinary commands reject missing canonical collections; explicit compatibility actions may create their declared records.",
+      "malformedBehavior": "Ordinary commands reject malformed or duplicate stable ids without persisting sibling repair.",
+      "damagedDatabaseBehavior": "Repair is owned by migration/import/recovery; normal commands remain validate-only outside their declared range.",
       "historicalFixture": "server/fastify/__tests__/commands.test.ts",
       "provenance": "Command integration and mutation-range fixtures across split presets, prompts, and translators.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "versioned migration/import repair plus validate-only command readers",
       "migrationPhase": "Phase 5 repair boundary",
       "oldReaderOrExporter": "existing ensure* helpers retained until migration fixtures cover every supported old shape",
       "rollbackProof": "Compare whole-database snapshots before/after ordinary commands and restore helper behind migration boundary.",
-      "workstream3Cursor": "Hold matching collection owner release if its command still repairs siblings.",
+      "workstream3Cursor": "Released: mutation-range tests prove ordinary commands do not persist unrelated repair; retained normalizers are explicit compatibility actions.",
       "probes": [
         {
           "path": "server/fastify/src/commands/splitPresets.ts",
@@ -934,12 +934,6 @@
           "kind": "identifier",
           "value": "ensurePromptPresetCollection",
           "expectedCount": 3
-        },
-        {
-          "path": "server/fastify/src/commands/prompts.ts",
-          "kind": "identifier",
-          "value": "ensurePromptTemplateCollection",
-          "expectedCount": 1
         },
         {
           "path": "server/fastify/src/commands/translatorPresets.ts",
@@ -965,12 +959,12 @@
       "damagedDatabaseBehavior": "Ordinary resource commands must not repair unrelated ids.",
       "historicalFixture": "server/fastify/__tests__/lorebookIdentityRepair.test.ts",
       "provenance": "Stable-id migration/import regression fixtures and database schema migration tests.",
-      "disposition": "migrate",
+      "disposition": "explicit-compatibility",
       "targetOwner": "versioned migration, import normalization, and explicit recovery only",
       "migrationPhase": "Phase 1 foundation and Phase 5 repair boundary",
       "oldReaderOrExporter": "repository broad reader with legacy embedded fallback",
       "rollbackProof": "Transactional migration retry plus pre-migration backup and deterministic-id fixture.",
-      "workstream3Cursor": "Hold affected lorebook/chat owner retirement until repair is boundary-owned.",
+      "workstream3Cursor": "Released: stable-id repair is confined to schema migration, legacy import, and explicit recovery paths.",
       "probes": [
         {
           "path": "server/fastify/src/repository.ts",
@@ -1099,26 +1093,26 @@
     {
       "id": "client-lorebook-page-compatibility",
       "family": "client-resource",
-      "surface": "owner-backed lorebook page pointer mirrored to the legacy database and plugin surface",
-      "currentOwner": "lorebookPageOwner with a narrow lorebookBridge compatibility replica",
+      "surface": "owner-backed lorebook page pointer with an explicit plugin refusal boundary",
+      "currentOwner": "lorebookPageOwner",
       "roles": [
         "read",
         "mutation",
         "plugin",
         "recovery"
       ],
-      "currentPrecedence": "The owner pointer wins whenever hydrated; only cold legacy actions may fall back to the existing database scalar, and structural collection repair projects the stable-id result back through the owner.",
-      "missingBehavior": "Owner-backed UI uses page zero until route hydration succeeds; cold non-UI actions may use the existing compatibility scalar without issuing a second request.",
+      "currentPrecedence": "The hydrated owner pointer is authoritative; normal process and UI reads never fall back to an aggregate database scalar.",
+      "missingBehavior": "Owner-backed UI and process actions use page zero until the narrow owner hydrates.",
       "malformedBehavior": "Negative/non-integer pages and non-unique lorebook ids are refused by owner selection; the repository remains responsible for legacy bounds and stable-id repair.",
       "damagedDatabaseBehavior": "The compatibility replica never repairs lorebook bodies or broad settings and cannot widen bootstrap, shell, or focused resource payloads.",
-      "historicalFixture": "src/ts/process/__tests__/lorebook.resourceGuard.test.ts",
+      "historicalFixture": "src/ts/process/__tests__/lorebook.owner.test.ts",
       "provenance": "Focused route, invalidation, owner, modal, process, and structural bridge tests cover hydration, durable settlement, rollback, stable-id repair, and cold fallback.",
-      "disposition": "temporary",
-      "targetOwner": "lorebookPageOwner only, with external plugin exposure replaced or permanently classified",
+      "disposition": "remove",
+      "targetOwner": "lorebookPageOwner only; the unsupported plugin key is an explicit refusal, not a replica",
       "migrationPhase": "Workstream 3 Phase 4 bridge removal and Phase 6 plugin/legacy disposition",
-      "oldReaderOrExporter": "unsupportedServerBridgeKeys loreBookPage exposure and currentLorebookPageIndex cold-flow fallback",
+      "oldReaderOrExporter": "unsupportedServerBridgeKeys loreBookPage refusal",
       "rollbackProof": "Owner current-attempt rollback plus bridge delete/reorder stable-id rollback and authoritative reload tests remain mandatory.",
-      "workstream3Cursor": "Owner UI/process consumers are migrated; remove this hold only after the plugin key and cold action fallback have closed-world replacements.",
+      "workstream3Cursor": "Released: the compatibility replica and cold aggregate fallback are removed; the legacy plugin key fails closed in server mode.",
       "probes": [
         {
           "path": "src/ts/plugins/plugins.svelte.ts",
@@ -1133,9 +1127,9 @@
           "expectedCount": 2
         },
         {
-          "path": "src/ts/server/lorebookBridge.svelte.ts",
+          "path": "src/ts/server/lorebookPageOwner.svelte.ts",
           "kind": "text",
-          "value": "lorebookPageOwner.subscribe",
+          "value": "export function currentLorebookPageIndex",
           "expectedCount": 1
         }
       ]

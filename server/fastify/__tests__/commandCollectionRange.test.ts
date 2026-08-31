@@ -1344,8 +1344,8 @@ describe('personas collection range', () => {
 })
 
 describe('translator-presets collection range', () => {
-  // Every translator route re-syncs the legacy scalars, so all four write the
-  // table + settings unconditionally.
+  // Translator routes persist stable selection metadata alongside the table;
+  // legacy prompt/max-response scalars remain unchanged.
   const EXPECTED = ['settings', 'translator_presets']
 
   it('POST translator-presets writes translator_presets + settings', async () => {
@@ -1370,8 +1370,8 @@ describe('translator-presets collection range', () => {
       'tp-b',
       'tp-c',
     ])
-    // No select: the pointer moves independently of legacy compatibility fields.
-    expect(readSettings().translatorPresetId).toBe(0)
+    // No select: stable identity and legacy compatibility scalars stay put.
+    expect(readSettings().translatorPresetId).toBe('tp-a')
     expect(readSettings().translatorPrompt).toBe('pa-prompt')
   })
 
@@ -1427,7 +1427,7 @@ describe('translator-presets collection range', () => {
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
     const settings = readSettings()
-    expect(settings.translatorPresetId).toBe(1)
+    expect(settings.translatorPresetId).toBe('tp-b')
     expect(settings.translatorPrompt).toBe('pa-prompt')
     expect(settings.translatorMaxResponse).toBe(500)
   })

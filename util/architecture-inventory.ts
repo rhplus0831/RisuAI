@@ -907,7 +907,7 @@ async function run(): Promise<void> {
     0,
   )
   console.log(
-    `[architecture-inventory] PASS ${clientConsumerCount} client compatibility references across ${clientResourceBaseline.consumers.length} consumer groups, ${clientResourceBaseline.bridgeFamilies.length} bridge families, and ${clientResourceBaseline.temporarySeams.length} temporary seam markers`,
+    `[architecture-inventory] PASS ${clientConsumerCount} test-fixture compatibility references across ${clientResourceBaseline.consumers.length} consumer groups, ${clientResourceBaseline.bridgeFamilies.length} bridge families, and ${clientResourceBaseline.temporarySeams.length} reviewed seam markers`,
   )
   console.log(
     `[architecture-inventory] PASS ${Object.keys(clientResourceBaseline.policies).length} client resource owner gap rows`,

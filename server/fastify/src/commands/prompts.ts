@@ -19,13 +19,6 @@ export interface PromptItemPatch {
 
 const PROMPT_SETTINGS_KEY_SET = new Set<string>(PROMPT_SETTINGS_KEYS)
 
-export function ensurePromptTemplateCollection(database: JsonRecord): PromptItemRecord[] {
-  const source = Array.isArray(database.promptTemplate) ? database.promptTemplate : []
-  const promptTemplate = normalizePromptTemplateValue(source)
-  database.promptTemplate = promptTemplate
-  return promptTemplate
-}
-
 export function normalizePromptTemplateValue(value: unknown[]): PromptItemRecord[]
 export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null
 export function normalizePromptTemplateValue(value: unknown): PromptItemRecord[] | null {

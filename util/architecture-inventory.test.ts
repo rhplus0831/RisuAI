@@ -107,10 +107,7 @@ describe('cross-runtime baseline gate', () => {
     const observation = collectCrossRuntimeObservation(REPO_ROOT)
     const baseline = JSON.parse(
       fs.readFileSync(
-        path.join(
-          REPO_ROOT,
-          '.archived-docs/architecture-and-migration/cross-runtime-boundaries/baseline.json',
-        ),
+        path.join(REPO_ROOT, '.archived-docs/architecture-and-migration/cross-runtime-boundaries/baseline.json'),
         'utf8',
       ),
     ) as CrossRuntimeBaseline
@@ -167,7 +164,7 @@ describe('compatibility disposition gate', () => {
     expect(baseline.surfaces).toHaveLength(28)
     expect(new Set(baseline.surfaces.map((surface) => surface.id)).size).toBe(28)
     expect(new Set(baseline.surfaces.map((surface) => surface.disposition))).toEqual(
-      new Set(['canonical', 'migrate', 'import-only', 'explicit-compatibility', 'temporary', 'remove']),
+      new Set(['canonical', 'import-only', 'explicit-compatibility', 'remove']),
     )
   })
 
@@ -229,7 +226,7 @@ describe('client resource ownership gate', () => {
     ) as ClientResourceOwnerGapMatrix
 
     expect(validateClientResourceOwnerGapMatrix(REPO_ROOT, baseline, matrix)).toEqual([])
-    expect(Object.keys(matrix.policies)).toHaveLength(56)
+    expect(Object.keys(matrix.policies)).toHaveLength(9)
     expect(matrix).not.toHaveProperty('consumers')
     expect(matrix.foundations['lorebook-page-standalone']).toMatchObject({
       status: 'implemented',
@@ -248,7 +245,7 @@ describe('client resource ownership gate', () => {
     const matrix = JSON.parse(
       fs.readFileSync(path.join(REPO_ROOT, 'docs/plan/client-resource-ownership/owner-api-gap-matrix.json'), 'utf8'),
     ) as ClientResourceOwnerGapMatrix
-    delete matrix.policies['lorebook:read']
+    delete matrix.policies['lorebook:test-fixture']
     matrix.owners.lorebook.capabilities.aggregateSnapshot = 'complete'
     matrix.foundations['lorebook-page-standalone'].ownerApi = 'src/ts/server/lorebookPageOwner.svelte.ts#missingOwner'
 
@@ -261,7 +258,7 @@ describe('client resource ownership gate', () => {
     )
   })
 
-  it('matches every reviewed consumer, bridge family, and temporary seam', () => {
+  it('matches every reviewed test fixture and retained compatibility seam', () => {
     const observation = collectClientResourceObservation(REPO_ROOT)
     const baseline = JSON.parse(
       fs.readFileSync(
@@ -271,18 +268,13 @@ describe('client resource ownership gate', () => {
     ) as ClientResourceBaseline
 
     expect(compareClientResourceBaseline(observation, baseline)).toEqual([])
-    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(9582)
-    expect(observation.consumers).toHaveLength(1163)
-    expect(baseline.consumers).toHaveLength(326)
-    expect(observation.bridgeFamilies.map((bridge) => bridge.family)).toEqual([
-      'character',
-      'chat',
-      'lorebook',
-      'promptTemplate',
-      'scriptDefinition',
-      'settings',
-    ])
+    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(4221)
+    expect(observation.consumers).toHaveLength(216)
+    expect(baseline.consumers).toHaveLength(30)
+    expect(observation.consumers.filter((consumer) => consumer.lane === 'production')).toEqual([])
+    expect(observation.bridgeFamilies).toEqual([])
     expect(observation.temporarySeams).toHaveLength(20)
+    expect(baseline.temporarySeams.every((seam) => !seam.disposition.startsWith('temporary'))).toBe(true)
   })
 
   it('parses Svelte scripts and rejects a new aggregate consumer or bridge family', () => {

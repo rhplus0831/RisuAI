@@ -3,206 +3,210 @@
   "source": {
     "baseline": "docs/plan/client-resource-ownership/client-resource-baseline.json",
     "openingAnchor": "c0df82d5240a29a33efa5995e08cc970e0147573",
-    "inventoryCursor": "0432b32ba1bcb7f8a3d5ca68a5605dd47a26857f",
-    "policyCount": 56,
-    "consumerGroupCount": 326,
-    "referenceCount": 9582
+    "inventoryCursor": "244713c5e",
+    "policyCount": 9,
+    "consumerGroupCount": 30,
+    "referenceCount": 4221
   },
-  "capabilityKeys": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
+  "capabilityKeys": [
+    "selectors",
+    "resourceState",
+    "commands",
+    "draftRecovery",
+    "contractTests"
+  ],
   "owners": {
     "broad-settings-shell": {
       "dependencies": {
-        "workstream1": "Shell reads released at 159b6eccf; standalone settings at 33d1643ae; remaining settings contracts pending per resource after the 6a6d0ac1f route catalog.",
-        "workstream2": "Already-singular settings rows require per-resource proof; other owners remain pending after the 1e758cd22 migration foundation."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "missing",
-        "contractTests": "partial"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Add settings-group/shell selectors, stale/retry ownership, owner-scoped drafts, and full lifecycle tests without widening shell payloads.",
-      "evidence": ["src/ts/server/resourceState.svelte.ts", "src/ts/server/resourceRefresh.test.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/server/settingsOwner.svelte.ts",
+        "src/ts/server/resourceState.svelte.ts"
+      ]
     },
     "character-chat": {
       "dependencies": {
-        "workstream1": "Character-summary reads released at 159b6eccf; remaining character/chat contracts pending after the 6a6d0ac1f route catalog.",
-        "workstream2": "Character, chat, message, and Hypa SQLite row owners are released at 7cb62afa8; embedded copies are pre-extraction import/recovery only, with orphan cleanup held for Phases 5-6."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "partial",
-        "contractTests": "partial"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Unify stable-id row/transcript selectors with explicit stale/retry, writer-fenced drafts, and accepted/queued/failed owner tests.",
-      "evidence": ["src/ts/server/resourceState.svelte.ts", "src/ts/server/chatMessageHydration.svelte.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/server/characterDraft.svelte.ts",
+        "src/ts/server/chatMessageHydration.svelte.ts"
+      ]
     },
     "compatibility-infrastructure": {
       "dependencies": {
-        "workstream1": "Removal waits for every family contract; catalogs are released at 3f275e9dc and 6a6d0ac1f.",
-        "workstream2": "Removal waits for all canonical-owner releases; only the 1e758cd22 migration foundation is released."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
         "selectors": "not-applicable",
         "resourceState": "not-applicable",
-        "commands": "blocked",
+        "commands": "not-applicable",
         "draftRecovery": "not-applicable",
-        "contractTests": "partial"
+        "contractTests": "complete"
       },
-      "gap": "Retain gates and bridge lifecycle until all family owners release; this row must converge to removal rather than a replacement aggregate owner.",
-      "evidence": ["src/ts/server/pendingBridgeFlushRegistry.ts", "src/ts/server/resourceWriteGuard.svelte.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/lib/_audit/frontendArchitecture.static.test.ts",
+        "src/ts/server/ownerMutationLifecycle.ts"
+      ]
     },
     "cross-cutting": {
       "dependencies": {
-        "workstream1": "Resolve against the exact family contract; catalogs are released at 3f275e9dc and 6a6d0ac1f.",
-        "workstream2": "Resolve against the exact canonical owner; only the 1e758cd22 migration foundation is released."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "missing",
-        "contractTests": "partial"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Split each cross-cutting observation by concrete owner; do not create an all-resource selector, epoch, or draft store.",
-      "evidence": ["src/ts/server/resourceOwnerMutationKeys.ts", "src/ts/server/replacementDatabaseOwnership.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/bootstrap.ts",
+        "src/ts/server/replacementDatabaseOwnership.ts"
+      ]
     },
     "leaf-settings-collections": {
       "dependencies": {
-        "workstream1": "Standalone settings released at 33d1643ae and route metadata at 6a6d0ac1f; each collection still needs an exact contract check.",
-        "workstream2": "Prove an already-singular row/collection or wait for its owner release after 1e758cd22."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "missing",
-        "contractTests": "partial"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Add resource-keyed selectors, stale/retry state, durable outcomes, and reload tests one singular settings/collection owner at a time.",
-      "evidence": ["src/ts/server/resourceState.svelte.ts", "src/ts/server/commands.test.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/server/resourceState.svelte.ts",
+        "src/ts/server/settingsOwner.svelte.ts"
+      ]
     },
     "lorebook": {
       "dependencies": {
-        "workstream1": "The loreBookPage standalone read is released at 33d1643ae with route metadata at 6a6d0ac1f; lorebook bodies and commands remain pending.",
-        "workstream2": "The loreBookPage settings row is already singular; lorebook bodies remain under the Phase 4 disposition/repair hold."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "missing",
-        "contractTests": "partial"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Keep page selection, global rows, character bodies, and script scopes separate; complete mutation/draft contracts after canonical-owner releases.",
-      "evidence": ["src/ts/server/lorebookBridge.svelte.ts", "src/ts/server/resourceState.svelte.test.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/server/lorebookOwner.svelte.ts",
+        "src/ts/server/resourceState.svelte.test.ts"
+      ]
     },
     "model-translator": {
       "dependencies": {
-        "workstream1": "Route and durable-operation catalogs are released at 6a6d0ac1f and 3f275e9dc; exact model/translator contracts remain pending.",
-        "workstream2": "Model ownership is active in Phase 2 after 1e758cd22; translator ownership waits for Phase 4."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "missing",
-        "contractTests": "blocked"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Wait for Workstream 2 model and translator canonical-owner releases before filling browser owner contracts.",
-      "evidence": ["docs/plan/canonical-state-and-compatibility/status.md"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/model/modelProfileResolver.ts",
+        "src/ts/translator/presets.ts"
+      ]
     },
     "prompt-template": {
       "dependencies": {
-        "workstream1": "Route and durable-operation catalogs are released at 6a6d0ac1f and 3f275e9dc; the prompt contract remains pending.",
-        "workstream2": "Prompt canonical ownership waits for Phase 3 after the 1e758cd22 migration foundation."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "partial",
-        "commands": "partial",
-        "draftRecovery": "missing",
-        "contractTests": "blocked"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Wait for the Workstream 2 prompt owner, then expose preset-owned lazy-body hydration, drafts, and durable mutation outcomes.",
-      "evidence": ["src/ts/server/promptTemplateHydration.ts", "docs/plan/canonical-state-and-compatibility/status.md"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/server/promptTemplateHydration.ts",
+        "src/ts/server/promptTemplateMutations.svelte.ts"
+      ]
     },
     "script-definition": {
       "dependencies": {
-        "workstream1": "Route and durable-operation catalogs are released at 6a6d0ac1f and 3f275e9dc; scoped script contracts remain pending.",
-        "workstream2": "Script definitions remain under the Phase 4 disposition/repair hold after 1e758cd22."
+        "workstream1": "Released owner contracts; Workstream 1 is archived at 377a3610b.",
+        "workstream2": "Canonical persisted owners and retained compatibility boundaries are released for Workstream 3 closeout."
       },
       "capabilities": {
-        "selectors": "partial",
-        "resourceState": "missing",
-        "commands": "partial",
-        "draftRecovery": "partial",
-        "contractTests": "partial"
+        "selectors": "complete",
+        "resourceState": "complete",
+        "commands": "complete",
+        "draftRecovery": "complete",
+        "contractTests": "complete"
       },
-      "gap": "Add scoped definition hydration/state and mutation settlement per character/module owner without treating scripts as one global resource.",
-      "evidence": ["src/ts/server/moduleEditorDraftStore.ts", "src/ts/server/resourceOwnerMutationKeys.ts"]
+      "gap": "Closed; aggregate helpers remain only in the test-only owner-state adapter, and normal application consumers are zero.",
+      "evidence": [
+        "src/ts/server/scriptDefinitionOwner.svelte.ts",
+        "src/ts/server/resourceState.svelte.ts"
+      ]
     }
   },
   "policies": {
-    "broad-settings-shell:definition": { "owner": "broad-settings-shell" },
-    "broad-settings-shell:diagnostic": { "owner": "broad-settings-shell" },
-    "broad-settings-shell:hydration": { "owner": "broad-settings-shell" },
-    "broad-settings-shell:read": { "owner": "broad-settings-shell" },
-    "broad-settings-shell:recovery": { "owner": "broad-settings-shell" },
-    "broad-settings-shell:render": { "owner": "broad-settings-shell" },
-    "broad-settings-shell:test-fixture": { "owner": "broad-settings-shell" },
-    "character-chat:diagnostic": { "owner": "character-chat" },
-    "character-chat:generation": { "owner": "character-chat" },
-    "character-chat:mutation": { "owner": "character-chat" },
-    "character-chat:read": { "owner": "character-chat" },
-    "character-chat:recovery": { "owner": "character-chat" },
-    "character-chat:render": { "owner": "character-chat" },
-    "character-chat:test-fixture": { "owner": "character-chat" },
-    "compatibility-infrastructure:definition": { "owner": "compatibility-infrastructure" },
-    "compatibility-infrastructure:diagnostic": { "owner": "compatibility-infrastructure" },
-    "compatibility-infrastructure:mutation": { "owner": "compatibility-infrastructure" },
-    "compatibility-infrastructure:recovery": { "owner": "compatibility-infrastructure" },
-    "compatibility-infrastructure:test-fixture": { "owner": "compatibility-infrastructure" },
-    "cross-cutting:diagnostic": { "owner": "cross-cutting" },
-    "cross-cutting:generation": { "owner": "cross-cutting" },
-    "cross-cutting:mutation": { "owner": "cross-cutting" },
-    "cross-cutting:read": { "owner": "cross-cutting" },
-    "cross-cutting:recovery": { "owner": "cross-cutting" },
-    "cross-cutting:render": { "owner": "cross-cutting" },
-    "cross-cutting:test-fixture": { "owner": "cross-cutting" },
-    "leaf-settings-collections:diagnostic": { "owner": "leaf-settings-collections" },
-    "leaf-settings-collections:generation": { "owner": "leaf-settings-collections" },
-    "leaf-settings-collections:mutation": { "owner": "leaf-settings-collections" },
-    "leaf-settings-collections:read": { "owner": "leaf-settings-collections" },
-    "leaf-settings-collections:recovery": { "owner": "leaf-settings-collections" },
-    "leaf-settings-collections:render": { "owner": "leaf-settings-collections" },
-    "leaf-settings-collections:test-fixture": { "owner": "leaf-settings-collections" },
-    "lorebook:diagnostic": { "owner": "lorebook" },
-    "lorebook:generation": { "owner": "lorebook" },
-    "lorebook:read": { "owner": "lorebook" },
-    "lorebook:recovery": { "owner": "lorebook" },
-    "lorebook:render": { "owner": "lorebook" },
-    "lorebook:test-fixture": { "owner": "lorebook" },
-    "model-translator:diagnostic": { "owner": "model-translator" },
-    "model-translator:generation": { "owner": "model-translator" },
-    "model-translator:read": { "owner": "model-translator" },
-    "model-translator:render": { "owner": "model-translator" },
-    "model-translator:test-fixture": { "owner": "model-translator" },
-    "prompt-template:diagnostic": { "owner": "prompt-template" },
-    "prompt-template:generation": { "owner": "prompt-template" },
-    "prompt-template:read": { "owner": "prompt-template" },
-    "prompt-template:recovery": { "owner": "prompt-template" },
-    "prompt-template:render": { "owner": "prompt-template" },
-    "prompt-template:test-fixture": { "owner": "prompt-template" },
-    "script-definition:diagnostic": { "owner": "script-definition" },
-    "script-definition:generation": { "owner": "script-definition" },
-    "script-definition:mutation": { "owner": "script-definition" },
-    "script-definition:read": { "owner": "script-definition" },
-    "script-definition:recovery": { "owner": "script-definition" },
-    "script-definition:test-fixture": { "owner": "script-definition" }
+    "broad-settings-shell:test-fixture": {
+      "owner": "broad-settings-shell"
+    },
+    "character-chat:test-fixture": {
+      "owner": "character-chat"
+    },
+    "compatibility-infrastructure:test-fixture": {
+      "owner": "compatibility-infrastructure"
+    },
+    "cross-cutting:test-fixture": {
+      "owner": "cross-cutting"
+    },
+    "leaf-settings-collections:test-fixture": {
+      "owner": "leaf-settings-collections"
+    },
+    "lorebook:test-fixture": {
+      "owner": "lorebook"
+    },
+    "model-translator:test-fixture": {
+      "owner": "model-translator"
+    },
+    "prompt-template:test-fixture": {
+      "owner": "prompt-template"
+    },
+    "script-definition:test-fixture": {
+      "owner": "script-definition"
+    }
   },
   "foundations": {
     "lorebook-page-standalone": {
@@ -211,8 +215,14 @@
       "ownerApi": "src/ts/server/lorebookPageOwner.svelte.ts#lorebookPageOwner",
       "workstream1Cursor": "standalone read 33d1643ae; durable command 3f275e9dc; route relation 6a6d0ac1f",
       "workstream2Cursor": "already-singular settings row",
-      "capabilities": ["selectors", "resourceState", "commands", "draftRecovery", "contractTests"],
-      "remaining": "Owner-backed page consumers are migrated. The named cold-flow fallback, plugin/database compatibility replica, and structural collection repair remain until their Phase 4/6 closed-world gates; lorebook editor bodies stay on their separate family cursor."
+      "capabilities": [
+        "selectors",
+        "resourceState",
+        "commands",
+        "draftRecovery",
+        "contractTests"
+      ],
+      "remaining": "Closed for production ownership; the test-only aggregate fixture and classified external compatibility seams remain outside normal application state."
     }
   }
 }

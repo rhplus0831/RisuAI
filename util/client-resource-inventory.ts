@@ -208,10 +208,18 @@ function scriptSegments(file: string, source: string): string[] {
   return [...source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map((match) => match[1])
 }
 
-function detectorForIdentifier(symbol: string): string | null {
+function detectorForIdentifier(node: ts.Identifier): string | null {
+  const symbol = node.text
   const exact = EXACT_IDENTIFIER_DETECTORS.get(symbol)
+  if (
+    exact &&
+    ['aggregate-read', 'aggregate-replacement', 'resource-facade-read', 'aggregate-snapshot'].includes(exact)
+  ) {
+    return ts.isCallExpression(node.parent) && node.parent.expression === node ? exact : null
+  }
   if (exact) return exact
-  if (/^(?:capture|has).+ProjectionEpoch(?:Changed)?$/.test(symbol)) return 'resource-epoch'
+  // Owner-specific projection epochs are stale-response fences, not aggregate
+  // facade epochs. Only the retired broad epoch symbols above belong here.
   if (/^(?:watchServerBacked|syncServerBacked|flushPendingServerBacked|flushPendingPromptTemplate)/.test(symbol)) {
     return 'bridge-lifecycle'
   }
@@ -232,8 +240,14 @@ function collectFileConsumers(repoRoot: string, file: string): ClientConsumerObs
     )
     const visit = (node: ts.Node): void => {
       if (ts.isIdentifier(node)) {
-        const detector = detectorForIdentifier(node.text)
-        if (detector) {
+        const detector = detectorForIdentifier(node)
+        // Whole-database import/replacement owns this internal call; it is not
+        // an application consumer of the retired aggregate facade.
+        const retainedWholeDatabaseReplacement =
+          relative === 'src/ts/storage/database.svelte.ts' &&
+          detector === 'aggregate-replacement' &&
+          node.text === 'setDatabaseLite'
+        if (detector && !retainedWholeDatabaseReplacement) {
           const key = `${detector}\0${node.text}`
           const current = counts.get(key)
           if (current) current.count += 1
@@ -439,6 +453,19 @@ function migrationPhase(family: ClientResourceFamily): string {
 
 function policyForConsumer(row: ClientConsumerObservation): ClientConsumerPolicy {
   const family = resourceFamily(row.file, row.detector)
+  if (row.lane === 'test') {
+    return {
+      resourceFamily: family,
+      role: 'test-fixture',
+      targetOwnerApi: 'test-only aggregate adapter over explicit resource-owner state',
+      workstream1Dependency:
+        'Released owner contracts; production imports are forbidden by the static architecture gate',
+      workstream2Dependency:
+        'Canonical persisted owners released; the adapter does not participate in production state',
+      migrationPhase: 'Workstream 3 Phase 7 retained test-fixture decision',
+      removalTrigger: 'Retain only while compatibility fixtures need whole-database setup or assertions.',
+    }
+  }
   const workstream2Dependency =
     family === 'prompt-template'
       ? 'Workstream 2 Phase 3 prompt owner'
@@ -455,9 +482,7 @@ function policyForConsumer(row: ClientConsumerObservation): ClientConsumerPolicy
     workstream2Dependency,
     migrationPhase: migrationPhase(family),
     removalTrigger:
-      row.lane === 'test'
-        ? 'Replace with owner-contract coverage when the production consumer migrates.'
-        : 'Owner-specific read, command, queued/failure rollback, reload, and browser proof pass for this consumer.',
+      'Owner-specific read, command, queued/failure rollback, reload, and browser proof pass for this consumer.',
   }
 }
 
@@ -502,7 +527,7 @@ export function createClientResourceBaseline(
     openingAnchor,
     conventionRelease,
     policy:
-      'New aggregate reads, trusted writes, bridge families, lifecycle flushes, broad epochs, and temporary seams are forbidden. Baseline changes require an explicit reviewed owner, dependency, phase, and removal trigger.',
+      'New normal-runtime aggregate reads, trusted writes, bridge families, lifecycle flushes, broad epochs, and unclassified seams are forbidden. Baseline changes require an explicit reviewed owner, dependency, phase, and removal trigger.',
     policies: Object.fromEntries(Object.entries(policies).sort(([left], [right]) => left.localeCompare(right))),
     consumers,
     bridgeFamilies: observation.bridgeFamilies.map((bridge) => {
@@ -525,13 +550,16 @@ export function createClientResourceBaseline(
       owner:
         seam.id === 'character-aggregate-endpoint'
           ? 'Fastify compatibility character/chat resource read'
-          : 'pre-writer observer shell rollout',
-      disposition: 'temporary; remove or permanently classify with measurements and tests',
-      migrationPhase: 'Workstream 3 Phase 7',
+          : 'deployment-owned pre-writer observer-shell rollout',
+      disposition:
+        seam.id === 'character-aggregate-endpoint'
+          ? 'retained external compatibility; first-party production clients use narrow owners'
+          : 'retained operational rollout control; production ignores the smoke-only session override',
+      migrationPhase: 'Workstream 3 Phase 7 retained-seam decision',
       removalTrigger:
         seam.id === 'character-aggregate-endpoint'
-          ? 'Character/chat owner reads and payload/startup measurements pass without the broad endpoint.'
-          : 'Observer-shell rollout decision is final and override aliases are no longer required.',
+          ? 'Remove after path-only access telemetry records zero supported-client requests for 30 consecutive days.'
+          : 'Remove after deployment telemetry satisfies the documented observer-shell safety and latency thresholds.',
     })),
   }
 }
