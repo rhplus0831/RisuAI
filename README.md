@@ -84,9 +84,10 @@ Run the full stack (Vite dev server plus hot-reloading Fastify API) with one com
 pnpm dev:human
 ```
 
-The app is available at `http://localhost:6002`, with the API on port `6001`.
-Human development mode also listens on network interfaces, so another device
-on the same Tailscale network can open the Tailscale IPv4 URL printed by Vite.
+When Tailscale is connected, the app is available at the Tailscale IPv4 URL
+printed during startup, with the API on port `6001`. The runner binds only to
+that Tailscale address, not public or LAN interfaces. Without Tailscale it falls
+back to `http://localhost:6002`.
 
 Alternatively, run the two halves in separate terminals:
 

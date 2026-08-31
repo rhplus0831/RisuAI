@@ -46,10 +46,10 @@ respect `RISU_AGENT_DEV_HOST` / `RISU_AGENT_DEV_PORT` /
 `RISU_API_STATIC_ROOT=none`, default `VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS=TRUE`,
 and proxy `/api` to the spawned API port.
 The shared runner host defaults to `127.0.0.1` in agent mode because that mode
-bypasses authentication. Human mode keeps password authentication enabled and
-defaults to `0.0.0.0`, making the Vite URL reachable through network interfaces
-such as Tailscale; Vite prints the available network URLs during startup. Set
-`RISU_AGENT_DEV_HOST` explicitly to override either default.
+bypasses authentication. Human mode discovers its active Tailscale IPv4 address
+with `tailscale ip -4` and binds only to that address, so public and LAN
+interfaces remain closed. It falls back to `127.0.0.1` when Tailscale is
+unavailable. Set `RISU_AGENT_DEV_HOST` explicitly to override either default.
 The spawned API uses `tsx watch`, so API source edits restart it; use
 `pnpm api:dev:flag` when you need edit-triggered restarts to be manual.
 Vite scans all production TypeScript and Svelte modules for dependencies during
@@ -313,7 +313,7 @@ Local/dev:
 | Variable                         | Default                                         | Notes                                                                                                                             |
 | -------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `RISU_API_RESTART_FLAG`          | `.risu-api-restart`                             | Flag file watched by `pnpm api:dev:flag`.                                                                                         |
-| `RISU_AGENT_DEV_HOST`            | `127.0.0.1` for `dev:agent`, `0.0.0.0` for `dev:human` | Host used by the full-stack runner for both spawned processes; human mode's network bind includes Tailscale.                |
+| `RISU_AGENT_DEV_HOST`            | `127.0.0.1` for `dev:agent`; active Tailscale IPv4 or loopback fallback for `dev:human` | Host used by the full-stack runner for both spawned processes.                                                  |
 | `RISU_AGENT_DEV_PORT`            | `6418`                                          | Frontend port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6002`.                                                           |
 | `RISU_AGENT_API_PORT`            | `6419`                                          | Fastify port for `pnpm dev:agent`; `pnpm dev:human` sets it to `6001`.                                                            |
 | `RISU_AGENT_DEV_AUTH_BYPASS`     | `TRUE` for `dev:agent`, `FALSE` for `dev:human` | Protected API routes ignore password auth when enabled.                                                                           |

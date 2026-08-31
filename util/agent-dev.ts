@@ -1,15 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import { parseAgentDataSandboxMode, prepareAgentDataSandbox } from '../server/fastify/src/agentDataSandbox.js'
+import { resolveAgentDevHost } from './agent-dev-host.js'
 
 const repoRoot = process.cwd()
 const frontendPort = parsePort(process.env.RISU_AGENT_DEV_PORT, 6418, 'RISU_AGENT_DEV_PORT')
 const apiPort = parsePort(process.env.RISU_AGENT_API_PORT, 6419, 'RISU_AGENT_API_PORT')
 const traceMode = process.env.RISU_API_TRACE_MODE?.trim().toLowerCase()
-// Human mode keeps password authentication enabled, so expose it on network
-// interfaces (including Tailscale) by default. Agent mode bypasses auth and
-// must remain loopback-only unless the operator explicitly opts into a wider bind.
-const host = process.env.RISU_AGENT_DEV_HOST ?? (traceMode === 'human' ? '0.0.0.0' : '127.0.0.1')
+// Human mode binds specifically to Tailscale so it is not exposed through a
+// public or LAN interface. Agent mode bypasses auth and remains loopback-only.
+const hostResolution = resolveAgentDevHost(process.env.RISU_AGENT_DEV_HOST, traceMode)
+const host = hostResolution.host
 const defaultAuthBypass = traceMode === 'human' ? 'FALSE' : 'TRUE'
 // Agent mode runs against a disposable clone of the human data dir so
 // agent-driven sessions can mutate state freely. An explicit RISU_API_DATA_DIR
@@ -37,6 +38,10 @@ function parsePort(raw: string | undefined, fallback: number, name: string): num
 
 function log(message: string): void {
   console.log(`[dev:agent] ${message}`)
+}
+
+function urlHost(hostname: string): string {
+  return hostname.includes(':') ? `[${hostname}]` : hostname
 }
 
 function spawnManaged(name: string, command: string, args: string[], env: NodeJS.ProcessEnv): void {
@@ -90,8 +95,11 @@ async function shutdown(exitCode: number): Promise<void> {
   process.exit(exitCode)
 }
 
-log(`frontend: http://localhost:${frontendPort}`)
-log(`api: http://localhost:${apiPort} (proxied through /api on ${frontendPort})`)
+if (traceMode === 'human' && hostResolution.source === 'loopback') {
+  log('Tailscale IPv4 address unavailable; keeping dev:human on loopback')
+}
+log(`frontend: http://${urlHost(host)}:${frontendPort}`)
+log(`api: http://${urlHost(host)}:${apiPort} (proxied through /api on ${frontendPort})`)
 
 if (sandboxDataDir) {
   // Prepared here (not in the server) so tsx-watch restarts of the API child
@@ -116,7 +124,7 @@ spawnManaged('api', 'pnpm', ['exec', 'tsx', 'watch', 'server/fastify/src/index.t
 
 spawnManaged('vite', 'pnpm', ['exec', 'vite', '--host', host, '--port', String(frontendPort), '--strictPort'], {
   ...process.env,
-  RISU_API_PROXY_TARGET: `http://localhost:${apiPort}`,
+  RISU_API_PROXY_TARGET: `http://${urlHost(host)}:${apiPort}`,
   VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS: process.env.VITE_RISU_AGENT_DEV_IGNORE_REALM_TERMS ?? 'TRUE',
 })
 
