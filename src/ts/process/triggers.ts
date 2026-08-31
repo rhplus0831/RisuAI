@@ -1,14 +1,6 @@
 import { parseChatML } from '../parser/chatML'
 import { risuChatParser } from '../parser/parser.svelte'
-import {
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
-  setCurrentCharacter,
-  setDatabase,
-  type Chat,
-  type character,
-} from '../storage/database.svelte'
+import { setCurrentCharacter, setDatabase, type Chat, type character } from '../storage/database.svelte'
 import { setSelectedPersonaPromptFromTrigger } from '../persona'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { tokenize } from '../tokenizer'
@@ -40,6 +32,12 @@ import {
   type ChatScriptstateSnapshot,
 } from '../chatCommands'
 import { dispatchReplaceCharacterLorebooks, scopedLorebookStateSnapshot } from '../server/lorebookBridge.svelte'
+import {
+  getCharacterResourceOwner,
+  settingsResourceState,
+  collectionsResourceState,
+} from '../server/resourceState.svelte'
+import { getSelectedCharacterOwner } from '../characterState'
 
 export interface triggerscript {
   id?: string
@@ -48,6 +46,14 @@ export interface triggerscript {
   conditions: triggerCondition[]
   effect: triggerEffect[]
   lowLevelAccess?: boolean
+}
+
+function triggerSettings() {
+  return settingsResourceState.status === 'error' ? {} : settingsResourceState.value
+}
+
+function triggerPersonas() {
+  return collectionsResourceState.statuses.personas === 'error' ? [] : collectionsResourceState.values.personas
 }
 
 function scriptModelOverridesForTrigger(trigger: triggerscript, char: character): ScriptModelOverrides | undefined {
@@ -1411,8 +1417,9 @@ export async function runTrigger(
     }),
   )
   const triggers: triggerscript[] = charTriggers.concat(getModuleTriggers())
-  const db = getDatabase()
-  const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(db.templateDefaultVariables))
+  const defaultVariables = parseKeyValue(char.defaultVariables).concat(
+    parseKeyValue(triggerSettings().templateDefaultVariables ?? ''),
+  )
 
   const previousTriggerId = get(CurrentTriggerIdStore)
   const shouldSetTriggerId = !arg.displayMode && mode !== 'display'
@@ -1564,15 +1571,16 @@ export async function runTrigger(
   // there: in the live Fastify runtime the projection rows are read-only, so a
   // direct `currentChat.scriptstate = …` throws. Before the guard is enabled, the
   // wrapper is a pass-through. This remains the same single live write the former
-  // three (identical, same-object) assignments produced. `getCurrentChat()` is the
-  // canonical active chat, so this also stays correct after a data effect (e.g. v2
+  // three (identical, same-object) assignments produced. The selected-character
+  // owner is canonical, so this also stays correct after a data effect (e.g. v2
   // lorebook/desc) re-installs the character mid-pass.
   function syncActiveChatScriptstate(): void {
     if (!shouldApplyLiveChatSideEffects()) {
       return
     }
     withTrustedResourceWrite(() => {
-      const liveChat = getCurrentChat()
+      const currentCharacter = getSelectedCharacterOwner()
+      const liveChat = currentCharacter?.chats?.[currentCharacter.chatPage]
       if (liveChat) {
         liveChat.scriptstate = chat.scriptstate
       }
@@ -2735,9 +2743,14 @@ export async function runTrigger(
           break
         }
         case 'v2GetPersonaDesc': {
-          const db = getDatabase()
-          const currentPersonaPrompt = db.personaPrompt ?? ''
-          const savedPersonaPrompt = db.personas[db.selectedPersona]?.personaPrompt ?? ''
+          const settings = triggerSettings()
+          const currentPersonaPrompt = settings.personaPrompt ?? ''
+          const selectedPersona = settings.selectedPersona
+          const personas = triggerPersonas()
+          const savedPersonaPrompt =
+            Number.isInteger(selectedPersona) && Array.isArray(personas)
+              ? (personas[selectedPersona as number]?.personaPrompt ?? '')
+              : ''
           setVar(risuChatParser(effect.outputVar, { chara: char }), currentPersonaPrompt || savedPersonaPrompt)
           break
         }
@@ -3373,8 +3386,8 @@ export async function runTrigger(
             const noteRollback = captureScriptstateRollback()
             let chatId: string | undefined
             withTrustedResourceWrite(() => {
-              const currentCharacter = getCurrentCharacter()
-              const chatSlot = currentCharacter.chats?.[currentCharacter.chatPage]
+              const currentCharacter = getSelectedCharacterOwner()
+              const chatSlot = currentCharacter?.chats?.[currentCharacter.chatPage]
               if (chatSlot) {
                 chatSlot.note = value
                 chatId = chatSlot.id

@@ -88,6 +88,7 @@ function seedDb(messageChatId: string | null = 'm-0'): character {
     ...(messageChatId !== null ? { chatId: messageChatId } : {}),
   }
   testDatabaseState.db = {
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',

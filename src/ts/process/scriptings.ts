@@ -6,9 +6,6 @@ import { LuaEngine, LuaFactory } from 'wasmoon'
 import { get } from 'svelte/store'
 import {
   getCharacterByIndex,
-  getCurrentCharacter,
-  getCurrentChat,
-  getDatabase,
   setCharacterByIndex,
   setDatabase,
   type Chat,
@@ -38,6 +35,7 @@ import { parseKeyValue } from '../util'
 import { getPersonaPrompt, getUserIcon, getUserName } from '../utilState'
 import { safeStructuredClone } from '../polyfill'
 import { resolveModelProfile } from '../model/modelProfileResolver'
+import { getSelectedCharacterOwner } from '../characterState'
 import type { PyWorkerRequest, PyWorkerResponse } from './pyworker'
 import {
   captureActiveChatTarget,
@@ -53,9 +51,14 @@ import {
   ensureClientLorebookEntryIds,
   scopedLorebookStateSnapshot,
 } from '../server/lorebookBridge.svelte'
+import { getCharacterResourceOwner, settingsResourceState } from '../server/resourceState.svelte'
 let luaFactory: LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
+
+function scriptingSettings() {
+  return settingsResourceState.status === 'error' ? {} : settingsResourceState.value
+}
 let ScriptingLowLevelIds = new Set<string>()
 let lastRequestResetTime = 0
 let lastRequestsCount = 0
@@ -124,7 +127,10 @@ export async function runScripted(
   },
 ) {
   const type: 'lua' | 'py' = arg.type ?? 'lua'
-  const char = arg.char ?? getCurrentCharacter()
+  const char = arg.char ?? getSelectedCharacterOwner()
+  if (!char) {
+    throw new Error('character owner unavailable')
+  }
   const data = arg.data ?? ''
   const setVar = arg.setVar ?? setChatVar
   const getVar = arg.getVar ?? getChatVar
@@ -141,7 +147,7 @@ export async function runScripted(
         : char.scriptModelOverrides,
   )
 
-  let chat = arg.chat ?? getCurrentChat()
+  let chat = arg.chat ?? (char.type === 'character' ? char.chats?.[char.chatPage] : undefined)
   let stopSending = false
   let lowLevelAccess = arg.lowLevelAccess ?? false
 
@@ -378,7 +384,7 @@ export async function runScripted(
       })
 
       declareAPI('cbs', (value) => {
-        return risuChatParser(value, { chara: getCurrentCharacter() })
+        return risuChatParser(value, { chara: ScriptingEngineState.currentRun?.char })
       })
 
       declareAPI('setFullChatMain', (id: string, value: string) => {
@@ -506,16 +512,9 @@ export async function runScripted(
 
       declareAPI('getCharacterImageMain', async (id: string) => {
         try {
-          const db = getDatabase()
-          const selectedChar = get(selectedCharID)
+          const character = ScriptingEngineState.currentRun?.char
 
-          if (selectedChar < 0 || selectedChar >= db.characters.length) {
-            return ''
-          }
-
-          const character = db.characters[selectedChar]
-
-          if (!character || !character.image) {
+          if (!character || character.type !== 'character' || !character.image) {
             return ''
           }
 
@@ -791,10 +790,8 @@ export async function runScripted(
       })
 
       declareAPI('getName', (id: string) => {
-        const db = getDatabase()
-        const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
-        return char.name
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.name : ''
       })
 
       declareAPI('setName', (id: string, name: string) => {
@@ -814,9 +811,8 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const selectedChar = get(selectedCharID)
-        const char = getDatabase().characters[selectedChar]
-        return char.desc
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.desc : undefined
       })
 
       declareAPI('setDescription', (id: string, desc: string) => {
@@ -833,9 +829,8 @@ export async function runScripted(
       })
 
       declareAPI('getCharacterFirstMessage', (id: string) => {
-        const selectedChar = get(selectedCharID)
-        const char = getDatabase().characters[selectedChar]
-        return char.firstMessage
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.firstMessage : ''
       })
 
       declareAPI('setCharacterFirstMessage', (id: string, data: string) => {
@@ -857,11 +852,8 @@ export async function runScripted(
       })
 
       declareAPI('getPersonaDescription', (id: string) => {
-        const db = getDatabase()
-        const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
-
-        return risuChatParser(getPersonaPrompt(), { chara: char })
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return risuChatParser(getPersonaPrompt(), { chara: currentCharacter })
       })
 
       declareAPI('getAuthorsNote', (id: string) => {
@@ -872,10 +864,8 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        const db = getDatabase()
-        const selectedChar = get(selectedCharID)
-        const char = db.characters[selectedChar]
-        return char.backgroundHTML
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        return currentCharacter?.type === 'character' ? currentCharacter.backgroundHTML : undefined
       })
 
       declareAPI('setBackgroundEmbedding', (id: string, data: string) => {
@@ -894,9 +884,8 @@ export async function runScripted(
 
       // Lore books
       declareAPI('getLoreBooksMain', (id: string, search: string) => {
-        const db = getDatabase()
-        const selectedChar = db.characters[get(selectedCharID)]
-        if (selectedChar.type !== 'character') {
+        const selectedChar = ScriptingEngineState.currentRun?.char
+        if (!selectedChar || selectedChar.type !== 'character') {
           return
         }
 
@@ -960,18 +949,16 @@ export async function runScripted(
           return
         }
 
-        const db = getDatabase()
+        const selectedChar = ScriptingEngineState.currentRun?.char
 
-        const selectedChar = db.characters[get(selectedCharID)]
-
-        if (selectedChar.type !== 'character') {
+        if (!selectedChar || selectedChar.type !== 'character') {
           return
         }
 
         const fullLoreBooks = (await loadLoreBookV3Prompt()).actives
         // This is a low-level scripting API, so its budget follows the scriptMain
         // execution role (the same owner as LLM/simpleLLM), not chatMain.
-        const scriptProfile = resolveModelProfile({ database: db, role: 'scriptMain' })
+        const scriptProfile = resolveModelProfile({ database: scriptingSettings(), role: 'scriptMain' })
         const maxContext = (scriptProfile.runtimeOptions.maxContext ?? 0) - reserve
         if (maxContext < 0) {
           return JSON.stringify([])
@@ -1131,9 +1118,6 @@ export async function runScripted(
           return ''
         }
 
-        const db = getDatabase()
-        const selchar = db.characters[get(selectedCharID)]
-
         let pointer = chat.message.length - 1
         while (pointer >= 0) {
           if (chat.message[pointer].role === 'char') {
@@ -1143,7 +1127,9 @@ export async function runScripted(
           pointer--
         }
 
-        return selchar.firstMessage
+        return ScriptingEngineState.currentRun?.char?.type === 'character'
+          ? ScriptingEngineState.currentRun.char.firstMessage
+          : ''
       })
 
       declareAPI('getUserLastMessage', (id: string) => {
@@ -1170,9 +1156,6 @@ export async function runScripted(
           return ''
         }
 
-        const db = getDatabase()
-        const selchar = db.characters[get(selectedCharID)]
-
         let pointer = chat.message.length - 1
         while (pointer >= 0) {
           if (chat.message[pointer].role === 'char') {
@@ -1182,7 +1165,9 @@ export async function runScripted(
           pointer--
         }
 
-        return selchar.firstMessage
+        return ScriptingEngineState.currentRun?.char?.type === 'character'
+          ? ScriptingEngineState.currentRun.char.firstMessage
+          : ''
       })
 
       declareAPI('getUserLastMessage', (id: string) => {
@@ -1836,7 +1821,8 @@ function createLuaEditTriggerWorkingContext(
 ): LuaEditTriggerWorkingContext {
   const canMutateChatCollections = mode !== 'editDisplay'
   if (char.type !== 'character') {
-    const currentChat = getCurrentChat() ?? createEmptyLuaEditTriggerChat()
+    const currentCharacter = getSelectedCharacterOwner()
+    const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage] ?? createEmptyLuaEditTriggerChat()
     return {
       char,
       chat: cloneLuaEditTriggerChat(currentChat, canMutateChatCollections),
@@ -1844,7 +1830,7 @@ function createLuaEditTriggerWorkingContext(
   }
 
   const target = canUseServerCommands() ? captureActiveChatTarget() : null
-  const activeCharacter = target ? getDatabase().characters?.[target.selectedCharID] : undefined
+  const activeCharacter = target ? getCharacterResourceOwner(target.characterId) : undefined
   const activeChat = activeCharacter?.chats?.[activeCharacter.chatPage]
   const targetChatIndex = target?.chatId ? char.chats.findIndex((candidate) => candidate.id === target.chatId) : -1
   const ownsActiveChat =
@@ -1860,9 +1846,10 @@ function createLuaEditTriggerWorkingContext(
 
   const previousChat = ownsActiveChat ? cloneLuaEditTriggerChat(activeChat, canMutateChatCollections) : undefined
   const characterChat = char.chats[char.chatPage]
+  const currentCharacter = getSelectedCharacterOwner()
   const sourceChat = ownsActiveChat
     ? previousChat
-    : (characterChat ?? getCurrentChat() ?? createEmptyLuaEditTriggerChat())
+    : (characterChat ?? currentCharacter?.chats?.[currentCharacter.chatPage] ?? createEmptyLuaEditTriggerChat())
 
   const workingChat = cloneLuaEditTriggerChat(sourceChat, canMutateChatCollections)
   const workingChatIndex = ownsActiveChat ? targetChatIndex : characterChat ? char.chatPage : char.chats.length
@@ -1945,7 +1932,7 @@ function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContex
   const applied = withTrustedResourceWrite(() => {
     if (!isActiveChatTargetFresh(reconciliation.target)) return false
 
-    const selectedCharacter = getDatabase().characters?.[reconciliation.target.selectedCharID]
+    const selectedCharacter = getCharacterResourceOwner(reconciliation.target.characterId)
     const liveChat = selectedCharacter?.chats?.[selectedCharacter.chatPage]
     if (
       !selectedCharacter ||
@@ -2061,11 +2048,10 @@ function createLuaButtonWorkingGetVar(char: character | simpleCharacterArgument,
       return state.toString()
     }
 
-    const db = getDatabase()
     const defaultVariables =
       char.type === 'simple'
-        ? parseKeyValue(db.templateDefaultVariables)
-        : parseKeyValue(char.defaultVariables).concat(parseKeyValue(db.templateDefaultVariables))
+        ? parseKeyValue(scriptingSettings().templateDefaultVariables ?? '')
+        : parseKeyValue(char.defaultVariables).concat(parseKeyValue(scriptingSettings().templateDefaultVariables ?? ''))
     const defaultVariable = defaultVariables.find((entry) => entry[0] === key)
     return defaultVariable?.[1] ?? 'null'
   }

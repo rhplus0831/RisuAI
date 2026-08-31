@@ -1,12 +1,6 @@
 import { get } from 'svelte/store'
 import { CharEmotion, selectedCharID, VariableReloadGUIPointer } from '../stores.svelte'
-import {
-  type character,
-  type customscript,
-  getDatabase,
-  getCurrentCharacter,
-  getCurrentChat,
-} from '../storage/database.svelte'
+import { type character, type customscript, type Database, type Chat } from '../storage/database.svelte'
 import { downloadFile } from '../globalApi.svelte'
 import { alertError, alertNormal } from '../alert'
 import { language } from 'src/lang'
@@ -37,9 +31,26 @@ import {
 } from './clientRegexWorker'
 import { assertClientRegexPatternSafe } from './regexSafety'
 import { regexOutputSizeLimitCodeUnits } from '@risuai/shared-core/regex-output-size-limit'
+import { getSelectedCharacterOwner } from '../characterState'
+import { collectionsResourceState, settingsResourceState } from '../server/resourceState.svelte'
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
+
+function scriptSettings(): Partial<Database> {
+  if (settingsResourceState.status === 'error') return {}
+  return settingsResourceState.value as unknown as Partial<Database>
+}
+
+function promptPresetDatabase(): Database {
+  return {
+    ...scriptSettings(),
+    promptPresets:
+      collectionsResourceState.statuses.promptPresets === 'error'
+        ? []
+        : (collectionsResourceState.values.promptPresets ?? []),
+  } as Database
+}
 
 export type ScriptMode = 'editinput' | 'editoutput' | 'editprocess' | 'editdisplay'
 
@@ -74,8 +85,7 @@ export async function processScript(
 }
 
 export function exportRegex(s?: customscript[]) {
-  let db = getDatabase()
-  const script = s ?? db.globalscript
+  const script = s ?? scriptSettings().globalscript ?? []
   const data = Buffer.from(
     JSON.stringify({
       type: 'regex',
@@ -223,15 +233,15 @@ export function hasProcessScriptCacheEntryForTesting(
       chatID,
       cbsConditions,
       currentScriptCacheScope(mode),
-      regexOutputSizeLimitCodeUnits(getDatabase().regexOutputSizeLimitMiB),
+      regexOutputSizeLimitCodeUnits(scriptSettings().regexOutputSizeLimitMiB),
     ),
   )
 }
 
-function currentScriptCacheScope(mode: ScriptMode) {
+function currentScriptCacheScope(mode: ScriptMode, activeChat?: Chat) {
   if (mode !== 'editdisplay') return ''
   try {
-    const chat = getCurrentChat()
+    const chat = activeChat ?? getSelectedCharacterOwner()?.chats?.[getSelectedCharacterOwner()?.chatPage ?? -1]
     return JSON.stringify({
       selectedChar: get(selectedCharID),
       chatId: chat?.id,
@@ -282,23 +292,21 @@ export function getBestMatchCacheSizeForTesting() {
   return bestMatchCache.size
 }
 
-function selectedChatMessage(chatID: number) {
-  const selchar = getDatabase().characters?.[get(selectedCharID)]
-  const chat = selchar?.chats?.[selchar.chatPage]
+function selectedChatMessage(chat: Chat | undefined, chatID: number) {
   return chat?.message?.[chatID]
 }
 
-function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
+function applyInjectMutation(data: string, mode: ScriptMode, chatID: number, chat: Chat | undefined) {
   if (mode === 'editdisplay' || chatID === -1) return
 
   if (canUseServerCommands()) {
-    const messageId = selectedChatMessage(chatID)?.chatId
+    const messageId = selectedChatMessage(chat, chatID)?.chatId
     if (!messageId) return
 
     const previous = currentChatScopedSnapshot()
     let updated = false
     withTrustedResourceWrite(() => {
-      const message = selectedChatMessage(chatID)
+      const message = selectedChatMessage(chat, chatID)
       if (!message || message.chatId !== messageId) return
       message.data = data
       updated = true
@@ -311,7 +319,7 @@ function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
   }
 
   withTrustedResourceWrite(() => {
-    const message = selectedChatMessage(chatID)
+    const message = selectedChatMessage(chat, chatID)
     if (message) {
       message.data = data
     }
@@ -357,16 +365,17 @@ export async function processScriptFull(
   chatID = -1,
   cbsConditions: CbsConditions = {},
 ) {
-  let db = getDatabase()
+  const db = scriptSettings()
   let emoChanged = false
+  const activeCharacter = char.type === 'character' ? char : getSelectedCharacterOwner()
+  const currentChat = activeCharacter?.chats?.[activeCharacter.chatPage]
   data = await runLuaEditTrigger(char, mode, data, { index: chatID })
 
   if (mode === 'editdisplay') {
-    const currentChar = getCurrentCharacter()
-    if (currentChar) {
+    if (activeCharacter && currentChat) {
       try {
-        const d = await runTrigger(currentChar, 'display', {
-          chat: getCurrentChat(),
+        const d = await runTrigger(activeCharacter, 'display', {
+          chat: currentChat,
           displayMode: true,
           displayData: data,
         })
@@ -389,7 +398,7 @@ export async function processScriptFull(
 
   data = risuChatParser(data, { chatID: chatID, cbsConditions })
   const scripts = getProcessableCustomScripts(db.globalscript)
-    .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(db)))
+    .concat(getProcessableCustomScripts(getActivePromptPresetRegexScripts(promptPresetDatabase(), currentChat)))
     .concat(getProcessableCustomScripts((char as { customscript?: unknown }).customscript))
     .concat(getProcessableCustomScripts(getModuleRegexScripts()))
   const regexSizeLimit = regexOutputSizeLimitCodeUnits(db.regexOutputSizeLimitMiB)
@@ -399,7 +408,7 @@ export async function processScriptFull(
     mode,
     chatID,
     cbsConditions,
-    currentScriptCacheScope(mode),
+    currentScriptCacheScope(mode, currentChat),
     regexSizeLimit,
   )
   const cached = getScriptCache(hash)
@@ -493,7 +502,7 @@ export async function processScriptFull(
           const replaced = await testReplaceClientRegex(input, flag, data, '', regexTimeout, regexSizeLimit)
           matched = replaced.matched
           if (matched) {
-            applyInjectMutation(data, mode, chatID)
+            applyInjectMutation(data, mode, chatID, currentChat)
             data = replaced.result
           }
         } else {
@@ -529,8 +538,9 @@ export async function processScriptFull(
           chatID !== -1
         ) {
           const v = outScript.split(' ', 2)[1]
-          const selchar = db.characters[get(selectedCharID)]
-          const chat = selchar.chats[selchar.chatPage]
+          const selchar = char.type === 'character' ? char : getSelectedCharacterOwner()
+          const chat = currentChat
+          if (!selchar || !chat) return
           let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
           let pointer = chatID - 1
           while (pointer >= 0) {
@@ -622,7 +632,7 @@ export async function processScriptFull(
     }
     const assetNames = char.additionalAssets.map((v) => v[0])
 
-    const moduleAssets = getModuleAssets()
+    const moduleAssets = getModuleAssets({ character: char.type === 'character' ? char : undefined, chat: currentChat })
     if (moduleAssets.length > 0) {
       for (const asset of moduleAssets) {
         assetNames.push(asset[0])
