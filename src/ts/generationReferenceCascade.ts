@@ -2,12 +2,11 @@ import {
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
   charactersResourceState,
+  collectionsResourceState,
   getCharacterResourceOwner,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
 } from './server/resourceState.svelte'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import type { Database } from './storage/database.svelte'
 
 type JsonRecord = Record<string, unknown>
 
@@ -43,110 +42,105 @@ interface JsonFieldState {
  * The returned rollback is identity-, field-, and projection-fenced so a failed
  * delete never overwrites a newer chat save, loadout edit, or authoritative read.
  */
-export function optimisticallyRehomeGenerationReferences(input: {
-  getDatabase: () => Database
-  kind: GenerationReferenceKind
-  deletedId: string
-  replacement: GenerationReferenceReplacement | null
-}): OptimisticGenerationReferenceCascade {
+export function optimisticallyRehomeGenerationReferences<
+  T extends {
+    kind: GenerationReferenceKind
+    deletedId: string
+    replacement: GenerationReferenceReplacement | null
+  },
+>(input: T): OptimisticGenerationReferenceCascade {
   const field = generationReferenceField(input.kind)
-  const database = input.getDatabase()
   const rollbacks: FieldRollback[] = []
   let chatCount = 0
   let loadoutCount = 0
   let promptRecommendationCount = 0
 
-  withTrustedResourceWrite(() => {
-    // Character/chat generation settings are owned by the explicit character
-    // resource rows. Do not scan the aggregate mirror here: a row replacement
-    // or duplicate stable id must make the cascade fail closed rather than
-    // rehome a different character's chat.
-    for (const character of charactersResourceState.characters) {
-      const characterId = nonBlankId(character?.chaId)
-      if (!characterId) continue
-      const projectionEpoch = captureCharacterRowProjectionEpoch(characterId)
-      const chats = Array.isArray(character?.chats) ? character.chats : []
-      for (const chat of chats) {
-        const chatId = nonBlankId(chat?.id)
-        const generationSettings = asJsonRecord(chat?.generationSettings)
-        if (
-          !chatId ||
-          !generationSettings ||
-          generationSettings[field] !== input.deletedId ||
-          resolveUniqueChatGenerationSettings(characterId, chatId) !== generationSettings
-        ) {
-          continue
-        }
-        rollbacks.push(
-          captureFieldRollback({
-            target: generationSettings,
-            keys: [field],
-            resolveTarget: () => resolveUniqueChatGenerationSettings(characterId, chatId),
-            hasProjectionChanged: () => hasCharacterRowProjectionEpochChanged(characterId, projectionEpoch),
-            mutate: () => assignOptionalReference(generationSettings, field, input.replacement?.id),
-          }),
-        )
-        chatCount += 1
+  // Character/chat generation settings are owned by the explicit character
+  // resource rows. Do not scan the aggregate mirror here: a row replacement
+  // or duplicate stable id must make the cascade fail closed rather than
+  // rehome a different character's chat.
+  for (const character of charactersResourceState.characters) {
+    const characterId = nonBlankId(character?.chaId)
+    if (!characterId) continue
+    const projectionEpoch = captureCharacterRowProjectionEpoch(characterId)
+    const chats = Array.isArray(character?.chats) ? character.chats : []
+    for (const chat of chats) {
+      const chatId = nonBlankId(chat?.id)
+      const generationSettings = asJsonRecord(chat?.generationSettings)
+      if (
+        !chatId ||
+        !generationSettings ||
+        generationSettings[field] !== input.deletedId ||
+        resolveUniqueChatGenerationSettings(characterId, chatId) !== generationSettings
+      ) {
+        continue
       }
+      rollbacks.push(
+        captureFieldRollback({
+          target: generationSettings,
+          keys: [field],
+          resolveTarget: () => resolveUniqueChatGenerationSettings(characterId, chatId),
+          hasProjectionChanged: () => hasCharacterRowProjectionEpochChanged(characterId, projectionEpoch),
+          mutate: () => assignOptionalReference(generationSettings, field, input.replacement?.id),
+        }),
+      )
+      chatCount += 1
     }
+  }
 
-    const projectionEpoch = captureCollectionProjectionEpoch('loadouts')
-    for (const loadout of database.loadouts ?? []) {
-      const loadoutId = nonBlankId(loadout?.id)
-      const target = asJsonRecord(loadout)
-      if (!loadoutId || !target || target[field] !== input.deletedId) continue
-      if (resolveUniqueLoadout(input.getDatabase(), loadoutId) !== target) continue
-      const keys = loadoutReferenceKeys(input.kind)
+  const projectionEpoch = captureCollectionProjectionEpoch('loadouts')
+  for (const loadout of collectionsResourceState.values.loadouts ?? []) {
+    const loadoutId = nonBlankId(loadout?.id)
+    const target = asJsonRecord(loadout)
+    if (!loadoutId || !target || target[field] !== input.deletedId) continue
+    if (resolveUniqueLoadout(loadoutId) !== target) continue
+    const keys = loadoutReferenceKeys(input.kind)
+    rollbacks.push(
+      captureFieldRollback({
+        target,
+        keys,
+        resolveTarget: () => resolveUniqueLoadout(loadoutId),
+        hasProjectionChanged: () => hasCollectionProjectionEpochChanged('loadouts', projectionEpoch),
+        mutate: () => assignLoadoutReference(target, input.kind, input.replacement),
+      }),
+    )
+    loadoutCount += 1
+  }
+
+  if (input.kind === 'modelPreset') {
+    const promptPresetProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+    for (const promptPreset of collectionsResourceState.values.promptPresets ?? []) {
+      const promptPresetId = nonBlankId(promptPreset?.id)
+      const target = asJsonRecord(promptPreset)
+      if (
+        !promptPresetId ||
+        !target ||
+        target.recommendedModelPresetId !== input.deletedId ||
+        resolveUniquePromptPreset(promptPresetId) !== target
+      ) {
+        continue
+      }
       rollbacks.push(
         captureFieldRollback({
           target,
-          keys,
-          resolveTarget: () => resolveUniqueLoadout(input.getDatabase(), loadoutId),
-          hasProjectionChanged: () => hasCollectionProjectionEpochChanged('loadouts', projectionEpoch),
-          mutate: () => assignLoadoutReference(target, input.kind, input.replacement),
+          keys: ['recommendedModelPresetId'],
+          resolveTarget: () => resolveUniquePromptPreset(promptPresetId),
+          hasProjectionChanged: () => hasCollectionProjectionEpochChanged('promptPresets', promptPresetProjectionEpoch),
+          mutate: () => {
+            target.recommendedModelPresetId = null
+          },
         }),
       )
-      loadoutCount += 1
+      promptRecommendationCount += 1
     }
-
-    if (input.kind === 'modelPreset') {
-      const promptPresetProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
-      for (const promptPreset of database.promptPresets ?? []) {
-        const promptPresetId = nonBlankId(promptPreset?.id)
-        const target = asJsonRecord(promptPreset)
-        if (
-          !promptPresetId ||
-          !target ||
-          target.recommendedModelPresetId !== input.deletedId ||
-          resolveUniquePromptPreset(input.getDatabase(), promptPresetId) !== target
-        ) {
-          continue
-        }
-        rollbacks.push(
-          captureFieldRollback({
-            target,
-            keys: ['recommendedModelPresetId'],
-            resolveTarget: () => resolveUniquePromptPreset(input.getDatabase(), promptPresetId),
-            hasProjectionChanged: () =>
-              hasCollectionProjectionEpochChanged('promptPresets', promptPresetProjectionEpoch),
-            mutate: () => {
-              target.recommendedModelPresetId = null
-            },
-          }),
-        )
-        promptRecommendationCount += 1
-      }
-    }
-  })
+  }
 
   return {
     chatCount,
     loadoutCount,
     promptRecommendationCount,
     rollback: () => {
-      withTrustedResourceWrite(() => {
-        for (const rollback of rollbacks) restoreFields(rollback)
-      })
+      for (const rollback of rollbacks) restoreFields(rollback)
     },
   }
 }
@@ -246,17 +240,27 @@ function fieldMatches(target: JsonRecord, key: string, expected: JsonFieldState)
 function resolveUniqueChatGenerationSettings(characterId: string, chatId: string): JsonRecord | undefined {
   const character = getCharacterResourceOwner(characterId)
   if (!character) return undefined
-  const chats = (character.chats ?? []).filter((chat) => chat?.id === chatId)
-  return chats.length === 1 ? (asJsonRecord(chats[0].generationSettings) ?? undefined) : undefined
+  let match: JsonRecord | undefined
+  for (const candidateCharacter of charactersResourceState.characters) {
+    for (const chat of candidateCharacter.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      if (candidateCharacter !== character || match) return undefined
+      match = asJsonRecord(chat.generationSettings) ?? undefined
+      if (!match) return undefined
+    }
+  }
+  return match
 }
 
-function resolveUniqueLoadout(database: Database, loadoutId: string): JsonRecord | undefined {
-  const loadouts = (database.loadouts ?? []).filter((loadout) => loadout?.id === loadoutId)
+function resolveUniqueLoadout(loadoutId: string): JsonRecord | undefined {
+  const loadouts = (collectionsResourceState.values.loadouts ?? []).filter((loadout) => loadout?.id === loadoutId)
   return loadouts.length === 1 ? (asJsonRecord(loadouts[0]) ?? undefined) : undefined
 }
 
-function resolveUniquePromptPreset(database: Database, promptPresetId: string): JsonRecord | undefined {
-  const promptPresets = (database.promptPresets ?? []).filter((promptPreset) => promptPreset?.id === promptPresetId)
+function resolveUniquePromptPreset(promptPresetId: string): JsonRecord | undefined {
+  const promptPresets = (collectionsResourceState.values.promptPresets ?? []).filter(
+    (promptPreset) => promptPreset?.id === promptPresetId,
+  )
   return promptPresets.length === 1 ? (asJsonRecord(promptPresets[0]) ?? undefined) : undefined
 }
 

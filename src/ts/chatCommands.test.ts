@@ -680,6 +680,7 @@ beforeEach(() => {
     enabledModules: [],
     moduleIntergration: '',
     modules: [],
+    currentChar: 0,
     characters: [
       {
         chaId: 'char-a',
@@ -4513,6 +4514,20 @@ describe('chat-scoped snapshot kit', () => {
     expect(snapshot.chat).toBeUndefined()
   })
 
+  it('fails closed when a stable chat id has multiple global owners', () => {
+    const database = seedCloneCostDb() as any
+    database.characters[1].chats[0].id = database.characters[0].chats[0].id
+    setDatabaseLite(database)
+    selectedCharID.set(0)
+
+    const snapshot = currentChatScopedSnapshot()
+
+    expect(snapshot.characterId).toBe('char-0')
+    expect(snapshot.chatId).toBe('chat-0')
+    expect(snapshot.chat).toBeUndefined()
+    expect(captureActiveChatTarget()).toBeNull()
+  })
+
   it('restores only the active chat, preserving concurrent edits to other chats', () => {
     setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
@@ -6960,7 +6975,7 @@ describe('scriptstate-scoped var dispatch', () => {
     }
   })
 
-  it('flushes note and chat metadata PATCHes before DELETE when durable storage is unavailable', async () => {
+  it('flushes owned note and chat metadata PATCHes before DELETE without walking unrelated flushers', async () => {
     resetPendingMutationOutboxForTests()
     setCachedServerCommandRevision(30)
     setResourceWriteGuardEnabled(true)
@@ -7025,6 +7040,7 @@ describe('scriptstate-scoped var dispatch', () => {
         { method: 'PATCH', patch: { note: 'fallback note' } },
         { method: 'DELETE', patch: undefined },
       ])
+      expect(pendingNote).toBe(true)
     } finally {
       unregisterNoteFlusher()
       stopWatcher()
