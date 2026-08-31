@@ -1,9 +1,14 @@
 <script lang="ts">
   import SideChatList from './SideChatList.svelte'
-  import { selectedCharID } from 'src/ts/stores.svelte'
-  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { charactersResourceState, getCharacterResourceOwner } from 'src/ts/server/resourceState.svelte'
+
+  let selectedOwner = $derived.by(() => {
+    if (charactersResourceState.status !== 'ready') return undefined
+    const candidate = charactersResourceState.characters[charactersResourceState.currentChar]
+    return candidate?.chaId ? getCharacterResourceOwner(candidate.chaId) : undefined
+  })
 </script>
 
-{#if $selectedCharID >= 0 && getDatabase().characters?.[$selectedCharID]}
-  <SideChatList chara={getDatabase().characters[$selectedCharID]} />
+{#if selectedOwner}
+  <SideChatList chara={selectedOwner} />
 {/if}

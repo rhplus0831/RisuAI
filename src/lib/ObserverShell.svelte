@@ -3,13 +3,12 @@
   import { language } from '../lang'
   import { observerShellLifecycleStore, type ObserverShellLifecycleMode } from '../ts/observerShellLifecycle.svelte'
   import { hydrateCharacterShell, characterShellHydrationState } from '../ts/server/characterShellHydration.svelte'
-  import { getResourceDatabase as getDatabase } from '../ts/server/resourceState.svelte'
+  import { charactersResourceState } from '../ts/server/resourceState.svelte'
   import { isServerCharacterShell } from '../ts/storage/database.svelte'
   import { characterRoutePath, currentRoute, navigate } from '../ts/router'
   import { recordObserverRouteIntent } from '../ts/observerRouteIntent'
 
-  let database = $derived(getDatabase())
-  let characters = $derived(database.characters ?? [])
+  let characters = $derived(charactersResourceState.status === 'ready' ? charactersResourceState.characters : [])
   let routeCharacterId = $derived($currentRoute.kind === 'character' ? $currentRoute.chaId : null)
   let routeChatId = $derived($currentRoute.kind === 'character' ? ($currentRoute.chatId ?? null) : null)
   let selectedCharacter = $derived(

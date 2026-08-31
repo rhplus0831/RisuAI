@@ -20,11 +20,9 @@
 </script>
 
 <script lang="ts">
-  import { selectedCharID } from 'src/ts/stores.svelte'
   import {
     charactersResourceState,
     getCharacterResourceOwner,
-    getResourceDatabase,
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
@@ -49,7 +47,7 @@
   let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
   let selectedCharacterIndex = $derived(
-    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : $selectedCharID,
+    charactersResourceState.status === 'ready' ? charactersResourceState.currentChar : -1,
   )
   let mobileCharacterRows = $derived(
     formatMobileCharacterRows(readCharacterOwners(), {
@@ -70,7 +68,7 @@
 
   function openCharacterRoute(row: { chaId?: string; index: number }) {
     const characters = readCharacterOwners()
-    const owner = row.chaId ? uniqueCharacterOwner(characters, row.chaId) : undefined
+    const owner = row.chaId ? uniqueCharacterOwner(row.chaId) : undefined
     const index = owner?.index ?? (row.chaId ? -1 : row.index)
     if (index < 0) return
     const character = (owner?.character ?? characters[index]) as MobileCharacterSummary | undefined
@@ -90,40 +88,26 @@
       }
       return ownedCharacters as MobileCharacterSummary[]
     }
-    if (charactersResourceState.status !== 'idle' && charactersResourceState.status !== 'loading') return []
-    // Compatibility is limited to idle/loading. Once that projection has
-    // resident rows, keep rendering it rather than switching sources.
-    return (
-      ownedCharacters.length > 0 ? ownedCharacters : (getResourceDatabase().characters ?? [])
-    ) as MobileCharacterSummary[]
+    return []
   }
 
   function readMobileLanguageOwner(): unknown {
     if (settingsResourceState.status === 'error') return undefined
     const status = settingsResourceState.groupStatuses.language ?? 'idle'
     if (status === 'ready') return settingsResourceState.value.language
-    if (status === 'idle' || status === 'loading') return getResourceDatabase().language
     return undefined
   }
 
-  function uniqueCharacterOwner(characters: readonly MobileCharacterSummary[], characterId: string) {
-    if (charactersResourceState.status === 'ready') {
-      const character = getCharacterResourceOwner(characterId) as MobileCharacterSummary | undefined
-      const index = character ? charactersResourceState.characters.indexOf(character) : -1
-      return character && index >= 0 ? { character, index } : undefined
-    }
-    let owner: { character: MobileCharacterSummary; index: number } | undefined
-    for (const [index, character] of characters.entries()) {
-      if (character.chaId !== characterId) continue
-      if (owner) return undefined
-      owner = { character, index }
-    }
-    return owner
+  function uniqueCharacterOwner(characterId: string) {
+    if (charactersResourceState.status !== 'ready') return undefined
+    const character = getCharacterResourceOwner(characterId) as MobileCharacterSummary | undefined
+    const index = character ? charactersResourceState.characters.indexOf(character) : -1
+    return character && index >= 0 ? { character, index } : undefined
   }
 
   function isSelectedRow(row: { chaId?: string; index: number }): boolean {
     if (row.index !== selectedCharacterIndex) return false
-    return !row.chaId || uniqueCharacterOwner(readCharacterOwners(), row.chaId)?.index === row.index
+    return !row.chaId || uniqueCharacterOwner(row.chaId)?.index === row.index
   }
 
   function mobileCharacterRenderKey(row: MobileCharacterRow): string {

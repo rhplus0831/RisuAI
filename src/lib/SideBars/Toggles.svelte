@@ -2,7 +2,8 @@
   import { MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { alertError, alertNormal } from 'src/ts/alert'
-  import { getDatabase, type character } from 'src/ts/storage/database.svelte'
+  import type { character } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
@@ -74,6 +75,11 @@
     resolveActiveChatGenerationSettings({
       selectedCharIndex: $selectedCharID,
     }),
+  )
+  let hypaV3Enabled = $derived(
+    settingsResourceState.status !== 'error' &&
+      settingsResourceState.groupStatuses.memory === 'ready' &&
+      settingsResourceState.value.hypaV3 === true,
   )
 
   let hasJailbreakPrompt = $derived.by(() => activeGenerationSettings.readiness.requirements.jailbreakToggle.displayed)
@@ -420,7 +426,7 @@
     {/if}
 
     {@render toggles(displayedSidebarToggles, true)}
-    {#if chara && getDatabase().hypaV3}
+    {#if chara && hypaV3Enabled}
       <div
         class="flex mt-2 items-center w-full gap-2"
         class:justify-end={$MobileGUI}
@@ -465,7 +471,7 @@
     </div>
   {/if}
   {@render toggles(displayedSidebarToggles)}
-  {#if chara && getDatabase().hypaV3}
+  {#if chara && hypaV3Enabled}
     <div
       class="flex mt-2 items-center gap-2"
       data-risu-hypa-memory-toggle

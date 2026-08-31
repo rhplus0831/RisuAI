@@ -1,44 +1,19 @@
 <script lang="ts" module>
   import { selectCharacterOwner } from 'src/ts/characterState'
-  import { isServerCharacterShell, type character } from 'src/ts/storage/database.svelte'
+  import type { character } from 'src/ts/storage/database.svelte'
 
   interface MobileSelectedCharacterInput {
     ownerCharacters: readonly character[]
     ownerStatus: 'idle' | 'loading' | 'ready' | 'error'
     ownerSelectedIndex: number
-    compatibilitySelectedIndex: number
-    readCompatibilityCharacters: () => readonly character[]
   }
 
   export function resolveMobileSelectedCharacter({
     ownerCharacters,
     ownerStatus,
     ownerSelectedIndex,
-    compatibilitySelectedIndex,
-    readCompatibilityCharacters,
   }: MobileSelectedCharacterInput): character | undefined {
-    if (ownerStatus === 'ready') {
-      return selectCharacterOwner(ownerCharacters, ownerSelectedIndex)
-    }
-    if (ownerStatus !== 'idle' && ownerStatus !== 'loading') return undefined
-
-    const compatibilityCharacters = readCompatibilityCharacters()
-    const compatibilityCandidate = compatibilityCharacters[compatibilitySelectedIndex]
-    const compatibilityCharacter = compatibilityCandidate?.chaId
-      ? selectCharacterOwner(compatibilityCharacters, compatibilitySelectedIndex)
-      : compatibilityCandidate
-    if (compatibilityCandidate?.chaId && !compatibilityCharacter) return undefined
-
-    const characterId = compatibilityCharacter?.chaId ?? ownerCharacters[compatibilitySelectedIndex]?.chaId
-    if (!characterId) {
-      const owner = ownerCharacters[compatibilitySelectedIndex]
-      return owner && !isServerCharacterShell(owner) ? owner : compatibilityCharacter
-    }
-
-    const ownerIndex = ownerCharacters.findIndex((candidate) => candidate?.chaId === characterId)
-    const owner = selectCharacterOwner(ownerCharacters, ownerIndex)
-    if (ownerIndex >= 0 && !owner) return undefined
-    return owner && !isServerCharacterShell(owner) ? owner : compatibilityCharacter
+    return ownerStatus === 'ready' ? selectCharacterOwner(ownerCharacters, ownerSelectedIndex) : undefined
   }
 
   export function shouldRenderMobileChat(selectedCharacter: character | undefined): boolean {
@@ -47,7 +22,7 @@
 </script>
 
 <script lang="ts">
-  import { MobileGUIStack, MobileSideBar, selectedCharID } from 'src/ts/stores.svelte'
+  import { MobileGUIStack, MobileSideBar } from 'src/ts/stores.svelte'
   import Settings from '../Setting/Settings.svelte'
   import RealmMain from '../UI/Realm/RealmMain.svelte'
   import MobileCharacters from './MobileCharacters.svelte'
@@ -59,18 +34,13 @@
   import DevTool from '../SideBars/DevTool.svelte'
   import { isLite } from 'src/ts/lite'
 
-  import { charactersResourceState, getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState } from 'src/ts/server/resourceState.svelte'
 
   let selectedMobileCharacter = $derived(
     resolveMobileSelectedCharacter({
       ownerCharacters: charactersResourceState.characters,
       ownerStatus: charactersResourceState.status,
       ownerSelectedIndex: charactersResourceState.currentChar,
-      compatibilitySelectedIndex: $selectedCharID,
-      readCompatibilityCharacters: () =>
-        charactersResourceState.status === 'idle' || charactersResourceState.status === 'loading'
-          ? getDatabase().characters
-          : [],
     }),
   )
 </script>

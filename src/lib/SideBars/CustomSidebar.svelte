@@ -4,11 +4,18 @@
   import { language } from 'src/lang'
   import { getFullSettingsData } from 'src/ts/setting/utils'
   import SettingRenderer from '../Setting/SettingRenderer.svelte'
-  import { getDatabase, type CustomSideBarItem } from 'src/ts/storage/database.svelte'
+  import type { CustomSideBarItem, Database } from 'src/ts/storage/database.svelte'
+  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
   const settingsById = $derived.by(() => new Map(getFullSettingsData().map((setting) => [setting.id, setting])))
+  const sidebarSettings = $derived.by(() => {
+    if (settingsResourceState.status === 'error' || settingsResourceState.groupStatuses.sidebar !== 'ready') {
+      return undefined
+    }
+    return settingsResourceState.value as Partial<Database>
+  })
   const sidebarItems = $derived.by(() => {
-    const items = getDatabase().customSidebarItems
+    const items = sidebarSettings?.customSidebarItems
     return Array.isArray(items)
       ? items.filter((item): item is CustomSideBarItem => {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return false
@@ -30,7 +37,7 @@
       <Button
         onclick={() => {
           loadoutModalStore.open = !loadoutModalStore.open
-        }}>{getDatabase().lastLoadedLoadoutName || language.loadouts}</Button>
+        }}>{sidebarSettings?.lastLoadedLoadoutName || language.loadouts}</Button>
     {:else if item.type === 'setting'}
       {@const settingItem = settingsById.get(item.subType)}
       {#if settingItem}
