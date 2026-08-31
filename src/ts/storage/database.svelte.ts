@@ -102,19 +102,22 @@ import {
   isResourceWriteGuardEnabled,
   markLocalCharacterProjectionMutation,
   setResourceWriteGuardEnabled,
-  withServerResourceApply,
   withTrustedResourceWrite,
 } from '../server/resourceWriteGuard.svelte'
 import { mergeChatMessageRange, sameStructuredValue } from '../server/chatMessageRangeMerge'
 import {
   captureCollectionProjectionEpoch,
   captureSettingsProjectionEpoch,
+  charactersResourceState,
+  collectionsResourceState,
   getResourceDatabase,
   hasCollectionProjectionEpochChanged,
   hasSettingsProjectionEpochChanged,
+  isServerCollectionName,
   markCollectionAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
+  settingsResourceState,
 } from '../server/resourceState.svelte'
 import {
   capturePromptTemplateOwnerProjectionEpoch,
@@ -3474,19 +3477,52 @@ export function setDatabase(data: Database) {
 }
 
 export function applyServerResourceDatabase(data: Database, revision?: number) {
-  const result = withServerResourceApply(() => {
-    data.chatScreenWidth ??= 900
-    data.autoTranslateNotificationDeferCapSeconds ??= 180
-    data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
-    data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
-    normalizeNestedPromptTemplates(data)
-    normalizeAgentPresetSettings(data)
-    changeLanguage(data.language)
-    setDatabaseLite(data, revision)
-    reapplyPendingPresetProjectionsMutable()
-  })
+  data.chatScreenWidth ??= 900
+  data.autoTranslateNotificationDeferCapSeconds ??= 180
+  data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
+  data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
+  normalizeNestedPromptTemplates(data)
+  normalizeAgentPresetSettings(data)
+  changeLanguage(data.language)
+  setDatabaseLite(data, revision)
+  reapplyPendingPresetProjectionsMutable()
   createDestructiveRefreshToken('server-resource-database-replace')
-  return result
+}
+
+function applyServerResourceField(key: string, value: unknown): void {
+  if (key === 'characters') {
+    charactersResourceState.characters = safeStructuredClone(value) as character[]
+    charactersResourceState.status = 'ready'
+    return
+  }
+  if (isServerCollectionName(key)) {
+    collectionsResourceState.values[key] = safeStructuredClone(value) as never
+    collectionsResourceState.statuses[key] = 'ready'
+    return
+  }
+
+  const cloned = safeStructuredClone(value)
+  ;(settingsResourceState.value as Record<string, unknown>)[key] = cloned
+  settingsResourceState.status = 'ready'
+  if (key === 'characterOrder' && Array.isArray(cloned)) {
+    charactersResourceState.characterOrder = cloned as Database['characterOrder']
+  } else if (key === 'currentChar' && Number.isInteger(cloned)) {
+    charactersResourceState.currentChar = cloned as number
+  }
+}
+
+function deleteServerResourceField(key: string): void {
+  if (key === 'characters') {
+    charactersResourceState.characters = []
+    return
+  }
+  if (isServerCollectionName(key)) {
+    delete collectionsResourceState.values[key]
+    return
+  }
+  delete (settingsResourceState.value as Record<string, unknown>)[key]
+  if (key === 'characterOrder') charactersResourceState.characterOrder = []
+  if (key === 'currentChar') charactersResourceState.currentChar = -1
 }
 
 /**
@@ -3497,27 +3533,26 @@ export function applyServerResourceDatabase(data: Database, revision?: number) {
  * locally-hydrated entities outside the named keys.
  */
 export function mergeServerResourceFields(fields: Partial<Database>) {
-  return withServerResourceApply(() => {
-    const db = getDatabase() as unknown as Record<string, unknown>
-    for (const [key, value] of Object.entries(fields)) {
-      if ((key === 'promptTemplate' || key === 'agentPresetDefaultId') && value === null) {
-        delete db[key]
-        continue
-      }
-      db[key] =
-        key === 'promptTemplate'
-          ? normalizePromptTemplate(value)
-          : key === 'customSidebarItems'
-            ? normalizeCustomSidebarItems(value)
-            : key === 'chatGenerationTogglePresets'
-              ? normalizeChatGenerationTogglePresets(value)
-              : value
+  for (const [key, value] of Object.entries(fields)) {
+    if ((key === 'promptTemplate' || key === 'agentPresetDefaultId') && value === null) {
+      deleteServerResourceField(key)
+      continue
     }
-    if (typeof fields.language === 'string') {
-      changeLanguage(fields.language)
-    }
-    reapplyPendingPresetProjectionsMutable()
-  })
+    applyServerResourceField(
+      key,
+      key === 'promptTemplate'
+        ? normalizePromptTemplate(value)
+        : key === 'customSidebarItems'
+          ? normalizeCustomSidebarItems(value)
+          : key === 'chatGenerationTogglePresets'
+            ? normalizeChatGenerationTogglePresets(value)
+            : value,
+    )
+  }
+  if (typeof fields.language === 'string') {
+    changeLanguage(fields.language)
+  }
+  reapplyPendingPresetProjectionsMutable()
 }
 
 export { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
@@ -3543,7 +3578,7 @@ export function isServerCharacterShell(character: unknown): boolean {
  */
 function mergeServerResourceCharacterRowMutable(character: { chaId?: string } & Record<string, unknown>): boolean {
   delete character[SERVER_CHARACTER_SHELL_MARKER]
-  const characters = getDatabase().characters
+  const characters = charactersResourceState.characters
   if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
   const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
   if (index < 0) return false
@@ -3596,7 +3631,7 @@ function mergeServerResourceCharacterRowMutable(character: { chaId?: string } & 
 }
 
 export function mergeServerResourceCharacterRow(character: { chaId?: string } & Record<string, unknown>): boolean {
-  return withServerResourceApply(() => mergeServerResourceCharacterRowMutable(character))
+  return mergeServerResourceCharacterRowMutable(character)
 }
 
 /**
@@ -3609,23 +3644,21 @@ export function mergeServerResourceCharacterRowComposite(
   character: { chaId?: string } & Record<string, unknown>,
   applyDependentResource: () => boolean,
 ): boolean {
-  return withServerResourceApply(() => {
-    const characters = getDatabase().characters
-    if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
-    const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
-    if (index < 0) return false
-    const previous = characters[index]
-    let committed = false
-    try {
-      if (!mergeServerResourceCharacterRowMutable(character)) return false
-      committed = applyDependentResource()
-      return committed
-    } catch {
-      return false
-    } finally {
-      if (!committed) characters[index] = previous
-    }
-  })
+  const characters = charactersResourceState.characters
+  if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
+  const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
+  if (index < 0) return false
+  const previous = characters[index]
+  let committed = false
+  try {
+    if (!mergeServerResourceCharacterRowMutable(character)) return false
+    committed = applyDependentResource()
+    return committed
+  } catch {
+    return false
+  } finally {
+    if (!committed) characters[index] = previous
+  }
 }
 
 export function applyServerCharacterSelectionResource(input: {
@@ -3633,20 +3666,19 @@ export function applyServerCharacterSelectionResource(input: {
   currentChar: number
   lastInteraction?: number
 }): boolean {
-  return withServerResourceApply(() => {
-    const characters = getDatabase().characters
-    const liveIndex = Array.isArray(characters)
-      ? characters.findIndex((candidate) => candidate?.chaId === input.characterId)
-      : -1
-    if (liveIndex < 0) return false
-    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = liveIndex
-    const character = characters[liveIndex]
-    if (character && input.lastInteraction !== undefined) {
-      character.lastInteraction = input.lastInteraction
-    }
-    selectedCharID.set(liveIndex)
-    return true
-  })
+  const characters = charactersResourceState.characters
+  const liveIndex = Array.isArray(characters)
+    ? characters.findIndex((candidate) => candidate?.chaId === input.characterId)
+    : -1
+  if (liveIndex < 0) return false
+  charactersResourceState.currentChar = liveIndex
+  ;(settingsResourceState.value as unknown as { currentChar?: number }).currentChar = liveIndex
+  const character = characters[liveIndex]
+  if (character && input.lastInteraction !== undefined) {
+    character.lastInteraction = input.lastInteraction
+  }
+  selectedCharID.set(liveIndex)
+  return true
 }
 
 /**
@@ -3685,38 +3717,36 @@ export function hydrateServerChatMessages(
   range?: ServerChatMessagesHydrationRange,
   options: ServerChatMessagesHydrationOptions = {},
 ): boolean {
-  return withTrustedResourceWrite(() => {
-    for (const character of getDatabase().characters ?? []) {
-      const chat = character.chats?.find((candidate) => candidate.id === chatId)
-      if (chat) {
-        if (range) {
-          const hasExistingMessages = Array.isArray(chat.message)
-          const existingMessages = hasExistingMessages ? chat.message : []
-          const merge = mergeChatMessageRange(
-            existingMessages,
-            message as Message[],
-            range,
-            createServerChatMessagePlaceholder,
-          )
-          if (!merge) return false
-          if (!hasExistingMessages || merge.replacedArray) chat.message = merge.messages
-        } else {
-          if (!sameStructuredValue(chat.message, message)) chat.message = message as Message[]
-        }
-        // `hypaV3Data` is hydrated alongside messages; undefined means the chat
-        // has none, so clear any stale value.
-        if (options.hypaV3DataIncluded !== false) {
-          if (hypaV3Data === undefined && Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data')) {
-            delete (chat as { hypaV3Data?: unknown }).hypaV3Data
-          } else if (hypaV3Data !== undefined && !sameStructuredValue(chat.hypaV3Data, hypaV3Data)) {
-            chat.hypaV3Data = hypaV3Data as typeof chat.hypaV3Data
-          }
-        }
-        return true
+  for (const character of charactersResourceState.characters) {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (chat) {
+      if (range) {
+        const hasExistingMessages = Array.isArray(chat.message)
+        const existingMessages = hasExistingMessages ? chat.message : []
+        const merge = mergeChatMessageRange(
+          existingMessages,
+          message as Message[],
+          range,
+          createServerChatMessagePlaceholder,
+        )
+        if (!merge) return false
+        if (!hasExistingMessages || merge.replacedArray) chat.message = merge.messages
+      } else {
+        if (!sameStructuredValue(chat.message, message)) chat.message = message as Message[]
       }
+      // `hypaV3Data` is hydrated alongside messages; undefined means the chat
+      // has none, so clear any stale value.
+      if (options.hypaV3DataIncluded !== false) {
+        if (hypaV3Data === undefined && Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data')) {
+          delete (chat as { hypaV3Data?: unknown }).hypaV3Data
+        } else if (hypaV3Data !== undefined && !sameStructuredValue(chat.hypaV3Data, hypaV3Data)) {
+          chat.hypaV3Data = hypaV3Data as typeof chat.hypaV3Data
+        }
+      }
+      return true
     }
-    return false
-  })
+  }
+  return false
 }
 
 /**
@@ -3725,13 +3755,11 @@ export function hydrateServerChatMessages(
  * the read-only guard. Returns true if found and hydrated.
  */
 export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
-  return withTrustedResourceWrite(() => {
-    return writeServerCharacterLorebook(characterId, globalLore)
-  })
+  return writeServerCharacterLorebook(characterId, globalLore)
 }
 
 function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
-  for (const character of getDatabase().characters ?? []) {
+  for (const character of charactersResourceState.characters) {
     if (character.chaId === characterId) {
       character.globalLore = globalLore as typeof character.globalLore
       return true

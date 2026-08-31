@@ -13,7 +13,7 @@ import {
   replaceResourceDatabase,
   settingsResourceState,
 } from '../server/resourceState.svelte'
-import { getServerResourceApplyEpoch, setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import {
   applyServerResourceDatabase,
   getDatabase,
@@ -83,16 +83,13 @@ describe('database compatibility accessors over resource state', () => {
     expect(charactersResourceState.characters[0]?.name).toBe('Lite')
   })
 
-  it('seeds resource revisions and apply epochs on an authoritative replacement', () => {
-    const beforeApplyEpoch = getServerResourceApplyEpoch()
-
+  it('seeds resource revisions on an authoritative replacement', () => {
     applyServerResourceDatabase(databaseFixture('Projected'), 17)
 
     expect(getDatabase().characters[0]?.name).toBe('Projected')
     expect(settingsResourceState.revision).toBe(17)
     expect(collectionsResourceState.fullRevision).toBe(17)
     expect(charactersResourceState.listRevision).toBe(17)
-    expect(getServerResourceApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
   })
 
   it('backfills chat screen width when an authoritative database predates the setting', () => {
