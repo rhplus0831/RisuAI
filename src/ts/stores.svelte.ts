@@ -3,6 +3,7 @@ import { resetRegisteredScriptCaches } from './process/scriptCacheInvalidation'
 import { invalidateModuleRenderRevision } from './moduleRenderRevision'
 import type { ActiveChatTarget } from './types/activeChatTarget'
 import type { hubType } from './types/risuHub'
+import { readCachedCustomCSS } from './gui/customCSSCache'
 
 export { alertStore, LoadingStatusState, selectedCharID, selIdState } from './stores/coreStores.svelte'
 
@@ -59,14 +60,13 @@ export const OpenRealmStore = writable(false)
 export const RealmInitialOpenChar = writable<null | hubType>(null)
 export const PlaygroundStore = writable(0)
 export const HideIconStore = writable(false)
-export const CustomCSSStore = writable('')
+export const CustomCSSStore = writable(readCachedCustomCSS())
 export const SafeModeStore = writable(false)
 export const MobileSearch = writable('')
 export const CharConfigSubMenu = writable(0)
 export const CustomGUISettingMenuStore = writable(false)
 export const hypaV3ModalOpen = writable(false)
 CustomCSSStore.subscribe((css) => {
-  console.log(css)
   const q = document.querySelector('#customcss')
   if (q) {
     q.innerHTML = css

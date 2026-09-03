@@ -3,12 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const colorSchemeMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   applyServerBackedSettingsPatch: vi.fn(),
+  cacheCustomCSS: vi.fn(),
   database: {} as any,
   downloadFile: vi.fn(),
   selectSingleFile: vi.fn(),
   settingsResourceState: {
     value: {} as any,
     groupStatuses: { display: 'ready' },
+    shellRevision: null as number | null,
+    status: 'ready',
   },
   stores: {
     customCSS: createTestStore(''),
@@ -19,13 +22,14 @@ const colorSchemeMocks = vi.hoisted(() => ({
 function createTestStore<T>(initialValue: T) {
   let value = initialValue
   return {
-    set(nextValue: T) {
+    set: vi.fn((nextValue: T) => {
       value = nextValue
-    },
+    }),
     subscribe(run: (value: T) => void) {
       run(value)
       return () => {}
     },
+    value: () => value,
   }
 }
 
@@ -39,6 +43,10 @@ vi.mock('../server/settingsOwner.svelte', () => ({
 
 vi.mock('../globalApi.svelte', () => ({
   downloadFile: colorSchemeMocks.downloadFile,
+}))
+
+vi.mock('./customCSSCache', () => ({
+  cacheCustomCSS: colorSchemeMocks.cacheCustomCSS,
 }))
 
 vi.mock('../storage/database.svelte', () => ({
@@ -70,6 +78,7 @@ import {
   migrateLegacyBuiltInColorScheme,
   updateColorScheme,
   updateCustomColorScheme,
+  updateTextThemeAndCSS,
   type ColorScheme,
 } from './colorscheme'
 import { language } from 'src/lang'
@@ -140,12 +149,53 @@ beforeEach(() => {
   } as any
   colorSchemeMocks.settingsResourceState.value = colorSchemeMocks.database
   colorSchemeMocks.settingsResourceState.groupStatuses.display = 'ready'
+  colorSchemeMocks.settingsResourceState.shellRevision = null
+  colorSchemeMocks.settingsResourceState.status = 'ready'
   colorSchemeMocks.alertError.mockReset()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockReset()
+  colorSchemeMocks.cacheCustomCSS.mockReset()
   colorSchemeMocks.downloadFile.mockReset()
   colorSchemeMocks.selectSingleFile.mockReset()
+  colorSchemeMocks.stores.customCSS.set('')
+  colorSchemeMocks.stores.customCSS.set.mockClear()
+  colorSchemeMocks.stores.safeMode.set(false)
+  colorSchemeMocks.stores.safeMode.set.mockClear()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockImplementation((patch: Record<string, unknown>) => {
     Object.assign(colorSchemeMocks.database, patch)
+  })
+})
+
+describe('custom CSS cache reconciliation', () => {
+  it('replaces cached display CSS from the initial server shell', () => {
+    colorSchemeMocks.database.customCSS = 'body { color: rebeccapurple; }'
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'idle'
+    colorSchemeMocks.settingsResourceState.shellRevision = 7
+
+    updateTextThemeAndCSS()
+
+    expect(colorSchemeMocks.cacheCustomCSS).toHaveBeenCalledWith('body { color: rebeccapurple; }')
+    expect(colorSchemeMocks.stores.customCSS.value()).toBe('body { color: rebeccapurple; }')
+  })
+
+  it('does not rewrite the live style when the server CSS matches the cached display', () => {
+    colorSchemeMocks.database.customCSS = 'body { color: rebeccapurple; }'
+    colorSchemeMocks.stores.customCSS.set('body { color: rebeccapurple; }')
+    colorSchemeMocks.stores.customCSS.set.mockClear()
+
+    updateTextThemeAndCSS()
+
+    expect(colorSchemeMocks.cacheCustomCSS).toHaveBeenCalledWith('body { color: rebeccapurple; }')
+    expect(colorSchemeMocks.stores.customCSS.set).not.toHaveBeenCalled()
+  })
+
+  it('refreshes the cache while Safe Mode keeps the live style disabled', () => {
+    colorSchemeMocks.database.customCSS = 'body { color: rebeccapurple; }'
+    colorSchemeMocks.stores.safeMode.set(true)
+
+    updateTextThemeAndCSS()
+
+    expect(colorSchemeMocks.cacheCustomCSS).toHaveBeenCalledWith('body { color: rebeccapurple; }')
+    expect(colorSchemeMocks.stores.customCSS.value()).toBe('')
   })
 })
 

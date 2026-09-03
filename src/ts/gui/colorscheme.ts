@@ -19,6 +19,7 @@ import {
 } from '../server/colorSchemeImport'
 import { language } from 'src/lang'
 import { settingsResourceState } from '../server/resourceState.svelte'
+import { cacheCustomCSS } from './customCSSCache'
 
 export interface ColorScheme {
   bgcolor: string
@@ -279,6 +280,15 @@ function displaySettingsOwner(): Partial<Database> | undefined {
   return undefined
 }
 
+function runtimeDisplaySettingsOwner(): Partial<Database> | undefined {
+  return (
+    displaySettingsOwner() ??
+    (settingsResourceState.status === 'ready' && settingsResourceState.shellRevision !== null
+      ? (settingsResourceState.value as Partial<Database>)
+      : undefined)
+  )
+}
+
 export function changeColorScheme(colorScheme: string) {
   try {
     const patch: Record<string, unknown> = { colorSchemeName: colorScheme }
@@ -428,8 +438,14 @@ export async function importColorScheme() {
 }
 
 export function updateTextThemeAndCSS() {
-  const db = displaySettingsOwner()
+  const db = runtimeDisplaySettingsOwner()
   if (!db) return
+
+  const customCSS = db.customCSS ?? ''
+  cacheCustomCSS(customCSS)
+  const displayedCustomCSS = get(SafeModeStore) ? '' : customCSS
+  if (get(CustomCSSStore) !== displayedCustomCSS) CustomCSSStore.set(displayedCustomCSS)
+
   const root = document.querySelector(':root') as HTMLElement
   if (!root) {
     return
@@ -497,11 +513,5 @@ export function updateTextThemeAndCSS() {
       root.style.setProperty('--risu-font-family', db.customFont)
       break
     }
-  }
-
-  if (!get(SafeModeStore)) {
-    CustomCSSStore.set(db.customCSS ?? '')
-  } else {
-    CustomCSSStore.set('')
   }
 }

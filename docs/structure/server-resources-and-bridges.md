@@ -168,6 +168,12 @@ cached data is never used offline or without an authenticated server response
 confirming its hash. It is separate from the mutation outbox, whose retained
 encrypted intents represent unsent local work and must not be cleared as a cache.
 
+Custom CSS has a separate synchronous paint cache in `localStorage`. It may be
+displayed before authentication and shell hydration so a refresh keeps the
+current appearance, but it never seeds a settings owner or bypasses the normal
+server read. The validated shell/settings projection always reconciles that
+cache and the live style with the server-backed `customCSS` value.
+
 Intermediate message display has a separate non-authoritative cache owned by
 `server/fastify/src/displaySourceCache.ts`. It stores only completed,
 side-effect-free `displaySource` text in up to four exact
