@@ -113,47 +113,30 @@ export function createSummarizeMemoryJobBatchHandler(opts: SummarizeMemoryJobHan
     }
 
     const orderedJobs = [...jobs].sort(compareSummarizeJobs)
-    const results = await runWithConcurrency(orderedJobs, maxConcurrent, async (job) => {
+    await runWithConcurrency(orderedJobs, maxConcurrent, async (job) => {
       try {
-        return {
+        const result = await executeSummarizeJob({
+          opts,
           job,
-          result: await executeSummarizeJob({
-            opts,
-            job,
-            database,
-            settings,
-            summarize,
-            acquireRateLimit,
-            signal: context.signalFor(job.id),
-          }),
-        } satisfies BatchJobResult
-      } catch (error) {
-        return {
-          job,
-          error: error instanceof Error && error.message ? error.message : String(error),
-        } satisfies BatchJobResult
-      }
-    })
-
-    for (const item of results) {
-      if ('error' in item) {
-        context.retryOrFail(item.job.id, item.error || 'summarize job failed')
-        continue
-      }
-
-      try {
-        if (getMemoryJob(opts.db, item.job.id)?.status !== 'running') {
-          continue
+          database,
+          settings,
+          summarize,
+          acquireRateLimit,
+          signal: context.signalFor(job.id),
+        })
+        if (getMemoryJob(opts.db, job.id)?.status !== 'running') {
+          return
         }
-        if (item.result.kind === 'summary') {
-          persistSummary(opts.db, item.result)
+        // Persist and publish each completion while other requests are still running.
+        if (result.kind === 'summary') {
+          persistSummary(opts.db, result)
         }
-        context.complete(item.job.id)
+        context.complete(job.id)
       } catch (error) {
         const message = error instanceof Error && error.message ? error.message : String(error)
-        context.retryOrFail(item.job.id, message)
+        context.retryOrFail(job.id, message || 'summarize job failed')
       }
-    }
+    })
   }
 }
 
@@ -174,8 +157,6 @@ type SummarizeExecutionResult =
       text: string
       tokens: number
     }
-
-type BatchJobResult = { job: MemoryJob; result: SummarizeExecutionResult } | { job: MemoryJob; error: string }
 
 async function executeSummarizeJob(input: {
   opts: SummarizeMemoryJobHandlerOptions
@@ -329,22 +310,20 @@ function defaultSleep(ms: number): Promise<void> {
   })
 }
 
-async function runWithConcurrency<T, R>(
+async function runWithConcurrency<T>(
   items: readonly T[],
   limit: number,
-  run: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  run: (item: T) => Promise<void>,
+): Promise<void> {
   let nextIndex = 0
   const workers = Array.from({ length: Math.min(Math.max(1, limit), items.length) }, async () => {
     while (nextIndex < items.length) {
       const index = nextIndex
       nextIndex += 1
-      results[index] = await run(items[index])
+      await run(items[index])
     }
   })
   await Promise.all(workers)
-  return results
 }
 
 function compareSummarizeJobs(left: MemoryJob, right: MemoryJob): number {

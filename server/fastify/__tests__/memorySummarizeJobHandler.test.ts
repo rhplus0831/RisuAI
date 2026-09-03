@@ -403,7 +403,91 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('commits staged batch summaries independently after a sibling write fails', async () => {
+  it.each([1, 3])(
+    'persists and emits each summary completion during a batch with concurrency %i',
+    async (concurrency) => {
+      const db = openDatabase(makeDataDir())
+      const gates = Array.from({ length: 5 }, () => {
+        let resolve!: () => void
+        const promise = new Promise<void>((done) => {
+          resolve = done
+        })
+        return { promise, resolve }
+      })
+      let tick: Promise<boolean> | undefined
+      try {
+        for (let index = 0; index < gates.length; index += 1) {
+          seedBatchJob(db, {
+            id: `job-${index + 1}`,
+            chunkId: `chunk-${index + 1}`,
+            rangeStartSeq: index * 2,
+            rangeEndSeq: index * 2 + 1,
+            text: `chunk ${index + 1}`,
+          })
+        }
+        const liveStatuses = new Map<string, string>()
+        const completions: Array<{ jobId: string; savedSummaries: number }> = []
+        const worker = new MemoryWorker({
+          db,
+          onEvent: (event) => {
+            if (event.type !== 'memory.job') return
+            liveStatuses.set(event.job.id, event.job.status)
+            if (event.job.status === 'completed') {
+              completions.push({
+                jobId: event.job.id,
+                savedSummaries: listMemorySummaries(db, { chatId: 'chat-1' }).length,
+              })
+            }
+          },
+          batchHandlers: {
+            summarize: createSummarizeMemoryJobBatchHandler({
+              db,
+              loadDatabase: () => database({ summarizationMaxConcurrent: concurrency }),
+              sleep: async () => {},
+              summarize: async (messages) => {
+                const text = String(messages[0]?.content ?? '')
+                const index = Number(text.split(' ')[1]) - 1
+                await gates[index].promise
+                return { text: `summary for ${text}`, tokens: 1 }
+              },
+            }),
+          },
+        })
+
+        tick = worker.tick()
+        await flushMicrotasks()
+        expect([...liveStatuses.values()]).toEqual(Array(5).fill('running'))
+
+        // A slow first request must not delay completion updates for later jobs.
+        const completionOrder = concurrency === 1 ? [1, 2, 3, 4, 5] : [3, 4, 5, 2, 1]
+        for (const [index, jobNumber] of completionOrder.entries()) {
+          gates[jobNumber - 1].resolve()
+          await flushMicrotasks()
+
+          expect(completions).toHaveLength(index + 1)
+          expect(completions.at(-1)).toEqual({ jobId: `job-${jobNumber}`, savedSummaries: index + 1 })
+          expect([...liveStatuses.values()].filter((status) => status === 'running')).toHaveLength(4 - index)
+          expect(getMemoryJob(db, `job-${jobNumber}`)).toMatchObject({ status: 'completed' })
+          if (index < 4) expect(worker.isProcessing).toBe(true)
+        }
+
+        await expect(tick).resolves.toBe(true)
+        expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.chunkId)).toEqual([
+          'chunk-1',
+          'chunk-2',
+          'chunk-3',
+          'chunk-4',
+          'chunk-5',
+        ])
+      } finally {
+        for (const gate of gates) gate.resolve()
+        await tick
+        db.close()
+      }
+    },
+  )
+
+  it('commits batch summaries independently after a sibling write fails', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
@@ -794,7 +878,7 @@ describe('summarize memory job handler', () => {
     }
   })
 
-  it('commits a staged sibling summary after another running batch job is cancelled', async () => {
+  it('commits a sibling summary after another running batch job is cancelled', async () => {
     const db = openDatabase(makeDataDir())
     try {
       seedBatchJob(db, {
