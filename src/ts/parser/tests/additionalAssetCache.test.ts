@@ -13,6 +13,7 @@ import {
   settingsResourceState,
 } from '../../server/resourceState.svelte'
 import { invalidateModuleRenderRevision } from '../../moduleRenderRevision'
+import { pickHashRand } from '../../util'
 
 const mocks = vi.hoisted(() => ({
   db: {
@@ -116,7 +117,9 @@ function deferred<T>() {
 beforeEach(() => {
   clearAdditionalAssetCachesForTests()
   mocks.db.assetMaxDifference = 4
+  delete (mocks.db as Record<string, unknown>).legacyMediaFindings
   mocks.db.characters = []
+  mocks.db.enabledModules = ['module-owner']
   mocks.db.modules = []
   mocks.moduleAssets = []
   mocks.getFileSrc.mockReset().mockImplementation(async (path) => `/resolved/${path}`)
@@ -127,7 +130,7 @@ beforeEach(() => {
   charactersResourceState.status = 'idle'
   settingsResourceState.value = mocks.db
   settingsResourceState.status = 'ready'
-  settingsResourceState.groupStatuses = { advanced: 'ready', display: 'ready', modules: 'ready' }
+  settingsResourceState.groupStatuses = { advanced: 'ready', display: 'ready', modules: 'ready', media: 'ready' }
   settingsResourceState.standaloneStatuses = {}
   collectionsResourceState.values = {
     modules: mocks.db.modules,
@@ -227,6 +230,101 @@ describe('additional asset resolution cache', () => {
       resolvedAssetNames: 1,
     })
     expect(mocks.getFileSrc).toHaveBeenCalledTimes(2)
+
+    const distinctNames = Array.from({ length: 100 }, (_, i) => `{{raw::asset-${i}}}`).join(' ')
+    const output = await ParseMarkdown(distinctNames, character, 'back')
+    expect(output).toContain('/resolved/module-path-99')
+    expect(getAdditionalAssetCacheStatsForTests()).toMatchObject({
+      contextsBuilt: 1,
+      assetIndexesBuilt: 1,
+      moduleAssetTuplesVisited: 130_000,
+      resolvedAssetNames: 101,
+    })
+  })
+
+  it('preserves locale casing, the first extension and ordered deterministic variants', async () => {
+    const character = simpleCharacter('variants', [
+      ['PoRtRaIt', 'character-first', 'png'],
+      ['portrait', 'character-other-extension', 'jpg'],
+      ['PORTRAIT', 'character-second', 'png'],
+    ])
+    collectionsResourceState.values.modules = [
+      {
+        id: 'module-owner',
+        name: '',
+        description: '',
+        assets: [
+          ['portrait', 'module-first', 'png'],
+          ['portrait', 'module-other-extension', 'webp'],
+        ],
+      },
+      { id: 'module-second', name: '', description: '', assets: [['portrait', 'module-second', 'png']] },
+    ] as never
+    settingsResourceState.value.enabledModules = ['module-owner', 'module-second']
+    const variants = ['character-first', 'character-second', 'module-first', 'module-second']
+    for (let index = 0; index < 12; index++) {
+      const expected = variants[Math.floor(pickHashRand(index, character.chaId + index) * variants.length)]
+      await expect(ParseMarkdown('{{raw::PORTRAIT}}', character, 'back', index)).resolves.toBe(`/resolved/${expected}`)
+    }
+    expect(getAdditionalAssetCacheStatsForTests()).toMatchObject({
+      contextsBuilt: 1,
+      assetIndexesBuilt: 1,
+      characterAssetTuplesVisited: 3,
+      moduleAssetTuplesVisited: 3,
+    })
+  })
+
+  it('rebuilds for module order and activation, including a previously missing name', async () => {
+    const character = simpleCharacter('activation')
+    collectionsResourceState.values.modules = [
+      { id: 'module-owner', name: '', description: '', assets: [['frame', 'first-png', 'png']] },
+      { id: 'module-second', name: '', description: '', assets: [['frame', 'second-jpg', 'jpg']] },
+    ] as never
+    settingsResourceState.value.enabledModules = []
+    settingsResourceState.value.legacyMediaFindings = true
+    await expect(ParseMarkdown('{{raw::frame}}', character, 'back')).resolves.toBe('')
+    settingsResourceState.value.enabledModules = ['module-owner', 'module-second']
+    await expect(ParseMarkdown('{{raw::frame}}', character, 'back')).resolves.toBe('/resolved/first-png')
+    settingsResourceState.value.enabledModules = ['module-second', 'module-owner']
+    // Activation membership does not reorder the collection's traversal.
+    await expect(ParseMarkdown('{{raw::frame}}', character, 'back')).resolves.toBe('/resolved/first-png')
+    collectionsResourceState.values.modules!.reverse()
+    invalidateModuleRenderRevision()
+    await expect(ParseMarkdown('{{raw::frame}}', character, 'back')).resolves.toBe('/resolved/second-jpg')
+    settingsResourceState.value.enabledModules = ['module-owner']
+    await expect(ParseMarkdown('{{raw::frame}}', character, 'back')).resolves.toBe('/resolved/first-png')
+    expect(getAdditionalAssetCacheStatsForTests().contextsBuilt).toBe(4)
+  })
+
+  it('retains fuzzy misses and the last matching emotion without building an asset index for emotions', async () => {
+    const character = simpleCharacter(
+      'fallback',
+      [['portrait', 'fuzzy-path', 'png']],
+      [
+        ['Happy', 'first-emotion'],
+        ['HAPPY', 'last-emotion'],
+      ],
+    )
+    await expect(ParseMarkdown('{{emotion::happy}}', character, 'back')).resolves.toContain('/resolved/last-emotion')
+    expect(getAdditionalAssetCacheStatsForTests().assetIndexesBuilt).toBe(0)
+    await expect(ParseMarkdown('{{raw::portrai}}', character, 'back')).resolves.toBe('/resolved/fuzzy-path')
+    settingsResourceState.value.legacyMediaFindings = true
+    await expect(ParseMarkdown('{{raw::portrai}}', character, 'back')).resolves.toBe('')
+  })
+
+  it('evicts the least recently used context and reindexes replacement assets', async () => {
+    const first = simpleCharacter('eviction-0', [['frame', 'first', 'png']])
+    await ParseMarkdown('{{raw::frame}}', first, 'back')
+    for (let i = 1; i <= 32; i++) {
+      await ParseMarkdown('{{raw::frame}}', simpleCharacter(`eviction-${i}`, [['frame', `${i}`, 'png']]), 'back')
+    }
+    expect(getAdditionalAssetCacheStatsForTests().entries).toBe(32)
+    await expect(ParseMarkdown('{{raw::frame}}', first, 'back')).resolves.toBe('/resolved/first')
+    expect(getAdditionalAssetCacheStatsForTests().contextsBuilt).toBe(34)
+    const replacement = simpleCharacter('eviction-0', [['frame', 'replacement', 'png']])
+    await expect(ParseMarkdown('{{raw::frame}}', replacement, 'back')).resolves.toBe('/resolved/replacement')
+    expect(getAdditionalAssetCacheStatsForTests().contextsBuilt).toBe(35)
+    expect(getAdditionalAssetCacheStatsForTests().entries).toBe(32)
   })
 
   it('keeps concurrent character parses isolated when asset reads finish out of order', async () => {

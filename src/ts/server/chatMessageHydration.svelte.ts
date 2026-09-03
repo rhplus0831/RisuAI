@@ -141,8 +141,13 @@ function uniqueCharacterForHydration(characterId: string): character | undefined
 function uniqueChatForHydration(chatId: string): HydrationChatOwner | undefined {
   if (!chatId) return undefined
   let owner: HydrationChatOwner | undefined
-  for (const character of characterRowsForHydration()) {
-    if (uniqueCharacterForHydration(character.chaId) !== character) continue
+  const characters = characterRowsForHydration()
+  const characterCounts = new Map<string, number>()
+  for (const character of characters) {
+    if (character?.chaId) characterCounts.set(character.chaId, (characterCounts.get(character.chaId) ?? 0) + 1)
+  }
+  for (const character of characters) {
+    if (!character?.chaId || characterCounts.get(character.chaId) !== 1) continue
     for (const chat of character.chats ?? []) {
       if (chat.id !== chatId) continue
       if (owner) return undefined

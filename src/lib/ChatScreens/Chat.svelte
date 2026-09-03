@@ -1,4 +1,10 @@
 <script module lang="ts">
+  import { charactersResourceState as renderCharacters } from 'src/ts/server/resourceState.svelte'
+  import { getChatMessageOwnerState as readMessageOwner } from 'src/ts/server/chatMessageHydration.svelte'
+  import { createChatReadOwners } from './chatReadOwners.svelte'
+
+  // All mounted rows share the same structure and transcript identity indexes.
+  const renderOwners = createChatReadOwners(renderCharacters, (chatId) => readMessageOwner(chatId)?.messages)
   let manualTriggerDisplayGeneration = 0
 </script>
 
@@ -68,7 +74,6 @@
     alertWait,
   } from '../../ts/alert'
   import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
-  import { getSelectedCharacterOwner } from '../../ts/characterState'
   import {
     applyChatMetadataOwnerPatch,
     charactersResourceState,
@@ -185,7 +190,7 @@
   }
 
   function selectedCharacterReadOwner(): Character | undefined {
-    return charactersResourceState.status === 'ready' ? getSelectedCharacterOwner() : undefined
+    return renderOwners.character()
   }
 
   interface CharacterChatOwner {
@@ -197,8 +202,12 @@
     if (!chatId) return undefined
     const characters = characterRowsForRead()
     let owner: CharacterChatOwner | undefined
+    const characterCounts = new Map<string, number>()
     for (const character of characters) {
-      if (!character?.chaId || characters.filter((candidate) => candidate?.chaId === character.chaId).length !== 1) {
+      if (character?.chaId) characterCounts.set(character.chaId, (characterCounts.get(character.chaId) ?? 0) + 1)
+    }
+    for (const character of characters) {
+      if (!character?.chaId || characterCounts.get(character.chaId) !== 1) {
         continue
       }
       for (const chat of character.chats ?? []) {
@@ -968,12 +977,12 @@
 
   function hasServerRawTranslationTarget() {
     return (
-      captureRawTranslationTarget() !== null &&
       languageSettings.translator !== '' &&
       (languageSettings.translatorType === 'google' ||
         languageSettings.translatorType === 'deepl' ||
         languageSettings.translatorType === 'deeplX' ||
-        languageSettings.translatorType === 'llm')
+        languageSettings.translatorType === 'llm') &&
+      captureRawTranslationTarget() !== null
     )
   }
 
@@ -986,24 +995,11 @@
   }
 
   function currentLiveMessage(): Message | null {
-    const chat = currentLiveChat()
-    if (!chat?.id || idx < 0) return null
-    const messages = getChatMessageOwnerState(chat.id)?.messages
-    if (!messages) return null
-    const candidate = messages[idx]
-    return candidate?.chatId && messages.filter((message) => message.chatId === candidate.chatId).length === 1
-      ? candidate
-      : null
+    return renderOwners.message(idx) ?? null
   }
 
   function currentLiveChat(): Chat | null {
-    const character = renderCharacter
-    const chatPage = character?.chatPage
-    if (typeof chatPage !== 'number' || !character) return null
-    const candidate = character.chats?.[chatPage]
-    if (!candidate?.id || !character.chaId) return null
-    const owner = uniqueChatReadOwner(candidate.id)
-    return owner?.character === character ? owner.chat : null
+    return renderOwners.chat() ?? null
   }
 
   function automaticTranslationDisplayEnabled(): boolean {

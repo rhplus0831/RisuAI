@@ -17,9 +17,7 @@ describe('Chat explicit owner reads', () => {
     expect(source).toContain(
       "return charactersResourceState.status === 'ready' ? charactersResourceState.characters : []",
     )
-    expect(source).toContain(
-      "return charactersResourceState.status === 'ready' ? getSelectedCharacterOwner() : undefined",
-    )
+    expect(source).toContain('return renderOwners.character()')
     expect(source).toContain("if (status === 'ready') return settingsResourceState.value as Partial<Database>")
     expect(source).toContain('return {}')
   })
@@ -31,7 +29,8 @@ describe('Chat explicit owner reads', () => {
     expect(source).toContain('if (!getChatMetadataOwnerState(chatId)) return undefined')
     expect(source).toContain('if (!getChatMetadataOwnerSnapshot(owner.character.chaId, chatId)) return undefined')
     expect(source).toContain('return getChatMessageOwnerState(chat.id)?.messages')
-    expect(source).toContain('messages.filter((message) => message.chatId === candidate.chatId).length === 1')
+    expect(source).toContain('return renderOwners.message(idx) ?? null')
+    expect(source).toContain('return renderOwners.chat() ?? null')
   })
 
   it('reads settings from their owning groups instead of direct aggregate fields', () => {

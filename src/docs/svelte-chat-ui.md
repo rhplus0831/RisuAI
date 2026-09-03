@@ -9,13 +9,13 @@ or the [Svelte UI guide](svelte-ui.md) for the application shell.
 
 ## Fast Triage
 
-| Symptom | Inspect first | Then inspect |
-| ------- | ------------- | ------------ |
-| Chat frame, background, or display mode is wrong | `src/lib/ChatScreens/ChatScreen.svelte` | `src/lib/ChatScreens/BackgroundDom.svelte`, `src/styles.css` |
-| Transcript window, hydration, scroll, composer, or menu is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte` | `src/lib/ChatScreens/DefaultChatScreen.loadPages.ts`, `src/ts/server/chatMessageHydration.svelte.ts` |
-| One message, translation, parser result, or partial edit is wrong | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte` | `src/lib/ChatScreens/ChatBodyParseMemo.ts`, `src/lib/ChatScreens/PartialEditController.svelte` |
-| Generation text, progress bar, stage color, or cancel state is wrong | `src/lib/ChatScreens/chatGenerationLoading.ts`, `Chat.svelte`, `DefaultChatScreen.svelte` | `src/ts/process/index.svelte.ts`, durable generation state in [Generation Client](generation-client.md) |
-| Draft/BTW hook controls or review state are wrong | `src/lib/SideBars/ChatDraftHookSelector.svelte`, `src/lib/ChatScreens/InputHookPickerDialog.svelte`, `DefaultChatScreen.svelte` | [Translation And Input Hooks](../../docs/structure/translation-and-input-hooks.md) |
+| Symptom                                                              | Inspect first                                                                                                                   | Then inspect                                                                                            |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Chat frame, background, or display mode is wrong                     | `src/lib/ChatScreens/ChatScreen.svelte`                                                                                         | `src/lib/ChatScreens/BackgroundDom.svelte`, `src/styles.css`                                            |
+| Transcript window, hydration, scroll, composer, or menu is wrong     | `src/lib/ChatScreens/DefaultChatScreen.svelte`                                                                                  | `src/lib/ChatScreens/DefaultChatScreen.loadPages.ts`, `src/ts/server/chatMessageHydration.svelte.ts`    |
+| One message, translation, parser result, or partial edit is wrong    | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`                                                        | `src/lib/ChatScreens/ChatBodyParseMemo.ts`, `src/lib/ChatScreens/PartialEditController.svelte`          |
+| Generation text, progress bar, stage color, or cancel state is wrong | `src/lib/ChatScreens/chatGenerationLoading.ts`, `Chat.svelte`, `DefaultChatScreen.svelte`                                       | `src/ts/process/index.svelte.ts`, durable generation state in [Generation Client](generation-client.md) |
+| Draft/BTW hook controls or review state are wrong                    | `src/lib/SideBars/ChatDraftHookSelector.svelte`, `src/lib/ChatScreens/InputHookPickerDialog.svelte`, `DefaultChatScreen.svelte` | [Translation And Input Hooks](../../docs/structure/translation-and-input-hooks.md)                      |
 
 ## Chat Surface Ownership
 
@@ -87,6 +87,12 @@ ordinary greeting/composer layout.
 ## Message Rendering
 
 `Chat.svelte` owns each persisted row's controls and display state.
+Its module shares the character/chat and active-message identity indexes from
+`chatReadOwners.svelte.ts` across mounted rows. Svelte tracks array structure and
+stable IDs so hydration, optimistic structural edits, rollback, and selection
+invalidate the relevant reads; unrelated message bodies and settings do not
+rebuild those indexes. Mutation handlers retain their separate live ownership
+and asynchronous freshness checks.
 `ChatBody.svelte` renders parsed content, while `ChatBodyParseMemo.ts` owns
 parser/LLM-detection memoization and dependency signatures for character, chat,
 modules, settings, CBS state, and reload epochs. Stale HTML or unexpectedly

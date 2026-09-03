@@ -712,6 +712,7 @@ interface AssetResolutionContext {
   characterAssets: readonly (readonly string[])[]
   emotionAssets: readonly (readonly string[])[]
   moduleOwners: readonly RisuModule[]
+  assetIndex: Map<string, AssetPathMatch> | null
   resolvedAssets: Map<string, AssetPathMatch | null>
   resolvedEmotions: Map<string, string | null>
 }
@@ -727,6 +728,8 @@ const assetResolutionCache = new Map<string, AssetResolutionCacheEntry>()
 let cachedModuleRenderRevision = captureModuleRenderRevision()
 const additionalAssetCacheStats = {
   contextsBuilt: 0,
+  assetIndexesBuilt: 0,
+  characterAssetTuplesVisited: 0,
   moduleAssetTuplesVisited: 0,
   resolvedAssetNames: 0,
 }
@@ -782,6 +785,7 @@ function getAssetResolutionContext(char: simpleCharacterArgument | character): A
     emotionAssets: char.emotionImages ?? [],
     moduleOwners,
     moduleRenderRevision,
+    assetIndex: null,
     resolvedAssets: new Map(),
     resolvedEmotions: new Map(),
   }
@@ -799,21 +803,34 @@ function getAssetResolutionContext(char: simpleCharacterArgument | character): A
 function resolveAssetPaths(context: AssetResolutionContext, name: string): AssetPathMatch | null {
   if (context.resolvedAssets.has(name)) return context.resolvedAssets.get(name) ?? null
 
-  let match: AssetPathMatch | null = null
-  const consider = (asset: readonly string[]) => {
-    if (asset[0].toLocaleLowerCase() !== name) return
-    match ??= { srcPaths: [], ext: asset[2] }
-    if (match.ext === asset[2]) match.srcPaths.push(asset[1])
-  }
+  if (!context.assetIndex) {
+    const index = new Map<string, AssetPathMatch>()
+    const consider = (asset: readonly string[]) => {
+      const key = asset[0].toLocaleLowerCase()
+      let match = index.get(key)
+      if (!match) {
+        match = { srcPaths: [], ext: asset[2] }
+        index.set(key, match)
+      }
+      // The first extension wins; variants retain character/module traversal order.
+      if (match.ext === asset[2]) match.srcPaths.push(asset[1])
+    }
 
-  for (const asset of context.characterAssets) consider(asset)
-  for (const moduleOwner of context.moduleOwners) {
-    for (const asset of moduleOwner.assets ?? []) {
-      additionalAssetCacheStats.moduleAssetTuplesVisited += 1
+    for (const asset of context.characterAssets) {
+      additionalAssetCacheStats.characterAssetTuplesVisited += 1
       consider(asset)
     }
+    for (const moduleOwner of context.moduleOwners) {
+      for (const asset of moduleOwner.assets ?? []) {
+        additionalAssetCacheStats.moduleAssetTuplesVisited += 1
+        consider(asset)
+      }
+    }
+    context.assetIndex = index
+    additionalAssetCacheStats.assetIndexesBuilt += 1
   }
 
+  const match = context.assetIndex.get(name) ?? null
   additionalAssetCacheStats.resolvedAssetNames += 1
   context.resolvedAssets.set(name, match)
   return match
@@ -833,6 +850,8 @@ export function clearAdditionalAssetCachesForTests(): void {
   assetResolutionCache.clear()
   cachedModuleRenderRevision = captureModuleRenderRevision()
   additionalAssetCacheStats.contextsBuilt = 0
+  additionalAssetCacheStats.assetIndexesBuilt = 0
+  additionalAssetCacheStats.characterAssetTuplesVisited = 0
   additionalAssetCacheStats.moduleAssetTuplesVisited = 0
   additionalAssetCacheStats.resolvedAssetNames = 0
 }
