@@ -1,3 +1,5 @@
+import { recordClientDiagnostic } from '../diagnostics'
+
 type HydrationKind = 'chat' | 'characterLorebook'
 
 export const EXPECTED_FULL_RESOURCE_REFRESH_REASONS = [
@@ -203,6 +205,13 @@ export function recordGenerationRecoveryEvent(
   event: Omit<GenerationRecoveryEvent, 'recordedAt'>,
   counter?: GenerationRecoveryCounter,
 ): void {
+  recordClientDiagnostic({
+    event: 'generation-recovery',
+    level: counter === 'observer_exhaustion' || counter === 'authority_timeout' ? 'warn' : 'info',
+    code: counter,
+    requestUid: event.requestUid,
+    outcome: event.nextDurableState,
+  })
   if (counter) {
     diagnostics.generationRecovery.counters[counter] += 1
   }

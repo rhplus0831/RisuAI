@@ -89,6 +89,11 @@ import { createBardWikiRebuildHandler } from './bardWikiRebuildHandler.js'
 import { createEmbedMemoryJobBatchHandler, createEmbedMemoryJobHandler } from './memoryEmbedJobHandler.js'
 import { createSummarizeMemoryJobBatchHandler, createSummarizeMemoryJobHandler } from './memorySummarizeJobHandler.js'
 import { registerRequestTrace } from './requestTrace.js'
+import {
+  createClientDiagnostics,
+  registerClientDiagnosticsHooks,
+  registerClientDiagnosticsRoutes,
+} from './clientDiagnostics.js'
 import { createPushNotificationService } from './pushNotifications.js'
 import {
   getGenerationOperationProjection,
@@ -153,8 +158,20 @@ function isPathWithin(parent: string, child: string): boolean {
 export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   const config = opts.config ?? loadConfig()
   assertAgentDevAuthBypassHost(config)
+  const diagnostics = createClientDiagnostics(config.clientDiagnostics ?? Boolean(config.requestTrace))
   const app = Fastify({
-    logger: process.env.LOG_LEVEL === 'silent' ? false : { level: process.env.LOG_LEVEL ?? 'info' },
+    logger:
+      process.env.LOG_LEVEL === 'silent'
+        ? false
+        : {
+            level: process.env.LOG_LEVEL ?? 'info',
+            hooks: {
+              logMethod(args, method, level) {
+                diagnostics.recordLog(args, level)
+                return method.apply(this, args)
+              },
+            },
+          },
     bodyLimit: config.bodyLimit,
     trustProxy: config.trustProxy,
     // Generous explicit backstop for receiving a request, aligned
@@ -168,6 +185,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   if (config.requestTrace) {
     registerRequestTrace(app, { dataDir: config.dataDir, ...config.requestTrace })
   }
+  registerClientDiagnosticsHooks(app, diagnostics)
 
   await app.register(fastifyCompress, {
     global: true,
@@ -390,8 +408,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     generationJobRegistry,
     messageTranslationJobRegistry,
     greetingTranslationJobRegistry,
+    diagnostics.enabled,
   )
   registerActiveWriterGuard(app, activeWriterState)
+  registerClientDiagnosticsRoutes(app, authState, diagnostics)
   registerStartupTelemetryRoutes(app, authState)
   registerResourceReadRoutes(app, db, authState, config.dataDir)
   registerBardWikiReadRoutes(app, db, authState)

@@ -4,7 +4,10 @@ import { renderEntryLoadError } from './ts/entryLoadError'
 import { startApplicationAfterEnvironment } from './ts/entryStartup'
 import { installRuntimeEnvironment } from './ts/polyfill'
 import { recordStartupMilestone } from './ts/startupReadiness'
+import { initializeClientDiagnostics } from './ts/diagnostics'
 
+const stopDiagnostics = initializeClientDiagnostics()
+if (import.meta.hot) import.meta.hot.dispose(stopDiagnostics)
 recordStartupMilestone('entry', 0)
 
 function entryLoadErrorMessage(): string {

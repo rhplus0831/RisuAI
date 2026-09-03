@@ -8,6 +8,7 @@ const entryDependencyIds = [
   './alert',
   './entryLoadError',
   './polyfill',
+  './diagnostics',
   './startupReadiness',
 ] as const
 
@@ -38,6 +39,12 @@ function mockActualEntryDependencies(options: { applicationFactory?: () => unkno
     }),
   }))
   vi.doMock('./startupReadiness', () => ({ recordStartupMilestone: milestone }))
+  vi.doMock('./diagnostics', () => ({
+    initializeClientDiagnostics: vi.fn(() => {
+      order.push('diagnostics')
+      return () => {}
+    }),
+  }))
   vi.doMock('../appStartup', () => {
     if (options.applicationFactory) return options.applicationFactory()
     return {
@@ -104,7 +111,7 @@ describe('entry startup', () => {
     const entry = await import('../main')
 
     await expect(entry.default).resolves.toBe('mounted')
-    expect(dependencies.order).toEqual(['environment', 'application'])
+    expect(dependencies.order).toEqual(['diagnostics', 'environment', 'application'])
     expect(dependencies.milestone).toHaveBeenCalledWith('entry', 0)
     expect(addEventListener).toHaveBeenCalledWith('vite:preloadError', expect.any(Function))
   })

@@ -1,4 +1,23 @@
 export const languageEnglish = {
+  diagnostics: {
+    title: 'Diagnostics',
+    description:
+      'View recent browser and server events or export a text report. Message and prompt text, credentials, request bodies, and free-form log messages are excluded. Browser events survive a reload in this tab; recent server events reset when the server restarts.',
+    disabled: 'Diagnostics are disabled on this server.',
+    refresh: 'Refresh logs',
+    download: 'Download debug report',
+    copy: 'Copy debug report',
+    copied: 'Debug report copied.',
+    copyFallback: 'Automatic copying is unavailable. Select and copy the report below, or download it.',
+    exportFailed: 'The report could not be downloaded. You can select and copy the report below.',
+    loading: 'Loading recent server events…',
+    serverUnavailable:
+      'Recent server events could not be refreshed. You can still export browser events and any previously loaded server events.',
+    recent: (count: number) => `Recent events (${count})`,
+    errorsOnly: 'Warnings and errors only',
+    empty: 'No matching events recorded yet.',
+    report: 'Debug report text',
+  },
   unknownInteractionTime: 'Unknown',
   generationReattachFailure: {
     message: 'This reply may still be running, but this device could not reconnect.',

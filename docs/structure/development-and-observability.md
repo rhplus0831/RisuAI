@@ -107,6 +107,56 @@ Lua sidecars require protocol metrics but not the full-prompt flag; they use the
 same compressed-size cap. These files can retain redacted user prompt/chat
 content and should not be shared casually.
 
+## Client Diagnostics
+
+`RISU_CLIENT_DIAGNOSTICS=1` enables a content-free recent-event viewer in
+Settings → Advanced → Diagnostics, with text download, clipboard copy, and
+selectable report text for mobile browsers without clipboard access. If the
+variable is unset, `RISU_API_TRACE_MODE=agent` or `human` also enables it;
+`RISU_CLIENT_DIAGNOSTICS=0` explicitly disables it even in trace mode. This
+flag does not enable protocol metric console output or full-prompt sidecars.
+
+Authenticated bootstrap advertises `clientDiagnostics: { version: 1 }`.
+Authenticated, read-only `GET /api/v1/diagnostics` returns at most 300 server
+events with `Cache-Control: no-store`; active-writer ownership is not required.
+Disabled servers return an empty, disabled response. The server collector is
+owned by the Fastify app and resets on restart. It records HTTP status/timing,
+runtime errors, warning/error logger calls, and selected correlated protocol
+metrics. It generates `X-Request-UID` even when body-capable tracing is off.
+Metric subscriptions are restricted to request UIDs from that app and are
+removed on close.
+
+Browser capture starts before bootstrap, retaining a bounded pending queue until
+the server's opt-in arrives. Missing/unsupported opt-in discards it. Enabled
+capture records fetch status/time-to-response-headers/request UID, network
+failures, global errors/rejections, console warnings/errors, connectivity,
+startup events, and generation recovery. It retains 300 entries in memory and
+best-effort tab-scoped `sessionStorage`, revalidates them after reload, and clears
+them on auth loss or server opt-out. Fetch capture never reads or clones response
+bodies, including streams. Opening/refreshing/exporting the panel reads server
+events; collection does not require DevTools or the panel to be open. If that
+read fails, the report still includes browser events and previously loaded
+server events, explicitly marked unavailable for refresh.
+
+`packages/protocol/src/diagnostics.ts` owns the exact-key contract and projection.
+Only fixed event/error/route identifiers, numeric timing/status fields, random
+request UIDs, and application code coordinates are retained. Raw messages,
+prompts, request/response bodies, credentials, headers, URLs, domain IDs,
+plugin/Lua values, free-form log arguments, and error messages are excluded at
+capture, not merely hidden in the viewer. Error stacks retain only application
+file/line/column coordinates after removing the complete error message. Exports
+re-project records and add only app version, coarse browser/OS families,
+connectivity, viewport size, and export time. No settings, request-history rows,
+or trace files are read by this feature. Existing Show Request Logs and Request
+History remain separate content-bearing tools.
+
+Implementation owners are `server/fastify/src/clientDiagnostics.ts`,
+`src/ts/diagnostics.ts`, `src/ts/server/clientDiagnostics.ts`, and
+`src/lib/Setting/Pages/Advanced/DiagnosticsPanel.svelte`. Focused tests are
+`server/fastify/__tests__/clientDiagnostics.test.ts`,
+`src/ts/diagnostics.dom.test.ts`, and
+`src/lib/Setting/Pages/Advanced/DiagnosticsPanel.svelte.test.ts`.
+
 ## Browser Startup Telemetry
 
 Browser startup telemetry is an opt-in `browser_startup` protocol metric. Set
@@ -310,6 +360,7 @@ Server:
 | `RISU_REALM_URL`                                   | `https://realm.risuai.net` | Realm character import target.                                                                                                                            |
 | `RISU_AGENT_DEV_AUTH_BYPASS`                       | disabled                   | Direct-server dev escape hatch; full-stack runners override it as described below.                                                                        |
 | `LOG_LEVEL`                                        | `info`                     | Use `silent` to disable Fastify logger.                                                                                                                   |
+| `RISU_CLIENT_DIAGNOSTICS`                          | follows API trace mode     | Enables the authenticated recent diagnostics viewer/export; explicit `0` disables it even in `agent`/`human` trace mode.                                   |
 | `RISU_PROTOCOL_METRICS`                            | unset                      | Enables structured protocol metrics and advertises v1 browser startup collection when `1`, `true`, `yes`, or `on`.                                        |
 
 Local/dev:

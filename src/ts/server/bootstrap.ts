@@ -3,6 +3,8 @@ import type { Message } from '../storage/database.svelte'
 import { activeWriterSessionHeader } from './activeWriterSession'
 import { setCachedServerCommandRevision } from './commands'
 import { configureStartupTelemetry } from './startupTelemetry'
+import { configureClientDiagnostics } from '../diagnostics'
+import { isDiagnosticsConfiguration, type DiagnosticsConfiguration } from '@risuai/protocol/diagnostics'
 import { isStartupTelemetryConfiguration, type StartupTelemetryConfiguration } from '@risuai/protocol/startup-telemetry'
 
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -229,6 +231,7 @@ export interface ServerBootstrapRuntime {
   activeMessageTranslations?: ActiveMessageTranslation[]
   activeGreetingTranslations?: ActiveGreetingTranslation[]
   startupTelemetry?: StartupTelemetryConfiguration
+  clientDiagnostics?: DiagnosticsConfiguration
 }
 
 export type ServerBootstrapResult =
@@ -363,6 +366,7 @@ async function fetchServerBootstrapWithMode(input: {
     generationOperationProtocol: parseGenerationOperationProtocol(record.generationOperationProtocol),
     displaySourceProtocol: parseGenerationOperationProtocol(record.displaySourceProtocol),
     ...(isStartupTelemetryConfiguration(record.startupTelemetry) ? { startupTelemetry: record.startupTelemetry } : {}),
+    ...(isDiagnosticsConfiguration(record.clientDiagnostics) ? { clientDiagnostics: record.clientDiagnostics } : {}),
     generationOperationProjectionEpoch: isNonNegativeSafeInteger(record.generationOperationProjectionEpoch)
       ? (record.generationOperationProjectionEpoch as number)
       : undefined,
@@ -378,6 +382,7 @@ async function fetchServerBootstrapWithMode(input: {
     activeGreetingTranslations: parseActiveGreetingTranslations(record.activeGreetingTranslations),
   }
   configureStartupTelemetry(bootstrap.startupTelemetry)
+  configureClientDiagnostics(bootstrap.clientDiagnostics)
   return {
     status: 'ok',
     bootstrap,

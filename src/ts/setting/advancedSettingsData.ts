@@ -20,6 +20,8 @@ export const advancedSettingsItems: SettingItem[] = [
     options: { level: 'warning' },
   },
 
+  { type: 'custom', id: 'adv.diagnostics', componentId: 'DiagnosticsPanel' },
+
   // LoreBook Settings
   {
     id: 'adv.lbDepth',

@@ -33,6 +33,7 @@ import { listGenerationFinalizationRetryProjections } from '../generationFinaliz
 import { listPendingClientGenerationEffects } from '../generationEffects.js'
 import { DISPLAY_SOURCE_PROTOCOL_VERSION } from '@risuai/protocol/display-source'
 import { STARTUP_TELEMETRY_PROTOCOL_VERSION } from '@risuai/protocol/startup-telemetry'
+import { DIAGNOSTICS_VERSION } from '@risuai/protocol/diagnostics'
 
 export const ASSET_BASE_URL = '/api/v1/assets'
 export const WRITER_OBSERVER_SESSION_HEADER = 'risu-writer-observer-session'
@@ -54,6 +55,7 @@ export function registerBootstrapRoutes(
   generationJobs?: GenerationJobRegistry,
   messageTranslationJobs?: MessageTranslationJobRegistry,
   greetingTranslationJobs?: GreetingTranslationJobRegistry,
+  clientDiagnostics = false,
 ): void {
   app.get('/api/v1/bootstrap', { exposeHeadRoute: false }, async (req, reply) => {
     const metricStartedAt = protocolMetricsEnabled() ? protocolNowMs() : 0
@@ -96,6 +98,7 @@ export function registerBootstrapRoutes(
       assetBaseUrl: ASSET_BASE_URL,
       generationOperationProtocol: { version: GENERATION_OPERATION_PROTOCOL_VERSION },
       displaySourceProtocol: { version: DISPLAY_SOURCE_PROTOCOL_VERSION },
+      ...(clientDiagnostics ? { clientDiagnostics: { version: DIAGNOSTICS_VERSION } } : {}),
       ...(protocolMetricsEnabled()
         ? { startupTelemetry: { version: STARTUP_TELEMETRY_PROTOCOL_VERSION, sampleRate: 1 as const } }
         : {}),

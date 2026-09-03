@@ -13,6 +13,7 @@
     "./client-context": "./src/clientContext.ts",
     "./display-source": "./src/displaySource.ts",
     "./durable-command-operation": "./src/durableCommandOperation.ts",
+    "./diagnostics": "./src/diagnostics.ts",
     "./embedding-operation": "./src/embeddingOperation.ts",
     "./generation-sse": "./src/generationSse.ts",
     "./hypa-context-truncation": "./src/hypaContextTruncation.ts",

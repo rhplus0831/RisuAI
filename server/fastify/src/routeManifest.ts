@@ -118,6 +118,17 @@ export const PROTOCOL_ROUTE_POLICIES = [
     },
   },
   {
+    id: 'diagnostics-read',
+    auth: {
+      decision: 'required',
+      reason: 'Recent diagnostics are available only to authenticated clients.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only bounded diagnostic metadata.',
+    },
+  },
+  {
     id: 'startup-telemetry',
     auth: {
       decision: 'required',

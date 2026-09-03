@@ -1,4 +1,5 @@
 import { clearObserverRouteIntent } from './observerRouteIntent'
+import { configureClientDiagnostics } from './diagnostics'
 import {
   observerShellLifecycleStore,
   setObserverShellLifecycleMode,
@@ -21,6 +22,7 @@ import { selectedCharID } from './stores.svelte'
  * the old shell visible until their authoritative snapshot is ready.
  */
 export async function discardObserverProjectionState(reason: ObserverProjectionDiscardReason): Promise<void> {
+  if (reason === 'auth-loss') configureClientDiagnostics(undefined)
   clearObserverRouteIntent()
   clearCharacterShellHydrationState()
   resetChatHydration()

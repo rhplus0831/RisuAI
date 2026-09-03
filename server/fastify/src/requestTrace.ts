@@ -24,6 +24,15 @@ export function readRequestTraceUid(request: FastifyRequest): string | undefined
   return requestTraceUids.get(request)
 }
 
+export function ensureRequestTraceUid(request: FastifyRequest, reply: FastifyReply): string {
+  const uid = requestTraceUids.get(request) ?? generateRequestUid()
+  requestTraceUids.set(request, uid)
+  request.headers[REQUEST_UID_HEADER.toLowerCase()] = uid
+  reply.header(REQUEST_UID_HEADER, uid)
+  reply.raw.setHeader(REQUEST_UID_HEADER, uid)
+  return uid
+}
+
 interface RegisterRequestTraceOptions {
   dataDir: string
   mode: RequestTraceMode
@@ -176,16 +185,11 @@ export function registerRequestTrace(app: FastifyInstance, opts: RegisterRequest
 
   app.addHook('onRequest', async (request, reply) => {
     const state: RequestTraceState = {
-      uid: generateRequestUid(),
+      uid: ensureRequestTraceUid(request, reply),
       startedAtMs: performance.now(),
       logApiRequest: isApiRequest(request.raw.url ?? request.url),
     }
     traceStates.set(request, state)
-    requestTraceUids.set(request, state.uid)
-
-    request.headers[REQUEST_UID_HEADER.toLowerCase()] = state.uid
-    reply.header(REQUEST_UID_HEADER, state.uid)
-    reply.raw.setHeader(REQUEST_UID_HEADER, state.uid)
     installWriteHeadProbe(reply.raw, () => markSendStarted(state))
   })
 

@@ -4,6 +4,8 @@ import net from 'node:net'
 import { DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES } from './generation/generationTraceSidecar.js'
 
 export interface AppConfig {
+  /** Client-visible content-free diagnostics; trace modes enable this by default. */
+  clientDiagnostics?: boolean
   host: string
   port: number
   dataDir: string
@@ -198,6 +200,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     realmUrl: parseHubUrl(env.RISU_REALM_URL, 'https://realm.risuai.net'),
     agentDevAuthBypass: parseBoolean(env.RISU_AGENT_DEV_AUTH_BYPASS),
     requestTrace: requestTraceMode ? { mode: requestTraceMode } : undefined,
+    clientDiagnostics:
+      env.RISU_CLIENT_DIAGNOSTICS === undefined ? Boolean(requestTraceMode) : parseBoolean(env.RISU_CLIENT_DIAGNOSTICS),
     generationTrace: {
       fullPrompt: generationTraceFullPrompt,
       maxGzipBytes: generationTraceMaxGzipBytes,
