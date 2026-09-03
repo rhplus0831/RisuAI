@@ -287,6 +287,8 @@
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
     displayPriority?: DisplaySourcePriority
+    displayChatId?: string | null
+    displayMessageId?: string | null
   }
 
   interface CapturedChatButtonTriggerTarget {
@@ -360,6 +362,8 @@
     onInitialDisplayParseStart = () => {},
     onInitialDisplayParseSettled = () => {},
     displayPriority = 'normal',
+    displayChatId = null,
+    displayMessageId = null,
   }: Props = $props()
   let autoPopupMessageEditorOpen = $state(false)
   let autoPopupTranslationEditorOpen = $state(false)
@@ -1648,6 +1652,7 @@
   )
   let showSenderIdentity = $derived(!isComment)
   let currentChatId = $derived(currentLiveChat()?.id ?? '')
+  let currentDisplayChatId = $derived(displayChatId ?? (idx < 0 ? currentChatId : ''))
   let ownerMessage = $derived(currentLiveMessage() ?? undefined)
   let messageRowId = $derived(ownerMessage?.chatId ?? '')
   let renderChatId = $derived(currentChatId)
@@ -1928,14 +1933,13 @@
     const moduleRevision = $moduleRenderRevision
     const chatReloadEpoch = $ReloadChatPointer[idx] ?? 0
     const variableReloadEpoch = idx < 0 ? $VariableReloadGUIPointer : 0
-    const chatScopeKey = idx < 0 ? currentChatId : ''
     const displayParseKey = JSON.stringify([
       displayMessage,
       name,
       idx,
       role,
       firstMessage,
-      chatScopeKey,
+      currentDisplayChatId,
       reloadEpoch,
       moduleRevision,
       chatReloadEpoch,
@@ -2415,7 +2419,7 @@
   {:else}
     {@const variableReloadPointer = idx < 0 ? $VariableReloadGUIPointer : 0}
     {@const chatReloadPointer = `${$ReloadGUIPointer}|${$moduleRenderRevision}|${$ReloadChatPointer[idx] ?? 0}|${variableReloadPointer}`}
-    {@const chatScopePointer = idx < 0 ? currentChatId : ''}
+    {@const chatScopePointer = currentDisplayChatId}
     {@const totalLengthPointer = idx > totalLength - 6 ? totalLength : 0}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -2432,9 +2436,10 @@
             {character}
             {firstMessage}
             {idx}
+            chatId={currentDisplayChatId || undefined}
             {msgDisplay}
             {name}
-            messageId={messageRowId || undefined}
+            messageId={(displayMessageId ?? messageRowId) || undefined}
             displayLayer={displaySourceLayer}
             streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
             {displayPriority}
@@ -2452,9 +2457,10 @@
             {character}
             {firstMessage}
             {idx}
+            chatId={currentDisplayChatId || undefined}
             {msgDisplay}
             {name}
-            messageId={messageRowId || undefined}
+            messageId={(displayMessageId ?? messageRowId) || undefined}
             displayLayer={displaySourceLayer}
             streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
             {displayPriority}
@@ -2554,7 +2560,10 @@
 
             const parser = new DOMParser()
             const doc = parser.parseFromString(
-              await ParseMarkdown(msgDisplay, renderCharacter, 'normal', idx, getCbsCondition()),
+              await ParseMarkdown(msgDisplay, renderCharacter, 'normal', idx, getCbsCondition(), {
+                chatId: currentDisplayChatId || undefined,
+                messageId: (displayMessageId ?? messageRowId) || undefined,
+              }),
               'text/html',
             )
 

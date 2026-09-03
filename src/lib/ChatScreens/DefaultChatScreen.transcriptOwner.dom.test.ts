@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   resolveReadyOwnerValue,
+  routeOwnsSelectedChat,
   resolveTranscriptRenderMessages,
   resolveUniqueChatOwner,
 } from './DefaultChatScreen.svelte'
@@ -69,6 +70,18 @@ describe('DefaultChatScreen stable chat owner', () => {
     expect(resolveUniqueChatOwner([first, duplicateCharacterWithAnotherChat], 'character-a', 'chat-a')).toBeUndefined()
     expect(resolveUniqueChatOwner([first, duplicateChatOnAnotherCharacter], 'character-a', 'chat-a')).toBeUndefined()
     expect(resolveUniqueChatOwner([duplicateChat], 'character-a', 'chat-a')).toBeUndefined()
+  })
+
+  it('does not render a selected chat under a different routed chat identity', () => {
+    expect(
+      routeOwnsSelectedChat({ kind: 'character', chaId: 'character-a', chatId: 'chat-a1' }, 'character-a', 'chat-a1'),
+    ).toBe(true)
+    expect(
+      routeOwnsSelectedChat({ kind: 'character', chaId: 'character-a', chatId: 'chat-a2' }, 'character-a', 'chat-a1'),
+    ).toBe(false)
+    expect(
+      routeOwnsSelectedChat({ kind: 'character', chaId: 'character-b', chatId: 'chat-b2' }, 'character-a', 'chat-a1'),
+    ).toBe(false)
   })
 
   it('keeps the component closed to the aggregate database facade', () => {

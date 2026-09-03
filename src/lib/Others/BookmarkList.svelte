@@ -602,6 +602,7 @@
               <div class="p-1 border-t border-darkborderc">
                 <Chat
                   idx={msg.originalIndex}
+                  displayChatId={activeBookmarkMetadata?.chatId}
                   message={msg.data}
                   name={msg.role === 'user' ? getUserDisplayName() : getCharacterDisplayName(chara)}
                   img={msg.role === 'user' ? getCharImage(getUserIcon(), 'css') : getCharImage(chara.image, 'css')}

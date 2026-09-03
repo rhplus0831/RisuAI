@@ -1106,6 +1106,27 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(initialKey)
   })
 
+  it('keys identical rendered rows by their explicit owning chat', async () => {
+    const char = seedDb()
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'shared cloned row body',
+      charArg: char.chaId,
+      owners: memoModule.createChatBodyParseOwnerReaders(),
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+      chatId: 'chat-a1',
+      messageId: 'shared-message',
+    }
+
+    const firstChatKey = memoModule.getChatBodyParseMemoKey(input)
+    const secondChatKey = memoModule.getChatBodyParseMemoKey({ ...input, chatId: 'chat-a2' })
+
+    expect(secondChatKey).not.toBe(firstChatKey)
+  })
+
   it('explicit retranslate still calls translateHTML with regenerate enabled', async () => {
     const char = seedDb({
       autoTranslate: true,

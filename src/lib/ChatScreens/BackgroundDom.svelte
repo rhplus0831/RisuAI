@@ -19,6 +19,7 @@
 
   interface BackgroundParseInput {
     characterId: string
+    chatId?: string
     ownerKey: string
     characterKey: string
     html: string
@@ -103,6 +104,7 @@
   let backgroundOwner = $derived(selectedCharacter?.chaId ?? '')
   let backgroundParseInput: BackgroundParseInput = $derived({
     characterId: selectedCharacter?.chaId ?? '',
+    chatId: selectedChatId,
     ownerKey: backgroundOwner,
     characterKey: backgroundCharacterKey,
     html: backgroundHTML,
@@ -119,7 +121,16 @@
     return untrack(() => {
       const currentChar = selectedCharacter
       const source = (input.html || '') + '\n' + (input.moduleEmbedding || '')
-      return ParseMarkdown(risuChatParser(source, { chara: currentChar }), currentChar, 'back')
+      return ParseMarkdown(
+        risuChatParser(source, { chara: currentChar }),
+        currentChar,
+        'back',
+        -1,
+        {},
+        {
+          chatId: input.chatId,
+        },
+      )
     }).then((parsed) => {
       if (latestBackgroundParseInput === input) {
         retainedBackground = parsed

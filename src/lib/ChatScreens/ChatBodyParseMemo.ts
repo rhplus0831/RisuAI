@@ -66,6 +66,7 @@ export interface ChatBodyParseMemoInput {
   mode: ChatBodyParseMode
   chatID: number
   cbsConditions: CbsConditions
+  chatId?: string
   displayLayer?: DisplaySourceLayer
   messageId?: string
   name?: string
@@ -81,6 +82,7 @@ export interface ChatBodyCachedOnlyInput {
   chatID: number
   cbsConditions: CbsConditions
   fallbackMode: ChatBodyParseMode
+  chatId?: string
   displayLayer?: DisplaySourceLayer
   messageId?: string
   name?: string
@@ -486,7 +488,9 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
     const modules = safeGetModules(input.owners)
     return `{"activeChat":${serializedActiveChatSignature(input.owners)},"cbsConditions":${stableFragment(
       input.cbsConditions ?? {},
-    )},"character":${serializedCharacterSignature(input.charArg, input.owners)},"chatID":${stableFragment(
+    )},"character":${serializedCharacterSignature(input.charArg, input.owners)},"chatId":${stableFragment(
+      input.chatId,
+    )},"chatID":${stableFragment(
       input.chatID,
     )},"data":${stableFragment(input.data ?? '')},"kind":"chat-body-parse","mode":${stableFragment(
       input.mode,
@@ -535,6 +539,7 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
           mode: detectionMode,
           chatID: input.chatID,
           cbsConditions: input.cbsConditions,
+          chatId: input.chatId,
           displayLayer: input.displayLayer,
           messageId: input.messageId,
           name: input.name,
@@ -545,7 +550,7 @@ export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyIn
   const parseKeyFragment = detectionMode === 'raw' ? '' : `,"parseKey":${stableFragment(parseKey ?? '')}`
   const rawDataFragment = db.translateBeforeHTMLFormatting ? `,"rawData":${stableFragment(input.data ?? '')}` : ''
 
-  return `{"detectionMode":${stableFragment(
+  return `{"chatId":${stableFragment(input.chatId)},"detectionMode":${stableFragment(
     detectionMode,
   )},"kind":"chat-body-llm-cache-exists"${parseKeyFragment}${rawDataFragment},"translateSettings":${stableFragment(
     getTranslateSettingsSignature(input.owners),
@@ -568,6 +573,7 @@ export function memoizedChatBodyParse(input: ChatBodyParseMemoInput): Promise<st
       input.chatID,
       input.cbsConditions,
       {
+        chatId: input.chatId,
         layer: input.displayLayer,
         messageId: input.messageId,
         name: input.name,
@@ -602,6 +608,7 @@ export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnly
           mode: getChatBodyCachedOnlyLlmDetectionMode(input) as ChatBodyParseMode,
           chatID: input.chatID,
           cbsConditions: input.cbsConditions,
+          chatId: input.chatId,
           displayLayer: input.displayLayer,
           messageId: input.messageId,
           name: input.name,

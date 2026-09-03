@@ -34,7 +34,7 @@ const mocks = vi.hoisted(() => ({
   getFileSrc: vi.fn<(path: string) => Promise<string>>(),
   moduleAssets: [] as [string, string, string][],
   processScriptFull: vi.fn(async (_char: unknown, data: string) => ({ data, emoChanged: false })),
-  requestServerDisplaySource: vi.fn(async () => ({ status: 'fallback' as const, reason: 'test' })),
+  requestServerDisplaySource: vi.fn(async (_input: unknown) => ({ status: 'fallback' as const, reason: 'test' })),
   modelInfo: {
     id: 'test-model',
     name: 'Test Model',
@@ -333,5 +333,95 @@ describe('additional asset resolution cache', () => {
       0,
     )
     expect(generationOutput).toContain('/resolved/generation-frame')
+  })
+
+  it('keeps pinned-navigation display requests bound to the rendered chat target', async () => {
+    charactersResourceState.characters = [
+      {
+        chaId: 'character-a',
+        type: 'character',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a1',
+            message: [{ role: 'char', data: 'first chat row', chatId: 'message-a1' }],
+            scriptstate: {},
+          },
+          {
+            id: 'chat-a2',
+            message: [{ role: 'char', data: 'second chat row', chatId: 'message-a2' }],
+            scriptstate: {},
+          },
+        ],
+      },
+      {
+        chaId: 'character-b',
+        type: 'character',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-b2',
+            message: [{ role: 'char', data: 'second character row', chatId: 'message-b2' }],
+            scriptstate: {},
+          },
+        ],
+      },
+    ] as never
+    charactersResourceState.currentChar = 0
+    charactersResourceState.status = 'ready'
+
+    await ParseMarkdown(
+      'first chat row',
+      simpleCharacter('character-a'),
+      'notrim',
+      0,
+      { chatRole: 'char' },
+      {
+        chatId: 'chat-a1',
+        messageId: 'message-a1',
+      },
+    )
+    charactersResourceState.currentChar = 1
+    await ParseMarkdown(
+      'second character row',
+      simpleCharacter('character-b'),
+      'notrim',
+      0,
+      { chatRole: 'char' },
+      {
+        chatId: 'chat-b2',
+        messageId: 'message-b2',
+      },
+    )
+    charactersResourceState.currentChar = 0
+    await ParseMarkdown(
+      'first chat row',
+      simpleCharacter('character-a'),
+      'notrim',
+      0,
+      { chatRole: 'char' },
+      {
+        chatId: 'chat-a1',
+        messageId: 'message-a1',
+      },
+    )
+    await ParseMarkdown(
+      'second chat row',
+      simpleCharacter('character-a'),
+      'notrim',
+      0,
+      { chatRole: 'char' },
+      {
+        chatId: 'chat-a2',
+        messageId: 'message-a2',
+      },
+    )
+
+    expect(
+      mocks.requestServerDisplaySource.mock.calls.map(([request]) => (request as { chatId: string }).chatId),
+    ).toEqual(['chat-a1', 'chat-b2', 'chat-a1', 'chat-a2'])
+    expect(mocks.requestServerDisplaySource).toHaveBeenLastCalledWith(
+      expect.objectContaining({ chatId: 'chat-a2', messageId: 'message-a2', source: 'second chat row' }),
+    )
   })
 })

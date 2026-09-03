@@ -34,6 +34,7 @@
     character?: simpleCharacterArgument | string | null
     firstMessage?: boolean
     idx?: number
+    chatId?: string
     msgDisplay?: string
     name?: string
     messageId?: string
@@ -55,6 +56,7 @@
     character = null,
     idx = 0,
     firstMessage = false,
+    chatId,
     msgDisplay,
     name,
     messageId,
@@ -200,6 +202,7 @@
               mode: cachedOnlyDetectionMode,
               chatID,
               cbsConditions,
+              chatId,
               displayLayer,
               messageId,
               name,
@@ -212,6 +215,7 @@
         owners: parseOwners,
         chatID,
         cbsConditions,
+        chatId,
         fallbackMode: mode,
         cachedOnlyParseKey,
       })
@@ -229,6 +233,7 @@
                 owners: parseOwners,
                 chatID,
                 cbsConditions,
+                chatId,
                 displayLayer,
                 messageId,
                 name,
@@ -282,6 +287,7 @@
                 mode,
                 chatID,
                 cbsConditions,
+                chatId,
                 displayLayer,
                 messageId,
                 name,
@@ -310,6 +316,7 @@
                 mode: 'pretranslate',
                 chatID,
                 cbsConditions,
+                chatId,
                 displayLayer,
                 messageId,
                 name,
@@ -356,6 +363,7 @@
                 mode,
                 chatID,
                 cbsConditions,
+                chatId,
                 displayLayer,
                 messageId,
                 name,
@@ -396,6 +404,7 @@
               mode,
               chatID,
               cbsConditions,
+              chatId,
               displayLayer,
               messageId,
               name,
@@ -500,6 +509,12 @@
     const parseData = msgDisplay
     const parseCharacter = character
     const parseIndex = idx
+    const parseChatId = chatId
+    const parseMessageId = messageId
+    const parseDisplayLayer = displayLayer
+    const parseStreaming = streaming
+    const parseDisplayPriority = displayPriority
+    const parseName = name
 
     // These local inputs intentionally restart parsing. Database reads made by
     // the parser are snapshots; their UI activation is controlled by the
@@ -509,6 +524,12 @@
     void allowClientTranslation
     void firstMessage
     void role
+    void parseChatId
+    void parseMessageId
+    void parseDisplayLayer
+    void parseStreaming
+    void parseDisplayPriority
+    void parseName
 
     return untrack(() => markParsing(parseData, parseCharacter, parseIndex))
   })

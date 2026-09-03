@@ -12,6 +12,19 @@
     return status === 'ready' ? ownerValue : preReadyFallback
   }
 
+  export function routeOwnsSelectedChat(
+    route: { kind: string; chaId?: string; chatId?: string },
+    characterId: string | undefined,
+    chatId: string | undefined,
+  ): boolean {
+    return (
+      route.kind === 'character' &&
+      route.chaId === characterId &&
+      typeof route.chatId === 'string' &&
+      route.chatId === chatId
+    )
+  }
+
   export function resolveUniqueChatOwner<
     TChat extends { id?: string },
     TCharacter extends { chaId?: string; chats?: TChat[] },
@@ -490,11 +503,7 @@
     if (character?.chaId === '§playground') {
       return $PlaygroundStore === 2 && Boolean(currentChatId) && Array.isArray(currentChat)
     }
-    return (
-      visibleRoute.kind === 'character' &&
-      visibleRoute.chaId === character?.chaId &&
-      typeof visibleRoute.chatId === 'string'
-    )
+    return routeOwnsSelectedChat(visibleRoute, character?.chaId, currentChatId)
   })
   let currentRerollTarget = $derived(
     currentCharacter && currentChatId
@@ -3194,6 +3203,7 @@
           {#if !isServerCharacterShell(currentCharacter) && renderChat.length <= loadPages}
             <Chat
               character={currentDisplayCharacter}
+              displayChatId={currentChatId}
               greetingTarget={greetingTranslationTarget}
               translation={greetingTranslation}
               name={getCharacterDisplayName(currentCharacter)}

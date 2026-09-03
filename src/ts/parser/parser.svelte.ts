@@ -152,8 +152,8 @@ function readySelectedCharacterOwner(): character | undefined {
   return getCharacterResourceOwner(candidate.chaId) === candidate ? candidate : undefined
 }
 
-function readySelectedChatOwner(characterOwner: character): Chat | undefined {
-  const chatOwner = selectedChatOwner(charactersResourceState.characters, characterOwner)
+function readyChatOwner(characterOwner: character, chatId: string): Chat | undefined {
+  const chatOwner = uniqueChatOwner(charactersResourceState.characters, characterOwner, chatId)
   if (!chatOwner?.id || !characterOwner.chaId) return undefined
   const metadataOwner = getChatMetadataOwnerSnapshot(characterOwner.chaId, chatOwner.id)
   const scriptstateOwner = getChatScriptstateOwnerSnapshot(characterOwner.chaId, chatOwner.id)
@@ -174,6 +174,12 @@ function readySelectedChatOwner(characterOwner: character): Chat | undefined {
   } as Chat
 }
 
+function readySelectedChatOwner(characterOwner: character): Chat | undefined {
+  const candidate = characterOwner.chats?.[characterOwner.chatPage]
+  if (!nonBlankStableId(candidate?.id)) return undefined
+  return readyChatOwner(characterOwner, candidate.id)
+}
+
 function parserSelectedContext(): { character: character; chat?: Chat } | undefined {
   if (charactersResourceState.status !== 'ready') return undefined
   const characterOwner = readySelectedCharacterOwner()
@@ -191,6 +197,17 @@ function parserCharacterOwnerById(characterId: string): character | undefined {
   const normalizedCharacterId = characterId.trim()
   if (!normalizedCharacterId) return undefined
   return charactersResourceState.status === 'ready' ? getCharacterResourceOwner(normalizedCharacterId) : undefined
+}
+
+function parserChatOwnerById(characterId: string, chatId: string): Chat | undefined {
+  const normalizedCharacterId = characterId.trim()
+  const normalizedChatId = chatId.trim()
+  if (!normalizedCharacterId || !normalizedChatId) return undefined
+  if (charactersResourceState.status === 'ready') {
+    const characterOwner = getCharacterResourceOwner(normalizedCharacterId)
+    return characterOwner ? readyChatOwner(characterOwner, normalizedChatId) : undefined
+  }
+  return undefined
 }
 
 function projectSelectedCharacter(
@@ -1215,6 +1232,7 @@ export async function ParseMarkdown(
   chatID = -1,
   cbsConditions: CbsConditions = {},
   displayTarget: {
+    chatId?: string
     layer?: DisplaySourceLayer
     messageId?: string
     name?: string
@@ -1247,7 +1265,9 @@ export async function ParseMarkdown(
   }
 
   if (char) {
-    const currentChat = parserSelectedContext()?.chat
+    const currentChat = displayTarget.chatId
+      ? parserChatOwnerById(char.chaId, displayTarget.chatId)
+      : parserSelectedContext()?.chat
     const messageId = displayTarget.messageId ?? (chatID >= 0 ? currentChat?.message?.[chatID]?.chatId : undefined)
     const currentTriggerId = get(CurrentTriggerIdStore)
     const hasBrowserOnlyTriggerContext = currentTriggerId !== null && currentTriggerId !== 'null'

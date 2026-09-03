@@ -206,6 +206,14 @@ describe('BackgroundDom parser dependencies', () => {
     component = mount(BackgroundDom, { target })
     await waitForParserCalls(1)
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
+    expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ chaId: 'background-dom-character' }),
+      'back',
+      -1,
+      {},
+      { chatId: 'background-dom-chat' },
+    )
 
     withTestDatabaseWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame'

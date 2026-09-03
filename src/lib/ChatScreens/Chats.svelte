@@ -282,11 +282,11 @@
         message.chatId ??
         `message-${i}`
       const isAppendGenerationPresentation = activeAppendMessageIndex === i && activeAppendPresentationKey !== null
-      const rowKey =
+      const presentationRowKey =
         (message.chatId ? appendPresentationKeyAliases[message.chatId] : undefined) ??
         (isAppendGenerationPresentation ? activeAppendPresentationKey : `${presentationKey}:${i}:${reloadPointer}`)
       rows.push({
-        key: rowKey,
+        key: `${currentChatId ?? 'unscoped'}:${presentationRowKey}`,
         message,
         idx: i,
         img: message.role === 'user' ? userImage : charImage,
@@ -308,7 +308,7 @@
 
     if (activeAppendActivity && activeAppendMessageIndex < 0 && activeAppendPresentationKey) {
       rows.unshift({
-        key: activeAppendPresentationKey,
+        key: `${currentChatId ?? 'unscoped'}:${activeAppendPresentationKey}`,
         message: {
           role: 'char',
           data: '',
@@ -775,6 +775,8 @@
         {onSelectRerollCandidate}
         {rerollTarget}
         rerollIcon="dynamic"
+        displayChatId={row.scopeId}
+        displayMessageId={row.message.chatId ?? null}
         character={row.character}
         largePortrait={row.largePortrait}
         messageGenerationInfo={row.message.generationInfo}
