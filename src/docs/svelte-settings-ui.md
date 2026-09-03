@@ -189,8 +189,11 @@ a persisted setting. Blocking drawers/dialogs should use the shared focus trap
 and backdrop-dismiss actions described in
 [Svelte UI](svelte-ui.md#app-render-priority).
 
-`NotificationToggle.svelte` displays push setup compensation, cleanup/local
-inspection, retry-storage, and retry-operation states. Device/server ordering
+`NotificationToggle.svelte` preserves the enabled preference when browser setup
+fails and displays the shared `PushNotificationWarning.svelte` with a retry
+action. App also shows that warning across routes. Cleanup/local inspection,
+retry-storage, and retry-operation states remain available for intentional
+disable failures. Device/server ordering
 and its retry ledger belong to
 [Client Runtime](client-runtime.md#push-notification-coordinator).
 

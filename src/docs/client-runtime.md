@@ -296,10 +296,24 @@ freshness check passes.
 
 ## Push Notification Coordinator
 
-The notification setting is a serialized device/server transaction owned by
-`src/ts/server/pushNotificationSetting.ts`. It registers or removes browser and
-server subscriptions through `src/ts/server/pushNotifications.ts`; failed setup
-compensates the durable setting back to disabled. Unresolved cleanup endpoints
+The notification setting records the user's shared preference; device setup
+failures never write it back to disabled. `src/ts/server/pushNotificationSetting.ts`
+serializes browser/server subscription work through `src/ts/server/pushNotifications.ts`.
+Startup and background recovery inspect existing permission without prompting.
+Only explicit enable/retry actions request permission, synchronously before
+awaiting hydration. Failed registration preserves the browser subscription for
+the next attempt. Transient failures retry after 5 seconds with exponential
+backoff capped at 60 seconds; the shared lifecycle recovery dispatcher also
+rechecks on online/foreground signals. Permission and unsupported-browser
+failures wait for a user action or lifecycle recheck. Intentional disable,
+disposal, and writer loss prevent further automatic enablement.
+
+`src/ts/server/pushNotificationState.ts` exposes a small shell-safe status store.
+App lazily mounts `PushNotificationWarning.svelte` above route content, and the
+notification setting uses the same warning and retry action. The warning stays
+visible during retries and clears on successful setup or intentional disable.
+Reload revalidates the preserved preference and recreates any unresolved warning.
+Unresolved cleanup endpoints
 and local-subscription-inspection state persist in IndexedDB through
 `src/ts/server/pushNotificationRetryStorage.ts`, then hydrate and retry after
 reload. `public/service-worker.js` owns notification display plus the

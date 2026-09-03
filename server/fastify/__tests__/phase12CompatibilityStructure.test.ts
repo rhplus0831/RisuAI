@@ -84,6 +84,7 @@ const CLOSED_STRING_VOCABULARIES = {
       'permission-default',
       'push-unavailable',
       'server-registration-failed',
+      'service-worker-failed',
       'service-worker-unavailable',
       'subscription-failed',
       'vapid-unavailable',

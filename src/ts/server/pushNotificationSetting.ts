@@ -1,15 +1,25 @@
-import { readonly, writable, type Readable } from 'svelte/store'
+import { subscribeBrowserLifecycleRecovery, type BrowserLifecycleRecoveryTrigger } from './lifecycleRecovery'
+import { isWriterAccessLost } from './activeWriterSession'
+import { readonly, writable, type Readable, type Writable } from 'svelte/store'
 import {
   disableChatCompletionPushNotifications,
   enableChatCompletionPushNotifications,
+  requestChatCompletionNotificationPermission,
   type DisablePushNotificationsResult,
   type EnablePushNotificationsResult,
 } from './pushNotifications'
 import {
-  persistServerBackedSettingsPatchWithSettlement,
-  type ServerBackedSettingsPersistenceOutcome,
-  type ServerBackedSettingsPersistenceReceipt,
-} from './settingsOwner.svelte'
+  initialPushNotificationCoordinatorState,
+  pushNotificationStateWriter,
+  type PushNotificationCoordinatorState,
+  type PushNotificationEnableFailure,
+} from './pushNotificationState'
+export { pushNotificationCoordinatorState } from './pushNotificationState'
+export type {
+  PushNotificationCoordinatorPhase,
+  PushNotificationCoordinatorState,
+  PushNotificationEnableFailure,
+} from './pushNotificationState'
 import {
   normalizePendingPushEndpoints,
   pushNotificationRetryStorage,
@@ -17,15 +27,12 @@ import {
 } from './pushNotificationRetryStorage'
 
 export type PushNotificationSettingApplyResult = EnablePushNotificationsResult | DisablePushNotificationsResult
-export type PushNotificationEnableFailure = Exclude<EnablePushNotificationsResult, { status: 'enabled' }>
 
 export type PushNotificationSettingReconcileOutcome<TResult = PushNotificationSettingApplyResult> =
   | {
       status: 'applied'
       enabled: boolean
       result: TResult
-      compensation?: ServerBackedSettingsPersistenceOutcome
-      cleanup?: DisablePushNotificationsResult
     }
   | { status: 'superseded'; enabled: boolean }
   | { status: 'error'; enabled: boolean; error: unknown }
@@ -214,9 +221,6 @@ export function createPushNotificationSettingApplyDesiredState(
           const activeEndpoint = result.endpoint
           pendingDisableEndpoints = pendingDisableEndpoints.filter((endpoint) => endpoint !== activeEndpoint)
           localInspectionPending = false
-        } else if (result.status === 'fallback' && result.endpoint) {
-          pendingDisableEndpoints = normalizePendingPushEndpoints([...pendingDisableEndpoints, result.endpoint])
-          if (result.localCleanup === 'failed') localInspectionPending = true
         }
       } else {
         result = await disablePushNotifications(pendingDisableEndpoints, localInspectionPending)
@@ -234,33 +238,20 @@ export function createPushNotificationSettingApplyDesiredState(
   }
 }
 
-export type PushNotificationCoordinatorPhase =
-  | 'idle'
-  | 'hydrating'
-  | 'startup-cleanup'
-  | 'enabling'
-  | 'disabling'
-  | 'compensating'
-  | 'retrying-compensation'
-  | 'retrying-storage'
-  | 'retrying-cleanup'
-
-export interface PushNotificationCoordinatorState {
-  phase: PushNotificationCoordinatorPhase
-  setupFailure: PushNotificationEnableFailure | null
-  compensation: ServerBackedSettingsPersistenceOutcome | null
-  cleanup: DisablePushNotificationsResult | null
-  pendingEndpoints: string[]
-  localInspectionPending: boolean
-  retryStorageError: unknown | null
-  operationError: unknown | null
+export interface PushNotificationReconcileOptions {
+  /** Only explicit user actions may open a browser permission prompt. */
+  requestPermission?: boolean
+  force?: boolean
 }
 
 export interface PushNotificationCoordinator {
   state: Readable<PushNotificationCoordinatorState>
   initialize(): Promise<void>
-  reconcile(enabled: boolean): Promise<PushNotificationSettingReconcileOutcome>
-  retryCompensation(): Promise<ServerBackedSettingsPersistenceOutcome>
+  reconcile(
+    enabled: boolean,
+    options?: PushNotificationReconcileOptions,
+  ): Promise<PushNotificationSettingReconcileOutcome>
+  retrySetup(): Promise<PushNotificationSettingReconcileOutcome>
   retryStorage(): Promise<void>
   retryCleanup(): Promise<PushNotificationSettingReconcileOutcome>
   dispose(): void
@@ -268,13 +259,30 @@ export interface PushNotificationCoordinator {
 
 export interface CreatePushNotificationCoordinatorDependencies {
   enablePushNotifications?: () => Promise<EnablePushNotificationsResult>
+  requestPermission?: () => Promise<unknown>
   disablePushNotifications?: (
     pendingEndpoints?: readonly string[],
     requireLocalInspection?: boolean,
   ) => Promise<DisablePushNotificationsResult>
-  persistSettingsPatch?: (patch: { notification: false }) => Promise<ServerBackedSettingsPersistenceReceipt>
   retryStorage?: PushNotificationRetryStorage
+  state?: Writable<PushNotificationCoordinatorState>
+  subscribeRecovery?: typeof subscribeBrowserLifecycleRecovery
+  canRetry?: () => boolean
+  isOnline?: () => boolean
 }
+
+export function isRetryablePushNotificationFailure(failure: PushNotificationEnableFailure): boolean {
+  return (
+    failure.status === 'fallback' &&
+    (failure.reason === 'service-worker-failed' ||
+      failure.reason === 'vapid-unavailable' ||
+      failure.reason === 'subscription-failed' ||
+      failure.reason === 'server-registration-failed')
+  )
+}
+
+const INITIAL_RETRY_DELAY_MS = 5_000
+const MAX_RETRY_DELAY_MS = 60_000
 
 export function createPushNotificationCoordinator(
   dependencies: CreatePushNotificationCoordinatorDependencies = {},
@@ -285,27 +293,22 @@ export function createPushNotificationCoordinator(
     dependencies.retryStorage,
   )
   const transportReconciler = createPushNotificationSettingReconciler((enabled) => desiredStateApplier.apply(enabled))
-  const persistSettingsPatch = dependencies.persistSettingsPatch ?? persistServerBackedSettingsPatchWithSettlement
-  const initialState: PushNotificationCoordinatorState = {
-    phase: 'idle',
-    setupFailure: null,
-    compensation: null,
-    cleanup: null,
-    pendingEndpoints: [],
-    localInspectionPending: false,
-    retryStorageError: null,
-    operationError: null,
-  }
-  const stateWritable = writable(initialState)
-  let stateSnapshot = initialState
+  const requestPermission = dependencies.requestPermission ?? requestChatCompletionNotificationPermission
+  const subscribeRecovery = dependencies.subscribeRecovery ?? subscribeBrowserLifecycleRecovery
+  const canRetry = dependencies.canRetry ?? (() => !isWriterAccessLost())
+  const isOnline = dependencies.isOnline ?? (() => typeof navigator === 'undefined' || navigator.onLine !== false)
+  let stateSnapshot = initialPushNotificationCoordinatorState()
+  const stateWritable = dependencies.state ?? writable(stateSnapshot)
   let coordinatorRevision = 0
   let initializationPromise: Promise<void> | null = null
-  let suppressCompensationRollbackEnable = false
-  let suppressNextSettledCompensationRollbackEnable = false
-  let queuedCompensationGeneration = 0
-  let queuedCompensationCleanup: (() => void) | null = null
-  let suppressionResetTimer: ReturnType<typeof setTimeout> | null = null
+  let activeReconciliation: { enabled: boolean; promise: Promise<PushNotificationSettingReconcileOutcome> } | null =
+    null
   let lifecycleGeneration = 0
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let retryAttempt = 0
+  let stopRecovery: (() => void) | null = null
+  let requireFreshReconciliation = true
+  let lastAttemptAt = -Infinity
 
   function updateState(patch: Partial<PushNotificationCoordinatorState>): void {
     stateSnapshot = { ...stateSnapshot, ...patch }
@@ -320,17 +323,53 @@ export function createPushNotificationCoordinator(
     })
   }
 
+  function cancelRetry(): void {
+    if (retryTimer !== null) clearTimeout(retryTimer)
+    retryTimer = null
+    updateState({ nextRetryAt: null })
+  }
+
+  function scheduleRetry(): void {
+    if (!stateSnapshot.desiredEnabled || retryTimer !== null || !isOnline() || !canRetry()) return
+    if (
+      !stateSnapshot.operationError &&
+      (!stateSnapshot.setupFailure || !isRetryablePushNotificationFailure(stateSnapshot.setupFailure))
+    )
+      return
+    const delay = Math.min(INITIAL_RETRY_DELAY_MS * 2 ** Math.min(retryAttempt++, 4), MAX_RETRY_DELAY_MS)
+    const generation = lifecycleGeneration
+    updateState({ nextRetryAt: Date.now() + delay })
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      updateState({ nextRetryAt: null })
+      if (generation !== lifecycleGeneration || !stateSnapshot.desiredEnabled || !canRetry()) return
+      if (stateSnapshot.phase !== 'idle') {
+        scheduleRetry()
+        return
+      }
+      if (isOnline()) void reconcile(true, { force: true })
+    }, delay)
+  }
+
+  function retryOnReturn(trigger: BrowserLifecycleRecoveryTrigger): void {
+    if (!canRetry()) {
+      cancelRetry()
+      return
+    }
+    if (!stateSnapshot.desiredEnabled || activeReconciliation || stateSnapshot.phase !== 'idle' || !isOnline()) return
+    if (trigger !== 'online' && Date.now() - lastAttemptAt < 1_000) return
+    void reconcile(true, { force: true })
+  }
+
   function recordCleanupOutcome(
     outcome: PushNotificationSettingReconcileOutcome<PushNotificationDeviceApplyReceipt>,
-    revision: number,
   ): PushNotificationSettingReconcileOutcome {
-    if (outcome.status === 'applied') publishDeviceReceipt(outcome.result)
-    if (revision !== coordinatorRevision) return { status: 'superseded', enabled: false }
     if (outcome.status === 'error') {
       updateState({ phase: 'idle', operationError: outcome.error })
       return outcome
     }
     if (outcome.status === 'superseded') return outcome
+    publishDeviceReceipt(outcome.result)
     if (outcome.result.result.status !== 'disabled' && outcome.result.result.status !== 'partial') {
       const error = new Error('Push cleanup returned an invalid enable result.')
       updateState({ phase: 'idle', operationError: error })
@@ -343,24 +382,18 @@ export function createPushNotificationCoordinator(
   async function initialize(): Promise<void> {
     if (initializationPromise) return initializationPromise
     const generation = lifecycleGeneration
+    stopRecovery ??= subscribeRecovery(retryOnReturn)
     initializationPromise = (async () => {
       try {
-        updateState({ phase: 'hydrating', operationError: null })
+        updateState({ phase: 'hydrating' })
         const hydration = await desiredStateApplier.hydrate()
         if (generation !== lifecycleGeneration) return
-        updateState({
-          phase: 'idle',
-          pendingEndpoints: [...hydration.pendingEndpoints],
-          localInspectionPending: hydration.localInspectionPending,
-          retryStorageError: hydration.retryStorageError,
-        })
+        updateState({ phase: stateSnapshot.desiredEnabled ? 'enabling' : 'idle', ...hydration })
         if (hydration.pendingEndpoints.length === 0 && !hydration.localInspectionPending) return
-
-        const revision = ++coordinatorRevision
-        updateState({ phase: 'startup-cleanup', operationError: null })
+        updateState({ phase: 'startup-cleanup' })
         const outcome = await transportReconciler.reconcile(false, { force: true })
         if (generation !== lifecycleGeneration) return
-        recordCleanupOutcome(outcome, revision)
+        recordCleanupOutcome(outcome)
       } catch (error) {
         if (generation !== lifecycleGeneration) return
         initializationPromise = null
@@ -371,177 +404,120 @@ export function createPushNotificationCoordinator(
     return initializationPromise
   }
 
-  function clearQueuedCompensationSettlement(): void {
-    queuedCompensationCleanup?.()
-    queuedCompensationCleanup = null
-    queuedCompensationGeneration += 1
-  }
-
-  function armQueuedCompensationSettlement(
-    receipt: Extract<ServerBackedSettingsPersistenceReceipt, { status: 'queued' }>,
-  ): void {
-    clearQueuedCompensationSettlement()
-    const generation = queuedCompensationGeneration
-    queuedCompensationCleanup = receipt.subscribeSettlement((settlement) => {
-      if (generation !== queuedCompensationGeneration || !stateSnapshot.setupFailure) return
-      queuedCompensationCleanup = null
-      if (settlement === 'failed') {
-        suppressNextSettledCompensationRollbackEnable = true
-        if (suppressionResetTimer !== null) clearTimeout(suppressionResetTimer)
-        suppressionResetTimer = setTimeout(() => {
-          suppressionResetTimer = null
-          suppressNextSettledCompensationRollbackEnable = false
-        }, 0)
-      }
-      updateState({ compensation: settlement })
-    })
-  }
-
-  async function persistCompensatingDisable(revision: number): Promise<ServerBackedSettingsPersistenceOutcome> {
-    suppressCompensationRollbackEnable = true
-    let receipt: ServerBackedSettingsPersistenceReceipt
-    try {
-      receipt = await persistSettingsPatch({ notification: false })
-    } catch (error) {
-      receipt = { status: 'failed' }
-      if (revision === coordinatorRevision) updateState({ operationError: error })
-    } finally {
-      suppressCompensationRollbackEnable = false
+  function reconcile(
+    enabled: boolean,
+    options: PushNotificationReconcileOptions = {},
+  ): Promise<PushNotificationSettingReconcileOutcome> {
+    if (enabled && !canRetry()) return Promise.resolve({ status: 'superseded', enabled })
+    if (activeReconciliation?.enabled === enabled && !options.force && !options.requestPermission) {
+      return activeReconciliation.promise
     }
-    const compensation = receipt.status
-    if (stateSnapshot.setupFailure) updateState({ compensation })
-    if (receipt.status === 'queued') armQueuedCompensationSettlement(receipt)
-    else clearQueuedCompensationSettlement()
-    return compensation
-  }
-
-  async function reconcile(enabled: boolean): Promise<PushNotificationSettingReconcileOutcome> {
-    await initialize()
-    if (enabled && (suppressCompensationRollbackEnable || suppressNextSettledCompensationRollbackEnable)) {
-      suppressNextSettledCompensationRollbackEnable = false
-      return { status: 'superseded', enabled: true }
-    }
-
     const revision = ++coordinatorRevision
-    if (enabled) clearQueuedCompensationSettlement()
+    const generation = lifecycleGeneration
+    const changed = enabled !== stateSnapshot.desiredEnabled
+    if (changed || options.requestPermission) retryAttempt = 0
+    if (changed || !enabled || options.force || options.requestPermission) cancelRetry()
     updateState({
       phase: enabled ? 'enabling' : 'disabling',
-      ...(enabled
-        ? { setupFailure: null, compensation: null, cleanup: null, operationError: null }
-        : { operationError: null }),
+      desiredEnabled: enabled,
+      ...(!enabled ? { setupFailure: null, operationError: null } : {}),
     })
-    const outcome = await transportReconciler.reconcile(enabled)
-    if (outcome.status === 'applied') publishDeviceReceipt(outcome.result)
-    if (revision !== coordinatorRevision) return { status: 'superseded', enabled }
-    if (outcome.status === 'error') {
-      updateState({ phase: 'idle', operationError: outcome.error })
-      return outcome
-    }
-    if (outcome.status === 'superseded') return outcome
 
-    if (!enabled) return recordCleanupOutcome(outcome, revision)
-    const enableResult = outcome.result.result
-    if (enableResult.status === 'enabled') {
-      updateState({
-        phase: 'idle',
-        setupFailure: null,
-        compensation: null,
-        cleanup: null,
-        operationError: null,
-      })
-      return { status: 'applied', enabled: true, result: enableResult }
-    }
-    if (enableResult.status === 'disabled' || enableResult.status === 'partial') {
-      const error = new Error('Push enablement returned an invalid cleanup result.')
-      updateState({ phase: 'idle', operationError: error })
-      return { status: 'error', enabled: true, error }
-    }
-
-    const setupFailure = enableResult as PushNotificationEnableFailure
-    updateState({ phase: 'compensating', setupFailure, compensation: null })
-    const compensation = await persistCompensatingDisable(revision)
-    if (revision !== coordinatorRevision) return { status: 'superseded', enabled: true }
-
-    const cleanupOutcome = await transportReconciler.reconcile(false)
-    const cleanup = recordCleanupOutcome(cleanupOutcome, revision)
-    if (cleanup.status !== 'applied') {
-      return {
-        status: 'applied',
-        enabled: true,
-        result: enableResult,
-        compensation,
+    // Start the permission request synchronously within the click handler. All
+    // startup, projection, timer and foreground reconciliations stay passive.
+    let permissionRequest: Promise<unknown> | undefined
+    if (enabled && options.requestPermission) {
+      try {
+        permissionRequest = requestPermission()
+      } catch (error) {
+        permissionRequest = Promise.reject(error)
       }
     }
-    return {
-      status: 'applied',
-      enabled: true,
-      result: enableResult,
-      compensation,
-      cleanup: cleanup.result as DisablePushNotificationsResult,
-    }
+    const current = () => revision === coordinatorRevision && generation === lifecycleGeneration
+    const promise = (async (): Promise<PushNotificationSettingReconcileOutcome> => {
+      try {
+        await Promise.all([initialize(), permissionRequest])
+        if (!current()) return { status: 'superseded', enabled }
+        if (enabled && !canRetry()) {
+          updateState({ phase: 'idle' })
+          return { status: 'superseded', enabled }
+        }
+        updateState({ phase: enabled ? 'enabling' : 'disabling' })
+        lastAttemptAt = Date.now()
+        const force = requireFreshReconciliation || options.force || options.requestPermission
+        requireFreshReconciliation = false
+        const outcome = await transportReconciler.reconcile(enabled, { force })
+        if (!current()) return { status: 'superseded', enabled }
+        if (outcome.status === 'error') throw outcome.error
+        if (outcome.status === 'superseded') return outcome
+        if (!enabled) return recordCleanupOutcome(outcome)
+        publishDeviceReceipt(outcome.result)
+        const result = outcome.result.result
+        if (result.status === 'enabled') {
+          cancelRetry()
+          retryAttempt = 0
+          updateState({ phase: 'idle', setupFailure: null, cleanup: null, operationError: null })
+        } else if (result.status === 'fallback' || result.status === 'permission-denied') {
+          // Device availability must never rewrite the shared user preference.
+          updateState({ phase: 'idle', setupFailure: result, operationError: null })
+          scheduleRetry()
+        } else {
+          throw new Error('Push enablement returned an invalid cleanup result.')
+        }
+        return { status: 'applied', enabled: true, result }
+      } catch (error) {
+        if (!current()) return { status: 'superseded', enabled }
+        updateState({ phase: 'idle', operationError: error })
+        scheduleRetry()
+        return { status: 'error', enabled, error }
+      } finally {
+        if (current()) activeReconciliation = null
+      }
+    })()
+    activeReconciliation = { enabled, promise }
+    return promise
   }
 
-  async function retryCompensation(): Promise<ServerBackedSettingsPersistenceOutcome> {
-    await initialize()
-    const revision = ++coordinatorRevision
-    updateState({ phase: 'retrying-compensation', operationError: null })
-    const compensation = await persistCompensatingDisable(revision)
-    if (revision !== coordinatorRevision) return compensation
-    const cleanupOutcome = await transportReconciler.reconcile(false, { force: true })
-    recordCleanupOutcome(cleanupOutcome, revision)
-    return compensation
+  function retrySetup(): Promise<PushNotificationSettingReconcileOutcome> {
+    if (!stateSnapshot.desiredEnabled) return Promise.resolve({ status: 'superseded', enabled: false })
+    return reconcile(true, { requestPermission: true, force: true })
   }
 
   async function retryStorage(): Promise<void> {
+    const generation = lifecycleGeneration
+    const revision = coordinatorRevision
     await initialize()
-    const revision = ++coordinatorRevision
-    updateState({ phase: 'retrying-storage', operationError: null })
+    if (generation !== lifecycleGeneration || revision !== coordinatorRevision || stateSnapshot.phase !== 'idle') return
+    updateState({ phase: 'retrying-storage' })
     const hydration = await desiredStateApplier.retryStorage()
-    if (revision !== coordinatorRevision) return
-    updateState({
-      phase: 'idle',
-      pendingEndpoints: [...hydration.pendingEndpoints],
-      localInspectionPending: hydration.localInspectionPending,
-      retryStorageError: hydration.retryStorageError,
-    })
+    if (generation !== lifecycleGeneration || revision !== coordinatorRevision) return
+    updateState({ phase: 'idle', ...hydration })
+    scheduleRetry()
   }
 
   async function retryCleanup(): Promise<PushNotificationSettingReconcileOutcome> {
-    await initialize()
-    const revision = ++coordinatorRevision
-    updateState({ phase: 'retrying-cleanup', operationError: null })
-    const outcome = await transportReconciler.reconcile(false, { force: true })
-    return recordCleanupOutcome(outcome, revision)
+    if (stateSnapshot.desiredEnabled) return { status: 'superseded', enabled: true }
+    return reconcile(false, { force: true })
   }
 
   function dispose(): void {
     lifecycleGeneration += 1
     coordinatorRevision += 1
     initializationPromise = null
-    clearQueuedCompensationSettlement()
-    if (suppressionResetTimer !== null) {
-      clearTimeout(suppressionResetTimer)
-      suppressionResetTimer = null
-    }
-    suppressCompensationRollbackEnable = false
-    suppressNextSettledCompensationRollbackEnable = false
-    updateState(initialState)
+    activeReconciliation = null
+    requireFreshReconciliation = true
+    cancelRetry()
+    retryAttempt = 0
+    lastAttemptAt = -Infinity
+    stopRecovery?.()
+    stopRecovery = null
+    updateState(initialPushNotificationCoordinatorState())
   }
 
-  return {
-    state: readonly(stateWritable),
-    initialize,
-    reconcile,
-    retryCompensation,
-    retryStorage,
-    retryCleanup,
-    dispose,
-  }
+  return { state: readonly(stateWritable), initialize, reconcile, retrySetup, retryStorage, retryCleanup, dispose }
 }
 
-const pushNotificationCoordinator = createPushNotificationCoordinator()
-
-export const pushNotificationCoordinatorState = pushNotificationCoordinator.state
+const pushNotificationCoordinator = createPushNotificationCoordinator({ state: pushNotificationStateWriter })
 
 export function initializePushNotificationCoordinator(): Promise<void> {
   return pushNotificationCoordinator.initialize()
@@ -549,16 +525,17 @@ export function initializePushNotificationCoordinator(): Promise<void> {
 
 export function reconcileChatCompletionPushNotificationSetting(
   enabled: boolean,
+  options?: PushNotificationReconcileOptions,
 ): Promise<PushNotificationSettingReconcileOutcome> {
-  return pushNotificationCoordinator.reconcile(enabled)
+  return pushNotificationCoordinator.reconcile(enabled, options)
 }
 
 export function stopPushNotificationCoordinator(): void {
   pushNotificationCoordinator.dispose()
 }
 
-export function retryChatCompletionPushNotificationCompensation(): Promise<ServerBackedSettingsPersistenceOutcome> {
-  return pushNotificationCoordinator.retryCompensation()
+export function retryChatCompletionPushNotificationSetup(): Promise<PushNotificationSettingReconcileOutcome> {
+  return pushNotificationCoordinator.retrySetup()
 }
 
 export function retryChatCompletionPushNotificationStorage(): Promise<void> {

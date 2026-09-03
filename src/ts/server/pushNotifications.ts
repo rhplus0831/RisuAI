@@ -16,6 +16,7 @@ export type PushNotificationFallbackReason =
   | 'notification-unavailable'
   | 'permission-default'
   | 'service-worker-unavailable'
+  | 'service-worker-failed'
   | 'push-unavailable'
   | 'vapid-unavailable'
   | 'subscription-failed'
@@ -27,7 +28,6 @@ export type EnablePushNotificationsResult =
       status: 'fallback'
       reason: PushNotificationFallbackReason
       endpoint?: string
-      localCleanup?: 'succeeded' | 'failed'
     }
   | { status: 'permission-denied' }
 
@@ -127,7 +127,7 @@ function readServiceWorkerNavigationPath(data: unknown): string | null {
 }
 
 export async function enableChatCompletionPushNotifications(): Promise<EnablePushNotificationsResult> {
-  const permission = await requestNotificationPermission()
+  const permission = typeof Notification === 'undefined' ? 'unavailable' : Notification.permission
   if (permission === 'denied') return { status: 'permission-denied' }
   if (permission === 'unavailable') return { status: 'fallback', reason: 'notification-unavailable' }
   if (permission !== 'granted') return { status: 'fallback', reason: 'permission-default' }
@@ -137,7 +137,7 @@ export async function enableChatCompletionPushNotifications(): Promise<EnablePus
   }
 
   const registration = await registerPushServiceWorker()
-  if (!registration) return { status: 'fallback', reason: 'service-worker-unavailable' }
+  if (!registration) return { status: 'fallback', reason: 'service-worker-failed' }
 
   const pushManager = pushManagerForRegistration(registration)
   if (!pushManager) return { status: 'fallback', reason: 'push-unavailable' }
@@ -151,12 +151,12 @@ export async function enableChatCompletionPushNotifications(): Promise<EnablePus
   const endpoint = subscription.endpoint
   const registered = await registerPushSubscription(subscription)
   if (!registered.ok) {
-    const localCleanup = await unsubscribePushSubscription(subscription)
+    // A failed refresh must not destroy a subscription that may already be
+    // registered on the server. Reuse it when connectivity recovers.
     return {
       status: 'fallback',
       reason: 'server-registration-failed',
       endpoint,
-      localCleanup: localCleanup.ok ? 'succeeded' : 'failed',
     }
   }
 
@@ -241,10 +241,13 @@ export async function disableChatCompletionPushNotifications(
   }
 }
 
-async function requestNotificationPermission(): Promise<NotificationPermission | 'unavailable'> {
+/** Call directly from a user action, before awaiting storage or network work. */
+export async function requestChatCompletionNotificationPermission(): Promise<NotificationPermission | 'unavailable'> {
   if (typeof Notification === 'undefined' || typeof Notification.requestPermission !== 'function') {
     return 'unavailable'
   }
+
+  if (Notification.permission !== 'default') return Notification.permission
 
   try {
     return await Notification.requestPermission()

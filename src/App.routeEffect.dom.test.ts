@@ -1,6 +1,7 @@
 import { mount, tick, unmount } from 'svelte'
 import { get, writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { initialPushNotificationCoordinatorState, pushNotificationStateWriter } from './ts/server/pushNotificationState'
 import type { AppRoute } from './ts/router'
 import type { Database, character } from './ts/storage/database.svelte'
 import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
@@ -47,6 +48,7 @@ const appRouteDomMocks = vi.hoisted(() => {
   }
 
   return {
+    retryNotifications: vi.fn(),
     alertError: vi.fn(),
     alertNormal: vi.fn(),
     changeChar: vi.fn(),
@@ -92,6 +94,11 @@ async function createRouteMock() {
   return appRouteDomMocks.state.exports
 }
 
+vi.mock('./ts/server/pushNotificationSetting', () => ({
+  retryChatCompletionPushNotificationSetup: appRouteDomMocks.retryNotifications,
+  isRetryablePushNotificationFailure: () => true,
+}))
+
 vi.mock('./ts/router', createRouteMock)
 vi.mock('src/ts/router', createRouteMock)
 
@@ -112,6 +119,14 @@ vi.mock('./lang', () => ({
     home: 'Home',
     menu: 'Menu',
     loading: 'Loading',
+    pushNotifications: {
+      needsAttention: 'Notifications need attention on this browser',
+      preferenceEnabled: 'Your notification setting is still on.',
+      automaticRetry: 'We will retry automatically.',
+      retrySetup: 'Retry notifications',
+      retryingSetup: 'Retrying notifications…',
+      setupFailures: { vapidUnavailable: 'The server’s notification configuration could not be loaded.' },
+    },
     pluginRuntime: {
       failed: 'Plugins could not start. The rest of the app is still available.',
       retry: 'Retry plugins',
@@ -140,6 +155,14 @@ vi.mock('src/lang', () => ({
     home: 'Home',
     menu: 'Menu',
     loading: 'Loading',
+    pushNotifications: {
+      needsAttention: 'Notifications need attention on this browser',
+      preferenceEnabled: 'Your notification setting is still on.',
+      automaticRetry: 'We will retry automatically.',
+      retrySetup: 'Retry notifications',
+      retryingSetup: 'Retrying notifications…',
+      setupFailures: { vapidUnavailable: 'The server’s notification configuration could not be loaded.' },
+    },
     pluginRuntime: {
       failed: 'Plugins could not start. The rest of the app is still available.',
       retry: 'Retry plugins',
@@ -490,6 +513,7 @@ describe('App route/refreeze mounted DOM behavior', () => {
     appRouteDomMocks.discardGenerationRecoveryStartup.mockReset().mockResolvedValue(true)
     appRouteDomMocks.retryGenerationRecoveryStartup.mockReset().mockResolvedValue(true)
     seedStores()
+    pushNotificationStateWriter.set(initialPushNotificationCoordinatorState())
     await mountApp()
   })
 
@@ -500,10 +524,33 @@ describe('App route/refreeze mounted DOM behavior', () => {
     }
     replaceResourceDatabase({} as Database)
     resetStartupReadinessForTests()
+    pushNotificationStateWriter.set(initialPushNotificationCoordinatorState())
     resetObserverRouteIntentForTests()
     target.remove()
     vi.unstubAllEnvs()
     vi.clearAllMocks()
+  })
+
+  it('shows notification failures outside settings, keeps the warning during retry and clears it on recovery', async () => {
+    expect(get(settingsOpen)).toBe(false)
+    expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
+    pushNotificationStateWriter.set({
+      ...initialPushNotificationCoordinatorState(),
+      desiredEnabled: true,
+      setupFailure: { status: 'fallback', reason: 'vapid-unavailable' },
+    })
+    await vi.waitFor(() => expect(target.querySelector('[data-push-notification-warning]')).not.toBeNull())
+    const warning = target.querySelector<HTMLElement>('[data-push-notification-warning]')!
+    expect(warning.textContent).toContain('Your notification setting is still on.')
+    warning.querySelector('button')!.click()
+    expect(appRouteDomMocks.retryNotifications).toHaveBeenCalledOnce()
+    pushNotificationStateWriter.update((state) => ({ ...state, phase: 'enabling' }))
+    await tick()
+    expect(warning.textContent).toContain('Retrying notifications…')
+    expect(warning.querySelector('button')!.disabled).toBe(true)
+    pushNotificationStateWriter.update((state) => ({ ...state, phase: 'idle', setupFailure: null }))
+    await tick()
+    expect(target.querySelector('[data-push-notification-warning]')).toBeNull()
   })
 
   it('keeps the Character sidebar tab visible across a server resource refresh', async () => {

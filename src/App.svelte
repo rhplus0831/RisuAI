@@ -65,8 +65,10 @@
   import { hasDragType, RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes'
   import { consumeObserverRouteIntent, peekObserverRouteIntent } from './ts/observerRouteIntent'
   import { loadGrid, loadSettings } from './ts/routeComponentPreload'
+  import { pushNotificationCoordinatorState } from './ts/server/pushNotificationState'
 
   const loadAlert = () => import('./lib/Others/AlertComp.svelte')
+  const loadPushNotificationWarning = () => import('./lib/Others/PushNotificationWarning.svelte')
   const loadRealmPopup = () => import('./lib/UI/Realm/LazyRealmPopUp.svelte')
   const loadBookmarkList = () => import('./lib/Others/BookmarkList.svelte')
   const loadBotPreset = () => import('./lib/Setting/botpreset.svelte')
@@ -363,61 +365,69 @@
       }
     }
   }}>
-  {#if $startupCoordinatorStore.capabilities.canRenderShell && (pluginStartupFailed || pluginRuntimeFailed)}
-    <div
-      class="fixed top-3 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
-      role="status"
-      aria-live="polite"
-      data-plugin-runtime-status>
-      <span>{language.pluginRuntime.failed}</span>
-      <button
-        type="button"
-        class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
-        disabled={retryingPluginRuntime}
-        onclick={(event) => {
-          event.stopPropagation()
-          void retryPlugins()
-        }}>
-        {retryingPluginRuntime ? language.pluginRuntime.retrying : language.pluginRuntime.retry}
-      </button>
-    </div>
-  {:else if $startupCoordinatorStore.capabilities.canRenderShell && generationRecoveryStartupFailed}
-    <div
-      class="fixed top-3 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-wrap items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
-      role="status"
-      aria-live="polite"
-      data-generation-recovery-status>
-      <span class="min-w-0 flex-1">{language.generationRecovery.failed}</span>
-      <div class="flex max-w-full flex-wrap items-center gap-2">
+  <div
+    class="pointer-events-none fixed top-3 left-1/2 z-50 flex w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-3">
+    {#if $startupCoordinatorStore.capabilities.canRenderShell && (pluginStartupFailed || pluginRuntimeFailed)}
+      <div
+        class="pointer-events-auto flex items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+        role="status"
+        aria-live="polite"
+        data-plugin-runtime-status>
+        <span>{language.pluginRuntime.failed}</span>
         <button
           type="button"
           class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
-          data-generation-recovery-retry
-          disabled={generationRecoveryAction !== 'idle'}
+          disabled={retryingPluginRuntime}
           onclick={(event) => {
             event.stopPropagation()
-            void retryGenerationRecovery()
+            void retryPlugins()
           }}>
-          {generationRecoveryAction === 'retrying'
-            ? language.generationRecovery.retrying
-            : language.generationRecovery.retry}
-        </button>
-        <button
-          type="button"
-          class="shrink-0 rounded border border-yellow-700 px-3 py-1.5 disabled:cursor-wait disabled:opacity-60"
-          data-generation-recovery-discard
-          disabled={generationRecoveryAction !== 'idle'}
-          onclick={(event) => {
-            event.stopPropagation()
-            void discardGenerationRecovery()
-          }}>
-          {generationRecoveryAction === 'discarding'
-            ? language.generationRecovery.discarding
-            : language.generationRecovery.discard}
+          {retryingPluginRuntime ? language.pluginRuntime.retrying : language.pluginRuntime.retry}
         </button>
       </div>
-    </div>
-  {/if}
+    {:else if $startupCoordinatorStore.capabilities.canRenderShell && generationRecoveryStartupFailed}
+      <div
+        class="pointer-events-auto flex flex-wrap items-center gap-3 rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm shadow-lg"
+        role="status"
+        aria-live="polite"
+        data-generation-recovery-status>
+        <span class="min-w-0 flex-1">{language.generationRecovery.failed}</span>
+        <div class="flex max-w-full flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="shrink-0 rounded bg-yellow-700 px-3 py-1.5 text-white disabled:cursor-wait disabled:opacity-60"
+            data-generation-recovery-retry
+            disabled={generationRecoveryAction !== 'idle'}
+            onclick={(event) => {
+              event.stopPropagation()
+              void retryGenerationRecovery()
+            }}>
+            {generationRecoveryAction === 'retrying'
+              ? language.generationRecovery.retrying
+              : language.generationRecovery.retry}
+          </button>
+          <button
+            type="button"
+            class="shrink-0 rounded border border-yellow-700 px-3 py-1.5 disabled:cursor-wait disabled:opacity-60"
+            data-generation-recovery-discard
+            disabled={generationRecoveryAction !== 'idle'}
+            onclick={(event) => {
+              event.stopPropagation()
+              void discardGenerationRecovery()
+            }}>
+            {generationRecoveryAction === 'discarding'
+              ? language.generationRecovery.discarding
+              : language.generationRecovery.discard}
+          </button>
+        </div>
+      </div>
+    {/if}
+    {#if $startupCoordinatorStore.capabilities.canRenderShell && $pushNotificationCoordinatorState.desiredEnabled && ($pushNotificationCoordinatorState.setupFailure || $pushNotificationCoordinatorState.operationError)}
+      <div class="pointer-events-auto">
+        <LazyComponent loader={loadPushNotificationWarning} componentProps={{ banner: true }} />
+      </div>
+    {/if}
+  </div>
   {#if aprilFools && $startupCoordinatorStore.capabilities.canApplyRoutes}
     <div class="bg-[#212121] w-full h-screen min-h-screen text-black flex relative">
       <div class="w-full max-w-3xl mx-auto py-8 px-4 flex justify-center items-center">
