@@ -9,13 +9,9 @@ import {
   type character,
   type Database,
 } from '../../ts/storage/database.svelte'
-import { getSelectedCharacterOwner } from '../../ts/characterState'
-import {
-  collectionsResourceState,
-  getCharacterResourceOwner,
-  getChatMetadataOwnerState,
-  settingsResourceState,
-} from '../../ts/server/resourceState.svelte'
+import { sharedChatReadOwners } from './sharedChatReadOwners.svelte'
+import { readChatBodyModules } from './chatBodyModuleReads.svelte'
+import { collectionsResourceState, settingsResourceState } from '../../ts/server/resourceState.svelte'
 import { CurrentTriggerIdStore, ReloadGUIPointer, VariableReloadGUIPointer } from '../../ts/stores.svelte'
 import { captureModuleRenderRevision } from '../../ts/moduleRenderRevision'
 import { getLLMCache, getLLMCacheMutationEpoch } from '../../ts/translator/translator'
@@ -39,26 +35,21 @@ export interface ChatBodyParseOwnerReaders {
   settingsOwner: () => Partial<Database>
   assetWidthForPaint?: () => Database['assetWidth'] | undefined
   promptPresetOwners: () => Database['promptPresets'] | undefined
+  moduleOwners?: () => ReturnType<typeof getModules>
 }
 
 export function createChatBodyParseOwnerReaders(): ChatBodyParseOwnerReaders {
-  const activeChatOwner = (): Chat | undefined => {
-    const character = getSelectedCharacterOwner()
-    const chat = character?.chats?.[character.chatPage]
-    if (!chat?.id || getChatMetadataOwnerState(chat.id)?.chatId !== chat.id) return undefined
-    return chat
-  }
-
   return {
     characterOwner: (charArg) => {
-      if (typeof charArg === 'string') return getCharacterResourceOwner(charArg)
+      if (typeof charArg === 'string') return sharedChatReadOwners.characterById(charArg)
       return charArg ?? undefined
     },
-    activeCharacterOwner: getSelectedCharacterOwner,
-    activeChatOwner,
+    activeCharacterOwner: sharedChatReadOwners.character,
+    activeChatOwner: sharedChatReadOwners.chat,
     settingsOwner: () => settingsResourceState.value as Partial<Database>,
     assetWidthForPaint: () => displaySettingForPaint('assetWidth'),
     promptPresetOwners: () => collectionsResourceState.values.promptPresets,
+    moduleOwners: readChatBodyModules,
   }
 }
 
@@ -348,6 +339,7 @@ function serializedCharacterSignature(charArg: ChatBodyParseMemoInput['charArg']
 
 function safeGetModules(owners: ChatBodyParseOwnerReaders) {
   try {
+    if (owners.moduleOwners) return owners.moduleOwners()
     return getModules({ character: owners.activeCharacterOwner(), chat: owners.activeChatOwner() })
   } catch {
     return []
@@ -359,7 +351,7 @@ function safeGetActivePromptPresetRegexScripts(owners: ChatBodyParseOwnerReaders
     const settings = owners.settingsOwner()
     return getActivePromptPresetRegexScripts(
       {
-        ...settings,
+        presetRegex: settings.presetRegex,
         promptPresets: owners.promptPresetOwners() ?? [],
       } as Database,
       owners.activeChatOwner(),

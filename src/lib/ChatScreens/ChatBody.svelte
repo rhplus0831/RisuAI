@@ -188,14 +188,15 @@
     const cbsConditions = getCbsCondition()
 
     try {
-      const cachedOnlyDetectionMode = getChatBodyCachedOnlyLlmDetectionMode({
-        fallbackMode: mode,
-        owners: parseOwners,
-      })
+      const detectTranslation = allowClientTranslation && !retranslate
+      const automaticTranslation = detectTranslation && automaticClientTranslationEnabled()
+      const settings = parseOwners.settingsOwner()
+      const detectCachedLlm =
+        automaticTranslation && settings.autoTranslateCachedOnly && settings.translatorType === 'llm'
+      const cachedOnlyDetectionMode = getChatBodyCachedOnlyLlmDetectionMode({ fallbackMode: mode, owners: parseOwners })
       const cachedOnlyParseKey =
-        cachedOnlyDetectionMode === 'raw'
-          ? undefined
-          : getChatBodyParseMemoKey({
+        detectCachedLlm && cachedOnlyDetectionMode !== 'raw'
+          ? getChatBodyParseMemoKey({
               data,
               charArg,
               owners: parseOwners,
@@ -209,17 +210,20 @@
               streaming,
               displayPriority,
             })
-      const detectionKey = getChatBodyCachedOnlyLlmDetectionKey({
-        data,
-        charArg,
-        owners: parseOwners,
-        chatID,
-        cbsConditions,
-        chatId,
-        fallbackMode: mode,
-        cachedOnlyParseKey,
-      })
-      if (allowClientTranslation && !retranslate && detectionKey !== lastTranslationDetectionKey) {
+          : undefined
+      const detectionKey = detectCachedLlm
+        ? getChatBodyCachedOnlyLlmDetectionKey({
+            data,
+            charArg,
+            owners: parseOwners,
+            chatID,
+            cbsConditions,
+            chatId,
+            fallbackMode: mode,
+            cachedOnlyParseKey,
+          })
+        : `automatic:${automaticTranslation}`
+      if (detectTranslation && detectionKey !== lastTranslationDetectionKey) {
         lastParsedQueue = ''
         lastTranslationDetectionKey = detectionKey
         let translateText = false
@@ -314,6 +318,7 @@
                 charArg,
                 owners: parseOwners,
                 mode: 'pretranslate',
+                memoKey: cachedOnlyDetectionMode === 'pretranslate' ? cachedOnlyParseKey : undefined,
                 chatID,
                 cbsConditions,
                 chatId,
@@ -361,6 +366,7 @@
                 charArg,
                 owners: parseOwners,
                 mode,
+                memoKey: cachedOnlyDetectionMode === mode ? cachedOnlyParseKey : undefined,
                 chatID,
                 cbsConditions,
                 chatId,
@@ -402,6 +408,7 @@
               charArg,
               owners: parseOwners,
               mode,
+              memoKey: cachedOnlyDetectionMode === mode ? cachedOnlyParseKey : undefined,
               chatID,
               cbsConditions,
               chatId,

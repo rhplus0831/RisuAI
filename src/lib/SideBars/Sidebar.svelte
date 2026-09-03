@@ -66,13 +66,12 @@
   import GenerationIndicator from './GenerationIndicator.svelte'
   import PinnedChatsRail from './PinnedChatsRail.svelte'
   import {
-    characterFolderHasGeneratingChat,
-    characterHasGeneratingChat,
     collectExhaustedGenerationChatIds,
     collectGeneratingChatIds,
     collectPinnedChats,
     type PinnedChatItem,
   } from './sidebarMultitasking'
+  import { createSidebarChatProjection } from './sidebarChatProjection.svelte'
   import { activeChatGenerations } from 'src/ts/process/generationActivity.svelte'
   import { activeGenerationJobs, generationJobLifecycles } from 'src/ts/process/reattach'
   import { markChatRead, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
@@ -376,7 +375,7 @@
     return typeof value === 'string' && value.trim().length > 0
   }
 
-  function characterRowsOwner(): readonly character[] {
+  const characterRows = $derived.by((): readonly character[] => {
     const status = charactersResourceState.status
     if (status === 'error') return []
     if (status !== 'ready' && status !== 'idle' && status !== 'loading') return []
@@ -388,6 +387,10 @@
       ownerIds.add(row.chaId)
     }
     return rows
+  })
+
+  function characterRowsOwner(): readonly character[] {
+    return characterRows
   }
 
   function characterOwnerAt(index: number) {
@@ -433,20 +436,9 @@
     return hasStableUniqueCharacterOrder(order, characterRowsOwner()) ? order : []
   }
 
-  function characterChatRowsOwner() {
-    const rows = characterRowsOwner()
-    if (!hasStableUniqueCharacterOrder(charactersResourceState.characterOrder, rows)) return []
-    const chatIdCounts = new Map<string, number>()
-    for (const row of rows) {
-      for (const chat of row.chats ?? []) {
-        if (stableOwnerId(chat?.id)) chatIdCounts.set(chat.id, (chatIdCounts.get(chat.id) ?? 0) + 1)
-      }
-    }
-    return rows.map((row) => ({
-      ...row,
-      chats: (row.chats ?? []).filter((chat) => stableOwnerId(chat?.id) && chatIdCounts.get(chat.id) === 1),
-    }))
-  }
+  const chatProjection = createSidebarChatProjection(characterRowsOwner, () =>
+    hasStableUniqueCharacterOrder(charactersResourceState.characterOrder, characterRowsOwner()),
+  )
 
   type SidebarBooleanSetting =
     | 'roundIcons'
@@ -477,7 +469,10 @@
   let generatingChatIds = $derived(
     collectGeneratingChatIds($activeGenerationJobs, $activeChatGenerations, warningChatIds),
   )
-  let pinnedChats = $derived(collectPinnedChats(characterChatRowsOwner(), characterOrderOwner()))
+  let pinnedChats = $derived(collectPinnedChats(chatProjection.rows(), characterOrderOwner()))
+  const generatingCharacterIndexes = $derived(chatProjection.activeIndexes(generatingChatIds))
+  const warningCharacterIndexes = $derived(chatProjection.activeIndexes(warningChatIds))
+  const unreadCharacterIndexes = $derived(chatProjection.activeIndexes($unreadChatIds))
   let openFolders: string[] = $state([])
   const sidebarCharacterDrag = createSidebarCharacterDragController()
   interface Props {
@@ -535,27 +530,27 @@
   }
 
   function characterIsGenerating(index: number): boolean {
-    return characterHasGeneratingChat(characterChatRowsOwner()[index], generatingChatIds)
+    return generatingCharacterIndexes.has(index)
   }
 
   function characterFolderIsGenerating(indexes: readonly number[]): boolean {
-    return characterFolderHasGeneratingChat(indexes, characterChatRowsOwner(), generatingChatIds)
+    return indexes.some((index) => generatingCharacterIndexes.has(index))
   }
 
   function characterHasReattachWarning(index: number): boolean {
-    return characterHasGeneratingChat(characterChatRowsOwner()[index], warningChatIds)
+    return warningCharacterIndexes.has(index)
   }
 
   function characterFolderHasReattachWarning(indexes: readonly number[]): boolean {
-    return characterFolderHasGeneratingChat(indexes, characterChatRowsOwner(), warningChatIds)
+    return indexes.some((index) => warningCharacterIndexes.has(index))
   }
 
   function characterHasUnreadChat(index: number): boolean {
-    return characterHasGeneratingChat(characterChatRowsOwner()[index], $unreadChatIds)
+    return unreadCharacterIndexes.has(index)
   }
 
   function characterFolderHasUnreadChat(indexes: readonly number[]): boolean {
-    return characterFolderHasGeneratingChat(indexes, characterChatRowsOwner(), $unreadChatIds)
+    return indexes.some((index) => unreadCharacterIndexes.has(index))
   }
 
   function sidebarItemPosition(item: SidebarCharacterListItem): DragData | null {

@@ -240,6 +240,12 @@ describe('additional asset resolution cache', () => {
       moduleAssetTuplesVisited: 130_000,
       resolvedAssetNames: 101,
     })
+    // A different chat/character sharing the module must not walk its assets again.
+    await expect(
+      ParseMarkdown('{{raw::asset-129999}}', simpleCharacter('second-character'), 'back'),
+    ).resolves.toContain('/resolved/module-path-129999')
+    await expect(ParseMarkdown('{{raw::asset-0}}', character, 'back')).resolves.toContain('/resolved/module-path-0')
+    expect(getAdditionalAssetCacheStatsForTests().moduleAssetTuplesVisited).toBe(130_000)
   })
 
   it('preserves locale casing, the first extension and ordered deterministic variants', async () => {

@@ -100,10 +100,20 @@ expensive rerenders often start at that memo boundary.
 Module-dependent signatures use a compact client render revision plus active
 module ids; they never embed module assets, regex definitions, or triggers in a
 per-message key. Parse and LLM-detection memo keys are bounded by both entry
-count and approximate retained bytes. The additional-asset parser likewise
-keeps only demand-resolved module names for each character/context: enabling an
-asset-heavy module without rendering an asset marker does not build a complete
-name index, and a repeated exact-name lookup reuses its prior corpus scan.
+count and approximate retained bytes. Transcript rows and parser readers share
+`sharedChatReadOwners.svelte.ts`, so cache-key construction uses the same indexed
+character/chat ownership as rendering. Module display reads share a narrow
+reactive activation projection instead of rebuilding generation readiness for
+each row. Translation-detection keys are constructed only for automatic
+cached-only LLM translation; matching display parses reuse the prebuilt key.
+
+The additional-asset parser builds indexes only when an asset marker needs one.
+`assetCollectionIndex.ts` shares in-flight and completed module indexes across
+character contexts and yields between bounded chunks of construction. A module
+revision change during a yield discards the partial index and joins a current
+build; structurally versioned character tuples are captured before yielding.
+Per-collection indexes retain all extensions so merging preserves character-first
+and module-order precedence, including deterministic same-extension variants.
 
 Supported `ChatBody` parses negotiate server-owned intermediate display
 processing without moving HTML rendering. `Chat.svelte` supplies the stable

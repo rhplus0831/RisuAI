@@ -64,6 +64,7 @@ import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
 import { SERVER_SETTINGS_GROUP_BY_KEY } from '../server/settingsGroups'
 import { SERVER_STANDALONE_SETTING_NAMES } from '@risuai/protocol/standalone-settings'
 import { displaySettingForPaint } from '../gui/displaySettings'
+import { AssetCollectionIndexCache, type AssetNameIndex } from './assetCollectionIndex'
 
 export { dateTimeFormat, makeArray, parseArray, parseDict, risuEscape, risuUnescape }
 export type { CbsConditions }
@@ -710,9 +711,11 @@ interface AssetPathMatch {
 
 interface AssetResolutionContext {
   characterAssets: readonly (readonly string[])[]
+  characterAssetSource: readonly (readonly string[])[]
+  characterSignature: string
   emotionAssets: readonly (readonly string[])[]
   moduleOwners: readonly RisuModule[]
-  assetIndex: Map<string, AssetPathMatch> | null
+  assetIndex: Promise<AssetNameIndex[]> | null
   resolvedAssets: Map<string, AssetPathMatch | null>
   resolvedEmotions: Map<string, string | null>
 }
@@ -733,6 +736,10 @@ const additionalAssetCacheStats = {
   moduleAssetTuplesVisited: 0,
   resolvedAssetNames: 0,
 }
+const assetCollectionIndexes = new AssetCollectionIndexCache((kind) => {
+  if (kind === 'module') additionalAssetCacheStats.moduleAssetTuplesVisited += 1
+  else additionalAssetCacheStats.characterAssetTuplesVisited += 1
+}, captureModuleRenderRevision)
 
 function moduleOwnersForCharacter(char: simpleCharacterArgument | character): RisuModule[] {
   const ownerCharacter = parserCharacterOwnerById(char.chaId)
@@ -778,11 +785,15 @@ function getAssetResolutionContext(char: simpleCharacterArgument | character): A
     return cached
   }
 
+  // Character tuples use structural invalidation. Capture their values before
+  // yielding so an in-place edit cannot produce an index mixing two versions.
+  const [characterAssets, emotionAssets] = JSON.parse(characterSignature)
   const entry: AssetResolutionCacheEntry = {
     activeModuleKey,
-    characterAssets: char.additionalAssets ?? [],
+    characterAssets,
+    characterAssetSource: char.additionalAssets ?? characterAssets,
     characterSignature,
-    emotionAssets: char.emotionImages ?? [],
+    emotionAssets,
     moduleOwners,
     moduleRenderRevision,
     assetIndex: null,
@@ -800,37 +811,32 @@ function getAssetResolutionContext(char: simpleCharacterArgument | character): A
   return entry
 }
 
-function resolveAssetPaths(context: AssetResolutionContext, name: string): AssetPathMatch | null {
+async function resolveAssetPaths(context: AssetResolutionContext, name: string): Promise<AssetPathMatch | null> {
   if (context.resolvedAssets.has(name)) return context.resolvedAssets.get(name) ?? null
 
   if (!context.assetIndex) {
-    const index = new Map<string, AssetPathMatch>()
-    const consider = (asset: readonly string[]) => {
-      const key = asset[0].toLocaleLowerCase()
-      let match = index.get(key)
-      if (!match) {
-        match = { srcPaths: [], ext: asset[2] }
-        index.set(key, match)
-      }
-      // The first extension wins; variants retain character/module traversal order.
-      if (match.ext === asset[2]) match.srcPaths.push(asset[1])
-    }
-
-    for (const asset of context.characterAssets) {
-      additionalAssetCacheStats.characterAssetTuplesVisited += 1
-      consider(asset)
-    }
-    for (const moduleOwner of context.moduleOwners) {
-      for (const asset of moduleOwner.assets ?? []) {
-        additionalAssetCacheStats.moduleAssetTuplesVisited += 1
-        consider(asset)
-      }
-    }
-    context.assetIndex = index
+    const revision = captureModuleRenderRevision()
+    context.assetIndex = Promise.all([
+      assetCollectionIndexes.get(
+        context.characterAssetSource,
+        context.characterSignature,
+        'character',
+        context.characterAssets,
+      ),
+      ...context.moduleOwners.map((owner) => assetCollectionIndexes.get(owner.assets ?? [], revision, 'module')),
+    ])
     additionalAssetCacheStats.assetIndexesBuilt += 1
   }
-
-  const match = context.assetIndex.get(name) ?? null
+  const indexes = await context.assetIndex
+  if (context.resolvedAssets.has(name)) return context.resolvedAssets.get(name) ?? null
+  let match: AssetPathMatch | null = null
+  for (const index of indexes) {
+    const extensions = index.get(name)
+    if (!extensions) continue
+    // First extension wins across character then module collection order.
+    match ??= { ext: extensions.keys().next().value, srcPaths: [] }
+    for (const path of extensions.get(match.ext) ?? []) match.srcPaths.push(path)
+  }
   additionalAssetCacheStats.resolvedAssetNames += 1
   context.resolvedAssets.set(name, match)
   return match
@@ -848,6 +854,7 @@ function resolveEmotionPath(context: AssetResolutionContext, name: string): stri
 
 export function clearAdditionalAssetCachesForTests(): void {
   assetResolutionCache.clear()
+  assetCollectionIndexes.clear()
   cachedModuleRenderRevision = captureModuleRenderRevision()
   additionalAssetCacheStats.contextsBuilt = 0
   additionalAssetCacheStats.assetIndexesBuilt = 0
@@ -911,7 +918,7 @@ async function parseAdditionalAssets(
       }
     }
 
-    let match = resolveAssetPaths(context, name)
+    let match = await resolveAssetPaths(context, name)
 
     if (!match) {
       if (legacyMediaFindings) {

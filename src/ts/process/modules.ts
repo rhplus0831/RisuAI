@@ -60,6 +60,7 @@ import { isImportableMCPIdentifier } from './mcp/mcpIdentifier'
 import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
+import { getActiveModuleReadModules, getModuleReadDatabase } from './moduleReadDatabase.svelte'
 import { importLocalModuleFileFromServer } from '../server/localFileImport'
 
 export interface MCPModule {
@@ -651,10 +652,10 @@ function activeModuleCacheRowsUnchanged(moduleSource: RisuModule[]): boolean {
 }
 
 export function getModules(context?: ActiveModuleContext) {
-  const active = context?.database ? undefined : resolveActiveChatGenerationSettings()
-  const db = context?.database ?? active!.db
-  const currentChat = context ? context.chat : active?.chat
-  const character = context ? context.character : active?.character
+  if (!context) return getActiveModuleReadModules()
+  const db = context.database ?? getModuleReadDatabase()
+  const currentChat = context.chat
+  const character = context.character
   const moduleSource = getDatabaseModules(db)
   const activationIdentifiers = resolveActiveModuleIdentifiers(db, character, currentChat)
   const idsJoined = moduleActivationIdentifiersKey(activationIdentifiers)

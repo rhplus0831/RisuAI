@@ -136,6 +136,40 @@ function activeChatDatabaseBase(): Partial<Database> {
   return database
 }
 
+/** Module display reads need activation inputs, not generation readiness or a full settings copy. */
+export function readActiveModuleDatabase(): Database {
+  const agentConfiguration = readAgentConfigurationOwner()
+  const readSetting = (key: 'moduleIntergration' | 'selectedPersonaId') => {
+    const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+    if (settingsResourceState.status === 'error') return undefined
+    if (group ? settingsResourceState.groupStatuses[group] !== 'ready' : settingsResourceState.status !== 'ready') {
+      return undefined
+    }
+    return settingsResourceState.value[key]
+  }
+  return {
+    enabledModules: readModuleSettingsOwner().value,
+    modules: readCollectionOwner<ChatGenerationModuleReference>('modules').value,
+    personas: readCollectionOwner<ChatGenerationPersonaReference>('personas').value,
+    promptPresets: readCollectionOwner<ActiveChatGenerationPromptPresetReference>('promptPresets').value,
+    agentPresets: agentConfiguration.value.agentPresets,
+    agentPresetDefaultId: agentConfiguration.value.agentPresetDefaultId,
+    moduleIntergration: readSetting('moduleIntergration'),
+    selectedPersonaId: readSetting('selectedPersonaId'),
+  } as Database
+}
+
+export function readActiveModuleSelection(): { character: character | undefined; chat: Chat | undefined } {
+  const owner = readCharacterOwners()
+  const candidate = resolveUniqueCharacterAtIndex(owner.value, owner.selectedCharIndex)
+  const character = candidate && isReadyCharacterOwner(candidate) ? candidate : undefined
+  const chat =
+    character && Number.isInteger(character.chatPage)
+      ? resolveUniqueChatAtIndex(owner.value, character, character.chatPage)
+      : undefined
+  return { character, chat }
+}
+
 function readCharacterOwners(): {
   status: OwnerRead<character[]>['status']
   value: character[]

@@ -100,6 +100,18 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 
 import ChatBody from './ChatBody.svelte'
 
+vi.mock('./sharedChatReadOwners.svelte', () => ({
+  sharedChatReadOwners: {
+    character: () => chatBodyMocks.getSelectedCharacterOwner(),
+    characterById: () => chatBodyMocks.getSelectedCharacterOwner(),
+    chat: () => {
+      const character = chatBodyMocks.getSelectedCharacterOwner()
+      const chat = character.chats[character.chatPage]
+      return chatBodyMocks.chatMetadataOwner?.chatId === chat?.id ? chat : undefined
+    },
+  },
+}))
+
 chatBodyMocks.getDatabase.mockImplementation(() => chatBodyMocks.settingsOwner)
 
 async function flushComponentPromises() {

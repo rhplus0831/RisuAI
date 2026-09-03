@@ -825,6 +825,24 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
   })
 
+  it.each([
+    { autoTranslate: false, translatorType: 'llm', autoTranslateCachedOnly: true },
+    { autoTranslate: false, translatorType: 'google', autoTranslateCachedOnly: false },
+  ])('builds just the display parse key when automatic translation is disabled ($translatorType)', async (settings) => {
+    const char = seedDb(settings as SeedDbOverrides)
+    const { ChatBody, memoModule } = await loadChatBodyWithParseSpy()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mountChatBody(ChatBody, target, { character: char.chaId, msgDisplay: 'one display key' })
+    try {
+      await waitForText(target, 'one display key')
+      expect(memoModule.getChatBodyParseMemoDebugStats().parseKeyBuilds).toBe(1)
+    } finally {
+      await unmount(component)
+      target.remove()
+    }
+  })
+
   it('unchanged ChatBody remount performs zero additional ParseMarkdown calls', async () => {
     const char = seedDb()
     const target = document.createElement('div')

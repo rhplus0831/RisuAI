@@ -1,10 +1,5 @@
 <script module lang="ts">
-  import { charactersResourceState as renderCharacters } from 'src/ts/server/resourceState.svelte'
-  import { getChatMessageOwnerState as readMessageOwner } from 'src/ts/server/chatMessageHydration.svelte'
-  import { createChatReadOwners } from './chatReadOwners.svelte'
-
-  // All mounted rows share the same structure and transcript identity indexes.
-  const renderOwners = createChatReadOwners(renderCharacters, (chatId) => readMessageOwner(chatId)?.messages)
+  import { sharedChatReadOwners as renderOwners } from './sharedChatReadOwners.svelte'
   let manualTriggerDisplayGeneration = 0
 </script>
 

@@ -59,6 +59,7 @@ export function createChatReadOwners(
   })
 
   return {
+    characterById: (id: string): character | undefined => owners.characters.get(id),
     character: () => selectedCharacter,
     chat: () => selectedChat,
     message(index: number): Message | undefined {

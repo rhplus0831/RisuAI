@@ -94,6 +94,7 @@ vi.mock('../server/resourceState.svelte', () => ({
 }))
 
 vi.mock('../activeChatGenerationSettings', () => ({
+  readActiveModuleDatabase: () => getDatabase(),
   resolveActiveChatGenerationSettings: () => {
     const db = getDatabase()
     const character = getCurrentCharacter()
@@ -104,6 +105,19 @@ vi.mock('../activeChatGenerationSettings', () => ({
     }
   },
 }))
+
+vi.mock('./moduleReadDatabase.svelte', async () => {
+  const { resolveActiveModuleStates } = await import('../moduleActivation')
+  return {
+    getModuleReadDatabase: () => getDatabase(),
+    getActiveModuleReadModules: () =>
+      resolveActiveModuleStates(
+        getDatabase() as never,
+        getCurrentCharacter(),
+        getCurrentChatMock() ?? getCurrentCharacter()?.chats?.[getCurrentCharacter()?.chatPage],
+      ).map((state) => state.module),
+  }
+})
 
 vi.mock('../globalApi.svelte', () => ({
   AppendableBuffer: class {

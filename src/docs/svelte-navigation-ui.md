@@ -41,6 +41,12 @@ character avatars and collapsed character folders. Opening the chat or moving
 its transcript to the latest message clears it; warning and active-generation
 states take visual priority while they are present.
 
+`sidebarChatProjection.svelte.ts` shares validated chat metadata across pinned
+shortcuts and status badges. It reads only sidebar display fields and chat
+identities; changing chatPage or message bodies does not rebuild the projection.
+Generation, warning, and unread states each derive one set of character indexes,
+so individual badges and folder aggregates avoid repeating global chat scans.
+
 On wide layouts `src/App.svelte` mounts the sidebar beside chat. On responsive
 layouts the app mounts it as a focus-trapped dialog when `sideBarStore` is open;
 Escape closes that dialog. Route/store synchronization and history ownership
