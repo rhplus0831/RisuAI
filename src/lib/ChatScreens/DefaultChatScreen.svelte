@@ -896,9 +896,7 @@
     floatingInputOpen = false
     showFloatingInputButton = false
     await tick()
-    chatsInstance?.cancelLatestMessageAlignment()
-    showNewMessageButton = false
-    if (chatScrollContainer) chatScrollContainer.scrollTop = 0
+    chatsInstance?.scrollToLatestMessage()
     inputEle?.focus({ preventScroll: true })
   }
 

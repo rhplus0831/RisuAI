@@ -72,19 +72,17 @@ current. `DefaultChatScreen.loadPages.test.ts`, the shared-core load-page tests,
 `src/ts/server/chatMessageHydration.test.ts` guard this boundary.
 
 On chat entry, `Chats.svelte` waits for the newest persisted row to render and
-aligns that row's start with the transcript scrollport's start. A measured
-trailing spacer supplies only the reverse-scroll range needed for short newest
-rows. The viewport records an explicit `start`, `end`, or `free` transcript
-anchor scoped to that newest row. A `ResizeObserver` remeasures the spacer as a
-start-anchored row grows or shrinks; while the row still fits, its start remains
-aligned without stale blank space. If the row grows until the spacer reaches
-zero, the viewport transitions to the end anchor and preserves `scrollTop = 0`
-instead of jumping to the row's start. A resize of only the scrollport (the
-mobile keyboard opening or closing) retains the active anchor. A newly appended
-empty assistant placeholder starts at the end anchor throughout that streaming
-turn. Chat entry and explicit new-message actions still request start alignment,
-while manual scrolling into history selects the free anchor. Empty chats retain
-their ordinary greeting/composer layout.
+places the reverse transcript scroller at its natural end (`scrollTop = 0`). No
+trailing spacer is rendered, so short newest rows stay next to the composer
+instead of being pushed to the scrollport's start. The viewport records an
+explicit `end` or `free` transcript anchor scoped to that newest row.
+`ResizeObserver`s reassert the natural end while the transcript is following the
+latest row, including during streamed row growth and mobile-keyboard scrollport
+resizes. Manual scrolling into history selects the free anchor; regenerate
+following additionally checks explicit user intent so geometry-only scroll
+events do not cancel it. Chat entry, completed generation, and every explicit
+new-message action use the same natural-end behavior; empty chats retain their
+ordinary greeting/composer layout.
 
 ## Message Rendering
 
@@ -341,12 +339,11 @@ wrapper, so the same row survives the authoritative ID replacement.
 Regenerate follow-bottom is operation-aware rather than message-count based.
 If the transcript was following latest (or the always-follow preference is
 enabled), projection admission enters the reverse scroller's natural end,
-zeros the spacer, and reasserts `scrollTop = 0` through streamed resize and ID
-handoff. Wheel, touch, pointer/scrollbar, or scrolling-key intent followed by a
-move away cancels follow; geometry-only scroll events are corrected without
-being mistaken for history navigation. Settlement then runs the ordinary
-latest-row alignment once, while a cancelled follow preserves the user's
-history position.
+and reasserts `scrollTop = 0` through streamed resize and ID handoff. Wheel,
+touch, pointer/scrollbar, or scrolling-key intent followed by a move away
+cancels follow; geometry-only scroll events are corrected without being mistaken
+for history navigation. Settlement retains the same natural-end anchor, while a
+cancelled follow preserves the user's history position.
 
 Settling a chat-keyed message generation records a bounded, consume-once marker
 in `src/ts/process/chatSuggestionCompletion.svelte.ts`. `Suggestion.svelte`

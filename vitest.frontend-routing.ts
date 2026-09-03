@@ -17,7 +17,6 @@ export const legacyDomTestFiles = [
   'src/lib/ChatScreens/Chat.customHtml.test.ts',
   'src/lib/ChatScreens/Chat.parserDependencies.test.ts',
   'src/lib/ChatScreens/ChatBody.parseMemo.test.ts',
-  'src/lib/ChatScreens/chatScroll.test.ts',
   'src/lib/ChatScreens/DefaultChatScreen.composerDrafts.test.ts',
   'src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts',
   'src/lib/ChatScreens/PartialEditController.sharedHover.test.ts',

@@ -787,77 +787,30 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
   })
   await expect(page.getByTestId('default-chat-draft-input')).toBeVisible()
   await expect(latestMessage).toHaveCount(1)
-  await expect
-    .poll(() =>
-      latestMessage.evaluate((node) => {
-        const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
-        if (!transcriptElement) return Number.POSITIVE_INFINITY
-        return Math.abs(
-          node.getBoundingClientRect().top -
-            (transcriptElement.getBoundingClientRect().top + transcriptElement.clientTop),
-        )
-      }),
-    )
-    .toBeLessThanOrEqual(1)
+  await expect(page.locator('[data-latest-message-scroll-spacer]')).toHaveCount(0)
+  await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
 
-  const latestMessageSpacer = page.locator('[data-latest-message-scroll-spacer]')
-  const initialSpacerHeight = await latestMessageSpacer.evaluate((node) => node.getBoundingClientRect().height)
   await latestMessage.evaluate((node) => {
     node.style.minHeight = `${node.getBoundingClientRect().height + 160}px`
   })
-  await expect
-    .poll(() => latestMessageSpacer.evaluate((node) => node.getBoundingClientRect().height))
-    .toBeLessThan(initialSpacerHeight - 120)
-  await expect
-    .poll(() =>
-      latestMessage.evaluate((node) => {
-        const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
-        if (!transcriptElement) return Number.POSITIVE_INFINITY
-        return Math.abs(
-          node.getBoundingClientRect().top -
-            (transcriptElement.getBoundingClientRect().top + transcriptElement.clientTop),
-        )
-      }),
-    )
-    .toBeLessThanOrEqual(1)
+  await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
 
   await latestMessage.evaluate((node) => {
     node.style.removeProperty('min-height')
   })
-  await expect
-    .poll(async () =>
-      Math.abs(
-        (await latestMessageSpacer.evaluate((node) => node.getBoundingClientRect().height)) - initialSpacerHeight,
-      ),
-    )
-    .toBeLessThanOrEqual(1)
+  await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
 
   await latestMessage.evaluate((node) => {
     const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
     if (!transcriptElement) throw new Error('Expected transcript while expanding newest row')
     node.style.minHeight = `${transcriptElement.clientHeight + 160}px`
   })
-  await expect
-    .poll(() => latestMessageSpacer.evaluate((node) => node.getBoundingClientRect().height))
-    .toBeLessThanOrEqual(1)
   await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
-  await expect
-    .poll(() =>
-      latestMessage.evaluate((node) => {
-        const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
-        if (!transcriptElement) return 0
-        return node.getBoundingClientRect().top - transcriptElement.getBoundingClientRect().top
-      }),
-    )
-    .toBeLessThan(-100)
 
   await latestMessage.evaluate((node) => {
     node.style.removeProperty('min-height')
   })
   await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
-  await expect
-    .poll(() => latestMessageSpacer.evaluate((node) => node.getBoundingClientRect().height))
-    .toBeLessThanOrEqual(1)
   await expect(page.locator('[data-default-chat-composer-dock]')).toHaveCount(0)
   await expect(transcript.locator('[data-testid="default-chat-composer"]')).toHaveCount(1)
   await expect
