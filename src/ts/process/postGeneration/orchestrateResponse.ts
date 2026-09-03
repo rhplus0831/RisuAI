@@ -61,6 +61,8 @@ export interface OrchestrateResponseArgs {
   reformatContent: (data: string) => string
   runCurrentChatFunction: (chat: Chat) => Chat
   suppressStreamingTts?: boolean
+  /** Advances the owning chat activity once provider text begins arriving. */
+  onGenerationText?: () => void
   /**
    * The server owns post-generation derivation (`editoutput`, the pre-trigger
    * run-var pass, and the `'output'` trigger). When set, this orchestrator relays
@@ -123,6 +125,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       abortSignal,
       reformatContent,
       skipEditOutput: serverOwnsPostGeneration,
+      onGenerationText: args.onGenerationText,
     })
     result = stream.result
     streamProjection = stream.projection
@@ -189,6 +192,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       }
     }
   } else {
+    args.onGenerationText?.()
     const nonStream = await applyNonStreamResponse({
       req,
       arg,

@@ -8,6 +8,7 @@ import {
   finishChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
   updateChatGenerationActivityMetadata,
+  updateChatGenerationActivityPhase,
   updateChatGenerationActivityStage,
 } from './generationActivity.svelte'
 import {
@@ -49,11 +50,30 @@ describe('chat generation activity registry', () => {
     updateChatGenerationActivityStage(activityA.id, 2)
     updateChatGenerationActivityStage(activityB.id, 4)
     expect(findChatGenerationActivity(activityA.target)?.stage).toBe(2)
+    expect(findChatGenerationActivity(activityA.target)?.phase).toBe('checking-memory')
     expect(findChatGenerationActivity(activityB.target)?.stage).toBe(4)
+    expect(findChatGenerationActivity(activityB.target)?.phase).toBe('finalizing')
 
     finishChatGenerationActivity(activityB.id)
     expect(findChatGenerationActivity(activityB.target)).toBeUndefined()
     expect(findChatGenerationActivity(activityA.target)?.stage).toBe(2)
+  })
+
+  it('advances typed phases without regressing on replayed or legacy stage events', () => {
+    const activity = beginChatGenerationActivity({ target: target('char-a', 'chat-a', 0), kind: 'message' })!
+
+    expect(activity.phase).toBe('starting')
+    expect(activity.startedAt).toBeGreaterThan(0)
+    updateChatGenerationActivityStage(activity.id, 1)
+    updateChatGenerationActivityStage(activity.id, 2)
+    updateChatGenerationActivityStage(activity.id, 1)
+    updateChatGenerationActivityPhase(activity.id, 'generating')
+    updateChatGenerationActivityStage(activity.id, 3)
+
+    expect(findChatGenerationActivity(activity.target)).toMatchObject({
+      stage: 3,
+      phase: 'generating',
+    })
   })
 
   it('attaches regenerate operation and attempt metadata after admission', () => {

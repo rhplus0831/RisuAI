@@ -94,9 +94,10 @@
   import PartialEditController from './PartialEditController.svelte'
   import { resolveFreshPartialEditSave, type PartialEditSaveDetail } from './partialEditFreshness'
   import {
+    chatGenerationLoadingPhaseFromStage,
     getChatGenerationLoadingLanguageKey,
-    getChatGenerationLoadingProgress,
-    normalizeChatGenerationLoadingStage,
+    normalizeChatGenerationLoadingPhase,
+    type ChatGenerationLoadingPhase,
   } from './chatGenerationLoading'
   import { agentPresetProgress } from 'src/ts/process/agentPresetProgress'
   import {
@@ -273,9 +274,12 @@
     isComment?: boolean
     isGenerationLoading?: boolean
     isGenerationProjection?: boolean
+    generationPresentationMode?: 'send' | 'regenerate'
     isChatGenerating?: boolean
     halfStreamingTokensPerSecond?: number
     generationPersistenceState?: GenerationPersistenceIndicatorState | null
+    generationPhase?: ChatGenerationLoadingPhase
+    generationStartedAt?: number
     generationStage?: number
     disabled?: boolean | 'allBefore'
     autoTranslateOnReady?: boolean
@@ -343,9 +347,12 @@
     isComment = false,
     isGenerationLoading = false,
     isGenerationProjection = false,
+    generationPresentationMode = undefined,
     isChatGenerating = false,
     halfStreamingTokensPerSecond = undefined,
     generationPersistenceState = null,
+    generationPhase = undefined,
+    generationStartedAt = undefined,
     generationStage = 0,
     disabled = false,
     autoTranslateOnReady = false,
@@ -1703,9 +1710,22 @@
   let partialEditBilingualActive = $derived(
     partialEditTranslationText !== null && currentLiveChat()?.bilingualDisplay === true,
   )
-  let normalizedGenerationStage = $derived(normalizeChatGenerationLoadingStage(generationStage))
-  let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationStage)])
-  let generationLoadingProgress = $derived(getChatGenerationLoadingProgress(normalizedGenerationStage))
+  let normalizedGenerationPhase = $derived(
+    normalizeChatGenerationLoadingPhase(generationPhase ?? chatGenerationLoadingPhaseFromStage(generationStage)),
+  )
+  let generationLoadingText = $derived(language[getChatGenerationLoadingLanguageKey(normalizedGenerationPhase)])
+  let generationClock = $state(Date.now())
+  $effect(() => {
+    if (!isGenerationLoading || generationStartedAt === undefined) return
+    generationClock = Date.now()
+    const timer = setInterval(() => {
+      generationClock = Date.now()
+    }, 1_000)
+    return () => clearInterval(timer)
+  })
+  let generationElapsedSeconds = $derived(
+    generationStartedAt === undefined ? 0 : Math.max(0, Math.floor((generationClock - generationStartedAt) / 1_000)),
+  )
   let halfStreamingLoadingText = $derived(
     halfStreamingTokensPerSecond === undefined
       ? undefined
@@ -2319,22 +2339,27 @@
   {/if}
 {/snippet}
 
-{#snippet generationLoading(projection: boolean)}
+{#snippet generationLoading(projection: boolean, compact = false)}
   <div
     class="chat-generation-loading w-full"
+    class:chat-generation-loading-compact={compact}
     role="status"
     aria-live="polite"
     aria-busy="true"
     data-generation-projection-loading={projection ? '' : undefined}>
     <div class="chat-generation-loading-header">
-      <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" />
+      <LoaderCircleIcon size={16} class="risu-ongoing-pulse animate-spin shrink-0" aria-hidden="true" />
       <span>{halfStreamingLoadingText ?? generationLoadingText}</span>
+      {#if generationElapsedSeconds >= 3}
+        <span class="chat-generation-loading-elapsed" aria-hidden="true">
+          · {language.chatGenerationElapsed(generationElapsedSeconds)}
+        </span>
+      {/if}
     </div>
-    {#if halfStreamingLoadingText === undefined}
-      <div class="chat-generation-loading-track">
+    {#if halfStreamingLoadingText === undefined && !compact}
+      <div class="chat-generation-loading-track" aria-hidden="true">
         <div
-          class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
-          style:width={`${generationLoadingProgress}%`}>
+          class={`risu-ongoing-pulse chat-generation-loading-fill chat-generation-loading-phase-${normalizedGenerationPhase}`}>
         </div>
       </div>
     {/if}
@@ -2380,7 +2405,7 @@
       {/if}
     </div>
   {:else if isGenerationLoading && (!isGenerationProjection || message.length === 0)}
-    {#if !hasActiveAgentPresetProgress || isGenerationProjection}
+    {#if !hasActiveAgentPresetProgress || generationPresentationMode === 'regenerate'}
       {@render generationLoading(isGenerationProjection)}
     {/if}
   {:else if blankMessage}
@@ -2460,8 +2485,8 @@
           on:save={handlePartialEditSave} />
       {/if}
     </span>
-    {#if isGenerationLoading && isGenerationProjection}
-      {@render generationLoading(true)}
+    {#if isGenerationLoading && isGenerationProjection && (!hasActiveAgentPresetProgress || generationPresentationMode === 'regenerate')}
+      {@render generationLoading(true, true)}
     {:else if halfStreamingLoadingText !== undefined && isChatGenerating}
       <div class="chat-generation-loading w-full" role="status" aria-live="polite" aria-busy="true">
         <div class="chat-generation-loading-header">
@@ -3312,7 +3337,7 @@
   data-chat-id={messageRowId}
   data-risu-message-index={idx}
   data-risu-message-id={messageRowId}
-  data-generation-display-projection={isGenerationProjection ? 'regenerate' : undefined}
+  data-generation-display-projection={isGenerationProjection ? generationPresentationMode : undefined}
   style={isLastMemory ? `border-top:${displaySettings.memoryLimitThickness ?? 1}px solid rgba(98, 114, 164, 0.7);` : ''}
   onclickcapture={handleButtonTriggerWithin}>
   <div
@@ -3472,6 +3497,11 @@
     color: var(--risu-theme-textcolor2);
   }
 
+  .chat-generation-loading-compact {
+    margin-top: 0.5rem;
+    font-size: 0.8125rem;
+  }
+
   .chat-generation-loading-header {
     display: flex;
     align-items: center;
@@ -3479,6 +3509,11 @@
     min-height: 1.5rem;
     font-size: 0.875rem;
     line-height: 1.25rem;
+  }
+
+  .chat-generation-loading-elapsed {
+    opacity: 0.75;
+    font-variant-numeric: tabular-nums;
   }
 
   .chat-generation-loading-track {
@@ -3494,12 +3529,11 @@
   .chat-generation-loading-fill {
     position: relative;
     height: 100%;
-    min-width: 2rem;
+    width: 36%;
     border-radius: inherit;
     background: var(--risu-theme-borderc);
-    transition:
-      width 0.35s ease,
-      background-color 0.35s ease;
+    animation: chat-generation-loading-travel 1.3s ease-in-out infinite;
+    transition: background-color 0.35s ease;
   }
 
   .chat-generation-loading-fill::after {
@@ -3507,27 +3541,42 @@
     inset: 0;
     content: '';
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-    animation: chat-generation-loading-shine 1.25s ease-in-out infinite;
+    animation: chat-generation-loading-shine 1.1s ease-in-out infinite;
   }
 
-  .chat-generation-loading-stage-1 {
+  .chat-generation-loading-phase-preparing {
     background: #60a5fa;
   }
 
-  .chat-generation-loading-stage-2 {
+  .chat-generation-loading-phase-checking-memory {
     background: #db2777;
   }
 
-  .chat-generation-loading-stage-3 {
+  .chat-generation-loading-phase-waiting-for-model,
+  .chat-generation-loading-phase-generating {
     background: #34d399;
   }
 
-  .chat-generation-loading-stage-4 {
+  .chat-generation-loading-phase-finalizing {
     background: #8b5cf6;
   }
 
-  .chat-generation-loading-stage-5 {
+  .chat-generation-loading-phase-input-hook {
     background: #f59e0b;
+  }
+
+  @keyframes chat-generation-loading-travel {
+    0% {
+      transform: translateX(-120%);
+    }
+
+    50% {
+      transform: translateX(90%);
+    }
+
+    100% {
+      transform: translateX(280%);
+    }
   }
 
   @keyframes chat-generation-loading-shine {
@@ -3542,6 +3591,9 @@
 
   :global(html.risu-reduced-motion) .chat-generation-loading-fill {
     transition: none;
+    animation: none;
+    width: 100%;
+    opacity: 0.65;
   }
 
   :global(html.risu-reduced-motion) .chat-generation-loading-fill::after {

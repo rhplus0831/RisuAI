@@ -47,6 +47,8 @@
     settingsResourceState,
   } from 'src/ts/server/resourceState.svelte'
   import { projectChatMetadata } from 'src/ts/server/chatMetadataOwner'
+  import type { ChatGenerationActivity } from 'src/ts/process/generationActivity.svelte'
+  import type { ChatGenerationLoadingPhase } from './chatGenerationLoading'
 
   const getCurrentChatRoomId = () => chatId ?? null
 
@@ -66,6 +68,8 @@
     scrollContainer = null,
     isGenerationActive = false,
     regenerateTargetMessageId = null,
+    generationActivity = undefined,
+    generationPhase = undefined,
     generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
     initialDisplayPending = $bindable(false),
@@ -86,6 +90,8 @@
     scrollContainer?: HTMLDivElement | null
     isGenerationActive?: boolean
     regenerateTargetMessageId?: string | null
+    generationActivity?: ChatGenerationActivity
+    generationPhase?: ChatGenerationLoadingPhase
     generationStage?: number
     hasNewUnreadMessage?: boolean
     initialDisplayPending?: boolean
@@ -180,7 +186,31 @@
       )
       .at(-1)
   })
+  let activeAppendActivity = $derived.by(() => {
+    if (
+      !isGenerationActive ||
+      generationActivity?.kind !== 'message' ||
+      generationActivity.mode !== 'send' ||
+      generationActivity.chatId !== getCurrentChatRoomId()
+    ) {
+      return undefined
+    }
+    return generationActivity
+  })
+  let activeAppendMessageIndex = $derived.by(() => {
+    const generationId = activeAppendActivity?.generationId
+    if (!generationId) return -1
+    return messages.findIndex(
+      (message) =>
+        message.role === 'char' &&
+        (message.chatId === generationId || message.generationInfo?.generationId === generationId),
+    )
+  })
+  let activeAppendPresentationKey = $derived(
+    activeAppendActivity ? `generation-activity:${activeAppendActivity.id}` : null,
+  )
   let presentationKeyAliases: Record<string, string> = $state({})
+  let appendPresentationKeyAliases: Record<string, string> = $state({})
   let regexDisplayReloadToken = $derived(
     regexDisplayReloadTokenForContext($RegexDisplayReloadPointer, $RegexDisplayReloadScope, {
       characterId: currentCharacter?.chaId,
@@ -191,6 +221,8 @@
   const chatRows = $derived.by(() => {
     void regexDisplayReloadToken
     void activeRegenerateProjection
+    void activeAppendActivity
+    void activeAppendMessageIndex
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
     const simpleChar = createSimpleCharacter(
@@ -223,6 +255,8 @@
       scopeId: string | null
       awaitInitialDisplayParse: boolean
       isRegenerationTarget: boolean
+      isAppendGenerationPresentation: boolean
+      generationPresentationMode?: 'send' | 'regenerate'
       generationDisplayProjection?: GenerationDisplayProjection
     }[] = []
 
@@ -247,8 +281,12 @@
             : undefined) ??
         message.chatId ??
         `message-${i}`
+      const isAppendGenerationPresentation = activeAppendMessageIndex === i && activeAppendPresentationKey !== null
+      const rowKey =
+        (message.chatId ? appendPresentationKeyAliases[message.chatId] : undefined) ??
+        (isAppendGenerationPresentation ? activeAppendPresentationKey : `${presentationKey}:${i}:${reloadPointer}`)
       rows.push({
-        key: `${presentationKey}:${i}:${reloadPointer}`,
+        key: rowKey,
         message,
         idx: i,
         img: message.role === 'user' ? userImage : charImage,
@@ -261,7 +299,40 @@
         awaitInitialDisplayParse: shouldAwaitInitialDisplayParse(i, messages.length),
         isRegenerationTarget:
           isGenerationActive && regenerateTargetMessageId !== null && regenerateTargetMessageId === message.chatId,
+        isAppendGenerationPresentation,
+        ...(isAppendGenerationPresentation ? { generationPresentationMode: 'send' as const } : {}),
+        ...(generationDisplayProjection ? { generationPresentationMode: 'regenerate' as const } : {}),
         ...(generationDisplayProjection ? { generationDisplayProjection } : {}),
+      })
+    }
+
+    if (activeAppendActivity && activeAppendMessageIndex < 0 && activeAppendPresentationKey) {
+      rows.unshift({
+        key: activeAppendPresentationKey,
+        message: {
+          role: 'char',
+          data: '',
+          saying: currentCharacter.chaId,
+          time: activeAppendActivity.startedAt,
+          ...(activeAppendActivity.generationId
+            ? {
+                chatId: activeAppendActivity.generationId,
+                generationInfo: { generationId: activeAppendActivity.generationId },
+              }
+            : {}),
+        },
+        idx: messages.length,
+        img: charImage,
+        largePortrait: (currentCharacter as character).largePortrait ?? false,
+        name: getCharacterDisplayName(currentCharacter),
+        character: simpleChar,
+        generationPersistenceState: null,
+        isLastMemory: false,
+        scopeId: currentChatId,
+        awaitInitialDisplayParse: false,
+        isRegenerationTarget: false,
+        isAppendGenerationPresentation: true,
+        generationPresentationMode: 'send',
       })
     }
 
@@ -422,12 +493,16 @@
   }
 
   let generationFollowState: GenerationFollowState | null = null
-  let previousRegenerateProjectionKey: string | null = null
-  let pendingRegenerateWasAtLatest = true
+  let previousGenerationPresentationKey: string | null = null
+  let pendingGenerationWasAtLatest = true
   let transcriptUserIntentPending = false
 
   function regenerateProjectionKey(projection: GenerationDisplayProjection | undefined): string | null {
     return projection ? `${projection.operationId}:${projection.attemptNo}` : null
+  }
+
+  function currentGenerationPresentationKey(): string | null {
+    return regenerateProjectionKey(activeRegenerateProjection) ?? activeAppendPresentationKey
   }
 
   function reassertGenerationNaturalEnd(projectionKey: string): void {
@@ -435,7 +510,7 @@
       if (
         generationFollowState?.projectionKey === projectionKey &&
         generationFollowState.follow &&
-        regenerateProjectionKey(activeRegenerateProjection) === projectionKey &&
+        currentGenerationPresentationKey() === projectionKey &&
         scrollContainer
       ) {
         scrollContainer.scrollTop = 0
@@ -477,17 +552,28 @@
   let previousIsGenerationActive = false
 
   $effect.pre(() => {
-    const projectionKey = regenerateProjectionKey(activeRegenerateProjection)
-    if (projectionKey && projectionKey !== previousRegenerateProjectionKey) {
-      pendingRegenerateWasAtLatest = transcriptIsAtLatestPosition()
+    const projectionKey = currentGenerationPresentationKey()
+    if (projectionKey && projectionKey !== previousGenerationPresentationKey) {
+      pendingGenerationWasAtLatest = transcriptIsAtLatestPosition()
     }
   })
 
   $effect(() => {
     chatRows
     const projection = activeRegenerateProjection
-    const projectionKey = regenerateProjectionKey(projection)
+    const projectionKey = currentGenerationPresentationKey()
     const currentChatRoomId = getCurrentChatRoomId()
+
+    const activeAppendMessageId =
+      activeAppendMessageIndex >= 0 ? messages[activeAppendMessageIndex]?.chatId : activeAppendActivity?.generationId
+    if (activeAppendMessageId && activeAppendPresentationKey) {
+      if (appendPresentationKeyAliases[activeAppendMessageId] !== activeAppendPresentationKey) {
+        appendPresentationKeyAliases = {
+          ...appendPresentationKeyAliases,
+          [activeAppendMessageId]: activeAppendPresentationKey,
+        }
+      }
+    }
 
     if (projection?.targetMessageId) {
       const inheritedKey = presentationKeyAliases[projection.targetMessageId] ?? projection.targetMessageId
@@ -518,15 +604,15 @@
       return
     }
 
-    if (projectionKey && projectionKey !== previousRegenerateProjectionKey) {
-      const follow = autoScrollToNewMessage && (pendingRegenerateWasAtLatest || alwaysScrollToNewMessage)
+    if (projectionKey && projectionKey !== previousGenerationPresentationKey) {
+      const follow = autoScrollToNewMessage && (pendingGenerationWasAtLatest || alwaysScrollToNewMessage)
       generationFollowState = { projectionKey, follow, userCancelled: false }
       transcriptUserIntentPending = false
       if (follow) {
         followLatestAtNaturalEnd()
         reassertGenerationNaturalEnd(projectionKey)
       }
-      previousRegenerateProjectionKey = projectionKey
+      previousGenerationPresentationKey = projectionKey
       return
     }
 
@@ -536,9 +622,9 @@
       return
     }
 
-    if (!projectionKey && previousRegenerateProjectionKey) {
+    if (!projectionKey && previousGenerationPresentationKey) {
       const settledFollow = generationFollowState
-      previousRegenerateProjectionKey = null
+      previousGenerationPresentationKey = null
       generationFollowState = null
       transcriptUserIntentPending = false
       if (settledFollow?.follow && !settledFollow.userCancelled && currentChatRoomId) {
@@ -576,6 +662,7 @@
     const isSameChat = currentChatRoomId === previousChatRoomId
     if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
       presentationKeyAliases = {}
+      appendPresentationKeyAliases = {}
       clearVisibleChat(visibleChatRoomId)
       setVisibleChat(currentChatRoomId)
       visibleChatRoomId = currentChatRoomId
@@ -674,7 +761,7 @@
     <div
       class="chat-message-container"
       data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}
-      data-generation-display-projection={row.generationDisplayProjection ? 'regenerate' : undefined}>
+      data-generation-display-projection={row.generationPresentationMode}>
       <Chat
         message={row.generationDisplayProjection ? (row.generationDisplayProjection.text ?? '') : row.message.data}
         translation={row.generationDisplayProjection ? null : (row.message.translation ?? null)}
@@ -695,14 +782,17 @@
         name={row.name}
         isComment={row.message.isComment ?? false}
         isGenerationLoading={row.isRegenerationTarget ||
+          row.isAppendGenerationPresentation ||
           row.generationDisplayProjection !== undefined ||
           (isGenerationActive &&
             row.idx === messages.length - 1 &&
             row.message.role === 'char' &&
             row.message.data === '')}
-        isGenerationProjection={row.generationDisplayProjection !== undefined}
+        isGenerationProjection={row.isAppendGenerationPresentation || row.generationDisplayProjection !== undefined}
+        generationPresentationMode={row.generationPresentationMode}
         isChatGenerating={isGenerationActive}
-        halfStreamingTokensPerSecond={row.idx === messages.length - 1 && row.message.role === 'char'
+        halfStreamingTokensPerSecond={row.isAppendGenerationPresentation ||
+        (row.idx === messages.length - 1 && row.message.role === 'char')
           ? activeHalfStreamingTokensPerSecond
           : undefined}
         autoTranslateOnReady={typeof row.message.chatId === 'string' &&
@@ -717,6 +807,8 @@
           : undefined}
         displayPriority={row.awaitInitialDisplayParse ? 'critical' : 'background'}
         generationPersistenceState={row.generationPersistenceState}
+        {generationPhase}
+        generationStartedAt={row.isAppendGenerationPresentation ? generationActivity?.startedAt : undefined}
         {generationStage}
         disabled={row.message.disabled ?? false} />
     </div>

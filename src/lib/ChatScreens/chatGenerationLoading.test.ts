@@ -1,30 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import {
   CHAT_GENERATION_INPUT_HOOK_STAGE,
+  chatGenerationLoadingPhaseFromStage,
   getChatGenerationLoadingLanguageKey,
-  getChatGenerationLoadingProgress,
   getPostGenerationScriptProgress,
-  normalizeChatGenerationLoadingStage,
+  normalizeChatGenerationLoadingPhase,
 } from './chatGenerationLoading'
 
 describe('chat generation loading stage mapping', () => {
-  it('maps known process stages to user-facing status keys and progress values', () => {
-    expect(getChatGenerationLoadingLanguageKey(0)).toBe('chatGenerationStageStarting')
-    expect(getChatGenerationLoadingLanguageKey(1)).toBe('chatGenerationStagePreparingPrompt')
-    expect(getChatGenerationLoadingLanguageKey(2)).toBe('chatGenerationStageCheckingMemory')
-    expect(getChatGenerationLoadingLanguageKey(3)).toBe('chatGenerationStageWaitingForModel')
-    expect(getChatGenerationLoadingLanguageKey(4)).toBe('chatGenerationStageFinalizing')
-    expect(getChatGenerationLoadingLanguageKey(CHAT_GENERATION_INPUT_HOOK_STAGE)).toBe('chatGenerationStageInputHook')
+  it('maps process stages to typed, user-facing phases', () => {
+    expect(chatGenerationLoadingPhaseFromStage(0)).toBe('starting')
+    expect(chatGenerationLoadingPhaseFromStage(1)).toBe('preparing')
+    expect(chatGenerationLoadingPhaseFromStage(2)).toBe('checking-memory')
+    expect(chatGenerationLoadingPhaseFromStage(3)).toBe('waiting-for-model')
+    expect(chatGenerationLoadingPhaseFromStage(4)).toBe('finalizing')
+    expect(chatGenerationLoadingPhaseFromStage(CHAT_GENERATION_INPUT_HOOK_STAGE)).toBe('input-hook')
 
-    expect(getChatGenerationLoadingProgress(0)).toBe(12)
-    expect(getChatGenerationLoadingProgress(4)).toBe(92)
-    expect(getChatGenerationLoadingProgress(CHAT_GENERATION_INPUT_HOOK_STAGE)).toBe(20)
+    expect(getChatGenerationLoadingLanguageKey('starting')).toBe('chatGenerationStageStarting')
+    expect(getChatGenerationLoadingLanguageKey('preparing')).toBe('chatGenerationStagePreparingPrompt')
+    expect(getChatGenerationLoadingLanguageKey('checking-memory')).toBe('chatGenerationStageCheckingMemory')
+    expect(getChatGenerationLoadingLanguageKey('waiting-for-model')).toBe('chatGenerationStageWaitingForModel')
+    expect(getChatGenerationLoadingLanguageKey('generating')).toBe('chatGenerationStageGenerating')
+    expect(getChatGenerationLoadingLanguageKey('finalizing')).toBe('chatGenerationStageFinalizing')
+    expect(getChatGenerationLoadingLanguageKey('input-hook')).toBe('chatGenerationStageInputHook')
   })
 
-  it('falls back to the starting stage for unknown values', () => {
-    expect(normalizeChatGenerationLoadingStage(-1)).toBe(0)
-    expect(normalizeChatGenerationLoadingStage(99)).toBe(0)
-    expect(normalizeChatGenerationLoadingStage(null)).toBe(0)
+  it('falls back to the starting phase for unknown values', () => {
+    expect(normalizeChatGenerationLoadingPhase(-1)).toBe('starting')
+    expect(normalizeChatGenerationLoadingPhase('unknown')).toBe('starting')
+    expect(normalizeChatGenerationLoadingPhase(null)).toBe('starting')
     expect(getChatGenerationLoadingLanguageKey(undefined)).toBe('chatGenerationStageStarting')
   })
 

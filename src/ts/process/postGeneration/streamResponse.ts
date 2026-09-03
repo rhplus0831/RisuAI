@@ -54,6 +54,8 @@ export interface ConsumeStreamResponseOptions {
    * streamed reformatted text for live display.
    */
   skipEditOutput?: boolean
+  /** Called once when this attempt has observable provider text. */
+  onGenerationText?: () => void
   /**
    * Test seam: overrides the animation-frame scheduler the render coalescer
    * uses. Production callers omit it (`defaultRenderFlushScheduler`).
@@ -357,7 +359,14 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   let streamCompleted = false
   let result = ''
   let lastObservedResult = ''
+  let generationTextReported = false
   let emoChanged = false
+  const reportGenerationText = (): void => {
+    if (generationTextReported) return
+    generationTextReported = true
+    opts.onGenerationText?.()
+  }
+  if (!projectsRegenerateTarget && lastStreamOwnedData.length > 0) reportGenerationText()
   // Every `.data` write + `reloadKeys` bump re-runs
   // `risuChatParser` + `ParseMarkdown` over the whole growing message, so apply
   // the newest accumulated chunk at most once per animation frame instead of
@@ -433,6 +442,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
           result = ''
         }
         const rawStreamedResult = result
+        if (rawStreamedResult.length > 0) reportGenerationText()
         if (
           halfStreaming &&
           req.halfStreamingProgressManaged !== true &&

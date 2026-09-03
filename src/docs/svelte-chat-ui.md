@@ -283,11 +283,25 @@ enable the passive viewport overlay with `?risuViewportDebug=1` or the
 
 ## Generation And Loading States
 
-`src/lib/ChatScreens/chatGenerationLoading.ts` maps process stages to localized
-labels and bounded progress. The visible sequence covers starting, preparing
-the prompt, checking memory, waiting for the model, finalizing, and stage `5`
-for input hooks. `Chat.svelte` renders the message-row loading track, while the
-composer cancel button mirrors the same stage colors. Message-generation stage
+`src/ts/process/generationActivity.svelte.ts` advances each chat through typed,
+monotonic display phases: starting, preparing context, checking memory, waiting
+for the first model token, generating, and finalizing. The numeric process stage
+remains as a compatibility projection. `chatGenerationLoading.ts` maps the typed
+phase to localized labels; the UI uses an indeterminate phase-colored track
+instead of presenting fabricated percentage completion.
+
+Before an ordinary send is admitted, the composer replaces Send with a disabled
+`Sending message…` status. Once its chat-keyed generation activity exists,
+`Chats.svelte` projects a non-persisted assistant row immediately. The row keeps
+one presentation key while the stream-owned assistant `Message` is appended,
+then adopts that message without remounting. The first observable provider text
+advances the activity to generating; `Chat.svelte` renders the growing response
+and a compact status footer together until finalization settles. Empty failed or
+cancelled attempts therefore lose only the transient row, while retained partial
+and durable persistence behavior continues to belong to the existing generation
+reconciliation paths.
+
+The composer cancel button mirrors the phase colors. Message-generation phase
 and cancellation state come from the open chat's entry in
 `generationActivity.svelte.ts`, so another chat can generate concurrently
 without replacing the visible state of this one.
@@ -300,8 +314,8 @@ configured chat width.
 Draft and BTW hook execution registers a chat-keyed activity in
 `src/ts/process/inputHookActivity.svelte.ts`. Each entry owns stage `5`, its
 abort controller, hook kind, and composer-operation token/version; different
-chats may run concurrently while one chat remains single-flight. The progress
-fill and composer spinner are amber (`#f59e0b`), and ID-scoped cleanup prevents
+chats may run concurrently while one chat remains single-flight. The composer
+spinner is amber (`#f59e0b`), and ID-scoped cleanup prevents
 one hook from clearing another chat's state. Stage mapping is covered by
 `chatGenerationLoading.test.ts`, the registry by `inputHookActivity.test.ts`,
 and the DOM behavior by `DefaultChatScreen.loadPages.test.ts`.

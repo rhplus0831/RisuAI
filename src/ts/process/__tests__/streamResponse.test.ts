@@ -325,7 +325,10 @@ describe('consumeStreamResponse', () => {
     const currentChar = seed()
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
-    const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
+    const onGenerationText = vi.fn()
+    const promise = consumeStreamResponse(
+      callArgs(streamingReq(stream), currentChar, ctrl.signal, { onGenerationText }),
+    )
     push({ msgKey: 'hello' })
     close()
     const out = await promise
@@ -338,6 +341,7 @@ describe('consumeStreamResponse', () => {
     expect(messages[1].data).toBe('hello')
     expect(messages[1].role).toBe('char')
     expect(messages[1].chatId).toBe('gen-1')
+    expect(onGenerationText).toHaveBeenCalledOnce()
   })
 
   it('marks the completed stream projection when its replay window was gap-truncated', async () => {

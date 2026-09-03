@@ -114,7 +114,7 @@
     createActiveGenerationAbortController,
     sendChat,
   } from '../../ts/process/index.svelte'
-  import { SvelteSet } from 'svelte/reactivity'
+  import { SvelteMap } from 'svelte/reactivity'
   import { sleep } from '../../ts/util'
   import { resolveUserPersonaPresentation } from '../../ts/utilState'
   import { language } from '../../lang'
@@ -179,7 +179,7 @@
   import { preflightChatSendBeforeMutation } from 'src/ts/process/sendChatPreflight'
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
   import AgentPresetProgress from './AgentPresetProgress.svelte'
-  import { CHAT_GENERATION_INPUT_HOOK_STAGE } from './chatGenerationLoading'
+  import { CHAT_GENERATION_INPUT_HOOK_STAGE, chatGenerationLoadingPhaseFromStage } from './chatGenerationLoading'
   import { activeChatGenerations, chatGenerationTargetKey } from 'src/ts/process/generationActivity.svelte'
   import {
     activeInputHookActivities,
@@ -378,7 +378,8 @@
   let refreshChatContentGeometry = () => {}
   let chatsInstance: any = $state()
   let isScrollingToMessage = $state(false)
-  const preparingSendTargetKeys = new SvelteSet<string>()
+  type ChatPreparationKind = 'send' | 'hook' | 'reroll'
+  const preparingSendTargetKeys = new SvelteMap<string, ChatPreparationKind>()
   let pinMutationPending = $state(false)
   let composerDraftPersistenceError = $state('')
   const composerDraftPersistenceAlerts = new Set<string>()
@@ -637,6 +638,15 @@
     )
   })
   let currentChatGenerationStage = $derived(currentChatGenerationActivity?.stage ?? 0)
+  let currentChatGenerationPhase = $derived(
+    currentChatGenerationActivity?.phase ?? chatGenerationLoadingPhaseFromStage(currentChatGenerationStage),
+  )
+  $effect(() => {
+    const targetKey = currentChatGenerationActivity?.targetKey
+    if (targetKey && preparingSendTargetKeys.get(targetKey) === 'send') {
+      preparingSendTargetKeys.delete(targetKey)
+    }
+  })
   let currentChatPreparationTargetKey = $derived(
     currentCharacter && currentChatId
       ? chatGenerationTargetKey({
@@ -658,7 +668,13 @@
   let currentChatPreparingSend = $derived(
     currentChatPreparationTargetKey !== null && preparingSendTargetKeys.has(currentChatPreparationTargetKey),
   )
+  let currentChatPreparationKind = $derived(
+    currentChatPreparationTargetKey === null ? undefined : preparingSendTargetKeys.get(currentChatPreparationTargetKey),
+  )
   let visibleChatProcessStage = $derived(currentChatInputHookActivity?.stage ?? currentChatGenerationStage)
+  let visibleChatProcessPhase = $derived(
+    currentChatInputHookActivity ? ('input-hook' as const) : currentChatGenerationPhase,
+  )
   let configuredChatLoadPages = $derived(getInitialChatLoadPages(chatLoadPageSettings()))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
@@ -913,10 +929,10 @@
     })
   }
 
-  function claimPreparingSendTarget(target: ActiveChatTarget): string | null {
+  function claimPreparingSendTarget(target: ActiveChatTarget, kind: ChatPreparationKind): string | null {
     const targetKey = chatGenerationTargetKey(target)
     if (!targetKey || preparingSendTargetKeys.has(targetKey)) return null
-    preparingSendTargetKeys.add(targetKey)
+    preparingSendTargetKeys.set(targetKey, kind)
     return targetKey
   }
 
@@ -1154,6 +1170,7 @@
 
   function handoffAcceptedSend(input: {
     target: ActiveChatTarget
+    preparingTargetKey: string
     append?: Exclude<Awaited<ReturnType<typeof appendCurrentChatUserMessageForSend>>, { status: 'error' }>
     message?: Message
     composerOperation: ComposerOperation
@@ -1202,6 +1219,10 @@
         },
       )
     })
+    void generation.then(
+      () => releasePreparingSendTarget(input.preparingTargetKey),
+      () => releasePreparingSendTarget(input.preparingTargetKey),
+    )
   }
 
   function applyChatFileResultsForCurrentComposer(
@@ -1716,7 +1737,7 @@
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
     const composerOperation = beginComposerOperation('btw')
     if (!composerOperation) return
-    const preparingTargetKey = claimPreparingSendTarget(activeTarget)
+    const preparingTargetKey = claimPreparingSendTarget(activeTarget, 'hook')
     if (!preparingTargetKey) {
       composerOperationGuard.clear(composerOperation.token)
       return
@@ -1772,11 +1793,12 @@
     }
     const composerOperation = beginComposerOperation(continueResponse ? 'continue' : 'send')
     if (!composerOperation) return
-    const preparingTargetKey = claimPreparingSendTarget(activeTarget)
+    const preparingTargetKey = claimPreparingSendTarget(activeTarget, 'send')
     if (!preparingTargetKey) {
       composerOperationGuard.clear(composerOperation.token)
       return
     }
+    let preparationHandedOff = false
     try {
       const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
       if (generationSettingsGuard.status === 'error') {
@@ -1870,8 +1892,10 @@
 
       if (userMessage) {
         if (canUseGenerationOperationProtocol()) {
+          preparationHandedOff = true
           handoffAcceptedSend({
             target: activeTarget,
+            preparingTargetKey,
             message: userMessage,
             composerOperation,
             clearDraftFields: false,
@@ -1893,8 +1917,10 @@
           await sleep(10)
           return
         }
+        preparationHandedOff = true
         handoffAcceptedSend({
           target: activeTarget,
+          preparingTargetKey,
           append: appended,
           composerOperation,
           clearDraftFields: false,
@@ -1917,7 +1943,7 @@
       await sendChatMain(continueResponse, undefined, true, composerOperation, activeTarget, syntheticSayNothing)
     } finally {
       composerOperationGuard.clear(composerOperation.token)
-      releasePreparingSendTarget(preparingTargetKey)
+      if (!preparationHandedOff) releasePreparingSendTarget(preparingTargetKey)
     }
   }
 
@@ -1927,12 +1953,13 @@
     if (!activeTarget || !isActiveChatTargetFresh(activeTarget)) return
     const composerOperation = beginComposerOperation('draft-send')
     if (!composerOperation) return
-    const preparingTargetKey = claimPreparingSendTarget(activeTarget)
+    const preparingTargetKey = claimPreparingSendTarget(activeTarget, 'send')
     if (!preparingTargetKey) {
       composerOperationGuard.clear(composerOperation.token)
       return
     }
 
+    let preparationHandedOff = false
     try {
       const generationSettingsGuard = guardActiveChatGenerationSettingsForSend()
       if (generationSettingsGuard.status === 'error') {
@@ -1983,8 +2010,10 @@
       }
 
       if (canUseGenerationOperationProtocol()) {
+        preparationHandedOff = true
         handoffAcceptedSend({
           target: activeTarget,
+          preparingTargetKey,
           message: userMessage,
           composerOperation,
           clearDraftFields: true,
@@ -1999,8 +2028,10 @@
         return
       }
 
+      preparationHandedOff = true
       handoffAcceptedSend({
         target: activeTarget,
+        preparingTargetKey,
         append: appended,
         composerOperation,
         clearDraftFields: true,
@@ -2008,7 +2039,7 @@
       })
     } finally {
       composerOperationGuard.clear(composerOperation.token)
-      releasePreparingSendTarget(preparingTargetKey)
+      if (!preparationHandedOff) releasePreparingSendTarget(preparingTargetKey)
     }
   }
 
@@ -2017,7 +2048,7 @@
     const targetIdentity = getActiveTranscriptWindowIdentity()
     const target = captureActiveChatTarget()
     if (!target || !isActiveChatTargetFresh(target)) return
-    const preparingTargetKey = claimPreparingSendTarget(target)
+    const preparingTargetKey = claimPreparingSendTarget(target, 'reroll')
     if (!preparingTargetKey) return
     try {
       await hydrateActiveChatFully()
@@ -2760,6 +2791,18 @@
                 style:height={inputHeight}>
                 <TriangleAlertIcon aria-hidden="true" />
               </button>
+            {:else if currentChatPreparationKind === 'send' && !currentChatOwnsGeneration && !hookRunActive}
+              <button
+                type="button"
+                data-testid="default-chat-preparing-button"
+                aria-label={language.chatGenerationStageSending}
+                aria-busy="true"
+                disabled
+                class="peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 disabled:cursor-wait disabled:opacity-70"
+                style:height={inputHeight}>
+                <LoaderCircleIcon size={18} class="risu-ongoing-pulse animate-spin" aria-hidden="true" />
+                <span class="whitespace-nowrap text-sm">{language.chatGenerationStageSending}</span>
+              </button>
             {:else if currentChatOwnsGeneration || hookRunActive}
               <button
                 data-testid="default-chat-cancel-button"
@@ -2776,7 +2819,9 @@
                 {#if currentChatStopFailed}
                   <TriangleAlertIcon size={18} aria-hidden="true" />
                 {:else}
-                  <div class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage}"></div>
+                  <div
+                    class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage} chat-process-phase-{visibleChatProcessPhase}">
+                  </div>
                 {/if}
                 {#if currentChatStopPending}
                   <span class="whitespace-nowrap text-sm">{language.generationStop.stopping}</span>
@@ -3134,6 +3179,8 @@
               {userIconPortrait}
               isGenerationActive={currentChatOwnsGeneration}
               regenerateTargetMessageId={currentChatRegenerateTargetMessageId}
+              generationActivity={currentChatGenerationActivity}
+              generationPhase={currentChatGenerationPhase}
               generationStage={currentChatGenerationStage}
               initialRowsPending={activeChatMessagesLoading}
               bind:initialDisplayPending={activeChatDisplayLoading}
@@ -3526,27 +3573,33 @@
     overflow-y: auto;
   }
 
-  .chat-process-stage-1 {
+  .chat-process-stage-1,
+  .chat-process-phase-preparing {
     border-top: 0.4rem solid #60a5fa;
     border-left: 0.4rem solid #60a5fa;
   }
 
-  .chat-process-stage-2 {
+  .chat-process-stage-2,
+  .chat-process-phase-checking-memory {
     border-top: 0.4rem solid #db2777;
     border-left: 0.4rem solid #db2777;
   }
 
-  .chat-process-stage-3 {
+  .chat-process-stage-3,
+  .chat-process-phase-waiting-for-model,
+  .chat-process-phase-generating {
     border-top: 0.4rem solid #34d399;
     border-left: 0.4rem solid #34d399;
   }
 
-  .chat-process-stage-4 {
+  .chat-process-stage-4,
+  .chat-process-phase-finalizing {
     border-top: 0.4rem solid #8b5cf6;
     border-left: 0.4rem solid #8b5cf6;
   }
 
-  .chat-process-stage-5 {
+  .chat-process-stage-5,
+  .chat-process-phase-input-hook {
     border-top: 0.4rem solid #f59e0b;
     border-left: 0.4rem solid #f59e0b;
   }

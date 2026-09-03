@@ -40,6 +40,7 @@ import {
   findChatGenerationActivity,
   finishChatGenerationActivity,
   updateChatGenerationActivityMetadata,
+  updateChatGenerationActivityPhase,
   updateChatGenerationActivityStage,
   type ChatGenerationActivity,
 } from './generationActivity.svelte'
@@ -283,6 +284,10 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       }
       updateChatGenerationActivityStage(generationActivity.id, stage)
       refreshLegacyGenerationProjection()
+    }
+    const setGenerationPhase = (phase: Parameters<typeof updateChatGenerationActivityPhase>[1]) => {
+      if (!generationActivity) return
+      updateChatGenerationActivityPhase(generationActivity.id, phase)
     }
     const ctx = setupSendChatContext({
       database: generationSettingsState.db,
@@ -566,6 +571,9 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       req = dispatch.req
       generationId = dispatch.generationId
       generationInfo = dispatch.generationInfo
+      if (generationTarget && generationActivity) {
+        updateChatGenerationActivityMetadata(generationTarget, { generationId })
+      }
     }
     // New/append-style generations own the row keyed by generationId. In-place
     // Continue and regenerate keep the pre-dispatch target identity.
@@ -588,6 +596,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
       reformatContent,
       runCurrentChatFunction,
       suppressStreamingTts: !!serverDispatch,
+      onGenerationText: () => setGenerationPhase('generating'),
       // The server owns post-gen derivation on the server-dispatch path; the
       // browser relays the stream and applies the terminal patch instead.
       serverOwnsPostGeneration: !!serverDispatch,

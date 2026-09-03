@@ -50,7 +50,12 @@ const languageMocks = vi.hoisted(() => {
   const language = new Proxy<Record<string, any>>(
     {},
     {
-      get: (_target, property) => (property === 'partialEdit' ? partialEdit : String(property)),
+      get: (_target, property) =>
+        property === 'partialEdit'
+          ? partialEdit
+          : property === 'chatGenerationElapsed'
+            ? (seconds: number) => `${seconds}s`
+            : String(property),
     },
   )
 
@@ -403,7 +408,7 @@ afterEach(() => {
 })
 
 describe('Chat parser dependencies', () => {
-  it('keeps the generation loading track at the full message content width', async () => {
+  it('renders an indeterminate full-width phase track without fabricated percentage progress', async () => {
     const rows: ParserDependencyRow[] = [
       {
         id: 'loading-row',
@@ -420,8 +425,37 @@ describe('Chat parser dependencies', () => {
 
     const loading = target.querySelector<HTMLElement>('.chat-generation-loading')
     expect(loading?.classList).toContain('w-full')
-    expect(loading?.querySelector('.chat-generation-loading-track')).toBeTruthy()
+    const track = loading?.querySelector('.chat-generation-loading-track')
+    const fill = loading?.querySelector<HTMLElement>('.chat-generation-loading-fill')
+    expect(track).toBeTruthy()
+    expect(fill?.classList).toContain('chat-generation-loading-phase-waiting-for-model')
+    expect(fill?.style.width).toBe('')
+    expect(loading?.textContent).toContain('chatGenerationStageWaitingForModel')
     expect(target.textContent).not.toContain('previous response')
+  })
+
+  it('keeps a compact generating footer beside streamed projection text', async () => {
+    const rows: ParserDependencyRow[] = [
+      {
+        id: 'streaming-row',
+        data: 'Partial streamed response',
+        generationPhase: 'generating',
+        generationStartedAt: Date.now() - 5_000,
+        isGenerationLoading: true,
+        isGenerationProjection: true,
+        name: 'Parser Bot',
+        role: 'char',
+      },
+    ]
+    seedDatabase(rows)
+    mountHarness(rows)
+    await settle()
+
+    expect(target.textContent).toContain('Partial streamed response')
+    const footer = target.querySelector<HTMLElement>('.chat-generation-loading-compact')
+    expect(footer?.textContent).toContain('chatGenerationStageGenerating')
+    expect(footer?.textContent).toContain('5s')
+    expect(footer?.querySelector('.chat-generation-loading-track')).toBeNull()
   })
 
   it('does not re-run every visible row parser on unrelated owner writes', async () => {

@@ -4,6 +4,37 @@ import { markChatSuggestionCompletion, resetChatSuggestionCompletionsForTests } 
 
 export type ChatGenerationActivityKind = 'message' | 'preview'
 export type ChatGenerationActivityMode = 'send' | 'continue' | 'regenerate'
+export type ChatGenerationPhase =
+  | 'starting'
+  | 'preparing'
+  | 'checking-memory'
+  | 'waiting-for-model'
+  | 'generating'
+  | 'finalizing'
+
+const CHAT_GENERATION_PHASE_ORDER: Record<ChatGenerationPhase, number> = {
+  starting: 0,
+  preparing: 1,
+  'checking-memory': 2,
+  'waiting-for-model': 3,
+  generating: 4,
+  finalizing: 5,
+}
+
+export function chatGenerationPhaseFromProcessStage(stage: unknown): ChatGenerationPhase {
+  switch (stage) {
+    case 1:
+      return 'preparing'
+    case 2:
+      return 'checking-memory'
+    case 3:
+      return 'waiting-for-model'
+    case 4:
+      return 'finalizing'
+    default:
+      return 'starting'
+  }
+}
 
 export interface ChatGenerationActivity {
   id: number
@@ -12,6 +43,8 @@ export interface ChatGenerationActivity {
   chatId?: string
   characterId?: string
   stage: number
+  phase: ChatGenerationPhase
+  startedAt: number
   kind: ChatGenerationActivityKind
   controller?: AbortController
   operationId?: string
@@ -71,6 +104,8 @@ export function beginChatGenerationActivity(input: {
     chatId: input.target.chatId,
     characterId: input.target.characterId,
     stage: 0,
+    phase: 'starting',
+    startedAt: Date.now(),
     kind: input.kind,
     controller: input.controller,
     operationId: input.operationId,
@@ -108,8 +143,30 @@ export function updateChatGenerationActivityMetadata(
 }
 
 export function updateChatGenerationActivityStage(activityId: number, stage: number): void {
+  const phase = chatGenerationPhaseFromProcessStage(stage)
   activeChatGenerations.update((activities) =>
-    activities.map((activity) => (activity.id === activityId ? { ...activity, stage } : activity)),
+    activities.map((activity) =>
+      activity.id === activityId
+        ? {
+            ...activity,
+            stage,
+            phase:
+              CHAT_GENERATION_PHASE_ORDER[phase] >= CHAT_GENERATION_PHASE_ORDER[activity.phase]
+                ? phase
+                : activity.phase,
+          }
+        : activity,
+    ),
+  )
+}
+
+export function updateChatGenerationActivityPhase(activityId: number, phase: ChatGenerationPhase): void {
+  activeChatGenerations.update((activities) =>
+    activities.map((activity) =>
+      activity.id === activityId && CHAT_GENERATION_PHASE_ORDER[phase] >= CHAT_GENERATION_PHASE_ORDER[activity.phase]
+        ? { ...activity, phase }
+        : activity,
+    ),
   )
 }
 

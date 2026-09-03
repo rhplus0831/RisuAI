@@ -18,7 +18,8 @@ provider dispatch.
 Important files:
 
 - `src/ts/process/generationActivity.svelte.ts` owns the chat-keyed client
-  activity registry, including independent stages and abort controllers.
+  activity registry, including independent numeric compatibility stages, typed
+  monotonic display phases, activity start times, and abort controllers.
   `src/ts/process/index.svelte.ts` owns the high-level `sendChat` coordinator;
   `doingChat`, `chatProcessStage`, and `activeGenerationTarget` remain aggregate
   compatibility projections rather than the per-chat UI source of truth.
@@ -50,6 +51,11 @@ Important files:
   attempt-fenced display text for negotiated targeted regenerate. It never
   writes `Message.data`; presentation aliases let the generated message inherit
   the target row key during terminal authority handoff.
+- `src/lib/ChatScreens/Chats.svelte` derives an ordinary-send presentation row
+  from the active chat generation before a stream-owned assistant message
+  exists. This UI-only row never enters the transcript owner. Once the exact
+  generation id appears, its stable activity presentation key is adopted by the
+  real assistant row and retained across activity settlement.
 - `src/ts/process/reattach.ts` coordinates background recovery by durable
   `(databaseLineage, operationId)` authority. `jobId` and `attemptNo` remain
   expiring stream descriptors, while local viewer/activity state is only an

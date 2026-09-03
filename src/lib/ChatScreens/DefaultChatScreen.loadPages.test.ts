@@ -412,6 +412,8 @@ import {
   beginChatGenerationActivity,
   finishChatGenerationActivity,
   resetChatGenerationActivitiesForTests,
+  updateChatGenerationActivityMetadata,
+  updateChatGenerationActivityPhase,
 } from 'src/ts/process/generationActivity.svelte'
 import { resetChatUnreadForTests, unreadChatIds } from 'src/ts/process/chatUnread.svelte'
 import { defaultChatScreenTestChatController } from './DefaultChatScreen.testChatController'
@@ -1595,6 +1597,40 @@ describe('DefaultChatScreen latest-message natural-end following', () => {
     expect(target.querySelector('[data-latest-message-scroll-spacer]')).toBeNull()
   })
 
+  it('projects an early assistant row and adopts the generated message without remounting it', async () => {
+    seedDatabase([2])
+    const activeTarget = captureActiveChatTargetForTest()!
+    const generation = beginChatGenerationActivity({ target: activeTarget, kind: 'message', mode: 'send' })!
+    const chat = charactersResourceState.characters[0].chats[0]
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+    const projectedRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    expect(projectedRow.dataset.generationDisplayProjection).toBe('send')
+    expect(projectedRow.querySelector('.chat-generation-loading')).toBeTruthy()
+    expect(chat.message).toHaveLength(2)
+
+    updateChatGenerationActivityMetadata(activeTarget, { generationId: 'assistant-generated' })
+    chat.message.push({
+      chatId: 'assistant-generated',
+      role: 'char',
+      data: '',
+    })
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+    expect(target.querySelector('.chat-message-container')).toBe(projectedRow)
+
+    chat.message[2].data = 'Streamed response'
+    updateChatGenerationActivityPhase(generation.id, 'generating')
+    await waitFor(() => expect(projectedRow.textContent).toContain('Streamed response'))
+    expect(projectedRow.querySelector('.chat-generation-loading')).toBeTruthy()
+
+    finishChatGenerationActivity(generation.id)
+    await settle()
+    expect(target.querySelector('.chat-message-container')).toBe(projectedRow)
+    expect(projectedRow.dataset.generationDisplayProjection).toBeUndefined()
+    expect(projectedRow.querySelector('.chat-generation-loading')).toBeNull()
+  })
+
   it('keeps a newly appended assistant turn at the natural end through streaming and completion', async () => {
     const resizeObservers = installResizeObserverHarness()
     seedDatabase([2])
@@ -1605,6 +1641,7 @@ describe('DefaultChatScreen latest-message natural-end following', () => {
     await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
     const transcript = target.querySelector<HTMLElement>('[data-default-chat-transcript]')!
 
+    updateChatGenerationActivityMetadata(generation.target, { generationId: 'streaming-placeholder-message' })
     getResourceDatabase().characters[0].chats[0].message.push({
       chatId: 'streaming-placeholder-message',
       role: 'char',
@@ -1695,6 +1732,7 @@ describe('DefaultChatScreen latest-message natural-end following', () => {
       mountScreen()
       await waitFor(() => expect(target.querySelector('.chat-message-container')).toBeTruthy())
 
+      updateChatGenerationActivityMetadata(generation.target, { generationId: 'unfollowed-placeholder-message' })
       getResourceDatabase().characters[0].chats[0].message.push({
         chatId: 'unfollowed-placeholder-message',
         role: 'char',
@@ -3804,6 +3842,11 @@ describe('DefaultChatScreen transcript window state', () => {
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
     target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
     await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+    const preparingButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-preparing-button"]')
+    expect(preparingButton?.disabled).toBe(true)
+    expect(preparingButton?.getAttribute('aria-busy')).toBe('true')
+    expect(preparingButton?.textContent).toContain('chatGenerationStageSending')
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
 
     await clickSideMenuRerollItem()
     await settle()

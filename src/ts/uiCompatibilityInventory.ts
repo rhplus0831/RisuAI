@@ -249,6 +249,7 @@ export const phase4ControlInventory: readonly UiCompatibilityControlGroup[] = [
       'testid:accepted-send-recovery',
       'testid:accepted-send-retry',
       'testid:default-chat-cancel-button',
+      'testid:default-chat-preparing-button',
       'testid:default-chat-send-button',
       'testid:generation-reattach-failure',
       'testid:generation-reattach-last-error',
