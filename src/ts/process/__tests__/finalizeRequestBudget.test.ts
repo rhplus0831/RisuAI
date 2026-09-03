@@ -41,6 +41,21 @@ describe('finalizeRequestBudget', () => {
     expect(result.outputTokens).toBe(20)
   })
 
+  it('trims removable history to preserve maxResponse headroom', async () => {
+    const formated: OpenAIChat[] = [
+      { role: 'system', content: 'system-prompt' },
+      { role: 'user', content: 'aaaaaaaaaa', removable: true },
+      { role: 'assistant', content: 'bbbbbbbbbb', removable: true },
+      { role: 'user', content: 'final-question' },
+    ]
+    const result = await finalizeRequestBudget(formated, 50, 20, fakeTokenizer())
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.formated.map((c) => c.content)).toEqual(['system-prompt', 'final-question'])
+    expect(result.inputTokens).toBe(27)
+    expect(result.outputTokens).toBe(20)
+  })
+
   it('zeroes removable entries while preserving non-removable, then filters empties', async () => {
     const formated: OpenAIChat[] = [
       { role: 'system', content: 'system-prompt' },

@@ -26,12 +26,10 @@ export async function finalizeRequestBudget(
   }
 
   let trimmed = formated
-  if (inputTokens > maxContextTokens) {
+  const targetInputTokens = maxContextTokens - maxResponse
+  if (inputTokens > targetInputTokens) {
     let pointer = 0
-    while (inputTokens > maxContextTokens) {
-      if (pointer >= trimmed.length) {
-        return { ok: false, reason: 'overflow', inputTokens }
-      }
+    while (inputTokens > targetInputTokens && pointer < trimmed.length) {
       if (trimmed[pointer].removable) {
         const tokensBeforeTrim = await tokenizer.tokenizeChat(trimmed[pointer])
         trimmed[pointer].content = ''
@@ -43,6 +41,9 @@ export async function finalizeRequestBudget(
         }
       }
       pointer++
+    }
+    if (inputTokens > maxContextTokens) {
+      return { ok: false, reason: 'overflow', inputTokens }
     }
     trimmed = trimmed.filter((v) => {
       return v.content !== '' || (v.multimodals && v.multimodals.length > 0)

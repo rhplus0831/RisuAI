@@ -6,9 +6,9 @@ import type { PromptMessage } from './promptMessage.js'
 /**
  * Request budget finalization ported from the SPA's
  * `finalizeRequestBudget.ts`. Re-tokenizes the flattened `OpenAIChat[]`, trims
- * `removable` rows front-to-back until the request fits under `maxContextTokens`,
+ * `removable` rows front-to-back until the request leaves room for `maxResponse`,
  * drops now-empty rows while keeping multimodal-only rows, and clamps the response
- * budget.
+ * budget only when pinned rows prevent reserving it in full.
  *
  * `finalizeRequestBudget` re-tokenizes from scratch; it does **not**
  * consume `preflightTemplateTokens`' output. Finalize is the independent final
@@ -59,12 +59,10 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
 
   let trimmed = formated
   let historyTruncated = false
-  if (inputTokens > maxContextTokens) {
+  const targetInputTokens = maxContextTokens - maxResponse
+  if (inputTokens > targetInputTokens) {
     let pointer = 0
-    while (inputTokens > maxContextTokens) {
-      if (pointer >= trimmed.length) {
-        return { ok: false, reason: 'overflow', inputTokens }
-      }
+    while (inputTokens > targetInputTokens && pointer < trimmed.length) {
       const candidate = trimmed[pointer]
       if (candidate.removable) {
         if (typeof candidate.memo === 'string' && historyMessageIds?.has(candidate.memo)) {
@@ -80,6 +78,9 @@ export function finalizeRequestBudget(input: FinalizeRequestBudgetInput): Finali
         }
       }
       pointer++
+    }
+    if (inputTokens > maxContextTokens) {
+      return { ok: false, reason: 'overflow', inputTokens }
     }
     trimmed = trimmed.filter((v) => {
       return v.content !== '' || (v.multimodals && v.multimodals.length > 0)

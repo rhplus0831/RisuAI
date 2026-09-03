@@ -96,7 +96,7 @@ not rewrite global settings.
 | Lorebook preflight | Activate ordinary lore, distribute positions, expand CBS for token accounting, build depth rows, and preflight the template. |
 | History and bias | Format the bounded transcript, per-message scripts/CBS, continuation markers, and logit-bias rows. |
 | Memory bridge | Select already-produced Hypa V3 summaries and committed BardWiki references, insert independently removable memory rows, and enqueue only Hypa follow-up work. |
-| Render and budget | Render the owned prompt template, execute remaining request-time script hooks, retokenize, trim removable history, and clamp response budget. |
+| Render and budget | Render the owned prompt template, execute remaining request-time script hooks, retokenize, trim removable history to reserve the configured response budget, and clamp that budget only when pinned rows consume its headroom. |
 
 The stage order is explicit in `server/fastify/src/prompt/assemble.ts` and is
 covered broadly by `server/fastify/__tests__/assemble.test.ts`.
@@ -323,10 +323,11 @@ the complete selection contract.
 
 `server/fastify/src/prompt/budgetFinalize.ts` independently retokenizes the
 fully rendered `OpenAIChat[]`; it does not trust template preflight totals.
-When the prompt exceeds context, it removes rows marked `removable` from the
-front, preserves multimodal-only rows, fails if pinned rows alone overflow, and
-clamps response tokens to the remaining context. It also reports when a durable
-history message was dropped.
+When the prompt exceeds the input target (`maxContext - maxResponse`), it removes
+rows marked `removable` from the front to preserve the configured response
+budget. It preserves multimodal-only rows, fails if pinned rows alone overflow
+the full context, and clamps response tokens only when pinned rows prevent the
+full reservation. It also reports when a durable history message was dropped.
 
 For persisted send/continue/regenerate outside enabled character Hypa V3,
 history trimming requires a one-time chat-scoped confirmation. The server emits

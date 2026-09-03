@@ -443,7 +443,7 @@ export interface AssembleResult {
   promptSummary?: PromptRowsSummary
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
-  /** Clamped response budget from `finalizeRequestBudget`. */
+  /** Reserved response budget from `finalizeRequestBudget`, clamped when pinned input requires it. */
   outputTokens?: number
   /** Non-fatal assembly diagnostics emitted through the existing warning SSE channel. */
   warnings?: Omit<WarningEvent, 'type'>[]
@@ -618,7 +618,7 @@ export interface AssemblyState {
   promptText?: PromptMessage[]
   /** Final input token count from `finalizeRequestBudget`. */
   inputTokens?: number
-  /** Clamped response budget from `finalizeRequestBudget`. */
+  /** Reserved response budget from `finalizeRequestBudget`, clamped when pinned input requires it. */
   outputTokens?: number
   /** Why the send aborted, when `stopSending` is true. */
   abortReason?: AssembleAbortReason
@@ -2422,9 +2422,9 @@ function buildLuaEditRequest(state: AssemblyState): {
  *     hook ({@link buildLuaEditRequest}) over both `formated` and the
  *     prompt-info capture, mirroring the browser's `runLuaEditTrigger`;
  *   - `finalizeRequestBudget` re-tokenizes the rendered rows, trims
- *     `removable` rows under `db.maxContext`, and clamps the response
- *     budget. On overflow the send aborts (`stopSending` +
- *     `abortReason = 'overflow'`).
+ *     `removable` rows to reserve `db.maxResponse` within `db.maxContext`, and
+ *     clamps the response budget only when pinned rows require it. On overflow
+ *     the send aborts (`stopSending` + `abortReason = 'overflow'`).
  *
  * Runs after `fillMemoryAndPostHistory`, so a prior `stopSending`
  * short-circuits before any rendering.

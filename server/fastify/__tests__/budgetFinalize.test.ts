@@ -72,6 +72,30 @@ describe('finalizeRequestBudget — outputTokens clamp', () => {
     expect(result.inputTokens).toBe(15)
     expect(result.outputTokens).toBe(5)
   })
+
+  it('trims removable history to preserve maxResponse headroom', () => {
+    const formated: PromptMessage[] = [
+      { role: 'system', content: 'system-prompt' },
+      { role: 'user', content: 'aaaaaaaaaa', removable: true, memo: 'message-1' },
+      { role: 'assistant', content: 'bbbbbbbbbb', removable: true, memo: 'message-2' },
+      { role: 'user', content: 'final-question' },
+    ]
+    const result = finalizeRequestBudget({
+      db: makeDb(),
+      formated,
+      maxContextTokens: 35,
+      maxResponse: 15,
+      historyMessageIds: new Set(['message-1', 'message-2']),
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    // Totals (overhead 5): 8 + 7 + 8 + 7 = 30. The response reservation
+    // leaves a 20-token input target, so both removable rows are trimmed.
+    expect(result.formated.map((c) => c.content)).toEqual(['system-prompt', 'final-question'])
+    expect(result.inputTokens).toBe(15)
+    expect(result.outputTokens).toBe(15)
+    expect(result.historyTruncated).toBe(true)
+  })
 })
 
 describe('finalizeRequestBudget — trimming', () => {
