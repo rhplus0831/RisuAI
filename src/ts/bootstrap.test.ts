@@ -1230,6 +1230,33 @@ describe('API-backed client bootstrap', () => {
     expect(getStartupCoordinatorSnapshot().failures.canGenerate).toBeUndefined()
   })
 
+  it('loads the selected chat and prompt together while keeping generation gated until both settle', async () => {
+    let releaseChat!: (ready: boolean) => void
+    let releasePrompt!: (ready: boolean) => void
+    hydrationApi.hydrateActiveChat.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releaseChat = resolve
+        }),
+    )
+    promptTemplateApi.ensure.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          releasePrompt = resolve
+        }),
+    )
+
+    const loading = loadData()
+    await vi.waitFor(() => expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledOnce())
+    expect(promptTemplateApi.ensure).toHaveBeenCalledOnce()
+    releasePrompt(true)
+    await Promise.resolve()
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(false)
+    releaseChat(true)
+    await loading
+    expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)
+  })
+
   it('fences same-character chat hydration and ignores an older target result', async () => {
     await loadData()
     expect(getStartupCoordinatorSnapshot().capabilities.canGenerate).toBe(true)

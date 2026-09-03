@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { applyMigrations, CURRENT_SCHEMA_VERSION, getSchemaState, openDatabase } from '../src/db.js'
+import { normalizeTranslatorPreset } from '@risuai/shared-core/translator-presets'
 
 const dataDirs: string[] = []
 
@@ -378,6 +379,98 @@ describe('schema migrations', () => {
       ).toEqual(repairedPresets)
     } finally {
       reopened.close()
+    }
+  })
+
+  it.each([
+    { selection: 1, expected: 'translator-b' },
+    { selection: 0, expected: 'translator-a' },
+    { selection: undefined, expected: 'translator-a' },
+    { selection: null, expected: 'translator-a' },
+    { selection: '', expected: 'translator-a' },
+    { selection: 99, expected: 'translator-a' },
+    { selection: 'translator-b', expected: 'translator-b' },
+  ])('migrates translator selection $selection without changing preset bodies', ({ selection, expected }) => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const settings = { translatorPresetId: selection, theme: 'light' }
+    const presets = ['translator-a', 'translator-b'].map((id) =>
+      normalizeTranslatorPreset({ id, name: id, prompt: `Prompt for ${id}`, maxResponse: 500 }),
+    )
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(settings))
+    const insertPreset = initial.prepare('INSERT INTO translator_presets (position, data_json) VALUES (?, ?)')
+    presets.forEach((preset, index) => insertPreset.run(index, JSON.stringify(preset)))
+    initial.prepare('UPDATE schema_version SET version = 36, revision = 23 WHERE id = 1').run()
+    initial.close()
+
+    const migrated = openDatabase(dataDir)
+    let persistedSettings: string
+    try {
+      expect(getSchemaState(migrated)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      persistedSettings = (
+        migrated.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      ).data_json
+      expect(JSON.parse(persistedSettings)).toMatchObject({ translatorPresetId: expected, theme: 'light' })
+      if (typeof selection === 'string' && selection === expected) {
+        expect(persistedSettings).toBe(JSON.stringify(settings))
+      } else {
+        expect(JSON.parse(persistedSettings)).toMatchObject({
+          translatorPrompt: `Prompt for ${expected}`,
+          translatorMaxResponse: 500,
+        })
+      }
+      expect(migrated.prepare('SELECT data_json FROM translator_presets ORDER BY position').all()).toEqual(
+        presets.map((preset) => ({ data_json: JSON.stringify(preset) })),
+      )
+    } finally {
+      migrated.close()
+    }
+    const reopened = openDatabase(dataDir)
+    try {
+      expect(reopened.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({
+        data_json: persistedSettings,
+      })
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('rolls back translator selection repair if the migration cannot commit', () => {
+    const dataDir = makeDataDir()
+    const initial = openDatabase(dataDir)
+    const settings = JSON.stringify({ translatorPresetId: 0 })
+    initial.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(settings)
+    initial
+      .prepare('INSERT INTO translator_presets (position, data_json) VALUES (0, ?)')
+      .run(JSON.stringify(normalizeTranslatorPreset({ id: 'translator-a', name: 'A' })))
+    initial.exec(`
+      UPDATE schema_version SET version = 36, revision = 23 WHERE id = 1;
+      CREATE TRIGGER fail_translator_identity_version_bump
+      BEFORE UPDATE OF version ON schema_version WHEN NEW.version = 37
+      BEGIN SELECT RAISE(ABORT, 'injected translator identity failure'); END;
+    `)
+    initial.close()
+    expect(() => openDatabase(dataDir)).toThrow(
+      /durable-translator-preset-selection-identity.*injected translator identity failure/,
+    )
+    const failed = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      expect(getSchemaState(failed)).toEqual({ version: 36, revision: 23 })
+      expect(failed.prepare('SELECT data_json FROM settings WHERE id = 1').get()).toEqual({ data_json: settings })
+      failed.exec('DROP TRIGGER fail_translator_identity_version_bump')
+    } finally {
+      failed.close()
+    }
+    const retried = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(retried)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 23 })
+      expect(
+        JSON.parse(
+          (retried.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ).translatorPresetId,
+      ).toBe('translator-a')
+    } finally {
+      retried.close()
     }
   })
 

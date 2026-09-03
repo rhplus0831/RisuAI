@@ -52,9 +52,16 @@ language settings are normalized by
 exposes the selection pointer through the language read projection while
 reserving writes to the preset command family.
 
+Schema migration v37 converts legacy numeric or unavailable global selections
+to a stable ID in an existing canonical translator-preset collection. Backup
+restore applies the same repair. Preset bodies and valid stable selections are
+preserved; ordinary resource reads never repair stored settings. If translator
+ownership remains unavailable, the optional greeting-translation read returns
+`settingsHash: null` and no translations instead of an internal server error.
+
 Each chat can override that global selection with its optional stable
 `translatorPresetId` string. `src/ts/translator/presets.ts` resolves a valid
-chat binding first and falls back to the global numeric selection when the
+chat binding first and falls back to the global stable selection when the
 binding is absent or unavailable; bound presets never replace the global
 legacy mirrors. The guarded chat-metadata PATCH owns selection and clearing.
 Deleting a preset clears matching chat bindings in the same transaction and

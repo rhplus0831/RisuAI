@@ -40,6 +40,7 @@ import {
   listInlayCatalogEntries,
   loadPresetHydration,
   ValidationError,
+  EntityNotFoundError,
 } from '../repository.js'
 import { listSourceValidGreetingTranslations } from '../translation/greetingTranslationStore.js'
 import { resolveRawMessageTranslatorIdentity } from '../translation/rawMessageTranslation.js'
@@ -293,7 +294,14 @@ function loadSettingsWithTranslatorPresetsWithoutRepair(db: DatabaseSync): Recor
   if (settings === null) return null
   const presets = loadCollectionRowsWithoutRepair(db, COLLECTION_TABLES.translatorPresets)
   if (presets !== null) settings.translatorPresets = presets
-  ensureTranslatorPresetCollection(settings)
+  try {
+    ensureTranslatorPresetCollection(settings)
+  } catch (error) {
+    // An unavailable translator has no valid cached greeting projection.
+    // Keep this optional read usable without repairing settings during a GET.
+    if (error instanceof ValidationError || error instanceof EntityNotFoundError) return null
+    throw error
+  }
   return settings
 }
 

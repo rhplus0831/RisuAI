@@ -33,7 +33,7 @@ plus negative sequence positions. Regenerate preserves displaced/new candidates
 as alternates, while send/continue clears the reroll buffer for the appended
 path. Per-chat `hypaV3Data` lives in `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 33. SQLite includes settings; character, chat,
+`CURRENT_SCHEMA_VERSION` is 37. SQLite includes settings; character, chat,
 message, and per-chat memory rows; split collections; assets; command events and
 mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state;
 generation finalization retries; greeting translations; and durable LLM request
@@ -51,7 +51,9 @@ writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
 `request_history`; v29 adds the generation-operation ledger and durable
 operation identity on finalization/events; v30 adds stable memory-job instance
 identity; v31 adds the generation-effect ledger; and v32 adds effect-claim
-leases. Current browser state is rebuilt from concrete REST
+leases. Migration v33 adds BardWiki storage; v34 migrates model-profile
+ownership; v35 and v36 migrate persona and Hypa V3 preset identities; v37
+repairs legacy translator-preset selection identities. Current browser state is rebuilt from concrete REST
 resources rather than a cached database projection.
 
 Prompt-template ownership follows the split-preset contract. Modern template

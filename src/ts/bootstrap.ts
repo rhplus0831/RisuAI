@@ -664,17 +664,19 @@ async function ensureStartupChatReadiness(): Promise<void> {
       'Selected character detail hydration failed',
     )
   }
-  if (!(await hydrateActiveChat())) {
-    throw new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
-  }
   const promptPresetId = currentStartupPromptTemplateOwnerId()
-  if (
-    !(await ensurePromptTemplateHydrated({
+  const [chatHydrated, promptHydrated] = await Promise.all([
+    hydrateActiveChat(),
+    ensurePromptTemplateHydrated({
       ...(promptPresetId !== currentGlobalPromptTemplateOwnerId() ? { applyProjection: false } : {}),
       promptPresetId,
       minimumRevision: peekAppliedServerResourceRevision() ?? undefined,
-    }))
-  ) {
+    }),
+  ])
+  if (!chatHydrated) {
+    throw new StartupChatDependencyError('selected-chat-hydration-failed', 'Selected chat hydration failed')
+  }
+  if (!promptHydrated) {
     throw new StartupChatDependencyError(
       'selected-prompt-template-hydration-failed',
       'Selected prompt-template owner hydration failed',

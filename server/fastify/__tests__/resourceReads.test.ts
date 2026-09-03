@@ -11,6 +11,7 @@ import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { PROMPT_SETTINGS_KEYS } from '@risuai/shared-core/prompt-settings'
 import { BULK_RESOURCE_MAX_BODY_BYTES, BULK_RESOURCE_MAX_IDS } from '../src/routes/resourceReads.js'
+import { applyMigrations } from '../src/db.js'
 import { addAlternateMessage, replaceChatMessages } from '../src/messageStore.js'
 import {
   SERVER_CHARACTER_SUMMARY_KEYS,
@@ -227,6 +228,73 @@ function cachePayload(hashes: Record<string, string[]>): Record<string, unknown>
 }
 
 describe('authenticated resource read routes', () => {
+  it('loads greeting translations after migrating a legacy numeric translator selection', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = {
+        ...JSON.parse(row.data_json),
+        translatorPresetId: 0,
+        translatorType: 'google',
+        translator: 'en',
+      }
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      sqlite.exec('UPDATE schema_version SET version = 36 WHERE id = 1')
+      applyMigrations(sqlite, 36)
+      expect(
+        JSON.parse(
+          (sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }).data_json,
+        ).translatorPresetId,
+      ).toBe('translator-a')
+    } finally {
+      sqlite.close()
+    }
+    const before = readAllDatabaseRows()
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      characterId: 'char-a',
+      chatId: 'chat-a',
+      revision,
+      settingsHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      translations: [],
+    })
+    expect(readAllDatabaseRows()).toEqual(before)
+  })
+
+  it.each([null, '', 0, 'missing-translator'])(
+    'returns an unavailable greeting projection without repairing invalid translator selection %s on read',
+    async (selection) => {
+      const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+        const settings = { ...JSON.parse(row.data_json), translatorPresetId: selection, translatorType: 'google' }
+        sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      } finally {
+        sqlite.close()
+      }
+      const before = readAllDatabaseRows()
+      const response = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/characters/char-a/greeting-translations?chatId=chat-a',
+        headers: { 'risu-auth': assertion },
+      })
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toEqual({
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        revision,
+        settingsHash: null,
+        translations: [],
+      })
+      expect(readAllDatabaseRows()).toEqual(before)
+    },
+  )
+
   it('returns the exact versioned coherent shell projection', async () => {
     const response = await harness.app.inject({
       method: 'GET',

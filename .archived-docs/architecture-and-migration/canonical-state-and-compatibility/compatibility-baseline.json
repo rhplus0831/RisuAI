@@ -847,12 +847,12 @@
       "malformedBehavior": "Invalid numeric index normalizes to zero; unknown chat binding is cleared by owned delete behavior.",
       "damagedDatabaseBehavior": "Do not renumber or mint preset ids during ordinary translation.",
       "historicalFixture": "server/fastify/__tests__/commands.test.ts",
-      "provenance": "Translator selection/delete/chat-binding command fixtures.",
+      "provenance": "Translator selection/delete/chat-binding command fixtures; schema v37 and backup restore repair legacy numeric selections into existing stable preset IDs.",
       "disposition": "canonical",
       "targetOwner": "stable global selected translator preset id plus explicit chat binding",
       "migrationPhase": "Phase 4 translator ownership",
       "oldReaderOrExporter": "numeric index reader and legacy export projection",
-      "rollbackProof": "Retain ordered presets and index until stable-id restart/export proof passes.",
+      "rollbackProof": "db.test.ts covers migration rollback, retry, restart, and unchanged preset bodies; backups.test.ts covers legacy selection restore.",
       "workstream3Cursor": "Released: numeric inputs are normalized at migration/import, while normal commands require a stable preset id.",
       "probes": [
         {
@@ -865,7 +865,7 @@
           "path": "server/fastify/src/repository.ts",
           "kind": "identifier",
           "value": "translatorPresetId",
-          "expectedCount": 2
+          "expectedCount": 4
         }
       ]
     },

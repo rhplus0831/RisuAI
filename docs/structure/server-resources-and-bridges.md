@@ -83,7 +83,10 @@ capabilities consumed by the shell and protocol adapters:
 - `prepareRouteResources()` loads pre-route requirements plus the exact routed
   chat window/prompt owner before URL state may persist, while
   `finishRouteResources()` revalidates the selected target and applies its
-  compatibility projection. Requirement reads are deduplicated,
+  compatibility projection. Once character detail identifies the owners, chat
+  window and prompt-template bodies load concurrently, including during selected
+  chat readiness. Both must settle successfully before readiness is granted.
+  Requirement reads are deduplicated,
   minimum-revision fenced, and
   aborted when superseded by newer navigation. A route-local failure leaves the
   mounted shell and prior route content intact and exposes a compact Retry

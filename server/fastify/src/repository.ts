@@ -53,6 +53,7 @@ import {
   repairHypaV3PresetSelectionIdentity,
 } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@risuai/shared-core/agent-preset-records'
+import { getCanonicalTranslatorPresets } from '@risuai/shared-core/translator-presets'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -362,6 +363,42 @@ export function repairPersistedHypaV3PresetSelectionIdentityInSqlite(db: Databas
   })
   settings.hypaV3PresetId = result.hypaV3PresetId
   settings.selectedHypaV3PresetId = result.selectedHypaV3PresetId
+  db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+  return true
+}
+
+/** Schema-migration and backup-recovery repair of legacy numeric translator selections. */
+export function repairPersistedTranslatorPresetSelectionIdentityInSqlite(db: DatabaseSync): boolean {
+  const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as
+    | { data_json: string }
+    | undefined
+  if (!settingsRow) return false
+  const settings = JSON.parse(settingsRow.data_json) as unknown
+  if (!isRecord(settings)) return false
+
+  const rows = db.prepare('SELECT data_json FROM translator_presets ORDER BY position').all() as Array<{
+    data_json: string
+  }>
+  const presets = getCanonicalTranslatorPresets({
+    translatorPresets:
+      rows.length > 0
+        ? rows.map((row) => JSON.parse(row.data_json))
+        : Array.isArray(settings.translatorPresets)
+          ? settings.translatorPresets
+          : undefined,
+  })
+  // This migration only repairs the pointer into an existing canonical
+  // collection. It must not replace preset bodies or invent new preset IDs.
+  if (!presets) return false
+  const selection = settings.translatorPresetId
+  if (presets.some((preset) => preset.id === selection)) return false
+  const selected =
+    typeof selection === 'number' && Number.isInteger(selection) && selection >= 0 && selection < presets.length
+      ? presets[selection]!
+      : presets[0]!
+  settings.translatorPresetId = selected.id
+  settings.translatorPrompt = selected.prompt
+  settings.translatorMaxResponse = selected.maxResponse
   db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
   return true
 }
@@ -4129,6 +4166,7 @@ function restoreSqliteFromBackup(
       repairPersistedGlobalLorebookIdsInSqlite(db)
       repairPersistedPersonaSelectionIdentityInSqlite(db)
       repairPersistedHypaV3PresetSelectionIdentityInSqlite(db)
+      repairPersistedTranslatorPresetSelectionIdentityInSqlite(db)
       databaseLineage = rotateDatabaseLineage(db)
       rewriteRestoredGenerationOperationLineage(db, databaseLineage)
       hooks.beforeCommit?.(databaseLineage)

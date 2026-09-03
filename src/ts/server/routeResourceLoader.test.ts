@@ -298,7 +298,19 @@ describe('route resource loader', () => {
     )
     const route = { kind: 'character', path: '/character/char-a/chat-b', chaId: 'char-a', chatId: 'chat-b' } as const
 
-    await expect(prepareRouteResources(route)).resolves.toBe(true)
+    const chatRead = deferred<boolean>()
+    const promptRead = deferred<boolean>()
+    loaderMocks.routeChat.mockReturnValueOnce(chatRead.promise)
+    loaderMocks.prompt.mockReturnValueOnce(promptRead.promise)
+    const preparing = prepareRouteResources(route)
+    // Both requests must start before either body has finished loading.
+    await vi.waitFor(() => expect(loaderMocks.routeChat).toHaveBeenCalledOnce())
+    expect(loaderMocks.prompt).toHaveBeenCalledOnce()
+    promptRead.resolve(true)
+    await Promise.resolve()
+    expect(currentRouteResourceLoadState().status).toBe('loading')
+    chatRead.resolve(true)
+    await expect(preparing).resolves.toBe(true)
     await expect(finishRouteResources(route)).resolves.toBe(true)
     expect(loaderMocks.routeChat).toHaveBeenCalledWith('chat-b', expect.any(Number))
     expect(loaderMocks.prompt).toHaveBeenCalledWith({
@@ -579,7 +591,7 @@ describe('route resource loader', () => {
     await expect(prepareRouteResources(route)).resolves.toBe(true)
     await expect(finishRouteResources(route)).resolves.toBe(true)
     expect(loaderMocks.routeChat).toHaveBeenCalledTimes(2)
-    expect(loaderMocks.prompt).toHaveBeenCalledTimes(2)
+    expect(loaderMocks.prompt).toHaveBeenCalledTimes(3)
     expect(currentRouteResourceLoadState()).toMatchObject({ status: 'ready' })
   })
 })

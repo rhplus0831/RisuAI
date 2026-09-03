@@ -619,18 +619,20 @@ async function prepareRouteTargetResources(
       settingsResourceState.status !== 'error' && settingsResourceState.groupStatuses.display === 'ready'
         ? settingsResourceState.value
         : {}
-    if (!(await hydrateChatMessageWindow(route.chatId, getInitialChatLoadPages(displaySettings)))) {
-      throw new Error('Selected chat hydration failed')
-    }
-    if (!isCurrentRouteLoad(load)) return false
-
     const ownerId = activePromptTemplateOwnerId(route.chatId)
-    const hydrated = await ensurePromptTemplateHydrated({
-      applyProjection: false,
-      minimumRevision,
-      promptPresetId: ownerId,
-    })
-    if (!hydrated) throw new Error('Selected prompt-template hydration failed')
+    // Character detail already identifies both owners. Fetch their independent
+    // bodies together so navigation does not pay for two serial round trips.
+    const [chatHydrated, promptHydrated] = await Promise.all([
+      hydrateChatMessageWindow(route.chatId, getInitialChatLoadPages(displaySettings)),
+      ensurePromptTemplateHydrated({
+        applyProjection: false,
+        minimumRevision,
+        promptPresetId: ownerId,
+      }),
+    ])
+    if (!isCurrentRouteLoad(load)) return false
+    if (!chatHydrated) throw new Error('Selected chat hydration failed')
+    if (!promptHydrated) throw new Error('Selected prompt-template hydration failed')
   } catch (error) {
     if (!isCurrentRouteLoad(load)) return false
     routeResourceLoadState.set({

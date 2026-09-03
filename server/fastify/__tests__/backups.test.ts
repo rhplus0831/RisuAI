@@ -1888,6 +1888,55 @@ describe('backups', () => {
     })
   })
 
+  it('repairs a legacy numeric translator selection when restoring a SQLite backup', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await importDb(harness.app, assertion, {
+      tag: 'legacy-translator-selection',
+      translatorPresetId: 'translator-b',
+      translatorPresets: [
+        { id: 'translator-a', name: 'First', prompt: 'First prompt', maxResponse: 500 },
+        { id: 'translator-b', name: 'Second', prompt: 'Second prompt', maxResponse: 700 },
+      ],
+    })
+    const backup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/backups',
+      headers: { 'risu-auth': assertion },
+      payload: { label: 'legacy translator selection' },
+    })
+    expect(backup.statusCode).toBe(201)
+    const backupDb = new DatabaseSync(path.join(harness.dataDir, 'backups', backup.json().id, 'risu.db'))
+    try {
+      const row = backupDb.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = { ...JSON.parse(row.data_json), translatorPresetId: 1 }
+      backupDb.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+      backupDb.exec('UPDATE schema_version SET version = 36 WHERE id = 1')
+    } finally {
+      backupDb.close()
+    }
+    await importDb(harness.app, assertion, { tag: 'after-translator-backup' })
+    const restored = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/backups/${backup.json().id}/restore`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(restored.statusCode).toBe(200)
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase).toMatchObject({
+      translatorPresetId: 'translator-b',
+      translatorPrompt: 'Second prompt',
+      translatorMaxResponse: 700,
+      translatorPresets: [
+        { id: 'translator-a', prompt: 'First prompt' },
+        { id: 'translator-b', prompt: 'Second prompt' },
+      ],
+    })
+  })
+
   it('repairs durable Hypa V3 preset identity while restoring a pre-v36 SQLite backup', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await importDb(harness.app, assertion, {
