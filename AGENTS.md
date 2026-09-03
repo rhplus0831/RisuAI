@@ -45,8 +45,12 @@ Start by reading `STRUCTURE.md` to understand the project structure.
 # Test Workflow
 
 - While working, run only narrowly scoped tests using `pnpm test -- <test-or-source-file>`.
-- Once all work is complete, run `test:all` and check for bugs.
+- Once all work is complete, run `pnpm test:agent` and check for bugs.
   - “all work is complete” means there is nothing left to do except testing.
+- `pnpm test:agent` owns the core typechecks, topology validation, frontend and
+  server tests, and browser-smoke build. The user and CI retain `pnpm test:all`
+  for formatting, compatibility, coverage, scale, performance, and full
+  Playwright verification.
 
 # Language File
 

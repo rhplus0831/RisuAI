@@ -27,6 +27,7 @@
     "test:compat-harness": "tsx test/compat-harness/run.ts",
     "prepare:compat-baseline": "tsx util/compat-baseline.ts --prepare",
     "validate:compat-registers": "tsx util/validate-original-risu-compatibility-registers.ts",
+    "test:agent": "tsx util/test-agent.ts",
     "test:all": "tsx util/test-all.ts",
     "coverage:all": "sh -c 'pnpm coverage:frontend; frontend=$?; pnpm coverage:backend; backend=$?; exit $((frontend || backend))'",
     "coverage:frontend": "cross-env RISU_TEST_INCLUDE_GATES=true vitest run --coverage --coverage.provider=v8 --coverage.reportsDirectory=coverage/frontend --coverage.include='src/**/*.{ts,svelte}' --coverage.include='util/**/*.ts' --coverage.exclude='server/**' --coverage.reporter=text --coverage.reporter=json-summary --coverage.reporter=html",

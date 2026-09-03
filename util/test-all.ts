@@ -37,6 +37,8 @@ export interface QualityRunReport {
 
 type LaneRunner = (lane: QualityLane) => Promise<QualityLaneResult>
 
+export type QualityCommandName = 'test:agent' | 'test:all'
+
 const defaultJobs = 2
 
 export const qualityLanes: readonly QualityLane[] = [
@@ -135,6 +137,35 @@ export const qualityLanes: readonly QualityLane[] = [
   },
 ]
 
+function requiredQualityLane(id: string): QualityLane {
+  const lane = qualityLanes.find((candidate) => candidate.id === id)
+  if (!lane) throw new Error(`missing required quality lane: ${id}`)
+  return lane
+}
+
+export const agentQualityLanes: readonly QualityLane[] = [
+  requiredQualityLane('server-check'),
+  requiredQualityLane('test-topology'),
+  {
+    ...requiredQualityLane('frontend-tests'),
+    // The agent profile runs the UI-map tests normally, without coverage, and
+    // leaves the resource-sensitive performance probes to their explicit lane.
+    env: {
+      RISU_TEST_EXCLUDE_UI_MAP: 'false',
+      RISU_TEST_INCLUDE_GATES: 'false',
+    },
+  },
+  requiredQualityLane('frontend-check'),
+  requiredQualityLane('server-tests'),
+  {
+    id: 'browser-smoke-build',
+    label: 'browser-smoke build',
+    args: ['build:smoke'],
+    after: ['server-check'],
+    isolated: true,
+  },
+]
+
 function parsePositiveInteger(raw: string, option: string): number {
   const value = Number(raw)
   if (!Number.isInteger(value) || value < 1) {
@@ -147,7 +178,7 @@ export function parseTestAllJobs(raw: string | undefined): number {
   return raw ? parsePositiveInteger(raw, 'RISU_TEST_ALL_JOBS') : defaultJobs
 }
 
-export function parseTestAllCli(args: string[]): TestAllCliOptions {
+export function parseTestAllCli(args: string[], commandName: QualityCommandName = 'test:all'): TestAllCliOptions {
   let dryRun = false
   let jobs = parseTestAllJobs(process.env.RISU_TEST_ALL_JOBS?.trim())
   let timingsJson = false
@@ -168,7 +199,7 @@ export function parseTestAllCli(args: string[]): TestAllCliOptions {
     } else if (arg === '--') {
       continue
     } else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage: pnpm test:all [--jobs <count>] [--dry-run] [--timings=json]
+      console.log(`Usage: pnpm ${commandName} [--jobs <count>] [--dry-run] [--timings=json]
 
 Runs independent quality lanes with bounded concurrency, then runs dist- or load-sensitive
 lanes in isolation. RISU_TEST_ALL_JOBS sets the default concurrency (${defaultJobs}).
@@ -282,9 +313,9 @@ function displayCommand(lane: QualityLane): string {
   return `${env}pnpm ${lane.args.join(' ')}`
 }
 
-function printPlan(jobs: number): void {
-  console.log(`[test:all] up to ${jobs} regular lanes will run concurrently`)
-  for (const lane of qualityLanes) {
+function printPlan(commandName: QualityCommandName, lanes: readonly QualityLane[], jobs: number): void {
+  console.log(`[${commandName}] up to ${jobs} regular lanes will run concurrently`)
+  for (const lane of lanes) {
     const details = [
       lane.isolated ? 'isolated' : undefined,
       lane.after?.length ? `after ${lane.after.join(', ')}` : undefined,
@@ -321,10 +352,14 @@ export function createQualityRunReport(
   }
 }
 
-async function run(): Promise<void> {
-  const options = parseTestAllCli(process.argv.slice(2))
-  validateQualityLanePhases(qualityLanes)
-  printPlan(options.jobs)
+export async function runQualityCommand(
+  commandName: QualityCommandName,
+  lanes: readonly QualityLane[],
+  args = process.argv.slice(2),
+): Promise<void> {
+  const options = parseTestAllCli(args, commandName)
+  validateQualityLanePhases(lanes)
+  printPlan(commandName, lanes, options.jobs)
   if (options.dryRun) return
 
   const pnpmCommand = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
@@ -345,7 +380,7 @@ async function run(): Promise<void> {
       return { id: lane.id, exitCode: 1, elapsedMs: 0, finishedOffsetMs: offset, startedOffsetMs: offset }
     }
     const laneStartedAt = performance.now()
-    console.log(`\n[test:all] starting ${lane.label}: ${displayCommand(lane)}`)
+    console.log(`\n[${commandName}] starting ${lane.label}: ${displayCommand(lane)}`)
 
     const exitCode = await new Promise<number>((resolve) => {
       const spawnOptions: SpawnOptions = {
@@ -357,7 +392,7 @@ async function run(): Promise<void> {
       children.add(child)
       child.once('error', (error) => {
         children.delete(child)
-        console.error(`[test:all] could not start ${lane.label}: ${error.message}`)
+        console.error(`[${commandName}] could not start ${lane.label}: ${error.message}`)
         resolve(1)
       })
       child.once('exit', (code) => {
@@ -369,7 +404,7 @@ async function run(): Promise<void> {
     const finishedAt = performance.now()
     const elapsedMs = finishedAt - laneStartedAt
     const status = exitCode === 0 ? 'passed' : `failed (exit ${exitCode})`
-    console.log(`\n[test:all] ${lane.label} ${status} in ${formatDuration(elapsedMs)}`)
+    console.log(`\n[${commandName}] ${lane.label} ${status} in ${formatDuration(elapsedMs)}`)
     return {
       id: lane.id,
       exitCode,
@@ -379,35 +414,39 @@ async function run(): Promise<void> {
     }
   }
 
-  const regularLanes = qualityLanes.filter((lane) => !lane.isolated)
-  const isolatedLanes = qualityLanes.filter((lane) => lane.isolated)
+  const regularLanes = lanes.filter((lane) => !lane.isolated)
+  const isolatedLanes = lanes.filter((lane) => lane.isolated)
   const results = await runLanePool(regularLanes, options.jobs, runLane)
   for (const lane of isolatedLanes) {
     results.push(await runLane(lane))
   }
 
   if (interruptedSignal) {
-    console.error(`[test:all] interrupted by ${interruptedSignal}`)
+    console.error(`[${commandName}] interrupted by ${interruptedSignal}`)
     process.exitCode = interruptedSignal === 'SIGINT' ? 130 : 143
     return
   }
 
   const aggregateElapsedMs = performance.now() - startedAt
-  console.log(`\n[test:all] completed in ${formatDuration(aggregateElapsedMs)}`)
-  for (const lane of qualityLanes) {
+  console.log(`\n[${commandName}] completed in ${formatDuration(aggregateElapsedMs)}`)
+  for (const lane of lanes) {
     const result = results.find((candidate) => candidate.id === lane.id)
     const status = result?.exitCode === 0 ? 'PASS' : 'FAIL'
     console.log(`  ${status}  ${lane.label} (${formatDuration(result?.elapsedMs ?? 0)})`)
   }
   if (options.timingsJson)
-    console.log(JSON.stringify(createQualityRunReport(qualityLanes, results, options.jobs, aggregateElapsedMs)))
+    console.log(JSON.stringify(createQualityRunReport(lanes, results, options.jobs, aggregateElapsedMs)))
   if (results.some((result) => result.exitCode !== 0)) process.exitCode = 1
+}
+
+export function runQualityCommandCli(commandName: QualityCommandName, lanes: readonly QualityLane[]): void {
+  runQualityCommand(commandName, lanes).catch((error) => {
+    console.error(`[${commandName}] ${error instanceof Error ? error.message : String(error)}`)
+    process.exitCode = 1
+  })
 }
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : ''
 if (invokedPath && fileURLToPath(import.meta.url) === invokedPath && existsSync(invokedPath)) {
-  run().catch((error) => {
-    console.error(`[test:all] ${error instanceof Error ? error.message : String(error)}`)
-    process.exitCode = 1
-  })
+  runQualityCommandCli('test:all', qualityLanes)
 }

@@ -685,21 +685,23 @@ Do not create Workstream 4 as active during this initial activation.
 ## Shared Verification Ladder
 
 During implementation, an agent may run `pnpm test -- <one-test-or-source-file>`
-only when that focused result answers a concrete question. Phase and workstream
-closeout use user/CI-owned full-suite results and record the tested commit plus
-exact evidence in `latest-verification.md`.
+only when that focused result answers a concrete question. Once implementation
+is complete, the agent runs `pnpm test:agent`; phase and workstream closeout use
+user/CI-owned full-suite results and record the tested commit plus exact evidence
+in `latest-verification.md`.
 
 The expected ladder is:
 
 1. Optional agent-focused unit or integration feedback for one exact owner.
-2. User/CI typecheck and architecture/import/contract results.
-3. User/CI complete frontend/server, compatibility, browser-smoke, and
+2. Agent-final core typecheck, topology, frontend/server, and smoke-build results.
+3. User/CI complete compatibility, browser-smoke, formatting, coverage, and
    performance/payload/replay results required by the phase risk.
 4. Prettier, `git diff --check`, current architecture documentation, and a final
    verification record tied to the tested commit.
 
-Agents do not run `pnpm test:all` or the component lanes behind it. The user owns
-periodic aggregate execution, failure triage, and closeout acceptance.
+Agents run `pnpm test:agent`, not `pnpm test:all`, at the completed implementation
+boundary. The user owns periodic full aggregate execution, specialized-lane
+failure triage, and closeout acceptance.
 
 ## Portfolio Completion Criteria
 

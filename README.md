@@ -104,16 +104,28 @@ Run one exact test, or tests related to one source file, with:
 pnpm test -- <test-or-source-file>
 ```
 
-The user/CI-owned complete quality lane (frontend routing, formatting,
-typechecks, frontend/server tests, UI coverage, isolated performance gates, and
-browser smoke) uses bounded local concurrency:
+After completing agent development, run the core final profile:
+
+```
+pnpm test:agent
+```
+
+It runs the typechecks, test-topology validation, ordinary frontend and server
+tests, and the browser-smoke build. It leaves repository-wide formatting,
+compatibility, coverage, scale, performance, and full Playwright verification
+to the complete quality aggregate below.
+
+The user/CI-owned complete quality lane (formatting, typechecks, topology,
+frontend/server tests, compatibility, UI coverage, Realm scale, isolated
+performance gates, and browser smoke) uses bounded local concurrency:
 
 ```
 pnpm test:all
 ```
 
-It defaults to two concurrent lanes. Use `pnpm test:all --jobs 3` to tune the
-limit for a larger machine, or `pnpm test:all --dry-run` to inspect the schedule.
+Both aggregate commands default to two concurrent regular lanes. Pass
+`--jobs 3` to tune the limit for a larger machine, or `--dry-run` to inspect
+either schedule.
 
 ### Contributing
 

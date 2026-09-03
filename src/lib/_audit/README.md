@@ -9,7 +9,8 @@ Agents may select one exact audit probe with:
 pnpm test -- src/lib/_audit/<owner>.test.ts
 ```
 
-The user/CI `pnpm test:all` aggregate includes the complete audit set.
+Both `pnpm test:agent` and the user/CI `pnpm test:all` aggregate include the
+complete audit set.
 
 Keep ordinary component regressions next to their components. Use this directory
 only for cross-cutting audit acceptance probes that benefit from a dedicated

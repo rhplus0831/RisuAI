@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { uiCoverageSupportFiles, uiCoverageTestFiles } from '../vitest.ui-coverage-tests.js'
 import { performanceTestFiles } from '../vitest.performance-tests.js'
 import {
+  agentQualityLanes,
   createQualityRunReport,
   parseTestAllCli,
   parseTestAllJobs,
@@ -20,6 +21,30 @@ describe('test:all orchestration', () => {
     expect(() => parseTestAllJobs('0')).toThrow('positive integer')
     expect(parseTestAllCli(['--timings=json'])).toMatchObject({ timingsJson: true })
     expect(parseTestAllCli([])).toMatchObject({ timingsJson: false })
+  })
+
+  it('keeps the agent final profile focused on core tests, checks, and the smoke build', () => {
+    expect(agentQualityLanes.map((lane) => lane.id)).toEqual([
+      'server-check',
+      'test-topology',
+      'frontend-tests',
+      'frontend-check',
+      'server-tests',
+      'browser-smoke-build',
+    ])
+
+    const byId = new Map(agentQualityLanes.map((lane) => [lane.id, lane]))
+    expect(byId.get('frontend-tests')?.env).toEqual({
+      RISU_TEST_EXCLUDE_UI_MAP: 'false',
+      RISU_TEST_INCLUDE_GATES: 'false',
+    })
+    expect(byId.get('server-tests')?.isolated).toBe(true)
+    expect(byId.get('browser-smoke-build')).toMatchObject({
+      args: ['build:smoke'],
+      after: ['server-check'],
+      isolated: true,
+    })
+    expect(() => validateQualityLanePhases(agentQualityLanes)).not.toThrow()
   })
 
   it('keeps dist and duplicate-test conflicts ordered and performance gates isolated', () => {
@@ -62,9 +87,11 @@ describe('test:all orchestration', () => {
 
     const packageScripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts as Record<string, string>
     expect(packageScripts['coverage:ui-map'].match(/src\/\S+\.test\.ts/g)).toEqual([...uiCoverageTestFiles])
+    expect(packageScripts['test:agent']).toBe('tsx util/test-agent.ts')
     expect(Object.keys(packageScripts).filter((script) => script.startsWith('test'))).toEqual([
       'test',
       'test:compat-harness',
+      'test:agent',
       'test:all',
     ])
   })

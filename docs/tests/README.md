@@ -1,6 +1,6 @@
 # Test Suite Guide
 
-Last audited: 2026-08-29.
+Last audited: 2026-09-03.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
@@ -59,21 +59,22 @@ The canonical command inventory and lane semantics are in
 | Goal | Command |
 | ---- | ------- |
 | Agent-focused test or related-source feedback | `pnpm test -- <one-test-or-source-file>` |
+| Completed agent-development verification | `pnpm test:agent` |
 | User-owned full local quality aggregate | `pnpm test:all` |
 | Full pinned compatibility differential | `pnpm prepare:compat-baseline && pnpm test:compat-harness` |
 | Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
 
-Agents may use only the focused command, only when it answers a concrete
-implementation question. It accepts exactly one repository file, rejects
-directories, globs, and arbitrary runner flags, runs exact tests in their owning
-runtime, and uses Vitest related-test discovery for source files. Shared
-protocol/core sources query both frontend and server projects. A selected
-browser-smoke spec performs its required build and runs only that spec.
+During implementation, agents use the focused command only when it answers a
+concrete question. It accepts exactly one repository file, rejects directories,
+globs, and arbitrary runner flags, runs exact tests in their owning runtime, and
+uses Vitest related-test discovery for source files. Shared protocol/core
+sources query both frontend and server projects. A selected browser-smoke spec
+performs its required build and runs only that spec.
 
-Agents do not run affected, broad lane, coverage, compatibility, smoke-suite, or
-aggregate commands at handoff. The user and CI own periodic full-suite execution
-and result review. Agent handoffs record the one focused command that ran, or
-state that no tests were run.
+After implementation is complete, agents run `pnpm test:agent` once. It owns
+the core typechecks, topology, ordinary frontend/server suites, and smoke build.
+The user and CI retain the full formatting, coverage, compatibility, scale,
+performance, and Playwright aggregate through `pnpm test:all`.
 
 ### Compatibility evidence ownership
 
@@ -142,11 +143,17 @@ reason. Explicit suffixes and legacy registrations determine Svelte+Node and DOM
 ownership; other `*.test.ts` files default to Node. Use runner discovery for the
 current exact file distribution.
 
-Playwright keeps each spec serial, uses two local file workers (one in CI),
-retains traces on failure, and sets `forbidOnly` in CI. The normally skipped
+Playwright keeps each spec serial, uses 75% of available local CPUs up to eight
+file workers (one in CI), retains traces on failure, and sets `forbidOnly` in CI. The normally skipped
 7,000-display-asset Realm stress case is enabled by running
 `realmImport.test.ts` directly. Broad frontend and backend coverage are
 report-only; only the focused UI map has thresholds.
+
+The agent-final `test:agent` command uses the same scheduler but selects only
+`check:server`, topology, ordinary frontend tests, `pnpm check`, isolated server
+tests, and `build:smoke`. Its frontend subprocess runs the six UI-map sentinel
+files without coverage instrumentation and excludes the two explicit performance
+probes. It never launches Playwright.
 
 The user-owned `test:all` command defaults to two concurrent outer lanes; override it with
 `RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
