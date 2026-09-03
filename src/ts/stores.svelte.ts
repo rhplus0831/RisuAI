@@ -69,7 +69,7 @@ export const hypaV3ModalOpen = writable(false)
 CustomCSSStore.subscribe((css) => {
   const q = document.querySelector('#customcss')
   if (q) {
-    q.innerHTML = css
+    if (q.innerHTML !== css) q.innerHTML = css
   } else {
     const s = document.createElement('style')
     s.id = 'customcss'

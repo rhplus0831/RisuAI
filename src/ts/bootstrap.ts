@@ -209,6 +209,7 @@ import {
   type StartupRetryTarget,
 } from './startupReadiness'
 import { startStartupTelemetryPublisher } from './server/startupTelemetry'
+import { cacheDisplaySettings } from './gui/displaySettingsCache'
 
 setPendingMutationDiscardNotifier((key, error) => {
   alertError(`${language.pendingMutationDiscarded}\n\n${language.pendingMutationDiscardedDetail(key, error)}`)
@@ -239,6 +240,7 @@ function hasProjectedRuntimeKey(keys: readonly string[], candidates: ReadonlySet
 }
 
 setSettingsRuntimeProjectionHook((keys) => {
+  cacheDisplaySettings(settingsResourceState.value, keys)
   const colorSchemeChanged = hasProjectedRuntimeKey(keys, COLOR_SCHEME_RUNTIME_KEYS)
   if (colorSchemeChanged) updateColorScheme()
   if (colorSchemeChanged || hasProjectedRuntimeKey(keys, TEXT_THEME_RUNTIME_KEYS)) updateTextThemeAndCSS()

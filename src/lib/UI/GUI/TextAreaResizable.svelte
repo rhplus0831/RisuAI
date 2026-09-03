@@ -11,6 +11,7 @@
     popUpEditorStore,
   } from 'src/ts/stores.svelte'
   import { longpress } from 'src/ts/gui/longtouch'
+  import { displaySettingForPaint } from 'src/ts/gui/displaySettings'
   import { sleep } from 'src/ts/util'
   import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
 
@@ -26,9 +27,8 @@
       ? settingsResourceState.value.hotkeys?.find((hotkey) => hotkey.action === 'popupEditor')
       : undefined,
   )
-  let displaySettingsReady = $derived(settingsResourceState.groupStatuses.display === 'ready')
-  let zoomSize = $derived(displaySettingsReady ? (settingsResourceState.value.zoomsize ?? 100) : 100)
-  let lineHeight = $derived(displaySettingsReady ? (settingsResourceState.value.lineHeight ?? 1.25) : 1.25)
+  let zoomSize = $derived(displaySettingForPaint('zoomsize') ?? 100)
+  let lineHeight = $derived(displaySettingForPaint('lineHeight') ?? 1.25)
   interface Props {
     value?: string
     handleLongPress?: any

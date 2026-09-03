@@ -266,11 +266,17 @@ by CSS variables such as `--risu-theme-bgcolor`, `--risu-theme-textcolor`, and
 Display controls update CSS through `src/ts/gui/colorscheme.ts` for color and
 text themes, `src/ts/gui/guisize.ts` for dimensions,
 `src/ts/gui/animation.ts` for animation and the `risu-reduced-motion` class,
-and `CustomCSSStore` for injected custom CSS. Custom CSS also has a synchronous,
-display-only `localStorage` cache: store initialization paints the cached value
-before server startup reads finish, and every shell/settings projection
-reconciles the cache and live style with the server-backed value. Safe Mode
-clears only the live style, not the cache. The visual palette selector and
+and `CustomCSSStore` for injected custom CSS. `gui/displaySettingsCache.ts`
+stores an allowlisted, display-only `localStorage` snapshot of theme/layout,
+font, size, and motion preferences plus their resolved root CSS properties.
+The synchronous `index.html` bootstraps restore those properties and Custom CSS
+before visible markup or the application bundle. Both loading surfaces use
+theme colors. Size and palette stores initialize from the cache;
+`gui/displaySettings.ts` supplies read-only paint hints while the Display group
+loads, without marking any resource ready or enabling mutations. Resident
+server settings take precedence during later refreshes, and shell/group
+projections reconcile the cache without rewriting unchanged styles. Safe Mode
+clears only live Custom CSS, not its cache. The visual palette selector and
 durable custom scheme are documented in
 [Settings UI](svelte-settings-ui.md#display-and-theme-controls).
 

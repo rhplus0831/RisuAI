@@ -26,6 +26,7 @@ import {
 } from '@risuai/protocol/display-source'
 import type { DisplaySourceLayer } from '@risuai/protocol/display-source'
 import type { DisplaySourcePriority } from '../../ts/server/displaySources'
+import { displaySettingForPaint } from '../../ts/gui/displaySettings'
 
 export type ChatBodyParseMode = 'normal' | 'back' | 'pretranslate' | 'notrim'
 
@@ -36,6 +37,7 @@ export interface ChatBodyParseOwnerReaders {
   activeCharacterOwner: () => character | undefined
   activeChatOwner: () => Chat | undefined
   settingsOwner: () => Partial<Database>
+  assetWidthForPaint?: () => Database['assetWidth'] | undefined
   promptPresetOwners: () => Database['promptPresets'] | undefined
 }
 
@@ -55,6 +57,7 @@ export function createChatBodyParseOwnerReaders(): ChatBodyParseOwnerReaders {
     activeCharacterOwner: getSelectedCharacterOwner,
     activeChatOwner,
     settingsOwner: () => settingsResourceState.value as Partial<Database>,
+    assetWidthForPaint: () => displaySettingForPaint('assetWidth'),
     promptPresetOwners: () => collectionsResourceState.values.promptPresets,
   }
 }
@@ -440,7 +443,7 @@ function parseSettingsSignature(owners: ChatBodyParseOwnerReaders) {
     paragraphBreakBySentences: db.paragraphBreakBySentences ?? false,
     paragraphBreakSentenceCount: db.paragraphBreakSentenceCount ?? 3,
     blockquoteStyling: db.blockquoteStyling,
-    assetWidth: db.assetWidth,
+    assetWidth: owners.assetWidthForPaint ? owners.assetWidthForPaint() : db.assetWidth,
     assetMaxDifference: db.assetMaxDifference,
     legacyMediaFindings: db.legacyMediaFindings,
     dynamicAssets: db.dynamicAssets,
@@ -463,7 +466,7 @@ function settingsSignatureToken(owners: ChatBodyParseOwnerReaders) {
     paragraphBreakBySentences: db.paragraphBreakBySentences ?? false,
     paragraphBreakSentenceCount: db.paragraphBreakSentenceCount ?? 3,
     blockquoteStyling: db.blockquoteStyling,
-    assetWidth: db.assetWidth,
+    assetWidth: owners.assetWidthForPaint ? owners.assetWidthForPaint() : db.assetWidth,
     assetMaxDifference: db.assetMaxDifference,
     legacyMediaFindings: db.legacyMediaFindings,
     dynamicAssets: db.dynamicAssets,

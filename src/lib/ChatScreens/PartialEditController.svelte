@@ -190,7 +190,7 @@
   import { CheckIcon, XIcon } from '@lucide/svelte'
   import { createEventDispatcher, onDestroy } from 'svelte'
   import { language } from 'src/lang'
-  import { settingsResourceState } from 'src/ts/server/resourceState.svelte'
+  import { displaySettingForPaint } from 'src/ts/gui/displaySettings'
   import {
     findAllOriginalRangesFromHtml,
     findAllOriginalRangesFromText,
@@ -236,9 +236,8 @@
   let displayMode: PartialEditDisplayMode = $derived(
     typeof translationText !== 'string' ? 'original' : bilingualActive ? 'bilingual' : 'translation',
   )
-  let displaySettingsReady = $derived(settingsResourceState.groupStatuses.display === 'ready')
-  let zoomSize = $derived(displaySettingsReady ? (settingsResourceState.value.zoomsize ?? 100) : 100)
-  let lineHeight = $derived(displaySettingsReady ? (settingsResourceState.value.lineHeight ?? 1.25) : 1.25)
+  let zoomSize = $derived(displaySettingForPaint('zoomsize') ?? 100)
+  let lineHeight = $derived(displaySettingForPaint('lineHeight') ?? 1.25)
 
   function layerSourceData(layer: PartialEditLayer): string | null {
     if (layer === 'translation') return typeof translationText === 'string' ? translationText : null

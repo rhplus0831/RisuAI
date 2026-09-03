@@ -32,6 +32,7 @@
     createChatCopyName,
   } from 'src/ts/globalApi.svelte'
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
+  import { displaySettingsForPaint } from 'src/ts/gui/displaySettings'
   import { longpress } from 'src/ts/gui/longtouch'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { runLuaButtonTrigger } from 'src/ts/process/scriptings'
@@ -238,6 +239,7 @@
   }
 
   function readSettingsGroup(group: SettingsGroup): Partial<Database> {
+    if (group === 'display') return displaySettingsForPaint()
     const status = settingsResourceState.groupStatuses[group] ?? 'idle'
     if (status === 'ready') return settingsResourceState.value as Partial<Database>
     return {}

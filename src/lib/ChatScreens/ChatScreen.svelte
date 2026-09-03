@@ -19,11 +19,7 @@
   } from '../../ts/characterState'
 
   import { isServerCharacterShell, type Database, type character } from 'src/ts/storage/database.svelte'
-  import {
-    charactersResourceState,
-    getChatMetadataOwnerState,
-    settingsResourceState,
-  } from 'src/ts/server/resourceState.svelte'
+  import { charactersResourceState, getChatMetadataOwnerState } from 'src/ts/server/resourceState.svelte'
   import { CharEmotion, selectedCharID } from '../../ts/stores.svelte'
   import ResizeBox from './ResizeBox.svelte'
   import DefaultChatScreen from './DefaultChatScreen.svelte'
@@ -36,6 +32,7 @@
   import CharacterShellHydrationGate from './CharacterShellHydrationGate.svelte'
   import { currentRoute, type AppRoute } from 'src/ts/router'
   import { language } from 'src/lang'
+  import { displaySettingsForPaint } from 'src/ts/gui/displaySettings'
 
   let { route }: { route?: AppRoute } = $props()
   let visibleRoute = $derived(route ?? $currentRoute)
@@ -112,10 +109,7 @@
 
   const wallPaper = `background: url(${defaultWallpaper})`
   function readDisplaySettings(): Partial<Database> {
-    const status = settingsResourceState.groupStatuses.display ?? 'idle'
-    if (status === 'ready') return settingsResourceState.value as Partial<Database>
-    if (status === 'idle' || status === 'loading') return settingsResourceState.value as Partial<Database>
-    return {}
+    return displaySettingsForPaint()
   }
 
   let displaySettings = $derived(readDisplaySettings())

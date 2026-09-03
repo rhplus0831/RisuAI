@@ -63,6 +63,7 @@ import {
 import { getChatMessageOwnerState } from '../server/chatMessageHydration.svelte'
 import { SERVER_SETTINGS_GROUP_BY_KEY } from '../server/settingsGroups'
 import { SERVER_STANDALONE_SETTING_NAMES } from '@risuai/protocol/standalone-settings'
+import { displaySettingForPaint } from '../gui/displaySettings'
 
 export { dateTimeFormat, makeArray, parseArray, parseDict, risuEscape, risuUnescape }
 export type { CbsConditions }
@@ -853,7 +854,7 @@ async function parseAdditionalAssets(
   arg: { ch: number },
   context: AssetResolutionContext,
 ) {
-  const assetWidth = parserSetting('assetWidth')
+  const assetWidth = displaySettingForPaint('assetWidth')
   const hideAllImages = parserSetting('hideAllImages') === true
   const legacyMediaFindings = parserSetting('legacyMediaFindings') === true
   const assetWidthString = (assetWidth && assetWidth !== -1) || assetWidth === 0 ? `max-width:${assetWidth}rem;` : ''

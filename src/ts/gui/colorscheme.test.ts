@@ -82,6 +82,8 @@ import {
   type ColorScheme,
 } from './colorscheme'
 import { language } from 'src/lang'
+import { isLite } from '../lite'
+import { readDisplaySettingsCache } from './displaySettingsCache'
 
 type SelectedFile = {
   name: string
@@ -142,6 +144,7 @@ async function flushAsync(): Promise<void> {
 }
 
 beforeEach(() => {
+  isLite.set(false)
   colorSchemeMocks.database = {
     colorSchemeName: 'default',
     colorScheme: scheme('aaa'),
@@ -365,6 +368,24 @@ describe('built-in color scheme contrast', () => {
 })
 
 describe('native control color scheme', () => {
+  it('applies and caches the shell palette before the Display group is ready', () => {
+    colorSchemeMocks.settingsResourceState.groupStatuses.display = 'idle'
+    colorSchemeMocks.settingsResourceState.shellRevision = 7
+    colorSchemeMocks.database.colorScheme = { ...builtInColorSchemes.light }
+    updateColorScheme()
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-bgcolor')).toBe('#ffffff')
+    expect(readDisplaySettingsCache().styles['--risu-theme-color-scheme']).toBe('light')
+  })
+
+  it('caches the resolved Lite palette instead of the configured light palette', () => {
+    isLite.set(true)
+    colorSchemeMocks.database.colorScheme = { ...builtInColorSchemes.light }
+    updateColorScheme()
+    expect(readDisplaySettingsCache().styles['--risu-theme-bgcolor']).toBe(builtInColorSchemes.lite.bgcolor)
+    expect(readDisplaySettingsCache().styles['--risu-theme-color-scheme']).toBe('dark')
+    isLite.set(false)
+  })
+
   it.each(['dark', 'light'] as const)('publishes the %s scheme for browser-owned controls', (type) => {
     colorSchemeMocks.database.colorScheme = { ...scheme('aaa'), type }
 

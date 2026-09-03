@@ -491,7 +491,7 @@
     </div>
   {:else if !$startupCoordinatorStore.capabilities.canRenderShell}
     <div
-      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col"
+      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-bgcolor flex-col"
       role="status"
       aria-live="polite"
       aria-busy="true">

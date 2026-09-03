@@ -6,6 +6,8 @@ const databaseState = vi.hoisted(() => ({
   settingsResourceState: {
     value: {} as Record<string, unknown>,
     groupStatuses: { display: 'ready' },
+    status: 'ready',
+    shellRevision: null as number | null,
   },
 }))
 
@@ -23,6 +25,7 @@ beforeEach(() => {
   databaseState.value = {}
   databaseState.settingsResourceState.value = databaseState.value
   databaseState.settingsResourceState.groupStatuses.display = 'ready'
+  databaseState.settingsResourceState.shellRevision = null
   textAreaSize.set(0)
   textAreaTextSize.set(0)
   sideBarSize.set(0)
@@ -35,6 +38,8 @@ describe('GUI size projection effects', () => {
     textAreaTextSize.set(3)
     databaseState.value = { sideBarSize: 1 }
     databaseState.settingsResourceState.value = databaseState.value
+    databaseState.settingsResourceState.groupStatuses.display = 'idle'
+    databaseState.settingsResourceState.shellRevision = 5
 
     updateGuisize()
 
@@ -54,6 +59,14 @@ describe('GUI size projection effects', () => {
     expect(get(textAreaSize)).toBe(4)
     expect(get(textAreaTextSize)).toBe(-1)
     expect(document.documentElement.style.getPropertyValue('--sidebar-size')).toBe('32rem')
+  })
+
+  it('clears cached textarea sizes when they are absent from a complete display projection', () => {
+    textAreaSize.set(3)
+    textAreaTextSize.set(2)
+    updateGuisize()
+    expect(get(textAreaSize)).toBe(0)
+    expect(get(textAreaTextSize)).toBe(0)
   })
 
   it('keeps the last projection when the display owner is in error', () => {

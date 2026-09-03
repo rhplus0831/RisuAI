@@ -245,10 +245,12 @@
   import { loadPlaygroundMenu } from 'src/ts/routeComponentPreload'
   import { cleanAutoSuggestionInput } from 'src/ts/model/autoSuggestionCleanup'
   import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
+  import { displaySettingForPaint } from 'src/ts/gui/displaySettings'
   const composerFileOperationGuard = createLatestOperationGuard<string>()
   const composerOperationGuard = createLatestOperationGuard<string>()
 
   function groupedSetting<K extends keyof Database>(group: SettingsGroup, key: K): Database[K] | undefined {
+    if (group === 'display') return displaySettingForPaint(key)
     const ownerValue = (settingsResourceState.value as unknown as Partial<Database>)[key] as Database[K] | undefined
     return resolveReadyOwnerValue(settingsResourceState.groupStatuses[group] ?? 'idle', ownerValue, undefined)
   }

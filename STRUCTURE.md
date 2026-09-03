@@ -66,7 +66,7 @@ source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
 
 | Path | Responsibility |
 | ---- | -------------- |
-| `index.html` | Declares the app mount/preloader, loads `src/main.ts`, and requests `interactive-widget=resizes-content`. |
+| `index.html` | Restores the display-only paint caches synchronously, declares the app mount/preloader, loads `src/main.ts`, and requests `interactive-widget=resizes-content`. |
 | `src/main.ts` | Thin browser entry boundary: records entry readiness, installs the runtime environment, handles preload failures, and dynamically imports `src/appStartup.ts`. |
 | `src/appStartup.ts` | Installs routing, push listeners, viewport coordination, root-scroll protection, and completion-audio unlocking; mounts the app, starts bootstrap/hotkeys and route warming, and removes the preloader. |
 | `src/App.svelte` | Svelte application shell, top-level render routing, overlays, and selected-character visibility guard. |

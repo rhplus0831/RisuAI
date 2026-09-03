@@ -26,6 +26,7 @@
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { collectionsResourceState, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import { isLite } from 'src/ts/lite'
+  import { displaySettingForPaint } from 'src/ts/gui/displaySettings'
   import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte'
   import LazyComponent from '../UI/LazyComponent.svelte'
   import { alertConfirm } from 'src/ts/alert'
@@ -71,11 +72,7 @@
     settingsResourceState.groupStatuses.sidebar === 'ready' &&
       settingsResourceState.value.enableRisuaiProTools === true,
   )
-  let settingsCloseButtonSize = $derived(
-    settingsResourceState.groupStatuses.display === 'ready'
-      ? settingsResourceState.value.settingsCloseButtonSize
-      : undefined,
-  )
+  let settingsCloseButtonSize = $derived(displaySettingForPaint('settingsCloseButtonSize'))
   let hasBotPresets = $derived(
     collectionsResourceState.statuses.botPresets === 'ready' &&
       Array.isArray(collectionsResourceState.values.botPresets) &&

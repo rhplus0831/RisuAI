@@ -20,6 +20,13 @@ import {
 import { language } from 'src/lang'
 import { settingsResourceState } from '../server/resourceState.svelte'
 import { cacheCustomCSS } from './customCSSCache'
+import { runtimeDisplaySettingsOwner } from './displaySettings'
+import {
+  applyDisplayStyles,
+  cacheDisplaySettings,
+  readDisplaySettingsCache,
+  type DisplayStyleProperties,
+} from './displaySettingsCache'
 
 export interface ColorScheme {
   bgcolor: string
@@ -268,7 +275,9 @@ export function migrateLegacyBuiltInColorScheme(name: unknown, scheme: ColorSche
   return unchangedFields ? ({ ...current } as ColorScheme) : scheme
 }
 
-export const ColorSchemeTypeStore = writable('dark' as 'dark' | 'light')
+export const ColorSchemeTypeStore = writable<'dark' | 'light'>(
+  readDisplaySettingsCache().styles['--risu-theme-color-scheme'] === 'light' ? 'light' : 'dark',
+)
 
 export const colorSchemePresets = builtInColorSchemes
 
@@ -278,15 +287,6 @@ function displaySettingsOwner(): Partial<Database> | undefined {
   const status = settingsResourceState.groupStatuses.display ?? 'idle'
   if (status === 'ready') return settingsResourceState.value as Partial<Database>
   return undefined
-}
-
-function runtimeDisplaySettingsOwner(): Partial<Database> | undefined {
-  return (
-    displaySettingsOwner() ??
-    (settingsResourceState.status === 'ready' && settingsResourceState.shellRevision !== null
-      ? (settingsResourceState.value as Partial<Database>)
-      : undefined)
-  )
 }
 
 export function changeColorScheme(colorScheme: string) {
@@ -320,7 +320,7 @@ export function updateCustomColorScheme(customColorScheme?: ColorScheme) {
 
 export function updateColorScheme() {
   try {
-    const db = displaySettingsOwner()
+    const db = runtimeDisplaySettingsOwner()
     if (!db) return
 
     let colorScheme = db.colorScheme
@@ -339,17 +339,18 @@ export function updateColorScheme() {
       colorScheme = safeStructuredClone(builtInColorSchemes.lite)
     }
 
-    //set css variables
-    document.documentElement.style.setProperty('--risu-theme-bgcolor', colorScheme.bgcolor)
-    document.documentElement.style.setProperty('--risu-theme-darkbg', colorScheme.darkbg)
-    document.documentElement.style.setProperty('--risu-theme-borderc', colorScheme.borderc)
-    document.documentElement.style.setProperty('--risu-theme-selected', colorScheme.selected)
-    document.documentElement.style.setProperty('--risu-theme-draculared', colorScheme.draculared)
-    document.documentElement.style.setProperty('--risu-theme-textcolor', colorScheme.textcolor)
-    document.documentElement.style.setProperty('--risu-theme-textcolor2', colorScheme.textcolor2)
-    document.documentElement.style.setProperty('--risu-theme-darkborderc', colorScheme.darkBorderc)
-    document.documentElement.style.setProperty('--risu-theme-darkbutton', colorScheme.darkbutton)
-    document.documentElement.style.setProperty('--risu-theme-color-scheme', colorScheme.type)
+    applyDisplayStyles({
+      '--risu-theme-bgcolor': colorScheme.bgcolor,
+      '--risu-theme-darkbg': colorScheme.darkbg,
+      '--risu-theme-borderc': colorScheme.borderc,
+      '--risu-theme-selected': colorScheme.selected,
+      '--risu-theme-draculared': colorScheme.draculared,
+      '--risu-theme-textcolor': colorScheme.textcolor,
+      '--risu-theme-textcolor2': colorScheme.textcolor2,
+      '--risu-theme-darkborderc': colorScheme.darkBorderc,
+      '--risu-theme-darkbutton': colorScheme.darkbutton,
+      '--risu-theme-color-scheme': colorScheme.type,
+    })
     ColorSchemeTypeStore.set(colorScheme.type)
   } catch (error) {}
 }
@@ -446,72 +447,53 @@ export function updateTextThemeAndCSS() {
   const displayedCustomCSS = get(SafeModeStore) ? '' : customCSS
   if (get(CustomCSSStore) !== displayedCustomCSS) CustomCSSStore.set(displayedCustomCSS)
 
-  const root = document.querySelector(':root') as HTMLElement
-  if (!root) {
-    return
-  }
-  let textTheme = get(isLite) ? 'standard' : db.textTheme
-  let colorScheme = get(isLite) ? 'dark' : db.colorScheme.type
+  const styles: DisplayStyleProperties = {}
+  const textTheme = get(isLite) ? 'standard' : db.textTheme
+  const colorScheme = get(isLite) ? 'dark' : db.colorScheme?.type
   switch (textTheme) {
     case 'standard': {
-      if (colorScheme === 'dark') {
-        root.style.setProperty('--FontColorStandard', '#fafafa')
-        root.style.setProperty('--FontColorItalic', '#8C8D93')
-        root.style.setProperty('--FontColorBold', '#fafafa')
-        root.style.setProperty('--FontColorItalicBold', '#8C8D93')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      } else {
-        root.style.setProperty('--FontColorStandard', '#0f172a')
-        root.style.setProperty('--FontColorItalic', '#8C8D93')
-        root.style.setProperty('--FontColorBold', '#0f172a')
-        root.style.setProperty('--FontColorItalicBold', '#8C8D93')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      }
+      styles['--FontColorStandard'] = colorScheme === 'dark' ? '#fafafa' : '#0f172a'
+      styles['--FontColorItalic'] = '#8C8D93'
+      styles['--FontColorBold'] = styles['--FontColorStandard']
+      styles['--FontColorItalicBold'] = '#8C8D93'
+      styles['--FontColorQuote1'] = '#8BE9FD'
+      styles['--FontColorQuote2'] = '#FFB86C'
       break
     }
     case 'highcontrast': {
-      if (colorScheme === 'dark') {
-        root.style.setProperty('--FontColorStandard', '#f8f8f2')
-        root.style.setProperty('--FontColorItalic', '#F1FA8C')
-        root.style.setProperty('--FontColorBold', '#8BE9FD')
-        root.style.setProperty('--FontColorItalicBold', '#FFB86C')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      } else {
-        root.style.setProperty('--FontColorStandard', '#0f172a')
-        root.style.setProperty('--FontColorItalic', '#F1FA8C')
-        root.style.setProperty('--FontColorBold', '#8BE9FD')
-        root.style.setProperty('--FontColorItalicBold', '#FFB86C')
-        root.style.setProperty('--FontColorQuote1', '#8BE9FD')
-        root.style.setProperty('--FontColorQuote2', '#FFB86C')
-      }
+      styles['--FontColorStandard'] = colorScheme === 'dark' ? '#f8f8f2' : '#0f172a'
+      styles['--FontColorItalic'] = '#F1FA8C'
+      styles['--FontColorBold'] = '#8BE9FD'
+      styles['--FontColorItalicBold'] = '#FFB86C'
+      styles['--FontColorQuote1'] = '#8BE9FD'
+      styles['--FontColorQuote2'] = '#FFB86C'
       break
     }
     case 'custom': {
-      root.style.setProperty('--FontColorStandard', db.customTextTheme.FontColorStandard)
-      root.style.setProperty('--FontColorItalic', db.customTextTheme.FontColorItalic)
-      root.style.setProperty('--FontColorBold', db.customTextTheme.FontColorBold)
-      root.style.setProperty('--FontColorItalicBold', db.customTextTheme.FontColorItalicBold)
-      root.style.setProperty('--FontColorQuote1', db.customTextTheme.FontColorQuote1 ?? '#8BE9FD')
-      root.style.setProperty('--FontColorQuote2', db.customTextTheme.FontColorQuote2 ?? '#FFB86C')
+      styles['--FontColorStandard'] = db.customTextTheme?.FontColorStandard
+      styles['--FontColorItalic'] = db.customTextTheme?.FontColorItalic
+      styles['--FontColorBold'] = db.customTextTheme?.FontColorBold
+      styles['--FontColorItalicBold'] = db.customTextTheme?.FontColorItalicBold
+      styles['--FontColorQuote1'] = db.customTextTheme?.FontColorQuote1 ?? '#8BE9FD'
+      styles['--FontColorQuote2'] = db.customTextTheme?.FontColorQuote2 ?? '#FFB86C'
       break
     }
   }
 
   switch (db.font) {
     case 'default': {
-      root.style.setProperty('--risu-font-family', 'Arial, sans-serif')
+      styles['--risu-font-family'] = 'Arial, sans-serif'
       break
     }
     case 'timesnewroman': {
-      root.style.setProperty('--risu-font-family', 'Times New Roman, serif')
+      styles['--risu-font-family'] = 'Times New Roman, serif'
       break
     }
     case 'custom': {
-      root.style.setProperty('--risu-font-family', db.customFont)
+      styles['--risu-font-family'] = db.customFont
       break
     }
   }
+  applyDisplayStyles(styles)
+  cacheDisplaySettings(db, ['textTheme', 'customTextTheme', 'font', 'customFont'])
 }

@@ -258,6 +258,23 @@ afterEach(async () => {
 })
 
 describe('ChatBody content-keyed parse memo', () => {
+  it('invalidates asset markup when a cached paint width is replaced by the authoritative default', async () => {
+    const character = seedDb()
+    const memo = await import('./ChatBodyParseMemo')
+    let paintWidth: number | undefined = 12
+    const input = {
+      data: '{{asset::portrait}}',
+      charArg: character.chaId,
+      owners: { ...memo.createChatBodyParseOwnerReaders(), assetWidthForPaint: () => paintWidth },
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+    const cachedKey = memo.getChatBodyParseMemoKey(input)
+    paintWidth = undefined
+    expect(memo.getChatBodyParseMemoKey(input)).not.toBe(cachedKey)
+  })
+
   it('repeated parse-key builds reuse corpus signatures until invalidators change', async () => {
     seedDb()
     const script = (id: string, out: string) => ({

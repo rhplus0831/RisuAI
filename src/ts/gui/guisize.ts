@@ -1,20 +1,21 @@
 import { writable } from 'svelte/store'
-import type { Database } from '../storage/database.svelte'
+import { cachedDisplaySize, runtimeDisplaySettingsOwner } from './displaySettings'
+import { applyDisplayStyles, cacheDisplaySettings } from './displaySettingsCache'
 import { settingsResourceState } from '../server/resourceState.svelte'
 
-export let textAreaSize = writable(0)
-export let sideBarSize = writable(0)
-export let textAreaTextSize = writable(0)
-
-function displaySettingsOwner(): Partial<Database> | undefined {
-  const status = settingsResourceState.groupStatuses.display ?? 'idle'
-  if (status === 'ready') return settingsResourceState.value as Partial<Database>
-  return undefined
-}
+export let textAreaSize = writable(cachedDisplaySize('textAreaSize'))
+export let sideBarSize = writable(cachedDisplaySize('sideBarSize'))
+export let textAreaTextSize = writable(cachedDisplaySize('textAreaTextSize'))
 
 export function updateGuisize() {
-  const db = displaySettingsOwner()
-  if (!db) return
+  const owner = runtimeDisplaySettingsOwner()
+  if (!owner) return
+  const fallback = settingsResourceState.groupStatuses.display === 'ready' ? 0 : undefined
+  const db = {
+    textAreaSize: owner.textAreaSize ?? fallback,
+    textAreaTextSize: owner.textAreaTextSize ?? fallback,
+    sideBarSize: owner.sideBarSize ?? fallback,
+  }
   const root = document.querySelector(':root') as HTMLElement
   if (!root) {
     return
@@ -25,8 +26,12 @@ export function updateGuisize() {
   }
   if (typeof db.sideBarSize === 'number' && Number.isFinite(db.sideBarSize)) {
     sideBarSize.set(db.sideBarSize)
-    root.style.setProperty('--sidebar-size', 24 + 4 * db.sideBarSize + 'rem')
+    applyDisplayStyles({ '--sidebar-size': 24 + 4 * db.sideBarSize + 'rem' })
   }
+  cacheDisplaySettings(
+    db,
+    (['textAreaSize', 'textAreaTextSize', 'sideBarSize'] as const).filter((key) => db[key] !== undefined),
+  )
 }
 
 export function guiSizeText(num: number) {

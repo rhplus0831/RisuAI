@@ -17,9 +17,61 @@
     <link href="https://fonts.googleapis.com/css2?family=Tilt+Prism&family=Yellowtail&display=swap" rel="stylesheet" />
     <!-- <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; object-src 'none'; require-trusted-types-for 'script'; trusted-types plugin-policy;"> -->
     <title>Risuai</title>
+    <!-- Paint-only cache. Keep this synchronous and independent of the app bundle/server. -->
+    <script data-risu-display-cache>
+      try {
+        const serialized = localStorage.getItem('risu-display-settings-v1')
+        const cached = serialized && serialized.length <= 1024 * 1024 ? JSON.parse(serialized) : null
+        if (cached?.version === 1 && cached.styles && typeof cached.styles === 'object') {
+          const properties = [
+            '--risu-theme-bgcolor',
+            '--risu-theme-darkbg',
+            '--risu-theme-borderc',
+            '--risu-theme-selected',
+            '--risu-theme-draculared',
+            '--risu-theme-textcolor',
+            '--risu-theme-textcolor2',
+            '--risu-theme-darkborderc',
+            '--risu-theme-darkbutton',
+            '--risu-theme-color-scheme',
+            '--FontColorStandard',
+            '--FontColorItalic',
+            '--FontColorBold',
+            '--FontColorItalicBold',
+            '--FontColorQuote1',
+            '--FontColorQuote2',
+            '--risu-font-family',
+            '--risu-animation-speed',
+            '--risu-height-size',
+            '--sidebar-size',
+          ]
+          for (const property of properties) {
+            const value = cached.styles[property]
+            if (typeof value === 'string' && value.length <= 4096) {
+              document.documentElement.style.setProperty(property, value)
+            }
+          }
+          if (typeof cached.reducedMotion === 'boolean') {
+            document.documentElement.classList.toggle('risu-reduced-motion', cached.reducedMotion)
+          }
+        }
+      } catch {}
+    </script>
   </head>
 
   <body>
+    <!-- Keep Custom CSS after head styles, even when lazy component styles arrive later. -->
+    <script data-risu-custom-css-cache>
+      try {
+        const css = localStorage.getItem('risu-custom-css-v1')
+        if (css) {
+          const style = document.createElement('style')
+          style.id = 'customcss'
+          style.textContent = css
+          document.body.appendChild(style)
+        }
+      } catch {}
+    </script>
     <div id="app">
       <noscript>
         <div class="noscript">
@@ -34,7 +86,7 @@
       role="status"
       aria-live="polite"
       aria-busy="true"
-      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col absolute top-0 left-0 z-50">
+      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-bgcolor flex-col absolute top-0 left-0 z-50">
       <div class="flex flex-row items-center">
         <svg
           class="animate-spin -ml-1 mr-3 h-5 w-5 text-textcolor"

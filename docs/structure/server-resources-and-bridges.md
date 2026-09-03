@@ -168,11 +168,18 @@ cached data is never used offline or without an authenticated server response
 confirming its hash. It is separate from the mutation outbox, whose retained
 encrypted intents represent unsent local work and must not be cleared as a cache.
 
-Custom CSS has a separate synchronous paint cache in `localStorage`. It may be
-displayed before authentication and shell hydration so a refresh keeps the
-current appearance, but it never seeds a settings owner or bypasses the normal
-server read. The validated shell/settings projection always reconciles that
-cache and the live style with the server-backed `customCSS` value.
+Display appearance has separate synchronous paint caches in `localStorage`:
+`risu-custom-css-v1` for Custom CSS and `risu-display-settings-v1` for allowlisted
+theme/layout, font, sizing, and motion settings plus resolved root CSS
+properties. `index.html` restores the DOM appearance before visible content;
+read-only paint helpers can retain deferred layout/size hints until Display
+hydration. These values never seed a settings owner, grant readiness/mutation
+capabilities, or bypass server reads. The validated shell immediately
+reconciles shell-owned styles without waiting for the full Display group.
+Partial shell reads retain deferred hints; a complete Display projection
+replaces them, including clearing omitted keys. Unchanged style values avoid
+DOM and storage rewrites. Cache/storage failures never block startup or
+authoritative style updates.
 
 Intermediate message display has a separate non-authoritative cache owned by
 `server/fastify/src/displaySourceCache.ts`. It stores only completed,
