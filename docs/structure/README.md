@@ -1,15 +1,16 @@
 # Structure Documentation Index
 
-Last audited: 2026-08-31.
+Last audited: 2026-09-05.
 
-Read [`STRUCTURE.md`](../../STRUCTURE.md) for repository boundaries and stable
-invariants. Start with the primary owner below. Open companion guides only when
-the task crosses their boundary or the
-[cross-cutting checklist](#cross-cutting-changes) names them; prefer an
-implementation owner over a compatibility re-export.
-Except for the compatibility pointer noted below, these guides describe current
-code. Historical plans and dated reports under `.archived-docs/` are not
-authoritative.
+Entry point: [`STRUCTURE.md`](../../STRUCTURE.md#agent-read-protocol).
+This index selects canonical guides and cross-layer checks; domain contracts
+and source inventories belong in the linked focused sections.
+
+- Known task: open its owner below, then the relevant section/source/test.
+- Unknown layer: use [cross-layer ownership](domain-glossary.md#cross-layer-ownership).
+- Cross-layer edit: apply only matching rows in [Cross-Cutting Changes](#cross-cutting-changes).
+- Browser-only detail: use [`src/docs/README.md`](../../src/docs/README.md).
+- Test discovery: use [`docs/tests/README.md`](../tests/README.md).
 
 ## Ownership
 
@@ -18,7 +19,7 @@ in `docs/structure/` appears below. `frontend.md` is retained only as a target
 for historical links and must not receive current guidance.
 
 | Document | Owns |
-| -------- | ---- |
+| --- | --- |
 | [`backend.md`](backend.md) | Fastify composition, security hooks, route families, startup telemetry, intermediate-display processing, workers, Web Push, generation operation/effect/job/timer wiring, half-streaming telemetry, and persistence fencing. |
 | [`data-and-events.md`](data-and-events.md) | SQLite stores, revisions, lineage, active writer, command events, atomic chat reset transactions, and command-event SSE. |
 | [`server-resources-and-bridges.md`](server-resources-and-bridges.md) | Browser bootstrap/root resources, REST endpoint and hydration workflows, cache protocol, route surfaces, and settings/feature projections. |
@@ -39,7 +40,7 @@ for historical links and must not receive current guidance.
 ## Adjacent Current Guides
 
 | Guide | Use |
-| ----- | --- |
+| --- | --- |
 | [`packages/protocol/README.md`](../../packages/protocol/README.md) | Change serialized DTOs, wire schemas, protocol versions, capability taxonomies, or their import boundary. |
 | [`packages/shared-core/README.md`](../../packages/shared-core/README.md) | Change browser/Node-neutral value algorithms, package exports, ownership/parity coverage, or their import boundary. |
 | [`src/docs/README.md`](../../src/docs/README.md) | Choose among the six focused Svelte/browser-runtime guides. |
@@ -48,43 +49,56 @@ for historical links and must not receive current guidance.
 
 ## Cross-Cutting Changes
 
-| If you change... | Also inspect... |
-| ---------------- | --------------- |
-| A shared wire contract or cross-runtime pure algorithm | The owning file and export in `packages/protocol/` or `packages/shared-core/`, its focused tests, `importBoundary.test.ts`, every browser/Fastify consumer, and the domain's focused guide plus [cross-layer ownership](domain-glossary.md#cross-layer-ownership). Keep serialized contracts in `@risuai/protocol`; keep non-serialized neutral value policy in `@risuai/shared-core`. |
-| Route/auth/writer/stream policy | `server/fastify/src/app.ts`, `server/fastify/src/routeManifest.ts`, `server/fastify/src/routeRateLimits.ts`, `server/fastify/__tests__/routeProtection.test.ts`, and [Backend Route-Side Contracts](backend.md#route-side-contracts). |
-| A revisioned command | `src/ts/server/commands.ts`, `src/ts/server/pendingMutationOutbox.ts`, `src/ts/server/resourceInvalidation.ts`, `server/fastify/src/commands/mutations.ts`, `server/fastify/src/commands/events.ts`, `server/fastify/src/commandMutationReceipts.ts`, their command tests, [resource/event ordering](data-and-events.md#resource-persistence-and-event-ordering), and [durable mutation recovery](durable-mutations-and-recovery.md#durable-mutation-recovery-command-queue-and-local-acknowledgements). |
-| A generic persisted setting | `SETTINGS_GROUP_KEYS` in `server/fastify/src/routes/commands.ts`, `SERVER_SETTINGS_GROUP_BY_KEY` in `packages/shared-core/src/settingsGroups.ts`, `server/fastify/src/databaseDefaults.ts`, `src/ts/storage/database.svelte.ts`, `server/fastify/__tests__/settingsGroupParity.test.ts`, `src/lang/`, [Durable Mutations And Recovery](durable-mutations-and-recovery.md), and [Settings Persistence](../../src/docs/svelte-settings-ui.md#settings-persistence). |
-| Character folder schema or opening behavior | `src/ts/storage/database.svelte.ts`, `src/ts/characterCommands.ts`, `src/ts/characterFolderOpening.ts`, `src/lib/SideBars/sidebarCharList.ts`, `src/lib/SideBars/Sidebar.svelte`, `src/ts/server/commands.ts`, `server/fastify/src/commands/characters.ts`, their focused tests, and [Navigation UI](../../src/docs/svelte-navigation-ui.md#character-folder-opening). |
-| Agents or Agent Presets | `packages/shared-core/src/agentPresetRecords.ts`, `agentPresetResolver.ts`, `agentPresetOutputReferences.ts`, `agentLorebookInputs.ts`, `moduleIntegration.ts`, and `chatGenerationSettings.ts`; browser integration in `src/ts/agents.ts`, `src/ts/agentPresets.ts`, and `src/ts/agentLorebookInputs.ts`; `src/ts/server/commands.ts`; `server/fastify/src/commands/agentPresets.ts`, `server/fastify/src/prompt/agentPresetExecution.ts`, and `server/fastify/src/prompt/assemble.ts`; their focused tests; [Agents And Presets](agents-and-presets.md); [Settings UI](../../src/docs/svelte-settings-ui.md#agent-and-prompt-authoring); and [Chat UI](../../src/docs/svelte-chat-ui.md#generation-and-loading-states). |
-| Provider, credential, profile, or runtime option | `src/ts/model/modellist.ts`; `packages/shared-core/src/modelTypes.ts`, `modelRoles.ts`, `providerCapability.ts`, `providerCredentialRecords.ts`, `modelProfileRecords.ts`, and `modelProfileResolver.ts`; `packages/protocol/src/providerOperation.ts`; `server/fastify/src/providerOperations.ts`, `server/fastify/src/providerSecrets.ts`, `server/fastify/src/prompt/chatDispatch.ts`, and `server/fastify/src/generation/stripCoT.ts`; `src/lib/Setting/Pages/Model/`; `server/fastify/src/databaseDefaults.ts`; `server/fastify/src/routes/commands.ts`; `src/lang/`; their focused tests; [Providers And Models](providers-and-models.md); and [Model Profile UI](../../src/docs/svelte-settings-ui.md#model-profiles-and-provider-panels). |
-| LLM request history or runtime diagnostics | `server/fastify/src/requestHistory.ts`, `server/fastify/src/routes/requestHistory.ts`, `server/fastify/src/generation/apiMetadata.ts`, `server/fastify/src/prompt/chatDispatch.ts`, translation/memory call sites, `src/ts/server/requestHistory.ts`, `src/lib/Setting/Pages/RequestHistorySettings.svelte`, their tests, [LLM Request History](providers-and-models.md#llm-request-history), [request/generation tracing](development-and-observability.md#request-and-generation-tracing), and [Settings UI](../../src/docs/svelte-settings-ui.md#shell-and-routed-pages). |
-| Prompt assembly, CBS, lorebook/memory injection, or scripting | `src/ts/cbs.ts`, `src/ts/process/request/serverPromptAssembly.ts`, `src/ts/process/promptAssembly/renderFinalPrompt.ts`, `src/ts/process/promptBudget/preflightTemplateTokens.ts`, `server/fastify/src/prompt/variables.ts`, `server/fastify/src/prompt/assemble.ts`, `server/fastify/src/prompt/preflight.ts`, `server/fastify/src/prompt/templates.ts`, `server/fastify/src/prompt/lorebook.ts`, `server/fastify/src/prompt/memory.ts`, `server/fastify/src/prompt/luaRuntime.ts`, `server/fastify/src/prompt/triggers.ts`, `server/fastify/src/routes/generationChat.ts`, their focused tests, and [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md). |
-| BardWiki memory | `packages/protocol/src/bardWiki.ts`, `server/fastify/src/bardWiki*.ts`, `server/fastify/src/routes/bardWiki*.ts`, `server/fastify/src/prompt/bardWiki*.ts`, `src/ts/server/bardWiki*.ts`, `src/lib/Setting/Pages/BardWikiSettings.svelte`, `src/lib/ChatScreens/BardWikiWorkspace.svelte`, their focused tests, and [BardWiki Memory](bardwiki.md). |
-| Prompt preset/template ownership | `prompt_presets.data_json`, `prompt_templates`, `server/fastify/src/commands/splitPresets.ts`, `src/ts/server/promptTemplateHydration.ts`, `src/ts/server/promptTemplateMutations.svelte.ts`, `server/fastify/src/prompt/effectiveGenerationConfig.ts`, `server/fastify/src/prompt/assemble.ts`, `src/lib/Setting/botpreset.svelte`, `src/lib/Setting/Pages/PromptSettings.svelte`, `src/ts/storage/database.svelte.ts`, `server/fastify/src/risuSave/`, their focused tests, [Prompt Template Ownership](prompt-assembly-and-scripting.md#prompt-template-ownership-and-roles), [prompt/legacy bodies](server-resources-and-bridges.md#prompt-preset-and-legacy-bodies), and [Prompt Authoring UI](../../src/docs/svelte-settings-ui.md#agent-and-prompt-authoring). |
-| Prompt-template block role selection | `src/ts/process/prompt.ts`, `packages/shared-core/src/promptBlockRole.ts`, `src/ts/process/promptTemplateNormalization.ts`, `src/ts/process/promptAssembly/renderFinalPrompt.ts`, `src/ts/process/promptBudget/preflightTemplateTokens.ts`, `src/lib/UI/PromptDataItem.svelte`, `src/ts/server/promptTemplateHydration.ts`, `src/ts/server/commands.ts`, `server/fastify/src/commands/prompts.ts`, `server/fastify/src/prompt/templates.ts`, `server/fastify/src/prompt/preflight.ts`, `server/fastify/src/prompt/assemble.ts`, their browser/server parity tests, [Prompt Template Roles](prompt-assembly-and-scripting.md#prompt-template-ownership-and-roles), and [Prompt Authoring UI](../../src/docs/svelte-settings-ui.md#agent-and-prompt-authoring). |
-| An asset or inlay-catalog field | `server/fastify/src/risuSave/assetReferences.ts`, `server/fastify/src/inlayAssetPersistence.ts`, `server/fastify/src/assetGc.ts`, `server/fastify/src/routes/assets.ts`, `server/fastify/src/routes/commands.ts`, `src/ts/server/inlayCatalog.ts`, `src/lib/Playground/PlaygroundInlayExplorer.svelte`, their tests, [Assets And Saves](assets-and-saves.md), [collection/cache bounds](server-resources-and-bridges.md#collection-and-cache-bounds), and [Playground UI](../../src/docs/svelte-ui.md#playground). |
-| Translation behavior | `packages/shared-core/src/translatorPipeline.ts`, `packages/shared-core/src/historySlots.ts`, `src/ts/setting/languageSettingsData.svelte.ts`, `src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte`, `server/fastify/src/databaseDefaults.ts`, `server/fastify/src/routes/commands.ts`, `server/fastify/src/translation/rawMessageTranslation.ts`, `server/fastify/src/translation/generationCompletionTranslation.ts`, `server/fastify/src/messageTranslationJobs.ts`, `server/fastify/src/greetingTranslationJobs.ts`, `src/ts/server/messageTranslationJobs.ts`, `src/ts/server/greetingTranslations.svelte.ts`, `src/ts/process/serverGeneratedMessageTranslation.ts`, their focused tests, [Translation And Input Hooks](translation-and-input-hooks.md), [Settings UI](../../src/docs/svelte-settings-ui.md#data-driven-rows), and [Chat UI](../../src/docs/svelte-chat-ui.md#message-rendering). |
-| Input hooks or Draft/BTW hooks | `src/ts/storage/database.svelte.ts`, `src/ts/process/inputHooks.ts`, `src/ts/process/draftHookTranslation.ts`, `src/ts/process/request/request.ts`, `src/ts/chatCommands.ts`, `src/lib/Setting/Pages/InputHookSettings.svelte`, `src/lib/SideBars/ChatDraftHookSelector.svelte`, `src/lib/ChatScreens/InputHookPickerDialog.svelte`, `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/chatGenerationLoading.ts`, `src/ts/server/commands.ts`, `packages/shared-core/src/settingsGroups.ts`, `server/fastify/src/databaseDefaults.ts`, `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/chats.ts`, their focused tests, [Draft And BTW Input Hooks](translation-and-input-hooks.md#draft-and-btw-input-hooks), [Chat Controls](../../src/docs/svelte-chat-ui.md#input-hook-chat-controls), and [Input-Hook Authoring](../../src/docs/svelte-settings-ui.md#input-hook-authoring). |
-| Generation operation or completion-effect lifecycle | `src/ts/server/generationOperations.ts`, `src/ts/process/request/serverChat.ts`, `src/ts/process/generationEffectLedger.ts`, `src/ts/process/recoveredGenerationEffects.ts`, `server/fastify/src/generationOperations.ts`, `server/fastify/src/generationEffects.ts`, `server/fastify/src/routes/generationOperations.ts`, `server/fastify/src/routes/generationEffects.ts`, their focused tests, [Backend Generation](backend.md#generation-and-background-work), and [Generation Client](../../src/docs/generation-client.md). |
-| Half-streaming generation | `packages/shared-core/src/modelProfileRecords.ts`, `packages/shared-core/src/modelProfileResolver.ts`, `server/fastify/src/commands/modelProfiles.ts`, `server/fastify/src/prompt/chatDispatch.ts`, `server/fastify/src/prompt/providerTransport.ts`, `packages/protocol/src/generationSse.ts`, `server/fastify/src/prompt/sseEvents.ts`, `server/fastify/src/routes/generationChat.ts`, `src/ts/process/request/serverChat.ts`, `src/ts/process/halfStreamingProgress.ts`, `src/lib/Setting/Pages/Model/ModelRuntimeOptionsEditor.svelte`, `src/lib/ChatScreens/Chats.svelte`, `src/lib/ChatScreens/Chat.svelte`, their focused tests, [Runtime Options](providers-and-models.md#runtime-options-and-precedence), [SSE And Streaming](data-and-events.md#sse-and-streaming), [Generation Client](../../src/docs/generation-client.md), [Settings UI](../../src/docs/svelte-settings-ui.md#model-profiles-and-provider-panels), and [Chat UI](../../src/docs/svelte-chat-ui.md#generation-and-loading-states). |
-| A module/plugin/MCP behavior | `src/ts/plugins/plugins.svelte.ts`, `src/ts/process/mcp/mcp.ts`, `server/fastify/src/mcpOAuthRefresh.ts`, `src/lib/Setting/Settings.svelte`, `src/lib/SideBars/Sidebar.svelte`, `src/lib/ChatScreens/DefaultChatScreen.svelte`, their focused tests, [Plugins And MCP](plugins-and-mcp.md), [Settings UI](../../src/docs/svelte-settings-ui.md#shell-and-routed-pages), [Navigation UI](../../src/docs/svelte-navigation-ui.md#sidebar-and-route-ownership), and [Chat UI](../../src/docs/svelte-chat-ui.md#chat-surface-ownership). |
-| An import/export or restore format | `src/ts/characterCards.ts`, `src/ts/process/processzip.ts`, `src/ts/characters.ts`, `src/ts/storage/backup.ts`, `src/lib/Setting/Pages/UserSettings.svelte`, `server/fastify/src/risuSave/`, `server/fastify/src/routes/save.ts`, `server/fastify/src/routes/backups.ts`, their fixtures/tests, [Assets And Saves](assets-and-saves.md), and [Settings UI](../../src/docs/svelte-settings-ui.md#shell-and-routed-pages). |
-| Chat export or all-chat reset | `src/ts/characters.ts`, `src/ts/chatCommands.ts`, `src/lib/SideBars/SideChatList.svelte`, `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/events.ts`, `src/ts/server/pendingMutationOutbox.ts`, `src/ts/server/resourceInvalidation.ts`, their focused tests, [Chats And Datasets](assets-and-saves.md#chats-and-datasets), the [client export fence](../../src/docs/client-runtime.md#all-chats-export-fence), and [Chat Lists UI](../../src/docs/svelte-navigation-ui.md#chat-lists-and-folders). |
-| Web Push | `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`, `src/ts/server/pushNotifications.ts`, `src/ts/server/pushNotificationRetryStorage.ts`, `src/ts/server/pushNotificationSetting.ts`, `public/service-worker.js`, `src/lib/Setting/Pages/Display/NotificationToggle.svelte`, their tests, [Backend Map](backend.md), [Client Runtime](../../src/docs/client-runtime.md#push-notification-coordinator), and [Settings UI](../../src/docs/svelte-settings-ui.md#shared-controls-and-focus). |
-| User-visible behavior | The narrowest of [Svelte UI](../../src/docs/svelte-ui.md), [Chat UI](../../src/docs/svelte-chat-ui.md), [Navigation UI](../../src/docs/svelte-navigation-ui.md), or [Settings UI](../../src/docs/svelte-settings-ui.md); matching DOM/browser tests; and `src/lang/` for strings. |
+Each row names a contract to verify and its canonical owner. Follow that
+section's file/test pointers instead of maintaining a second source inventory
+here. Runtime schema/route/setting changes also require their consumers and
+normalization/import paths, not only the visible editor.
+
+| Change trigger | Required cross-layer check | Read next |
+| --- | --- | --- |
+| Wire contract or neutral value algorithm | Schema/export and import boundary; browser + Fastify consumers; shared ownership assertions. | [Protocol](../../packages/protocol/README.md), [Shared core](../../packages/shared-core/README.md), [domain owners](domain-glossary.md#cross-layer-ownership) |
+| API route, auth, writer, or stream policy | Registration, manifest classification, rate limit, early auth/writer checks, and route-protection tests. | [Route-side contracts](backend.md#route-side-contracts) |
+| Revisioned command | Atomic write/event/receipt ordering; outbox allowlist and ordering; local-effect fence or authoritative invalidation; accepted/queued/failed UI. | [Persistence/event ordering](data-and-events.md#resource-persistence-and-event-ordering), [durable command recovery](durable-mutations-and-recovery.md#durable-mutation-recovery-command-queue-and-local-acknowledgements) |
+| Persisted setting | Shared/server group parity, defaults and import normalization, owner projection, command path, and localized control. | [Settings groups](server-resources-and-bridges.md#settings-groups-and-feature-projections), [settings persistence](../../src/docs/svelte-settings-ui.md#settings-persistence) |
+| Character folders or opening behavior | Serialized schema, command normalization, sidebar projection, and captured selection identity. | [Character folder opening](../../src/docs/svelte-navigation-ui.md#character-folder-opening) |
+| Chat generation settings or Saved Toggles | Definition-owner readiness before reconciliation; preservation of required values on full/sparse writes; prompt/module/persona activation. | [Chat-scoped controls](../../src/docs/svelte-navigation-ui.md#chat-scoped-generation-controls), [effective configuration](prompt-assembly-and-scripting.md#effective-configuration-and-assembly-order) |
+| Agents or Agent Presets | Shared normalization/resolution, references and delete cleanup, prepared inputs, phase execution, authoring/progress UI. | [Agents And Presets](agents-and-presets.md), [authoring](../../src/docs/svelte-settings-ui.md#agent-and-prompt-authoring) |
+| Provider, credential, model profile, or runtime option | Role/profile precedence, capability routing, secret handling, server operation/adapter, history, and provider-panel persistence. | [Adding provider behavior](providers-and-models.md#adding-provider-behavior), [model UI](../../src/docs/svelte-settings-ui.md#model-profiles-and-provider-panels) |
+| LLM request history or diagnostics | Attempt recording and retention, metadata sanitization, API reads, and history UI; trace flags are separate. | [Request history](providers-and-models.md#llm-request-history), [tracing](development-and-observability.md#request-and-generation-tracing) |
+| Prompt assembly, CBS, lorebook/memory injection, or scripting | Effective config, execution order, server/browser parity, budget/confirmation gates, and durable effects. | [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md) |
+| BardWiki | Protocol, chat-scoped documents/jobs/receipts, source fences, prompt retrieval, lifecycle/import recovery, and settings/workspace UI. | [BardWiki Memory](bardwiki.md) |
+| Prompt preset/template ownership or block roles | Modern owner versus compatibility projection, lazy hydration, commands, shared role normalization, render/budget parity, and save codecs. | [Prompt template ownership and roles](prompt-assembly-and-scripting.md#prompt-template-ownership-and-roles), [preset hydration](server-resources-and-bridges.md#prompt-preset-and-legacy-bodies), [authoring](../../src/docs/svelte-settings-ui.md#agent-and-prompt-authoring) |
+| Asset or inlay-catalog field | Asset references/GC, metadata persistence, command invalidation, bounded catalog projection, and Playground rendering. | [Inlay catalog](assets-and-saves.md#inlay-catalog), [cache bounds](server-resources-and-bridges.md#collection-and-cache-bounds), [Playground](../../src/docs/svelte-ui.md#playground) |
+| Translation or Draft/BTW input hooks | Shared slots/pipeline, settings/chat binding, source identity, job/recovery ownership, authoring, and chat controls. | [Translation change checklist](translation-and-input-hooks.md#change-checklist), [input-hook UI](../../src/docs/svelte-chat-ui.md#input-hook-chat-controls) |
+| Generation operation or completion effect | Durable operation/attempt identity, stream observation, cancellation/reattach, terminal authority, effect claims/receipts, and transient UI. | [Backend lifecycle](backend.md#generation-and-background-work), [Generation Client](../../src/docs/generation-client.md), [loading UI](../../src/docs/svelte-chat-ui.md#generation-and-loading-states) |
+| Half-streaming | Runtime-option precedence, provider buffering, SSE progress, terminal/cancelled partial reconciliation, and progress UI. | [Runtime options](providers-and-models.md#runtime-options-and-precedence), [SSE](data-and-events.md#sse-and-streaming), [client half-streaming](../../src/docs/generation-client.md#half-streaming) |
+| Modules, plugins, or MCP | Module content versus organization, activation, revisioned commands, device-local grants, browser execution, and server credential/transport boundaries. | [Plugins And MCP](plugins-and-mcp.md) |
+| Import/export, backups, or restore | Codec normalization, reference rewriting, asset/blob lifetime, table policy, revision/lineage changes, and stale-operation fences. | [Assets And Saves](assets-and-saves.md) |
+| Chat export or all-chat reset | Hydrate/fence the export; preserve atomic reset, dependent-table cleanup, outbox outcome, and authoritative reconciliation. | [Chats and datasets](assets-and-saves.md#chats-and-datasets), [client export fence](../../src/docs/client-runtime.md#all-chats-export-fence), [chat lists](../../src/docs/svelte-navigation-ui.md#chat-lists-and-folders) |
+| Web Push | Server subscription/delivery lifecycle, browser retry scope, service worker navigation, and notification setting outcome. | [Backend](backend.md), [push coordinator](../../src/docs/client-runtime.md#push-notification-coordinator), [settings control](../../src/docs/svelte-settings-ui.md#shared-controls-and-focus) |
+| User-visible behavior | Narrow UI owner, localized strings, matching DOM/browser evidence, and async visible states. | [Source guides](../../src/docs/README.md), [visible-state test contract](testing-and-operations.md#visible-state-test-contract) |
 
 ## Maintenance Rules
 
 - Keep stable orientation in `STRUCTURE.md`; keep implementation detail in the
   nearest focused document.
-- Prefer literal source paths and name the test, route-policy entry, or protocol
-  constant that makes a claim durable. Do not copy endpoint inventories that can
+- Give each section a specific behavior heading so agents can retrieve it by
+  anchor or heading search. State owner, invariant, lifecycle/failure behavior,
+  and verification pointers together; use ordered steps for execution order.
+- Prefer repository-relative literal source paths and searchable symbols over
+  line numbers. For a shortened filename, name its containing directory; expand
+  it when the same basename exists in multiple layers. Name the test, route-policy
+  entry, or protocol constant that makes a claim durable. Do not copy endpoint inventories that can
   be derived from `app.printRoutes()` and `routeManifest.ts`.
 - Link to the canonical owner instead of repeating a contract across documents.
+- Keep Markdown tables compact: single spaces around cells and three-dash
+  separators. Column-alignment padding adds agent input without adding meaning.
 - Keep active investigations or temporary planning records under `docs/` only
   while they remain current. Move completed audits, plans, reviews, and closeout
   reports into the matching `.archived-docs/` topic and update its index.
 - Update an audit date only after checking the document against current code.
+  For a partial check, retain the full-audit date and name the checked section
+  and date separately. Formatting or link validation is not a behavior audit.
 - Run `pnpm check:docs` after changing current documentation. It validates the
   current document set, focused-index completeness, local links and GitHub-style
   anchors, and unambiguous literal repository paths. Intentional absent/legacy

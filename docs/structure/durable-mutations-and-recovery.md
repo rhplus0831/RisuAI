@@ -1,6 +1,7 @@
 # Durable Mutations And Recovery
 
 Last audited: 2026-08-31.
+Targeted source check: 2026-09-05 (module-folder event invalidation).
 
 This guide owns browser-to-Fastify mutation durability and reconciliation:
 encrypted outbox intent, the serialized command queue, compact optimistic
@@ -12,7 +13,7 @@ cache validation, read endpoints, and hydration workflows remain in
 Important files:
 
 | Path | Role |
-| ---- | ---- |
+| --- | --- |
 | `src/ts/server/pendingMutationOutbox.ts` | Encrypted intent rows, scope/order indexes, and durable receipt acknowledgements. |
 | `src/ts/server/durableMutationDispatch.ts` | Stages intent, classifies dispatch/replay outcomes, and settles accepted work. |
 | `src/ts/server/pendingMutationReplay.ts` | Replays current-scope work after bootstrap and before resource hydration. |
@@ -32,7 +33,7 @@ Important files:
 Do not conflate the persistence and acknowledgement artifacts:
 
 | Artifact | Storage / protection | Authority and startup effect |
-| -------- | -------------------- | ---------------------------- |
+| --- | --- | --- |
 | Disposable resource cache | IndexedDB; SHA-256 reverified after authenticated read | Never authoritative or offline state; corruption/misses fall back to full reads. |
 | Durable mutation intent | IndexedDB; AES-GCM payload plus plaintext scope/order | Non-authoritative pending command work; current-scope unresolved rows replay before hydration and can block hydration. |
 | Composer recovery draft | Bounded `sessionStorage`; plaintext | Lineage/writer-scoped editing recovery only; not a command, receipt, or proof of acceptance. |
@@ -125,6 +126,9 @@ coalesced event batch, then converts each resource key into concrete reads:
 - Valid grouped settings events read `/api/v1/settings/:group`; broader
   settings-like resources still read `/api/v1/settings`.
 - Collection events read only the needed `/api/v1/collections/:name` entries.
+- Module-folder events are split across settings and collection owners; use
+  [Module Organization](plugins-and-mcp.md#module-organization) for the
+  `moduleFolders`/`moduleOrganization` read plan and mutation owners.
 - Character selection and order read their narrow resources; only broad
   character events read `/api/v1/characters`. Row-scoped character, script,
   trigger, chat-metadata, and chat-folder events read
@@ -243,13 +247,13 @@ that affect rendered state should follow the visible-state policy in
 
 ## Owner Mutation Lifecycles
 
-| File                              | Role                                                                                                                                                                                   |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ownerMutationLifecycle.ts`       | Flushes every registered, loaded owner on `pagehide` / hidden visibility with `keepalive`; it does not import feature owners into bootstrap.                                            |
-| `pendingOwnerMutationRegistry.ts` | Registers owner flush/reset callbacks for targeted structural calls, lifecycle durability, and database-ownership replacement.                                                          |
-| `settingsOwner.svelte.ts`          | Explicit group-owned drafts and patches through `PATCH /commands/settings/:group`, with equality-noop suppression, exact projection fences, durable receipts, and field-scoped rollback. |
-| `lorebookOwner.svelte.ts`          | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback.                                            |
-| `scriptDefinitionOwner.svelte.ts`  | Explicit character/module definition owner mutations plus the global-script settings draft watcher; compact create/update/delete/reorder classification, projection fencing, and full-replacement fallback. |
+| File | Role |
+| --- | --- |
+| `ownerMutationLifecycle.ts` | Flushes every registered, loaded owner on `pagehide` / hidden visibility with `keepalive`; it does not import feature owners into bootstrap. |
+| `pendingOwnerMutationRegistry.ts` | Registers owner flush/reset callbacks for targeted structural calls, lifecycle durability, and database-ownership replacement. |
+| `settingsOwner.svelte.ts` | Explicit group-owned drafts and patches through `PATCH /commands/settings/:group`, with equality-noop suppression, exact projection fences, durable receipts, and field-scoped rollback. |
+| `lorebookOwner.svelte.ts` | Stable-id global/character/chat/module lorebook upsert/delete/reorder planning with hydrated guards and unsafe-diff replacement fallback. |
+| `scriptDefinitionOwner.svelte.ts` | Explicit character/module definition owner mutations plus the global-script settings draft watcher; compact create/update/delete/reorder classification, projection fencing, and full-replacement fallback. |
 
 Common requirements are to capture snapshots, suppress no-op updates, respect
 the appropriate resource epoch or revision gate, debounce noisy edits, stage

@@ -1,6 +1,7 @@
 # Prompt Assembly And Scripting
 
 Last audited: 2026-08-30.
+Targeted source check: 2026-09-05 (CBS and regex display-activation ownership).
 
 This guide owns server prompt construction, CBS and history variables,
 lorebook and memory injection, prompt-template precedence, generation
@@ -111,10 +112,16 @@ run-variable rewrites as an incidental full-transcript replacement.
 
 ## CBS Variables And History
 
-`src/ts/cbs.ts` is the canonical parser/function registry shared by browser and
-server. Fastify binds it through `server/fastify/src/prompt/variables.ts` with
-the active database, character, chat, message index, prompt slot, variable
-engine, and available Agent outputs.
+| Responsibility | Canonical owner |
+| --- | --- |
+| Shared parser and function registry | `packages/shared-core/src/risuChatParserCore.ts`, `packages/shared-core/src/cbsRegistry.ts`; callback contracts in `packages/shared-core/src/cbsContracts.ts` |
+| Browser registration defaults/compatibility export and runtime binding | `src/ts/cbs.ts`, `src/ts/parser/risuChatParser.ts` |
+| Fastify runtime binding | `server/fastify/src/prompt/variables.ts`, `server/fastify/src/prompt/promptVariablesBoot.ts`, `server/fastify/src/prompt/cbsAdapter.ts` |
+
+Fastify supplies the active database, character, chat, message index, prompt
+slot, variable engine, and available Agent outputs to the shared implementation.
+Change shared CBS semantics in shared-core; keep environment-specific callbacks
+in the runtime bindings.
 
 Standard history variables have two distinct shapes:
 
@@ -198,7 +205,11 @@ though scriptstate is restored per target. Client disconnects abort queued or
 active display stages rather than leaving a superseded chat on the service's
 exclusive execution tail.
 
-Regex editor display activation is centrally debounced by owner. Character,
+### Display Activation And Persistence
+
+`src/ts/process/regexDisplayActivation.ts` owns the three-second regex display
+activation debounce; `src/ts/process/regexDisplayReload.ts` selects scoped
+reload dependencies. Character,
 module, prompt-preset/root, and global edits keep independent timers, and a
 component unmount does not shorten the three-second delay. Consumers derive a
 reload token from only the regex owners active for their character/chat, so an
@@ -209,7 +220,7 @@ results use a bounded LRU and namespace changes clear both in-flight and
 completed deduplication state.
 
 Character-sidebar script and trigger edits have an earlier 300 ms trailing
-draft debounce in `scriptDefinitionOwner.svelte.ts`, before cloning, diffing,
+draft debounce in `src/ts/server/scriptDefinitionOwner.svelte.ts`, before cloning, diffing,
 outbox staging, or network dispatch. Display activation flushes that draft and
 waits for final durable settlement before advancing its owner token; a failed
 save leaves the old display active. Send/continue/regenerate also flush the

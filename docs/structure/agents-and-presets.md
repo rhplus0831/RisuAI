@@ -1,6 +1,7 @@
 # Agents And Presets
 
 Last audited: 2026-08-09.
+Targeted source check: 2026-09-05 (browser Agent Preset owner and command boundary).
 
 This guide owns reusable Agents, Agent Preset records and selection, model
 resolution, module/reference inputs, lorebook inputs, dependency execution,
@@ -226,9 +227,16 @@ frames.
 
 ## Commands And Compatibility
 
-Canonical browser wrappers live in `src/ts/server/commands.ts`; route
-registration is in `server/fastify/src/routes/commands.ts`; mutation/validation
-logic is in `server/fastify/src/commands/agentPresets.ts`. Command families own
+| Responsibility | Owner |
+| --- | --- |
+| Browser Agent Preset reads, optimistic edits, rollback, and reference reconciliation | `src/ts/agentPresets.ts`; canonical browser projection is the `agents` settings group in `src/ts/server/resourceState.svelte.ts` |
+| Command transport | `src/ts/server/commands.ts` |
+| Route registration | `server/fastify/src/routes/commands.ts` |
+| Server mutation/validation | `server/fastify/src/commands/agentPresets.ts` |
+
+Agent Preset owner reads/writes require a ready, non-error settings group and
+valid unique stable ids; a missing owner is not an empty editable collection.
+Command families own
 Agent create/update/duplicate/delete/reorder, preset metadata/default/order,
 and preset-use create/update/delete/reorder. They validate the complete Agent
 and preset collections before committing one revision/event.

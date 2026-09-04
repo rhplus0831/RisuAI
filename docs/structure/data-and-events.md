@@ -8,19 +8,19 @@ mutation requests; its durable outbox and recovery drafts are non-authoritative.
 
 ## Stores
 
-| Store            | Location                                                                                           | Role                                                                                                                                        |
-| ---------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | Authoritative schema/revision/lineage plus normalized domain and operational tables.                                                        |
-| Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed supported asset payloads; metadata lives in SQLite `assets`.                                                              |
-| Inlay catalog    | SQLite `inlay_catalog`                                                                             | Revisioned names, dimensions, and aliases keyed to immutable `assets` rows; the browser keeps a separate read projection.                   |
-| Backups          | `data/backups/<id>/`                                                                               | Database snapshot, manifest, assets, and legacy storage when present; restore uses an explicit table allowlist.                             |
-| Legacy `db.json` | `data/db.json`                                                                                     | Import-only input: valid snapshots commit/checkpoint before rename; invalid envelopes quarantine, while malformed JSON stops startup.       |
-| Legacy storage   | `data/save/<hex-key>`                                                                              | Compatibility bytes for `/api/v1/storage/*`; guarded writes do not bump the domain revision.                                                |
-| Auth files       | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password, registered browser-key hashes, and optional session-token hashes.                                                     |
-| Web Push keys    | `data/__web_push_vapid_keys.json`                                                                  | Generated VAPID keypair when keys are not supplied by environment; subscription rows live in SQLite.                                       |
-| Resource cache   | Browser IndexedDB `risu-resource-cache-v1`                                                         | Disposable authenticated-hash read cache; never offline or authoritative state.                                                             |
-| Mutation outbox  | Browser IndexedDB `risu-pending-mutations-v1`                                                      | Crash-recovery journal with AES-GCM-encrypted intent payloads plus plaintext scope/order metadata and receipt-ACK rows; never server truth. |
-| Recovery drafts  | Browser `sessionStorage` and IndexedDB `risu-recovery-drafts-v1`                                  | Lineage/writer-scoped composer and module-editor drafts; editing recovery only, not mutation intent or proof of acceptance.                 |
+| Store | Location | Role |
+| --- | --- | --- |
+| SQLite | `data/risu.db` | Authoritative schema/revision/lineage plus normalized domain and operational tables. |
+| Asset bytes | `data/assets/<sha256>.<ext>` | Content-addressed supported asset payloads; metadata lives in SQLite `assets`. |
+| Inlay catalog | SQLite `inlay_catalog` | Revisioned names, dimensions, and aliases keyed to immutable `assets` rows; the browser keeps a separate read projection. |
+| Backups | `data/backups/<id>/` | Database snapshot, manifest, assets, and legacy storage when present; restore uses an explicit table allowlist. |
+| Legacy `db.json` | `data/db.json` | Import-only input: valid snapshots commit/checkpoint before rename; invalid envelopes quarantine, while malformed JSON stops startup. |
+| Legacy storage | `data/save/<hex-key>` | Compatibility bytes for `/api/v1/storage/*`; guarded writes do not bump the domain revision. |
+| Auth files | `data/__password`, `data/__known_public_key_hashes.json`, `data/__known_session_token_hashes.json` | Single-user password, registered browser-key hashes, and optional session-token hashes. |
+| Web Push keys | `data/__web_push_vapid_keys.json` | Generated VAPID keypair when keys are not supplied by environment; subscription rows live in SQLite. |
+| Resource cache | Browser IndexedDB `risu-resource-cache-v1` | Disposable authenticated-hash read cache; never offline or authoritative state. |
+| Mutation outbox | Browser IndexedDB `risu-pending-mutations-v1` | Crash-recovery journal with AES-GCM-encrypted intent payloads plus plaintext scope/order metadata and receipt-ACK rows; never server truth. |
+| Recovery drafts | Browser `sessionStorage` and IndexedDB `risu-recovery-drafts-v1` | Lineage/writer-scoped composer and module-editor drafts; editing recovery only, not mutation intent or proof of acceptance. |
 
 Primary boundaries: `server/fastify/src/db.ts` owns
 schema/migrations/revision, `server/fastify/src/repository.ts` owns domain
@@ -350,7 +350,7 @@ active-writer, streaming, public exceptions, and read-only POST decisions.
 ## Resource Persistence And Event Ordering
 
 | Concern | Canonical source |
-| ------- | ---------------- |
+| --- | --- |
 | Transaction, revision bump, receipt, commit, and live-emission order | `server/fastify/src/commands/mutations.ts` |
 | Event drafts, persisted replay rows, and retention window | `server/fastify/src/commands/events.ts` |
 | Browser interpretation of event resource keys | `src/ts/server/resourceInvalidation.ts` |

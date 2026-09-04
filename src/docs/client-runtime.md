@@ -1,6 +1,7 @@
 # Client Runtime Guide
 
 Last audited: 2026-08-31.
+Targeted source check: 2026-09-05 (module organization, model ownership, and diagnostics).
 
 This file covers browser TypeScript coordinators that influence visible Svelte
 UI. For component ownership and UI triage, start with the
@@ -14,17 +15,17 @@ messages on demand.
 
 ## Client TypeScript Areas
 
-| Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, encrypted pending-mutation outbox/replay, REST resource reads, explicit resource owners/invalidation, commands, hydration, events, active writer, provider/media operations, assets, backups, Realm import, owner mutation lifecycles, push notifications, stale-operation guards, diagnostics, smoke hooks. |
-| `src/ts/storage/`                                                                                                                                                              | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection.                                                                                                                                                                                                   |
-| `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                                                                                                                                           |
-| `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                                                                                                                                                     |
-| `src/ts/model/`, `src/ts/horde/`                                                                                                                                               | Browser model registry, durable profile records/resolver/UI state, and provider catalog helpers used by settings and generation preflight.                                                                                                                                                                                            |
-| `src/ts/plugins/`                                                                                                                                                              | Browser plugin loading/runtime and Plugin V3 API host. Fastify stores plugin records but does not execute plugins.                                                                                                                                                                                                                    |
-| `src/ts/process/mcp/`                                                                                                                                                          | Browser MCP clients, internal tools, Risu access tools, and plugin MCP clients.                                                                                                                                                                                                                                                       |
-| `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                    | Focused helper domains that feed visible UI and tests.                                                                                                                                                                                                                                                                                |
-| `src/ts/stores.svelte.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/characters.ts`, `src/ts/characterCards.ts`, `src/ts/characterFolderOpening.ts`, `src/ts/hotkey.ts`, `src/ts/lite.ts`, `src/ts/observer.svelte.ts` | Cross-cutting browser stores, compatibility helpers, character/card and folder-opening utilities, hotkeys, lite mode, and observers.                                                                                                                                                                   |
+| Path | Runtime ownership |
+| --- | --- |
+| `src/ts/server/` | Fastify browser adapters: runtime bootstrap, encrypted pending-mutation outbox/replay, REST resource reads, explicit resource owners/invalidation, commands, hydration, events, active writer, provider/media operations, assets, backups, Realm import, owner mutation lifecycles, push notifications, stale-operation guards, diagnostics, smoke hooks. |
+| `src/ts/storage/` | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection. |
+| `src/ts/process/` | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers. |
+| `src/ts/process/request/` | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers. |
+| `src/ts/model/`, `src/ts/horde/` | Browser model registry, profile UI/integration, and provider catalog adapters. Neutral profile records/resolution live in `packages/shared-core/`; see [Providers And Models](../../docs/structure/providers-and-models.md). |
+| `src/ts/plugins/` | Browser plugin loading/runtime and Plugin V3 API host. Fastify stores plugin records but does not execute plugins. |
+| `src/ts/process/mcp/` | Browser MCP clients, internal tools, Risu access tools, and plugin MCP clients. |
+| `src/ts/media/`, `src/ts/parser/`, `src/ts/gui/`, `src/ts/setting/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/` | Focused helper domains that feed visible UI and tests. |
+| `src/ts/stores.svelte.ts`, `src/ts/globalApi.svelte.ts`, `src/ts/characters.ts`, `src/ts/characterCards.ts`, `src/ts/characterFolderOpening.ts`, `src/ts/hotkey.ts`, `src/ts/lite.ts`, `src/ts/observer.svelte.ts` | Cross-cutting browser stores, compatibility helpers, character/card and folder-opening utilities, hotkeys, lite mode, and observers. |
 
 Retained compatibility and parity helpers still exist under `src/ts/process/`,
 but they are not a selectable browser-local runtime. `src/ts/platform.ts`
@@ -176,16 +177,16 @@ only for interchange, browser-smoke diagnostics, and test adapters.
 
 The main client boundaries are:
 
-| Path                                                                                                                                   | Responsibility                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `src/ts/server/resourceReads.ts`, `resourceCache.ts`                                                                                   | Root/targeted reads and the disposable authenticated-hash cache.            |
-| `src/ts/server/shellHydration.ts`, `src/ts/server/routeResourceLoader.ts`, `packages/shared-core/src/resourceManifest.ts`              | Atomic root shell application and manifest-driven route/runtime resources.  |
-| `src/ts/server/hydrationReads.ts`, `chatMessageHydration.svelte.ts`, `characterShellHydration.svelte.ts`, `promptTemplateHydration.ts` | Lazy owner-body and shell hydration.                                        |
-| `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts`                                              | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
-| `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts`                                     | Encrypted crash-recovery intents and pre-hydration replay.                  |
-| `src/ts/server/greetingTranslations.svelte.ts`                                                                                         | Character-scoped greeting projection, refresh, manual translation, and job recovery. |
-| `src/ts/server/ownerMutationLifecycle.ts`, `pendingOwnerMutationRegistry.ts`                                                           | Registers and flushes loaded explicit owners at structural and lifecycle boundaries. |
-| `src/ts/server/settingsOwner.svelte.ts`, `lorebookOwner.svelte.ts`, `scriptDefinitionOwner.svelte.ts`                                 | Owner-scoped drafts, narrow command dispatch, projection fencing, and field/row rollback. |
+| Path | Responsibility |
+| --- | --- |
+| `src/ts/server/resourceReads.ts`, `resourceCache.ts` | Root/targeted reads and the disposable authenticated-hash cache. |
+| `src/ts/server/shellHydration.ts`, `src/ts/server/routeResourceLoader.ts`, `packages/shared-core/src/resourceManifest.ts` | Atomic root shell application and manifest-driven route/runtime resources. |
+| `src/ts/server/hydrationReads.ts`, `chatMessageHydration.svelte.ts`, `characterShellHydration.svelte.ts`, `promptTemplateHydration.ts` | Lazy owner-body and shell hydration. |
+| `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts` | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
+| `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts` | Encrypted crash-recovery intents and pre-hydration replay. |
+| `src/ts/server/greetingTranslations.svelte.ts` | Character-scoped greeting projection, refresh, manual translation, and job recovery. |
+| `src/ts/server/ownerMutationLifecycle.ts`, `pendingOwnerMutationRegistry.ts` | Registers and flushes loaded explicit owners at structural and lifecycle boundaries. |
+| `src/ts/server/settingsOwner.svelte.ts`, `lorebookOwner.svelte.ts`, `scriptDefinitionOwner.svelte.ts` | Owner-scoped drafts, narrow command dispatch, projection fencing, and field/row rollback. |
 
 If a component shows stale or missing data, confirm whether the data is:
 
@@ -411,12 +412,14 @@ cover decoded output.
 
 ## Adjacent Runtime Owners
 
-| Topic                                                        | Browser entrypoints                                                                                                           | Canonical guide                                                                    |
-| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Assets, inlay catalog, saves, backups, Realm, legacy storage | `src/ts/server/assets.ts`, `inlayCatalog.ts`, `backups.ts`, `realmImport.ts`; `src/ts/storage/backup.ts`, `fastifyStorage.ts` | [Assets And Saves](../../docs/structure/assets-and-saves.md)                       |
-| Plugins, modules, MCP                                        | `src/ts/plugins/`, `src/ts/moduleActivation.ts`, `src/ts/process/modules.ts`, `src/ts/process/mcp/`; neutral parsing in `packages/shared-core/src/moduleIntegration.ts` | [Plugins And MCP](../../docs/structure/plugins-and-mcp.md)                         |
-| Providers, prompt assembly, and Agents                       | `src/ts/model/`, `src/ts/process/request/`, `src/ts/process/promptAssembly/`                                                  | [Providers And Models](../../docs/structure/providers-and-models.md), [Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md), [Agents And Presets](../../docs/structure/agents-and-presets.md) |
-| Retired/browser-local surfaces                               | `src/ts/platform.ts`                                                                                                          | [Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md) |
+| Topic | Browser entrypoints | Canonical guide |
+| --- | --- | --- |
+| Client diagnostics | `src/ts/diagnostics.ts`, `src/ts/server/clientDiagnostics.ts` | [Client Diagnostics](../../docs/structure/development-and-observability.md#client-diagnostics) |
+| Module folders and organization | `src/ts/moduleOrganization.ts`, `src/ts/moduleCommands.ts` | [Module Organization](../../docs/structure/plugins-and-mcp.md#module-organization) |
+| Assets, inlay catalog, saves, backups, Realm, legacy storage | `src/ts/server/assets.ts`, `inlayCatalog.ts`, `backups.ts`, `realmImport.ts`; `src/ts/storage/backup.ts`, `fastifyStorage.ts` | [Assets And Saves](../../docs/structure/assets-and-saves.md) |
+| Plugins, modules, MCP | `src/ts/plugins/`, `src/ts/moduleActivation.ts`, `src/ts/process/modules.ts`, `src/ts/process/mcp/`; neutral parsing in `packages/shared-core/src/moduleIntegration.ts` | [Plugins And MCP](../../docs/structure/plugins-and-mcp.md) |
+| Providers, prompt assembly, and Agents | `src/ts/model/`, `src/ts/process/request/`, `src/ts/process/promptAssembly/` | [Providers And Models](../../docs/structure/providers-and-models.md), [Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md), [Agents And Presets](../../docs/structure/agents-and-presets.md) |
+| Retired/browser-local surfaces | `src/ts/platform.ts` | [Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md) |
 
 `packages/shared-core/src/moduleIntegration.ts` parses and deduplicates the
 comma-separated module references shared by prompt and Agent Presets.

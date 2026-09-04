@@ -9,6 +9,12 @@ taxonomies, and pure validation/parsing helpers. Runtime source must not import
 Svelte, Fastify, Node APIs, repositories, application stores, provider code, or
 database models. `importBoundary.test.ts` enforces that rule.
 
+Resolve public entrypoints in [`package.json`](package.json) and
+the [package index](src/index.ts), then edit the owning module under
+`packages/protocol/src/`. Consumer re-exports under `src/ts/server/` are
+compatibility seams. Neutral value algorithms belong in
+[`@risuai/shared-core`](../shared-core/README.md).
+
 Generation SSE objects include their discriminator as `type`; the Fastify
 formatter moves it to the named SSE `event:` field. Shipped generation events
 are additive, so their object schemas intentionally accept unknown properties.
@@ -19,5 +25,9 @@ Run the focused checks with:
 
 ```sh
 pnpm check:protocol
-pnpm exec vitest run packages/protocol/src
+pnpm test -- packages/protocol/src/importBoundary.test.ts
 ```
+
+For a contract change, select its schema test or source file with the same
+focused runner, then inspect browser and Fastify consumers. Final verification
+follows the root [test workflow](../../docs/structure/testing-and-operations.md#focused-execution).

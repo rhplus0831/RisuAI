@@ -1,6 +1,7 @@
 # Plugins And MCP
 
 Last audited: 2026-09-04.
+Targeted source check: 2026-09-05 (module organization ownership and events).
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -8,22 +9,22 @@ does not execute browser plugin code.
 
 ## Plugin Runtime
 
-| Path                                                            | Purpose                                                                                                                      |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `src/ts/plugins/plugins.svelte.ts`                              | V3-only plugin import/update/load, custom providers, command-backed state dispatch.                                           |
-| `src/ts/plugins/apiV3/v3.svelte.ts`                             | Plugin API V3 surface exposed to sandboxed plugins.                                                                          |
-| `src/ts/plugins/apiV3/factory.ts`                               | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                                                           |
-| `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`          | Plugin V3 transpilation and development-mode loading.                                                                        |
-| `src/ts/plugins/apiV3/risuai.d.ts`                              | Plugin V3 TypeScript declarations for plugin authors.                                                                        |
-| `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters.                                                  |
-| `src/ts/plugins/pluginUpdates.ts`, `pluginIconSafety.ts`       | Bounded explicit update flow and network-dead HTML/CSS/registered-icon sanitization.                                         |
-| `src/ts/plugins/pluginSafeClass.ts`                            | Safe wrappers and device-local storage gates.                                                                                |
-| `src/ts/plugins/unsupportedServerWriteGuard.ts`                 | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                                                 |
-| `src/ts/pluginCommands.ts`                                      | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
-| `src/ts/server/pluginImport.ts`                                 | Server-backed plugin import/update helper with stale import guards.                                                          |
-| `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts`    | Server validation for plugin records and plugin key/value JSON storage.                                                      |
-| `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts`        | DNS-pinned public-target validation and the dedicated plugin fetch proxy.                                                    |
-| `src/ts/plugins/migrationGuide.md`                              | Plugin-author V3 migration and compatibility reference.                                                                      |
+| Path | Purpose |
+| --- | --- |
+| `src/ts/plugins/plugins.svelte.ts` | V3-only plugin import/update/load, custom providers, command-backed state dispatch. |
+| `src/ts/plugins/apiV3/v3.svelte.ts` | Plugin API V3 surface exposed to sandboxed plugins. |
+| `src/ts/plugins/apiV3/factory.ts` | `SandboxHost` iframe/RPC bridge between app and plugin guest code. |
+| `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts` | Plugin V3 transpilation and development-mode loading. |
+| `src/ts/plugins/apiV3/risuai.d.ts` | Plugin V3 TypeScript declarations for plugin authors. |
+| `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters. |
+| `src/ts/plugins/pluginUpdates.ts`, `pluginIconSafety.ts` | Bounded explicit update flow and network-dead HTML/CSS/registered-icon sanitization. |
+| `src/ts/plugins/pluginSafeClass.ts` | Safe wrappers and device-local storage gates. |
+| `src/ts/plugins/unsupportedServerWriteGuard.ts` | Blocks Plugin API direct writes to fields unsupported in server-backed mode. |
+| `src/ts/pluginCommands.ts` | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
+| `src/ts/server/pluginImport.ts` | Server-backed plugin import/update helper with stale import guards. |
+| `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts` | Server validation for plugin records and plugin key/value JSON storage. |
+| `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts` | DNS-pinned public-target validation and the dedicated plugin fetch proxy. |
+| `src/ts/plugins/migrationGuide.md` | Plugin-author V3 migration and compatibility reference. |
 
 Plugin startup is an explicit readiness step, not part of the minimal shell
 load. `src/ts/bootstrap.ts` loads the plugin runtime resource, enabled plugins,
@@ -197,7 +198,17 @@ independently applies the shared MCP import predicate at creation. Stored MCP
 rows can be globally enabled or durably deleted, but cannot be patched or
 linked to character, chat, Persona, or loadout scopes.
 
-Module library organization is a presentation-only flat folder layer.
+### Module Organization
+
+| Responsibility | Owner |
+| --- | --- |
+| Folder schema, payload validation, and folder normalization | `packages/protocol/src/moduleOrganization.ts` |
+| Browser grouping, folder moves, and reordering projection | `src/ts/moduleOrganization.ts` |
+| Optimistic mutations, rollback, and durable dependency ordering | `src/ts/moduleCommands.ts`, `src/ts/server/resourceOwnerMutationKeys.ts` |
+| Server validation and revisioned transactions | `server/fastify/src/commands/modules.ts`, `server/fastify/src/routes/commands.ts` |
+| Event catalog and resource read planning | `server/fastify/src/commands/events.ts`, `src/ts/server/resourceInvalidation.ts` |
+
+Module library organization is a durable, presentation-only flat folder layer.
 `moduleFolders` lives in the `modules` settings group, while an optional
 `folderId` lives on each module collection row. Folder CRUD and ordering use
 dedicated `/api/v1/commands/module-folders` commands; module order and folder
@@ -205,9 +216,17 @@ assignments are committed together through `/api/v1/commands/modules/reorder`.
 Deleting a folder atomically removes the settings row and clears matching
 module assignments without deleting modules. Folder-only events refresh the
 modules settings group, while deletion refreshes that group plus the modules
-collection. Standalone module import/export strips `folderId`; full `.risu`
+collection (`moduleFolders` versus `moduleOrganization` event resources).
+Standalone module import/export strips `folderId`; full `.risu`
 snapshots retain folders and assignments. Activation, prompt assembly, and MCP
 selection do not read folder metadata.
+
+Focused guards: `src/ts/moduleOrganization.test.ts`,
+`src/ts/moduleCommands.test.ts`, `server/fastify/__tests__/commands.test.ts`,
+and `src/ts/server/resourceInvalidation.test.ts`.
+
+### Plugin Storage And Collection Sequences
+
 Single-key plugin-storage `PUT`/`DELETE` commands skip full database load and
 touch only `plugin_custom_storage`; bulk storage reads and merges current
 storage. Plugin collection commands are similarly scoped, and deleting the
@@ -248,17 +267,17 @@ command-backed Risu access writes, but normal Fastify chat/completion provider
 dispatch does not execute MCP tools; see the server provider boundary in
 [Providers And Models](providers-and-models.md#capability-table-and-dispatch-boundary).
 
-| Path                                                                                                       | Purpose                                                                                               |
-| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
-| `packages/shared-core/src/mcpIdentifier.ts`                                                                | Shared stored-MCP creation predicate; the browser path is a compatibility re-export.                   |
-| `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
-| `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts`                         | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials.            |
-| `server/fastify/src/mcpOAuthRefreshEgress.ts`                                                              | DNS-pinned, redirect-free, bounded token-endpoint validation and connection.                           |
-| `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
-| `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
-| `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, read-only chat history, and modules.                       |
-| `src/ts/process/mcp/aiaccess.ts`, `googlesearchclient.ts`, `graphmem.ts`, `dice.ts`, `filesystemclient.ts` | Internal tool clients.                                                                                |
+| Path | Purpose |
+| --- | --- |
+| `src/ts/process/mcp/mcp.ts` | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
+| `packages/shared-core/src/mcpIdentifier.ts` | Shared stored-MCP creation predicate; the browser path is a compatibility re-export. |
+| `src/ts/process/mcp/mcplib.ts` | Remote Streamable HTTP MCP client with legacy SSE fallback. |
+| `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts` | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials. |
+| `server/fastify/src/mcpOAuthRefreshEgress.ts` | DNS-pinned, redirect-free, bounded token-endpoint validation and connection. |
+| `src/ts/process/mcp/internalmcp.ts` | Base class for internal MCP-like clients. |
+| `src/ts/process/mcp/pluginmcp.ts` | Plugin-registered MCP modules using `plugin:` identifiers. |
+| `src/ts/process/mcp/risuaccess/` | Internal Risu access tools for characters, read-only chat history, and modules. |
+| `src/ts/process/mcp/aiaccess.ts`, `googlesearchclient.ts`, `graphmem.ts`, `dice.ts`, `filesystemclient.ts` | Internal tool clients. |
 
 Runtime MCP identifier forms:
 

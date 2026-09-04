@@ -15,16 +15,16 @@ paths.
 
 ## Assets
 
-| Path                                                                        | Role                                                                                              |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `server/fastify/src/routes/assets.ts`                                       | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe.                 |
-| `server/fastify/src/repository.ts`                                          | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.            |
-| `server/fastify/src/assetGc.ts`                                             | Reference-counted asset garbage collection over a minimal SQLite reference shape.                 |
-| `server/fastify/src/risuSave/assetReferences.ts`                            | Known-field asset-reference walker for import/export/GC reports.                                  |
-| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts`                     | Browser upload/read adapters, asset URL normalization, and bulk-upload existence probing.         |
-| `src/ts/server/inlayCatalog.ts`                                             | Browser catalog projection validation and revision-aware acknowledgement application.             |
-| `src/ts/server/commands.ts`, `src/ts/process/files/inlays.ts`               | Catalog commands plus the upload/register/migrate/read/delete inlay workflow.                      |
-| `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization.          |
+| Path | Role |
+| --- | --- |
+| `server/fastify/src/routes/assets.ts` | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe. |
+| `server/fastify/src/repository.ts` | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks. |
+| `server/fastify/src/assetGc.ts` | Reference-counted asset garbage collection over a minimal SQLite reference shape. |
+| `server/fastify/src/risuSave/assetReferences.ts` | Known-field asset-reference walker for import/export/GC reports. |
+| `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters, asset URL normalization, and bulk-upload existence probing. |
+| `src/ts/server/inlayCatalog.ts` | Browser catalog projection validation and revision-aware acknowledgement application. |
+| `src/ts/server/commands.ts`, `src/ts/process/files/inlays.ts` | Catalog commands plus the upload/register/migrate/read/delete inlay workflow. |
+| `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization. |
 
 Asset ids are lowercase sha256 hex strings. Metadata lives in SQLite `assets`;
 bytes live at `data/assets/<sha256>.<ext>`. Supported content types are defined
@@ -123,22 +123,22 @@ server asset-GC policy.
 
 ## `.risu` And Bundle Routes
 
-| Path                                                                  | Role                                                                |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `server/fastify/src/routes/save.ts`                                   | Save import/export and device-backup bundle routes.                 |
-| `server/fastify/src/risuSave/importSnapshot.ts`                       | Envelope decode, validation, and import normalization.              |
-| `server/fastify/src/risuSave/exportSnapshot.ts`                       | Repository export into block or legacy envelopes.                   |
-| `server/fastify/src/risuSave/portableMetadata.ts`                     | Validated versioned `__risuServerData` metadata.                     |
-| `server/fastify/src/translation/greetingTranslationStore.ts`          | Portable normalized greeting-translation extraction/replacement.    |
-| `server/fastify/src/risuSave/bundleExport.ts`                         | Zip bundle export with `.risu` bytes plus present asset files.      |
-| `server/fastify/src/risuSave/localBackupExport.ts`                    | Original Risu `.bin` local-backup export with asset records.        |
-| `server/fastify/src/risuSave/exportAssetIntegrity.ts`                 | Export-time content hash and declared-size verification.            |
-| `server/fastify/src/risuSave/localBackupImport.ts`                    | Streaming device-backup decode for `.risu.zip` and legacy `.bin`.   |
-| `server/fastify/src/risuSave/localBackupDatabase.ts`                  | Legacy `.bin` account redaction and asset-reference conversion.     |
-| `server/fastify/src/risuSave/importLimits.ts`                         | Expanded-payload guard shared by `.risu` and Realm import decoding. |
-| `server/fastify/src/risuSave/boundedInflate.ts`                       | Streaming bounded inflate used by block and legacy envelope codecs. |
-| `server/fastify/src/risuSave/blockCodec.ts`                           | Current `.risu` envelope codec.                                    |
-| `server/fastify/src/risuSave/legacyEnvelopeCodec.ts`                  | Legacy `.risu` envelope codec.                                     |
+| Path | Role |
+| --- | --- |
+| `server/fastify/src/routes/save.ts` | Save import/export and device-backup bundle routes. |
+| `server/fastify/src/risuSave/importSnapshot.ts` | Envelope decode, validation, and import normalization. |
+| `server/fastify/src/risuSave/exportSnapshot.ts` | Repository export into block or legacy envelopes. |
+| `server/fastify/src/risuSave/portableMetadata.ts` | Validated versioned `__risuServerData` metadata. |
+| `server/fastify/src/translation/greetingTranslationStore.ts` | Portable normalized greeting-translation extraction/replacement. |
+| `server/fastify/src/risuSave/bundleExport.ts` | Zip bundle export with `.risu` bytes plus present asset files. |
+| `server/fastify/src/risuSave/localBackupExport.ts` | Original Risu `.bin` local-backup export with asset records. |
+| `server/fastify/src/risuSave/exportAssetIntegrity.ts` | Export-time content hash and declared-size verification. |
+| `server/fastify/src/risuSave/localBackupImport.ts` | Streaming device-backup decode for `.risu.zip` and legacy `.bin`. |
+| `server/fastify/src/risuSave/localBackupDatabase.ts` | Legacy `.bin` account redaction and asset-reference conversion. |
+| `server/fastify/src/risuSave/importLimits.ts` | Expanded-payload guard shared by `.risu` and Realm import decoding. |
+| `server/fastify/src/risuSave/boundedInflate.ts` | Streaming bounded inflate used by block and legacy envelope codecs. |
+| `server/fastify/src/risuSave/blockCodec.ts` | Current `.risu` envelope codec. |
+| `server/fastify/src/risuSave/legacyEnvelopeCodec.ts` | Legacy `.risu` envelope codec. |
 
 `POST /api/v1/import/risusave` accepts multipart `.risu` uploads or JSON
 database bodies. Imports normalize the database, apply it through the
@@ -209,14 +209,14 @@ ownership. Local character-card and module files are exceptions at the byte
 boundary: the browser sends each selected file once and Fastify owns decoding,
 asset registration, validation, and the final revisioned create.
 
-| Owner                                                                                            | Exchange contract                                                 |
-| ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| `src/ts/storage/exportAsDataset.ts`                                                              | Dataset JSON export.                                              |
-| `src/ts/characters.ts`                                                                           | Single-chat and all-chat import/export.                           |
-| `src/ts/characterCards.ts`, `src/ts/process/processzip.ts`                                       | Character-card export and non-picker compatibility helpers.       |
-| `server/fastify/src/routes/localFileImport.ts`, `server/fastify/src/localFileImport.ts`           | Local character-card/module upload, decoding, assets, and create.  |
-| `src/ts/persona.ts`                                                                              | Persona PNG import/export.                                        |
-| `src/ts/storage/database.svelte.ts`                                                              | Legacy and split preset exchange, including `.risup`.             |
+| Owner | Exchange contract |
+| --- | --- |
+| `src/ts/storage/exportAsDataset.ts` | Dataset JSON export. |
+| `src/ts/characters.ts` | Single-chat and all-chat import/export. |
+| `src/ts/characterCards.ts`, `src/ts/process/processzip.ts` | Character-card export and non-picker compatibility helpers. |
+| `server/fastify/src/routes/localFileImport.ts`, `server/fastify/src/localFileImport.ts` | Local character-card/module upload, decoding, assets, and create. |
+| `src/ts/persona.ts` | Persona PNG import/export. |
+| `src/ts/storage/database.svelte.ts` | Legacy and split preset exchange, including `.risup`. |
 | `src/ts/process/lorebook.svelte.ts`, `src/ts/process/scripts.ts`, `src/ts/translator/presets.ts` | Lorebook, regex-script, and `.risutl` translator-preset exchange. |
 
 Prompt Settings imports inspect the unmerged legacy payload. Pure prompt files
@@ -362,13 +362,13 @@ store.
 
 ## Backups
 
-| Path                                                                                                  | Role                                                                   |
-| ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `server/fastify/src/routes/backups.ts`                                                                | Create/list/restore/delete backup routes.                              |
-| `server/fastify/src/repository.ts`                                                                    | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
-| `src/ts/server/backups.ts`                                                                            | Browser adapter for backup/import/export routes and progress headers.  |
-| `src/ts/server/replacementDatabaseOwnership.ts`                                                       | Adopts replacement lineage/writer ownership before refreshing state.   |
-| `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows.            |
+| Path | Role |
+| --- | --- |
+| `server/fastify/src/routes/backups.ts` | Create/list/restore/delete backup routes. |
+| `server/fastify/src/repository.ts` | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
+| `src/ts/server/backups.ts` | Browser adapter for backup/import/export routes and progress headers. |
+| `src/ts/server/replacementDatabaseOwnership.ts` | Adopts replacement lineage/writer ownership before refreshing state. |
+| `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows. |
 
 Backups live under `data/backups/<id>/`. Current backups contain
 `manifest.json`, an online `node:sqlite` backup of the whole `risu.db`, assets
@@ -406,7 +406,7 @@ requires a rationale for every exclusion. Split model/prompt preset rows and
 policy is explicit:
 
 | State | Portable `.risu`, bundle, and local backup | Server backup/restore |
-| ----- | ------------------------------------------ | --------------------- |
+| --- | --- | --- |
 | Generation finalization retries | Excluded: portable content transfer never resumes old operational work. | Snapshot-owned and restored. Historical queue tables use an explicit column projection; missing target snapshots default to `NULL` and missing alternates to `[]`. |
 | Legacy-summary tombstones | Encoded under the validated, versioned `__risuServerData` root key and stripped before repository normalization. | Snapshot-owned and restored after `memory_summaries`, so delete-trigger side effects cannot change the selected snapshot. |
 | Greeting translations | Source-valid rows are embedded per character; import validates, deduplicates, and drops stale-source rows. | `greeting_translations` is restore-allowlisted and replaced with the snapshot. |

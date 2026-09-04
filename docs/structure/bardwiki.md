@@ -1,6 +1,7 @@
 # BardWiki Memory
 
 Last audited: 2026-08-29.
+Targeted source check: 2026-09-05 (automatic confirmation and transcript invalidation owners).
 
 BardWiki is the server-owned, per-chat Markdown memory system. It stores manual
 and model-derived documents with stable ids, logical paths, aliases, wikilinks,
@@ -16,7 +17,8 @@ authority.
 | Tables, validation, versions, links, and search projection | `server/fastify/src/bardWikiRepository.ts` |
 | Targeted reads and deterministic vault export | `server/fastify/src/routes/bardWiki.ts`, `server/fastify/src/bardWikiVault.ts` |
 | Revisioned settings/document/confirmation/import/rebuild commands | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/events.ts` |
-| Exact-source receipts and automatic confirmation | `server/fastify/src/bardWikiReceipts.ts`, generation finalization/effect owners |
+| Exact-source receipts and automatic confirmation | `server/fastify/src/bardWikiReceipts.ts`, `server/fastify/src/routes/generationChat.ts` |
+| Transcript-mutation receipt invalidation | `server/fastify/src/bardWikiInvalidation.ts`, called by `server/fastify/src/messageStore.ts` |
 | Background model work | `server/fastify/src/bardWikiWorker.ts`, `bardWikiApplyTurnHandler.ts`, `bardWikiReconcileHandler.ts`, `bardWikiRebuildHandler.ts` |
 | Prompt selection/injection | `server/fastify/src/prompt/bardWikiSelection.ts`, `server/fastify/src/prompt/memory.ts`, `prompt/assemble.ts`, `prompt/budgetFinalize.ts` |
 | Browser resources/commands/status | `src/ts/server/bardWikiResource.ts`, `bardWikiCommands.ts`, `bardWikiJobEvents.ts`, `src/ts/process/request/serverBardWikiJobs.ts` |

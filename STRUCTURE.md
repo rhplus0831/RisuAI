@@ -1,17 +1,53 @@
 # Project Structure
 
-Last audited: 2026-08-30.
+Last audited: 2026-09-05.
 
-Use this file to orient yourself in the Fastify-only RisuAI codebase. The
-supported toolchain is Node.js 24 or newer with pnpm. Choose the primary guide
-for your task below. For cross-cutting work, follow its companion links and the
-[cross-cutting change checklist](docs/structure/README.md#cross-cutting-changes).
-Historical records under `.archived-docs/` are not authoritative.
+Fastify-only RisuAI: Svelte 5 browser client, Fastify API, SQLite persistence.
+Toolchain: Node.js >=24 and pnpm; root `package.json` owns both runtimes.
+
+## Agent Read Protocol
+
+1. Read applicable `AGENTS.md` guidance, then the invariants below.
+2. Choose one primary guide in [Choose By Task](#choose-by-task). Read its
+   relevant section and source owners; do not load all linked guides by default.
+3. For a cross-layer change, use the [change checklist](docs/structure/README.md#cross-cutting-changes).
+   Use the [ownership map](docs/structure/domain-glossary.md#cross-layer-ownership)
+   when the implementation layer is unclear, or the glossary for an unfamiliar term.
+4. Verify behavior in current source and focused tests. Docs are navigation and
+   contract summaries; if they disagree with shipped code, record the mismatch
+   before treating either behavior as intended. `.archived-docs/` is historical;
+   only explicit imports from current tooling make an archived artifact a live input.
+5. Discover paths with `rg --files | rg '<name>'`, honoring `.ignore`. Prefer
+   canonical package implementations over browser compatibility re-exports.
+6. Find a relevant test in [docs/tests/README.md](docs/tests/README.md); use
+   `pnpm test -- <one-test-or-source-file>` while working, then `pnpm test:agent`
+   when edits are complete. Documentation changes also require `pnpm check:docs`.
+
+## Repository-Wide Invariants
+
+- The live runtime is Fastify-only; responsive mobile web remains supported.
+  Native wrappers, browser-local authoritative persistence, peer sync, and Drive
+  sync are not live. See [Generated And Legacy](docs/structure/generated-and-legacy.md).
+- Fastify SQLite rows, content-addressed assets, and compatibility files are
+  authoritative. Browser caches are disposable; the encrypted outbox and scoped
+  drafts retain pending intent or edits, not an independent offline database.
+  See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
+- Normal revision-tracked domain writes use command mutations and global
+  revision ordering. Server-owned exceptions are listed in
+  [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).
+- Mutation-facing UI must distinguish `accepted`, `queued`, and `failed`. A
+  queued mutation is retained intent, not server acceptance; preserve newer
+  drafts and do not report success merely because dispatch began.
+- Put new user-visible frontend strings in `src/lang`; `src/lang/en.ts` is the
+  source language pack.
+- The single-writer rule is an intentional architecture constraint. Unless a
+  change explicitly redesigns that boundary, new features do not need to support
+  multi-writer mutation.
 
 ## Choose By Task
 
 | Task area | Read next |
-| --------- | --------- |
+| --- | --- |
 | Unfamiliar code or cross-layer ownership | [Architecture Index](docs/structure/README.md) and [Domain Glossary](docs/structure/domain-glossary.md#cross-layer-ownership) |
 | Shared wire contracts, cross-runtime pure algorithms, or package import boundaries | [`@risuai/protocol`](packages/protocol/README.md), [`@risuai/shared-core`](packages/shared-core/README.md), then the owning focused guide from the [Architecture Index](docs/structure/README.md) |
 | Fastify composition, Fastify API routes, generation operations/effects, jobs, timers, tracing, or Web Push | [Backend Map](docs/structure/backend.md) |
@@ -41,7 +77,7 @@ Historical records under `.archived-docs/` are not authoritative.
 ### Top-Level Paths
 
 | Path | Purpose |
-| ---- | ------- |
+| --- | --- |
 | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` | Root application metadata, scripts, lockfile, workspace membership, and dependency-build policy. |
 | `packages/protocol/` | Browser-safe, schema-first wire contracts shared by the Svelte client and Fastify; it must not import application, Svelte, Fastify, database, or Node-only modules. |
 | `packages/shared-core/` | Browser/Node-neutral value algorithms shared by the Svelte client and Fastify; it must not import protocol schemas, runtime frameworks, persistence, credentials, aggregate application state, or environment-specific APIs. |
@@ -64,7 +100,7 @@ Historical records under `.archived-docs/` are not authoritative.
 ### Runtime Entrypoints
 
 | Path | Responsibility |
-| ---- | -------------- |
+| --- | --- |
 | `index.html` | Restores the display-only paint caches synchronously, declares the app mount/preloader, loads `src/main.ts`, and requests `interactive-widget=resizes-content`. |
 | `src/main.ts` | Thin browser entry boundary: records entry readiness, installs the runtime environment, handles preload failures, and dynamically imports `src/appStartup.ts`. |
 | `src/appStartup.ts` | Installs routing, push listeners, viewport coordination, root-scroll protection, and completion-audio unlocking; mounts the app, starts bootstrap/hotkeys and route warming, and removes the preloader. |
@@ -82,24 +118,3 @@ lists the shared protocol/core, browser/UI, and Fastify/storage owners for each
 domain. Use the
 [cross-cutting change checklist](docs/structure/README.md#cross-cutting-changes)
 to find companion files and tests.
-
-## Repository-Wide Invariants
-
-- The live runtime is Fastify-only; responsive mobile web remains supported.
-  Native wrappers, browser-local authoritative persistence, peer sync, and Drive
-  sync are not live. See [Generated And Legacy](docs/structure/generated-and-legacy.md).
-- Fastify SQLite rows, content-addressed assets, and compatibility files are
-  authoritative. Browser caches are disposable; the encrypted outbox and scoped
-  drafts retain pending intent or edits, not an independent offline database.
-  See the [Cache Protocol](docs/structure/server-resources-and-bridges.md#cache-protocol).
-- Normal revision-tracked domain writes use command mutations and global
-  revision ordering. Server-owned exceptions are listed in
-  [Data And Events](docs/structure/data-and-events.md#server-owned-exceptions).
-- Mutation-facing UI must distinguish `accepted`, `queued`, and `failed`. A
-  queued mutation is retained intent, not server acceptance; preserve newer
-  drafts and do not report success merely because dispatch began.
-- Put new user-visible frontend strings in `src/lang`; `src/lang/en.ts` is the
-  source language pack.
-- The single-writer rule is an intentional architecture constraint. Unless a
-  change explicitly redesigns that boundary, new features do not need to support
-  multi-writer mutation.

@@ -7,33 +7,33 @@ generated, local-only, historical, vendored, or intentionally no-port.
 
 ## Generated And Local Paths
 
-| Path                                            | Why                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dist/`                                         | Generated Vite build output created by `pnpm build` and related measurement commands.                                                                                                                                                                                                                  |
-| `node_modules/`                                 | Installed root dependencies. The project has no separate `server/fastify/package.json`.                                                                                                                                                                                                                    |
-| `coverage/`                                     | Local reports from the frontend, backend, and UI coverage scripts.                                                                                                                                                                                                                                          |
-| `test-results/`                                 | Playwright/test output.                                                                                                                                                                                                                                                                                     |
-| `fast-bootstrap-results/`                       | Generated startup/bundle measurement and integration reports. Commands and interpretation live in `development-and-observability.md`.                                                                                                                                                                     |
-| `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                                                                                                                                                                                 |
-| `*.tsbuildinfo`                                 | Local TypeScript incremental build artifacts when an ad hoc tool enables incremental compilation; they are not runtime source.                                                                                                                                                                             |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, and legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
-| `data-agent/`                                   | Disposable `pnpm dev:agent` runtime state. Default clone mode snapshots SQLite and links/copies assets/save while excluding auth, VAPID, backups, and traces; see `development-and-observability.md`.                                                                                                    |
-| `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                                                                                                                                                                                    |
+| Path | Why |
+| --- | --- |
+| `dist/` | Generated Vite build output created by `pnpm build` and related measurement commands. |
+| `node_modules/` | Installed root dependencies. The project has no separate `server/fastify/package.json`. |
+| `coverage/` | Local reports from the frontend, backend, and UI coverage scripts. |
+| `test-results/` | Playwright/test output. |
+| `fast-bootstrap-results/` | Generated startup/bundle measurement and integration reports. Commands and interpretation live in `development-and-observability.md`. |
+| `blobs-for-test/` | Ignored local binary/test scratch payloads. |
+| `*.tsbuildinfo` | Local TypeScript incremental build artifacts when an ad hoc tool enables incremental compilation; they are not runtime source. |
+| `data/` | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, and legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `data-agent/` | Disposable `pnpm dev:agent` runtime state. Default clone mode snapshots SQLite and links/copies assets/save while excluding auth, VAPID, backups, and traces; see `development-and-observability.md`. |
+| `scripts/` when present | Ignored local scratch/tooling directory. |
 
 ## Tracked Payloads With Special Handling
 
-| Path                                             | Why                                                                                                                                                                     |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `public/token/`                                  | Vendored tokenizer data. Only touch when intentionally updating those assets.                                                                                           |
-| `public/plugin_start.7z`                         | Packaged starter plugin archive downloaded by `src/lib/Setting/Pages/PluginSettings.svelte`.                                                                             |
-| `src/etc/o200k_base.json`                        | Live bundled tokenizer payload. Update only with its tokenizer consumers/tests.                                                                                         |
-| `src/etc/Airisu.webp`, `src/etc/bg.jpg`, `src/etc/send.mp3` | Live bundled image/audio assets imported by the current UI/runtime.                                                                                              |
-| `src/etc/docs/`, `src/etc/airisu.cbs`, `src/etc/patchNote.ts` | Retained unreferenced legacy documentation/script/update payloads; do not infer a live consumer from their location.                                           |
-| `src/ts/rpack/`                                  | Vendored rpack implementation; excluded from Prettier.                                                                                                                  |
-| `src/ts/process/__fixtures__/expected/`          | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`.                                                                                                 |
-| `src/ts/process/__fixtures__/upstream/`          | Upstream fixture corpus for request/provider tests.                                                                                                                     |
-| `*.snap` under test fixtures                     | Tracked Vitest snapshots; update through the relevant test workflow.                                                                                                    |
-| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow.                                      |
+| Path | Why |
+| --- | --- |
+| `public/token/` | Vendored tokenizer data. Only touch when intentionally updating those assets. |
+| `public/plugin_start.7z` | Packaged starter plugin archive downloaded by `src/lib/Setting/Pages/PluginSettings.svelte`. |
+| `src/etc/o200k_base.json` | Live bundled tokenizer payload. Update only with its tokenizer consumers/tests. |
+| `src/etc/Airisu.webp`, `src/etc/bg.jpg`, `src/etc/send.mp3` | Live bundled image/audio assets imported by the current UI/runtime. |
+| `src/etc/docs/`, `src/etc/airisu.cbs`, `src/etc/patchNote.ts` | Retained unreferenced legacy documentation/script/update payloads; do not infer a live consumer from their location. |
+| `src/ts/rpack/` | Vendored rpack implementation; excluded from Prettier. |
+| `src/ts/process/__fixtures__/expected/` | Prompt/generation golden fixtures; regenerate with `UPDATE_FIXTURES=1`. |
+| `src/ts/process/__fixtures__/upstream/` | Upstream fixture corpus for request/provider tests. |
+| `*.snap` under test fixtures | Tracked Vitest snapshots; update through the relevant test workflow. |
+| `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow. |
 
 `.archived-docs/` contains historical documentation, not current implementation
 guidance. Prefer `STRUCTURE.md`, `docs/structure/`, code, and current behavioral

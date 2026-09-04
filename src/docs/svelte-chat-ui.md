@@ -9,13 +9,20 @@ or the [Svelte UI guide](svelte-ui.md) for the application shell.
 
 ## Fast Triage
 
-| Symptom                                                              | Inspect first                                                                                                                   | Then inspect                                                                                            |
-| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Chat frame, background, or display mode is wrong                     | `src/lib/ChatScreens/ChatScreen.svelte`                                                                                         | `src/lib/ChatScreens/BackgroundDom.svelte`, `src/styles.css`                                            |
-| Transcript window, hydration, scroll, composer, or menu is wrong     | `src/lib/ChatScreens/DefaultChatScreen.svelte`                                                                                  | `src/lib/ChatScreens/DefaultChatScreen.loadPages.ts`, `src/ts/server/chatMessageHydration.svelte.ts`    |
-| One message, translation, parser result, or partial edit is wrong    | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`                                                        | `src/lib/ChatScreens/ChatBodyParseMemo.ts`, `src/lib/ChatScreens/PartialEditController.svelte`          |
-| Generation text, progress bar, stage color, or cancel state is wrong | `src/lib/ChatScreens/chatGenerationLoading.ts`, `Chat.svelte`, `DefaultChatScreen.svelte`                                       | `src/ts/process/index.svelte.ts`, durable generation state in [Generation Client](generation-client.md) |
-| Draft/BTW hook controls or review state are wrong                    | `src/lib/SideBars/ChatDraftHookSelector.svelte`, `src/lib/ChatScreens/InputHookPickerDialog.svelte`, `DefaultChatScreen.svelte` | [Translation And Input Hooks](../../docs/structure/translation-and-input-hooks.md)                      |
+Direct sections: [hydration/scroll](#transcript-hydration-and-paging),
+[parse dependencies](#row-ownership-and-parse-dependencies),
+[translation layers](#translation-layers-and-greeting-ownership),
+[partial editing](#partial-editing), [composer](#draft-and-placement-ownership),
+[keyboard viewport](#keyboard-viewport-coordination),
+[send phases](#message-generation-phases), [regenerate](#targeted-regenerate-presentation).
+
+| Symptom | Inspect first | Then inspect |
+| --- | --- | --- |
+| Chat frame, background, or display mode is wrong | `src/lib/ChatScreens/ChatScreen.svelte` | `src/lib/ChatScreens/BackgroundDom.svelte`, `src/styles.css` |
+| Transcript window, hydration, scroll, composer, or menu is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte` | `src/lib/ChatScreens/DefaultChatScreen.loadPages.ts`, `src/ts/server/chatMessageHydration.svelte.ts` |
+| One message, translation, parser result, or partial edit is wrong | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte` | `src/lib/ChatScreens/ChatBodyParseMemo.ts`, `src/lib/ChatScreens/PartialEditController.svelte` |
+| Generation text, progress bar, stage color, or cancel state is wrong | `src/lib/ChatScreens/chatGenerationLoading.ts`, `Chat.svelte`, `DefaultChatScreen.svelte` | `src/ts/process/index.svelte.ts`, durable generation state in [Generation Client](generation-client.md) |
+| Draft/BTW hook controls or review state are wrong | `src/lib/SideBars/ChatDraftHookSelector.svelte`, `src/lib/ChatScreens/InputHookPickerDialog.svelte`, `DefaultChatScreen.svelte` | [Translation And Input Hooks](../../docs/structure/translation-and-input-hooks.md) |
 
 ## Chat Surface Ownership
 
@@ -90,6 +97,8 @@ action do so. Empty chats retain their ordinary greeting/composer layout.
 
 ## Message Rendering
 
+### Row Ownership And Parse Dependencies
+
 `Chat.svelte` owns each persisted row's controls and display state.
 Its module shares the character/chat and active-message identity indexes from
 `chatReadOwners.svelte.ts` across mounted rows. Svelte tracks array structure and
@@ -111,6 +120,8 @@ reactive activation projection instead of rebuilding generation readiness for
 each row. Translation-detection keys are constructed only for automatic
 cached-only LLM translation; matching display parses reuse the prebuilt key.
 
+### Asset Indexing
+
 The additional-asset parser builds indexes only when an asset marker needs one.
 `assetCollectionIndex.ts` shares in-flight and completed module indexes across
 character contexts and yields between bounded chunks of construction. A module
@@ -118,6 +129,8 @@ revision change during a yield discards the partial index and joins a current
 build; structurally versioned character tuples are captured before yielding.
 Per-collection indexes retain all extensions so merging preserves character-first
 and module-order precedence, including deterministic same-extension variants.
+
+### Intermediate Display And Cold Hydration
 
 Supported `ChatBody` parses negotiate server-owned intermediate display
 processing without moving HTML rendering. `Chat.svelte` supplies the stable
@@ -138,6 +151,8 @@ Plugin hooks and unsupported surfaces transparently run the former all-client
 path, while raw message, translation, copy, edit, TTS, and prompt sources remain
 unchanged.
 
+### Finalization Indicators And Render Isolation
+
 `Chats.svelte` matches writer-scoped generation-finalization state by stable chat,
 message, and generation ids. `Chat.svelte` renders queued, transiently stalled,
 terminal, and quarantined legacy indicators on that exact row; committed rows
@@ -153,6 +168,8 @@ completion must leave the foreground row-model build counter, parser calls, and
 geometry effects unchanged; `renderCostHarness.test.ts` guards both
 terminal-before-event and event-before-terminal orderings.
 
+### Parser DOM Integration
+
 Message HTML crosses parser output, translation, custom HTML templates, inlays,
 additional/module assets, and optional partial edit. Parser code lives under
 `src/ts/parser/`, while file and inlay processing lives under
@@ -163,6 +180,8 @@ the next user activation, and stops playback on chat change.
 `src/ts/observer.svelte.test.ts` guards that DOM contract. Runtime parser
 ownership remains in the
 [client TypeScript map](client-runtime.md#client-typescript-areas).
+
+### Translation Layers And Greeting Ownership
 
 Persisted generated-message translations are server-raw. The terminal
 generation frame can carry the final automatic translation result, and
@@ -198,6 +217,8 @@ the owning chat id so different preset bindings on chats for the same character
 cannot leak into one another. Persisted greeting projections do not become
 automatic merely because chat auto-translation is enabled.
 
+### Partial Editing
+
 Partial block/text editing belongs to `PartialEditController.svelte`. Its
 match-selection, delete-confirmation, and failure dialogs share the modal focus
 and backdrop actions; stale target guards prevent a result from applying after
@@ -223,6 +244,8 @@ text selection inside the message body while the gesture is active. Outside
 taps dismiss the buttons via a macrotask-attached listener.
 
 ## Composer Layout Modes And Mobile Viewport
+
+### Draft And Placement Ownership
 
 The composer owns five reload-recoverable fields: message, translated message,
 attached files, reviewed Draft output, and BTW output.
@@ -252,6 +275,8 @@ fill: the chat column's text-screen overlay tints the transcript and composer
 uniformly. Accessibility exposes both the baseline `fixedChatTextarea` placement
 and the default-on `floatingChatInput` companion for in-flow mode.
 
+### Width And Containing Blocks
+
 `DefaultChatScreen.svelte` measures the rendered content column with
 `ResizeObserver`. The transcript, active composer surface, and overflow menu
 share that width across `chatScreenWidth`, viewport changes, and safe-area
@@ -261,6 +286,8 @@ menus use `--chat-content-fixed-inline-end`; its measurement accounts for custom
 `backdrop-filter`, which makes the chat root the containing block for fixed
 descendants. Normal and translated textareas clamp to a 44-pixel minimum, while
 the floating textarea is capped at `min(40dvh, 18rem)`.
+
+### Keyboard Viewport Coordination
 
 While a text editor is focused, `visualViewportCoordinator.ts` publishes only
 the visual viewport height to the app shell. The shell stays at page origin and
@@ -303,6 +330,8 @@ enable the passive viewport overlay with `?risuViewportDebug=1` or the
 
 ## Generation And Loading States
 
+### Message Generation Phases
+
 `src/ts/process/generationActivity.svelte.ts` advances each chat through typed,
 monotonic display phases: starting, preparing context, checking memory, waiting
 for the first model token, generating, and finalizing. The numeric process stage
@@ -335,6 +364,8 @@ they fill the message content width instead of stopping at the former fixed
 34-rem cap. The surrounding transcript/content column still enforces the user's
 configured chat width.
 
+### Input-Hook Activity
+
 Draft and BTW hook execution registers a chat-keyed activity in
 `src/ts/process/inputHookActivity.svelte.ts`. Each entry owns stage `5`, its
 abort controller, hook kind, and composer-operation token/version; different
@@ -343,6 +374,8 @@ spinner is amber (`#f59e0b`), and ID-scoped cleanup prevents
 one hook from clearing another chat's state. Stage mapping is covered by
 `chatGenerationLoading.test.ts`, the registry by `inputHookActivity.test.ts`,
 and the DOM behavior by `DefaultChatScreen.loadPages.test.ts`.
+
+### Progress And Recovery Controls
 
 `AgentPresetProgress.svelte` and `PostGenerationScriptProgress.svelte` mount
 above the transcript in the shared content column. Their visible snapshots are
@@ -356,6 +389,9 @@ pulse with a warning and renders a separate accessible alert. Its Retry,
 Refresh, and Stop controls pass the failed job ID rather than selecting work by
 chat, and the accepted-send recovery alert remains an independent state
 machine.
+
+### Targeted Regenerate Presentation
+
 `src/ts/process/rerollNavigation.svelte.ts` owns reroll operation fencing and
 keeps the selected assistant authoritative while its targeted regenerate is
 admitted. Server assembly removes that row only from the working prompt, and
@@ -383,6 +419,8 @@ cancels follow; geometry-only scroll events are corrected without being mistaken
 for history navigation. Settlement aligns the completed row's beginning with
 the scrollport start, while a cancelled follow preserves the user's history
 position and frozen spacer.
+
+### Suggestion Completion
 
 Settling a chat-keyed message generation records a bounded, consume-once marker
 in `src/ts/process/chatSuggestionCompletion.svelte.ts`. `Suggestion.svelte`

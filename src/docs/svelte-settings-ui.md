@@ -11,7 +11,7 @@ shell and routing model.
 ## Fast Triage
 
 | Symptom | Inspect first | Then inspect |
-| ------- | ------------- | ------------ |
+| --- | --- | --- |
 | Category, slug, mobile back, or page switch is wrong | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` | [Shell And Routed Pages](#shell-and-routed-pages) |
 | A data-driven row is hidden, stale, or not saving | `src/lib/Setting/SettingRenderer.svelte`, the matching definition under `src/ts/setting/` | `src/ts/setting/utils.ts`, `src/lib/Setting/Wrappers/` |
 | A primitive control is wrong everywhere | The control in `src/lib/UI/GUI/` | Its settings wrapper if only rows are affected |
@@ -37,7 +37,7 @@ or replaces a direct entry with home.
 Primary indexes and canonical slugs are:
 
 | Index | Slug | Page or visible category |
-| ----- | ---- | ------------------------ |
+| --- | --- | --- |
 | `0` | `backup` | `src/lib/Setting/Pages/UserSettings.svelte` |
 | `1` | `bot-preset` | `src/lib/Setting/Pages/BotSettings.svelte` when legacy presets exist; otherwise model settings |
 | `2` | `memory` | `src/lib/Setting/Pages/OtherBotSettings.svelte`; visible label is **Memory** through `language.settingsNavMemory` and a brain icon |

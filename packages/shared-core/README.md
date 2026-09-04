@@ -11,6 +11,10 @@ belong in `@risuai/protocol`; runtime-specific policy remains with its runtime.
 
 ## Navigate By Change
 
+Filenames below are relative to `packages/shared-core/src/` and are representative
+entrypoints. The complete public surface is declared in
+[`package.json`](package.json) and the [package index](src/index.ts).
+
 - Record normalization and resolution: `agentPresetRecords.ts`,
   `agentPresetResolver.ts`, `modelProfileRecords.ts`, `modelProfileResolver.ts`,
   `providerCredentialRecords.ts`, and `translatorPresets.ts`.
@@ -30,11 +34,12 @@ there is an import seam, not the implementation owner.
 ```sh
 pnpm check:shared-core
 pnpm check:shared-core:boundary
-pnpm exec vitest run packages/shared-core/src
+pnpm test -- packages/shared-core/src/modelProfileResolver.test.ts
 ```
 
-Run the nearest browser and Fastify consumer tests as well when shared behavior
-changes.
+The test command is an example; replace the file with the changed algorithm's
+test or source file. A source target discovers related browser and Fastify tests.
+Follow the root [verification workflow](../../docs/structure/testing-and-operations.md#focused-execution).
 
 The boundary command runs `packages/shared-core/src/importBoundary.test.ts` and
 `packages/shared-core/src/ownership.test.ts`.

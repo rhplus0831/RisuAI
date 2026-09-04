@@ -1,6 +1,7 @@
 # Svelte Navigation UI Guide
 
 Last audited: 2026-08-27.
+Targeted source check: 2026-09-05 (chat-scoped toggle hydration and writes).
 
 This guide owns the sidebar, navigation controls, character and chat selection,
 character configuration, and list organization.
@@ -11,7 +12,7 @@ routes and shell priority.
 ## Fast Triage
 
 | Symptom | Inspect first | Then inspect |
-| ------- | ------------- | ------------ |
+| --- | --- | --- |
 | Sidebar route, tab, character, folder, or grid button is wrong | `src/lib/SideBars/Sidebar.svelte` | `src/ts/router.ts`, `src/ts/stores.svelte.ts` |
 | Chat list, chat folder, branch graph, or export/reset flow is wrong | `src/lib/SideBars/SideChatList.svelte` | `src/ts/chatCommands.ts`, `src/ts/server/chatMessageHydration.svelte.ts` |
 | Character profile, media, lorebook, scripts, or TTS editor is wrong | `src/lib/SideBars/CharConfig.svelte` | The focused bridge/upload helper under `src/ts/server/` |
@@ -109,12 +110,37 @@ greetings and message prefixes from `src/ts/gui/branches.ts` to
 
 ## Chat-Scoped Generation Controls
 
+### Owner Readiness And Toggle Preservation
+
 In chat-open mode, `ChatGenerationSettingsControls.svelte`, `Toggles.svelte`,
 and `src/ts/activeChatGenerationSettings.ts` own the chat-local settings UI.
 Optimistic saves serialize per chat and expose pending/queued/failed state; a
 freshness guard prevents a different character projection from rolling back the
 visible value while a save settles. Runtime overlay resolution belongs to
 [Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md).
+
+Toggle reconciliation has an additional readiness contract:
+
+1. `resolveActiveChatGenerationSettings()` exposes
+   `sidebarToggleDefinitionsReady` only when the character, persona,
+   prompt-preset, module, Agent configuration, and module-settings owners are
+   available and the active character/chat resolves. An empty projection during
+   hydration does not prove that its toggle definitions were removed.
+2. `ensureActiveChatSidebarToggleDefaults()` and module-command default filling
+   wait for that readiness. Automatic reconciliation only adds missing defaults;
+   it never prunes saved values. Explicit save paths may prune stale keys only
+   after definitions are ready.
+3. `readChatGenerationSettingsWrite()` in
+   `server/fastify/src/commands/chats.ts` checks both full and sparse writes
+   against authoritative post-update activation. It rejects removal of an
+   existing value whose toggle is still required.
+
+Regression owners: `src/ts/activeChatGenerationSettings.test.ts`,
+`src/lib/SideBars/chatGenerationSettingsControls.test.ts`, and
+`server/fastify/__tests__/commands.test.ts` (delayed Persona-module hydration
+and required-value removal).
+
+### Saved Toggles Presets
 
 Saved Toggles uses `ChatGenerationTogglePresets.svelte` and the app-hosted
 `ChatGenerationTogglePresetDialog.svelte`. The state caption distinguishes

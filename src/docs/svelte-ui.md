@@ -10,7 +10,7 @@ surface-specific ownership.
 ## Related Guides
 
 | Guide | Owns |
-| ----- | ---- |
+| --- | --- |
 | [Chat UI](svelte-chat-ui.md) | Transcript and message rendering, composer variants, generation states, and in-chat confirmations. |
 | [Navigation UI](svelte-navigation-ui.md) | Sidebar, character folders, chat and character selection, and internal reordering. |
 | [Settings UI](svelte-settings-ui.md) | Settings routes, data-driven rows, controls, authoring surfaces, model profiles, and settings persistence. |
@@ -27,7 +27,7 @@ CSS, and plugin execution.
 ## Fast Triage
 
 | Symptom | Inspect first | Continue with |
-| ------- | ------------- | ------------- |
+| --- | --- | --- |
 | Loading, settings, grid, chat, or global overlay is wrong | `src/App.svelte`, `src/appStartup.ts`, `src/ts/router.ts` | This guide and [Client Runtime](client-runtime.md) |
 | Transcript, message HTML, composer, generation progress, or chat confirmation is wrong | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chat.svelte` | [Chat UI](svelte-chat-ui.md) |
 | Sidebar, character folder, character/chat list, or reorder is wrong | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte` | [Navigation UI](svelte-navigation-ui.md) |
@@ -39,7 +39,7 @@ CSS, and plugin execution.
 ## Entrypoints And Shell
 
 | Path | Role |
-| ---- | ---- |
+| --- | --- |
 | `index.html` | Mounts `#app` and loads `/src/main.ts`. |
 | `src/main.ts` | Thin entry boundary: readiness marker, preload-error handling, runtime-environment installation, and dynamic import of `src/appStartup.ts`. |
 | `src/ts/entryStartup.ts`, `src/ts/polyfill.ts`, `src/ts/entryLoadError.ts` | Environment-before-app ordering, conditional baseline globals/polyfills, and the localized pre-mount reload surface. |
@@ -142,7 +142,7 @@ URLs to stores, and synchronizes user-owned store changes back to history.
 Routes are not file-system based.
 
 | Route | Store effect |
-| ----- | ------------ |
+| --- | --- |
 | `/` | Home; clears selection and closes settings and Playground. |
 | `/settings` | Opens settings; split layout selects model settings, while the narrow layout shows the category list. |
 | `/settings/:section` | Opens settings and maps the slug to `SettingsMenuIndex`. |
@@ -219,7 +219,7 @@ Important route and store facts:
 ## Component Ownership
 
 | Path | Visible ownership |
-| ---- | ----------------- |
+| --- | --- |
 | `src/lib/ChatScreens/` | Chat frame, transcript, message rows, composer variants, suggestions, partial edit, resize/emotion displays, and progress; see [Chat UI](svelte-chat-ui.md). |
 | `src/lib/SideBars/` | Desktop navigation, character folders, lists, character config, lorebook, scripts, quick settings, and the custom-sidebar renderer; see [Navigation UI](svelte-navigation-ui.md). |
 | `src/lib/Setting/` | Settings shell, renderer, wrappers, pages, authoring surfaces, bot presets, persona lists, and lore presets; see [Settings UI](svelte-settings-ui.md). |
@@ -368,7 +368,7 @@ playground character and the normal chat shell renders it. Keep menu buttons
 aligned with the slug maps in `src/ts/router.ts`.
 
 | Value | Tool |
-| ----- | ---- |
+| --- | --- |
 | `1` | Menu |
 | `2` | Playground chat through `src/ts/playground.ts` |
 | `3`–`8` | Embedding, tokenizer, syntax, Jinja, image generation, parser |
