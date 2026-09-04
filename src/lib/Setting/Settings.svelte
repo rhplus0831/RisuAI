@@ -37,6 +37,7 @@
     loadAccessibilitySettings,
     loadAdvancedSettings,
     loadAgentPresetSettings,
+    loadBardWikiSettings,
     loadBotSettings,
     loadCommunities,
     loadDisplaySettings,
@@ -46,7 +47,7 @@
     loadInputHookSettings,
     loadLanguageSettings,
     loadModuleSettings,
-    loadOtherBotSettings,
+    loadMemorySettings,
     loadPersonaSettings,
     loadPluginSettings,
     loadPromptSettings,
@@ -213,12 +214,21 @@
               >{language.settingsGroupCapabilities}</span>
             <button
               class={navButtonClass($SettingsMenuIndex === 2)}
-              data-risu-route-intent="/settings/other-bots"
+              data-risu-route-intent="/settings/memory"
               onclick={() => {
-                navigate('/settings/other-bots')
+                navigate('/settings/memory')
               }}>
               <BrainIcon size={20} />
               <span>{language.settingsNavMemory}</span>
+            </button>
+            <button
+              class={navButtonClass($SettingsMenuIndex === 23)}
+              data-risu-route-intent="/settings/bardwiki"
+              onclick={() => {
+                navigate('/settings/bardwiki')
+              }}>
+              <BookOpen size={20} />
+              <span>{language.bardWiki.title}</span>
             </button>
             <button
               class={navButtonClass($SettingsMenuIndex === 14)}
@@ -433,7 +443,7 @@
                 testId="settings-model" />
             {/if}
           {:else if $SettingsMenuIndex === 2}
-            <LazyComponent loader={loadOtherBotSettings} fill testId="settings-other-bots" />
+            <LazyComponent loader={loadMemorySettings} fill testId="settings-memory" />
           {:else if $SettingsMenuIndex === 3}
             <LazyComponent loader={loadDisplaySettings} fill testId="settings-display" />
           {:else if $SettingsMenuIndex === 4}
@@ -485,6 +495,8 @@
             <LazyComponent loader={loadRequestHistorySettings} fill testId="settings-request-history" />
           {:else if $SettingsMenuIndex === 22}
             <LazyComponent loader={loadSourceCode} fill testId="settings-source-code" />
+          {:else if $SettingsMenuIndex === 23}
+            <LazyComponent loader={loadBardWikiSettings} fill testId="settings-bardwiki" />
           {:else if $SettingsMenuIndex === 77}
             <LazyComponent loader={loadThanksPage} fill testId="settings-thanks" />
           {/if}

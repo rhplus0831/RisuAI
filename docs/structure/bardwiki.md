@@ -47,11 +47,11 @@ as appropriate.
 
 ## Settings And Workspace
 
-The Memory settings page has a lazy BardWiki tab. Global settings choose default
-enablement, Hypa/BardWiki/Hybrid mode, model and prompt owners, automatic and
-canonical update policy, total/partition token budgets, selected-document cap,
-link hops, and recent-query depth. New chats inherit globals; the workspace can
-persist nullable per-chat overrides.
+The standalone BardWiki page under Settings > Tools & Extensions is available at
+`/settings/bardwiki`. It chooses default enablement, Hypa/BardWiki/Hybrid mode,
+model and prompt owners, automatic and canonical update policy, total/partition
+token budgets, selected-document cap, link hops, and recent-query depth. New
+chats inherit globals; the workspace can persist nullable per-chat overrides.
 
 The active-chat overflow menu opens the lazy, focus-trapped workspace. It owns:
 

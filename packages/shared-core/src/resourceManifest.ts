@@ -277,9 +277,9 @@ export const RESOURCE_SURFACE_MANIFEST = {
       standalone('promptPresetsId', ['render', 'interact', 'mutate']),
     ],
   },
-  'settings:other-bots': {
+  'settings:memory': {
     family: 'settings',
-    owners: ['src/lib/Setting/Pages/OtherBotSettings.svelte', 'src/lib/Setting/Pages/BardWikiSettings.svelte'],
+    owners: ['src/lib/Setting/Pages/OtherBotSettings.svelte'],
     requirements: [
       group('media', ['render', 'interact', 'mutate']),
       group('memory', ['render', 'interact', 'mutate']),
@@ -294,6 +294,15 @@ export const RESOURCE_SURFACE_MANIFEST = {
     ],
     notes:
       'The memory group owns selectedHypaV3PresetId; hypaV3PresetId is its derived numeric compatibility projection.',
+  },
+  'settings:bardwiki': {
+    family: 'settings',
+    owners: ['src/lib/Setting/Pages/BardWikiSettings.svelte'],
+    requirements: [
+      group('memory', ['render', 'interact', 'mutate'], ['bardWiki']),
+      group('providers', ['render', 'interact'], ['modelProfiles']),
+      collection('promptPresets', ['render', 'interact']),
+    ],
   },
   'settings:display': {
     family: 'settings',
@@ -756,7 +765,7 @@ export type ResourceSurfaceId = keyof typeof RESOURCE_SURFACE_MANIFEST
 export const SETTINGS_RESOURCE_SURFACE_BY_INDEX = {
   0: 'settings:user-backup',
   1: 'settings:bot-model-prompt',
-  2: 'settings:other-bots',
+  2: 'settings:memory',
   3: 'settings:display',
   4: 'settings:plugins',
   6: 'settings:advanced',
@@ -775,6 +784,7 @@ export const SETTINGS_RESOURCE_SURFACE_BY_INDEX = {
   20: 'settings:input-hooks',
   21: 'settings:request-history',
   22: 'settings:source-code',
+  23: 'settings:bardwiki',
   77: 'settings:supporter',
 } as const satisfies Record<number, ResourceSurfaceId>
 

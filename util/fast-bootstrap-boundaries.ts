@@ -25,6 +25,7 @@ export const phase1LazyBoundarySources = [
   'src/lib/Setting/Pages/UserSettings.svelte',
   'src/lib/Setting/Pages/BotSettings.svelte',
   'src/lib/Setting/Pages/OtherBotSettings.svelte',
+  'src/lib/Setting/Pages/BardWikiSettings.svelte',
   'src/lib/Setting/Pages/DisplaySettings.svelte',
   'src/lib/Setting/Pages/PluginSettings.svelte',
   'src/lib/Setting/Pages/AdvancedSettings.svelte',

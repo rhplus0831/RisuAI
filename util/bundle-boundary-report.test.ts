@@ -164,8 +164,8 @@ describe('bundle boundary report', () => {
   })
 
   it('keeps the shared lazy inventory unique and complete', () => {
-    expect(phase1LazyBoundarySources).toHaveLength(59)
-    expect(new Set(phase1LazyBoundarySources).size).toBe(59)
+    expect(phase1LazyBoundarySources).toHaveLength(60)
+    expect(new Set(phase1LazyBoundarySources).size).toBe(60)
   })
 
   it('formats deterministic closure summaries', () => {

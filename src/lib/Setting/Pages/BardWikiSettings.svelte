@@ -42,6 +42,8 @@
   }
 </script>
 
+<h2 class="mb-2 mt-2 text-2xl font-bold">{language.bardWiki.title}</h2>
+
 <section class="flex flex-col gap-4" data-risu-bardwiki-settings>
   <p class="text-sm text-textcolor2">{language.bardWiki.description}</p>
 

@@ -19,6 +19,9 @@ export async function applySettingsRoute(
   SettingsMenuIndex.set(route.index)
   PlaygroundStore.set(0)
   OpenRealmStore.set(false)
+  if (route.index === 2 && (route.section === 'other-bots' || route.section === 'otherbots')) {
+    context.replacePath('/settings/memory')
+  }
   if (route.index === 12 && route.personaId) await selectRoutedPersona(route.personaId, context)
 }
 

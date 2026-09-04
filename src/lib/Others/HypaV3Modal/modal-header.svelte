@@ -80,7 +80,7 @@
 
   function openSettings(): void {
     $settingsOpen = true
-    $SettingsMenuIndex = 2 // Other bot settings
+    $SettingsMenuIndex = 2 // Memory settings
   }
 
   function requestClose(): boolean | Promise<boolean> {

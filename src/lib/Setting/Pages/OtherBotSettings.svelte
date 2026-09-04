@@ -67,9 +67,6 @@
   import { reconcileLegacyGuiSubmenu } from 'src/ts/setting/legacyGuiLayout'
   import { confirmSettingsItemRemoval } from 'src/ts/setting/confirmSettingsItemRemoval'
   import { resolveModelProfile } from 'src/ts/model/modelProfileResolver'
-  import LazyComponent from 'src/lib/UI/LazyComponent.svelte'
-
-  const loadBardWikiSettings = () => import('./BardWikiSettings.svelte')
 
   let componentAlive = true
   onDestroy(() => {
@@ -778,26 +775,11 @@
       onclick={() => {
         submenu = 3
       }}
-      class="p-2 flex-1 border-r border-darkborderc"
+      class="p-2 flex-1"
       class:bg-darkbutton={submenu === 3}>
       <span>{language.imageGeneration}</span>
     </button>
-    <button
-      aria-pressed={submenu === 4}
-      onclick={() => {
-        submenu = 4
-      }}
-      class="p-2 flex-1"
-      class:bg-darkbutton={submenu === 4}>
-      <span>{language.bardWiki.title}</span>
-    </button>
   </div>
-{/if}
-
-{#if submenu === 4 || submenu === -1}
-  <Accordion name={language.bardWiki.title} styled disabled={submenu !== -1}>
-    <LazyComponent loader={loadBardWikiSettings} testId="bardwiki-settings" />
-  </Accordion>
 {/if}
 
 {#if submenu === 3 || submenu === -1}

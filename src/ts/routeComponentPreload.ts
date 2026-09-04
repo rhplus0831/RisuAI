@@ -22,8 +22,11 @@ export const loadPlaygroundMenu = cachedRouteComponentLoader(() => import('../li
 
 export const loadUserSettings = cachedRouteComponentLoader(() => import('../lib/Setting/Pages/UserSettings.svelte'))
 export const loadBotSettings = cachedRouteComponentLoader(() => import('../lib/Setting/Pages/BotSettings.svelte'))
-export const loadOtherBotSettings = cachedRouteComponentLoader(
+export const loadMemorySettings = cachedRouteComponentLoader(
   () => import('../lib/Setting/Pages/OtherBotSettings.svelte'),
+)
+export const loadBardWikiSettings = cachedRouteComponentLoader(
+  () => import('../lib/Setting/Pages/BardWikiSettings.svelte'),
 )
 export const loadDisplaySettings = cachedRouteComponentLoader(
   () => import('../lib/Setting/Pages/DisplaySettings.svelte'),
@@ -99,7 +102,7 @@ const settingsPageLoaders = new Map<number, RouteComponentLoader>([
   [-1, loadBotSettings],
   [0, loadUserSettings],
   [1, loadBotSettings],
-  [2, loadOtherBotSettings],
+  [2, loadMemorySettings],
   [3, loadDisplaySettings],
   [4, loadPluginSettings],
   [6, loadAdvancedSettings],
@@ -118,6 +121,7 @@ const settingsPageLoaders = new Map<number, RouteComponentLoader>([
   [20, loadInputHookSettings],
   [21, loadRequestHistorySettings],
   [22, loadSourceCode],
+  [23, loadBardWikiSettings],
   [77, loadThanksPage],
 ])
 

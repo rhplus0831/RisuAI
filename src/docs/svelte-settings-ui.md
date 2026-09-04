@@ -40,7 +40,7 @@ Primary indexes and canonical slugs are:
 | ----- | ---- | ------------------------ |
 | `0` | `backup` | `src/lib/Setting/Pages/UserSettings.svelte` |
 | `1` | `bot-preset` | `src/lib/Setting/Pages/BotSettings.svelte` when legacy presets exist; otherwise model settings |
-| `2` | `other-bots` | `src/lib/Setting/Pages/OtherBotSettings.svelte`; visible label is **Memory** through `language.settingsNavMemory` and a brain icon |
+| `2` | `memory` | `src/lib/Setting/Pages/OtherBotSettings.svelte`; visible label is **Memory** through `language.settingsNavMemory` and a brain icon |
 | `3` | `display` | `src/lib/Setting/Pages/DisplaySettings.svelte` |
 | `4` | `plugins` | `src/lib/Setting/Pages/PluginSettings.svelte` |
 | `6` | `advanced` | `src/lib/Setting/Pages/AdvancedSettings.svelte` |
@@ -57,20 +57,24 @@ Primary indexes and canonical slugs are:
 | `19`, `20` | `agent-presets`, `input-hooks` | `src/lib/Setting/Pages/AgentPresetSettings.svelte` and `src/lib/Setting/Pages/InputHookSettings.svelte` |
 | `21` | `request-history` | `src/lib/Setting/Pages/RequestHistorySettings.svelte` |
 | `22` | `source-code` | `src/lib/Setting/Pages/SourceCode.svelte` |
+| `23` | `bardwiki` | `src/lib/Setting/Pages/BardWikiSettings.svelte` |
 | `77` | `supporter` | `src/lib/Setting/Pages/ThanksPage.svelte` after the external-server warning when required |
 
-The `other-bots` URL is retained for compatibility, but the visible nav,
+`/settings/memory` is canonical for the Memory page. `/settings/other-bots`
+and `/settings/otherbots` remain compatibility aliases and are replaced with
+the canonical URL after their route is applied. The visible nav,
 `OtherBotSettings.svelte` heading, and Quick Settings button all say Memory.
-Keep `src/ts/router.ts` slug maps, `SettingsMenuIndex`, page branches, and nav
-conditions aligned.
+Keep the shared route slug maps, `SettingsMenuIndex`, page branches, resource
+surfaces, and nav conditions aligned.
 
-The Memory page owns five lazy inner tabs. Its BardWiki tab renders
-`BardWikiSettings.svelte` only when selected and edits the global defaults for
-enablement, Hypa/BardWiki/Hybrid selection, confirmation policy, model/prompt
-owners, canonical updates, and token/query/link limits. The page explains that
-automatic confirmation and rebuild can make background provider calls and
-therefore incur provider cost. Per-chat overrides belong to the active-chat
-workspace rather than this global page; see
+The Memory page owns four inner tabs for long-term memory, TTS, emotion images,
+and image generation. BardWiki is a separate Tools & Extensions item at
+`/settings/bardwiki`; its lazy page edits the global defaults for enablement,
+Hypa/BardWiki/Hybrid selection, confirmation policy, model/prompt owners,
+canonical updates, and token/query/link limits. The page explains that automatic
+confirmation and rebuild can make background provider calls and therefore incur
+provider cost. Per-chat overrides belong to the active-chat workspace rather
+than this global page; see
 [BardWiki Memory](../../docs/structure/bardwiki.md#settings-and-workspace).
 
 The Data group contains Backup & Restore plus Request History. The latter reads

@@ -18,6 +18,10 @@ describe('parseRoute', () => {
       ['/settings/sourcecode#editor', 'sourcecode', 22],
       ['/settings/requesthistory', 'requesthistory', 21],
       ['/settings/prompt-preset', 'prompt-preset', 18],
+      ['/settings/memory', 'memory', 2],
+      ['/settings/other-bots', 'other-bots', 2],
+      ['/settings/otherbots', 'otherbots', 2],
+      ['/settings/bardwiki', 'bardwiki', 23],
       ['/settings/77', '77', 77],
       ['/settings/5', '5', 17],
       ['/settings/unknown', 'unknown', 17],
@@ -96,6 +100,7 @@ describe('route path planning', () => {
 
   it('applies settings precedence and canonical settings slugs', () => {
     expect(routePathFromState({ ...baseState, settingsOpen: true, settingsMenuIndex: -1 })).toBe('/settings')
+    expect(routePathFromState({ ...baseState, settingsOpen: true, settingsMenuIndex: 2 })).toBe('/settings/memory')
     expect(routePathFromState({ ...baseState, settingsOpen: true, settingsMenuIndex: 19 })).toBe(
       '/settings/agent-presets',
     )
@@ -105,6 +110,7 @@ describe('route path planning', () => {
     expect(routePathFromState({ ...baseState, settingsOpen: true, settingsMenuIndex: 22 })).toBe(
       '/settings/source-code',
     )
+    expect(routePathFromState({ ...baseState, settingsOpen: true, settingsMenuIndex: 23 })).toBe('/settings/bardwiki')
     expect(
       routePathFromState({
         ...baseState,

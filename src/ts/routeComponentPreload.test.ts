@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parseRoute } from './routerRoute'
 import {
+  loadBardWikiSettings,
   loadBotSettings,
   loadDisplaySettings,
   loadGrid,
+  loadMemorySettings,
   loadPlaygroundEmbedding,
   loadPlaygroundInlayExplorer,
   loadPlaygroundMenu,
@@ -17,6 +19,8 @@ vi.mock('../lib/Others/GridCatalog.svelte', () => ({ default: {} }))
 describe('route component preload', () => {
   it('maps route families to their shell and exact page chunks', () => {
     expect(routeComponentLoaders(parseRoute('/settings'))).toEqual([loadSettings, loadBotSettings])
+    expect(routeComponentLoaders(parseRoute('/settings/memory'))).toEqual([loadSettings, loadMemorySettings])
+    expect(routeComponentLoaders(parseRoute('/settings/bardwiki'))).toEqual([loadSettings, loadBardWikiSettings])
     expect(routeComponentLoaders(parseRoute('/settings/display'))).toEqual([loadSettings, loadDisplaySettings])
     expect(routeComponentLoaders(parseRoute('/playground/embedding'))).toEqual([
       loadPlaygroundMenu,

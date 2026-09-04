@@ -43,7 +43,9 @@ test('BardWiki settings, manual document, confirmation status, and lifecycle too
 
   await page.goto(`${harness.baseUrl}/settings/other-bots`)
   await waitForLoaded(page)
+  await expect(page).toHaveURL(`${harness.baseUrl}/settings/memory`)
   await page.getByRole('button', { name: 'BardWiki', exact: true }).click()
+  await expect(page).toHaveURL(`${harness.baseUrl}/settings/bardwiki`)
   await expect(page.locator('[data-risu-bardwiki-settings]')).toBeVisible()
   await expect(page.locator('[data-risu-bardwiki-settings]')).toContainText('may incur provider cost')
   await expect(page.getByRole('checkbox', { name: 'Enable BardWiki for new chats', exact: true })).toBeChecked()

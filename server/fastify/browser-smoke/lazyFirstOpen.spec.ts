@@ -61,9 +61,14 @@ const settingsCases: LazyRouteCase[] = [
     surface: 'settings-prompt-presets',
   },
   {
-    path: '/settings/other-bots',
+    path: '/settings/memory',
     source: 'src/lib/Setting/Pages/OtherBotSettings.svelte',
-    surface: 'settings-other-bots',
+    surface: 'settings-memory',
+  },
+  {
+    path: '/settings/bardwiki',
+    source: 'src/lib/Setting/Pages/BardWikiSettings.svelte',
+    surface: 'settings-bardwiki',
   },
   {
     path: '/settings/display',
@@ -284,7 +289,7 @@ test('smoke manifest accounts for every lazy boundary', async () => {
     ...routeHandlerSources,
   ])
 
-  expect(expectedSources.size).toBe(59)
+  expect(expectedSources.size).toBe(60)
   expect(expectedSources).toEqual(new Set(phase1LazyBoundarySources))
   for (const source of expectedSources) {
     const chunk = manifest[source]

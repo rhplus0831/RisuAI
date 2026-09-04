@@ -232,6 +232,23 @@ describe('router initial application', () => {
     })
   })
 
+  it.each(['/settings/other-bots', '/settings/otherbots'])('canonicalizes the legacy Memory route %s', async (path) => {
+    const router = await importRouterAt(path)
+    const stores = await import('./stores.svelte')
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/settings/memory')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/memory',
+      section: 'memory',
+      index: 2,
+    })
+    expect(get(stores.SettingsMenuIndex)).toBe(2)
+  })
+
   it('routes and serializes the Source Code settings section', async () => {
     const router = await importRouterAt('/settings/source-code')
     const stores = await import('./stores.svelte')

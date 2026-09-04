@@ -216,20 +216,65 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavInputHooks)).toBeTruthy()
+    expect(settingsButton(language.settingsNavMemory)).toBeTruthy()
+    expect(settingsButton(language.bardWiki.title)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
   })
 
   it('warms the exact settings page on pointer or keyboard intent', () => {
     const modelButton = settingsButton(language.settingsNavModelProfiles)
     const promptButton = settingsButton(language.settingsNavPromptPresets)
+    const memoryButton = settingsButton(language.settingsNavMemory)
+    const bardWikiButton = settingsButton(language.bardWiki.title)
     expect(modelButton).toBeTruthy()
     expect(promptButton).toBeTruthy()
+    expect(memoryButton).toBeTruthy()
+    expect(bardWikiButton).toBeTruthy()
 
     modelButton?.dispatchEvent(new Event('pointerover', { bubbles: true }))
     promptButton?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    memoryButton?.dispatchEvent(new Event('pointerover', { bubbles: true }))
+    bardWikiButton?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
 
     expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(1, '/settings/model')
     expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(2, '/settings/prompt-settings')
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(3, '/settings/memory')
+    expect(routeIntentSpies.prefetch).toHaveBeenNthCalledWith(4, '/settings/bardwiki')
+  })
+
+  it('opens Memory through its canonical route', async () => {
+    const memoryButton = settingsButton(language.settingsNavMemory)
+    expect(memoryButton).toBeTruthy()
+
+    memoryButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/memory',
+      section: 'memory',
+      index: 2,
+    })
+  })
+
+  it('opens the standalone BardWiki settings page from Tools & Extensions', async () => {
+    const bardWikiButton = settingsButton(language.bardWiki.title)
+    expect(bardWikiButton).toBeTruthy()
+
+    bardWikiButton?.click()
+    await flushClick()
+
+    expect(get(currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/bardwiki',
+      section: 'bardwiki',
+      index: 23,
+    })
+
+    await applyNavigatedRoute()
+
+    expect(get(SettingsMenuIndex)).toBe(23)
+    expect(target.querySelector('[data-risu-bardwiki-settings]')).toBeTruthy()
   })
 
   it('updates a selected settings page layout across the responsive breakpoint', async () => {

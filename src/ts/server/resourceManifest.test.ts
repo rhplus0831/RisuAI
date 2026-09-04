@@ -23,7 +23,7 @@ import { SERVER_STANDALONE_SETTING_NAMES } from '@risuai/protocol/standalone-set
 const canonicalSettingsRoutes = [
   ['/settings/backup', 0],
   ['/settings/bot-preset', 1],
-  ['/settings/other-bots', 2],
+  ['/settings/memory', 2],
   ['/settings/display', 3],
   ['/settings/plugins', 4],
   ['/settings/advanced', 6],
@@ -42,6 +42,7 @@ const canonicalSettingsRoutes = [
   ['/settings/input-hooks', 20],
   ['/settings/request-history', 21],
   ['/settings/source-code', 22],
+  ['/settings/bardwiki', 23],
   ['/settings/supporter', 77],
 ] as const
 
@@ -139,6 +140,37 @@ describe('route resource manifest', () => {
       'shared:app-shell',
       'shared:settings-shell',
       SETTINGS_RESOURCE_SURFACE_BY_INDEX[index],
+    ])
+  })
+
+  it.each(['/settings/other-bots', '/settings/otherbots'])(
+    'keeps the legacy Memory alias %s on the canonical Memory resource surface',
+    (path) => {
+      const route = parseRoute(path)
+      expect(route).toMatchObject({ kind: 'settings', index: 2 })
+      expect(resourceSurfacesForRoute(route)).toEqual(['shared:app-shell', 'shared:settings-shell', 'settings:memory'])
+    },
+  )
+
+  it('keeps the standalone BardWiki settings surface narrowly hydrated', () => {
+    expect(RESOURCE_SURFACE_MANIFEST['settings:bardwiki'].requirements).toEqual([
+      {
+        kind: 'settings-group',
+        group: 'memory',
+        keys: ['bardWiki'],
+        purposes: ['render', 'interact', 'mutate'],
+      },
+      {
+        kind: 'settings-group',
+        group: 'providers',
+        keys: ['modelProfiles'],
+        purposes: ['render', 'interact'],
+      },
+      {
+        kind: 'collection',
+        collection: 'promptPresets',
+        purposes: ['render', 'interact'],
+      },
     ])
   })
 

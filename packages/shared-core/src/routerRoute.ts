@@ -39,8 +39,10 @@ const settingIndexBySlug = new Map<string, number>([
   ['model', 17],
   ['model-settings', 17],
   ['models', 17],
+  ['memory', 2],
   ['other-bots', 2],
   ['otherbots', 2],
+  ['bardwiki', 23],
   ['display', 3],
   ['plugin', 4],
   ['plugins', 4],
@@ -78,7 +80,7 @@ const settingIndexBySlug = new Map<string, number>([
 const settingSlugByIndex = new Map<number, string>([
   [0, 'backup'],
   [1, 'bot-preset'],
-  [2, 'other-bots'],
+  [2, 'memory'],
   [3, 'display'],
   [4, 'plugins'],
   [6, 'advanced'],
@@ -97,6 +99,7 @@ const settingSlugByIndex = new Map<number, string>([
   [20, 'input-hooks'],
   [21, 'request-history'],
   [22, 'source-code'],
+  [23, 'bardwiki'],
   [77, 'supporter'],
 ])
 
