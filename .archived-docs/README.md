@@ -33,8 +33,9 @@ codebase whenever an archived line number or contract has drifted.
 - Redundant evidence/progress pairs and parallel audit lenses were consolidated
   into canonical files. Each merged file labels its historical sections and
   states which later section supersedes earlier verdicts.
-- The v1-v3 stability/performance audit and active-risk Markdown files remain
-  live completeness-gate fixtures even though they are archived guidance.
+- Historical completeness-gate references describe the closeout process; those
+  Markdown gates are no longer part of the live suite. Archived JSON remains a
+  live input only where current tooling imports it explicitly.
 - Active plans, when present, live under `docs/plan/`; archived TODO language is
   not an active backlog unless a current plan explicitly reopens it.
 

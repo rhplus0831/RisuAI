@@ -38,17 +38,11 @@ routing, and LLM request history. Start from the
 
 The static registry is capability metadata, not only a picker list. Dispatch
 materializes a sampler or reasoning control only when the selected row declares
-the corresponding parameter. Current high-tier examples are pinned in the
-provider files:
-
-- `src/ts/model/providers/openai.ts` registers `gpt-5.5` and its dated id with
-  `GPT5XHighParameters`. `src/ts/model/types.ts` defines the extra
-  `reasoning_effort_none` and `reasoning_effort_xhigh` capability tiers.
-- `src/ts/model/providers/anthropic.ts` marks `claude-opus-4-8` for adaptive
-  thinking and X-high effort.
-- `src/ts/model/providers/google.ts` marks Gemini 3.6 Flash, 3.5 Flash, and 3.5
-  Flash Lite as thinking-capable. Models carrying
-  `geminiThinkingNoMinimal` downgrade the disabled/minimal tier to `low`.
+the corresponding parameter. The provider files under
+`src/ts/model/providers/` are the source of truth for static model capabilities;
+`src/ts/model/types.ts` owns the reusable capability tiers. Update the provider
+row and its focused model-registry/request tests together when capabilities
+change.
 
 `src/ts/model/modellist.ts` also synthesizes Responses variants for compatible
 OpenAI rows and Vertex variants for Google rows. Dynamic Google and Anthropic

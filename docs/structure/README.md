@@ -4,8 +4,8 @@ Last audited: 2026-08-31.
 
 Read [`STRUCTURE.md`](../../STRUCTURE.md) for repository boundaries and stable
 invariants. Then open only the document that owns the behavior you are changing.
-These notes describe current code; completed workstreams and dated reports live
-under [`.archived-docs/`](../../.archived-docs/README.md).
+These notes describe current code; historical plans and dated reports live under
+`.archived-docs/` and are not authoritative.
 
 ## Ownership
 
@@ -26,7 +26,7 @@ in `docs/structure/` appears below.
 | [`translation-and-input-hooks.md`](translation-and-input-hooks.md) | Translator pipelines and history slots, browser caches, server translation identity/jobs, generated-message translation, and Draft/BTW input hooks. |
 | [`agents-and-presets.md`](agents-and-presets.md) | Agent selection/readiness, Agent Preset models and prepared/lorebook inputs, dependencies, destinations, output composition, provider dispatch, and compatibility. |
 | [`testing-and-operations.md`](testing-and-operations.md) | pnpm scripts, test lanes, CI, deployment, TypeScript, and visible-state testing policy. |
-| [`development-and-observability.md`](development-and-observability.md) | Local/full-stack dev, tracing, startup telemetry and rollout measurement, built SPA serving, browser support, and runtime environment variables. |
+| [`development-and-observability.md`](development-and-observability.md) | Local/full-stack dev, tracing, startup telemetry, startup/bundle verification, built SPA serving, browser support, and runtime environment variables. |
 | [`domain-glossary.md`](domain-glossary.md) | Shared record names, mutation terms, runtime boundaries, cross-layer ownership, focused-guide routing, and retired/no-port vocabulary. |
 | [`generated-and-legacy.md`](generated-and-legacy.md) | Generated, vendored, ignored, compatibility-only, retired, and deliberately absent surfaces. |
 | [`frontend.md`](frontend.md) | Compatibility pointer only; routes old links to the seven current `src/docs/` index/guide files and owns no current guidance. |
@@ -38,10 +38,6 @@ in `docs/structure/` appears below.
 | [`src/docs/README.md`](../../src/docs/README.md) | Choose among the six focused Svelte/browser-runtime guides. |
 | [`docs/tests/README.md`](../tests/README.md) | Find product-flow, domain, server, browser, and visible-state tests without searching the full test tree. |
 | [`server/fastify/__tests__/README.md`](../../server/fastify/__tests__/README.md) | Navigate the flat Fastify test directory by feature area. |
-
-[`frontend.md`](frontend.md) remains only as a compatibility pointer for older
-archive links. It now routes to the `src/docs/` index plus all six current
-frontend/browser guides and owns no current guidance.
 
 ## Cross-Cutting Changes
 
@@ -77,7 +73,7 @@ frontend/browser guides and owns no current guidance.
   constant that makes a claim durable. Do not copy endpoint inventories that can
   be derived from `app.printRoutes()` and `routeManifest.ts`.
 - Link to the canonical owner instead of repeating a contract across documents.
-- Keep active investigations or deferred workstream ledgers under `docs/` only
+- Keep active investigations or temporary planning records under `docs/` only
   while they remain current. Move completed audits, plans, reviews, and closeout
   reports into the matching `.archived-docs/` topic and update its index.
 - Update an audit date only after checking the document against current code.

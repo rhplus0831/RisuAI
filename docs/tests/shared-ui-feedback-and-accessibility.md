@@ -4,8 +4,6 @@ Last audited: 2026-08-29.
 
 This area covers alert and dialog queues, modal focus/inert behavior, shared form controls, popup editors, localization contracts, color/motion/layout runtime helpers, DOM enhancement observers, onboarding, and global browser chrome. The primary inventory is supplemented by cross-cutting sanitizer and stack-map coverage plus the blocking-alert Playwright journey. Login origin and browser-surface policy also relate to [API Security, Runtime, and Network Boundaries](api-security-and-runtime.md).
 
-The suite is notably strong on focus containment, safe initial focus, Escape ownership, opener restoration, stale async results, and accessible names. Its weakest tests inspect source strings rather than the rendered accessibility tree, and Happy DOM cannot validate browser focus, touch, geometry, media autoplay, canvas, or visual layout exactly. There is no automated complete-screen accessibility scan.
-
 ## Alert service queueing and rendered dialogs
 
 | Relevant locations and included cases                                                                                                                                                                                                                                                                                                                                                                                                                                  | Behavior and scenarios verified                                                                                            | Importance                                                                                        | Effectiveness and regression value                                                                                                                 |
@@ -73,14 +71,6 @@ The suite is notably strong on focus containment, safe initial focus, Escape own
 - Welcome persistence and secret masking protect first-run credentials and setup completion.
 - Login origin allowlisting is the security-critical edge of an otherwise presentation-focused area.
 - Color contrast/import and DOM observer cleanup protect accessibility and long-session reliability.
-
-## Attention and gaps
-
-- Add automated complete-screen accessibility checks for onboarding, Settings, chat, catalog, and a complex nested modal; retain targeted keyboard tests for ownership details.
-- Extend the AST icon policy with rendered computed-name/activation cases when a shared action lacks a mounted owner.
-- Add a real browser onboarding flow and stacked confirm/input/select alert flow. Add true mobile/touch and Firefox/WebKit coverage for focus, file, and viewport behavior.
-- Add general language placeholder/formatter parity across all seven languages and representative long translated-label rendering.
-- Broaden `coverage:ui-map`: it currently excludes `src/lib/UI`, Setting, Playground, Mobile, App, language, and GUI runtime files and repeats only six selected component files. Its low aggregate thresholds make it a smoke sentinel, not comprehensive coverage.
 
 ## Primary inventory
 

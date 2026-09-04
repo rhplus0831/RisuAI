@@ -9,17 +9,6 @@ startup telemetry/measurement, built-SPA serving, browser support, and runtime
 environment variables live in
 [Development And Observability](development-and-observability.md).
 
-The
-[Frontend Test Architecture record](../../.archived-docs/performance-and-stability/frontend-test-architecture/status.md)
-explains the rollout and benchmarks behind the settled frontend project
-ownership. This document and the current runner configuration are the source of
-truth for the resulting commands, routing, setup, and lane behavior.
-
-The completed
-[Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
-is historical. Its retained manifests are frozen records rather than live gates;
-current commands and behavior stay authoritative here.
-
 ## Scripts
 
 | Command                            | Purpose                                                                                                                                                                       |
@@ -34,8 +23,8 @@ current commands and behavior stay authoritative here.
 | `pnpm report:bundle-boundaries`    | Validate the generated entry/static closure against protected optional/database/export boundaries and write JSON/text reports.                                              |
 | `pnpm report:initial-preload`      | Measure JavaScript referenced by built `index.html`, enforce the ratified total/largest-file budgets, and write JSON/text reports.                                          |
 | `pnpm build:initial-preload`       | Production build with the boundary plugin, followed by both boundary and initial-preload reports.                                                                          |
-| `pnpm measure:fast-bootstrap`      | Run the initial-preload build/report, browser-smoke build, and small/large cold/warm Phase 0 startup matrix.                                                                |
-| `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the Phase 7 direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                      |
+| `pnpm measure:fast-bootstrap`      | Run the initial-preload build/report, browser-smoke build, and small/large cold/warm startup matrix.                                                                        |
+| `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                              |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:server`                | Check protocol/shared-core types and architecture inventories, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting code.       |
@@ -234,7 +223,7 @@ frontend run. Server Vitest uses Node, forks, a 15s
 test timeout, and
 sets `RISU_DIRECT_REALM_IMPORT_TEST` only when the Realm import test is directly
 selected. Playwright smoke keeps tests within each file serial except for the
-explicitly parallel Phase 7 direct-link batches. Local workers use 75% of
+explicitly parallel direct-link batches. Local workers use 75% of
 available CPUs capped at eight, CI stays at one by default, and
 `RISU_BROWSER_SMOKE_WORKERS` overrides either choice. It retains Chromium traces
 on failure and rejects focused tests when CI is truthy.
@@ -282,11 +271,6 @@ collections, and character resources for the requesting test only; it does not
 patch production bootstrap behavior. Production `/api/v1/bootstrap` remains
 runtime-only and has no legacy `database` property. New tests should use the
 narrow resource reader unless composed state is the behavior under test.
-Closed
-client-thinning and v1-v4 stability audits under `.archived-docs/` are
-historical records, not test fixtures; current behavior is protected directly
-by feature and performance regression tests.
-
 Communication-cost regressions stay in the normal frontend/server lanes rather
 than a separate package script. The server lane owns the large-corpus and
 mutation-shape checks in `serverLoadCostHarness.test.ts`,

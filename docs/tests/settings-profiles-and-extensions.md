@@ -4,8 +4,6 @@ Last audited: 2026-08-29.
 
 This area covers the Settings shell and data-driven renderer, durable form drafts, translator/prompt/model/Agent presets, provider profiles and credentials, plugins and modules, custom sidebars, loadouts, display options, and hotkey configuration. Provider execution is analyzed in [Providers, Models, and Media](providers-models-and-media.md), extension runtime behavior in [Plugins, Modules, and MCP](plugins-modules-and-mcp.md), and durable bridge/outbox mechanics in [Browser State Sync and Recovery](browser-state-sync-and-recovery.md).
 
-The suite is exceptionally strong on optimistic edits, debounced/lifecycle flushes, command ordering, rollback, authoritative projection convergence, and stale dialog ownership. Its biggest liabilities are a handful of source-text assertions and several very large mock-heavy component suites. There is no browser journey that edits a representative setting or secret through Fastify and observes the final masked/reconciled UI.
-
 ## Settings shell, renderer, and durable data-driven inputs
 
 | Relevant locations and included cases                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Behavior and scenarios verified                                                                                                                                                                                          | Importance                                                                               | Effectiveness and regression value                                                                                                                                                            |
@@ -91,14 +89,6 @@ router suites separately cover the Source Code navigation route and index.
 - Plugin confirmation/hot-reload ownership and module stable-ID editing protect extension boundaries.
 - Active/global generation picker mode tests prevent changes from landing on the wrong owner.
 - The shared settings-item confirmation has one focused custom-model proof; expand direct cancel/confirm assertions before relying on it for every repeatable editor.
-
-## Attention and gaps
-
-- Add one real browser settings journey: edit a debounced value, navigate away to force keepalive flush, reload after SSE reconciliation, then preserve/replace/clear a masked secret.
-- Replace raw source-string/count checks in Bot/OtherBot/ModuleMenu with compiled AST rules plus representative mounted interactions; exact counts such as “27 sliders” are brittle.
-- Split `TranslatorPresetSettings` and other remaining mega-suites by the logical groups above using common typed harnesses.
-- Add focused contracts for currently indirect pages such as `UserSettings.svelte`, `AccessibilitySettings.svelte`, and `LanguageSettings.svelte`.
-- Keep outbox/receipt implementation assertions, but label them architecture contracts and pair them with visible DOM outcomes.
 
 ## Primary inventory
 

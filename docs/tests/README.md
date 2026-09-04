@@ -4,25 +4,6 @@ Last audited: 2026-09-03.
 
 This documentation groups the current suite by protected product behavior. Treat `package.json` and the runner configuration files as the source of truth for commands and discovery; this guide intentionally avoids snapshot case counts and pass totals, which become stale whenever tests are added or parameterized matrices change.
 
-## Executive summary
-
-The suite is strongest at the application's highest-risk state and protocol boundaries: durable writes, revisions, optimistic rollback, prompt assembly, provider wire contracts, streaming terminal behavior, bounded imports, backups, memory jobs, stale asynchronous UI work, and accessibility/focus behavior.
-
-Assertions are commonly exact and stateful: request bodies and headers, SSE frame order, SQLite rows and revisions, IndexedDB outbox contents, rollback scope, visible DOM state, and resource cleanup are all checked.
-
-The main weakness is integration depth rather than raw case count. Most frontend tests run in happy-dom with mocked network/storage/browser APIs; most provider tests mock upstream services; and the per-file-serial Playwright suite covers selected built-browser/Fastify/SQLite journeys. The Phase 7 fast-bootstrap matrix now provides isolated response-loss replay, offline replay, event-gap recovery, multi-tab writer takeover, observer promotion, direct-link, and optional-runtime failure journeys. Browser smoke also proves visible settings authoring, local backup restore over a conflicting edit, resynchronization, and reload durability. There is still no normal composer-to-stream-to-durable-reload browser journey, page-crash/reload outbox journey combined with writer transfer, or destructive restore while encrypted outbox work needs quarantine/reconciliation. CI also enforces only a deliberately small UI coverage sentinel, not the much broader frontend or backend coverage maps.
-
-The
-[Frontend Test Architecture record](../../.archived-docs/performance-and-stability/frontend-test-architecture/status.md)
-explains the completed migration to explicit Node, Svelte+Node, DOM, and
-built-browser capability ownership. The commands and routing documented below
-are authoritative.
-
-The completed
-[Test Suite Effectiveness Audit](../../.archived-docs/performance-and-stability/test-suite-effectiveness-audit/status.md)
-preserves the review decisions and verification history. Its case-count,
-effectiveness, and support manifests are frozen historical records.
-
 ## Index
 
 ### Product flows and UI
@@ -62,7 +43,7 @@ The canonical command inventory and lane semantics are in
 | Completed agent-development verification | `pnpm test:agent` |
 | User-owned full local quality aggregate | `pnpm test:all` |
 | Full pinned compatibility differential | `pnpm prepare:compat-baseline && pnpm test:compat-harness` |
-| Startup rollout evidence | `pnpm verify:fast-bootstrap:phase7` |
+| Startup and bundle verification | `pnpm verify:fast-bootstrap:phase7` |
 
 During implementation, agents use the focused command only when it answers a
 concrete question. It accepts exactly one repository file, rejects directories,
@@ -182,26 +163,8 @@ Playwright run into `fast-bootstrap-results/phase7-integration.{json,txt}`, with
 exact batch and route-index coverage validation. The disposable harness owns a
 temporary authenticated Fastify/SQLite instance per journey or direct-link
 batch. See
-[Development And Observability](../structure/development-and-observability.md#fast-bootstrap-measurement-and-rollout-gate)
+[Development And Observability](../structure/development-and-observability.md#startup-and-bundle-verification)
 for fixtures, budgets, artifact interpretation, and request-trace correlation.
-
-## Major coverage strengths
-
-- Durable state and data integrity. The revision/receipt transaction suites, encrypted pending-mutation outbox, replay/dependency lanes, hydration fences, targeted invalidation, and field-scoped rollback tests are the suite's deepest protection. They exercise response loss, stale writers, concurrent edits, partial success, restart recovery, and real SQLite constraints.
-- Prompt and generation contracts. Exact prompt rows, golden local/server-backed fixtures, eligibility matrices, terminal SSE vocabulary, fragmented frames, disconnect/reattach/cancel behavior, and reroll persistence make semantic or message-loss regressions likely to be caught.
-- Provider and security boundaries. Every major provider family has request/stream/error/abort coverage. Secret masking, stable identity, fixed-operation allowlists, endpoint binding, SSRF prevention, body/decompression caps, trace redaction, and prototype-pollution cases are especially valuable.
-- Recoverability and untrusted content. Backups, `.risu` codecs, bundle import/export, asset hashing/GC, Realm/CharX staging, rollback, size caps, aborts, and historical-format normalization use real files, archives, bytes, and SQLite state rather than only shape mocks.
-- Asynchronous UI ownership. Character, media, catalog, modal, settings, memory, translation, and Playground tests consistently guard "latest request wins," target disappearance, stale completion, dirty-field preservation, cancellation, and focus restoration.
-- Performance invariants. Clone counts, SQL reads/table writes, cache reuse, parser invalidation, asset loads, and large-corpus request shapes explicitly protect users with large libraries. These assertions are implementation-aware but cover real regression classes.
-
-## Major gaps
-
-- Too few complete browser journeys. The per-file-serial Chromium suite cannot cover the number of independently tested layers. Missing high-value journeys include normal composer streaming and reload, crash/replay, two-tab writer transfer, profile creation-to-generation, Hypa jobs, multi-step loadouts/modules, and destructive backup restore while queued outbox work must be quarantined or reconciled.
-- Mocked external and browser behavior. Provider APIs, Web Push, Web Speech/AudioContext, image decoding/canvas/compression, workers, IndexedDB quota/upgrade failure, Web Locks, and most service-worker behavior are simulated. Deterministic unit tests should remain, but bounded opt-in canaries and a few real-browser media/storage cases are needed.
-- Coverage and CI governance are narrow. The enforced UI map samples six files with low aggregate thresholds; the much broader frontend/backend maps have no floors or changed-file policy. CI uploads retained Playwright failure traces/results, the startup matrix, and the Phase 7 integration report. Important low-covered seams include browser Hypa implementations, plugin safety/sandbox branches, parsing/script orchestration, some provider adapters, backend CBS/lorebook/trigger effects, Realm card conversion, and several runtime/error branches.
-- Duplicated client/server contracts can drift. Capability eligibility, command routes, SSE event names, prompt/lore behavior, preset schemas, and provider option matrices are hand-maintained on both sides. Independent tests provide defense in depth, but shared typed fixtures or parity checks are missing. Persisted asset discovery and local-backup rewriting are the closed exception: they share a narrow owner catalog with explicit parity and arbitrary-JSON negative tests.
-- Scale/stress ownership is selective. The 7,000-asset Realm case and render-cost harness now have isolated local/CI lanes, but other large-corpus bounds still rely on their ordinary suite owners. New resource-sensitive contracts need explicit concurrency and schedule decisions.
-- Some visible outcomes stop at internal state. Many bridge and command tests assert projections and mocks but do not mount the consuming component. Translation, media, memory, optimistic rollback, and provider-profile changes need selective DOM/browser confirmation.
 
 ## Regression-critical test groups
 
@@ -229,35 +192,17 @@ in-flight completion rejection, and entry/byte bounds aggregated across all
 retained namespaces. The route metric case exercises the same A/B/A namespace
 sequence through Fastify.
 
-1. Outbox, dispatch, replay, bootstrap, and invalidation: `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `startupReadiness`, `resourceState`, `resourceInvalidation`, and the Phase 0/7 browser matrices. These are the core protection against lost, duplicated, or stale user edits.
+1. Outbox, dispatch, replay, bootstrap, and invalidation: `pendingMutationOutbox`, `durableMutationDispatch`, `durableMutationTerminalRejection`, `pendingMutationReplay`, browser `commands`, `bootstrap`, `startupReadiness`, `resourceState`, `resourceInvalidation`, and the startup/recovery browser matrices. These are the core protection against lost, duplicated, or stale user edits.
 2. Generation goldens and durable lifecycle: `sendChat.fixtures*`, server `assemble`, `generation.chat`, `durableGeneration`, provider transport/terminal assertions, and the reroll Playwright journey. They protect model-visible context and durable transcripts.
 3. Persistence transactions, identity repair, and recovery: command/revision/idempotency/concurrency suites, migrations, lorebook and record identity normalization, backups, save/bundle codecs, asset GC, and Realm atomic staging. These defend user data at rest and through destructive operations.
 4. Provider conformance, credentials, and egress: provider request/stream/catalog contracts, dispatch-option parity, stale inline-secret migration, model-profile secret tests, provider operation allowlists, OAuth refresh, SSRF, redaction, and request/body/decompression limits. Regressions here have security impact beyond functional breakage.
 5. Memory jobs: repository transitions, embed/summarize handlers, worker fairness/cancellation/shutdown, selection/ranking, browser terminal fences, and prompt-memory fixtures. Partial failures otherwise risk corrupt indexes or permanently active jobs.
 6. Performance gates: render/clone probes and server load-cost assertions. They are the only direct defense against accidentally restoring whole-corpus work to common actions.
 
-## Tests requiring attention
-
-- Structural or implementation-coupled checks: `AccessibleIconActions`, several Bot/character/module/editor accessibility gates, `browserLocalSurface`, source-text bridge assertions, clone-count probes, exact epoch/cache/read-count tests, and terminal-oracle tests. Some are useful architecture policy; they should be labeled as such and paired with behavior assertions rather than treated as user-outcome evidence.
-- Very large suites: browser `commands.test.ts`, `chatCommands.test.ts`, `storage/database.svelte.test.ts`, `TranslatorPresetSettings.svelte.test.ts`, the `DefaultChatScreen*.test.ts` family, `SideChatList.svelte.test.ts`, and backend `generation.chat.test.ts`/`assemble.test.ts` combine many concerns and dense shared mocks. Their scenarios are mostly valuable, but failure diagnosis and safe fixture changes are difficult.
-- Repeated race/focus matrices: latest-operation upload tests, modal focus/Escape checks, dirty-field rollback, and route allow/deny tables repeat setup across domains. Consolidate shared contracts without deleting ownership-specific cases.
-- Browser failure isolation: the visible-state journeys now synchronize on command responses, applied revisions, lineage conflict, navigation, document reload, and settled DOM/store state, and attach recent console/page errors on failure. The first Fastify browser smoke remains a long, monolithic journey whose failure location can be hard to interpret.
-- Conditional/resource-sensitive gates: keep the direct-only Realm scale, render, and load-cost harnesses under controlled concurrency.
-- Narrow tests: several icon/DropList/supporter/static token/source-presence checks prove only one mapping or markup fact. Keep them cheap, but do not count them as substitutes for interaction or accessibility-name computation.
-- Global test doubles: the Vitest baseline now installs the production clone helper, with native/fallback semantics and global-restoration behavior locked by tests. It still mocks KaTeX to an empty module; retain at least one non-mocked math-rendering integration.
-- Shared browser fixture state: two Playwright specs reuse one Fastify/SQLite fixture across their serial cases. This is efficient but order-coupled. A common fixture with explicit per-test state ownership/reset would make failures easier to reproduce.
-- Explicit resource composition: migrated Fastify suites use `injectComposedResourceDatabase` only when they need an assembled read-after-write view. The real bootstrap response remains unmodified and has no synthetic `database` property; new tests should prefer the narrow resource reader that owns the behavior.
-
-## Prioritized recommendations
-
-1. Add the remaining end-to-end reliability journeys. First: real composer submission → incremental stream → durable completion → reload. Second: stage a durable edit → lose the response/kill the page → reload and replay exactly once, with a two-tab writer-transfer variant. Third: extend the existing visible backup-restore/reload proof by staging encrypted outbox work before restore and asserting quarantine/reconciliation.
-2. Strengthen CI governance. Keep the fast UI sentinel's production-only denominator and add realistic per-area or changed-file floors for high-risk frontend/backend code. Keep Playwright artifacts plus isolated Realm/performance lanes as required owners.
-3. Replace remaining fixed timing and improve failure isolation. Use observable barriers in backup/abort, Lua, worker, and remaining browser/server tests; keep parameter rows behavior-oriented and uniquely named; split monolithic browser smoke while preserving its cross-layer assertions.
-4. Create shared parity contracts. Generate or share typed fixtures for client/server provider capability, durable routes, SSE event vocabulary, prompt/lore parity, and preset schemas while preserving boundary-specific assertions; keep the completed persisted-asset owner catalog parity gate current.
-5. Target uncovered high-risk semantics. Prioritize CBS/lore/trigger effects, similarity ranking with malformed/mixed vectors, Realm card conversion variants, plugin sandbox/safety branches, cache limits/quota failures, and provider error/content-block variants over indiscriminate global percentage increases.
-6. Refactor the test architecture. Split mega-suites by behavior, centralize durable-command/race/focus harnesses, replace source-string checks with mounted behavior or one explicit static architecture gate, and retain exact state/DOM assertions in domain-owned tests.
-7. Add bounded integration canaries. Use sanitized recorded upstream responses and optional live provider/media/Push canaries with strict cost, secret, timeout, and network controls. They should supplement—not make flaky—the deterministic default suite.
-
 ## Reading the detailed documents
 
-Each feature document lists its primary inventory, groups representative cases by behavior, explains the regression protected, and evaluates assertion strength, overlap, coupling, realism, and gaps. Cross-cutting tests may appear in more than one document—for example, a memory modal in both memory and character UI. Inventories name files rather than claiming a suite-wide count; use runner discovery when an exact current count is needed.
+Each feature document lists its primary inventory and groups representative
+cases by behavior and the regression protected. Cross-cutting tests may appear
+in more than one document—for example, a memory modal in both memory and
+character UI. Inventories name files rather than claiming a suite-wide count;
+use runner discovery when an exact current count is needed.

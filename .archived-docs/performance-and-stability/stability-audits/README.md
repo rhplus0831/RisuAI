@@ -8,5 +8,5 @@
 | v4      | [`v4/`](v4/README.md) |
 
 Versions remain separate because their finding universes and repeated IDs are
-chronological, not duplicate files. The v1-v3 audit and active-risk files are
-also live completeness-gate fixtures.
+chronological, not duplicate files. Their completeness-gate references describe
+historical closeout checks that are no longer part of the live suite.

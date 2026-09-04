@@ -21,19 +21,6 @@ assessed in [Settings, Profiles, and Extensions](settings-profiles-and-extension
 alerts, and accessibility are assessed in
 [Shared UI, Feedback, and Accessibility](shared-ui-feedback-and-accessibility.md).
 
-## Assessment
-
-Coverage is unusually deep around the failures that most often cause browser
-data loss: index shifts during an await, owner switches, a second local edit overtaking the first,
-authoritative projection replacement, retryable durable retention, terminal rollback, partial success in
-a command sequence, and rollback that must touch only fields still equal to the failed attempt.
-
-Assertion strength is high. Tests normally assert the immediate optimistic value, exact command payload,
-durable ordering or result classification, and final rollback/retained state while checking that sibling
-rows and newer edits survive. The main limitation is that many cases stop at resource state or mocked
-command calls. Only part of the prompt owner suite mounts real Svelte UI; most character, chat, persona,
-loadout, module, lorebook, and script rollback behavior lacks a rendered-state assertion.
-
 ## Test groups
 
 | Logical group                                                | Relevant test locations and included cases                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Behavior and regression importance                                                                                                                                                                                                | Effectiveness and value                                                                                                                                                                                                                                                                                                                                                       |
@@ -124,42 +111,6 @@ coverage boundaries explicit without repeating one paragraph per assertion.
 - `persona.test.ts` and `loadout.test.ts` protect cross-resource references and multi-step partial success.
 - `process/modules.test.ts` protects accepted-prefix/retained-suffix module imports and refuses to report
   success before durable settlement.
-
-## Attention and gaps
-
-- The current explicit owners execute resource-state or mounted behavior and no
-  longer read their production source. Companion checks in
-  `src/lib/_audit/frontendArchitecture.static.test.ts` still use source text for
-  explicit wiring policy; do not count those static policies as runtime proof.
-- Large files repeat deferred promises, command receipts, projection epochs, and generic attempted-field/
-  keyed-list rollback. `chatCommands.test.ts` is many lines; `storage/database.svelte.test.ts` is 4,928;
-  lorebook/prompt/script owner suites are each multi-thousand-line. The scenarios are mostly valuable,
-  but shared harnesses would make failures easier to diagnose.
-- Historical work-item identifiers such as “Phase”, “Lxx”, “Mxx”, “K4”, and “P1” do not belong in test
-  titles. Name tests for the behavior, scope, or performance contract they protect.
-- Clone-count and exact snapshot-boundary assertions protect real large-corpus regressions but are
-  intentionally coupled to implementation. Preserve a dedicated performance gate and also assert user
-  outcomes.
-- Most tests mock the transport and do not mount the consuming component. Cross-link chat, settings,
-  sidebar, model, and plugin UI tests, and add DOM coverage where no visible-state test exists.
-- Import and upload byte handling is deliberately not repeated here. Character card, Realm, backup,
-  binary asset, and inlay details belong in the assets/saves document.
-
-## Prioritized recommendations
-
-1. Add mounted optimistic-then-rollback tests for one character field, one chat message edit/delete, one
-   persona selection, one prompt item, one loadout apply, one module toggle, and one lorebook entry. Assert
-   both the optimistic paint and the visible rollback or authoritative replacement.
-2. Add a browser-to-Fastify integration for a multi-step loadout or module import: verify queue ordering,
-   partial success, retained suffix, reload replay, resource reread, and final rendered state.
-3. Keep component wiring policies centralized in the named static architecture
-   gate, and retain mounted behavior as their runtime companion.
-4. Build shared parameterized contracts for latest-operation freshness and attempted-field/keyed-list
-   rollback. Retain domain-specific ownership, stable-ID, payload, and projection cases.
-5. Split the largest files by product behavior while reusing fixtures: chat structures/messages/settings;
-   preset hydration/mutation/replay; lorebook draft/modal/watcher; script classifier/draft/watcher.
-6. Cross-link model/Agent Preset validity, asset/import transport, plugin/MCP permissions, scripting
-   execution, and rendered UI documents so this file does not imply end-to-end coverage it does not own.
 
 ## Primary inventory
 

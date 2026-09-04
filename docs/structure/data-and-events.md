@@ -33,28 +33,20 @@ plus negative sequence positions. Regenerate preserves displaced/new candidates
 as alternates, while send/continue clears the reroll buffer for the appended
 path. Per-chat `hypaV3Data` lives in `chat_hypa_v3`.
 
-`CURRENT_SCHEMA_VERSION` is 37. SQLite includes settings; character, chat,
-message, and per-chat memory rows; split collections; assets; command events and
-mutation receipts; the inlay catalog; push subscriptions; Hypa V3 memory state;
-generation finalization retries; greeting translations; and durable LLM request
-history. It also stores lineage-scoped generation operations and attempts, their
-projection epoch, the generation-effect claim/lease/receipt ledger, and the
-BardWiki settings/document/version/source/link/receipt/job/staging/search
-tables; active stream viewers and job attachments remain process-local.
-Migration v22 drops
-the retired `collection_body_revisions` and `projection_body_cache_state`
-tables; v23
-persists stable ids for legacy global lorebooks and entries; v24 adds durable
-command-mutation receipts; v25 adds persistent database lineage, durable active
-writer ownership/epochs, and acknowledged-receipt tombstones; v26 adds the
-`inlay_catalog` table; v27 adds greeting translations; v28 adds
-`request_history`; v29 adds the generation-operation ledger and durable
-operation identity on finalization/events; v30 adds stable memory-job instance
-identity; v31 adds the generation-effect ledger; and v32 adds effect-claim
-leases. Migration v33 adds BardWiki storage; v34 migrates model-profile
-ownership; v35 and v36 migrate persona and Hypa V3 preset identities; v37
-repairs legacy translator-preset selection identities. Current browser state is rebuilt from concrete REST
-resources rather than a cached database projection.
+`CURRENT_SCHEMA_VERSION` and the ordered `MIGRATIONS` table in
+`server/fastify/src/db.ts` are the schema source of truth. Migration ordering,
+uniqueness, retry safety, and current-version behavior are guarded by
+`server/fastify/__tests__/migrationFoundation.test.ts` and
+`server/fastify/__tests__/db.test.ts`.
+
+SQLite includes settings; character, chat, message, and per-chat memory rows;
+split collections; assets; command events and mutation receipts; the inlay
+catalog; push subscriptions; Hypa V3 memory state; generation finalization
+retries; greeting translations; durable LLM request history; lineage-scoped
+generation operations and attempts; the generation-effect ledger; and BardWiki
+state. Active stream viewers and job attachments remain process-local. Current
+browser state is rebuilt from concrete REST resources rather than a cached
+database projection.
 
 Prompt-template ownership follows the split-preset contract. Modern template
 bodies are persisted as `promptPresets[].promptTemplate` inside

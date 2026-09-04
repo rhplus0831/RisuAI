@@ -12,7 +12,7 @@ declarations and prevent equivalent coupling from returning through another
 import shape.
 
 This workstream activates Workstream 1 of the
-[Architecture Modernization Roadmap](../../../docs/architecture-modernization/PLAN.md).
+[Architecture Modernization Roadmap](../architecture-modernization/PLAN.md).
 [`status.md`](status.md) is the mutable execution router. This plan owns stable
 scope, invariants, phase order, and closeout gates; it does not supersede
 [`STRUCTURE.md`](../../../STRUCTURE.md), current architecture guides, or shipped
@@ -90,7 +90,7 @@ These are planning observations, not the authoritative Phase 0 inventory.
 | Cursor | Initial value | Meaning |
 | --- | --- | --- |
 | Opening Fastify code anchor | `c0df82d5240a29a33efa5995e08cc970e0147573` | Code state inspected while activating the plan; not an implementation-completion claim. |
-| Portfolio authority | `docs/architecture-modernization/PLAN.md` dated 2026-08-30 | Stable cross-workstream dependency and invariant source. |
+| Portfolio authority | Archived Architecture Modernization Roadmap dated 2026-08-30 | Historical cross-workstream dependency and invariant source. |
 | No-new-debt gate | Released at `b01e88b03` | The reproducible 375-edge manifest runs in `check:server`. |
 | Boundary-convention release | Released at `b01e88b03` | Workstream 2 inventory is unblocked; Phase 1 releases shared contracts per family. |
 | Canonical-owner consumers | Per resource, not established | Workstream 2 may consume stable shared contracts without waiting for whole-plan closeout. |

@@ -3,7 +3,7 @@
 Last audited: 2026-08-27.
 
 Use this guide for local/full-stack servers, request and generation tracing,
-browser startup telemetry, fast-bootstrap measurement and rollout reports,
+browser startup telemetry, startup and bundle verification,
 built-SPA serving, browser support, and runtime environment variables. Package
 scripts, test lanes, typechecks, formatting, CI, and deployment policy remain in
 [Testing And Operations](testing-and-operations.md).
@@ -229,7 +229,7 @@ caught or detached. Server logger/subscriber exceptions are isolated from the
 204 response. None of these paths can grant, revoke, delay, or otherwise change
 `canRenderShell`, `canApplyRoutes`, `canMutate`, or `canGenerate`.
 
-## Fast Bootstrap Measurement And Rollout Gate
+## Startup And Bundle Verification
 
 Use Node.js 24 or newer, install Chromium once with
 `pnpm exec playwright install --with-deps chromium`, and run:
@@ -238,27 +238,26 @@ Use Node.js 24 or newer, install Chromium once with
 pnpm verify:fast-bootstrap:phase7
 ```
 
-This is the one-command local initiative gate. It runs
-`measure:fast-bootstrap` first: a production initial-preload/boundary build, a
-browser-smoke build, and the Phase 0 small/large cold/warm startup matrix. It
-then runs the Phase 7 integration matrix. Each browser journey gets a disposable
-authenticated Fastify instance, temporary SQLite/data directory, request trace,
-and imported fixture; writer identity, outbox state, cache state, and revisions
-do not leak between journeys.
+This command runs `measure:fast-bootstrap` first: a production
+initial-preload/boundary build, a browser-smoke build, and the small/large
+cold/warm startup matrix. It then runs the direct-link and recovery integration
+matrix. Each browser journey gets a disposable authenticated Fastify instance,
+temporary SQLite/data directory, request trace, and imported fixture; writer
+identity, outbox state, cache state, and revisions do not leak between journeys.
 
 The small fixture in `server/fastify/browser-smoke/fastBootstrapHarness.ts` is a
 minimal deterministic character/chat database. The large fixture in
 `src/ts/__tests__/largeCorpusFixture.ts` is shared with client/server load-cost
 tests and deliberately expands characters, chats, messages, collections,
-lorebooks, and summary fields. Phase 0 keeps cold browser/resource cache and warm
-browser/resource cache as separate populations. Phase 7 runs both fixtures with
-the observer override disabled and enabled, derives direct-link cases from the
+lorebooks, and summary fields. Cold and warm browser/resource caches remain
+separate populations. The integration matrix runs both fixtures with the
+observer override disabled and enabled, derives direct-link cases from the
 production route manifest, and uses isolated fixtures for replay, event-gap,
-takeover, and failure-injection journeys. The 43 direct links run as four
-independent batches in `startupDirectLinks.spec.ts`; the remaining journeys stay
+takeover, and failure-injection journeys. Direct links run in independently
+isolated batches in `startupDirectLinks.spec.ts`; the remaining journeys stay
 file-serial in `startupRecoveryIntegrationMatrix.spec.ts`. Each worker writes a
-unique partial artifact, and Playwright global teardown validates and merges all
-four route batches with the recovery partial into the existing combined report.
+unique partial artifact, and Playwright global teardown validates and merges the
+route batches with the recovery partial into the combined report.
 
 Generated files are local evidence and are ignored by Git:
 
@@ -271,13 +270,12 @@ Generated files are local evidence and are ignored by Git:
 
 `util/initial-preload-budgets.json` is authoritative. The ratified hard gates are
 921,600 bytes (900 KiB) total initial JavaScript gzip and 512,000 bytes (500
-KiB) for the largest initial file. The historical 1,650,000/675,000-byte
-regression ceilings remain visible as baseline context; the report exits nonzero
-when either comparison fails. The boundary report independently fails when the
-HTML preload list differs from the computed entry closure or when a protected
-database, export, or optional-surface module re-enters that closure. Startup
-matrices additionally require zero user mutation before `writer-ready` and zero
-generation before `chat-ready`.
+KiB) for the largest initial file. The report exits nonzero when either gate
+fails. The boundary report independently fails when the HTML preload list
+differs from the computed entry closure or when a protected database, export,
+or optional-surface module re-enters that closure. Startup matrices additionally
+require zero user mutation before `writer-ready` and zero generation before
+`chat-ready`.
 
 Interpret failures from the first failing layer:
 
@@ -285,12 +283,13 @@ Interpret failures from the first failing layer:
    closure mismatch or named module violation, then `initial-preload.txt` for the
    total/largest-file budget and per-file contribution. Do not loosen a budget
    without before/after artifacts and a named dependency.
-2. For the Phase 0 matrix, compare cold only with cold and warm only with warm.
+2. For the startup matrix, compare cold only with cold and warm only with warm.
    Check milestone ordering/durations, resource payload/cache totals, and the two
    early-request counters. The JSON request UIDs and safe trace summaries identify
    the resource or bootstrap call responsible for a payload/timing change.
-3. For Phase 7, read the matching section of `phase7-integration.txt`: startup
-   rollout, direct links, recovery, writer, or optional runtime. The JSON retains
+3. For integration failures, read the matching section of
+   `phase7-integration.txt`: startup behavior, direct links, recovery, writer,
+   or optional runtime. The JSON retains
    exact revisions, command attempts, receipt acknowledgements, requested paths,
    capabilities, localized failure state, and Retry outcome. Playwright retains
    a trace on failure under `test-results/` when the browser/UI transition itself
@@ -301,9 +300,9 @@ Interpret failures from the first failing layer:
    taxonomy above; route/content values are intentionally absent.
 
 CI runs `pnpm build:initial-preload` in its dedicated initial-preload lane and
-uploads both report families. The normal smoke lane discovers the Phase 7
-integration spec with the other seven browser owners and uploads the startup
-matrix, `phase7-integration.*`, and Playwright results. The explicit
+uploads both report families. The normal smoke lane discovers the integration
+spec with the other browser owners and uploads the startup matrix,
+`phase7-integration.*`, and Playwright results. The explicit
 `verify:fast-bootstrap:phase7` wrapper remains a local convenience that also
 runs the standalone preload measurement first. Do not commit
 `fast-bootstrap-results/`, `test-results/`, `dist/`, trace data, or temporary

@@ -4,12 +4,6 @@ Last audited: 2026-08-30.
 
 This area covers Plugin V3 execution and permissions, V2-series rejection, module import and activation, permissioned network access, MCP client transport/OAuth/tool dispatch, and RisuAccess tools. Durable command mechanics are cross-referenced in [Domain Mutations and Editing Owners](domain-mutations-and-editing-bridges.md); the server egress boundary is also discussed in [API Security and Runtime](api-security-and-runtime.md).
 
-## Assessment
-
-Coverage is deep at the security, cancellation, lifecycle, and optimistic-state seams. The suite repeatedly checks that permissions are bound to the exact plugin identity/script/capability, stale async work cannot mutate a replacement runtime or RisuAccess owner, private targets are rejected, and unload releases listeners, delayed keyboard callbacks, timers, observers, providers, MCP registrations, and pending RPC work. MCP tests similarly cover failed handshakes, expired sessions, header and JSON-body deadlines, standard SSE line framing and parse errors, duplicate response IDs, listener cleanup, bounded buffers/list pagination, and stable dispatch identities.
-
-The main caveat is environment realism. Most Plugin V3 sandbox and MCP transport tests run in happy-dom with mocked windows, frames, transports, and permission prompts. They strongly prove local logic but cannot fully validate a production browser's iframe CSP, cross-window structured-clone/transfer behavior, network stack, or interoperability with real MCP servers.
-
 ## Test groups
 
 | Logical group                                         | Relevant locations and included cases                                                                                                                                                              | Behavior and importance                                                                                                                                                                                                                                                                                                                                               | Effectiveness and overall value                                                                                                                                                                                                                                                                                                            |
@@ -32,15 +26,6 @@ The main caveat is environment realism. Most Plugin V3 sandbox and MCP transport
 - MCP deadline/listener/custom-transport tests prevent permanently pending tool calls and resource leaks.
 - RisuAccess narrow rollback tests prevent one failed tool mutation from reverting unrelated character/module edits.
 - Module import retained-suffix and destructive-refresh cases protect multi-step imports across transient failures.
-
-## Attention and gaps
-
-- Add a maintained Chromium integration test that loads a minimal Plugin V3 iframe, verifies effective CSP/network blocking, performs RPC with transferable/cyclic data, unloads it, and proves all registrations/listeners are gone. A Phase 10 probe already showed active SVG rendered through the real icon component issues no requests/script and opaque guest blobs are refused; retain that as evidence until a tracked lane supersedes it.
-- Add a local standards-conformant MCP test server for discovery, OAuth renewal, SSE/streamable HTTP, duplicate tool names, tool results with text/image/resource content, cancellation, and reconnect.
-- Generate the shared protected-host and plugin-capability matrices from exported protocol catalogs. Keep adversarial spelling/encoding cases explicit.
-- Split `src/ts/plugins/plugins.test.ts` by runtime lifecycle, import/update, and database bridge. Its cases are strong but the mixed harness makes ownership difficult.
-- Expand Google Search/internal client behavior beyond credential non-persistence, or explicitly mark unsupported server-backed paths as compatibility gates.
-- Keep snapshot updates for RisuAccess module output paired with a semantic field diff; a large snapshot should not be the only signal for a tool-schema change.
 
 ## Primary inventory
 

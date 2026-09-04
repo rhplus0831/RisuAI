@@ -32,6 +32,8 @@ Start with:
    record format.
 5. [`latest-verification.md`](latest-verification.md) for reproducible command
    evidence and count changes.
+6. [`post-closeout-guide-assessments-2026-09-04.md`](post-closeout-guide-assessments-2026-09-04.md)
+   for assessment and recommendation text removed from the current test guides.
 
 ## Baseline Anchor
 

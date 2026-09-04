@@ -4,8 +4,6 @@ Last audited: 2026-08-02.
 
 This area covers character profile/media editing, author notes, lorebooks, regex and trigger editors, Hypa V3 memory/summary management, character catalog presentation, and Realm discovery/import/card actions. Script execution is analyzed in [Scripting, Parsing, and Automation](scripting-parsing-and-automation.md), media/import persistence in [Assets, Import, Export, and Backups](assets-import-export-and-backups.md), and chat bookmark navigation in [App Navigation and Chat](app-navigation-and-chat.md).
 
-Coverage is strongest where a delayed picker, confirmation, hydration, translation, or command could apply to a replacement character, row, message, or summary. Stable-ID targeting and optimistic rollback are consistently asserted. The main gap is a lack of real-browser create/edit/delete journeys through Fastify; several character control/token checks inspect source rather than interacting with rendered controls.
-
 ## Character profile, media, avatar, emotion, and voice editing
 
 | Relevant locations and included cases                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Behavior and scenarios verified                                                                                                              | Importance                                                                            | Effectiveness and regression value                                                                                                                                                                                |
@@ -66,14 +64,6 @@ Coverage is strongest where a delayed picker, confirmation, hydration, translati
 - Trigger V2 literal-rendering and drag-generation guards protect both injection and wrong-row mutation.
 - Hypa dirty-close and stale bulk-operation tests protect expensive long-running memory edits.
 - Realm stable card/account/report tests prevent destructive actions on the wrong remote item.
-
-## Attention and gaps
-
-- Add one browser content-authoring journey through Fastify: edit ordinary character fields, create/edit/delete one lore or trigger row, reload, and run the saved definition in generation/display.
-- Replace CharConfig source-level picker-token and control-name checks with delayed picker interactions and computed accessible-name assertions.
-- Exercise Trigger V2 drag/move on a real touch-capable browser and add a save/reload/runtime round trip.
-- Add a live Hypa job/create/cancel/reopen browser journey and a Realm search/import/report journey; current network/job layers are mocked.
-- Add focused full-page coverage for `GlobalLoreBookSettings.svelte` and ordinary name/description/first-message persistence.
 
 ## Primary inventory
 

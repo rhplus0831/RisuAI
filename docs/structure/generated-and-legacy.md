@@ -13,7 +13,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `node_modules/`                                 | Installed root dependencies. The project has no separate `server/fastify/package.json`.                                                                                                                                                                                                                    |
 | `coverage/`                                     | Local reports from the frontend, backend, and UI coverage scripts.                                                                                                                                                                                                                                          |
 | `test-results/`                                 | Playwright/test output.                                                                                                                                                                                                                                                                                     |
-| `fast-bootstrap-results/`                       | Generated startup/bundle measurement and Phase 7 integration reports. Commands and interpretation live in `development-and-observability.md`.                                                                                                                                                             |
+| `fast-bootstrap-results/`                       | Generated startup/bundle measurement and integration reports. Commands and interpretation live in `development-and-observability.md`.                                                                                                                                                                     |
 | `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                                                                                                                                                                                 |
 | `*.tsbuildinfo`                                 | Local TypeScript incremental build artifacts when an ad hoc tool enables incremental compilation; they are not runtime source.                                                                                                                                                                             |
 | `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, and legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
@@ -35,11 +35,10 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `*.snap` under test fixtures                     | Tracked Vitest snapshots; update through the relevant test workflow.                                                                                                    |
 | `server/fastify/browser-smoke/*-snapshots/*.png` | Tracked Playwright visual baselines, not scratch output. Update only for an intentional visible change through the smoke workflow.                                      |
 
-`.archived-docs/` files are historical documentation. They may contain
-present-tense statements, commands, and gate references that were true at
-closeout and are now stale. Prefer `STRUCTURE.md`, `docs/structure/`, code, and
-the current behavioral tests. None of the archived audit Markdown is a live
-test fixture.
+`.archived-docs/` contains historical documentation, not current implementation
+guidance. Prefer `STRUCTURE.md`, `docs/structure/`, code, and current behavioral
+tests. Archived Markdown is not a live test fixture; archived JSON is live only
+when current tooling imports it explicitly.
 
 `docs/structure/frontend.md` is source documentation only as a compatibility
 pointer for older links. Add current frontend guidance to
@@ -89,17 +88,9 @@ wrappers, browser-local persistence as primary runtime, peer sync, Drive sync,
 Risu Account Sync, and legacy `public/sw.js` share/file-handler/offline
 service-worker behavior are archival unless a new plan reopens them.
 
-Closed records under `.archived-docs/` explain how the current runtime landed:
-Fastify migration, client thinning, durable generation, the former lazy
-projection architecture and its replacement by concrete REST resources,
-db-json-to-SQLite
-(`.archived-docs/protocol-and-persistence/sqlite-migration.md`), and the v1-v4
-stability/performance audits under
-`.archived-docs/performance-and-stability/stability-audits/`. They are design
-history, not current guidance.
-
-Current ownership for those systems belongs in the focused guides linked from
-[`README.md`](README.md), not in the historical records.
+Historical migration and audit records explain how the current runtime landed,
+but current ownership belongs in the focused guides linked from
+[`README.md`](README.md).
 
 ## Legacy Names Still Active
 

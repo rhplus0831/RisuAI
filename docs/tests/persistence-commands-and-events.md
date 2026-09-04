@@ -4,8 +4,6 @@ Last audited: 2026-08-29.
 
 This area covers SQLite initialization/schema/defaults, missing-database safety, revisioned domain commands, transactional mutation receipts, persisted/live event delivery, surgical character/chat/message writes, and the load/write-range gates that keep large databases responsive.
 
-This is the backend suite’s strongest data-integrity area. High-value tests routinely combine four or more oracles: HTTP result, revision and event, persisted JSON/SQLite rows, and absence of writes to unrelated rows/tables. The principal maintenance concern is concentration: `commands.test.ts` remains a very large multi-domain suite, while several performance families repeat similar harness setup and assert implementation-level SQL/table behavior.
-
 ## Database initialization, defaults, and migrations
 
 | Test group and included cases                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Behavior protected                                                                                                     | Importance                                                             | Effectiveness and attention                                                                                                                                                                              |
@@ -88,15 +86,6 @@ resource family, and restores mutation capability. The multi-tab journey proves
 the old writer is demoted and only the promoted writer can mutate. These are the
 strongest browser counterparts to the transaction/receipt/event suites, though
 they do not replace their exhaustive route and physical-row matrices.
-
-## Coverage gaps and recommendations
-
-- Split `commands.test.ts` by the behavior groups above while retaining shared harnesses. Rename phase-code-first suites to behavior-first names; phase IDs can remain suffixes.
-- Consolidate range/floor/ceiling/read-budget setup into a declarative command matrix that records route, required reads, permitted writes, fallback and event shape. Preserve route-specific semantic tests separately.
-- Add tracked historical SQLite/database fixtures alongside the synthetic migration schemas, particularly for receipts, event history, extracted messages/Hypa and split presets.
-- Treat command timing metrics as diagnostics unless explicit, stable ceilings are added. Do not describe nonnegative timings as performance gates.
-- Add targeted `splitPresets` cases before changing its normalization branches; do not chase a global percentage without realistic fixtures.
-- Continue requiring the strong negative oracle—no revision, event, receipt, or unrelated write—whenever a command rejects input or a transactional persistence step fails.
 
 ## Complete primary file manifest
 

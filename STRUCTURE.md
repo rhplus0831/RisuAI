@@ -4,14 +4,8 @@ Last audited: 2026-08-30.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
 supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
-task below; each guide is self-contained. [Archived documentation](.archived-docs/README.md)
-records past decisions and is not authoritative.
-
-Upstream synchronization uses
-`f3f0242fba297d82e0efcc2c31ca1428569b70f2` as the behavioral sync cursor:
-upstream changes through that commit were dispositioned and, where applicable,
-ported into this fork's architecture. It is not the Git fork point or a
-source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
+task below; each guide is self-contained. Historical records under
+`.archived-docs/` are not authoritative.
 
 ## Choose By Task
 
@@ -33,7 +27,7 @@ source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
 | Agents, Agent Presets, prepared inputs, dependencies, or output composition | [Agents And Presets](docs/structure/agents-and-presets.md) |
 | Modules, plugins, permissions, or MCP | [Plugins And MCP](docs/structure/plugins-and-mcp.md) |
 | Assets, inlay catalog, `.risu`/CharX/chat exchange, backups, reset, or Realm conversion | [Assets And Saves](docs/structure/assets-and-saves.md) |
-| Startup performance, bundle boundaries, observer rollout, or readiness budgets | [Development And Observability](docs/structure/development-and-observability.md#fast-bootstrap-measurement-and-rollout-gate), [Server Resources And Hydration](docs/structure/server-resources-and-bridges.md), and [Client Runtime](src/docs/client-runtime.md) |
+| Startup performance, bundle boundaries, observer rollout, or readiness budgets | [Development And Observability](docs/structure/development-and-observability.md#startup-and-bundle-verification), [Server Resources And Hydration](docs/structure/server-resources-and-bridges.md), and [Client Runtime](src/docs/client-runtime.md) |
 | Tests, Node/Svelte+Node/DOM/browser capability routing, compatibility harness, CI, TypeScript, or formatting | [Testing And Operations](docs/structure/testing-and-operations.md) and [Test Suite Guide](docs/tests/README.md) |
 | Local dev, tracing, startup telemetry, environment, or browser support | [Development And Observability](docs/structure/development-and-observability.md) |
 | Generated, ignored, compatibility-only, or removed paths | [Generated And Legacy](docs/structure/generated-and-legacy.md) |
@@ -49,15 +43,15 @@ source-equivalent ancestor; compatibility work remains pinned to `71c476e9c`.
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
-| `docs/plan/` | Active multi-phase workstreams, including live status, phase boundaries, and verification records. These plans do not supersede current runtime documentation until their phases land. |
+| `docs/plan/` | Temporary implementation plans while changes are actively in progress; current architecture guides remain authoritative for shipped behavior. |
 | `docs/tests/` | Test-discovery guides organized by product and domain area. |
-| `.archived-docs/` | Closed or retired workstreams and dated reports, including the test-suite effectiveness and Original RisuAI compatibility audits, Fast Bootstrap execution guide, August Fastify audits, upstream-sync sweep, data-driven UI inventory, and message-generation parity audit. Test-audit manifests and narrative records are historical. |
+| `.archived-docs/` | Historical plans, audits, decisions, and verification records. Some archived JSON registers remain machine inputs where current tooling imports them explicitly. |
 | `test/compat-harness/` | Current-stack compatibility goldens run in `pnpm test:all`; the full pinned comparison against the prepared pre-Fastify worktree remains an opt-in/scheduled lane. |
 | `public/` | Static application sources copied or served by Vite, including the service worker and vendor/tokenizer payloads. |
 | `resources/` | Retained packaging artwork; the current Vite/Fastify build does not consume it. |
 | `util/` | Full-stack dev runners, database analyzer, tsserver wrapper, API-flag runner, and userscript bridge. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts` | TypeScript, Vitest, and Playwright configuration. |
-| `.github/workflows/quality.yml`, `.github/workflows/compatibility-differential.yml` | Parallel Node 24 CI for pull requests and pushes to `main` or `fastify`, plus the scheduled/manual full pinned compatibility differential. Quality preserves local `test:all` ownership, validates test topology, runs the focused UI coverage map once, and adds initial-preload reporting. |
+| `.github/workflows/quality.yml`, `.github/workflows/compatibility-differential.yml` | Current quality and compatibility CI definitions. |
 | `.claude/`, `.vscode/`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore` | Agent tooling, editor, package-manager, Git, and search policy. |
 | `.prettier*`, `README.md`, `version.json`, `LICENSE`, `AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md` | Formatting policy, project metadata, and shared/local contributor and agent guidance. |
 | `dist/`, `data/`, `data-agent/`, `node_modules/`, `coverage/`, `test-results/`, `fast-bootstrap-results/` | Generated or runtime state. Persisted/user-uploaded assets live under `data/assets/`; see [Generated And Legacy](docs/structure/generated-and-legacy.md). |
@@ -100,4 +94,6 @@ to find companion files and tests.
   drafts and do not report success merely because dispatch began.
 - Put new user-visible frontend strings in `src/lang`; `src/lang/en.ts` is the
   source language pack.
-- Unless there is an explicit instruction to change the architecture, we should continue to follow the single-writer rule for now. The single-writer rule exists to reduce implementation complexity, so new features do not need to account for multi-writer scenarios.
+- The single-writer rule is an intentional architecture constraint. Unless a
+  change explicitly redesigns that boundary, new features do not need to support
+  multi-writer mutation.

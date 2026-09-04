@@ -4,10 +4,6 @@ Last audited: 2026-08-02.
 
 This area covers legacy memory-window construction and the Hypa V3 lifecycle: planning conversation chunks, summarizing and embedding them, selecting memories for a prompt, operating the background queue, exposing the API, and keeping browser state coherent. Prompt placement is also discussed in [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md); the modal's broader character-management context is covered in [Character Content, Memory, and Catalogs](character-content-memory-and-catalogs.md).
 
-## Assessment
-
-Memory is one of the best-layered subsystems in the suite. Pure planners and ranking functions, SQLite repositories, provider adapters, job handlers, the worker, Fastify routes, browser adapters, and Svelte controls all have targeted coverage. Failure, cancellation, stale-response, idempotency, rollback, and bounded-work cases are unusually prominent. The primary risks are semantic drift between the legacy and Hypa paths, lower branch coverage in similarity ranking and read routes, and the absence of a production-browser journey that lets a real job progress through summary creation, embedding, selection, editing, cancellation, and prompt use.
-
 ## Test groups
 
 | Logical group                                        | Relevant test locations and included cases                                                                                                                                                                                                                                                 | Behavior and regression importance                                                                                                                                                                                                                                                                                                                                                                                                                                              | Effectiveness and value                                                                                                                                                                                                                                                                                                                             |
@@ -31,15 +27,6 @@ Memory is one of the best-layered subsystems in the suite. Pure planners and ran
 - `memoryWorker.test.ts` prevents duplicate execution, starvation, unbounded draining, and jobs stranded during shutdown.
 - The terminal-fence cases in `memoryJobRefresh.test.ts` protect the browser from stale responses that make completed work appear active again.
 - Golden prompt fixtures and `promptMemoryAdapter.test.ts` verify that selected memories actually reach the prompt in canonical order and shape.
-
-## Attention and gaps
-
-- Add a Playwright journey that enables Hypa, starts summary/embedding work, observes live progress, edits a summary, cancels or retries a job, reloads, and verifies the selected memory appears in prompt preview. This would connect seven well-tested layers that are currently isolated.
-- Expand similarity-ranking cases around corrupt/mixed vector dimensions, zero-norm values, multi-query ties, and partial provider output. Target the uncovered semantics, not a percentage alone.
-- Establish shared legacy/Hypa prompt-placement fixtures for the compatibility scenarios both paths claim to preserve.
-- Add opt-in recorded or live canaries for supported embedding and summary providers. Keep credentials and network-dependent checks outside the deterministic default suite.
-- Consolidate repeated modal focus/escape setup into shared helpers while retaining assertions on visible state, the active element, and persisted patches.
-- Keep scheduler/load-cost assertions as explicit performance gates; document intentional bound changes rather than weakening them during refactors.
 
 ## Primary inventory
 

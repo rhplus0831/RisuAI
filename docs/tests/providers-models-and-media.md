@@ -4,12 +4,6 @@ Last audited: 2026-08-02.
 
 This area covers durable model profiles and role bindings, provider capability/routing, provider-specific wire adapters, secret ownership, fixed server operations, translation, image generation, transcription, TTS, and browser media processing. Prompt orchestration is assessed in [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md); MCP OAuth is assessed in [Plugins, Modules, and MCP](plugins-modules-and-mcp.md).
 
-## Assessment
-
-The provider suite has excellent contract-level breadth. Tests assert selected model/profile precedence, URL, headers, credentials, body fields, multimodal conversion, streaming frames, finish/error metadata, aborts, byte limits, and secret redaction for every supported provider family. The model-profile tests are similarly thorough across durable and legacy resolution. This makes accidental credential exposure or a wrong wire shape unlikely to pass unnoticed.
-
-The unavoidable weakness is upstream realism. Normal tests replace all commercial services with mocked fetches or local echo servers. They can prove what RisuAI sends and how it parses recorded shapes, but not that an upstream API still accepts the request today. Browser audio/canvas/image/worker behavior is also largely mocked. There is no opt-in recorded/live provider canary lane and no non-Chromium media journey.
-
 ## Test groups
 
 | Logical group                                                 | Relevant locations and included cases                                                                                                                                                                                                                                                                                                                       | Behavior and importance                                                                                                                                                                                                                                                                                                                                                                                                | Effectiveness and overall value                                                                                                                                                                                                                                                                                                                   |
@@ -36,15 +30,6 @@ The unavoidable weakness is upstream realism. Normal tests replace all commercia
 - Provider stream fragmentation, terminal error, byte-cap, and abort cases protect long-running chat reliability.
 - SigV4/Vertex token cache and credential-isolation tests protect expensive and security-sensitive authentication flows.
 - TTS/image supersession and cancellation tests prevent stale media from applying to a new character/chat target.
-
-## Attention and gaps
-
-- Add an opt-in canary lane using sanitized recorded responses and, where credentials are available, tightly bounded live requests. Version fixtures by upstream API date/model family.
-- Add one cross-layer profile journey: create and bind in the browser, reload masked resources, resolve the role, generate through Fastify, and prove the key never appears in browser state or traces.
-- Generate capability/profile option parity from shared typed fixtures while retaining provider-owned request assertions.
-- Add real Chromium media tests for representative PNG/JPEG orientation/transparency, audio decode/stop/autoplay, PCM wrapping, and image object-URL cleanup; add Firefox/WebKit where feasible.
-- Target uncovered backend semantics in generation tools, chat dispatch, and less common provider branches rather than chasing a global percentage.
-- Expand cache expiration/eviction and credential-rotation cases for all dynamic provider catalogs.
 
 ## Primary inventory
 

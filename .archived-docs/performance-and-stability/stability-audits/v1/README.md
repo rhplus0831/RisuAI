@@ -4,13 +4,10 @@ Date: 2026-06-04
 
 > **ARCHIVED - workstream complete.** Moved from `docs/plan/` to
 > `.archived-docs/performance-and-stability/stability-audits/v1/` on 2026-06-05 after all
-> phases (0-8) closed with the recorded closing verification run. The
-> fix-completeness gate (`src/ts/__tests__/fixCompletenessGate.test.ts`)
-> stays live against this archive and keeps every landed fix's regression
-> test registered. The follow-up v2 audit and its remediation plan are now
-> closed in [`../v2/`](../v2/);
-> the still-gated items here (L4, L7, L26, U2) remain
-> owner-decision/evidence-gated and are referenced by the v2 archive.
+> phases (0-8) closed with the recorded closing verification run. The former
+> fix-completeness gate was deleted after closeout; references to it in this
+> directory are historical. The follow-up v2 audit is closed in
+> [`../v2/`](../v2/).
 
 This directory turns the stability/performance audit into a phased repair plan.
 The audit found 57 confirmed issues: 3 high, 14 medium, and 40 low. The plan

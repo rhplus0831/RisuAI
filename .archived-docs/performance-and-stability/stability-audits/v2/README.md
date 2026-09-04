@@ -9,10 +9,8 @@ Date: 2026-06-05
 > gates passed, `pnpm test` passed (1312 passed / 4 skipped),
 > `pnpm api:test` passed (1846 passed / 1 skipped),
 > `pnpm client-thinning:audit` passed, and both TypeScript project-reference
-> checks passed. The v2 gate
-> (`src/ts/__tests__/fixCompletenessGateV2.test.ts`) stays live against this
-> archive at `.archived-docs/performance-and-stability/stability-audits/v2/`; the v1 gate
-> remains live against `.archived-docs/performance-and-stability/stability-audits/v1/`.
+> checks passed. The former v1/v2 completeness gates were deleted after
+> closeout; references to them in this directory are historical.
 
 This directory turns the v2 stability/performance audit into a phased repair
 plan. The audit found 102 confirmed issues: 3 high, 22 medium, 59 low, and 18

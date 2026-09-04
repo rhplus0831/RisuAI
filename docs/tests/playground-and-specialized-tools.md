@@ -1,10 +1,8 @@
 # Playground and Specialized Tools
 
-Last audited: 2026-08-29 (test-suite effectiveness Phase 10).
+Last audited: 2026-08-29.
 
 This area covers the Playground route and durable starter chat, parser/tokenizer/Jinja/syntax surfaces, image generation and translation, embeddings, subtitles/transcription, translation, inlay asset browsing, MCP tool execution, Iris, and DevTool imports. Provider/media adapters are analyzed in [Providers, Models, and Media](providers-models-and-media.md), MCP runtime and permissions in [Plugins, Modules, and MCP](plugins-modules-and-mcp.md), and parser/script engines in [Scripting, Parsing, and Automation](scripting-parsing-and-automation.md).
-
-The suite is strong on stale request ownership, cancellation, cleanup, retry, control naming, and partial-success behavior. The production-browser first-open matrix now opens every Playground route against its real emitted JavaScript/CSS entry and covers delayed, offline, and stale assets. It remains weakest where the browser is the product after loading: canvas selection, Blob URLs, codecs, AudioContext, downloads, contenteditable, file pickers, workers, and MCP transport are still mocked.
 
 ## Parser, tokenizer, Jinja, syntax, docs, navigation, and conversion
 
@@ -62,14 +60,6 @@ The suite is strong on stale request ownership, cancellation, cleanup, retry, co
 - Inlay partial-delete and preview ownership protect assets under real failure patterns.
 - MCP duplicate-name and pending-action cases prevent execution against the wrong server/tool.
 - Iris supplied-tool enforcement, bounded follow-up, stale reset, and UTF-8 truncation protect a privileged conversational boundary.
-
-## Attention and gaps
-
-- Add at least two real Chromium journeys: image file select/canvas region/result rendering and subtitle file/transcription/cancel/download. Add Firefox/WebKit where codec and Blob behavior differs.
-- Add a Playground MCP journey against a deterministic local server, including refresh, duplicate names, one tool execution, cancellation/error, and permission/OAuth boundary as applicable.
-- Exercise contenteditable parser/syntax input, file conversion, inlay preview URLs, and actual download behavior in a browser.
-- Add an Iris conversation/tool round through the visible modal and persisted reload; avoid relying only on exposed component methods.
-- Keep async ownership fixtures shared and typed, but do not replace per-tool visible error/retry assertions with generic helper tests.
 
 ## Primary inventory
 

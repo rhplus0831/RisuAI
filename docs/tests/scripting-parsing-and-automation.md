@@ -4,10 +4,6 @@ Last audited: 2026-08-30.
 
 This area covers CBS/template parsing, ChatML and rendered-message parsing, regex scripts, slash commands, trigger effects, Lua/Python execution, owner-scoped automation writes, and script-definition editing. Prompt assembly uses many of these features and is cross-referenced in [Prompting, Generation, and Streaming](prompting-generation-and-streaming.md).
 
-## Assessment
-
-The parser tests are compact and valuable: most feed concrete source text to production parsers and assert exact output, including nested control flow, whitespace, escaping, recursion, and budget failures. Trigger/script tests are strongest where they prove durable writes through explicit owners, bounded execution, scoped rollback, cache behavior, and server-side Lua security. Phase 9 added recursion propagation, regex complexity/output bounds, recoverable Lua/Python deadlines, UTF-8 response limits, nested Trigger V2 validation, and collision-free script cache identities. Large legacy trigger/CBS engines still have many branches, client and server implementations lack a comprehensive parity table, and editor/UI tests do not exercise every runtime effect they can author.
-
 ## Test groups
 
 | Logical group                                      | Relevant locations and included cases                                                                                                                                                                                                                              | Behavior and importance                                                                                                                                                                                                                                                                                                                                                         | Effectiveness and overall value                                                                                                                                                                                                                                                                                                                                                               |
@@ -29,14 +25,6 @@ The parser tests are compact and valuable: most feed concrete source text to pro
 - Server Lua SSRF, execution-budget, abort, and low-level-call cases protect a powerful extension boundary.
 - Trigger client/server budget and regex-cap tests prevent runaway automation on chat send or render.
 - Definition delete-race and stale-owner cases prevent one editor from deleting or restoring a newer definition.
-
-## Attention and gaps
-
-- Build a shared CBS compatibility matrix for browser and server adapters: supported value, rejected host-only callback, fallback value, mutation behavior, and error semantics.
-- Add table-driven coverage for the missing V2 trigger data operations rather than another broad happy-path trigger fixture.
-- Run a saved regex/trigger/Lua definition from its real editor through persistence, reload, and generation/display in one browser journey.
-- Expand Python worker tests to real worker startup/termination, abort/deadline, multiple concurrent calls, large/error results, and context replacement.
-- Separate behavior assertions from explicit performance gates where the same test currently asserts both exact output and clone/cache internals.
 
 ## Primary inventory
 
