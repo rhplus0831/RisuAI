@@ -923,7 +923,7 @@
     floatingInputOpen = false
     showFloatingInputButton = false
     await tick()
-    chatsInstance?.scrollToLatestMessage()
+    chatsInstance?.scrollToNaturalEnd()
     inputEle?.focus({ preventScroll: true })
   }
 
@@ -2762,6 +2762,9 @@
               value={floatingComposerValue}
               readonly={floatingDraftPreviewVisible}
               bind:this={inputEle}
+              onfocus={() => {
+                if (!docked) chatsInstance?.prepareForInFlowComposerFocus()
+              }}
               onkeydown={(e) => {
                 if (!floatingDraftPreviewVisible && shouldSendFromComposerKeydown(e)) {
                   send()

@@ -724,6 +724,111 @@ test('core chat controls and blocking alerts remain accessible across responsive
   }
 })
 
+test('latest-message start alignment never mutates spacer geometry during free scrolling', async ({ page }) => {
+  const database = browserSmokeDatabase()
+  database.floatingChatInput = false
+  const character = (
+    database.characters as Array<{
+      chats: Array<Record<string, unknown> & { message?: Array<Record<string, unknown>> }>
+    }>
+  )[0]
+  character.chats[0].message = Array.from({ length: 24 }, (_, index) => ({
+    chatId: `alignment-message-${index}`,
+    role: index % 2 === 0 ? 'user' : 'char',
+    data:
+      index === 23
+        ? 'Latest alignment smoke message'
+        : `Alignment history ${index}: ${'scrollable transcript content '.repeat(12)}`,
+  }))
+  await importDatabase(harness.app, browserSmokeAssertion, database)
+
+  const openChat = async () => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(harness.baseUrl)
+    await waitForBrowserSmokeLoaded(page)
+    await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+
+    const chatRow = page.locator('[data-risu-chat-id="chat-smoke"]').first()
+    const mobileRecentChat = page.getByRole('button', { name: /Open most recent chat Smoke Chat/ })
+    await expect.poll(async () => (await chatRow.isVisible()) || (await mobileRecentChat.isVisible())).toBe(true)
+    if (await chatRow.isVisible()) {
+      await chatRow.locator('button[data-risu-chat-action="select"]').click()
+    } else {
+      await mobileRecentChat.click()
+    }
+  }
+
+  const transcript = page.locator('[data-default-chat-transcript]')
+  const latestMessage = page.locator('.chat-message-container', { hasText: 'Latest alignment smoke message' })
+  const spacer = page.locator('[data-latest-message-scroll-spacer]')
+  const latestStartOffset = () =>
+    latestMessage.evaluate((node) => {
+      const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+      if (!transcriptElement) return Number.POSITIVE_INFINITY
+      return Math.abs(
+        node.getBoundingClientRect().top -
+          (transcriptElement.getBoundingClientRect().top + transcriptElement.clientTop),
+      )
+    })
+
+  await openChat()
+  await expect(latestMessage).toHaveCount(1)
+  await expect(spacer).toHaveCount(1)
+  await expect.poll(latestStartOffset).toBeLessThanOrEqual(1)
+  const expandedSpacerHeight = await spacer.evaluate((node) => node.getBoundingClientRect().height)
+  expect(expandedSpacerHeight).toBeGreaterThan(100)
+
+  await transcript.dispatchEvent('pointerdown')
+  await transcript.evaluate((node) => {
+    node.scrollTop = -160
+    node.dispatchEvent(new Event('scroll'))
+  })
+  await latestMessage.evaluate((node) => {
+    node.style.minHeight = `${node.getBoundingClientRect().height + 180}px`
+  })
+  await expect
+    .poll(() => spacer.evaluate((node) => node.getBoundingClientRect().height))
+    .toBeCloseTo(expandedSpacerHeight, 0)
+
+  await transcript.evaluate((node) => {
+    node.scrollTop = 0
+    node.dispatchEvent(new Event('scroll'))
+  })
+  await expect
+    .poll(() => spacer.evaluate((node) => node.getBoundingClientRect().height))
+    .toBeCloseTo(expandedSpacerHeight, 0)
+
+  // Start a fresh semantic entry, consume the spacer with a tall latest row,
+  // then prove a later free-scroll return to zero does not recreate it.
+  await openChat()
+  await expect.poll(latestStartOffset).toBeLessThanOrEqual(1)
+  await latestMessage.evaluate((node) => {
+    const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+    if (!transcriptElement) throw new Error('Expected transcript while growing latest message')
+    node.style.minHeight = `${transcriptElement.clientHeight + 200}px`
+  })
+  await expect.poll(() => spacer.evaluate((node) => node.getBoundingClientRect().height)).toBeLessThanOrEqual(1)
+  await expect.poll(latestStartOffset).toBeLessThanOrEqual(1)
+  await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBeLessThan(-100)
+
+  await transcript.dispatchEvent('pointerdown')
+  await transcript.evaluate((node) => {
+    node.scrollTop -= 100
+    node.dispatchEvent(new Event('scroll'))
+  })
+  await latestMessage.evaluate((node) => node.style.removeProperty('min-height'))
+  await expect.poll(() => spacer.evaluate((node) => node.getBoundingClientRect().height)).toBeLessThanOrEqual(1)
+
+  await transcript.evaluate((node) => {
+    node.scrollTop = 0
+    node.dispatchEvent(new Event('scroll'))
+  })
+  await expect.poll(() => spacer.evaluate((node) => node.getBoundingClientRect().height)).toBeLessThanOrEqual(1)
+  await expect
+    .poll(() => latestMessage.evaluate((node) => node.getBoundingClientRect().top))
+    .toBeGreaterThan((await transcript.evaluate((node) => node.getBoundingClientRect().top)) + 50)
+})
+
 test('mobile in-flow composer opens from a button above the stable keyboard viewport', async ({ page }) => {
   const database = browserSmokeDatabase()
   database.inputHooks = [{ id: 'draft-smoke', name: 'Draft Smoke', prompt: '', type: 'draft' }]
@@ -787,7 +892,19 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
   })
   await expect(page.getByTestId('default-chat-draft-input')).toBeVisible()
   await expect(latestMessage).toHaveCount(1)
-  await expect(page.locator('[data-latest-message-scroll-spacer]')).toHaveCount(0)
+  await expect(page.locator('[data-latest-message-scroll-spacer]')).toHaveCount(1)
+  await expect
+    .poll(() =>
+      latestMessage.evaluate((node) => {
+        const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+        if (!transcriptElement) return Number.POSITIVE_INFINITY
+        return Math.abs(
+          node.getBoundingClientRect().top -
+            (transcriptElement.getBoundingClientRect().top + transcriptElement.clientTop),
+        )
+      }),
+    )
+    .toBeLessThanOrEqual(1)
   await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
 
   await latestMessage.evaluate((node) => {
@@ -805,7 +922,19 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
     if (!transcriptElement) throw new Error('Expected transcript while expanding newest row')
     node.style.minHeight = `${transcriptElement.clientHeight + 160}px`
   })
-  await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(0)
+  await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBeLessThan(-100)
+  await expect
+    .poll(() =>
+      latestMessage.evaluate((node) => {
+        const transcriptElement = document.querySelector<HTMLElement>('[data-default-chat-transcript]')
+        if (!transcriptElement) return Number.POSITIVE_INFINITY
+        return Math.abs(
+          node.getBoundingClientRect().top -
+            (transcriptElement.getBoundingClientRect().top + transcriptElement.clientTop),
+        )
+      }),
+    )
+    .toBeLessThanOrEqual(1)
 
   await latestMessage.evaluate((node) => {
     node.style.removeProperty('min-height')
@@ -938,6 +1067,7 @@ test('mobile in-flow composer opens from a button above the stable keyboard view
 
   await composer.fill('Floating keyboard draft')
 
+  await transcript.dispatchEvent('pointerdown')
   await expect
     .poll(() =>
       transcript.evaluate((node) => {

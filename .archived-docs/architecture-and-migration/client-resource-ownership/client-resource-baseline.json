@@ -995,7 +995,7 @@
         },
         {
           "file": "src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts",
-          "count": 104
+          "count": 108
         },
         {
           "file": "src/lib/ChatScreens/DefaultChatScreen.shellGreeting.dom.test.ts",
