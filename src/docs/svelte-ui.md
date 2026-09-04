@@ -82,7 +82,7 @@ feature-owned reorder rules. The content-exchange entrypoints are:
   `src/ts/process/modules.ts`, and `src/ts/translator/presets.ts`.
 
 Their formats and durable ownership are canonical in
-[Assets And Saves](../../docs/structure/assets-and-saves.md#client-content-exchange).
+[Assets And Saves](../../docs/structure/assets-and-saves.md#content-exchange).
 
 Application startup has no Terms of Service gate, and the former
 application-wide legal component is gone. The remaining `realmTerms` alert is
@@ -157,11 +157,11 @@ Routes are not file-system based.
 Unknown settings and Playground slugs fall back to their default menu; they are
 not general not-found routes.
 
-`src/ts/server/resourceManifest.ts` maps every route family to the settings
-groups, collections, standalone values, and detail projections it owns. The
-shared application shell is inherited; settings and Playground add their shared
-navigation shells, while chat generation and optional overlays remain separate
-runtime/first-use surfaces. `applyRouteToStores()` calls
+`packages/shared-core/src/resourceManifest.ts` maps every route family to the
+settings groups, collections, standalone values, and detail projections it
+owns. The shared application shell is inherited; settings and Playground add
+their shared navigation shells, while chat generation and optional overlays
+remain separate runtime/first-use surfaces. `applyRouteToStores()` calls
 `prepareRouteResources()` while the memoized loaders in
 `src/ts/routeComponentPreload.ts` resolve the target route shell/page, before
 mutating route-backed stores, and calls

@@ -83,7 +83,7 @@ router suites separately cover the Source Code navigation route and index.
 
 ## Especially critical tests
 
-- `TranslatorPresetSettings`, `src/ts/setting/utils`, and Bot prompt durability protect the hardest convergence and data-loss paths.
+- `TranslatorPresetSettings`, `src/ts/setting/utils.ts`, and Bot prompt durability protect the hardest convergence and data-loss paths.
 - Model secret masking/clearing and bug-report redaction prevent credential disclosure.
 - Profile role/default tests prevent generation from silently using the wrong provider/profile.
 - Plugin confirmation/hot-reload ownership and module stable-ID editing protect extension boundaries.

@@ -245,8 +245,11 @@ names selected CBS inputs and can validate role-tagged ChatML before save.
 Preset-use editing exposes phase, dependency/output wiring, destination,
 failure policy, model/runtime overrides, module integration, and final-output
 CBS text. `src/lib/SideBars/LoreBook/LoreBookData.svelte` owns Agent-only entry
-controls and disables ordinary activation controls for those entries;
-`src/ts/agentLorebookInputs.ts` validates their supported runtime shape.
+controls and disables ordinary activation controls for those entries.
+`packages/shared-core/src/agentOnlyLorebook.ts` identifies the marker, while
+`packages/shared-core/src/agentLorebookInputs.ts` validates the supported runtime
+shape. `src/ts/agentLorebookInputs.ts` adapts those records for browser-side
+Original Risu export.
 There is no generic port-mapping editor: prepared-input scopes, Agent toggles,
 Agent-only lorebook inputs, module references, and the final-output template
 with `{{slot::mainOutput}}`/`{{agent::outputKey}}` are the bounded authoring
@@ -339,9 +342,9 @@ model grid.
 
 `src/lib/Setting/Pages/Model/ProviderCredentialList.svelte` owns credential
 create/edit/delete presentation, masked-secret rotation, and profile-reference
-deletion checks. `src/ts/model/providerCredentialRecords.ts` owns credential
-schema/projection normalization; durable credential and profile mutation helpers
-live in `src/ts/model/modelProfileMutations.ts`.
+deletion checks. `packages/shared-core/src/providerCredentialRecords.ts` owns
+credential schema/projection normalization; durable credential and profile
+mutation helpers live in `src/ts/model/modelProfileMutations.ts`.
 
 Model and prompt preset application operates on the masked resource projection.
 `src/ts/storage/database.svelte.ts` therefore normalizes projected credentials
@@ -368,12 +371,12 @@ selection UI.
 Advanced Legacy Settings embeds
 `src/lib/Setting/Pages/Model/ModelRoleList.svelte`. It is hidden after every
 role resolves from a durable profile, including supported inherited bindings;
-legacy-inherit keeps it visible. `src/ts/model/modelProfileRecords.ts`
+legacy-inherit keeps it visible. `packages/shared-core/src/modelProfileRecords.ts`
 normalizes profile records, role bindings, runtime defaults, credential
 references, provider options, and fallbacks.
 `src/ts/model/modelProfileUiState.ts` maps resolved state to the summaries and
 visibility used by these pages. Effective resolution and readiness live in
-`src/ts/model/modelProfileResolver.ts` and remain canonical in
+`packages/shared-core/src/modelProfileResolver.ts` and remain canonical in
 [Providers And Models](../../docs/structure/providers-and-models.md).
 
 The same page exposes `adv.regexOutputSizeLimitMiB`, a durable numeric control

@@ -40,6 +40,7 @@ The canonical command inventory and lane semantics are in
 | Goal | Command |
 | ---- | ------- |
 | Agent-focused test or related-source feedback | `pnpm test -- <one-test-or-source-file>` |
+| Current documentation links, indexes, and paths | `pnpm check:docs` |
 | Completed agent-development verification | `pnpm test:agent` |
 | User-owned full local quality aggregate | `pnpm test:all` |
 | Full pinned compatibility differential | `pnpm prepare:compat-baseline && pnpm test:compat-harness` |
@@ -53,9 +54,10 @@ sources query both frontend and server projects. A selected browser-smoke spec
 performs its required build and runs only that spec.
 
 After implementation is complete, agents run `pnpm test:agent` once. It owns
-the core typechecks, topology, ordinary frontend/server suites, and smoke build.
-The user and CI retain the full formatting, coverage, compatibility, scale,
-performance, and Playwright aggregate through `pnpm test:all`.
+the core typechecks, current-document validation, topology, ordinary
+frontend/server suites, and smoke build. The user and CI retain the full
+formatting, coverage, compatibility, scale, performance, and Playwright
+aggregate through `pnpm test:all`.
 
 ### Compatibility evidence ownership
 
@@ -131,10 +133,10 @@ file workers (one in CI), retains traces on failure, and sets `forbidOnly` in CI
 report-only; only the focused UI map has thresholds.
 
 The agent-final `test:agent` command uses the same scheduler but selects only
-`check:server`, topology, ordinary frontend tests, `pnpm check`, isolated server
-tests, and `build:smoke`. Its frontend subprocess runs the six UI-map sentinel
-files without coverage instrumentation and excludes the two explicit performance
-probes. It never launches Playwright.
+`check:server`, current-document validation, topology, ordinary frontend tests,
+`pnpm check`, isolated server tests, and `build:smoke`. Its frontend subprocess
+runs the six UI-map sentinel files without coverage instrumentation and excludes
+the two explicit performance probes. It never launches Playwright.
 
 The user-owned `test:all` command defaults to two concurrent outer lanes; override it with
 `RISU_TEST_ALL_JOBS=<count>` or `--jobs <count>`, and inspect the schedule with
@@ -169,7 +171,7 @@ for fixtures, budgets, artifact interpretation, and request-trace correlation.
 ## Regression-critical test groups
 
 Intermediate display protocol/cache/route coverage lives in
-`src/ts/process/displaySourceProtocol.test.ts`,
+`packages/protocol/src/displaySource.test.ts`,
 `src/ts/server/displaySources.test.ts`,
 `server/fastify/__tests__/displaySourceCache.test.ts`, and
 `server/fastify/__tests__/displaySources.test.ts`. The existing ChatBody memo,

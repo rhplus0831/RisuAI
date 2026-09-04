@@ -124,7 +124,7 @@ capabilities consumed by the shell and protocol adapters:
 | `src/ts/server/bootstrap.ts`                               | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.                                                  |
 | `src/ts/server/resourceReads.ts`                           | Browser wrappers and response validation for settings, collections, characters, and the inlay catalog.                               |
 | `src/ts/server/shellHydration.ts`                          | Atomically preflights and applies the exact shell settings plus versioned character summaries at one revision.                       |
-| `src/ts/server/resourceManifest.ts`                        | Audited ownership manifest for shared, route, deferred-runtime, and first-use resource surfaces.                                     |
+| `packages/shared-core/src/resourceManifest.ts`             | Audited ownership manifest for shared, route, deferred-runtime, and first-use resource surfaces.                                     |
 | `src/ts/server/routeResourceLoader.ts`                     | Route/deferred-surface loading, deduplication, supersession, retry state, and idle character-detail prefetch.                         |
 | `src/ts/server/resourceCache.ts`                           | Disposable, non-authoritative SHA-256 manifests and verified IndexedDB values used only after authenticated hash confirmation.       |
 | `src/ts/server/resourceState.svelte.ts`                    | Explicit Svelte resource owners plus per-slice revisions, status, errors, projection epochs, and acknowledgement fences.              |
@@ -134,7 +134,7 @@ capabilities consumed by the shell and protocol adapters:
 | `src/ts/server/promptTemplateHydration.ts`                 | Fetches the template owned by a selected or explicitly requested prompt preset.                                                      |
 | `src/ts/server/messageTranslationJobs.ts`                  | Tracks detached manual or generated-message translation rows from bootstrap and refresh polling.                                     |
 | `src/ts/server/greetingTranslations.svelte.ts`             | Character-scoped greeting projection, source/settings fencing, manual translation, refresh, and job recovery.                        |
-| `src/ts/server/settingsGroups.ts`                          | Browser settings-group ownership, including the `sidebar` membership projection.                                                     |
+| `packages/shared-core/src/settingsGroups.ts`               | Shared settings-group membership, including the browser `sidebar` projection.                                                        |
 | `src/ts/process/serverGeneratedMessageTranslation.ts`      | Applies translation results embedded in generation completion and seeds the shared translation-job state for running/failure UI.     |
 | `src/ts/process/generatedMessageTranslationEligibility.ts` | Prevents the older rendered-row auto trigger from duplicating server-owned generated-message translation.                            |
 | `src/ts/server/inlayCatalog.ts`                            | Standalone browser projection and revision-aware writes for inlay metadata.                                                          |

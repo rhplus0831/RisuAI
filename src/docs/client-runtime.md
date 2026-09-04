@@ -179,7 +179,7 @@ The main client boundaries are:
 | Path                                                                                                                                   | Responsibility                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `src/ts/server/resourceReads.ts`, `resourceCache.ts`                                                                                   | Root/targeted reads and the disposable authenticated-hash cache.            |
-| `src/ts/server/shellHydration.ts`, `resourceManifest.ts`, `routeResourceLoader.ts`                                                     | Atomic root shell application and manifest-driven route/runtime resources.  |
+| `src/ts/server/shellHydration.ts`, `src/ts/server/routeResourceLoader.ts`, `packages/shared-core/src/resourceManifest.ts`              | Atomic root shell application and manifest-driven route/runtime resources.  |
 | `src/ts/server/hydrationReads.ts`, `chatMessageHydration.svelte.ts`, `characterShellHydration.svelte.ts`, `promptTemplateHydration.ts` | Lazy owner-body and shell hydration.                                        |
 | `src/ts/server/commands.ts`, `events.ts`, `resourceInvalidation.ts`, `resourceRefresh.ts`                                              | Serialized commands, SSE reconciliation, targeted reads, and full recovery. |
 | `src/ts/server/pendingMutationOutbox.ts`, `durableMutationDispatch.ts`, `pendingMutationReplay.ts`                                     | Encrypted crash-recovery intents and pre-hydration replay.                  |
@@ -414,11 +414,11 @@ cover decoded output.
 | Topic                                                        | Browser entrypoints                                                                                                           | Canonical guide                                                                    |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
 | Assets, inlay catalog, saves, backups, Realm, legacy storage | `src/ts/server/assets.ts`, `inlayCatalog.ts`, `backups.ts`, `realmImport.ts`; `src/ts/storage/backup.ts`, `fastifyStorage.ts` | [Assets And Saves](../../docs/structure/assets-and-saves.md)                       |
-| Plugins, modules, MCP                                        | `src/ts/plugins/`, `src/ts/moduleIntegration.ts`, `src/ts/process/modules.ts`, `src/ts/process/mcp/`                          | [Plugins And MCP](../../docs/structure/plugins-and-mcp.md)                         |
+| Plugins, modules, MCP                                        | `src/ts/plugins/`, `src/ts/moduleActivation.ts`, `src/ts/process/modules.ts`, `src/ts/process/mcp/`; neutral parsing in `packages/shared-core/src/moduleIntegration.ts` | [Plugins And MCP](../../docs/structure/plugins-and-mcp.md)                         |
 | Providers, prompt assembly, and Agents                       | `src/ts/model/`, `src/ts/process/request/`, `src/ts/process/promptAssembly/`                                                  | [Providers And Models](../../docs/structure/providers-and-models.md), [Prompt Assembly And Scripting](../../docs/structure/prompt-assembly-and-scripting.md), [Agents And Presets](../../docs/structure/agents-and-presets.md) |
 | Retired/browser-local surfaces                               | `src/ts/platform.ts`                                                                                                          | [Generated Files And Legacy Caveats](../../docs/structure/generated-and-legacy.md) |
 
-`src/ts/moduleIntegration.ts` parses and deduplicates the
+`packages/shared-core/src/moduleIntegration.ts` parses and deduplicates the
 comma-separated module references shared by prompt and Agent Presets.
 `src/ts/process/modules.ts` combines the effective prompt-preset and Agent
 Preset references with global, chat, and character module selections; the

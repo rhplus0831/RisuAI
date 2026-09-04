@@ -27,6 +27,7 @@ describe('test:all orchestration', () => {
     expect(agentQualityLanes.map((lane) => lane.id)).toEqual([
       'server-check',
       'test-topology',
+      'docs',
       'frontend-tests',
       'frontend-check',
       'server-tests',
@@ -87,7 +88,9 @@ describe('test:all orchestration', () => {
 
     const packageScripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts as Record<string, string>
     expect(packageScripts['coverage:ui-map'].match(/src\/\S+\.test\.ts/g)).toEqual([...uiCoverageTestFiles])
+    expect(packageScripts['check:docs']).toBe('tsx util/current-documentation-validator.ts')
     expect(packageScripts['test:agent']).toBe('tsx util/test-agent.ts')
+    expect(packageScripts['test:all']).toBe('tsx util/test-all.ts')
     expect(Object.keys(packageScripts).filter((script) => script.startsWith('test'))).toEqual([
       'test',
       'test:compat-harness',
@@ -209,6 +212,7 @@ describe('test:all orchestration', () => {
     const ciOwners = new Map([
       ['server-check', ['check-server', 'pnpm check:server']],
       ['test-topology', ['check', 'pnpm exec tsx util/test-topology.ts']],
+      ['docs', ['docs', 'pnpm check:docs']],
       ['frontend-tests', ['frontend', 'pnpm exec vitest run']],
       ['compat-registers', ['compat-registers', 'pnpm validate:compat-registers']],
       ['compat-current', ['compat-current', 'pnpm exec tsx test/compat-harness/run.ts --current-only']],
@@ -240,6 +244,8 @@ describe('test:all orchestration', () => {
       expect(verifySection, `${job} verify dependency`).toContain(`- ${job}`)
     }
     expect(verifySection).toContain('- initial-preload')
+    expect(verifySection).toContain('DOCS_RESULT: ${{ needs.docs.result }}')
+    expect(verifySection).toContain('test "$DOCS_RESULT" = success')
     const smokeUpload = workflow.slice(
       workflow.indexOf('name: playwright-test-results'),
       workflow.indexOf('\n\n  verify:'),

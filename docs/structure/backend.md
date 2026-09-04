@@ -43,7 +43,7 @@ wired through those boundaries.
 | `server/fastify/src/generation/serverTools.ts`, `ollamaCloudToolProxy.ts`               | Bounded server-intent tool protocol translation and credential-safe Ollama Cloud transport for browser-owned tool loops.                                                              |
 | `server/fastify/src/risuSave/`                                                          | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.                                                                                         |
 | `server/fastify/src/realmImport/`                                                       | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                                                                                                            |
-| `server/fastify/src/prompt/agentPresetExecution.ts`, `src/ts/agentPresetReferences.ts`  | Prepared-input and named-output-CBS Agent Preset prompting, shared reference expansion, provider dispatch, phase execution, failure handling, and diagnostics.                        |
+| `server/fastify/src/prompt/agentPresetExecution.ts`, `packages/shared-core/src/agentPresetOutputReferences.ts` | Prepared-input and named-output-CBS Agent Preset prompting, shared reference expansion, provider dispatch, phase execution, failure handling, and diagnostics.                        |
 | `server/fastify/src/commands/agentPresets.ts`                                           | Revisioned standalone Agent and Agent Preset/use create/update/duplicate/delete/reorder/default commands, reference validation, and delete cleanup.                                     |
 | `server/fastify/src/commands/providerCredentials.ts`                                    | Revisioned shared API-key/Vertex credential CRUD, masking-aware updates, reference validation, and deletion guards.                                                                    |
 | `server/fastify/src/prompt/luaPostGenerationProgress.ts`                                | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                                                                                                     |
@@ -110,8 +110,9 @@ Rate limits are opt-in per route. Current presets are setup `5/min`, login
 `10/min`, auth crypto `60/min`, provider and embedding operations `60/min`,
 OpenAI transcription `10/min`, image generation `10/min`, MCP OAuth refresh
 `30/min`, TTS synthesis `60/min`, proxy fetch `120/min`, proxy stream-job create
-`30/min`, imports `10/min`, asset upload `120/min`, asset existence checks and
-bulk asset uploads `180/min`, and generation submit `60/min`.
+`30/min`, imports `10/min`, asset existence checks `180/min`, and generation
+submit `60/min`. Global rate limiting is disabled; `POST /api/v1/assets` and
+`POST /api/v1/assets/bulk` currently have no route-specific rate limit.
 
 ## Route Family Index
 

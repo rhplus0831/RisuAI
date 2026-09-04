@@ -33,7 +33,7 @@ Important files:
   typed optimistic-message effect only while its chat-body projection epoch is
   still current. Invalid or stale event/effect data falls back to authoritative
   resource reconciliation instead of replacing the optimistic transcript.
-- `src/ts/process/request/providerCapability.ts` and
+- `packages/shared-core/src/providerCapability.ts` and
   `src/ts/process/request/serverPromptAssembly.ts` decide whether the selected
   request can run on the server.
 - `src/ts/process/serverBackedSendChat.ts` builds server requests, maps legacy

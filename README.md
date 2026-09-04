@@ -110,14 +110,14 @@ After completing agent development, run the core final profile:
 pnpm test:agent
 ```
 
-It runs the typechecks, test-topology validation, ordinary frontend and server
-tests, and the browser-smoke build. It leaves repository-wide formatting,
-compatibility, coverage, scale, performance, and full Playwright verification
-to the complete quality aggregate below.
+It runs the typechecks, current-document and test-topology validation, ordinary
+frontend and server tests, and the browser-smoke build. It leaves
+repository-wide formatting, compatibility, coverage, scale, performance, and
+full Playwright verification to the complete quality aggregate below.
 
-The user/CI-owned complete quality lane (formatting, typechecks, topology,
-frontend/server tests, compatibility, UI coverage, Realm scale, isolated
-performance gates, and browser smoke) uses bounded local concurrency:
+The user/CI-owned complete quality lane (formatting, typechecks, current docs,
+topology, frontend/server tests, compatibility, UI coverage, Realm scale,
+isolated performance gates, and browser smoke) uses bounded local concurrency:
 
 ```
 pnpm test:all

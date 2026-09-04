@@ -3,25 +3,29 @@
 Last audited: 2026-08-30.
 
 Use this file to orient yourself in the Fastify-only RisuAI codebase. The
-supported toolchain is Node.js 24 or newer with pnpm. Choose the guide for your
-task below; each guide is self-contained. Historical records under
-`.archived-docs/` are not authoritative.
+supported toolchain is Node.js 24 or newer with pnpm. Choose the primary guide
+for your task below. For cross-cutting work, follow its companion links and the
+[cross-cutting change checklist](docs/structure/README.md#cross-cutting-changes).
+Historical records under `.archived-docs/` are not authoritative.
 
 ## Choose By Task
 
 | Task area | Read next |
 | --------- | --------- |
 | Unfamiliar code or cross-layer ownership | [Architecture Index](docs/structure/README.md) and [Domain Glossary](docs/structure/domain-glossary.md#cross-layer-ownership) |
-| Fastify composition, routes, generation operations/effects, jobs, timers, tracing, or Web Push | [Backend Map](docs/structure/backend.md) |
+| Shared wire contracts, cross-runtime pure algorithms, or package import boundaries | [`@risuai/protocol`](packages/protocol/README.md), [`@risuai/shared-core`](packages/shared-core/README.md), then the owning focused guide from the [Architecture Index](docs/structure/README.md) |
+| Fastify composition, Fastify API routes, generation operations/effects, jobs, timers, tracing, or Web Push | [Backend Map](docs/structure/backend.md) |
+| Authentication, writer bootstrap/takeover, first-run initialization, or onboarding | [Auth And Active Writer](docs/structure/data-and-events.md#auth-and-active-writer) for server policy; [Bootstrap And Initial Resources](docs/structure/server-resources-and-bridges.md#bootstrap-and-initial-resources) and [Client Startup](src/docs/client-runtime.md#startup-sequence) for browser startup; [Backend Route-Side Contracts](docs/structure/backend.md#route-side-contracts) for atomic onboarding |
 | SQLite, revisions, active writer, command events, or SSE | [Data And Events](docs/structure/data-and-events.md) |
 | Browser resources, cache, or hydration | [Server Resources And Hydration](docs/structure/server-resources-and-bridges.md), then [Client Runtime](src/docs/client-runtime.md) |
 | Durable mutations, command events, invalidation, bridges, writer loss, or recovery | [Durable Mutations And Recovery](docs/structure/durable-mutations-and-recovery.md) |
 | Chat, transcript, message, composer, generation UI, drafts, viewport behavior, or completion audio | [Svelte Chat UI](src/docs/svelte-chat-ui.md), then [Generation Client](src/docs/generation-client.md) for durable generation |
-| Sidebars, routes, chat lists, character selection, or reordering | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md) |
+| Sidebars, client URL/navigation routes, chat lists, character selection, or reordering | [Svelte Navigation UI](src/docs/svelte-navigation-ui.md) |
 | Settings, shared controls/accessibility, localization, authoring pages, or provider panels | [Svelte Settings UI](src/docs/svelte-settings-ui.md) and [Svelte UI](src/docs/svelte-ui.md#localization) |
 | App shell, styling/themes, responsive/Lite behavior, Playground, or data-dependent rendering | [Svelte UI](src/docs/svelte-ui.md) |
 | Model profiles, credentials, providers, capabilities, runtime options, or request history | [Providers And Models](docs/structure/providers-and-models.md) |
-| Prompt assembly, templates, lorebook/Hypa/BardWiki memory, CBS, regex, triggers, or Lua | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md) and [BardWiki Memory](docs/structure/bardwiki.md) |
+| TTS, image generation, transcription, or server-owned media operations | [Server-Owned Provider And Media Operations](docs/structure/providers-and-models.md#server-owned-provider-and-media-operations) for contracts, then [Client Runtime](src/docs/client-runtime.md#server-owned-operation-adapters) for browser adapters or the [Backend Boundary](docs/structure/backend.md#server-owned-provider-and-media-boundary) for API wiring |
+| Prompt assembly, templates, lorebook/Hypa memory injection, CBS, regex, triggers, or Lua | [Prompt Assembly And Scripting](docs/structure/prompt-assembly-and-scripting.md) |
 | BardWiki settings, documents, confirmation, jobs, prompt retrieval, vaults, rebuilds, or lifecycle | [BardWiki Memory](docs/structure/bardwiki.md) |
 | Translation, translator presets/caches/jobs, or Draft/BTW input hooks | [Translation And Input Hooks](docs/structure/translation-and-input-hooks.md) |
 | Agents, Agent Presets, prepared inputs, dependencies, or output composition | [Agents And Presets](docs/structure/agents-and-presets.md) |
@@ -40,6 +44,7 @@ task below; each guide is self-contained. Historical records under
 | ---- | ------- |
 | `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml` | Root application metadata, scripts, lockfile, workspace membership, and dependency-build policy. |
 | `packages/protocol/` | Browser-safe, schema-first wire contracts shared by the Svelte client and Fastify; it must not import application, Svelte, Fastify, database, or Node-only modules. |
+| `packages/shared-core/` | Browser/Node-neutral value algorithms shared by the Svelte client and Fastify; it must not import protocol schemas, runtime frameworks, persistence, credentials, aggregate application state, or environment-specific APIs. |
 | `index.html`, `vite.config.ts`, `src/` | Svelte 5 SPA, Vite configuration, browser runtime, UI, language packs, and bundled client data. |
 | `server/fastify/` | Fastify API and tests, including SQLite persistence and provider execution; it has no separate package manifest. |
 | `STRUCTURE.md`, `docs/structure/`, `src/docs/` | Current architecture and implementation guides. Start at the [Architecture Index](docs/structure/README.md). |
@@ -73,7 +78,8 @@ task below; each guide is self-contained. Historical records under
 ## Domain Ownership
 
 The [cross-layer ownership map](docs/structure/domain-glossary.md#cross-layer-ownership)
-lists the browser/UI and Fastify/storage owners for each domain. Use the
+lists the shared protocol/core, browser/UI, and Fastify/storage owners for each
+domain. Use the
 [cross-cutting change checklist](docs/structure/README.md#cross-cutting-changes)
 to find companion files and tests.
 

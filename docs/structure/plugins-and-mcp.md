@@ -234,7 +234,8 @@ and the effective enabled Agent Preset's `moduleIntergration`.
 The pure `resolveActiveModuleStates()` helper in `src/ts/moduleActivation.ts`
 matches module ids or namespaces, deduplicates module rows, and preserves the
 activation sources for runtime and UI consumers. This resolution is guarded by
-`src/ts/moduleActivation.test.ts`, `src/ts/moduleIntegration.test.ts`, and
+`src/ts/moduleActivation.test.ts`,
+`packages/shared-core/src/moduleIntegration.test.ts`, and
 `src/ts/process/modules.test.ts`.
 Initialization dedupes concurrent construction, removes stale clients when the
 active URL inputs change, indexes tools with the first MCP URL winning duplicate
@@ -250,7 +251,7 @@ dispatch does not execute MCP tools; see the server provider boundary in
 | Path                                                                                                       | Purpose                                                                                               |
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
-| `src/ts/process/mcp/mcpIdentifier.ts`                                                                      | Shared stored-MCP creation predicate.                                                                   |
+| `packages/shared-core/src/mcpIdentifier.ts`                                                                | Shared stored-MCP creation predicate; the browser path is a compatibility re-export.                   |
 | `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
 | `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts`                         | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials.            |
 | `server/fastify/src/mcpOAuthRefreshEgress.ts`                                                              | DNS-pinned, redirect-free, bounded token-endpoint validation and connection.                           |

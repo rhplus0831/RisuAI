@@ -18,7 +18,7 @@ authority.
 | Revisioned settings/document/confirmation/import/rebuild commands | `server/fastify/src/routes/commands.ts`, `server/fastify/src/commands/events.ts` |
 | Exact-source receipts and automatic confirmation | `server/fastify/src/bardWikiReceipts.ts`, generation finalization/effect owners |
 | Background model work | `server/fastify/src/bardWikiWorker.ts`, `bardWikiApplyTurnHandler.ts`, `bardWikiReconcileHandler.ts`, `bardWikiRebuildHandler.ts` |
-| Prompt selection/injection | `server/fastify/src/bardWikiSelection.ts`, `server/fastify/src/prompt/memory.ts`, `prompt/assemble.ts`, `prompt/budgetFinalize.ts` |
+| Prompt selection/injection | `server/fastify/src/prompt/bardWikiSelection.ts`, `server/fastify/src/prompt/memory.ts`, `prompt/assemble.ts`, `prompt/budgetFinalize.ts` |
 | Browser resources/commands/status | `src/ts/server/bardWikiResource.ts`, `bardWikiCommands.ts`, `bardWikiJobEvents.ts`, `src/ts/process/request/serverBardWikiJobs.ts` |
 | Global settings and chat workspace | `src/lib/Setting/Pages/BardWikiSettings.svelte`, `src/lib/ChatScreens/BardWikiWorkspace.svelte` |
 

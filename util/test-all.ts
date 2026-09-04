@@ -55,6 +55,12 @@ export const qualityLanes: readonly QualityLane[] = [
     priority: 0,
   },
   {
+    id: 'docs',
+    label: 'current documentation validation',
+    args: ['check:docs'],
+    priority: 0,
+  },
+  {
     id: 'frontend-tests',
     label: 'frontend tests',
     args: ['exec', 'vitest', 'run'],
@@ -146,6 +152,7 @@ function requiredQualityLane(id: string): QualityLane {
 export const agentQualityLanes: readonly QualityLane[] = [
   requiredQualityLane('server-check'),
   requiredQualityLane('test-topology'),
+  requiredQualityLane('docs'),
   {
     ...requiredQualityLane('frontend-tests'),
     // The agent profile runs the UI-map tests normally, without coverage, and

@@ -247,7 +247,7 @@ identity, outbox state, cache state, and revisions do not leak between journeys.
 
 The small fixture in `server/fastify/browser-smoke/fastBootstrapHarness.ts` is a
 minimal deterministic character/chat database. The large fixture in
-`src/ts/__tests__/largeCorpusFixture.ts` is shared with client/server load-cost
+`test/fixtures/largeCorpusFixture.ts` is shared with client/server load-cost
 tests and deliberately expands characters, chats, messages, collections,
 lorebooks, and summary fields. Cold and warm browser/resource caches remain
 separate populations. The integration matrix runs both fixtures with the

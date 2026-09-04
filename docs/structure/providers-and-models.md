@@ -20,17 +20,17 @@ routing, and LLM request history. Start from the
   behavior. This guide covers only the provider transport boundary used by tool
   requests.
 
-## Browser Model Registry
+## Model Registry And Shared Contracts
 
 | Path | Role |
 | --- | --- |
-| `src/ts/model/types.ts` | `LLMProvider`, `LLMFormat`, tokenizers, flags, parameter capability tiers, and `LLMModel`. |
+| `packages/shared-core/src/modelTypes.ts` | `LLMProvider`, `LLMFormat`, tokenizers, flags, parameter capability tiers, and `LLMModel`. |
 | `src/ts/model/modellist.ts` | Static, generated, dynamic, custom, and Plugin V3 registry merging plus `getModelInfo()`. |
-| `src/ts/model/providers/` | Provider-specific static model rows. |
-| `src/ts/model/modelRoles.ts` | The exact roles `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; legacy fallback references are a separate map. |
-| `src/ts/model/modelProfileRecords.ts` | Durable profile, runtime-option, role-binding, fallback, and order schemas. |
-| `src/ts/model/modelProfileResolver.ts` | Compatibility resolution, provider capability, credential resolution, and readiness status. |
-| `src/ts/model/providerCredentialRecords.ts` | Reusable API-key and Vertex service-account records. |
+| `packages/shared-core/src/openaiModels.ts`, `anthropicModels.ts`, `googleModels.ts` | Shared static provider-model rows; matching files under `src/ts/model/providers/` are compatibility re-exports. |
+| `packages/shared-core/src/modelRoles.ts` | The exact roles `chatMain`, `chatAux`, `memory`, `emotion`, `translate`, `otherAx`, `scriptMain`, and `scriptAux`; legacy fallback references are a separate map. |
+| `packages/shared-core/src/modelProfileRecords.ts` | Durable profile, runtime-option, role-binding, fallback, and order schemas. |
+| `packages/shared-core/src/modelProfileResolver.ts` | Compatibility resolution, provider capability, credential resolution, and readiness status. |
+| `packages/shared-core/src/providerCredentialRecords.ts` | Reusable API-key and Vertex service-account records. |
 | `src/ts/model/tokenizerOptions.ts` | Portable tokenizer choices shared by settings, profiles, Custom API, and playground code. |
 | `src/ts/model/modelGrid.ts` | Model-grid normalization and filtering helpers. |
 | `src/ts/model/keyedRequestCache.ts` | Complete-context in-flight dedupe and bounded successful-result reuse. |
@@ -38,11 +38,11 @@ routing, and LLM request history. Start from the
 
 The static registry is capability metadata, not only a picker list. Dispatch
 materializes a sampler or reasoning control only when the selected row declares
-the corresponding parameter. The provider files under
-`src/ts/model/providers/` are the source of truth for static model capabilities;
-`src/ts/model/types.ts` owns the reusable capability tiers. Update the provider
-row and its focused model-registry/request tests together when capabilities
-change.
+the corresponding parameter. Shared-core owns the OpenAI, Anthropic, and Google
+catalog rows; `src/ts/model/modellist.ts` owns the remaining static rows and
+registry merge, while `packages/shared-core/src/modelTypes.ts` owns the reusable
+capability tiers. Update the owning row and its focused model-registry/request
+tests together when capabilities change.
 
 `src/ts/model/modellist.ts` also synthesizes Responses variants for compatible
 OpenAI rows and Vertex variants for Google rows. Dynamic Google and Anthropic
@@ -57,7 +57,7 @@ Static and legacy fallback ids still resolve from flat settings through the
 `staticModel` path; that selection bypasses role resolution and carries no
 recursive fallback refs. A persisted `xcustom:::` model is server-routable only
 when its stored URL, key, and format satisfy
-`src/ts/process/request/providerCapability.ts`; dynamic registry presence alone
+`packages/shared-core/src/providerCapability.ts`; dynamic registry presence alone
 does not make it routable.
 
 ## Model Profiles And Role Resolution
@@ -96,7 +96,8 @@ ordering, role binding, create-and-bind, runtime-default, and legacy-conversion
 mutations. Whole-array settings patches remain compatibility paths for imports,
 presets, loadouts, and older callers. Preservation runs through
 `src/ts/model/modelPresetSnapshots.ts`,
-`src/ts/promptPresetModelOverrides.svelte.ts`, `src/ts/presetSplit.ts`, and
+`src/ts/promptPresetModelOverrides.svelte.ts`,
+`packages/shared-core/src/presetSplit.ts`, and
 `server/fastify/src/commands/splitPresets.ts` plus `src/ts/loadout.ts`.
 Applying model or prompt presets operates on a masked browser projection, so
 `applyModelPresetFieldsToDatabase()` and `applyPromptPresetFieldsToDatabase()`
@@ -203,7 +204,7 @@ lives in `src/ts/model/nanogpt.ts`. The catalog/account allowlist covers
 NanoGPT, OpenRouter, LLM Gateway, Neuralwatt, Ollama Cloud, WaveSpeed, Google,
 Anthropic, ElevenLabs, and Fish Speech; it also owns Google token counting and
 DeepL/DeepLX translation. Use
-`src/ts/server/providerOperationsProtocol.ts`, not a picker list, as the
+`packages/protocol/src/providerOperation.ts`, not a picker list, as the
 operation name/type source of truth;
 `server/fastify/src/providerOperations.ts` owns the executable upstream
 allowlist. These operations do not require the active writer; MCP OAuth refresh
@@ -223,10 +224,10 @@ cancellation are bounded.
 | `POST /api/v1/media/openai/transcriptions` / `src/ts/server/openAITranscription.ts` | One bounded OpenAI `whisper-1` upload with fixed VTT output. | VTT text, `10/min` |
 | `POST /api/v1/mcp/oauth/refresh` / `src/ts/server/mcpOAuthRefresh.ts` | Exact stored MCP identity selects its credential; a rotated refresh token may persist. See the MCP guide. | JSON access token, `30/min` |
 
-Shared request/result types live in the matching protocol modules under
-`src/ts/server/`; implementations are the matching files under
-`server/fastify/src/`, with route registration under
-`server/fastify/src/routes/`. Catalog helpers use
+Shared request/result types live in the matching modules under
+`packages/protocol/src/`; browser request adapters live under `src/ts/server/`,
+implementations are the matching files under `server/fastify/src/`, and route
+registration lives under `server/fastify/src/routes/`. Catalog helpers use
 `src/ts/model/keyedRequestCache.ts`: OpenRouter, NanoGPT, and public LLM
 Gateway/Neuralwatt catalogs cache safe successes for 30 seconds;
 credential-keyed Ollama Cloud tags use 15 seconds; local Ollama discovery is
@@ -237,7 +238,7 @@ the legacy model settings surface debounces draft catalog credentials for
 
 ## Capability Table And Dispatch Boundary
 
-`src/ts/process/request/providerCapability.ts` is the shared pure routing
+`packages/shared-core/src/providerCapability.ts` is the shared pure routing
 decision table. Given resolved metadata and narrow configuration, it returns a
 server provider or a stable unsupported reason. Do not fork this logic for chat
 or completion: browser preflight and Fastify dispatch use the same decision.
@@ -412,7 +413,7 @@ visible retention behavior are additionally pinned by
   capability table is sufficient. Unsupported explicit provider ids remain
   preserved placeholders and block active generation.
 - Memory-role profile and preset resolution is canonical in
-  [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md#hypa-v3-memory-phase).
+  [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md#hypa-v3-and-bardwiki-memory-phase).
   Embeddings remain on the separate Hypa/Voyage/custom contract; provider
   deadlines are bounded by `server/fastify/src/memoryProviderDeadline.ts`.
 - `customModels` / `xcustom:::` remains separate from first-class Custom API
@@ -426,7 +427,7 @@ Update the browser model/settings metadata, the shared capability table,
 profile/provider-id resolution, `server/fastify/src/prompt/chatDispatch.ts`, the
 selected adapter, credential groups, and chat/completion tests. A managed
 provider with a catalog also needs a fixed discriminator in
-`src/ts/server/providerOperationsProtocol.ts`, an allowlisted
+`packages/protocol/src/providerOperation.ts`, an allowlisted
 `server/fastify/src/providerOperations.ts` implementation, and operation tests.
 Keep prompt assembly, translation, and Agent-specific behavior in their related
 guides rather than duplicating it here.

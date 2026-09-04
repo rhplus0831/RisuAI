@@ -124,8 +124,10 @@ dialog supports save/overwrite, rename, delete, unselect, apply, and compatible
 value picking. Its display order is frozen when the dialog opens, then sorted by
 toggle-key-set similarity, active-count distance, `updatedAt`, and name. The
 selected ID persists in `generationSettings.togglePresetId`, and loadout
-capture/apply in `src/ts/loadout.ts` preserves it. Logic lives in
-`src/ts/chatGenerationTogglePresetRecords.ts` and
+capture/apply in `src/ts/loadout.ts` preserves it. Record normalization and
+comparison logic live in
+`packages/shared-core/src/chatGenerationTogglePresetRecords.ts`; browser state
+and commands live in
 `src/ts/chatGenerationTogglePresets.ts`; focused guards are
 `src/ts/chatGenerationTogglePresets.test.ts` and
 `src/lib/SideBars/chatGenerationSettingsControls.test.ts`.

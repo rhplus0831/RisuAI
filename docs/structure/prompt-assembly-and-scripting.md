@@ -270,9 +270,11 @@ owner boundary; see `src/ts/promptPresetModelOverrides.svelte.ts`,
 `src/lib/Setting/pickerGenerationSettings.test.ts`.
 
 Persona, description, author-note, and memory template blocks can select their
-wire role through `role2`. `src/ts/process/promptTemplateNormalization.ts`
-normalizes `assistant`/`char` to `bot`, accepts `user`, `bot`, or `system`, and
-defaults invalid or absent roles to `system`. The browser editor lives in
+wire role through `role2`.
+`packages/shared-core/src/promptTemplateNormalization.ts` normalizes
+`assistant`/`char` to `bot`, accepts `user`, `bot`, or `system`, and defaults
+invalid or absent roles to `system`; `src/ts/process/promptTemplateNormalization.ts`
+retains the browser `PromptItem` return type. The browser editor lives in
 `src/lib/UI/PromptDataItem.svelte`; server rendering parity is in
 `server/fastify/src/prompt/templates.ts`.
 
@@ -336,7 +338,8 @@ occurred and `chat.hypaContextTruncationAcknowledged` is not true. The browser
 confirmation flow in `src/ts/process/serverBackedSendChat.ts` persists that
 field through a targeted chat command, verifies current chat ownership, and
 retries once. The protocol constant lives in
-`src/ts/process/request/hypaContextTruncation.ts`.
+`packages/protocol/src/hypaContextTruncation.ts`; the browser path is a
+compatibility re-export.
 
 ## Assembly Gates
 

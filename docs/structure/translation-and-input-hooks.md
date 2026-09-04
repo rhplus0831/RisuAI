@@ -24,9 +24,10 @@ translation, and draft/BTW input-hook execution. Start from the
 
 | Path | Role |
 | --- | --- |
-| `src/ts/translator/presets.ts` | Translator preset normalization, selection, import, and export. |
-| `src/ts/translator/pipeline.ts` | Ordered step resolution, prompt slots, ChatML parsing, named outputs, and reasoning cleanup. |
-| `src/ts/translator/historySlots.ts` | Shared source/translated history filtering and token-bounded rendering. |
+| `packages/shared-core/src/translatorPresets.ts` | Translator preset normalization and selection shared by browser and Fastify. |
+| `src/ts/translator/presets.ts` | Browser import/export codec and compatibility re-exports. |
+| `packages/shared-core/src/translatorPipeline.ts` | Ordered step resolution, prompt slots, ChatML parsing, named outputs, and reasoning cleanup. |
+| `packages/shared-core/src/historySlots.ts` | Shared source/translated history filtering and token-bounded rendering. |
 | `src/ts/translator/translator.ts` | Browser HTML/plain translation, provider-operation calls, LLM dispatch, and browser caches. |
 | `server/fastify/src/translation/rawMessageTranslation.ts` | Server Google/DeepL/DeepLX/LLM translation and settings/source identity. |
 | `server/fastify/src/translation/serverMessageTranslation.ts` | Detached message work and source/job-fenced targeted persistence. |
@@ -48,7 +49,7 @@ Selection is collection-owned: translator-preset commands in
 `server/fastify/src/routes/commands.ts` normalize `translatorPresetId` and keep
 the selected first-step legacy mirrors synchronized. Translator defaults and
 language settings are normalized by
-`server/fastify/src/databaseDefaults.ts`; `src/ts/server/settingsGroups.ts`
+`server/fastify/src/databaseDefaults.ts`; `packages/shared-core/src/settingsGroups.ts`
 exposes the selection pointer through the language read projection while
 reserving writes to the preset command family.
 
@@ -69,7 +70,7 @@ uses state invalidation so preset and chat projections refresh together.
 Standalone-chat and full-save imports retain only bindings backed by their
 destination/imported preset collection.
 
-`src/ts/translator/pipeline.ts` expands language, source, previous-output,
+`packages/shared-core/src/translatorPipeline.ts` expands language, source, previous-output,
 named-output, translator-note, and history slots before parsing optional
 role-tagged ChatML. Without ChatML, a prompt containing an embedded input slot
 becomes one system row; otherwise the current pipeline value is added as the
@@ -99,7 +100,7 @@ streaming and multi-generation disabled.
 These slots are shared by server LLM Send Text As-Is translation and browser
 draft/BTW hooks; they are separate from normal CBS `{{history::N}}`.
 
-The renderer in `src/ts/translator/historySlots.ts` walks backward from the
+The renderer in `packages/shared-core/src/historySlots.ts` walks backward from the
 target row, skips disabled/comment rows, stops at `disabled: "allBefore"`, and
 adds the owned greeting only when the requested window exhausts stored history.
 It restores chronological order, formats `user`/`char` blocks, and drops the

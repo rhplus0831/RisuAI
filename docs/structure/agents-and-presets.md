@@ -20,7 +20,8 @@ output composition, and the command/compatibility surface. Start from the
 
 ## Record Model
 
-`src/ts/agentPresetRecords.ts` is the schema and validation owner.
+`packages/shared-core/src/agentPresetRecords.ts` is the schema and validation
+owner.
 
 An `AgentRecord` is reusable behavior: id/name/description/version,
 instruction, optional role-tagged ChatML mode, default model and runtime limits,
@@ -51,9 +52,9 @@ phase modifiers, missing Agents, and unavailable named-output references.
 
 ## Selection And Readiness
 
-`src/ts/agentPresetResolver.ts` and
-`src/ts/chatGenerationSettings.ts` share selection semantics with browser
-preflight and server assembly. An own-property
+`packages/shared-core/src/agentPresetResolver.ts` and
+`packages/shared-core/src/chatGenerationSettings.ts` own the selection semantics
+shared by browser preflight and server assembly. An own-property
 `chat.generationSettings.agentPresetId` wins over
 `Database.agentPresetDefaultId`. An explicit blank chat value opts out rather
 than falling back to the global default.
@@ -78,11 +79,11 @@ does not maintain a second readiness model.
 
 An Agent Preset can own the compatibility-spelled `moduleIntergration` string,
 using the same comma-separated module id or namespace contract as Prompt
-Presets. `src/ts/moduleIntegration.ts` and
-`src/ts/chatGenerationSettings.ts` union the effective Agent integration with
-global `enabledModules`, character/chat module ids, and Prompt Preset
-integration. Namespace matches are allowed and final rows are deduplicated by
-module id.
+Presets. `packages/shared-core/src/moduleIntegration.ts` and
+`packages/shared-core/src/chatGenerationSettings.ts` union the effective Agent
+integration with global `enabledModules`, character/chat module ids, and Prompt
+Preset integration. Namespace matches are allowed and final rows are
+deduplicated by module id.
 
 The union is an effective generation overlay. Selecting a preset does not
 mutate `enabledModules`. A disabled or absent preset contributes no Agent module
@@ -160,7 +161,7 @@ key fields blank. Agent-only entries are excluded from normal lorebook
 activation. All required inputs across both phases are checked before any
 enabled Agent step or main prompt assembly begins.
 
-`src/ts/agentPresetRecords.ts` validates declarations;
+`packages/shared-core/src/agentPresetRecords.ts` validates declarations;
 `server/fastify/src/prompt/agentPresetExecution.ts` owns lookup, precedence,
 bounding, and substitution. Ordinary lorebook activation is documented in
 [Prompt Assembly And Scripting](prompt-assembly-and-scripting.md#lorebook-activation-and-injection).

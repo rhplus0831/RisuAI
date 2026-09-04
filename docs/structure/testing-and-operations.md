@@ -27,13 +27,14 @@ environment variables live in
 | `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                              |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
+| `pnpm check:docs`                  | Validate the current documentation set: local Markdown targets/anchors, focused-index completeness, and unambiguous literal repository paths.                              |
 | `pnpm check:server`                | Check protocol/shared-core types and architecture inventories, then typecheck strict Fastify and Playwright browser-smoke projects concurrently without emitting code.       |
 | `pnpm test -- <file>`              | Agent-facing focused runner. Requires exactly one repository test or source file, routes it to the owning runtime, and uses related-test discovery for source files.          |
 | `pnpm validate:compat-registers`   | Validate the compatibility inventory/findings schemas, cross-register references, and pinned upstream commit coverage.                                                       |
 | `pnpm test:compat-harness`         | Compare pinned local/Fastify generation matrices against a prepared pre-Fastify worktree; opt-in and not part of `test:all`.                                                 |
 | `pnpm prepare:compat-baseline`     | Create or verify the exact detached compatibility-baseline worktree and install its frozen dependencies.                                                                       |
-| `pnpm test:agent`                  | Agent-final aggregate for typechecks, topology, ordinary frontend/server tests, and the browser-smoke build; excludes the specialized full-quality lanes.                      |
-| `pnpm test:all`                    | User-owned full local aggregate for format, typechecks, topology, frontend/server tests, compatibility, coverage, scale, performance, and browser smoke.                       |
+| `pnpm test:agent`                  | Agent-final aggregate for typechecks, current docs, topology, ordinary frontend/server tests, and the browser-smoke build; excludes the specialized full-quality lanes.        |
+| `pnpm test:all`                    | User-owned full local aggregate for format, typechecks, current docs, topology, frontend/server tests, compatibility, coverage, scale, performance, and browser smoke.         |
 | `pnpm coverage:ui-map`             | Run the focused UI coverage gate and write text/JSON reports to `coverage/ui-map`; use `coverage:ui-map:html` for an on-demand HTML report.                                   |
 | `pnpm smoke:fastify-browser`       | User/CI command that builds the smoke client without production sourcemaps, then runs the full Playwright Fastify browser smoke suite.                                       |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output.               |
@@ -50,7 +51,8 @@ There is no ESLint config or `lint` script.
 | Area                        | Command/config                                                                          | Environment | Locations                                                                                                                  |
 | --------------------------- | --------------------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Browser/client/domain tests | `pnpm test -- <file>`, `vitest*.config.ts`                                              | Node + Svelte/Node + `happy-dom` | One exact test, or tests related to one source file, outside the server tree.                                        |
-| Agent-final aggregate       | `pnpm test:agent`, `util/test-agent.ts`, `util/test-all.ts`                             | Node + Svelte/Node + `happy-dom` | Core typechecks and topology, all ordinary frontend/server tests, and a Vite browser-smoke build without Playwright. |
+| Agent-final aggregate       | `pnpm test:agent`, `util/test-agent.ts`, `util/test-all.ts`                             | Node + Svelte/Node + `happy-dom` | Core typechecks, current docs, topology, all ordinary frontend/server tests, and a Vite browser-smoke build without Playwright. |
+| Current documentation      | `pnpm check:docs`, `util/current-documentation-validator.ts`                           | Node filesystem | Both aggregates and CI validate current guides, three focused indexes, local links/anchors, and literal repository paths. |
 | Test topology              | `util/test-topology.ts`, `vitest*.config.ts`, `server/fastify/vitest.config.ts`           | Static Vitest discovery | Agent/user/CI aggregate owner; validates every tracked test exactly once in its configured project.                  |
 | Specialized frontend gates  | `vitest.performance-tests.ts`, `vitest.config.ts`                                       | Node + `happy-dom` | Exact performance owners; isolated in `test:all`/CI, or individually selectable through the focused runner.          |
 | Focused UI audit tests      | `pnpm test -- <audit-test-file>`, `vitest.config.ts`                                    | Node + `happy-dom` | One exact `src/lib/_audit/**/*.test.ts` file; both aggregates include the complete audit set.                         |
@@ -73,7 +75,8 @@ Compatibility-isolated tests remain user-owned.
 
 Agents use the focused command only for a concrete diagnostic need while work
 is in progress. Once implementation is complete, `pnpm test:agent` runs the
-core broad checks, ordinary frontend/server suites, and smoke build. It does not
+core broad checks, current-document validator, ordinary frontend/server suites,
+and smoke build. It does not
 run repository-wide formatting, coverage instrumentation, compatibility and
 Realm scale gates, explicit performance probes, or Playwright. The user and CI
 retain those lanes through `pnpm test:all` and the split Quality workflow. On a
@@ -138,9 +141,10 @@ compatibility risk calls for baseline comparison. The user owns that decision
 and reviews the scheduled/manual differential.
 
 `pnpm test:agent` uses the same bounded scheduler and failure aggregation as
-`test:all`. It runs `check:server`, topology, the frontend suite with the six UI
-sentinel files restored as ordinary uninstrumented tests, `pnpm check`, the
-isolated server suite, and an isolated `build:smoke`. It explicitly disables the
+`test:all`. It runs `check:server`, current-document validation, topology, the
+frontend suite with the six UI sentinel files restored as ordinary
+uninstrumented tests, `pnpm check`, the isolated server suite, and an isolated
+`build:smoke`. It explicitly disables the
 two frontend performance probes and does not launch Playwright. The smoke build
 waits for `check:server`; every selected lane still finishes after another lane
 fails. `RISU_TEST_ALL_JOBS`, `--jobs`, `--dry-run`, and `--timings=json` work for
@@ -174,7 +178,8 @@ changing concurrency or isolation.
 Agents may run one focused target when it answers a concrete question, then run
 `pnpm test:agent` once at the completed handoff boundary. The user and CI own
 the specialized `test:all` lanes and their review. `check:server` already owns
-the protocol check, while both aggregates own the two check families.
+the protocol check, while both aggregates own server/client typechecks and the
+current-document check.
 
 Config details: `vitest.config.ts` composes three isolated thread-pool projects,
 and `vitest.frontend-routing.ts` owns their disjoint filename/registration
@@ -386,10 +391,11 @@ flags include `--project`, `--absolute`, `--compact`, and `--timeout-ms`. Set
 
 `.github/workflows/quality.yml` runs for pull requests and pushes to `main` with
 Node 24 and the exact pnpm version declared by `packageManager` in
-`package.json`. Formatting, both typecheck lanes, frontend tests (including UI
-audit probes), focused UI coverage, isolated performance gates, compatibility
-register validation, current compatibility, server tests, and serial browser
-smoke run as separate jobs; only the smoke job installs Chromium. Current
+`package.json`. Formatting, both typecheck lanes, current-document validation,
+frontend tests (including UI audit probes), focused UI coverage, isolated
+performance gates, compatibility register validation, current compatibility,
+server tests, and serial browser smoke run as separate jobs; only the smoke job
+installs Chromium. Current
 compatibility waits for register validation, and both results are required by
 the final `verify` aggregate. The ordinary frontend job always omits the six
 sentinel files because the unconditional coverage job executes them once with
