@@ -2806,13 +2806,12 @@
               <button
                 type="button"
                 data-testid="default-chat-preparing-button"
-                aria-label={language.chatGenerationStageSending}
+                aria-label={language.hotkeyDesc.send}
                 aria-busy="true"
                 disabled
-                class="peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 disabled:cursor-wait disabled:opacity-70"
+                class="peer-focus:border-textcolor flex w-12 shrink-0 justify-center border-y border-darkborderc items-center text-textcolor p-3 disabled:cursor-wait disabled:opacity-70"
                 style:height={inputHeight}>
-                <LoaderCircleIcon size={18} class="risu-ongoing-pulse animate-spin" aria-hidden="true" />
-                <span class="whitespace-nowrap text-sm">{language.chatGenerationStageSending}</span>
+                <LoaderCircleIcon size={24} class="risu-ongoing-pulse animate-spin" aria-hidden="true" />
               </button>
             {:else if currentChatOwnsGeneration || hookRunActive}
               <button

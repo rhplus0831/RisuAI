@@ -3845,7 +3845,10 @@ describe('DefaultChatScreen transcript window state', () => {
     const preparingButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-preparing-button"]')
     expect(preparingButton?.disabled).toBe(true)
     expect(preparingButton?.getAttribute('aria-busy')).toBe('true')
-    expect(preparingButton?.textContent).toContain('chatGenerationStageSending')
+    expect(preparingButton?.textContent).toBe('')
+    expect(preparingButton?.querySelector('svg.animate-spin')).toBeTruthy()
+    expect(preparingButton?.classList).toContain('w-12')
+    expect(preparingButton?.classList).toContain('shrink-0')
     expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
 
     await clickSideMenuRerollItem()

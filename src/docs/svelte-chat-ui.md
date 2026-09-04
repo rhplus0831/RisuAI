@@ -306,8 +306,9 @@ remains as a compatibility projection. `chatGenerationLoading.ts` maps the typed
 phase to localized labels; the UI uses an indeterminate phase-colored track
 instead of presenting fabricated percentage completion.
 
-Before an ordinary send is admitted, the composer replaces Send with a disabled
-`Sending message…` status. Once its chat-keyed generation activity exists,
+Before an ordinary send is admitted, the composer replaces Send with a compact,
+disabled spinner that preserves the Send button's width. Once its chat-keyed
+generation activity exists,
 `Chats.svelte` projects a non-persisted assistant row immediately. The row keeps
 one presentation key while the stream-owned assistant `Message` is appended,
 then adopts that message without remounting. The first observable provider text

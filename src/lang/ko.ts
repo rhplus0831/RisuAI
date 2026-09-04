@@ -2598,7 +2598,6 @@ export const languageKorean = {
     '이 프리셋은 지정된 대체 프롬프트 템플릿을 사용합니다. 실수로 수정되지 않도록 읽기 전용으로 표시됩니다.',
   loadingLorebookData: '로어북 데이터를 불러오는 중…',
   lorebookDataLoadFailed: '로어북 데이터를 불러올 수 없습니다.',
-  chatGenerationStageSending: '메시지 전송 중…',
   chatGenerationStageStarting: '응답 시작 중…',
   chatGenerationStagePreparingPrompt: '컨텍스트 준비 중…',
   chatGenerationStageCheckingMemory: '메모리 확인 중',

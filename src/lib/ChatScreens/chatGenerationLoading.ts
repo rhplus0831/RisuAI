@@ -2,10 +2,9 @@ import { chatGenerationPhaseFromProcessStage, type ChatGenerationPhase } from 's
 
 export const CHAT_GENERATION_INPUT_HOOK_STAGE = 5
 
-export type ChatGenerationLoadingPhase = ChatGenerationPhase | 'sending' | 'input-hook'
+export type ChatGenerationLoadingPhase = ChatGenerationPhase | 'input-hook'
 
 export type ChatGenerationLoadingLanguageKey =
-  | 'chatGenerationStageSending'
   | 'chatGenerationStageStarting'
   | 'chatGenerationStagePreparingPrompt'
   | 'chatGenerationStageCheckingMemory'
@@ -15,7 +14,6 @@ export type ChatGenerationLoadingLanguageKey =
   | 'chatGenerationStageInputHook'
 
 const PHASE_LABEL_KEYS: Record<ChatGenerationLoadingPhase, ChatGenerationLoadingLanguageKey> = {
-  sending: 'chatGenerationStageSending',
   starting: 'chatGenerationStageStarting',
   preparing: 'chatGenerationStagePreparingPrompt',
   'checking-memory': 'chatGenerationStageCheckingMemory',

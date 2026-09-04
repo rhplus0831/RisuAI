@@ -2450,7 +2450,6 @@ export const languageEnglish = {
   loadingLorebookData: 'Loading Lorebook Data',
   lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
   retry: 'Retry',
-  chatGenerationStageSending: 'Sending message…',
   chatGenerationStageStarting: 'Starting response…',
   chatGenerationStagePreparingPrompt: 'Preparing context…',
   chatGenerationStageCheckingMemory: 'Checking memory',
