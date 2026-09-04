@@ -252,12 +252,5 @@ export const accessibilitySettingsItems: SettingItem[] = [
     bindKey: 'hamburgerButtonBottom',
     keywords: ['hamburger', 'button', 'bottom', 'menu', 'sidebar', 'accessibility'],
   },
-  {
-    id: 'acc.enableRisuaiProTools',
-    type: 'check',
-    labelKey: 'enableRisuaiProTools',
-    bindKey: 'enableRisuaiProTools',
-    keywords: ['pro', 'tools', 'accessibility'],
-  },
   { type: 'custom', id: 'acc.customSidebarConfig', componentId: 'CustomSidebarConfig' },
 ]

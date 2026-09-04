@@ -89,16 +89,18 @@ advanced/about group. Legacy global lorebook and regex navigation also remain
 hidden in Lite. `showGlobalLorebookAndRegex` controls visibility, not execution
 of imported legacy data; new global functionality belongs in modules.
 
-When `enableRisuaiProTools` is set, the shell adds Easy Panel. It opens the
-global `easyPanelStore` overlay rather than a routed settings page. Plugin V3
-can append settings menu items; plugin registration semantics belong to
-[Plugins And MCP](../../docs/structure/plugins-and-mcp.md#ui-surfaces).
+The deprecated `enableRisuaiProTools` toggle lives in Advanced settings. It is
+visible when unrecommended settings are shown or while Pro Tools is already
+enabled, so existing users can turn it off. When set, the shell adds Easy Panel,
+which opens the global `easyPanelStore` overlay rather than a routed settings
+page. Plugin V3 can append settings menu items; plugin registration semantics
+belong to [Plugins And MCP](../../docs/structure/plugins-and-mcp.md#ui-surfaces).
 
 ## Data-Driven Rows
 
 `SettingItem` in `src/ts/setting/types.ts` is the schema contract. Its fields are
 `id`, `type`, `labelKey`, `fallbackLabel`, `helpKey`, `helpUnrecommended`,
-`showExperimental`, `bindKey`, `bindPath`, `condition`, `options`, `keywords`,
+`showExperimental`, `deprecated`, `bindKey`, `bindPath`, `condition`, `options`, `keywords`,
 `classes`, `containerClasses`, `componentId`, `componentProps`, `getValue`,
 `setValue`, and `onChange`. `SettingContext` supplies `db`, `modelInfo`,
 `subModelInfo`, and the optional `presetMirrorTarget`.

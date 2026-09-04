@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
 
 import { advancedSettingsItems } from './advancedSettingsData'
+import { accessibilitySettingsItems } from './accessibilitySettingsData'
 
 describe('advanced settings data', () => {
   it('includes configurable initial and additional chat load counts', () => {
@@ -62,6 +63,25 @@ describe('advanced settings data', () => {
         options: { min: 1, max: 64, step: 1 },
       }),
     )
+  })
+
+  it('moves deprecated RisuAI Pro Tools from Accessibility to Advanced settings', () => {
+    const proTools = advancedSettingsItems.find((item) => item.id === 'adv.enableRisuaiProTools')
+
+    expect(accessibilitySettingsItems.some((item) => item.bindKey === 'enableRisuaiProTools')).toBe(false)
+    expect(proTools).toMatchObject({
+      type: 'check',
+      labelKey: 'enableRisuaiProTools',
+      bindKey: 'enableRisuaiProTools',
+      helpKey: 'risuaiProToolsDeprecated',
+      helpUnrecommended: true,
+      deprecated: true,
+    })
+    expect(proTools?.condition?.({ db: { showUnrecommended: false, enableRisuaiProTools: false } } as never)).toBe(
+      false,
+    )
+    expect(proTools?.condition?.({ db: { showUnrecommended: true, enableRisuaiProTools: false } } as never)).toBe(true)
+    expect(proTools?.condition?.({ db: { showUnrecommended: false, enableRisuaiProTools: true } } as never)).toBe(true)
   })
 
   it('does not advertise unsupported browser-side cold storage', () => {

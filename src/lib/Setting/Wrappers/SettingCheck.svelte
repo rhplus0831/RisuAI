@@ -4,6 +4,7 @@
   import { untrack } from 'svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
+  import { language } from 'src/lang'
 
   interface Props {
     item: SettingItem
@@ -33,6 +34,9 @@
 
 <div class="flex items-center {item.classes ?? 'mt-2'}">
   <Check bind:check={localValue} name={getLabel(item)}>
+    {#if item.deprecated}
+      <span data-setting-deprecated class="text-xs opacity-60">({language.triggerCategories.Deprecated})</span>
+    {/if}
     {#if item.showExperimental}<Help key="experimental" />{/if}
     {#if item.helpKey}<Help key={item.helpKey as any} unrecommended={item.helpUnrecommended ?? false} />{/if}
   </Check>

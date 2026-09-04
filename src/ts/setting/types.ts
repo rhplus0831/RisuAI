@@ -124,6 +124,9 @@ export interface SettingItem {
   /** If true, shows an additional experimental marker (flask icon) */
   showExperimental?: boolean
 
+  /** If true, shows a deprecated marker beside check-setting labels */
+  deprecated?: boolean
+
   /**
    * Resource database key for binding.
    * Only for input types (check, text, number, textarea, slider, select, color)

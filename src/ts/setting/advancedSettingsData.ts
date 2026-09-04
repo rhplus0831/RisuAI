@@ -553,6 +553,18 @@ export const advancedSettingsItems: SettingItem[] = [
     helpUnrecommended: true,
     classes: 'mt-4',
   },
+  {
+    id: 'adv.enableRisuaiProTools',
+    type: 'check',
+    labelKey: 'enableRisuaiProTools',
+    bindKey: 'enableRisuaiProTools',
+    condition: (ctx) => ctx.db.showUnrecommended || ctx.db.enableRisuaiProTools === true,
+    helpKey: 'risuaiProToolsDeprecated',
+    helpUnrecommended: true,
+    deprecated: true,
+    keywords: ['pro', 'tools', 'easy panel', 'deprecated', 'legacy', 'advanced'],
+    classes: 'mt-4',
+  },
 
   // Custom Components
   { type: 'custom', id: 'adv.banChar', componentId: 'BanCharacterSetSettings' },

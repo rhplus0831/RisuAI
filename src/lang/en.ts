@@ -400,6 +400,8 @@ export const languageEnglish = {
     sayNothing: "If enabled, it will input 'say nothing' when no string inputed.",
     showUnrecommended:
       'If enabled, it will show unrecommended, deprecated settings. It is NOT RECOMMENDED to use these settings.',
+    risuaiProToolsDeprecated:
+      'RisuAI Pro Tools is deprecated. Use Model Settings profiles, role bindings, and runtime options instead. Pro Tools may be removed in a future release.',
     showGlobalLorebookAndRegex:
       'Globally enabled modules are the preferred way to provide global lorebooks and regex scripts. These legacy menus are hidden by default.',
     pluginCompatibilityMode:

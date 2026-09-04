@@ -184,6 +184,8 @@ const languageKoreanBase = {
     openAIFixer: 'OpenAI Fixer는 OpenAI 모델의 일부 알려진 문제를 보정하는 플러그인입니다.',
     sayNothing: "활성화하면 아무 텍스트도 입력되지 않았을 때 '아무 말도 하지 않음'을 자동으로 입력합니다.",
     showUnrecommended: '활성화하면 권장되지 않거나 지원 중단된 설정을 표시합니다. 일반적인 사용에는 권장하지 않습니다.',
+    risuaiProToolsDeprecated:
+      'RisuAI Pro 도구는 지원 중단되었습니다. 대신 모델 설정의 프로필, 역할 연결, 런타임 옵션을 사용하세요. Pro 도구는 향후 릴리스에서 제거될 수 있습니다.',
     imageCompression:
       '활성화하면 캐릭터 내보내기 시 이미지를 압축합니다. 움직이는 이미지(GIF/APNG)가 제대로 동작하지 않는 경우 이 옵션을 비활성화해 보세요.',
     useExperimental: '활성화하면 실험적 기능들이 인터페이스에 표시됩니다.',
