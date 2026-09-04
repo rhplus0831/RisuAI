@@ -763,6 +763,22 @@ export const COMMAND_EVENT_CATALOG = {
     // Reorder rewrites only the `modules` table.
     resource: 'moduleReordered',
   },
+  moduleFolderCreated: {
+    type: 'moduleFolder.created',
+    resource: 'moduleFolders',
+  },
+  moduleFolderUpdated: {
+    type: 'moduleFolder.updated',
+    resource: 'moduleFolders',
+  },
+  moduleFolderDeleted: {
+    type: 'moduleFolder.deleted',
+    resource: 'moduleOrganization',
+  },
+  moduleFolderReordered: {
+    type: 'moduleFolder.reordered',
+    resource: 'moduleFolders',
+  },
   characterModulesReordered: {
     type: 'character.modules.reordered',
     // Reordering a character's module links writes one character row, so a

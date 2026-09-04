@@ -22,10 +22,10 @@ import { SERVER_SETTINGS_GROUP_BY_KEY } from '@risuai/shared-core/settings-group
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const temporaryDirectories: string[] = []
 
-const EXPECTED_COMMAND_ROUTE_COUNT = 161
-const EXPECTED_COMMAND_ROUTE_DIGEST = '9a775bf37947d50975099a92410e8fbe2d7f351fc0d251e5d781846b58270d2a'
-const EXPECTED_COMMAND_EVENT_COUNT = 146
-const EXPECTED_COMMAND_EVENT_DIGEST = '005b70c844b7516780a48662c6ab53ca7f445666641c2f1a058131f7ee4bfbb0'
+const EXPECTED_COMMAND_ROUTE_COUNT = 165
+const EXPECTED_COMMAND_ROUTE_DIGEST = '6cf578fff081487c445f780af234697ff41635daf5a6b12450c833b26f3cbe7e'
+const EXPECTED_COMMAND_EVENT_COUNT = 150
+const EXPECTED_COMMAND_EVENT_DIGEST = 'd3d6a356bea9e728b5e2cae0422f696dee8065534eb5bb7781d471c6617859cd'
 const EXPECTED_SQLITE_SCHEMA_DIGEST = 'c58dc02a662f40f6ec988d0e7f8077ecd42b54dcc7a7bbaa9f474828eccf910c'
 
 /**
@@ -75,6 +75,8 @@ const EVENT_RESOURCE_CLASSIFICATION: Record<string, EventRefreshClass> = {
   module: 'targeted-read',
   moduleCreated: 'targeted-read',
   moduleEnabled: 'targeted-read',
+  moduleFolders: 'targeted-read',
+  moduleOrganization: 'targeted-read',
   moduleReordered: 'targeted-read',
   moduleScriptDefinition: 'targeted-read',
   moduleTriggerDefinition: 'targeted-read',
@@ -251,7 +253,7 @@ describe('Phase 3 compatibility structure', () => {
       'conditional-preview-or-revisioned': 2,
       initialization: 1,
       'receipt-acknowledgement': 1,
-      revisioned: 156,
+      revisioned: 160,
     })
     expect(routes).toHaveLength(EXPECTED_COMMAND_ROUTE_COUNT)
     expect(digest(routeKeys.join('\n'))).toBe(EXPECTED_COMMAND_ROUTE_DIGEST)
@@ -446,7 +448,7 @@ function commandRouteDomain(pathname: string): string | null {
   if (/^bardwiki\//u.test(relative)) return 'bardwiki'
   if (/(^|\/)lorebooks(\/|$)/u.test(relative)) return 'lorebooks'
   if (/(^|\/)(scripts|triggers)(\/|$)/u.test(relative)) return 'script-definitions'
-  if (/^(modules|plugins|plugin-storage|inlay-assets)(\/|$)/u.test(relative)) return 'extensions'
+  if (/^(modules|module-folders|plugins|plugin-storage|inlay-assets)(\/|$)/u.test(relative)) return 'extensions'
   if (/^(characters|chats|chat-folders|messages)(\/|$)/u.test(relative)) return 'characters-chats-messages'
   if (
     /^(presets|model-presets|prompt-presets|legacy-bot-presets|prompt-settings|prompt-items|personas|translator-presets|loadouts)(\/|$)/u.test(

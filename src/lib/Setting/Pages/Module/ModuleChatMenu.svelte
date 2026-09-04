@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { CircleCheckIcon, Waypoints, XIcon } from '@lucide/svelte'
+  import { untrack } from 'svelte'
+  import { ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, Waypoints, XIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -22,6 +23,8 @@
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { resolveActiveModuleStates, type ModuleActivationSource } from 'src/ts/moduleActivation'
   import type { Chat, Database, character } from 'src/ts/storage/database.svelte'
+  import type { ModuleFolder } from '@risuai/protocol/module-organization'
+  import { groupModulesByFolder, normalizeModuleOrganizationSearch } from 'src/ts/moduleOrganization'
 
   interface Props {
     close?: any
@@ -30,6 +33,7 @@
 
   let { close = (i: string) => {}, alertMode = false }: Props = $props()
   let moduleSearch = $state('')
+  let normalizedModuleSearch = $derived(normalizeModuleOrganizationSearch(moduleSearch))
   let nextScopedModuleMutationSequence = 0
   let scopedModuleMutationStates = $state<
     Record<string, { sequence: number; status: 'saving' | 'queued' | 'failed'; error?: string }>
@@ -37,6 +41,15 @@
   let moduleOwnerSnapshot = $derived(readModuleOwners())
   let moduleOwners = $derived(moduleOwnerSnapshot ?? [])
   let enabledModuleIds = $derived(readEnabledModuleIds())
+  let moduleFolders = $derived(readModuleFolders())
+  let moduleGroups = $derived(
+    groupModulesByFolder(moduleFolders, moduleOwners, {
+      search: moduleSearch,
+      omitEmptyMatches: true,
+    }),
+  )
+  let collapsedFolderIds = $state<string[]>([])
+  let knownFolderIds = $state<string[]>([])
   let selectedCharacter = $derived(selectedCharacterOwner())
   let selectedChat = $derived(selectedCharacter ? uniqueSelectedChatOwner(selectedCharacter) : undefined)
   let scopedModuleOwnerReady = $derived(!!selectedCharacter && !!selectedChat)
@@ -84,6 +97,17 @@
       ids.add(candidate)
     }
     return value
+  }
+
+  function readModuleFolders(): ModuleFolder[] {
+    if (settingsResourceState.groupStatuses.modules !== 'ready') return []
+    const value = settingsResourceState.value.moduleFolders
+    if (value === undefined) return []
+    const folders = readUniqueIdCollection<ModuleFolder>(value)
+    return folders.length === (Array.isArray(value) ? value.length : -1) &&
+      folders.every((folder) => typeof folder.name === 'string' && folder.name.trim() !== '')
+      ? folders
+      : []
   }
 
   function selectedCharacterOwner(): character | undefined {
@@ -141,16 +165,24 @@
     } as Database
   }
 
-  function sortModules(modules: RisuModule[], search: string) {
-    return modules
-      .filter((v) => {
-        if (search === '') return true
-        return v.name.toLowerCase().includes(search.toLowerCase())
-      })
-      .sort((a, b) => {
-        let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-        return score
-      })
+  $effect(() => {
+    const ids = moduleFolders.map((folder) => folder.id)
+    const previousIds = untrack(() => knownFolderIds)
+    if (ids.length === previousIds.length && ids.every((id, index) => previousIds[index] === id)) return
+    const previousCollapsed = untrack(() => collapsedFolderIds)
+    collapsedFolderIds = [
+      ...new Set([
+        ...previousCollapsed.filter((id) => ids.includes(id)),
+        ...ids.filter((id) => !previousIds.includes(id)),
+      ]),
+    ]
+    knownFolderIds = ids
+  })
+
+  function toggleFolder(folderId: string): void {
+    collapsedFolderIds = collapsedFolderIds.includes(folderId)
+      ? collapsedFolderIds.filter((id) => id !== folderId)
+      : [...collapsedFolderIds, folderId]
   }
 
   function hasActivationSource(moduleId: string, source: ModuleActivationSource): boolean {
@@ -294,84 +326,93 @@
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
       {#if moduleOwners.length === 0}
         <div class="text-textcolor2 p-3">{language.noModules}</div>
+      {:else if moduleGroups.length === 0}
+        <div class="text-textcolor2 p-3">{language.moduleFolders.noSearchResults}</div>
       {:else}
-        {#each sortModules(moduleOwners, moduleSearch) as rmodule, i}
-          {@const inheritedLabels = inheritedActivationLabels(rmodule.id)}
-          {#if i !== 0}
-            <div class="border-t-1 border-selected"></div>
-          {/if}
-          <div class="pl-3 py-3 text-left">
-            <div class="flex items-center">
-              {#if rmodule.mcp}
-                <Waypoints size={18} class="mr-2" />
+        {#each moduleGroups as group (group.folder?.id ?? '__uncategorized__')}
+          {@const collapsed =
+            !!group.folder && collapsedFolderIds.includes(group.folder.id) && normalizedModuleSearch === ''}
+          <section data-risu-module-picker-folder={group.folder?.id ?? 'uncategorized'}>
+            <div class="flex items-center gap-2 bg-darkbg px-3 py-2 border-b border-selected">
+              {#if group.folder}
+                <button
+                  aria-label={collapsed
+                    ? language.moduleFolders.expand(group.folder.name)
+                    : language.moduleFolders.collapse(group.folder.name)}
+                  aria-expanded={!collapsed}
+                  class="text-textcolor2 hover:text-textcolor"
+                  onclick={() => toggleFolder(group.folder!.id)}>
+                  {#if collapsed}<ChevronRightIcon size={18} />{:else}<ChevronDownIcon size={18} />{/if}
+                </button>
               {/if}
-              {#if !alertMode && isInheritedActive(rmodule.id)}
-                <span class="text-textcolor2">{rmodule.name}</span>
-              {:else}
-                <span class="">{rmodule.name}</span>
-              {/if}
-              <div class="grow flex justify-end">
-                {#if alertMode}
-                  <button
-                    class={'text-textcolor2 mr-2 cursor-pointer hover:text-blue-500 transition-colors'}
-                    aria-label={`${language.select}: ${rmodule.name}`}
-                    onclick={async (e) => {
-                      e.stopPropagation()
-
-                      close(rmodule.id)
-                    }}>
-                    <CircleCheckIcon size={18} />
-                  </button>
-                {:else if hasActivationSource(rmodule.id, 'global')}
-                  <span class="mr-2" aria-hidden="true"></span>
-                {:else if inheritedLabels.length > 0}
-                  <span class="mr-2 flex flex-wrap justify-end gap-1">
-                    {#each inheritedLabels as activation}
-                      <span class="text-xs text-blue-400" data-module-activation-source={activation.source}
-                        >{activation.label}</span>
-                    {/each}
-                  </span>
-                {:else if rmodule.mcp}
-                  <span class="mr-2" aria-hidden="true"></span>
-                {:else if !scopedModuleOwnerReady}
-                  <span class="mr-2" aria-hidden="true"></span>
-                {:else}
-                  <button
-                    aria-label={`${language.module}: ${rmodule.name}`}
-                    aria-pressed={hasActivationSource(rmodule.id, 'chat') ||
-                      hasActivationSource(rmodule.id, 'character')}
-                    aria-busy={isScopedModuleMutationPending(rmodule.id)}
-                    disabled={isScopedModuleMutationPending(rmodule.id)}
-                    class={hasActivationSource(rmodule.id, 'chat')
-                      ? 'mr-2 cursor-pointer text-blue-500 disabled:cursor-wait disabled:opacity-60'
-                      : hasActivationSource(rmodule.id, 'character')
-                        ? 'mr-2 cursor-pointer text-violet-500 disabled:cursor-wait disabled:opacity-60'
-                        : 'text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer disabled:cursor-wait disabled:opacity-60'}
-                    onclick={(e) => {
-                      e.stopPropagation()
-                      void trackScopedModuleMutation(rmodule.id, () => toggleSelectedChatModule(rmodule.id))
-                    }}
-                    oncontextmenu={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      void trackScopedModuleMutation(rmodule.id, () => toggleSelectedCharacterModule(rmodule.id))
-                    }}>
-                    <CircleCheckIcon size={18} />
-                  </button>
-                {/if}
-              </div>
+              <span class="font-semibold">{group.folder?.name ?? language.moduleFolders.uncategorized}</span>
+              <span class="text-xs text-textcolor2">({group.modules.length})</span>
             </div>
-            {#if !alertMode && scopedModuleMutationStates[rmodule.id]?.status === 'failed'}
-              <div
-                data-module-mutation-status={rmodule.id}
-                class={scopedModuleMutationStates[rmodule.id]?.status === 'failed'
-                  ? 'mt-1 pr-2 text-xs text-draculared'
-                  : 'mt-1 pr-2 text-xs text-textcolor2'}
-                role={scopedModuleMutationStates[rmodule.id]?.status === 'failed' ? 'alert' : 'status'}>
-                {scopedModuleMutationStatus(rmodule.id)}
-              </div>
+            {#if !collapsed}
+              {#each group.modules as rmodule, i (rmodule.id)}
+                {@const inheritedLabels = inheritedActivationLabels(rmodule.id)}
+                {#if i !== 0}<div class="border-t-1 border-selected"></div>{/if}
+                <div class="pl-3 py-3 text-left">
+                  <div class="flex items-center">
+                    {#if rmodule.mcp}<Waypoints size={18} class="mr-2" />{/if}
+                    <span class={!alertMode && isInheritedActive(rmodule.id) ? 'text-textcolor2' : ''}
+                      >{rmodule.name}</span>
+                    <div class="grow flex justify-end">
+                      {#if alertMode}
+                        <button
+                          class="text-textcolor2 mr-2 cursor-pointer hover:text-blue-500 transition-colors"
+                          aria-label={`${language.select}: ${rmodule.name}`}
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            close(rmodule.id)
+                          }}><CircleCheckIcon size={18} /></button>
+                      {:else if hasActivationSource(rmodule.id, 'global')}
+                        <span class="mr-2" aria-hidden="true"></span>
+                      {:else if inheritedLabels.length > 0}
+                        <span class="mr-2 flex flex-wrap justify-end gap-1">
+                          {#each inheritedLabels as activation}
+                            <span class="text-xs text-blue-400" data-module-activation-source={activation.source}
+                              >{activation.label}</span>
+                          {/each}
+                        </span>
+                      {:else if rmodule.mcp || !scopedModuleOwnerReady}
+                        <span class="mr-2" aria-hidden="true"></span>
+                      {:else}
+                        <button
+                          aria-label={`${language.module}: ${rmodule.name}`}
+                          aria-pressed={hasActivationSource(rmodule.id, 'chat') ||
+                            hasActivationSource(rmodule.id, 'character')}
+                          aria-busy={isScopedModuleMutationPending(rmodule.id)}
+                          disabled={isScopedModuleMutationPending(rmodule.id)}
+                          class={hasActivationSource(rmodule.id, 'chat')
+                            ? 'mr-2 cursor-pointer text-blue-500 disabled:cursor-wait disabled:opacity-60'
+                            : hasActivationSource(rmodule.id, 'character')
+                              ? 'mr-2 cursor-pointer text-violet-500 disabled:cursor-wait disabled:opacity-60'
+                              : 'text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer disabled:cursor-wait disabled:opacity-60'}
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            void trackScopedModuleMutation(rmodule.id, () => toggleSelectedChatModule(rmodule.id))
+                          }}
+                          oncontextmenu={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void trackScopedModuleMutation(rmodule.id, () => toggleSelectedCharacterModule(rmodule.id))
+                          }}><CircleCheckIcon size={18} /></button>
+                      {/if}
+                    </div>
+                  </div>
+                  {#if !alertMode && scopedModuleMutationStates[rmodule.id]?.status === 'failed'}
+                    <div
+                      data-module-mutation-status={rmodule.id}
+                      class="mt-1 pr-2 text-xs text-draculared"
+                      role="alert">
+                      {scopedModuleMutationStatus(rmodule.id)}
+                    </div>
+                  {/if}
+                </div>
+              {/each}
             {/if}
-          </div>
+          </section>
         {/each}
       {/if}
     </div>

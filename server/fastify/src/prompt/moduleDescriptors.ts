@@ -58,6 +58,7 @@ export interface RisuModule {
   namespace?: string
   customModuleToggle?: string
   mcp?: MCPModule
+  folderId?: string
 }
 
 /** Fastify-owned aliases for the exact persisted module descriptor mirror. */

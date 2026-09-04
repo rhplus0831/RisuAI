@@ -27,6 +27,7 @@
         'userNote',
         'modules',
         'enabledModules',
+        'moduleFolders',
         'botPresets',
         'characterOrder',
         'webUiUrl',

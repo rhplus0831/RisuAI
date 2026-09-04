@@ -37,6 +37,8 @@ import {
   currentGlobalModuleStateSnapshot,
   createGlobalModule,
   createGlobalModuleWithOutcome,
+  createModuleFolder,
+  deleteModuleFolder,
   deleteGlobalModule,
   dispatchModuleInfoPatch,
   dispatchReorderModules,
@@ -252,6 +254,7 @@ beforeEach(() => {
     ],
     characterOrder: [],
     enabledModules: [],
+    moduleFolders: [],
     modules: [
       { id: 'mod-a', name: 'Module A' },
       { id: 'mod-b', name: 'Module B' },
@@ -264,6 +267,32 @@ afterEach(() => {
 })
 
 describe('module command projection helpers', () => {
+  it('rolls back failed folder creation and failed populated-folder deletion', async () => {
+    setCachedServerCommandRevision(10)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        return jsonResponse({ error: 'invalid folder request' }, 400)
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(createModuleFolder({ id: 'folder-new', name: 'New' })).resolves.toMatchObject({ status: 'failed' })
+    expect(settingsResourceState.value.moduleFolders).toEqual([])
+
+    settingsResourceState.value.moduleFolders = [{ id: 'folder-a', name: 'Folder A' }]
+    collectionsResourceState.values.modules = [
+      { id: 'mod-a', name: 'Module A', description: '', folderId: 'folder-a' },
+      { id: 'mod-b', name: 'Module B', description: '' },
+    ]
+    await expect(deleteModuleFolder('folder-a')).resolves.toMatchObject({ status: 'failed' })
+    expect(settingsResourceState.value.moduleFolders).toEqual([{ id: 'folder-a', name: 'Folder A' }])
+    expect(collectionsResourceState.values.modules).toEqual([
+      { id: 'mod-a', name: 'Module A', description: '', folderId: 'folder-a' },
+      { id: 'mod-b', name: 'Module B', description: '' },
+    ])
+  })
+
   it('toggles module ids without mutating the input array', () => {
     const current = ['mod-a']
 
@@ -956,7 +985,10 @@ describe('module command projection helpers', () => {
           {
             key: 'module-collection',
             path: '/modules/reorder',
-            body: { moduleIds: ['mod-b', 'mod-a'] },
+            body: {
+              moduleIds: ['mod-b', 'mod-a'],
+              folderByModuleId: { 'mod-b': null, 'mod-a': null },
+            },
           },
         ])
       })

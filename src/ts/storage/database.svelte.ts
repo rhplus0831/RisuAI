@@ -59,6 +59,7 @@ import { repairHypaV3PresetSelectionIdentity } from '@risuai/shared-core/hypa-v3
 import { normalizeTranslatorPresetStateWithLegacyCompatibility, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill'
 import { SERVER_CHARACTER_SHELL_MARKER } from '@risuai/protocol/character-summary-resource'
+import { normalizeModuleFolders } from '@risuai/protocol/module-organization'
 import {
   DEFAULT_BARDWIKI_GLOBAL_SETTINGS,
   isBardWikiGlobalSettings,
@@ -3281,6 +3282,11 @@ export function setDatabase(data: Database) {
   data.memoryLimitThickness ??= 1
   data.modules ??= []
   data.enabledModules ??= []
+  data.moduleFolders = normalizeModuleFolders(data.moduleFolders)
+  const moduleFolderIds = new Set(data.moduleFolders.map((folder) => folder.id))
+  for (const module of data.modules) {
+    if (!moduleFolderIds.has(module.folderId ?? '')) delete module.folderId
+  }
   for (const character of data.characters) {
     const overrides = normalizeScriptModelOverrides(character.scriptModelOverrides)
     if (Object.keys(overrides).length > 0) character.scriptModelOverrides = overrides
@@ -4168,6 +4174,7 @@ export interface Database {
   memoryLimitThickness?: number
   modules: RisuModule[]
   enabledModules: string[]
+  moduleFolders: import('@risuai/protocol/module-organization').ModuleFolder[]
   sideMenuRerollButton?: boolean
   requestInfoInsideChat?: boolean
   additionalParams: [string, string][]

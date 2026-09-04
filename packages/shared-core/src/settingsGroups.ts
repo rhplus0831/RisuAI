@@ -120,6 +120,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   emotionProcesser: 'media',
   emotionPrompt2: 'advanced',
   enabledModules: 'modules',
+  moduleFolders: 'modules',
   enableBlockPartialEdit: 'sidebar',
   enableBookmark: 'advanced',
   enableCustomFlags: 'advanced',

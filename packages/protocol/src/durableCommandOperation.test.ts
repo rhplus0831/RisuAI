@@ -9,12 +9,12 @@ import {
   protocolDurableGenerationOperationMatches,
 } from '@risuai/protocol/durable-command-operation'
 
-const OPENING_ALLOWLIST_SHA256 = '388b54057be8704bbde7bf38460fa18f7fb8a54f13c795127d57ceb5f99c0084'
+const OPENING_ALLOWLIST_SHA256 = '57839af7209199273e4c17169939f71ee29874ad7917860ee46670671adb327a'
 
 describe('durable-command operation catalog', () => {
-  it('preserves all 129 opening method/path patterns behind unique stable identifiers', () => {
-    expect(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG).toHaveLength(129)
-    expect(new Set(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(129)
+  it('preserves all 133 opening method/path patterns behind unique stable identifiers', () => {
+    expect(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG).toHaveLength(133)
+    expect(new Set(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(133)
 
     const matcherFingerprint = PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG.map(
       ({ method, path }) => `${method}:${path.source}`,

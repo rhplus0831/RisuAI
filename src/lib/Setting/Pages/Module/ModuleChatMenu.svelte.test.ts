@@ -16,6 +16,7 @@ const moduleMenuDatabase = vi.hoisted(() => ({
     },
   ],
   enabledModules: [] as string[],
+  moduleFolders: [] as Array<{ id: string; name: string }>,
   moduleIntergration: '',
   modules: [] as Array<{ id: string; name: string; namespace?: string; mcp?: unknown }>,
   personas: [] as Array<{ id: string; modules?: string[] }>,
@@ -146,6 +147,7 @@ beforeEach(() => {
   moduleMenuDatabase.characters[0].modules = []
   moduleMenuDatabase.modules = []
   moduleMenuDatabase.enabledModules = []
+  moduleMenuDatabase.moduleFolders = []
   moduleMenuDatabase.moduleIntergration = ''
   moduleMenuDatabase.personas = []
   moduleMenuDatabase.promptPresets = []
@@ -177,6 +179,29 @@ afterEach(() => {
 })
 
 describe('ModuleChatMenu modal behavior', () => {
+  it('groups by authoritative folders, starts named folders collapsed, and search reveals description matches', async () => {
+    moduleMenuDatabase.moduleFolders = [{ id: 'folder-a', name: 'Writing' }]
+    moduleMenuDatabase.modules = [
+      { id: 'module-a', name: 'Alpha', description: 'hidden needle', folderId: 'folder-a' },
+      { id: 'module-b', name: 'Loose', description: 'plain' },
+    ] as any
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    const folder = target.querySelector<HTMLElement>('[data-risu-module-picker-folder="folder-a"]')
+    expect(folder?.textContent).toContain('Writing')
+    expect(folder?.textContent).not.toContain('Alpha')
+    expect(target.textContent).toContain('Loose')
+
+    const search = target.querySelector<HTMLInputElement>('input')
+    if (!search) throw new Error('Module search input not found')
+    search.value = 'needle'
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(folder?.textContent).toContain('Alpha')
+    expect(target.textContent).not.toContain('Loose')
+  })
+
   it('names the per-chat module toggle and removes the globally enabled placeholder button', async () => {
     moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
     component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })

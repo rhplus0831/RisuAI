@@ -62,6 +62,7 @@ import { normalizeScriptModelOverrides, type ScriptModelOverrides } from '@risua
 import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSettings'
 import { getActiveModuleReadModules, getModuleReadDatabase } from './moduleReadDatabase.svelte'
 import { importLocalModuleFileFromServer } from '../server/localFileImport'
+import type { ModuleFolder } from '@risuai/protocol/module-organization'
 
 export interface MCPModule {
   url: string
@@ -84,7 +85,10 @@ export interface RisuModule {
   namespace?: string
   customModuleToggle?: string
   mcp?: MCPModule
+  folderId?: string
 }
+
+export type { ModuleFolder }
 
 const MODULE_TRIGGER_OWNER = Symbol('risu.moduleTriggerOwner')
 
@@ -186,6 +190,7 @@ function normalizeRisuModuleMetadata(module: unknown): RisuModule | null {
   // or older single-module imports must not bind themselves to a coincidentally
   // matching local profile id.
   delete normalized.scriptModelOverrides
+  delete normalized.folderId
   if (assets) {
     normalized.assets = assets
   } else {
@@ -278,6 +283,7 @@ async function guardImportableRisuModule(module: RisuModule): Promise<boolean> {
 export function moduleForSingleItemExport(module: RisuModule): RisuModule {
   const exported = safeStructuredClone(module)
   delete exported.scriptModelOverrides
+  delete exported.folderId
   return exported
 }
 

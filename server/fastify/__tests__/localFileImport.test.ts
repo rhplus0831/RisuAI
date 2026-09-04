@@ -255,6 +255,7 @@ describe('local character and module file imports', () => {
           id: 'source-json-id',
           name: 'JSON Module',
           description: 'Existing JSON interchange shape',
+          folderId: 'foreign-folder',
         }),
       ),
       'module.json',
@@ -278,5 +279,6 @@ describe('local character and module file imports', () => {
       name: 'JSON Module',
       description: 'Existing JSON interchange shape',
     })
+    expect(modules[0]).not.toHaveProperty('folderId')
   })
 })

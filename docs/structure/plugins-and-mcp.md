@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-08-30.
+Last audited: 2026-09-04.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -196,6 +196,18 @@ metadata, including CJS and asset references. `POST /api/v1/commands/modules`
 independently applies the shared MCP import predicate at creation. Stored MCP
 rows can be globally enabled or durably deleted, but cannot be patched or
 linked to character, chat, Persona, or loadout scopes.
+
+Module library organization is a presentation-only flat folder layer.
+`moduleFolders` lives in the `modules` settings group, while an optional
+`folderId` lives on each module collection row. Folder CRUD and ordering use
+dedicated `/api/v1/commands/module-folders` commands; module order and folder
+assignments are committed together through `/api/v1/commands/modules/reorder`.
+Deleting a folder atomically removes the settings row and clears matching
+module assignments without deleting modules. Folder-only events refresh the
+modules settings group, while deletion refreshes that group plus the modules
+collection. Standalone module import/export strips `folderId`; full `.risu`
+snapshots retain folders and assignments. Activation, prompt assembly, and MCP
+selection do not read folder metadata.
 Single-key plugin-storage `PUT`/`DELETE` commands skip full database load and
 touch only `plugin_custom_storage`; bulk storage reads and merges current
 storage. Plugin collection commands are similarly scoped, and deleting the

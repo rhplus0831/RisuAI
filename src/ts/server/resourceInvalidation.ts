@@ -751,6 +751,13 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'moduleEnabled':
       addSettingsGroup('modules')
       return
+    case 'moduleFolders':
+      addSettingsGroup('modules')
+      return
+    case 'moduleOrganization':
+      addSettingsGroup('modules')
+      plan.collections.add('modules')
+      return
     case 'settingsWithHypaV3Presets':
       if (event.id !== 'memory') {
         plan.full = true

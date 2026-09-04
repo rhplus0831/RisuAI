@@ -12,6 +12,7 @@ import {
 import { isImportableMCPIdentifier } from '@risuai/shared-core/mcp-identifier'
 import { repairCreatedLorebookEntries, validateStoredLorebookEntries } from './lorebooks.js'
 import { normalizeScriptModelOverrides, readScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'
+import type { ModuleFolder } from '@risuai/protocol/module-organization'
 
 type JsonRecord = Record<string, unknown>
 
@@ -20,6 +21,7 @@ export interface ModuleRecord extends JsonRecord {
   name: string
   description: string
   mcp?: unknown
+  folderId?: string
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
@@ -31,6 +33,7 @@ const MODULE_PATCH_DELETABLE_KEYS = new Set([
   'customModuleToggle',
   'cjs',
   'assets',
+  'folderId',
 ])
 
 const MODULE_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
@@ -42,6 +45,7 @@ const MODULE_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
   ['backgroundEmbedding', ['string', 'undefined']],
   ['customModuleToggle', ['string', 'undefined']],
   ['cjs', ['string', 'undefined']],
+  ['folderId', ['string', 'undefined']],
 ])
 
 export function ensureModuleCommandDatabase(database: unknown): JsonRecord {
@@ -174,6 +178,91 @@ export function readModuleIdList(input: unknown, label = 'moduleIds'): string[] 
     throw new ValidationError(`${label} must be an array`)
   }
   return input.map((id, index) => readModuleId(id, `${label}[${index}]`))
+}
+
+export function createModuleFolderRecord(input: unknown, label = 'folder'): ModuleFolder {
+  const record = readJsonObject(input, label)
+  for (const key of Object.keys(record)) {
+    if (key !== 'id' && key !== 'name') throw new ValidationError(`${label}.${key} is not supported`)
+  }
+  const id = readModuleId(record.id, `${label}.id`)
+  if (id.trim() !== id) throw new ValidationError(`${label}.id must be a trimmed non-empty string`)
+  return {
+    id,
+    name: readModuleFolderName(record.name, `${label}.name`),
+  }
+}
+
+export function readModuleFolderPatch(input: unknown): Pick<ModuleFolder, 'name'> {
+  const patch = readJsonObject(input, 'patch')
+  if (Object.keys(patch).length !== 1 || !Object.prototype.hasOwnProperty.call(patch, 'name')) {
+    throw new ValidationError('patch must contain only name')
+  }
+  return { name: readModuleFolderName(patch.name, 'patch.name') }
+}
+
+export function readStrictModuleFolders(database: JsonRecord): ModuleFolder[] {
+  if (database.moduleFolders === undefined) return []
+  if (!Array.isArray(database.moduleFolders)) throw new ValidationError('moduleFolders must be an array')
+  const ids = new Set<string>()
+  return database.moduleFolders.map((value, index) => {
+    const folder = createModuleFolderRecord(value, `moduleFolders[${index}]`)
+    if (ids.has(folder.id)) throw new ValidationError(`Duplicate module folder id: ${folder.id}`)
+    ids.add(folder.id)
+    return folder
+  })
+}
+
+export function readModuleFolderIdList(input: unknown, label = 'folderIds'): string[] {
+  return readModuleIdList(input, label)
+}
+
+export function validateFullModuleFolderOrder(folders: readonly ModuleFolder[], folderIds: readonly string[]): void {
+  const existing = new Set(folders.map((folder) => folder.id))
+  const seen = new Set<string>()
+  for (const folderId of folderIds) {
+    if (!existing.has(folderId)) throw new ValidationError(`Unknown module folder id in folderIds: ${folderId}`)
+    if (seen.has(folderId)) throw new ValidationError(`Duplicate module folder id in folderIds: ${folderId}`)
+    seen.add(folderId)
+  }
+  if (seen.size !== existing.size) throw new ValidationError('folderIds must include every module folder')
+}
+
+export function readModuleFolderAssignments(
+  input: unknown,
+  modules: readonly ModuleRecord[],
+  folders: readonly ModuleFolder[],
+): Record<string, string | null> {
+  const assignments = readJsonObject(input, 'folderByModuleId')
+  const moduleIds = new Set(modules.map((module) => module.id))
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  const result: Record<string, string | null> = {}
+  for (const [moduleId, value] of Object.entries(assignments)) {
+    if (!moduleIds.has(moduleId)) throw new ValidationError(`Unknown module id in folderByModuleId: ${moduleId}`)
+    if (value === null) {
+      result[moduleId] = null
+      continue
+    }
+    if (typeof value !== 'string' || !folderIds.has(value)) {
+      throw new ValidationError(`Unknown module folder id in folderByModuleId: ${String(value)}`)
+    }
+    result[moduleId] = value
+  }
+  if (Object.keys(result).length !== moduleIds.size) {
+    throw new ValidationError('folderByModuleId must include every module')
+  }
+  return result
+}
+
+export function validateModuleFolderReference(
+  module: ModuleRecord,
+  folders: readonly ModuleFolder[],
+  label = 'module',
+): void {
+  if (module.folderId === undefined) return
+  if (!folders.some((folder) => folder.id === module.folderId)) {
+    throw new ValidationError(`${label}.folderId must reference an existing module folder`)
+  }
 }
 
 export function readModuleEnabled(input: unknown): boolean {
@@ -444,6 +533,16 @@ function validateModulePatch(
   if (assetOptions.assetDb && 'assets' in record && record.assets !== null) {
     validateAssetTriples(assetOptions.assetDb, record.assets, `${label}.assets`)
   }
+  if ('folderId' in record && record.folderId !== null && record.folderId !== undefined) {
+    readModuleId(record.folderId, `${label}.folderId`)
+  }
+}
+
+function readModuleFolderName(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError(`${label} must be a non-empty string`)
+  }
+  return value.trim()
 }
 
 function readStringArray(input: unknown, label: string): string[] {

@@ -35,6 +35,7 @@ import {
   createCharacterCommand,
   createLoadoutCommand,
   createModuleCommand,
+  createModuleFolderCommand,
   createPersonaCommand,
   createPluginCommand,
   createBardWikiDocumentCommand,
@@ -67,6 +68,7 @@ import {
   deleteModelProfileCommand,
   deleteProviderCredentialCommand,
   deleteModuleCommand,
+  deleteModuleFolderCommand,
   deleteModuleLorebookEntryCommand,
   deletePersonaCommand,
   deletePluginCommand,
@@ -117,6 +119,7 @@ import {
   reorderCharacterModulesCommand,
   reorderChatLorebookEntriesCommand,
   reorderModulesCommand,
+  reorderModuleFoldersCommand,
   reorderModelPresetsCommand,
   reorderModelProfilesCommand,
   reorderGlobalLorebookEntriesCommand,
@@ -145,6 +148,7 @@ import {
   replaceModuleLorebooksCommand,
   replaceModuleScriptsCommand,
   replaceModuleTriggersCommand,
+  updateModuleFolderCommand,
   selectCharacterCommand,
   selectGlobalLorebookCommand,
   setAgentPresetDefaultCommand,
@@ -9271,7 +9275,11 @@ describe('server command API adapter', () => {
 
   it('dispatches module record and enablement commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
-      if (url.includes('/modules') || url.includes('/characters/char-a/modules/reorder')) {
+      if (
+        url.includes('/modules') ||
+        url.includes('/module-folders') ||
+        url.includes('/characters/char-a/modules/reorder')
+      ) {
         return {
           revision: 9,
           event: {
@@ -9299,12 +9307,20 @@ describe('server command API adapter', () => {
     })
     await deleteModuleCommand({ baseRevision: 3, moduleId: 'mod-a' })
     await enableModuleCommand({ baseRevision: 4, moduleId: 'mod-a', enabled: true })
-    await reorderModulesCommand({ baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] })
+    await reorderModulesCommand({
+      baseRevision: 5,
+      moduleIds: ['mod-b', 'mod-a'],
+      folderByModuleId: { 'mod-a': null, 'mod-b': 'folder-a' },
+    })
     await reorderCharacterModulesCommand({
       baseRevision: 6,
       characterId: 'char-a',
       moduleIds: ['mod-a'],
     })
+    await createModuleFolderCommand({ baseRevision: 7, folder: { id: 'folder-a', name: 'Folder A' } })
+    await updateModuleFolderCommand({ baseRevision: 8, folderId: 'folder-a', patch: { name: 'Renamed' } })
+    await reorderModuleFoldersCommand({ baseRevision: 9, folderIds: ['folder-b', 'folder-a'] })
+    await deleteModuleFolderCommand({ baseRevision: 10, folderId: 'folder-a' })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
@@ -9336,12 +9352,36 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/modules/reorder',
         method: 'POST',
-        body: { baseRevision: 5, moduleIds: ['mod-b', 'mod-a'] },
+        body: {
+          baseRevision: 5,
+          moduleIds: ['mod-b', 'mod-a'],
+          folderByModuleId: { 'mod-a': null, 'mod-b': 'folder-a' },
+        },
       },
       {
         url: '/api/v1/commands/characters/char-a/modules/reorder',
         method: 'POST',
         body: { baseRevision: 6, moduleIds: ['mod-a'] },
+      },
+      {
+        url: '/api/v1/commands/module-folders',
+        method: 'POST',
+        body: { baseRevision: 7, folder: { id: 'folder-a', name: 'Folder A' } },
+      },
+      {
+        url: '/api/v1/commands/module-folders/folder-a',
+        method: 'PATCH',
+        body: { baseRevision: 8, patch: { name: 'Renamed' } },
+      },
+      {
+        url: '/api/v1/commands/module-folders/reorder',
+        method: 'POST',
+        body: { baseRevision: 9, folderIds: ['folder-b', 'folder-a'] },
+      },
+      {
+        url: '/api/v1/commands/module-folders/folder-a',
+        method: 'DELETE',
+        body: { baseRevision: 10 },
       },
     ])
   })

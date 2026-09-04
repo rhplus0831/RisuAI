@@ -15948,6 +15948,103 @@ describe('module record and enablement commands', () => {
     ])
   })
 
+  it('creates, renames, reorders, assigns, and atomically deletes module folders', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      moduleFolders: [],
+      modules: [
+        { id: 'mod-a', name: 'A', description: 'Alpha' },
+        { id: 'mod-b', name: 'B', description: 'Beta' },
+      ],
+    })
+
+    const createdA = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/module-folders',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, folder: { id: 'folder-a', name: 'Writing' } },
+    })
+    expect(createdA.statusCode).toBe(200)
+    expect(createdA.json()).toMatchObject({
+      revision: revision + 1,
+      folderId: 'folder-a',
+      event: { type: 'moduleFolder.created', resource: 'moduleFolders', id: 'folder-a' },
+    })
+
+    const renamed = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/module-folders/folder-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, patch: { name: 'Prompts' } },
+    })
+    expect(renamed.statusCode).toBe(200)
+
+    const createdB = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/module-folders',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 2, folder: { id: 'folder-b', name: 'Tools' } },
+    })
+    expect(createdB.statusCode).toBe(200)
+
+    const reorderedFolders = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/module-folders/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 3, folderIds: ['folder-b', 'folder-a'] },
+    })
+    expect(reorderedFolders.statusCode).toBe(200)
+
+    const organized = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 4,
+        moduleIds: ['mod-b', 'mod-a'],
+        folderByModuleId: { 'mod-a': 'folder-a', 'mod-b': 'folder-b' },
+      },
+    })
+    expect(organized.statusCode).toBe(200)
+
+    const incomplete = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 5,
+        moduleIds: ['mod-b', 'mod-a'],
+        folderByModuleId: { 'mod-a': 'folder-a' },
+      },
+    })
+    expect(incomplete.statusCode).toBe(400)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/module-folders/folder-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 5 },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json().event).toMatchObject({
+      type: 'moduleFolder.deleted',
+      resource: 'moduleOrganization',
+      id: 'folder-a',
+    })
+
+    const bootstrap = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.resourceDatabase.moduleFolders).toEqual([{ id: 'folder-b', name: 'Tools' }])
+    expect(bootstrap.resourceDatabase.modules).toEqual([
+      expect.objectContaining({ id: 'mod-b', folderId: 'folder-b' }),
+      expect.not.objectContaining({ folderId: expect.anything() }),
+    ])
+  })
+
   it('deletes an MCP module and all of its references', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

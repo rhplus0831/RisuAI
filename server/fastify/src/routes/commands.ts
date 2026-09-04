@@ -258,18 +258,25 @@ import {
 } from '../commands/scriptDefinitions.js'
 import {
   createModuleRecord,
+  createModuleFolderRecord,
   findCharacterForModuleCommand,
   readCharacterId as readModuleCharacterId,
   readModuleEnabled,
+  readModuleFolderAssignments,
+  readModuleFolderIdList,
+  readModuleFolderPatch,
   readModuleId as readCommandModuleId,
   readModuleIdList,
   readModulePatch,
   readStrictEnabledModules,
   readStrictModuleRecords,
+  readStrictModuleFolders,
   removeModuleReferences,
   requireModuleIndex,
   validateCharacterModuleLinks,
   validateFullModuleOrder,
+  validateFullModuleFolderOrder,
+  validateModuleFolderReference,
   validateNormalModuleLinks,
   validateStoredModuleRecord,
 } from '../commands/modules.js'
@@ -1606,6 +1613,14 @@ interface ModuleCommandBody {
   moduleId?: unknown
   moduleIds?: unknown
   enabled?: unknown
+  folderByModuleId?: unknown
+}
+
+interface ModuleFolderCommandBody {
+  baseRevision?: unknown
+  folder?: unknown
+  patch?: unknown
+  folderIds?: unknown
 }
 
 interface PluginCommandBody {
@@ -1975,7 +1990,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'hypaCustomSettings',
     'showMenuHypaMemoryModal',
   ],
-  modules: ['enabledModules'],
+  modules: ['enabledModules', 'moduleFolders'],
   agents: ['agents', 'agentPresets', 'agentPresetDefaultId'],
   advanced: [
     'inputHooks',
@@ -2372,6 +2387,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'chatGenerationTogglePresets',
   'customSidebarItems',
   'enabledModules',
+  'moduleFolders',
   'globalscript',
   'hotkeys',
   'modelProfiles',
@@ -8509,6 +8525,160 @@ export function registerCommandRoutes(
     }
   })
 
+  app.post('/api/v1/commands/module-folders', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const folder = createModuleFolderRecord(body.folder)
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          if (folders.some((candidate) => candidate.id === folder.id)) {
+            throw new ValidationError(`Module folder already exists: ${folder.id}`)
+          }
+          folders.push(folder)
+          target.moduleFolders = folders
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleFolderCreated, id: folder.id },
+            extra: { folderId: folder.id },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/module-folders/:folderId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const folderId = readCommandModuleId((req.params as { folderId?: unknown }).folderId, 'folderId')
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const patch = readModuleFolderPatch(body.patch)
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          const matches = folders
+            .map((folder, index) => ({ folder, index }))
+            .filter(({ folder }) => folder.id === folderId)
+          if (matches.length === 0) throw new EntityNotFoundError(`Module folder not found: ${folderId}`)
+          if (matches.length !== 1) throw new ValidationError(`Duplicate module folder id: ${folderId}`)
+          folders[matches[0].index] = { ...matches[0].folder, ...patch, id: folderId }
+          target.moduleFolders = folders
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleFolderUpdated, id: folderId },
+            extra: { folderId },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/module-folders/:folderId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const folderId = readCommandModuleId((req.params as { folderId?: unknown }).folderId, 'folderId')
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const result = applyTargetedCommandMutation<{ folderId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.crossOwner,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          const matches = folders
+            .map((folder, index) => ({ folder, index }))
+            .filter(({ folder }) => folder.id === folderId)
+          if (matches.length === 0) {
+            return {
+              event: { ...COMMAND_EVENT_CATALOG.moduleFolderDeleted, id: folderId },
+              extra: { folderId },
+            }
+          }
+          if (matches.length !== 1) throw new ValidationError(`Duplicate module folder id: ${folderId}`)
+          folders.splice(matches[0].index, 1)
+          target.moduleFolders = folders
+
+          const modules = readStrictModuleRecords(target)
+          let modulesChanged = false
+          for (const module of modules) {
+            if (module.folderId !== folderId) continue
+            delete module.folderId
+            modulesChanged = true
+          }
+          writeSettingsOnly(innerDb, extractSettings(target))
+          if (modulesChanged) writeSingleCollectionTable(innerDb, 'modules', modules)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.moduleFolderDeleted, id: folderId },
+            extra: { folderId },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/module-folders/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = (req.body ?? {}) as ModuleFolderCommandBody
+      const baseRevision = readBaseRevision(body)
+      const folderIds = readModuleFolderIdList(body.folderIds)
+      const result = applyTargetedCommandMutation({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        mutate(database, innerDb) {
+          const target = readJsonObject(database, 'database')
+          const folders = readStrictModuleFolders(target)
+          validateFullModuleFolderOrder(folders, folderIds)
+          const byId = new Map(folders.map((folder) => [folder.id, folder]))
+          target.moduleFolders = folderIds.map((folderId) => byId.get(folderId)!)
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return { event: { ...COMMAND_EVENT_CATALOG.moduleFolderReordered } }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
   app.post('/api/v1/commands/modules', async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
 
@@ -8532,6 +8702,7 @@ export function registerCommandRoutes(
           if (modules.some((candidate) => candidate.id === module.id)) {
             throw new ValidationError(`Module already exists: ${module.id}`)
           }
+          validateModuleFolderReference(module, readStrictModuleFolders(target))
           modules.push(module)
           writeSingleCollectionTable(innerDb, 'modules', modules)
           return {
@@ -8578,6 +8749,7 @@ export function registerCommandRoutes(
               modules[index][key] = value
             }
           }
+          validateModuleFolderReference(modules[index], readStrictModuleFolders(target), `module ${moduleId}`)
           validateStoredModuleRecord(modules[index], `module ${moduleId}`)
           writeSingleCollectionRow(innerDb, 'modules', index, modules[index])
           return {
@@ -8722,8 +8894,20 @@ export function registerCommandRoutes(
             validateStoredModuleRecord(candidate, `module[${index}]`, { allowMcp: true }),
           )
           validateFullModuleOrder(modules, moduleIds)
+          const folderByModuleId =
+            body.folderByModuleId === undefined
+              ? null
+              : readModuleFolderAssignments(body.folderByModuleId, modules, readStrictModuleFolders(target))
           const byId = new Map(modules.map((module) => [module.id, module]))
-          const reordered = moduleIds.map((id) => byId.get(id))
+          const reordered = moduleIds.map((id) => {
+            const module = byId.get(id)!
+            if (folderByModuleId) {
+              const folderId = folderByModuleId[id]
+              if (folderId === null) delete module.folderId
+              else module.folderId = folderId
+            }
+            return module
+          })
           target.modules = reordered
           writeSingleCollectionTable(innerDb, 'modules', reordered)
           return {
@@ -10443,6 +10627,9 @@ function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<st
   for (const [key, value] of entries) {
     if (!SETTINGS_GROUP_KEY_SETS[group].has(key)) {
       throw new ValidationError(`Unsupported ${group} setting: ${key}`)
+    }
+    if (key === 'moduleFolders') {
+      throw new ValidationError('moduleFolders must be changed through module folder commands')
     }
     validateSettingValue(key, value)
     sanitized[key] = sanitizeSettingValue(key, value)

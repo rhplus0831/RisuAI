@@ -1293,6 +1293,52 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase().enabledModules).toEqual(['module-a'])
   })
 
+  it('reads only the modules settings group for module folder metadata events', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'modules',
+      settings: { enabledModules: [], moduleFolders: [{ id: 'folder-a', name: 'Folder A' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'moduleFolders', { id: 'folder-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).not.toHaveBeenCalled()
+    expect(getResourceDatabase().moduleFolders).toEqual([{ id: 'folder-a', name: 'Folder A' }])
+  })
+
+  it('reads module folders and module rows after a folder deletion', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'modules',
+      settings: { enabledModules: [], moduleFolders: [] },
+    })
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { modules: [{ id: 'module-a', name: 'A', description: '' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'moduleOrganization', { id: 'folder-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).toHaveBeenCalledWith('modules', undefined)
+  })
+
   it('reads only enabled modules alongside the required module deletion cascade', async () => {
     seedResources(1)
     api.settingsGroup.mockResolvedValue({

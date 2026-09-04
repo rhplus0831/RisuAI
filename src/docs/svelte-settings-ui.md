@@ -1,6 +1,6 @@
 # Svelte Settings UI Guide
 
-Last audited: 2026-08-29.
+Last audited: 2026-09-04.
 
 This guide owns settings navigation, data-driven rows, shared controls,
 authoring editors, model-profile presentation, and visible settings persistence
@@ -159,6 +159,15 @@ is in
 `ModuleSettings.svelte` has separate reload-durable editor recovery in
 `src/ts/server/moduleEditorDraftStore.ts`. It rebases a restored draft over the
 latest module and offers copy/export/discard recovery when the target vanished.
+The module library also renders the authoritative flat `moduleFolders`
+settings projection. `src/ts/moduleOrganization.ts` groups modules without
+sorting away persisted order and places missing/dangling assignments in a
+virtual Uncategorized group. Folder CRUD/order and module move/order actions
+dispatch through `src/ts/moduleCommands.ts`; search covers names and
+descriptions and disables drag so a filtered DOM cannot become the submitted
+complete order. Collapse state is device-local. The chat module picker reuses
+the same grouping helper, starts named folders collapsed, and opens matching
+groups while searching without changing activation state.
 The editor also registers a dirty-leave guard: routed Settings navigation,
 Quick Settings tab changes, history traversal, and browser unload warn only
 after the draft differs from its opening snapshot. Leaving keeps the recovery

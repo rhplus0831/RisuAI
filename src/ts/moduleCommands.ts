@@ -12,10 +12,13 @@ import {
 import {
   canUseServerCommands,
   createModuleCommand,
+  createModuleFolderCommand,
+  deleteModuleFolderCommand,
   deleteModuleCommand,
   enableModuleCommand,
   reorderCharacterModulesCommand,
   reorderModulesCommand,
+  reorderModuleFoldersCommand,
   replaceModuleLorebooksCommand,
   replaceModuleScriptsCommand,
   replaceModuleTriggersCommand,
@@ -23,6 +26,7 @@ import {
   saveChatGenerationSettingsCommand,
   updateChatCommand,
   updateModuleCommand,
+  updateModuleFolderCommand,
   type LorebookEntrySnapshot,
   type ModuleSnapshot,
   type ScriptDefinitionSnapshot,
@@ -40,7 +44,7 @@ import {
   settingsResourceState,
 } from './server/resourceState.svelte'
 import { reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
-import type { RisuModule } from './process/modules'
+import type { ModuleFolder, RisuModule } from './process/modules'
 import type { character, customscript, loreBook, triggerscript } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
@@ -56,7 +60,7 @@ import {
   stagePendingMutation,
   type DurableMutationIntent,
 } from './server/pendingMutationOutbox'
-import { moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { moduleFolderOwnerMutationKey, moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { chatGenerationSettingsMutationDependencyKeys } from './server/chatGenerationSettingsMutationKeys'
 import { ensureClientLorebookEntryIds, flushPendingLorebookOwnerMutations } from './server/lorebookOwner.svelte'
 import {
@@ -72,6 +76,11 @@ export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
   enabledModules: string[]
   moduleReferences?: ModuleReferenceStateSnapshot
+}
+
+export interface ModuleOrganizationSnapshot {
+  folders: ModuleFolder[]
+  modules: RisuModule[]
 }
 
 export type ModuleMutationOutcome =
@@ -151,6 +160,7 @@ const MODULE_PATCH_DELETABLE_KEYS = new Set([
   'customModuleToggle',
   'cjs',
   'assets',
+  'folderId',
 ])
 
 function moduleCollectionOwnerRead(): RisuModule[] {
@@ -176,6 +186,51 @@ function enabledModulesOwnerWrite(enabledModules: string[]): void {
   if (!isUniqueStringArray((settingsResourceState.value as Record<string, unknown>).enabledModules)) return
   if (!isUniqueStringArray(enabledModules)) return
   ;(settingsResourceState.value as Record<string, unknown>).enabledModules = enabledModules
+}
+
+function isStableModuleFolderCollection(value: unknown): value is ModuleFolder[] {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const folder = candidate as Record<string, unknown>
+    if (
+      typeof folder.id !== 'string' ||
+      folder.id.trim() !== folder.id ||
+      folder.id.length === 0 ||
+      ids.has(folder.id) ||
+      typeof folder.name !== 'string' ||
+      folder.name.trim() !== folder.name ||
+      folder.name.length === 0
+    ) {
+      return false
+    }
+    ids.add(folder.id)
+  }
+  return true
+}
+
+function moduleFoldersOwnerRead(): ModuleFolder[] {
+  if (settingsResourceState.groupStatuses.modules !== 'ready') return []
+  const folders = (settingsResourceState.value as Record<string, unknown>).moduleFolders
+  if (folders === undefined) return []
+  return isStableModuleFolderCollection(folders) ? folders : []
+}
+
+function moduleFoldersOwnerWrite(folders: ModuleFolder[]): void {
+  if (settingsResourceState.groupStatuses.modules !== 'ready') return
+  if (!isStableModuleFolderCollection(folders)) return
+  ;(settingsResourceState.value as Record<string, unknown>).moduleFolders = folders
+}
+
+function canWriteModuleOrganizationOwner(): boolean {
+  return (
+    settingsResourceState.groupStatuses.modules === 'ready' &&
+    ((settingsResourceState.value as Record<string, unknown>).moduleFolders === undefined ||
+      isStableModuleFolderCollection((settingsResourceState.value as Record<string, unknown>).moduleFolders)) &&
+    collectionsResourceState.statuses.modules === 'ready' &&
+    isStableModuleCollection(collectionsResourceState.values.modules)
+  )
 }
 
 function isStableModuleCollection(value: unknown): value is RisuModule[] {
@@ -246,6 +301,10 @@ type GlobalModuleRollbackEntry =
   | ModuleEnableRollbackEntry
   | ModuleReferenceRollbackEntry
   | ModuleOrderRollbackEntry
+  | ModuleFolderCreateRollbackEntry
+  | ModuleFolderNameRollbackEntry
+  | ModuleFolderDeleteRollbackEntry
+  | ModuleFolderOrderRollbackEntry
 
 interface ModuleCreateRollbackEntry {
   kind: 'module-create'
@@ -298,6 +357,36 @@ interface ModuleOrderRollbackEntry {
   target: string
   previousModuleIds: string[]
   attemptedModuleIds: string[]
+}
+
+interface ModuleFolderCreateRollbackEntry {
+  kind: 'module-folder-create'
+  target: string
+  folderId: string
+  attemptedFolder: ModuleFolder
+}
+
+interface ModuleFolderNameRollbackEntry {
+  kind: 'module-folder-name'
+  target: string
+  folderId: string
+  previousName: string
+  attemptedName: string
+}
+
+interface ModuleFolderDeleteRollbackEntry {
+  kind: 'module-folder-delete'
+  target: string
+  folderId: string
+  previousFolder: ModuleFolder
+  previousIndex: number
+}
+
+interface ModuleFolderOrderRollbackEntry {
+  kind: 'module-folder-order'
+  target: string
+  previousFolderIds: string[]
+  attemptedFolderIds: string[]
 }
 
 interface ModuleCollectionPatchStep {
@@ -461,6 +550,13 @@ export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string)
   }
 
   return snapshot
+}
+
+export function currentModuleOrganizationSnapshot(): ModuleOrganizationSnapshot {
+  return {
+    folders: cloneJsonValue(moduleFoldersOwnerRead()),
+    modules: cloneJsonValue(moduleCollectionOwnerRead()),
+  }
 }
 
 export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): void {
@@ -927,6 +1023,7 @@ export async function createGlobalModule(module: RisuModule): Promise<ServerComm
   // Classified interchange repair: every production caller of this legacy API
   // is a module import path. Imported child rows may have missing or duplicate
   // ids, so normalize them once before the durable create owns the result.
+  delete module.folderId
   if (Array.isArray(module.lorebook)) ensureClientLorebookEntryIds(module.lorebook)
   if (Array.isArray(module.regex)) ensureClientScriptDefinitionIds(module.regex)
   if (Array.isArray(module.trigger)) ensureClientTriggerDefinitionIds(module.trigger)
@@ -1302,21 +1399,228 @@ function removeProjectedModuleReferences(moduleId: string): void {
   }
 }
 
-export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export async function dispatchReorderModules(previous: GlobalModuleStateSnapshot): Promise<ModuleMutationOutcome> {
+  if (!canUseServerCommands()) return { status: 'accepted', result: null }
   const attemptedModuleIds = moduleCollectionOwnerRead().map((module) => module.id)
-  const rollbackEntry = moduleOrderRollbackEntry(previous, attemptedModuleIds)
-  runModuleCollectionPatchSteps([
+  const attemptedModules = moduleCollectionOwnerRead()
+  const folderIds = new Set(moduleFoldersOwnerRead().map((folder) => folder.id))
+  const folderByModuleId = Object.fromEntries(
+    attemptedModules.map((module) => [
+      module.id,
+      module.folderId && folderIds.has(module.folderId) ? module.folderId : null,
+    ]),
+  )
+  const rollbackEntries: GlobalModuleRollbackEntry[] = [moduleOrderRollbackEntry(previous, attemptedModuleIds)]
+  for (const module of attemptedModules) {
+    const previousModule = previous.modules.find((candidate) => candidate.id === module.id)
+    if (!previousModule || previousModule.folderId === module.folderId) continue
+    const entry = moduleFieldRollbackEntry(
+      module.id,
+      'folderId',
+      previous,
+      module.folderId !== undefined,
+      module.folderId,
+    )
+    if (entry) rollbackEntries.push(entry)
+  }
+  const batch = runModuleCollectionPatchSteps([
     {
       method: 'POST',
       path: '/modules/reorder',
-      body: { moduleIds: cloneJsonValue(attemptedModuleIds) },
+      body: { moduleIds: cloneJsonValue(attemptedModuleIds), folderByModuleId: cloneJsonValue(folderByModuleId) },
       dependencyKeys: attemptedModuleIds.map(moduleOwnerMutationKey),
       factory: (baseRevision, body) =>
-        reorderModulesCommand({ baseRevision, moduleIds: body.moduleIds as string[] }, undefined, true),
-      rollbackEntries: [rollbackEntry],
+        reorderModulesCommand(
+          {
+            baseRevision,
+            moduleIds: body.moduleIds as string[],
+            folderByModuleId: body.folderByModuleId as Record<string, string | null>,
+          },
+          undefined,
+          true,
+        ),
+      rollbackEntries,
     },
   ])
+  return moduleBatchOutcome(batch ? await batch : { status: 'ok', acceptedCount: 0 })
+}
+
+export async function createModuleFolder(folder: ModuleFolder): Promise<ModuleMutationOutcome> {
+  if (!canWriteModuleOrganizationOwner() || moduleFoldersOwnerRead().some((candidate) => candidate.id === folder.id)) {
+    return { status: 'failed', result: unavailableModuleOwnerResult() }
+  }
+  const canonical = { id: folder.id.trim(), name: folder.name.trim() }
+  if (!canonical.id || canonical.id !== folder.id || !canonical.name) {
+    return { status: 'failed', result: { status: 'error', error: 'Invalid module folder', reason: 'invalid-request' } }
+  }
+  moduleFoldersOwnerWrite([...moduleFoldersOwnerRead(), canonical])
+  reloadGuiAfterDefinitionChange()
+  const entry: ModuleFolderCreateRollbackEntry = {
+    kind: 'module-folder-create',
+    target: moduleFolderRowRollbackTarget(canonical.id),
+    folderId: canonical.id,
+    attemptedFolder: cloneJsonValue(canonical),
+  }
+  const batch = runModuleCollectionPatchSteps([
+    {
+      method: 'POST',
+      path: '/module-folders',
+      body: { folder: cloneJsonValue(canonical) },
+      dependencyKeys: [moduleFolderOwnerMutationKey(canonical.id)],
+      factory: (baseRevision, body) => createModuleFolderCommand({ baseRevision, folder: body.folder as ModuleFolder }),
+      rollbackEntries: [entry],
+    },
+  ])
+  return moduleBatchOutcome(batch ? await batch : { status: 'ok', acceptedCount: 0 })
+}
+
+export async function renameModuleFolder(folderId: string, name: string): Promise<ModuleMutationOutcome> {
+  if (!canWriteModuleOrganizationOwner()) return { status: 'failed', result: unavailableModuleOwnerResult() }
+  const folders = moduleFoldersOwnerRead()
+  const index = folders.findIndex((folder) => folder.id === folderId)
+  const canonicalName = name.trim()
+  if (index === -1 || !canonicalName) {
+    return { status: 'failed', result: { status: 'error', error: 'Invalid module folder', reason: 'invalid-request' } }
+  }
+  const previousName = folders[index].name
+  if (previousName === canonicalName) return { status: 'accepted', result: null }
+  const next = [...folders]
+  next[index] = { ...next[index], name: canonicalName }
+  moduleFoldersOwnerWrite(next)
+  reloadGuiAfterDefinitionChange()
+  const entry: ModuleFolderNameRollbackEntry = {
+    kind: 'module-folder-name',
+    target: moduleFolderNameRollbackTarget(folderId),
+    folderId,
+    previousName,
+    attemptedName: canonicalName,
+  }
+  const batch = runModuleCollectionPatchSteps([
+    {
+      method: 'PATCH',
+      path: `/module-folders/${encodeURIComponent(folderId)}`,
+      body: { patch: { name: canonicalName } },
+      dependencyKeys: [moduleFolderOwnerMutationKey(folderId)],
+      factory: (baseRevision, body) =>
+        updateModuleFolderCommand({
+          baseRevision,
+          folderId,
+          patch: body.patch as Pick<ModuleFolder, 'name'>,
+        }),
+      rollbackEntries: [entry],
+    },
+  ])
+  return moduleBatchOutcome(batch ? await batch : { status: 'ok', acceptedCount: 0 })
+}
+
+export async function deleteModuleFolder(folderId: string): Promise<ModuleMutationOutcome> {
+  if (!canWriteModuleOrganizationOwner()) return { status: 'failed', result: unavailableModuleOwnerResult() }
+  const folders = moduleFoldersOwnerRead()
+  const index = folders.findIndex((folder) => folder.id === folderId)
+  if (index === -1) return { status: 'accepted', result: null }
+  const previous = currentGlobalModuleStateSnapshot()
+  const entries: GlobalModuleRollbackEntry[] = [
+    {
+      kind: 'module-folder-delete',
+      target: moduleFolderRowRollbackTarget(folderId),
+      folderId,
+      previousFolder: cloneJsonValue(folders[index]),
+      previousIndex: index,
+    },
+  ]
+  const nextModules = moduleCollectionOwnerRead().map((module) => {
+    if (module.folderId !== folderId) return module
+    const fieldEntry = moduleFieldRollbackEntry(module.id, 'folderId', previous, false, undefined)
+    if (fieldEntry) entries.push(fieldEntry)
+    const nextModule = { ...module }
+    delete nextModule.folderId
+    return nextModule
+  })
+  moduleFoldersOwnerWrite(folders.filter((folder) => folder.id !== folderId))
+  moduleCollectionOwnerWrite(nextModules)
+  reloadGuiAfterDefinitionChange()
+  const batch = runModuleCollectionPatchSteps([
+    {
+      method: 'DELETE',
+      path: `/module-folders/${encodeURIComponent(folderId)}`,
+      body: {},
+      dependencyKeys: [moduleFolderOwnerMutationKey(folderId)],
+      factory: (baseRevision) => deleteModuleFolderCommand({ baseRevision, folderId }),
+      rollbackEntries: entries,
+    },
+  ])
+  return moduleBatchOutcome(batch ? await batch : { status: 'ok', acceptedCount: 0 })
+}
+
+export async function reorderModuleFolders(folderIds: readonly string[]): Promise<ModuleMutationOutcome> {
+  if (!canWriteModuleOrganizationOwner()) return { status: 'failed', result: unavailableModuleOwnerResult() }
+  const folders = moduleFoldersOwnerRead()
+  if (folderIds.length !== folders.length || new Set(folderIds).size !== folderIds.length) {
+    return {
+      status: 'failed',
+      result: { status: 'error', error: 'Invalid module folder order', reason: 'invalid-request' },
+    }
+  }
+  const byId = new Map(folders.map((folder) => [folder.id, folder]))
+  if (folderIds.some((folderId) => !byId.has(folderId))) {
+    return {
+      status: 'failed',
+      result: { status: 'error', error: 'Invalid module folder order', reason: 'invalid-request' },
+    }
+  }
+  const previousFolderIds = folders.map((folder) => folder.id)
+  const attemptedFolderIds = [...folderIds]
+  if (isStringArrayEqual(previousFolderIds, attemptedFolderIds)) return { status: 'accepted', result: null }
+  moduleFoldersOwnerWrite(attemptedFolderIds.map((folderId) => byId.get(folderId)!))
+  reloadGuiAfterDefinitionChange()
+  const entry: ModuleFolderOrderRollbackEntry = {
+    kind: 'module-folder-order',
+    target: 'module-folder-order:current',
+    previousFolderIds,
+    attemptedFolderIds,
+  }
+  const batch = runModuleCollectionPatchSteps([
+    {
+      method: 'POST',
+      path: '/module-folders/reorder',
+      body: { folderIds: attemptedFolderIds },
+      dependencyKeys: attemptedFolderIds.map(moduleFolderOwnerMutationKey),
+      factory: (baseRevision, body) =>
+        reorderModuleFoldersCommand({ baseRevision, folderIds: body.folderIds as string[] }),
+      rollbackEntries: [entry],
+    },
+  ])
+  return moduleBatchOutcome(batch ? await batch : { status: 'ok', acceptedCount: 0 })
+}
+
+export async function reorderGlobalModules(modules: RisuModule[]): Promise<ModuleMutationOutcome> {
+  if (!canWriteModuleOrganizationOwner() || !isStableModuleCollection(modules)) {
+    return { status: 'failed', result: unavailableModuleOwnerResult() }
+  }
+  const live = moduleCollectionOwnerRead()
+  const liveIds = new Set(live.map((module) => module.id))
+  const folderIds = new Set(moduleFoldersOwnerRead().map((folder) => folder.id))
+  if (
+    modules.length !== live.length ||
+    modules.some(
+      (module) => !liveIds.has(module.id) || (module.folderId !== undefined && !folderIds.has(module.folderId)),
+    )
+  ) {
+    return {
+      status: 'failed',
+      result: { status: 'error', error: 'Invalid module organization', reason: 'invalid-request' },
+    }
+  }
+  const previous = currentGlobalModuleStateSnapshot()
+  moduleCollectionOwnerWrite(cloneJsonValue(modules))
+  reloadGuiAfterDefinitionChange()
+  return dispatchReorderModules(previous)
+}
+
+function moduleBatchOutcome(outcome: CharacterOwnedDurableBatchResult): ModuleMutationOutcome {
+  if (outcome.status === 'ok') return { status: 'accepted', result: null }
+  if (outcome.status === 'retained') return { status: 'queued', result: outcome.failure }
+  return { status: 'failed', result: outcome.failure }
 }
 
 export function dispatchModuleCollectionPatch(
@@ -1770,7 +2074,54 @@ function rollbackGlobalModuleEntryIfLiveMatches(entry: GlobalModuleRollbackEntry
   if (entry.kind === 'module-reference') {
     return rollbackModuleReferenceIfLiveMatches(entry)
   }
+  if (entry.kind === 'module-folder-create') return rollbackModuleFolderCreateIfLiveMatches(entry)
+  if (entry.kind === 'module-folder-name') return rollbackModuleFolderNameIfLiveMatches(entry)
+  if (entry.kind === 'module-folder-delete') return rollbackModuleFolderDeleteIfLiveMatches(entry)
+  if (entry.kind === 'module-folder-order') return rollbackModuleFolderOrderIfLiveMatches(entry)
   return rollbackModuleOrderIfLiveMatches(entry)
+}
+
+function rollbackModuleFolderCreateIfLiveMatches(entry: ModuleFolderCreateRollbackEntry): boolean {
+  const folders = moduleFoldersOwnerRead()
+  const index = folders.findIndex((folder) => folder.id === entry.folderId)
+  if (index === -1 || !isJsonValueEqual(folders[index], entry.attemptedFolder)) return false
+  moduleFoldersOwnerWrite(folders.filter((_, folderIndex) => folderIndex !== index))
+  return true
+}
+
+function rollbackModuleFolderNameIfLiveMatches(entry: ModuleFolderNameRollbackEntry): boolean {
+  const folders = moduleFoldersOwnerRead()
+  const index = folders.findIndex((folder) => folder.id === entry.folderId)
+  if (index === -1 || folders[index].name !== entry.attemptedName) return false
+  const next = [...folders]
+  next[index] = { ...next[index], name: entry.previousName }
+  moduleFoldersOwnerWrite(next)
+  return true
+}
+
+function rollbackModuleFolderDeleteIfLiveMatches(entry: ModuleFolderDeleteRollbackEntry): boolean {
+  const folders = moduleFoldersOwnerRead()
+  if (folders.some((folder) => folder.id === entry.folderId)) return false
+  const next = [...folders]
+  next.splice(boundedInsertIndex(entry.previousIndex, next.length), 0, cloneJsonValue(entry.previousFolder))
+  moduleFoldersOwnerWrite(next)
+  return true
+}
+
+function rollbackModuleFolderOrderIfLiveMatches(entry: ModuleFolderOrderRollbackEntry): boolean {
+  const folders = moduleFoldersOwnerRead()
+  if (
+    !isStringArrayEqual(
+      folders.map((folder) => folder.id),
+      entry.attemptedFolderIds,
+    )
+  )
+    return false
+  const byId = new Map(folders.map((folder) => [folder.id, folder]))
+  const reordered = entry.previousFolderIds.map((folderId) => byId.get(folderId))
+  if (reordered.some((folder) => !folder)) return false
+  moduleFoldersOwnerWrite(reordered as ModuleFolder[])
+  return true
 }
 
 function rollbackModuleCreateIfLiveMatches(entry: ModuleCreateRollbackEntry): boolean {
@@ -1935,6 +2286,14 @@ function moduleEnableRollbackTarget(moduleId: string): string {
   return `module-enable:${moduleId}`
 }
 
+function moduleFolderRowRollbackTarget(folderId: string): string {
+  return `module-folder-row:${folderId}`
+}
+
+function moduleFolderNameRollbackTarget(folderId: string): string {
+  return `module-folder-name:${folderId}`
+}
+
 function moduleCharacterReferenceRollbackTarget(characterId: string): string {
   return `module-reference:character:${characterId}`
 }
@@ -2023,6 +2382,43 @@ function reapplyGlobalModuleEntryIfLiveMatchesPrevious(entry: GlobalModuleRollba
     const target = findModuleReferenceTarget(entry)
     if (!target || !modulesFieldMatches(target, entry.previous)) return false
     restoreModulesField(target, entry.attempted)
+    return true
+  }
+  if (entry.kind === 'module-folder-create') {
+    const folders = moduleFoldersOwnerRead()
+    if (folders.some((folder) => folder.id === entry.folderId)) return false
+    moduleFoldersOwnerWrite([...folders, cloneJsonValue(entry.attemptedFolder)])
+    return true
+  }
+  if (entry.kind === 'module-folder-name') {
+    const folders = moduleFoldersOwnerRead()
+    const index = folders.findIndex((folder) => folder.id === entry.folderId)
+    if (index === -1 || folders[index].name !== entry.previousName) return false
+    const next = [...folders]
+    next[index] = { ...next[index], name: entry.attemptedName }
+    moduleFoldersOwnerWrite(next)
+    return true
+  }
+  if (entry.kind === 'module-folder-delete') {
+    const folders = moduleFoldersOwnerRead()
+    const index = folders.findIndex((folder) => folder.id === entry.folderId)
+    if (index === -1 || !isJsonValueEqual(folders[index], entry.previousFolder)) return false
+    moduleFoldersOwnerWrite(folders.filter((_, folderIndex) => folderIndex !== index))
+    return true
+  }
+  if (entry.kind === 'module-folder-order') {
+    const folders = moduleFoldersOwnerRead()
+    if (
+      !isStringArrayEqual(
+        folders.map((folder) => folder.id),
+        entry.previousFolderIds,
+      )
+    )
+      return false
+    const byId = new Map(folders.map((folder) => [folder.id, folder]))
+    const reordered = entry.attemptedFolderIds.map((folderId) => byId.get(folderId))
+    if (reordered.some((folder) => !folder)) return false
+    moduleFoldersOwnerWrite(reordered as ModuleFolder[])
     return true
   }
 

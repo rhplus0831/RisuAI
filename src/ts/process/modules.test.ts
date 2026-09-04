@@ -468,7 +468,9 @@ describe('module imports', () => {
       },
     }
 
-    expect(moduleForSingleItemExport(module)).not.toHaveProperty('scriptModelOverrides')
+    const organizedModule = { ...module, folderId: 'local-folder' }
+    expect(moduleForSingleItemExport(organizedModule)).not.toHaveProperty('scriptModelOverrides')
+    expect(moduleForSingleItemExport(organizedModule)).not.toHaveProperty('folderId')
     expect(module).toHaveProperty('scriptModelOverrides.llmProfileId', 'local-main')
 
     await importRisuModuleObject(module)

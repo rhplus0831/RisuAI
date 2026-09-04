@@ -379,6 +379,7 @@ function normalizeModuleMetadata(header: unknown): JsonRecord {
   if (assets.length > 0) module.assets = assets
   else delete module.assets
   delete module.scriptModelOverrides
+  delete module.folderId
   return module
 }
 

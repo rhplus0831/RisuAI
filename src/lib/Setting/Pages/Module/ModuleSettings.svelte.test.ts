@@ -25,6 +25,11 @@ const moduleCommandSpies = vi.hoisted(() => ({
     }),
   ),
   setGlobalModuleEnabled: vi.fn(),
+  createModuleFolder: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  renameModuleFolder: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  deleteModuleFolder: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  reorderModuleFolders: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
+  reorderGlobalModules: vi.fn(async (): Promise<any> => ({ status: 'accepted', result: null })),
 }))
 
 const moduleDraftStoreSpies = vi.hoisted(() => {
@@ -71,6 +76,7 @@ const scriptDefinitionOwnerSpies = vi.hoisted(() => ({
 const alertSpies = vi.hoisted(() => ({
   alertConfirm: vi.fn(async () => false),
   alertError: vi.fn(),
+  alertInput: vi.fn(async () => null as string | null),
   alertMd: vi.fn(),
   alertNormal: vi.fn(),
 }))
@@ -153,6 +159,7 @@ interface ModuleFixtureOptions {
   description?: string
   namespace?: string
   mcp?: RisuModule['mcp']
+  folderId?: string
   readCounter?: NameReadCounter
 }
 
@@ -167,6 +174,7 @@ function makeModule(options: ModuleFixtureOptions): RisuModule {
     description: options.description ?? `${options.name} description`,
     namespace: options.namespace,
     mcp: options.mcp,
+    folderId: options.folderId,
   }
 
   Object.defineProperty(module, 'name', {
@@ -216,6 +224,7 @@ function seedModules(readCounter?: NameReadCounter) {
     loreBook: [],
     moduleIntergration: 'shared, trimmed',
     modules: [],
+    moduleFolders: [],
     showDeprecatedTriggerV1: false,
     useAdditionalAssetsPreview: false,
   } as any)
@@ -485,10 +494,39 @@ describe('ModuleSettings derived module rows', () => {
     expect(labels).toContain(`${language.import}: ${language.loreBook}`)
   })
 
-  it('ModuleSettings empty search shows every module in lowercase sorted order', () => {
+  it('ModuleSettings empty search preserves the authoritative module order', () => {
     mountSettings()
 
-    expect(moduleRowNames()).toEqual(['Alpha Module', 'beta Module', 'MCP Tools', 'zulu module'])
+    expect(moduleRowNames()).toEqual(['zulu module', 'Alpha Module', 'beta Module', 'MCP Tools'])
+  })
+
+  it('groups modules by folder, searches descriptions, and exposes folder management', async () => {
+    settingsResourceState.value.moduleFolders = [
+      { id: 'folder-b', name: 'Tools' },
+      { id: 'folder-a', name: 'Writing' },
+    ]
+    collectionsResourceState.values.modules = [
+      makeModule({ id: 'alpha-id', name: 'Alpha Module', folderId: 'folder-a' }),
+      makeModule({ id: 'beta-id', name: 'Beta Module', description: 'special needle', folderId: 'folder-b' }),
+      makeModule({ id: 'loose-id', name: 'Loose Module', folderId: 'missing' }),
+    ]
+    mountSettings()
+
+    expect(
+      Array.from(target.querySelectorAll<HTMLElement>('[data-risu-module-folder]'), (section) =>
+        section.getAttribute('data-risu-module-folder'),
+      ),
+    ).toEqual(['folder-b', 'folder-a', 'uncategorized'])
+    expect(moduleRowNames()).toEqual(['Beta Module', 'Alpha Module', 'Loose Module'])
+
+    await updateSearch('needle')
+    expect(moduleRowNames()).toEqual(['Beta Module'])
+    expect(rowForModuleId('beta-id').getAttribute('draggable')).toBe('false')
+
+    alertSpies.alertInput.mockResolvedValueOnce('New Folder')
+    moduleSurfaceAction('create-folder').click()
+    await vi.waitFor(() => expect(moduleCommandSpies.createModuleFolder).toHaveBeenCalledOnce())
+    expect(moduleCommandSpies.createModuleFolder).toHaveBeenCalledWith(expect.objectContaining({ name: 'New Folder' }))
   })
 
   it('ModuleSettings filtered rows keep action targets by module id', async () => {

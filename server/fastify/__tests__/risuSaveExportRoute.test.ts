@@ -103,7 +103,8 @@ function persistExportableDatabase(dataDir: string): void {
         ],
         characterOrder: ['export-route-char'],
         botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-        modules: [{ id: 'module-a', name: 'Module A' }],
+        moduleFolders: [{ id: 'folder-a', name: 'Writing' }],
+        modules: [{ id: 'module-a', name: 'Module A', folderId: 'folder-a' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
         plugins: [{ id: 'plugin-a', name: 'Plugin A', version: '3.0' }],
         pluginCustomStorage: { 'plugin-a:key': { assetId: ASSET_ID } },
@@ -165,6 +166,8 @@ describe('repository .risu export route', () => {
     expect(decoded.database.pluginCustomStorage).toEqual({
       'plugin-a:key': { assetId: ASSET_ID },
     })
+    expect(decoded.database.moduleFolders).toEqual([{ id: 'folder-a', name: 'Writing' }])
+    expect(decoded.database.modules).toContainEqual(expect.objectContaining({ id: 'module-a', folderId: 'folder-a' }))
     expect(harness.commandEvents.list()).toEqual([
       {
         type: 'state.exported',

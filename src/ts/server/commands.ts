@@ -74,6 +74,7 @@ import type {
   BardWikiReceiptSummary,
   BardWikiReviewState,
 } from '@risuai/protocol'
+import type { ModuleFolder } from '@risuai/protocol/module-organization'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
@@ -197,6 +198,8 @@ export interface ModuleCollectionMutationLocalEffect {
   moduleIds?: string[]
   collectionProjectionEpoch?: number
 }
+
+export type ModuleFolderSnapshot = ModuleFolder
 
 export interface ModuleEnabledLocalEffect {
   kind: 'moduleEnabled'
@@ -848,6 +851,7 @@ export type ModuleSnapshot = Record<string, unknown> & {
   name?: string
   description?: string
   namespace?: string
+  folderId?: string | null
   lowLevelAccess?: boolean
   scriptModelOverrides?: ScriptModelOverrides
   hideIcon?: boolean
@@ -1762,6 +1766,24 @@ export interface EnableModuleCommandInput extends ModuleCommandInput {
 
 export interface ReorderModulesCommandInput extends ModuleCommandInput {
   moduleIds: string[]
+  folderByModuleId?: Record<string, string | null>
+}
+
+export interface CreateModuleFolderCommandInput extends ModuleCommandInput {
+  folder: ModuleFolderSnapshot
+}
+
+export interface UpdateModuleFolderCommandInput extends ModuleCommandInput {
+  folderId: string
+  patch: Pick<ModuleFolderSnapshot, 'name'>
+}
+
+export interface DeleteModuleFolderCommandInput extends ModuleCommandInput {
+  folderId: string
+}
+
+export interface ReorderModuleFoldersCommandInput extends ModuleCommandInput {
+  folderIds: string[]
 }
 
 export interface ReorderCharacterModulesCommandInput extends ModuleCommandInput {
@@ -5317,6 +5339,7 @@ export async function reorderModulesCommand(
     body: {
       baseRevision: input.baseRevision,
       moduleIds: input.moduleIds,
+      ...(input.folderByModuleId ? { folderByModuleId: input.folderByModuleId } : {}),
     },
     signal,
     readLocalEffect: acknowledgeOptimistic
@@ -5326,6 +5349,50 @@ export async function reorderModulesCommand(
             expectedModuleIds: input.moduleIds,
           })
       : undefined,
+  })
+}
+
+export async function createModuleFolderCommand(
+  input: CreateModuleFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson('/module-folders', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, folder: input.folder },
+    signal,
+  })
+}
+
+export async function updateModuleFolderCommand(
+  input: UpdateModuleFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/module-folders/${encodeURIComponent(input.folderId)}`, {
+    method: 'PATCH',
+    body: { baseRevision: input.baseRevision, patch: input.patch },
+    signal,
+  })
+}
+
+export async function deleteModuleFolderCommand(
+  input: DeleteModuleFolderCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ folderId: string }>> {
+  return requestCommandJson(`/module-folders/${encodeURIComponent(input.folderId)}`, {
+    method: 'DELETE',
+    body: { baseRevision: input.baseRevision },
+    signal,
+  })
+}
+
+export async function reorderModuleFoldersCommand(
+  input: ReorderModuleFoldersCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult> {
+  return requestCommandJson('/module-folders/reorder', {
+    method: 'POST',
+    body: { baseRevision: input.baseRevision, folderIds: input.folderIds },
+    signal,
   })
 }
 

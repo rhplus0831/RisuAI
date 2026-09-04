@@ -9,6 +9,29 @@ import { LLMFlags } from '@risuai/shared-core/model-types'
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS } from '@risuai/protocol'
 
 describe('database defaults', () => {
+  it('repairs module folders and clears dangling assignments', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        moduleFolders: [
+          { id: 'folder-a', name: '  Writing  ' },
+          { id: 'folder-a', name: 'Duplicate' },
+          { id: '', name: 'Invalid' },
+        ],
+        modules: [
+          { id: 'module-a', name: 'A', description: '', folderId: 'folder-a' },
+          { id: 'module-b', name: 'B', description: '', folderId: 'missing' },
+        ],
+      },
+      { providerDefaults: false },
+    )
+
+    expect(database.moduleFolders).toEqual([{ id: 'folder-a', name: 'Writing' }])
+    expect(database.modules).toEqual([
+      expect.objectContaining({ id: 'module-a', folderId: 'folder-a' }),
+      expect.not.objectContaining({ folderId: expect.anything() }),
+    ])
+  })
+
   it('prefers legacy Hypa settings over the stale Supa prompt during first-preset migration', () => {
     const database = normalizeDatabaseDefaults(
       {

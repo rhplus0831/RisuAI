@@ -587,7 +587,7 @@ describe('authenticated resource read routes', () => {
     expect(modules.json()).toEqual({
       revision,
       group: 'modules',
-      settings: { enabledModules: ['module-a'] },
+      settings: { enabledModules: ['module-a'], moduleFolders: [] },
     })
 
     const account = await harness.app.inject({

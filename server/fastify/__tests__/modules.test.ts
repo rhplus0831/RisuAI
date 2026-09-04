@@ -67,6 +67,23 @@ function makeChat(overrides: Partial<Chat> = {}): Chat {
 }
 
 describe('getActiveModules', () => {
+  it('ignores module folder metadata during activation and content assembly', () => {
+    const a = makeModule({ id: 'a', lorebook: [lore({ id: 'lore-a', content: 'A' })] } as Partial<RisuModule>)
+    const b = makeModule({ id: 'b', lorebook: [lore({ id: 'lore-b', content: 'B' })] } as Partial<RisuModule>)
+    const database = makeDb({ modules: [a, b], enabledModules: ['a', 'b'] })
+    const activeBefore = getActiveModules(database, undefined, undefined)
+    const contentBefore = getModuleLorebooks(activeBefore)
+
+    ;(database as unknown as Record<string, unknown>).moduleFolders = [{ id: 'folder-a', name: 'Folder A' }]
+    ;(a as unknown as Record<string, unknown>).folderId = 'folder-a'
+    ;(b as unknown as Record<string, unknown>).folderId = 'missing'
+
+    expect(getActiveModules(database, undefined, undefined).map((module) => module.id)).toEqual(
+      activeBefore.map((module) => module.id),
+    )
+    expect(getModuleLorebooks(getActiveModules(database, undefined, undefined))).toEqual(contentBefore)
+  })
+
   it('returns [] when nothing is enabled', () => {
     const db = makeDb({
       modules: [makeModule({ id: 'a' })],

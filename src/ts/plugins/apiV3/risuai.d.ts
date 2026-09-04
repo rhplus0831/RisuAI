@@ -332,6 +332,8 @@ interface RisuModule {
   trigger?: any[]
   /** Module ID */
   id: string
+  /** Optional installation-local organizational folder ID */
+  folderId?: string
   /** Low level system access */
   lowLevelAccess?: boolean
   /** Local-only model-profile selections for module-owned LLM and axLLM calls */

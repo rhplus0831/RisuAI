@@ -1,4 +1,7 @@
-function ownerMutationKey(kind: 'character' | 'chat' | 'chat-folder' | 'loadout' | 'module', id: string): string {
+function ownerMutationKey(
+  kind: 'character' | 'chat' | 'chat-folder' | 'loadout' | 'module' | 'module-folder',
+  id: string,
+): string {
   return `${kind}-owner:${id}`
 }
 
@@ -14,6 +17,10 @@ export function chatOwnerMutationKey(chatId: string): string {
 
 export function moduleOwnerMutationKey(moduleId: string): string {
   return ownerMutationKey('module', moduleId)
+}
+
+export function moduleFolderOwnerMutationKey(folderId: string): string {
+  return ownerMutationKey('module-folder', folderId)
 }
 
 export function loadoutOwnerMutationKey(loadoutId: string): string {

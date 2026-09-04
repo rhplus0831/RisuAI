@@ -52,6 +52,7 @@ import { DEFAULT_REQUEST_HISTORY_LIMIT, normalizeRequestHistoryLimit } from './r
 import { DEFAULT_BARDWIKI_GLOBAL_SETTINGS, isBardWikiGlobalSettings } from '@risuai/protocol'
 import { repairPersonaSelectionIdentity } from '@risuai/shared-core/persona-selection-identity'
 import { repairHypaV3PresetSelectionIdentity } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
+import { normalizeModuleFolders } from '@risuai/protocol/module-organization'
 
 type JsonRecord = Record<string, unknown>
 
@@ -848,6 +849,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'removePunctuationHypa', true)
   setDefault(database, 'memoryLimitThickness', 1)
   setDefault(database, 'modules', [])
+  normalizeModuleOrganization(database)
   normalizeModuleScriptModelOverrides(database)
   normalizePersonaModuleLinks(database)
   setDefault(database, 'enabledModules', [])
@@ -1040,6 +1042,19 @@ function normalizeModuleScriptModelOverrides(database: JsonRecord): void {
     const overrides = normalizeScriptModelOverrides(module.scriptModelOverrides)
     if (Object.keys(overrides).length > 0) module.scriptModelOverrides = overrides
     else delete module.scriptModelOverrides
+  }
+}
+
+function normalizeModuleOrganization(database: JsonRecord): void {
+  const folders = normalizeModuleFolders(database.moduleFolders)
+  database.moduleFolders = folders
+  const folderIds = new Set(folders.map((folder) => folder.id))
+  if (!Array.isArray(database.modules)) return
+  for (const module of database.modules) {
+    if (!isRecord(module)) continue
+    if (typeof module.folderId !== 'string' || !folderIds.has(module.folderId)) {
+      delete module.folderId
+    }
   }
 }
 
