@@ -51,6 +51,8 @@ export interface ActiveChatGenerationSettingsIdentity {
 export interface ActiveChatGenerationSettingsState {
   db: Database
   identity: ActiveChatGenerationSettingsIdentity
+  /** False while an empty owner projection can still mean "not hydrated" instead of "no definitions". */
+  sidebarToggleDefinitionsReady: boolean
   character?: character
   chat?: Chat
   settings?: ChatGenerationSettings
@@ -76,6 +78,7 @@ export interface ResolveActiveChatGenerationSettingsOptions {
 interface ActiveChatOwnerProjection {
   db: Database
   selectedCharIndex: number
+  sidebarToggleDefinitionOwnersReady: boolean
   usesCharacterOwner: boolean
 }
 
@@ -85,6 +88,7 @@ function explicitDatabaseProjection(db: Database): ActiveChatOwnerProjection {
   return {
     db,
     selectedCharIndex: -1,
+    sidebarToggleDefinitionOwnersReady: true,
     usesCharacterOwner: false,
   }
 }
@@ -116,6 +120,15 @@ function activeChatOwnerProjection(): ActiveChatOwnerProjection {
   return {
     db,
     selectedCharIndex: characters.selectedCharIndex,
+    // Owner readers intentionally fail closed to empty projections. Keep that
+    // ambiguity from authorizing default persistence or stale-key deletion.
+    sidebarToggleDefinitionOwnersReady:
+      characters.status === 'available' &&
+      personas.status === 'available' &&
+      promptPresets.status === 'available' &&
+      modules.status === 'available' &&
+      agentConfiguration.status === 'available' &&
+      moduleSettings.status === 'available',
     usesCharacterOwner: characters.usesOwner,
   }
 }
@@ -294,6 +307,8 @@ export function resolveActiveChatGenerationSettings(
   const effectiveAgentPresetId = resolveEffectiveAgentPresetId(db, settings)
 
   const readiness = resolveReadiness(db, readyCharacter, chat, settings)
+  const sidebarToggleDefinitionsReady =
+    ownerProjection.sidebarToggleDefinitionOwnersReady && readyCharacter !== undefined && chat !== undefined
   const identity: ActiveChatGenerationSettingsIdentity = {
     selectedCharIndex,
     characterIndex: readyCharacter ? selectedCharIndex : -1,
@@ -305,6 +320,7 @@ export function resolveActiveChatGenerationSettings(
   return {
     db,
     identity,
+    sidebarToggleDefinitionsReady,
     character: readyCharacter,
     chat,
     settings,
@@ -422,13 +438,13 @@ export function createActiveChatGenerationSettingsPatch(
         }
       }
     }
-    next.sidebarToggles = pruneStaleSidebarToggleKeys(state, {
+    next.sidebarToggles = pruneStaleSidebarToggleKeysWhenReady(state, {
       ...next,
       sidebarToggles: mergedSidebarToggles,
     }).sidebarToggles
   }
 
-  const pruned = pruneStaleSidebarToggleKeys(state, next)
+  const pruned = pruneStaleSidebarToggleKeysWhenReady(state, next)
   return fillMissingDefaultSidebarToggles(state, pruned)
 }
 
@@ -512,10 +528,9 @@ export function fillMissingActiveChatSidebarToggleDefaults(
   state: ActiveChatGenerationSettingsState = resolveActiveChatGenerationSettings(),
 ): ChatGenerationSettings | undefined {
   if (!state.settings) return undefined
-  return fillMissingDefaultSidebarToggles(
-    state,
-    pruneStaleSidebarToggleKeys(state, cloneGenerationSettings(state.settings)),
-  )
+  // Automatic reconciliation is additive. Destructive normalization is only
+  // safe through explicit save paths after every definition owner is ready.
+  return fillMissingDefaultSidebarToggles(state, cloneGenerationSettings(state.settings))
 }
 
 export function ensureActiveChatSidebarToggleDefaults(
@@ -523,6 +538,7 @@ export function ensureActiveChatSidebarToggleDefaults(
   options: ActiveChatGenerationSettingsSaveOptions = {},
 ): boolean {
   if (hasStaleExpectedTarget(options)) return false
+  if (!state.sidebarToggleDefinitionsReady) return false
   if (hasBlockingSidebarToggleDefaultSaveReason(state)) return false
 
   const chatId = state.identity.chatId
@@ -776,6 +792,13 @@ function pruneStaleSidebarToggleKeys(
   }
 }
 
+function pruneStaleSidebarToggleKeysWhenReady(
+  state: ActiveChatGenerationSettingsState,
+  settings: ChatGenerationSettings,
+): ChatGenerationSettings {
+  return state.sidebarToggleDefinitionsReady ? pruneStaleSidebarToggleKeys(state, settings) : settings
+}
+
 function fillMissingDefaultSidebarToggles(
   state: ActiveChatGenerationSettingsState,
   settings: ChatGenerationSettings,
@@ -822,7 +845,7 @@ function normalizeActiveChatGenerationSettingsForSave(
   if (!hasOwn(next, 'jailbreakToggle')) {
     next.jailbreakToggle = false
   }
-  return fillMissingDefaultSidebarToggles(state, pruneStaleSidebarToggleKeys(state, next))
+  return fillMissingDefaultSidebarToggles(state, pruneStaleSidebarToggleKeysWhenReady(state, next))
 }
 
 function cloneGenerationSettings(settings: ChatGenerationSettings | undefined): ChatGenerationSettings {

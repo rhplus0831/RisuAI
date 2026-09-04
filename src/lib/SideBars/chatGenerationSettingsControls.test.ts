@@ -73,7 +73,7 @@ import {
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { currentRoute, navigate } from 'src/ts/router'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
-import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import { collectionsResourceState, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { mergeServerResourceCharacterRow } from 'src/ts/storage/database.svelte'
 import { getResourceDatabase } from 'src/ts/__tests__/resourceDatabaseState'
 
@@ -1105,6 +1105,53 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('flag').dataset.risuSelected).toBe('false')
     expect(toggleCheckbox('moduleFlag').checked).toBe(false)
     expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('false')
+  })
+
+  it('waits for module hydration before filling defaults and preserves Persona-module values', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState().enabledModules = []
+    testDatabaseState().personas[0].modules = ['module-a']
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    }
+    collectionsResourceState.statuses.modules = 'loading'
+
+    mountToggles()
+    await tick()
+    await flushAsyncWork()
+
+    expect(generationSettingsSaves(calls)).toHaveLength(0)
+    expect(activeChat().generationSettings?.sidebarToggles).toEqual({
+      mood: '1',
+      note: 'alpha-note',
+      moduleFlag: '1',
+    })
+    expect(target.querySelector('[data-risu-toggle-key="moduleFlag"]')).toBeNull()
+
+    collectionsResourceState.statuses.modules = 'ready'
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+
+    expect(activeChat().generationSettings?.sidebarToggles).toEqual({
+      mood: '1',
+      flag: '0',
+      note: 'alpha-note',
+      moduleFlag: '1',
+    })
+    expect(toggleCheckbox('moduleFlag').checked).toBe(true)
+    expect(generationSettingsSaves(calls)[0].body).toMatchObject({
+      patch: { sidebarToggles: { flag: '0' } },
+    })
+    expect(generationSettingsSaves(calls)[0].body).not.toHaveProperty('sidebarToggleDeleteKeys')
   })
 
   it('renders preset-owned toggles from bootstrap-shaped preset stubs', async () => {

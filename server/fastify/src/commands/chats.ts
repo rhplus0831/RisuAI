@@ -402,6 +402,7 @@ export function readChatGenerationSettingsWrite(
 
   if (hasFullSettings) {
     const canonical = readChatGenerationSettingsSave(body.generationSettings, context)
+    assertRequiredSidebarToggleValuesPreserved(current, canonical, context)
     return {
       mode: 'full',
       requested: cloneJsonValue(body.generationSettings as ChatGenerationSettings),
@@ -476,10 +477,12 @@ export function readChatGenerationSettingsWrite(
     ...(sidebarToggleDeleteKeys.length ? { sidebarToggleDeleteKeys } : {}),
   }
   const requested = applySparseChatGenerationSettingsUpdate(current, update)
+  const canonical = readChatGenerationSettingsSave(requested, context)
+  assertRequiredSidebarToggleValuesPreserved(current, canonical, context)
   return {
     mode: 'sparse',
     requested,
-    canonical: readChatGenerationSettingsSave(requested, context),
+    canonical,
     update,
     baseMatches:
       body.baseGenerationSettingsDigest ===
@@ -614,14 +617,7 @@ export function readChatGenerationSettingsSave(
     normalized.sidebarToggles = readSidebarToggleValueMap(raw.sidebarToggles, `${label}.sidebarToggles`)
   }
 
-  const selectedPromptPreset = isNonEmptyString(normalized.promptPresetId)
-    ? resolveUniquePromptPreset(context.promptPresets, normalized.promptPresetId)
-    : undefined
-  const readiness = resolveChatGenerationSettingsReadiness({
-    ...context,
-    settings: normalized,
-    moduleIntegration: readOptionalStringValue(selectedPromptPreset?.moduleIntergration),
-  })
+  const readiness = resolveChatGenerationSettingsSaveReadiness(normalized, context)
   if (readiness.staleSidebarToggleKeys.length > 0 && normalized.sidebarToggles) {
     const pruned = { ...normalized.sidebarToggles }
     for (const key of readiness.staleSidebarToggleKeys) {
@@ -631,6 +627,42 @@ export function readChatGenerationSettingsSave(
   }
 
   return normalized
+}
+
+function resolveChatGenerationSettingsSaveReadiness(
+  settings: ChatGenerationSettings,
+  context: ChatGenerationSettingsValidationContext,
+) {
+  const selectedPromptPreset = isNonEmptyString(settings.promptPresetId)
+    ? resolveUniquePromptPreset(context.promptPresets, settings.promptPresetId)
+    : undefined
+  return resolveChatGenerationSettingsReadiness({
+    ...context,
+    settings,
+    moduleIntegration: readOptionalStringValue(selectedPromptPreset?.moduleIntergration),
+  })
+}
+
+function assertRequiredSidebarToggleValuesPreserved(
+  current: ChatGenerationSettings | undefined,
+  next: ChatGenerationSettings,
+  context: ChatGenerationSettingsValidationContext,
+): void {
+  if (!current?.sidebarToggles) return
+  // A stale client may submit a destructive snapshot assembled from partial
+  // hydration. Values can disappear only after their post-update definition is
+  // genuinely inactive in the server's authoritative activation context.
+  const requiredToggles = resolveChatGenerationSettingsSaveReadiness(next, context).requirements.sidebarToggles
+  for (const toggle of requiredToggles) {
+    if (
+      typeof current.sidebarToggles[toggle.key] === 'string' &&
+      typeof next.sidebarToggles?.[toggle.key] !== 'string'
+    ) {
+      throw new ValidationError(
+        `${CHAT_GENERATION_SETTINGS_FIELD}.sidebarToggles.${toggle.key} cannot remove a required existing toggle value`,
+      )
+    }
+  }
 }
 
 export function requireChatLocation(characters: readonly CharacterRecord[], chatId: string): ChatLocation {

@@ -2458,6 +2458,7 @@ interface ActiveChatSidebarToggleDefaultUpdate {
 
 function applyMissingActiveChatSidebarToggleDefaults(): ActiveChatSidebarToggleDefaultUpdate | null {
   const state = resolveActiveChatGenerationSettings()
+  if (!state.sidebarToggleDefinitionsReady) return null
   const chatId = state.identity.chatId
   const generationSettings = fillMissingActiveChatSidebarToggleDefaults(state)
   if (!chatId || !generationSettings || isJsonValueEqual(generationSettings, state.settings)) return null

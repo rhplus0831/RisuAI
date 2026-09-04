@@ -29,6 +29,7 @@ import {
   createActiveChatPersonaSelectionPatch,
   createManualModelPresetSelection,
   createPromptPresetSelection,
+  ensureActiveChatSidebarToggleDefaults,
   fillMissingActiveChatSidebarToggleDefaults,
   guardActiveChatGenerationSettingsForSend,
   resolveActiveChatGenerationSettings,
@@ -657,6 +658,46 @@ describe('active chat generation settings helper', () => {
       selectedCharIndex: 0,
     })
     expect(state.readiness.missing.map((reason) => reason.code)).not.toContain('sidebar_toggle_missing')
+  })
+
+  it('does not reconcile or prune toggle values until every definition owner is ready', () => {
+    testDatabaseState.db.enabledModules = []
+    testDatabaseState.db.characters[0].modules = []
+    testDatabaseState.db.characters[0].chats[0].modules = []
+    testDatabaseState.db.personas[0].modules = ['persona-module']
+    testDatabaseState.db.modules.push({
+      id: 'persona-module',
+      customModuleToggle: 'personaFlag=Persona flag',
+    } as never)
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: { personaFlag: '1' },
+    }
+    const calls = stubCommandFetch()
+    collectionsResourceState.statuses.modules = 'loading'
+
+    const loadingState = resolveActiveChatGenerationSettings()
+
+    expect(loadingState.sidebarToggleDefinitionsReady).toBe(false)
+    expect(loadingState.staleSidebarToggleKeys).toEqual(['personaFlag'])
+    expect(fillMissingActiveChatSidebarToggleDefaults(loadingState)?.sidebarToggles).toEqual({ personaFlag: '1' })
+    expect(ensureActiveChatSidebarToggleDefaults(loadingState)).toBe(false)
+    expect(calls).toEqual([])
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings?.sidebarToggles).toEqual({
+      personaFlag: '1',
+    })
+
+    collectionsResourceState.statuses.modules = 'ready'
+    const readyState = resolveActiveChatGenerationSettings()
+
+    expect(readyState.sidebarToggleDefinitionsReady).toBe(true)
+    expect(readyState.staleSidebarToggleKeys).toEqual([])
+    expect(ensureActiveChatSidebarToggleDefaults(readyState)).toBe(false)
+    expect(calls).toEqual([])
   })
 
   it('automatically saves defaults when active toggle requirements gain new keys', async () => {

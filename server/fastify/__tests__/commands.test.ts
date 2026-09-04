@@ -10247,6 +10247,101 @@ describe('chat record and folder commands', () => {
     expect(staleBase.json()).not.toHaveProperty('certificate')
   })
 
+  it('rejects removing a still-required Persona-module toggle value without advancing revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
+      jailbreakToggle: false,
+      sidebarToggles: { personaFlag: '1' },
+    }
+    const revision = await importDatabase(harness.app, assertion, {
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }],
+      personas: [
+        {
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: '',
+          personaPrompt: '',
+          note: '',
+          modules: ['module-persona'],
+        },
+      ],
+      modules: [
+        {
+          id: 'module-persona',
+          name: 'Persona module',
+          description: '',
+          customModuleToggle: 'personaFlag=Persona flag',
+        },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings,
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const baseline = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const persistedGenerationSettings = baseline.resourceDatabase.characters[0].chats[0].generationSettings
+    expect(persistedGenerationSettings.sidebarToggles).toEqual({ personaFlag: '1' })
+
+    const sparseDelete = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        baseGenerationSettingsDigest: chatGenerationSettingsDigest(persistedGenerationSettings),
+        patch: {},
+        sidebarToggleDeleteKeys: ['personaFlag'],
+      },
+    })
+    expect(sparseDelete.statusCode).toBe(400)
+
+    const fullDelete = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        generationSettings: {
+          ...persistedGenerationSettings,
+          sidebarToggles: {},
+        },
+      },
+    })
+    expect(fullDelete.statusCode).toBe(400)
+
+    const unchanged = await injectComposedResourceDatabase(harness.app, {
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(unchanged.json().revision).toBe(revision)
+    expect(unchanged.resourceDatabase.characters[0].chats[0].generationSettings).toEqual(persistedGenerationSettings)
+  })
+
   it('rejects ambiguous sparse generation-settings updates without advancing the revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const initialSettings = {
