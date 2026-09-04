@@ -37,7 +37,7 @@
 {#if state.desiredEnabled && (state.setupFailure || state.operationError)}
   <div
     class={banner
-      ? 'pointer-events-auto w-full rounded-md border border-yellow-600 bg-bg px-4 py-3 text-sm text-textcolor shadow-lg'
+      ? 'pointer-events-auto w-full rounded-md border border-yellow-600 bg-bgcolor px-4 py-3 text-sm text-textcolor shadow-lg'
       : 'mt-2 rounded-md border border-yellow-600 p-3 text-sm text-textcolor'}
     role="status"
     aria-live="polite"

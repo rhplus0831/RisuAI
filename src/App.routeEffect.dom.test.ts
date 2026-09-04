@@ -541,6 +541,8 @@ describe('App route/refreeze mounted DOM behavior', () => {
     })
     await vi.waitFor(() => expect(target.querySelector('[data-push-notification-warning]')).not.toBeNull())
     const warning = target.querySelector<HTMLElement>('[data-push-notification-warning]')!
+    expect(warning.classList.contains('bg-bgcolor')).toBe(true)
+    expect(warning.classList.contains('bg-bg')).toBe(false)
     expect(warning.textContent).toContain('Your notification setting is still on.')
     warning.querySelector('button')!.click()
     expect(appRouteDomMocks.retryNotifications).toHaveBeenCalledOnce()
