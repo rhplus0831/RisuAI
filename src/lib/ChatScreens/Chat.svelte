@@ -3542,8 +3542,8 @@
     position: absolute;
     inset: 0;
     content: '';
+    /* Travel with the fill; a separate transform makes the highlight drift out of sync. */
     background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-    animation: chat-generation-loading-shine 1.1s ease-in-out infinite;
   }
 
   .chat-generation-loading-phase-preparing {
@@ -3581,25 +3581,11 @@
     }
   }
 
-  @keyframes chat-generation-loading-shine {
-    0% {
-      transform: translateX(-100%);
-    }
-
-    100% {
-      transform: translateX(100%);
-    }
-  }
-
   :global(html.risu-reduced-motion) .chat-generation-loading-fill {
     transition: none;
     animation: none;
     width: 100%;
     opacity: 0.65;
-  }
-
-  :global(html.risu-reduced-motion) .chat-generation-loading-fill::after {
-    animation: none;
   }
 
   :global(.chat-message-body .x-risu-bilingual-pair) {
