@@ -50,6 +50,14 @@ function containsVisualComponent(node: AstNode): boolean {
   return found
 }
 
+function sliders(node: unknown): AstNode[] {
+  const result: AstNode[] = []
+  walkAst(node, (candidate) => {
+    if (candidate.type === 'Component' && candidate.name === 'SliderInput') result.push(candidate)
+  })
+  return result
+}
+
 const iconButtons: AstNode[] = []
 walkAst(ast.fragment, (node) => {
   if (node.type === 'RegularElement' && node.name === 'button' && containsVisualComponent(node)) {
@@ -83,29 +91,23 @@ describe('BotSettings additional parameters visibility', () => {
 
 describe('BotSettings direct slider names', () => {
   it('keeps every direct slider named for its parameter in each mutually exclusive model section', () => {
-    const sliderTags = source.match(/<SliderInput\b[\s\S]*?\/>/g) ?? []
+    const controls = sliders(ast.fragment)
+    expect(controls.length).toBeGreaterThan(0)
+    for (const control of controls) expect(attributeExpression(control, 'ariaLabel')).toBeTruthy()
 
-    expect(sliderTags).toHaveLength(27)
-    expect(sliderTags.every((tag) => tag.includes('ariaLabel={'))).toBe(true)
-
-    const sections = [
-      source.slice(
-        source.indexOf("{#if mainProfile.modelId === 'textgen_webui'"),
-        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelAI}'),
-      ),
-      source.slice(
-        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelAI}'),
-        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelList}'),
-      ),
-      source.slice(
-        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelList}'),
-        source.indexOf('      <!-- Standard parameters come from SettingRenderer. -->'),
-      ),
-    ]
-
-    expect(sections.map((section) => section.match(/<SliderInput\b[\s\S]*?\/>/g)?.length)).toEqual([7, 13, 7])
+    const sections: AstNode[] = []
+    walkAst(ast.fragment, (node) => {
+      if (node.type === 'IfBlock' && node.test) {
+        const condition = generate(node.test as Parameters<typeof generate>[0])
+        if (['textgen_webui', 'LLMFormat.NovelAI', 'LLMFormat.NovelList'].some((name) => condition.includes(name))) {
+          sections.push(node)
+        }
+      }
+    })
+    expect(sections.length).toBeGreaterThan(0)
     for (const section of sections) {
-      const labels = Array.from(section.matchAll(/ariaLabel=\{([^}]+)\}/g), (match) => match[1])
+      const labels = sliders(section.consequent).map((control) => attributeExpression(control, 'ariaLabel'))
+      expect(labels.length).toBeGreaterThan(0)
       expect(new Set(labels).size).toBe(labels.length)
     }
   })

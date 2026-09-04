@@ -9,13 +9,6 @@ import {
 
 const MIB_IN_CODE_UNITS = 1024 * 1024
 
-function normalizeRegexOutputSizeLimitMiBBeforeExtraction(value: unknown): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB
-  }
-  return Math.max(MIN_REGEX_OUTPUT_SIZE_LIMIT_MIB, Math.min(MAX_REGEX_OUTPUT_SIZE_LIMIT_MIB, Math.trunc(value)))
-}
-
 describe('regex output-size normalization', () => {
   it('preserves the default and bounds', () => {
     expect(DEFAULT_REGEX_OUTPUT_SIZE_LIMIT_MIB).toBe(16)
@@ -41,8 +34,7 @@ describe('regex output-size normalization', () => {
     [64, 64],
     [64.9, 64],
     [128, 64],
-  ])('preserves the pre-extraction result for %o', (input, expected) => {
-    expect(normalizeRegexOutputSizeLimitMiBBeforeExtraction(input)).toBe(expected)
+  ])('normalizes %o to the expected value', (input, expected) => {
     expect(normalizeRegexOutputSizeLimitMiB(input)).toBe(expected)
     expect(regexOutputSizeLimitCodeUnits(input)).toBe(expected * MIB_IN_CODE_UNITS)
   })

@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
+import { isInside, moduleSpecifiers, parseSource, resolveModule } from '../../../util/test-support/source-contract.js'
 import { describe, expect, it } from 'vitest'
 
 const sourceRoot = path.dirname(fileURLToPath(import.meta.url))
@@ -19,40 +19,18 @@ function discoverRuntimeFiles(root: string, directory = root): string[] {
   return files.sort()
 }
 
-function moduleSpecifiers(file: string, source: string): string[] {
-  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  const specifiers: string[] = []
-  const record = (node: ts.Expression | undefined): void => {
-    if (node && ts.isStringLiteralLike(node)) specifiers.push(node.text)
-  }
-  const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) record(node.moduleSpecifier)
-    else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      record(node.moduleReference.expression)
-    } else if (ts.isCallExpression(node)) {
-      const dynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword
-      const requireCall = ts.isIdentifier(node.expression) && node.expression.text === 'require'
-      if (dynamicImport || requireCall) record(node.arguments[0])
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(sourceFile)
-  return specifiers
-}
-
 function auditImportBoundary(root: string): { runtimeFiles: string[]; violations: string[] } {
   const runtimeFiles = discoverRuntimeFiles(root)
   const violations: string[] = []
   for (const file of runtimeFiles) {
     const absolutePath = path.join(root, file)
-    for (const specifier of moduleSpecifiers(file, fs.readFileSync(absolutePath, 'utf8'))) {
+    for (const specifier of moduleSpecifiers(parseSource(absolutePath, fs.readFileSync(absolutePath, 'utf8')))) {
       if (!specifier.startsWith('.')) {
         violations.push(`${file}: ${specifier}`)
         continue
       }
-      const target = path.resolve(path.dirname(absolutePath), specifier)
-      const relativeTarget = path.relative(root, target)
-      if (relativeTarget === '..' || relativeTarget.startsWith(`..${path.sep}`) || path.isAbsolute(relativeTarget)) {
+      const target = resolveModule(root, absolutePath, specifier)
+      if (!target || !isInside(root, target)) {
         violations.push(`${file}: ${specifier}`)
       }
     }
@@ -62,68 +40,9 @@ function auditImportBoundary(root: string): { runtimeFiles: string[]; violations
 
 describe('@risuai/shared-core import boundary', () => {
   it('keeps every runtime module dependency-free and inside shared core', () => {
-    expect(auditImportBoundary(sourceRoot)).toEqual({
-      runtimeFiles: [
-        'agentLorebookInputs.ts',
-        'agentOnlyLorebook.ts',
-        'agentPresetOutputReferences.ts',
-        'agentPresetRecords.ts',
-        'agentPresetResolver.ts',
-        'anthropicModels.ts',
-        'browserSmoke.ts',
-        'calculation.ts',
-        'cbsContracts.ts',
-        'cbsRegistry.ts',
-        'chatDisplayTailCount.ts',
-        'chatGenerationSettings.ts',
-        'chatGenerationTogglePresetRecords.ts',
-        'chatLoadPages.ts',
-        'chatMLRows.ts',
-        'chatPage.ts',
-        'defaultHotkeys.ts',
-        'defaultPromptSettings.ts',
-        'effectivePromptTemplate.ts',
-        'googleModels.ts',
-        'historySlots.ts',
-        'hypaV3PresetSelectionIdentity.ts',
-        'index.ts',
-        'inlayTokens.ts',
-        'internalReasoning.ts',
-        'legacyOpenAIModelAliases.ts',
-        'loreHash.ts',
-        'mcpIdentifier.ts',
-        'memoryModelCapability.ts',
-        'modelProfileRecords.ts',
-        'modelProfileResolver.ts',
-        'modelRoles.ts',
-        'modelTypes.ts',
-        'moduleActivation.ts',
-        'moduleIntegration.ts',
-        'mutationCertificates.ts',
-        'openaiModels.ts',
-        'parseKeyValue.ts',
-        'personaSelectionIdentity.ts',
-        'presetSplit.ts',
-        'promptBlockRole.ts',
-        'promptInfoSnapshot.ts',
-        'promptSettings.ts',
-        'promptTemplateNormalization.ts',
-        'providerCapability.ts',
-        'providerCredentialRecords.ts',
-        'providerSecretMask.ts',
-        'punctuation.ts',
-        'regexOutputSizeLimit.ts',
-        'resourceManifest.ts',
-        'risuChatParserCore.ts',
-        'risuChatParserHelpers.ts',
-        'routerRoute.ts',
-        'scriptModelOverrides.ts',
-        'settingsGroups.ts',
-        'translatorPipeline.ts',
-        'translatorPresets.ts',
-      ],
-      violations: [],
-    })
+    const result = auditImportBoundary(sourceRoot)
+    expect(result.runtimeFiles.length).toBeGreaterThan(0)
+    expect(result.violations).toEqual([])
   })
 
   it('rejects bare, nested, dynamic, require, and package-escape imports', () => {
@@ -135,6 +54,11 @@ describe('@risuai/shared-core import boundary', () => {
         `
           import { writable } from 'svelte/store'
           const dynamicModule = import('node:path')
+          type Imported = import('node:crypto').Hash
+          const computed = import(moduleName)
+          export { missing } from './missing.js'
+          // import fake from 'node:util'
+          const example = "require('node:util')"
         `,
       )
       fs.writeFileSync(
@@ -150,6 +74,9 @@ describe('@risuai/shared-core import boundary', () => {
         violations: [
           'index.ts: svelte/store',
           'index.ts: node:path',
+          'index.ts: node:crypto',
+          'index.ts: <non-literal module>',
+          'index.ts: ./missing.js',
           'nested/runtime.ts: node:fs',
           'nested/runtime.ts: node:os',
           'nested/runtime.ts: ../../outside.js',

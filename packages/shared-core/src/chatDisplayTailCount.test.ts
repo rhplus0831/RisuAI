@@ -6,18 +6,6 @@ import {
   normalizeChatDisplayTailCount,
 } from './chatDisplayTailCount.js'
 
-function normalizeChatDisplayTailCountBeforeExtraction(value: unknown): number {
-  const parsed =
-    typeof value === 'number'
-      ? value
-      : typeof value === 'string' && value.trim() !== ''
-        ? Number(value)
-        : DEFAULT_CHAT_DISPLAY_TAIL_COUNT
-
-  if (!Number.isFinite(parsed)) return DEFAULT_CHAT_DISPLAY_TAIL_COUNT
-  return Math.min(MAX_CHAT_DISPLAY_TAIL_COUNT, Math.max(MIN_CHAT_DISPLAY_TAIL_COUNT, Math.round(parsed)))
-}
-
 describe('normalizeChatDisplayTailCount', () => {
   it('preserves the display-tail defaults and bounds', () => {
     expect(DEFAULT_CHAT_DISPLAY_TAIL_COUNT).toBe(30)
@@ -46,9 +34,7 @@ describe('normalizeChatDisplayTailCount', () => {
     [-20, 1],
     [500.5, 500],
     [999, 500],
-  ])('preserves the pre-extraction result for %o', (input, expected) => {
-    expect(normalizeChatDisplayTailCountBeforeExtraction(input)).toBe(expected)
+  ])('normalizes %o to the expected value', (input, expected) => {
     expect(normalizeChatDisplayTailCount(input)).toBe(expected)
-    expect(normalizeChatDisplayTailCount(input)).toBe(normalizeChatDisplayTailCountBeforeExtraction(input))
   })
 })

@@ -21,47 +21,19 @@ import {
   LEGACY_STREAM_HEADER,
   RISUSAVE_BLOCK_HEADER,
   classifyRisuSaveEnvelope,
-  type RisuSaveEnvelopeKind,
 } from '../src/risuSave/legacyEnvelopeCodec.js'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 
-type CodecPolicy = {
-  import: 'accepted' | 'skipped-with-report' | 'unsupported-reference'
-  export: 'emitted' | 'import-only'
-}
-
-const BLOCK_POLICY = {
-  [RisuSaveBlockType.CONFIG]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.ROOT]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.CHARACTER_WITH_CHAT]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.CHAT]: { import: 'skipped-with-report', export: 'import-only' },
-  [RisuSaveBlockType.BOTPRESET]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.MODULES]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.REMOTE]: { import: 'unsupported-reference', export: 'import-only' },
-  [RisuSaveBlockType.CHARACTER_WITHOUT_CHAT]: { import: 'accepted', export: 'import-only' },
-  [RisuSaveBlockType.ROOT_COMPONENT]: { import: 'accepted', export: 'import-only' },
-  [RisuSaveBlockType.PLUGINS]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.LOADOUTS]: { import: 'accepted', export: 'emitted' },
-  [RisuSaveBlockType.PLUGIN_STORAGE]: { import: 'accepted', export: 'emitted' },
-} satisfies Record<RisuSaveBlockType, CodecPolicy>
-
-const ENVELOPE_POLICY = {
-  'legacy-raw': { decode: 'supported', encode: 'supported' },
-  'legacy-compressed': { decode: 'supported', encode: 'supported' },
-  'legacy-stream': { decode: 'supported', encode: 'supported' },
-  'risusave-blocks': { decode: 'supported', encode: 'supported' },
-} satisfies Record<RisuSaveEnvelopeKind, { decode: 'supported'; encode: 'supported' }>
-
-const ASSET_CATALOG_POLICY = {
-  ROOT_ASSET_REFERENCE_FIELDS: 'root scalar references',
-  NESTED_ASSET_REFERENCE_FIELDS: 'nested settings scalar references',
-  COLLECTION_ASSET_IMAGE_OWNERS: 'preset image references',
-  CHARACTER_ASSET_REFERENCE_FIELDS: 'character scalar references',
-  CHARACTER_ASSET_TUPLE_FIELDS: 'character tuple references',
-  CHARACTER_ASSET_REFERENCE_LIST_FIELDS: 'character list references',
-  CHARACTER_TEXT_INLAY_FIELDS: 'character text inlay references',
-} as const
+const ASSET_CATALOG_NAMES = [
+  'ROOT_ASSET_REFERENCE_FIELDS',
+  'NESTED_ASSET_REFERENCE_FIELDS',
+  'COLLECTION_ASSET_IMAGE_OWNERS',
+  'CHARACTER_ASSET_REFERENCE_FIELDS',
+  'CHARACTER_ASSET_TUPLE_FIELDS',
+  'CHARACTER_ASSET_REFERENCE_LIST_FIELDS',
+  'CHARACTER_TEXT_INLAY_FIELDS',
+] as const
 
 const SPECIALIZED_ASSET_OWNER_POLICY = [
   {
@@ -101,12 +73,6 @@ const SPECIALIZED_ASSET_OWNER_POLICY = [
 
 describe('Phase 11 compatibility structure', () => {
   it('classifies every supported save envelope and every portable block type', () => {
-    expect(Object.keys(ENVELOPE_POLICY).sort()).toEqual([
-      'legacy-compressed',
-      'legacy-raw',
-      'legacy-stream',
-      'risusave-blocks',
-    ])
     expect([
       classifyRisuSaveEnvelope(LEGACY_RAW_HEADER),
       classifyRisuSaveEnvelope(LEGACY_COMPRESSED_HEADER),
@@ -114,13 +80,23 @@ describe('Phase 11 compatibility structure', () => {
       classifyRisuSaveEnvelope(RISUSAVE_BLOCK_HEADER),
     ]).toEqual(['legacy-raw', 'legacy-compressed', 'legacy-stream', 'risusave-blocks'])
 
-    const enumValues = Object.values(RisuSaveBlockType)
-      .filter((value): value is number => typeof value === 'number')
-      .sort((left, right) => left - right)
-    const classifiedValues = Object.keys(BLOCK_POLICY)
-      .map(Number)
-      .sort((left, right) => left - right)
-    expect(classifiedValues).toEqual(enumValues)
+    // These numeric tags are persisted in portable save blocks.
+    expect(
+      Object.fromEntries(Object.entries(RisuSaveBlockType).filter(([, value]) => typeof value === 'number')),
+    ).toEqual({
+      CONFIG: 0,
+      ROOT: 1,
+      CHARACTER_WITH_CHAT: 2,
+      CHAT: 3,
+      BOTPRESET: 4,
+      MODULES: 5,
+      REMOTE: 6,
+      CHARACTER_WITHOUT_CHAT: 7,
+      ROOT_COMPONENT: 8,
+      PLUGINS: 9,
+      LOADOUTS: 10,
+      PLUGIN_STORAGE: 11,
+    })
   })
 
   it('keeps every declarative asset-owner catalog entry shared by discovery and legacy rewriting', () => {
@@ -131,7 +107,7 @@ describe('Phase 11 compatibility structure', () => {
       .map((match) => match[1])
       .sort()
 
-    expect(exportedCatalogNames).toEqual(Object.keys(ASSET_CATALOG_POLICY).sort())
+    expect(exportedCatalogNames).toEqual([...ASSET_CATALOG_NAMES].sort())
     for (const catalogName of exportedCatalogNames) {
       expect(discoverySource, `${catalogName} must be consumed by portable asset discovery`).toContain(catalogName)
       expect(rewriteSource, `${catalogName} must be consumed by legacy asset rewriting`).toContain(catalogName)

@@ -4,14 +4,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  collectCrossRuntimeObservation,
   collectSourceFileModuleEdges,
   compareCrossRuntimeBaseline,
   createCrossRuntimeBaseline,
   refreshCompatibilityBaseline,
   validateCompatibilityBaseline,
-  type CompatibilityBaseline,
-  type CrossRuntimeBaseline,
 } from './architecture-inventory.js'
 import {
   collectClientResourceObservation,
@@ -103,27 +100,6 @@ describe('architecture inventory AST collector', () => {
 })
 
 describe('cross-runtime baseline gate', () => {
-  it('matches the reviewed repository baseline and records every current lane', () => {
-    const observation = collectCrossRuntimeObservation(REPO_ROOT)
-    const baseline = JSON.parse(
-      fs.readFileSync(
-        path.join(REPO_ROOT, '.archived-docs/architecture-and-migration/cross-runtime-boundaries/baseline.json'),
-        'utf8',
-      ),
-    ) as CrossRuntimeBaseline
-
-    expect(compareCrossRuntimeBaseline(observation, baseline)).toEqual([])
-    expect(observation.edges.reduce((total, edge) => total + edge.count, 0)).toBe(0)
-    expect(
-      Object.fromEntries(
-        (['production', 'server-test', 'browser-smoke'] as const).map((lane) => [
-          lane,
-          observation.edges.filter((edge) => edge.lane === lane).reduce((total, edge) => total + edge.count, 0),
-        ]),
-      ),
-    ).toEqual({ production: 0, 'server-test': 0, 'browser-smoke': 0 })
-  }, 15_000)
-
   it('rejects inventory drift and incomplete policy ownership', () => {
     const observation = {
       edges: [],
@@ -152,25 +128,6 @@ describe('cross-runtime baseline gate', () => {
 })
 
 describe('compatibility disposition gate', () => {
-  it('validates the reviewed repository matrix and fixture provenance', () => {
-    const baseline = JSON.parse(
-      fs.readFileSync(
-        path.join(
-          REPO_ROOT,
-          '.archived-docs/architecture-and-migration/canonical-state-and-compatibility/compatibility-baseline.json',
-        ),
-        'utf8',
-      ),
-    ) as CompatibilityBaseline
-
-    expect(validateCompatibilityBaseline(REPO_ROOT, baseline)).toEqual([])
-    expect(baseline.surfaces).toHaveLength(28)
-    expect(new Set(baseline.surfaces.map((surface) => surface.id)).size).toBe(28)
-    expect(new Set(baseline.surfaces.map((surface) => surface.disposition))).toEqual(
-      new Set(['canonical', 'import-only', 'explicit-compatibility', 'remove']),
-    )
-  })
-
   it('rejects probe drift and missing fixtures', () => {
     const root = fixtureRoot()
     const fixture = path.join(root, 'fixture.ts')
@@ -217,16 +174,7 @@ describe('compatibility disposition gate', () => {
 })
 
 describe('client resource ownership gate', () => {
-  it('requires one owner capability row for every frozen policy without copying consumer observations', () => {
-    const baseline = JSON.parse(
-      fs.readFileSync(
-        path.join(
-          REPO_ROOT,
-          '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json',
-        ),
-        'utf8',
-      ),
-    ) as ClientResourceBaseline
+  it('keeps the standalone lorebook foundation on the supported owner capabilities', () => {
     const matrix = JSON.parse(
       fs.readFileSync(
         path.join(
@@ -237,8 +185,6 @@ describe('client resource ownership gate', () => {
       ),
     ) as ClientResourceOwnerGapMatrix
 
-    expect(validateClientResourceOwnerGapMatrix(REPO_ROOT, baseline, matrix)).toEqual([])
-    expect(Object.keys(matrix.policies)).toHaveLength(9)
     expect(matrix).not.toHaveProperty('consumers')
     expect(matrix.foundations['lorebook-page-standalone']).toMatchObject({
       status: 'implemented',
@@ -277,28 +223,6 @@ describe('client resource ownership gate', () => {
         'client resource owner foundation lorebook-page-standalone owner API anchor is missing: missingOwner',
       ]),
     )
-  })
-
-  it('matches every reviewed test fixture and retained compatibility seam', () => {
-    const observation = collectClientResourceObservation(REPO_ROOT)
-    const baseline = JSON.parse(
-      fs.readFileSync(
-        path.join(
-          REPO_ROOT,
-          '.archived-docs/architecture-and-migration/client-resource-ownership/client-resource-baseline.json',
-        ),
-        'utf8',
-      ),
-    ) as ClientResourceBaseline
-
-    expect(compareClientResourceBaseline(observation, baseline)).toEqual([])
-    expect(observation.consumers.reduce((total, consumer) => total + consumer.count, 0)).toBe(4215)
-    expect(observation.consumers).toHaveLength(216)
-    expect(baseline.consumers).toHaveLength(30)
-    expect(observation.consumers.filter((consumer) => consumer.lane === 'production')).toEqual([])
-    expect(observation.bridgeFamilies).toEqual([])
-    expect(observation.temporarySeams).toHaveLength(20)
-    expect(baseline.temporarySeams.every((seam) => !seam.disposition.startsWith('temporary'))).toBe(true)
   })
 
   it('parses Svelte scripts and rejects a new aggregate consumer or bridge family', () => {

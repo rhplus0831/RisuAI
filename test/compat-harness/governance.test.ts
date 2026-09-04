@@ -35,7 +35,8 @@ function payload(cell: CompatCellDiff, aspect: CompatDivergenceAspect): [unknown
   return [cell.baseline.providerRequests, cell.current.providerRequests]
 }
 
-function matchingExpectedDifferences(diff: CompatDiffArtifact): ExpectedDifferenceRegister {
+// Build a valid in-memory fixture for mutation tests. run.ts validates committed digests unchanged.
+function expectedDifferencesFixture(diff: CompatDiffArtifact): ExpectedDifferenceRegister {
   const register = clone(readJsonFile(path.resolve(ROOT, EXPECTED_DIFFERENCES_PATH)) as ExpectedDifferenceRegister)
   for (const mapping of register.mappings) {
     const cell = diff.cells.find((candidate) => candidate.id === mapping.cellId)!
@@ -59,7 +60,7 @@ describe('compatibility harness governance', () => {
     const baseline = validateCompatSideArtifact(golden('baseline.json'), 'baseline')
     const current = validateCompatSideArtifact(golden('current.json'), 'current')
     const diff = buildCompatDiff(baseline, current)
-    const register = matchingExpectedDifferences(diff)
+    const register = expectedDifferencesFixture(diff)
     const decisions = readJsonFile(path.resolve(ROOT, DECISION_REGISTER_PATH))
     const inventory = readJsonFile(path.resolve(ROOT, INVENTORY_REGISTER_PATH))
     expect(() => validateExpectedDifferences(register, diff, decisions, inventory)).not.toThrow()
@@ -94,6 +95,7 @@ describe('compatibility harness governance', () => {
     brokenProvenance.sourceFiles[0].sha256 = '0'.repeat(64)
     expect(() => validateFixtureProvenance(brokenProvenance, ROOT)).toThrow(/digest mismatch/)
 
+    // This tests manifest construction and rejection of mutations; run.ts owns the committed manifest.
     const manifest = buildGoldenManifest(ROOT, 'Governance test manifest review')
     expect(() => validateGoldenManifest(manifest, ROOT)).not.toThrow()
     const brokenManifest = clone(manifest)

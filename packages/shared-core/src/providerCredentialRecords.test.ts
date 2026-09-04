@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { MASKED_PROVIDER_SECRET } from './providerSecretMask.js'
-import { normalizeProviderCredentials, readProviderCredentials } from './providerCredentialRecords.js'
+import {
+  normalizeProjectedProviderCredentials,
+  normalizeProviderCredentials,
+  readProviderCredentials,
+} from './providerCredentialRecords.js'
 
 describe('provider credential records', () => {
   it('leniently normalizes persisted credentials and drops invalid rows', () => {
@@ -110,5 +114,32 @@ describe('provider credential records', () => {
     expect(() =>
       readProviderCredentials([{ id: 'cred-a', name: 'A', type: 'apiKey', apiKey: 'secret', vertex: {} }]),
     ).toThrow('providerCredentials[0].vertex is only supported for vertexServiceAccount')
+  })
+  it('preserves masked API keys and private keys in browser resource projections', () => {
+    expect(
+      normalizeProjectedProviderCredentials([
+        { id: 'masked-api', name: 'Masked API', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+        {
+          id: 'masked-private-key',
+          name: 'Masked Private Key',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: 'service@example.com', privateKey: MASKED_PROVIDER_SECRET },
+        },
+        {
+          id: 'masked-client-email',
+          name: 'Masked Client Email',
+          type: 'vertexServiceAccount',
+          vertex: { clientEmail: MASKED_PROVIDER_SECRET, privateKey: 'real-private-key' },
+        },
+      ]),
+    ).toEqual([
+      { id: 'masked-api', name: 'Masked API', type: 'apiKey', apiKey: MASKED_PROVIDER_SECRET },
+      {
+        id: 'masked-private-key',
+        name: 'Masked Private Key',
+        type: 'vertexServiceAccount',
+        vertex: { clientEmail: 'service@example.com', privateKey: MASKED_PROVIDER_SECRET },
+      },
+    ])
   })
 })

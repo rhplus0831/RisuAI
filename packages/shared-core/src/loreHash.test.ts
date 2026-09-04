@@ -17,20 +17,6 @@ function sfc32BeforeExtraction(a: number, b: number, c: number, d: number): () =
   }
 }
 
-function pickHashRandBeforeExtraction(cid: number, word: string): number {
-  let hashAddress = 5515
-  const rand = (value: string): number => {
-    for (let index = 0; index < value.length; index += 1) {
-      hashAddress = (hashAddress << 5) + hashAddress + value.charCodeAt(index)
-    }
-    return hashAddress
-  }
-  const random = sfc32BeforeExtraction(rand(word), rand(word), rand(word), rand(word))
-  const advances = cid % 1000
-  for (let index = 0; index < advances; index += 1) random()
-  return random()
-}
-
 describe('lore hash randomization', () => {
   it.each([
     { seeds: [0, 0, 0, 0] },
@@ -60,8 +46,6 @@ describe('lore hash randomization', () => {
     { cid: 2147483647, word: 'overflow', expected: 0.9226429469417781 },
     { cid: 2.9, word: 'fractional', expected: 0.5053094227332622 },
   ])('preserves deterministic pickHashRand vector $cid / $word', ({ cid, word, expected }) => {
-    expect(pickHashRand(cid, word)).toBe(pickHashRandBeforeExtraction(cid, word))
-    expect(pickHashRand(cid, word)).toBe(expected)
     expect(pickHashRand(cid, word)).toBe(expected)
   })
 })

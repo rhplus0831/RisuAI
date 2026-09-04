@@ -52,6 +52,7 @@ const credentials = [
 ]
 
 function props(providerId: string) {
+  let customTokenizer = ''
   return {
     providerId,
     modelId: providerId === 'vertex' ? 'gemini-2.5-pro-vertex' : 'gpt-5',
@@ -71,7 +72,12 @@ function props(providerId: string) {
     ollamaThinkingMode: '',
     vertexProjectId: 'project-a',
     vertexRegion: 'us-central1',
-    customTokenizer: '',
+    get customTokenizer() {
+      return customTokenizer
+    },
+    set customTokenizer(value: string) {
+      customTokenizer = value
+    },
     customFlags: [],
   }
 }
@@ -123,7 +129,8 @@ describe('ModelProviderPanel credential selection', () => {
   })
 
   it('offers every Fastify-portable tokenizer for Custom API profiles', async () => {
-    component = mount(ModelProviderPanel, { target, props: props('custom-api') })
+    const input = props('custom-api')
+    component = mount(ModelProviderPanel, { target, props: input })
     await tick()
 
     const picker = target.querySelector<HTMLSelectElement>('[data-custom-tokenizer-picker]')
@@ -147,9 +154,18 @@ describe('ModelProviderPanel credential selection', () => {
 
     if (!picker) throw new Error('Tokenizer picker was not rendered')
     picker.value = '6'
-    picker.dispatchEvent(new Event('change', { bubbles: true }))
+    // happy-dom only matches inputs for :checked; Svelte uses it to read selected options.
+    const querySelector = picker.querySelector.bind(picker)
+    const selection = vi.spyOn(picker, 'querySelector').mockImplementation((selector: string) => {
+      return selector === ':checked' ? picker.selectedOptions.item(0) : querySelector(selector)
+    })
+    try {
+      picker.dispatchEvent(new Event('change', { bubbles: true }))
+    } finally {
+      selection.mockRestore()
+    }
     await tick()
-    expect(picker.value).toBe('6')
+    expect(input.customTokenizer).toBe('6')
   })
 
   it('loads and selects models from the LLM Gateway catalog', async () => {
@@ -221,7 +237,20 @@ describe('ModelProviderPanel credential selection', () => {
     ['Neuralwatt', 'neuralwatt', neuralwattCatalog.getModels],
   ])('recovers when the %s catalog request rejects', async (_name, providerId, getModels) => {
     getModels.mockRejectedValueOnce(new Error('offline'))
-    component = mount(ModelProviderPanel, { target, props: props(providerId) })
+    const input = props(providerId)
+    let modelId = input.modelId
+    component = mount(ModelProviderPanel, {
+      target,
+      props: {
+        ...input,
+        get modelId() {
+          return modelId
+        },
+        set modelId(value: string) {
+          modelId = value
+        },
+      },
+    })
 
     await vi.waitFor(() => {
       expect(target.querySelector('.animate-spin')).toBeNull()
@@ -235,6 +264,6 @@ describe('ModelProviderPanel credential selection', () => {
     modelInput.value = 'manual-recovery-model'
     modelInput.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    expect(modelInput.value).toBe('manual-recovery-model')
+    expect(modelId).toBe('manual-recovery-model')
   })
 })

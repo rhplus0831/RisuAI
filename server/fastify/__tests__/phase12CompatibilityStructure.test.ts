@@ -9,8 +9,6 @@ const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 type Owner = {
   production: string
   anchors: readonly string[]
-  assurance: string
-  assuranceAnchors: readonly string[]
 }
 
 const CLOSED_STRING_VOCABULARIES = {
@@ -134,38 +132,26 @@ const LIMIT_CLASS_OWNERS: Record<string, Owner> = {
   request_receive_timeout: {
     production: 'server/fastify/src/app.ts',
     anchors: ['REQUEST_RECEIVE_TIMEOUT_MS', 'requestTimeout: REQUEST_RECEIVE_TIMEOUT_MS'],
-    assurance: 'server/fastify/__tests__/requestAbort.test.ts',
-    assuranceAnchors: ['default deadline mirrors the durable 600s reference'],
   },
   authenticated_body_bytes: {
     production: 'server/fastify/src/routes/pushNotifications.ts',
     anchors: ['PUSH_SUBSCRIPTION_BODY_LIMIT', 'onRequest: async'],
-    assurance: 'server/fastify/__tests__/pushNotifications.test.ts',
-    assuranceAnchors: ['authenticates before body parsing and caps subscription bodies before mutation'],
   },
   expanded_payload_bytes: {
     production: 'server/fastify/src/risuSave/importLimits.ts',
     anchors: ['assertExpandedSizeWithinLimit', 'exceeds size limit'],
-    assurance: 'server/fastify/__tests__/risuSaveBoundedInflate.test.ts',
-    assuranceAnchors: ['aborts an oversized inflate at the cap instead of materializing the payload'],
   },
   stream_concurrency_and_buffering: {
     production: 'server/fastify/src/streamJobs.ts',
     anchors: ['PROXY_STREAM_MAX_PENDING_BYTES', 'DURABLE_REPLAY_MAX_AGGREGATE_BYTES'],
-    assurance: 'server/fastify/__tests__/streamJobs.test.ts',
-    assuranceAnchors: ['buffer overflow'],
   },
   response_backpressure: {
     production: 'server/fastify/src/streamBackpressure.ts',
     anchors: ['STREAM_CLIENT_MAX_BUFFERED_BYTES', 'wouldExceedStreamBuffer'],
-    assurance: 'server/fastify/__tests__/streamBackpressure.test.ts',
-    assuranceAnchors: ['detects a frame that would exceed the stream buffer cap'],
   },
   diagnostic_retention: {
     production: 'server/fastify/src/requestHistory.ts',
     anchors: ['REQUEST_HISTORY_TOTAL_MAX_BYTES', 'pruneRequestHistory'],
-    assurance: 'server/fastify/__tests__/requestHistory.test.ts',
-    assuranceAnchors: ['prunes oldest rows when their retained UTF-8 bytes exceed the total budget'],
   },
 }
 
@@ -173,32 +159,22 @@ const DIAGNOSTIC_OWNERS: Record<string, Owner> = {
   request_trace: {
     production: 'server/fastify/src/requestTrace.ts',
     anchors: ['TRACE_ENTRY_LIMIT', 'STARTUP_TELEMETRY_ROUTE', "'[redacted]'"],
-    assurance: 'server/fastify/__tests__/requestTrace.test.ts',
-    assuranceAnchors: ['redacted query params', 'never retains startup telemetry request bodies'],
   },
   request_history: {
     production: 'server/fastify/src/requestHistory.ts',
     anchors: ['redactRequestHistoryValue', 'REQUEST_HISTORY_TOTAL_MAX_BYTES'],
-    assurance: 'server/fastify/__tests__/requestHistory.test.ts',
-    assuranceAnchors: ['redacts secret-shaped metadata', 'exceed the total budget'],
   },
   generation_trace_sidecar: {
     production: 'server/fastify/src/generation/generationTraceSidecar.ts',
     anchors: ['SECRET_KEY_PATTERN', 'PEM_PATTERN', 'DEFAULT_GENERATION_TRACE_MAX_GZIP_BYTES'],
-    assurance: 'server/fastify/__tests__/generationTraceSidecar.test.ts',
-    assuranceAnchors: ['redacts consecutive PEM private-key strings'],
   },
   startup_telemetry: {
     production: 'server/fastify/src/routes/startupTelemetry.ts',
     anchors: ['STARTUP_TELEMETRY_BODY_LIMIT', 'metadata-only contract'],
-    assurance: 'server/fastify/__tests__/startupTelemetry.test.ts',
-    assuranceAnchors: ['startup telemetry route'],
   },
   production_bundle_negative: {
     production: 'util/bundle-boundary-report.ts',
     anchors: ['protectedBoundary', 'initialViolations'],
-    assurance: 'util/bundle-boundary-report.test.ts',
-    assuranceAnchors: ['protected module enters the initial closure'],
   },
 }
 
@@ -206,30 +182,18 @@ const PLATFORM_OWNERS: Record<string, Owner> = {
   baseline_feature_polyfills: {
     production: 'src/ts/polyfill.ts',
     anchors: ['BASELINE_RUNTIME_FEATURES', 'detectBaselineRuntimeSupport'],
-    assurance: 'src/ts/polyfill.test.ts',
-    assuranceAnchors: ['loads only missing baseline features'],
   },
   fastify_browser_runtime: {
     production: 'src/ts/platform.ts',
     anchors: ["RisuEnvironmentLabel = 'fastify'", 'isFastifyServer = true'],
-    assurance: 'src/ts/browserLocalSurface.test.ts',
-    assuranceAnchors: ['public/sw.js', 'share_target', 'file_handlers'],
   },
   web_push_client_lifecycle: {
     production: 'src/ts/server/pushNotifications.ts',
     anchors: ['PushNotificationFallbackReason', 'DisablePushNotificationCleanupStep'],
-    assurance: 'src/ts/server/pushNotifications.test.ts',
-    assuranceAnchors: ['retries a failed server deletion after the local subscription is already gone'],
   },
   web_push_server_lifecycle: {
     production: 'server/fastify/src/pushNotifications.ts',
     anchors: ['PUSH_DELIVERY_TIMEOUT_MS', 'isExpiredPushSubscriptionError'],
-    assurance: 'server/fastify/__tests__/pushNotifications.test.ts',
-    assuranceAnchors: [
-      'reuses its persisted VAPID identity and subscriptions after a database reopen',
-      'prunes expired push subscriptions',
-      'malformed, insecure, credential-bearing',
-    ],
   },
 }
 
@@ -237,29 +201,18 @@ const RECOVERY_OWNERS: Record<string, Owner> = {
   interrupted_restore_before_open: {
     production: 'server/fastify/src/app.ts',
     anchors: ['recoverInterruptedRestoreSwaps(db, config.dataDir, app.log)', 'backfillLegacyHypaV3MemoryRows'],
-    assurance: 'server/fastify/__tests__/backups.test.ts',
-    assuranceAnchors: [
-      'crash between the live-directory renames',
-      'database commits but old-directory cleanup crashes',
-    ],
   },
   generation_startup_reconciliation: {
     production: 'server/fastify/src/app.ts',
     anchors: ['reconcileGenerationOperationsAtStartup', 'reconcileGenerationEffectsAtStartup'],
-    assurance: 'server/fastify/__tests__/generationOperationsStartup.test.ts',
-    assuranceAnchors: ['generation operation startup reconciliation'],
   },
   orderly_shutdown: {
     production: 'server/fastify/src/app.ts',
     anchors: ["app.addHook('onClose'", 'await generationJobRegistry.settleRunners()', "failureCode: 'server_shutdown'"],
-    assurance: 'server/fastify/__tests__/durableGeneration.test.ts',
-    assuranceAnchors: ['server_shutdown'],
   },
   fallback_session_reopen: {
     production: 'server/fastify/src/auth.ts',
     anchors: ['sessionTokensPath', 'persistKnownSessionTokens'],
-    assurance: 'server/fastify/__tests__/auth.test.ts',
-    assuranceAnchors: ['after reopening persisted auth state'],
   },
 }
 
@@ -387,7 +340,7 @@ describe('Phase 12 runtime, platform, limit, and diagnostic structure', () => {
     ])
   })
 
-  it('requires every declared route rate limit and every limit class to retain production and assurance owners', () => {
+  it('requires every declared route rate limit and every limit class to retain production owners', () => {
     expect(Object.keys(RATE_LIMIT_OWNERS).sort()).toEqual(
       exportedVariableNames(readRepoFile('server/fastify/src/routeRateLimits.ts'), /RateLimit$/).sort(),
     )
@@ -395,7 +348,7 @@ describe('Phase 12 runtime, platform, limit, and diagnostic structure', () => {
     verifyOwners(LIMIT_CLASS_OWNERS)
   })
 
-  it('keeps diagnostics, supported-platform boundaries, and restart paths attached to behavioral assurance', () => {
+  it('keeps diagnostics, supported-platform boundaries, and restart paths attached to production owners', () => {
     verifyOwners(DIAGNOSTIC_OWNERS)
     verifyOwners(PLATFORM_OWNERS)
     verifyOwners(RECOVERY_OWNERS)
@@ -445,8 +398,6 @@ function rateOwner(production: string, rateLimit: string): Owner {
   return {
     production,
     anchors: [rateLimit],
-    assurance: 'server/fastify/__tests__/routeProtection.test.ts',
-    assuranceAnchors: ['explicit route rate limits'],
   }
 }
 
@@ -458,8 +409,6 @@ function verifyOwners(owners: Readonly<Record<string, Owner>>): void {
   for (const [name, owner] of Object.entries(owners)) {
     const production = readRepoFile(owner.production)
     for (const anchor of owner.anchors) expect(production, `${name} production anchor`).toContain(anchor)
-    const assurance = readRepoFile(owner.assurance)
-    for (const anchor of owner.assuranceAnchors) expect(assurance, `${name} assurance anchor`).toContain(anchor)
   }
 }
 

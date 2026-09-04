@@ -1,6 +1,10 @@
-import fs from 'node:fs'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('src/ts/stores.svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/stores.svelte')>()),
+  openPresetListModal: vi.fn(),
+}))
 
 vi.mock('src/ts/process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
@@ -12,6 +16,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import CustomSidebar from './CustomSidebar.svelte'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { openPresetListModal } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -19,6 +24,7 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 beforeEach(() => {
+  vi.mocked(openPresetListModal).mockClear()
   target = document.createElement('div')
   document.body.appendChild(target)
   setDatabaseLite({
@@ -39,15 +45,15 @@ afterEach(() => {
 })
 
 describe('CustomSidebar', () => {
-  it('routes the model control to the canonical picker instead of the flat model field', async () => {
+  it('opens the global model preset picker when the model control is clicked', async () => {
     component = mount(CustomSidebar, { target })
     await tick()
     const button = target.querySelector('button')
     expect(button?.textContent).toContain('Model presets')
 
-    const source = fs.readFileSync('src/lib/SideBars/CustomSidebar.svelte', 'utf8')
-    expect(source).toContain("openPresetListModal('global', 'model')")
-    expect(source).not.toContain("createServerBackedSettingDraft<string>('aiModel'")
+    expect(openPresetListModal).not.toHaveBeenCalled()
+    button?.click()
+    expect(openPresetListModal).toHaveBeenCalledExactlyOnceWith('global', 'model')
   })
 
   it('skips malformed setting rows instead of passing undefined into SettingRenderer', async () => {

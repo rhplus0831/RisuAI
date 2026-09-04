@@ -208,3 +208,23 @@ cases by behavior and the regression protected. Cross-cutting tests may appear
 in more than one document—for example, a memory modal in both memory and
 character UI. Inventories name files rather than claiming a suite-wide count;
 use runner discovery when an exact current count is needed.
+
+## Maintaining focused coverage
+
+Shared algorithm behavior belongs in `packages/shared-core/src/*.test.ts`.
+Browser facade tests should cover browser-specific adaptation; pure re-exports
+use the consolidated `packages/shared-core/src/ownership.test.ts` dependency
+rules. `packages/shared-core/src/importBoundary.test.ts` discovers every shared
+runtime module without a manually maintained filename inventory.
+
+UI interaction tests should assert bound state, emitted actions, or saved results
+after an event. Reading back a DOM value assigned by the test does not prove the
+application handled it. Keep explicit input/output fixtures; avoid copying the
+implementation when those expected values already provide the oracle.
+
+Repository-wide documentation and architecture validation belong to `check:docs`
+and `check:server`, reached by both aggregates. Validator unit tests focus on
+small valid/invalid fixtures and distinct policy assertions. Compatibility
+governance unit tests construct valid in-memory fixtures for mutation checks;
+`test/compat-harness/run.ts` separately validates committed manifests and digests
+in its designated compatibility lane.

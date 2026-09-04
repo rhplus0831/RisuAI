@@ -35,3 +35,12 @@ pnpm exec vitest run packages/shared-core/src
 
 Run the nearest browser and Fastify consumer tests as well when shared behavior
 changes.
+
+The boundary command runs `packages/shared-core/src/importBoundary.test.ts` and
+`packages/shared-core/src/ownership.test.ts`.
+The first discovers shared runtime modules and validates their dependencies. The
+second checks consumer imports, package exports, compatibility facades, and retired
+paths using TypeScript and Svelte syntax. Its maintained consumer table is
+[the shared-core consumer table](../../util/test-support/shared-core-ownership.ts);
+add new ownership rules there.
+Behavioral tests remain beside each shared algorithm.

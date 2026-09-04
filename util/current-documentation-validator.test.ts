@@ -1,9 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  currentDocumentationPaths,
   validateCurrentDocumentation,
   type CurrentDocumentationValidationOptions,
 } from './current-documentation-validator.js'
@@ -32,14 +31,6 @@ function fixture(files: Record<string, string>, options: Omit<CurrentDocumentati
 }
 
 describe('current documentation validator', () => {
-  it('validates the complete current documentation set', () => {
-    const paths = currentDocumentationPaths()
-    const expectedCount = existsSync('AGENTS.override.md') ? 49 : 48
-    expect(paths).toHaveLength(expectedCount)
-    if (existsSync('AGENTS.override.md')) expect(paths).toContain('AGENTS.override.md')
-    expect(validateCurrentDocumentation()).toEqual({ documentCount: expectedCount, errors: [], ok: true })
-  })
-
   it('reports missing relative Markdown targets while ignoring fenced examples', () => {
     const result = fixture({
       'docs/guide.md': ['# Guide', '', '[missing](absent.md)', '', '```md', '[example](also-absent.md)', '```'].join(

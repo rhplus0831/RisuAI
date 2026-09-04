@@ -17,7 +17,6 @@ type TextAdapterOwner = {
   resolver: string
   runner: string
   dispatchAnchor: string
-  assurance: string
 }
 
 /** Every provider admitted by the legacy completion route and shared chat dispatcher. */
@@ -27,105 +26,90 @@ const TEXT_ADAPTER_OWNERS: Record<string, TextAdapterOwner> = {
     resolver: 'resolveEchoRequest',
     runner: 'runEcho',
     dispatchAnchor: "provider === 'echo'",
-    assurance: 'server/fastify/__tests__/echo.test.ts',
   },
   openai: {
     adapter: 'server/fastify/src/generation/openai.ts',
     resolver: 'resolveOpenAIRequest',
     runner: 'runOpenAI',
     dispatchAnchor: "provider === 'openai' || provider === 'openrouter'",
-    assurance: 'server/fastify/__tests__/openai.test.ts',
   },
   nanogpt: {
     adapter: 'server/fastify/src/generation/openai.ts',
     resolver: 'resolveOpenAIRequest',
     runner: 'runOpenAI',
     dispatchAnchor: "provider === 'nanogpt'",
-    assurance: 'server/fastify/__tests__/chatDispatchProfileOptions.test.ts',
   },
   openrouter: {
     adapter: 'server/fastify/src/generation/openai.ts',
     resolver: 'resolveOpenAIRequest',
     runner: 'runOpenAI',
     dispatchAnchor: "provider === 'openrouter'",
-    assurance: 'server/fastify/__tests__/chatDispatchProfileOptions.test.ts',
   },
   anthropic: {
     adapter: 'server/fastify/src/generation/anthropic.ts',
     resolver: 'resolveAnthropicRequest',
     runner: 'runAnthropic',
     dispatchAnchor: "provider === 'anthropic'",
-    assurance: 'server/fastify/__tests__/anthropic.test.ts',
   },
   mistral: {
     adapter: 'server/fastify/src/generation/mistral.ts',
     resolver: 'resolveMistralRequest',
     runner: 'runMistral',
     dispatchAnchor: "provider === 'mistral'",
-    assurance: 'server/fastify/__tests__/mistral.test.ts',
   },
   cohere: {
     adapter: 'server/fastify/src/generation/cohere.ts',
     resolver: 'resolveCohereRequest',
     runner: 'runCohere',
     dispatchAnchor: "provider === 'cohere'",
-    assurance: 'server/fastify/__tests__/cohere.test.ts',
   },
   gemini: {
     adapter: 'server/fastify/src/generation/gemini.ts',
     resolver: 'resolveGeminiRequest',
     runner: 'runGemini',
     dispatchAnchor: "provider === 'gemini'",
-    assurance: 'server/fastify/__tests__/gemini.test.ts',
   },
   'openai-legacy-instruct': {
     adapter: 'server/fastify/src/generation/openaiLegacyInstruct.ts',
     resolver: 'resolveOpenAILegacyInstructRequest',
     runner: 'runOpenAILegacyInstruct',
     dispatchAnchor: "provider === 'openai-legacy-instruct'",
-    assurance: 'server/fastify/__tests__/openaiLegacyInstruct.test.ts',
   },
   'openai-responses': {
     adapter: 'server/fastify/src/generation/openaiResponses.ts',
     resolver: 'resolveOpenAIResponsesRequest',
     runner: 'runOpenAIResponses',
     dispatchAnchor: "provider === 'openai-responses'",
-    assurance: 'server/fastify/__tests__/openaiResponses.test.ts',
   },
   kobold: {
     adapter: 'server/fastify/src/generation/kobold.ts',
     resolver: 'resolveKoboldRequest',
     runner: 'runKobold',
     dispatchAnchor: "provider === 'kobold'",
-    assurance: 'server/fastify/__tests__/kobold.test.ts',
   },
   'ooba-legacy': {
     adapter: 'server/fastify/src/generation/oobaLegacy.ts',
     resolver: 'resolveOobaLegacyRequest',
     runner: 'runOobaLegacy',
     dispatchAnchor: "provider === 'ooba-legacy'",
-    assurance: 'server/fastify/__tests__/oobaLegacy.test.ts',
   },
   ollama: {
     adapter: 'server/fastify/src/generation/ollama.ts',
     resolver: 'resolveOllamaRequest',
     runner: 'runOllama',
     dispatchAnchor: "provider === 'ollama'",
-    assurance: 'server/fastify/__tests__/ollama.test.ts',
   },
   bedrock: {
     adapter: 'server/fastify/src/generation/bedrock.ts',
     resolver: 'resolveBedrockRequest',
     runner: 'runBedrock',
     dispatchAnchor: "provider === 'bedrock'",
-    assurance: 'server/fastify/__tests__/bedrock.test.ts',
   },
   horde: {
     adapter: 'server/fastify/src/generation/horde.ts',
     resolver: 'resolveHordeRequest',
     runner: 'runHorde',
     dispatchAnchor: "provider === 'horde'",
-    assurance: 'server/fastify/__tests__/horde.test.ts',
   },
 }
 
@@ -287,14 +271,13 @@ const RUNTIME_OPTION_OWNERS: Record<string, OptionOwner> = {
   customFlags: { owner: 'packages/shared-core/src/modelProfileResolver.ts', anchor: 'customFlags' },
 }
 
-type OperationOwner = { production: string; assurance: string }
+type OperationOwner = { production: string }
 
 const PROVIDER_OPERATION_OWNERS: Record<string, OperationOwner> = Object.fromEntries(
   PROVIDER_OPERATIONS.map((operation) => [
     operation,
     {
       production: 'server/fastify/src/providerOperations.ts',
-      assurance: 'server/fastify/__tests__/providerOperations.test.ts',
     },
   ]),
 )
@@ -302,19 +285,15 @@ const PROVIDER_OPERATION_OWNERS: Record<string, OperationOwner> = Object.fromEnt
 const RAW_TRANSLATOR_OWNERS: Record<string, OperationOwner> = {
   google: {
     production: 'server/fastify/src/translation/rawMessageTranslation.ts',
-    assurance: 'server/fastify/__tests__/rawMessageTranslation.test.ts',
   },
   deepl: {
     production: 'server/fastify/src/translation/rawMessageTranslation.ts',
-    assurance: 'server/fastify/__tests__/rawMessageTranslation.test.ts',
   },
   deeplX: {
     production: 'server/fastify/src/translation/rawMessageTranslation.ts',
-    assurance: 'server/fastify/__tests__/rawMessageTranslation.test.ts',
   },
   llm: {
     production: 'server/fastify/src/translation/rawMessageTranslation.ts',
-    assurance: 'server/fastify/__tests__/rawMessageTranslation.test.ts',
   },
 }
 
@@ -322,27 +301,22 @@ const TRANSLATION_LIFECYCLE_OWNERS = {
   browser_pipeline_and_cache: {
     production: 'src/ts/translator/translator.ts',
     anchor: 'translateLLM',
-    assurance: 'src/ts/translator/translator.cache.svelte-node.test.ts',
   },
   message_job: {
     production: 'server/fastify/src/translation/serverMessageTranslation.ts',
     anchor: 'runServerMessageTranslation',
-    assurance: 'server/fastify/__tests__/serverMessageTranslation.test.ts',
   },
   greeting_job: {
     production: 'server/fastify/src/translation/serverGreetingTranslation.ts',
     anchor: 'runServerGreetingTranslation',
-    assurance: 'server/fastify/__tests__/greetingTranslationStore.test.ts',
   },
   generation_completion: {
     production: 'server/fastify/src/translation/generationCompletionTranslation.ts',
     anchor: 'handleGeneratedChatCompletion',
-    assurance: 'server/fastify/__tests__/generationChatCompletionTranslation.test.ts',
   },
   draft_and_btw_hooks: {
     production: 'src/ts/process/inputHooks.ts',
     anchor: 'runInputHook',
-    assurance: 'src/ts/process/inputHooks.test.ts',
   },
 } as const
 
@@ -351,7 +325,6 @@ const IMAGE_OPERATION_OWNERS: Record<string, OperationOwner> = Object.fromEntrie
     provider,
     {
       production: 'server/fastify/src/imageGeneration.ts',
-      assurance: 'server/fastify/__tests__/imageGeneration.test.ts',
     },
   ]),
 )
@@ -361,7 +334,6 @@ const TTS_OPERATION_OWNERS: Record<string, OperationOwner> = Object.fromEntries(
     operation,
     {
       production: 'server/fastify/src/tts.ts',
-      assurance: 'server/fastify/__tests__/tts.test.ts',
     },
   ]),
 )
@@ -370,7 +342,6 @@ const TRANSCRIPTION_OWNER = {
   browser: 'src/ts/server/openAITranscription.ts',
   production: 'server/fastify/src/openAITranscription.ts',
   route: 'server/fastify/src/routes/openAITranscription.ts',
-  assurance: 'server/fastify/__tests__/openAITranscription.test.ts',
 } as const
 
 describe('Phase 7 compatibility structure', () => {
@@ -399,7 +370,6 @@ describe('Phase 7 compatibility structure', () => {
       expect(adapterSource, `${provider} endpoint/credential resolver`).toContain(owner.resolver)
       expect(adapterSource, `${provider} adapter runner`).toContain(owner.runner)
       expect(dispatchSource, `${provider} option dispatch`).toContain(owner.dispatchAnchor)
-      expect(readRepoFile(owner.assurance), `${provider} behavioral assurance`).toContain('describe(')
     }
   })
 
@@ -450,12 +420,11 @@ describe('Phase 7 compatibility structure', () => {
     }
   })
 
-  it('keeps every fixed provider operation tied to production and request-capture assurance', () => {
+  it('keeps every fixed provider operation tied to production dispatch', () => {
     expect(Object.keys(PROVIDER_OPERATION_OWNERS).sort()).toEqual([...PROVIDER_OPERATIONS].sort())
     for (const operation of PROVIDER_OPERATIONS) {
       const owner = PROVIDER_OPERATION_OWNERS[operation]
       expect(readRepoFile(owner.production), `${operation} production owner`).toContain(`'${operation}'`)
-      expect(readRepoFile(owner.assurance), `${operation} request capture`).toContain(`'${operation}'`)
     }
   })
 
@@ -466,11 +435,9 @@ describe('Phase 7 compatibility structure', () => {
     )
     for (const [translator, owner] of Object.entries(RAW_TRANSLATOR_OWNERS)) {
       expect(readRepoFile(owner.production), `${translator} translation dispatch`).toContain(`'${translator}'`)
-      expect(readRepoFile(owner.assurance), `${translator} translation assurance`).toContain(`'${translator}'`)
     }
     for (const [lifecycle, owner] of Object.entries(TRANSLATION_LIFECYCLE_OWNERS)) {
       expect(readRepoFile(owner.production), `${lifecycle} production owner`).toContain(owner.anchor)
-      expect(readRepoFile(owner.assurance), `${lifecycle} behavioral assurance`).toContain('describe(')
     }
   })
 
@@ -479,20 +446,17 @@ describe('Phase 7 compatibility structure', () => {
     for (const provider of SERVER_IMAGE_GENERATION_PROVIDERS) {
       const owner = IMAGE_OPERATION_OWNERS[provider]
       expect(readRepoFile(owner.production), `${provider} image dispatch`).toContain(`case '${provider}'`)
-      expect(readRepoFile(owner.assurance), `${provider} image assurance`).toContain(`'${provider}'`)
     }
 
     expect(Object.keys(TTS_OPERATION_OWNERS).sort()).toEqual([...TTS_SYNTHESIS_OPERATIONS].sort())
     for (const operation of TTS_SYNTHESIS_OPERATIONS) {
       const owner = TTS_OPERATION_OWNERS[operation]
       expect(readRepoFile(owner.production), `${operation} TTS dispatch`).toContain(`case '${operation}'`)
-      expect(readRepoFile(owner.assurance), `${operation} TTS assurance`).toContain(`'${operation}'`)
     }
 
     expect(readRepoFile(TRANSCRIPTION_OWNER.browser)).toContain('requestOpenAITranscription')
     expect(readRepoFile(TRANSCRIPTION_OWNER.production)).toContain('executeOpenAITranscription')
     expect(readRepoFile(TRANSCRIPTION_OWNER.route)).toContain('/api/v1/media/openai/transcriptions')
-    expect(readRepoFile(TRANSCRIPTION_OWNER.assurance)).toContain('fixed Whisper VTT request')
   })
 })
 

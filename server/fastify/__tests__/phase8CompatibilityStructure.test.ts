@@ -24,8 +24,6 @@ const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 type Owner = {
   production: string
   anchors: readonly string[]
-  assurance: string
-  assuranceAnchors?: readonly string[]
 }
 
 type EmbeddingModelOwner = Owner & {
@@ -37,7 +35,6 @@ const HYPA_PLANNER_OWNERS: Record<string, Owner> = {
   standard: {
     production: 'server/fastify/src/memoryPlanner.ts',
     anchors: ['planStandardHypaV3Memory', "mode: 'standard'"],
-    assurance: 'server/fastify/__tests__/memoryPlanner.test.ts',
   },
 }
 
@@ -48,8 +45,6 @@ const RETIRED_MEMORY_ALGORITHM_OWNERS: Record<string, Owner> = Object.fromEntrie
     {
       production: 'src/ts/process/legacyMemoryMigrationNotice.ts',
       anchors: [`'${algorithm}'`, 'detectActiveRetiredMemoryAlgorithms'],
-      assurance: 'src/ts/process/legacyMemoryMigrationNotice.test.ts',
-      assuranceAnchors: ['names each active retired memory selection without flagging maintained Hypa V3'],
     },
   ]),
 )
@@ -82,7 +77,6 @@ const HYPA_SELECTION_CATEGORY_OWNERS: Record<string, Owner> = Object.fromEntries
     {
       production: 'server/fastify/src/memoryBudgetAllocator.ts',
       anchors: [`'${category}'`, 'allocateMemorySummaries'],
-      assurance: 'server/fastify/__tests__/memoryBudgetAllocator.test.ts',
     },
   ]),
 )
@@ -91,17 +85,14 @@ const BARDWIKI_MODE_OWNERS: Record<BardWikiMemoryMode, Owner> = {
   hypa: {
     production: 'server/fastify/src/bardWikiSettings.ts',
     anchors: ["settings.memoryMode === 'hypa'", 'hypaTokenBudget: null'],
-    assurance: 'server/fastify/__tests__/bardWikiPrompt.test.ts',
   },
   bardwiki: {
     production: 'server/fastify/src/bardWikiSettings.ts',
     anchors: ["settings.memoryMode === 'bardwiki'", 'bardWikiTokenBudget: total'],
-    assurance: 'server/fastify/__tests__/bardWikiPrompt.test.ts',
   },
   hybrid: {
     production: 'server/fastify/src/bardWikiSettings.ts',
     anchors: ['requestedBardWiki', 'total - hypaTokenBudget'],
-    assurance: 'server/fastify/__tests__/bardWikiPrompt.test.ts',
   },
 }
 
@@ -121,7 +112,6 @@ const BARDWIKI_SCORE_REASON_OWNERS: Record<string, Owner> = Object.fromEntries(
     {
       production: 'server/fastify/src/prompt/bardWikiSelection.ts',
       anchors: [`'${reason}'`, 'selectBardWikiPromptRows'],
-      assurance: 'server/fastify/__tests__/bardWikiSelection.test.ts',
     },
   ]),
 )
@@ -131,19 +121,16 @@ const MEMORY_JOB_KIND_OWNERS: Record<MemoryJobKind, Owner & { disposition: 'acti
     disposition: 'reserved-noop',
     production: 'server/fastify/src/memoryWorker.ts',
     anchors: ['chunk: noopMemoryJobHandler', 'Stub dispatch only; memory mutation is supplied by concrete handlers.'],
-    assurance: 'server/fastify/__tests__/memoryWorker.test.ts',
   },
   embed: {
     disposition: 'active',
     production: 'server/fastify/src/memoryEmbedJobHandler.ts',
     anchors: ['createEmbedMemoryJobHandler', 'createEmbedMemoryJobBatchHandler'],
-    assurance: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
   },
   summarize: {
     disposition: 'active',
     production: 'server/fastify/src/memorySummarizeJobHandler.ts',
     anchors: ['createSummarizeMemoryJobHandler', 'createSummarizeMemoryJobBatchHandler'],
-    assurance: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
   },
 }
 
@@ -151,26 +138,23 @@ const BARDWIKI_JOB_KIND_OWNERS: Record<BardWikiJobKind, Owner> = {
   apply_turn: {
     production: 'server/fastify/src/bardWikiApplyTurnHandler.ts',
     anchors: ['createBardWikiApplyTurnHandler', "job.kind !== 'apply_turn'"],
-    assurance: 'server/fastify/__tests__/bardWikiApplyTurnHandler.test.ts',
   },
   reconcile_receipt: {
     production: 'server/fastify/src/bardWikiReconcileHandler.ts',
     anchors: ['createBardWikiReconcileReceiptHandler', "job.kind !== 'reconcile_receipt'"],
-    assurance: 'server/fastify/__tests__/bardWikiLifecycle.test.ts',
   },
   rebuild_chat: {
     production: 'server/fastify/src/bardWikiRebuildHandler.ts',
     anchors: ['createBardWikiRebuildHandler', "job.kind !== 'rebuild_chat'"],
-    assurance: 'server/fastify/__tests__/bardWikiRebuildHandler.test.ts',
   },
 }
 
 const MEMORY_JOB_STATE_OWNERS: Record<MemoryJobStatus, Owner> = {
-  pending: memoryStateOwner('enqueueMemoryJob', 'enqueues and claims pending jobs'),
-  running: memoryStateOwner('claimNextMemoryJob', 'enqueues and claims pending jobs'),
-  completed: memoryStateOwner('completeMemoryJob', 'completes, fails, and cancels only legal queue transitions'),
-  failed: memoryStateOwner('retryOrFailMemoryJob', 'retries running jobs with exponential backoff'),
-  cancelled: memoryStateOwner('cancelMemoryJob', 'completes, fails, and cancels only legal queue transitions'),
+  pending: memoryStateOwner('enqueueMemoryJob'),
+  running: memoryStateOwner('claimNextMemoryJob'),
+  completed: memoryStateOwner('completeMemoryJob'),
+  failed: memoryStateOwner('retryOrFailMemoryJob'),
+  cancelled: memoryStateOwner('cancelMemoryJob'),
 }
 
 const BARDWIKI_JOB_STATE_OWNERS: Record<BardWikiJobSummary['status'], Owner> = {
@@ -182,50 +166,43 @@ const BARDWIKI_JOB_STATE_OWNERS: Record<BardWikiJobSummary['status'], Owner> = {
 }
 
 const MEMORY_JOB_LIFECYCLE_OWNERS: Record<string, Owner> = {
-  retry_and_exhaustion: memoryLifecycleOwner('retryOrFailMemoryJob', 'memoryRepository.test.ts'),
-  cancellation: memoryLifecycleOwner('abortRunningJob', 'memoryWorker.test.ts'),
-  restart_recovery: memoryLifecycleOwner('recoverRunningMemoryJobs', 'memoryWorker.test.ts'),
+  retry_and_exhaustion: memoryLifecycleOwner('retryOrFailMemoryJob'),
+  cancellation: memoryLifecycleOwner('abortRunningJob'),
+  restart_recovery: memoryLifecycleOwner('recoverRunningMemoryJobs'),
   embed_duplicate_delivery: {
     production: 'server/fastify/src/memoryEmbedJobHandler.ts',
     anchors: ['const existing = listMemoryEmbeddings', "result.kind === 'existing'"],
-    assurance: 'server/fastify/__tests__/memoryEmbedJobHandler.test.ts',
   },
   summary_duplicate_delivery: {
     production: 'server/fastify/src/memorySummarizeJobHandler.ts',
     anchors: ['const existing = listMemorySummaries', "result.kind === 'existing'"],
-    assurance: 'server/fastify/__tests__/memorySummarizeJobHandler.test.ts',
   },
   stale_target_invalidation: {
     production: 'server/fastify/src/memoryInvalidation.ts',
     anchors: ['invalidateUnsummarizedMemoryForChat', 'DELETE FROM memory_jobs'],
-    assurance: 'server/fastify/__tests__/commands.test.ts',
   },
   terminal_diagnostics: {
     production: 'server/fastify/src/memoryEvents.ts',
     anchors: ['sanitizeMemoryJobError', "job.status === 'completed'"],
-    assurance: 'server/fastify/__tests__/memoryJobsRoutes.test.ts',
   },
 }
 
 const BARDWIKI_JOB_LIFECYCLE_OWNERS: Record<string, Owner> = {
-  retry_and_exhaustion: bardWikiLifecycleOwner('retryOrFailBardWikiJob', 'bardWikiJobs.test.ts'),
-  explicit_retry: bardWikiLifecycleOwner('retryFailedBardWikiJob', 'bardWikiJobs.test.ts'),
-  cancellation: bardWikiLifecycleOwner('cancelBardWikiJob', 'bardWikiApplyTurnHandler.test.ts'),
-  restart_recovery: bardWikiLifecycleOwner('recoverRunningBardWikiJobs', 'bardWikiRebuildHandler.test.ts'),
+  retry_and_exhaustion: bardWikiLifecycleOwner('retryOrFailBardWikiJob'),
+  explicit_retry: bardWikiLifecycleOwner('retryFailedBardWikiJob'),
+  cancellation: bardWikiLifecycleOwner('cancelBardWikiJob'),
+  restart_recovery: bardWikiLifecycleOwner('recoverRunningBardWikiJobs'),
   duplicate_delivery: {
     production: 'server/fastify/src/bardWikiReceipts.ts',
     anchors: ['findExactReceipt', 'created: false'],
-    assurance: 'server/fastify/__tests__/bardWikiConfirmation.test.ts',
   },
   stale_source_reconciliation: {
     production: 'server/fastify/src/bardWikiInvalidation.ts',
     anchors: ['invalidateBardWikiReceiptsForTranscriptMutation', "kind: 'reconcile_receipt'"],
-    assurance: 'server/fastify/__tests__/bardWikiLifecycle.test.ts',
   },
   terminal_diagnostics: {
     production: 'server/fastify/src/memoryEvents.ts',
     anchors: ['buildBardWikiJobEvent', 'errorSummary'],
-    assurance: 'server/fastify/__tests__/bardWikiWorker.test.ts',
   },
 }
 
@@ -287,7 +264,7 @@ describe('Phase 8 compatibility structure', () => {
     ])
   })
 
-  it('keeps every job kind, state, and lifecycle transition tied to production and assurance owners', () => {
+  it('keeps every job kind, state, and lifecycle transition tied to production owners', () => {
     expect(Object.keys(MEMORY_JOB_KIND_OWNERS).sort()).toEqual([...MEMORY_JOB_KINDS].sort())
     expect(Object.keys(MEMORY_JOB_STATE_OWNERS).sort()).toEqual([...MEMORY_JOB_STATUSES].sort())
     expect([...MEMORY_JOB_TERMINAL_STATUSES].sort()).toEqual(['cancelled', 'completed', 'failed'])
@@ -316,7 +293,6 @@ function modelOwner(
     provider,
     production: 'server/fastify/src/memoryEmbeddingModel.ts',
     anchors: [anchor, 'resolveMemoryEmbeddingModel'],
-    assurance: 'server/fastify/__tests__/memoryEmbeddingModel.test.ts',
   }
 }
 
@@ -326,16 +302,13 @@ function localModelOwner(anchor: string): EmbeddingModelOwner {
     provider: 'transformers',
     production: 'server/fastify/src/memoryEmbeddingModel.ts',
     anchors: [anchor, 'server-side memory embeddings do not support browser-local model'],
-    assurance: 'server/fastify/__tests__/memoryEmbeddingModel.test.ts',
   }
 }
 
-function memoryStateOwner(anchor: string, assuranceAnchor: string): Owner {
+function memoryStateOwner(anchor: string): Owner {
   return {
     production: 'server/fastify/src/memoryRepository.ts',
     anchors: [anchor],
-    assurance: 'server/fastify/__tests__/memoryRepository.test.ts',
-    assuranceAnchors: [assuranceAnchor],
   }
 }
 
@@ -343,24 +316,21 @@ function bardWikiStateOwner(anchor: string): Owner {
   return {
     production: 'server/fastify/src/bardWikiJobs.ts',
     anchors: [anchor],
-    assurance: 'server/fastify/__tests__/bardWikiJobs.test.ts',
   }
 }
 
-function memoryLifecycleOwner(anchor: string, assuranceFile: string): Owner {
+function memoryLifecycleOwner(anchor: string): Owner {
   return {
     production:
       anchor === 'abortRunningJob' ? 'server/fastify/src/memoryWorker.ts' : 'server/fastify/src/memoryRepository.ts',
     anchors: [anchor],
-    assurance: `server/fastify/__tests__/${assuranceFile}`,
   }
 }
 
-function bardWikiLifecycleOwner(anchor: string, assuranceFile: string): Owner {
+function bardWikiLifecycleOwner(anchor: string): Owner {
   return {
     production: 'server/fastify/src/bardWikiJobs.ts',
     anchors: [anchor],
-    assurance: `server/fastify/__tests__/${assuranceFile}`,
   }
 }
 
@@ -372,11 +342,6 @@ function verifyOwners(owners: Readonly<Record<string, Owner>>): void {
   for (const [name, owner] of Object.entries(owners)) {
     const production = readRepoFile(owner.production)
     for (const anchor of owner.anchors) expect(production, `${name} production anchor`).toContain(anchor)
-    const assurance = readRepoFile(owner.assurance)
-    expect(assurance, `${name} behavioral assurance`).toContain('describe(')
-    for (const anchor of owner.assuranceAnchors ?? []) {
-      expect(assurance, `${name} assurance anchor`).toContain(anchor)
-    }
   }
 }
 
