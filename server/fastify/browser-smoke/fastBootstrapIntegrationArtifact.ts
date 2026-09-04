@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { StartupCoordinatorSnapshot, StartupReadinessSnapshot } from '@risuai/protocol/startup-telemetry'
-import { directLinkCases, phase7DirectLinkBatchCount } from './phase7DirectLinks.js'
+import { directLinkCases, fastBootstrapDirectLinkBatchCount } from './fastBootstrapDirectLinks.js'
 
 export interface RolloutStartupCase {
   fixture: 'small' | 'large'
@@ -65,7 +65,7 @@ export interface OptionalRuntimeJourney {
   retrySucceeded: boolean
 }
 
-export interface Phase7RecoveryArtifact {
+export interface FastBootstrapRecoveryArtifact {
   schemaVersion: 1
   startupRollout: RolloutStartupCase[]
   recoveryJourneys: RecoveryJourney[]
@@ -73,7 +73,7 @@ export interface Phase7RecoveryArtifact {
   optionalRuntimeJourneys: OptionalRuntimeJourney[]
 }
 
-export interface Phase7IntegrationArtifact extends Phase7RecoveryArtifact {
+export interface FastBootstrapIntegrationArtifact extends FastBootstrapRecoveryArtifact {
   directLinks: DirectLinkCase[]
 }
 
@@ -82,7 +82,7 @@ export interface IndexedDirectLinkCase {
   result: DirectLinkCase
 }
 
-export interface Phase7DirectLinkBatchArtifact {
+export interface FastBootstrapDirectLinkBatchArtifact {
   schemaVersion: 1
   batchIndex: number
   batchCount: number
@@ -91,16 +91,16 @@ export interface Phase7DirectLinkBatchArtifact {
   directLinks: IndexedDirectLinkCase[]
 }
 
-const finalJsonName = 'phase7-integration.json'
-const finalTextName = 'phase7-integration.txt'
-const recoveryPartialName = 'phase7-integration.recovery.partial.json'
-const directLinkPartialPattern = /^phase7-integration\.direct-links-(\d+)-of-(\d+)\.partial\.json$/
+const finalJsonName = 'fast-bootstrap-integration.json'
+const finalTextName = 'fast-bootstrap-integration.txt'
+const recoveryPartialName = 'fast-bootstrap-integration.recovery.partial.json'
+const directLinkPartialPattern = /^fast-bootstrap-integration\.direct-links-(\d+)-of-(\d+)\.partial\.json$/
 
-export function phase7OutputDir(): string {
+export function fastBootstrapOutputDir(): string {
   return path.resolve('fast-bootstrap-results')
 }
 
-export function emptyPhase7RecoveryArtifact(): Phase7RecoveryArtifact {
+export function emptyFastBootstrapRecoveryArtifact(): FastBootstrapRecoveryArtifact {
   return {
     schemaVersion: 1,
     startupRollout: [],
@@ -110,7 +110,7 @@ export function emptyPhase7RecoveryArtifact(): Phase7RecoveryArtifact {
   }
 }
 
-export function resetPhase7ArtifactOutputs(outputDir = phase7OutputDir()): void {
+export function resetFastBootstrapArtifactOutputs(outputDir = fastBootstrapOutputDir()): void {
   if (!fs.existsSync(outputDir)) return
   for (const name of fs.readdirSync(outputDir)) {
     if (
@@ -124,29 +124,34 @@ export function resetPhase7ArtifactOutputs(outputDir = phase7OutputDir()): void 
   }
 }
 
-export function writePhase7RecoveryPartial(artifact: Phase7RecoveryArtifact, outputDir = phase7OutputDir()): string {
+export function writeFastBootstrapRecoveryPartial(
+  artifact: FastBootstrapRecoveryArtifact,
+  outputDir = fastBootstrapOutputDir(),
+): string {
   validateRecoveryArtifact(artifact)
   return writeJson(path.join(outputDir, recoveryPartialName), artifact)
 }
 
-export function writePhase7DirectLinkBatchPartial(
-  artifact: Phase7DirectLinkBatchArtifact,
-  outputDir = phase7OutputDir(),
+export function writeFastBootstrapDirectLinkBatchPartial(
+  artifact: FastBootstrapDirectLinkBatchArtifact,
+  outputDir = fastBootstrapOutputDir(),
 ): string {
   validateDirectLinkBatchArtifact(artifact)
-  const name = `phase7-integration.direct-links-${artifact.batchIndex + 1}-of-${artifact.batchCount}.partial.json`
+  const name = `fast-bootstrap-integration.direct-links-${artifact.batchIndex + 1}-of-${artifact.batchCount}.partial.json`
   return writeJson(path.join(outputDir, name), artifact)
 }
 
-export function mergePhase7ArtifactOutputs({
-  outputDir = phase7OutputDir(),
+export function mergeFastBootstrapArtifactOutputs({
+  outputDir = fastBootstrapOutputDir(),
   required = false,
 }: {
   outputDir?: string
   required?: boolean
-} = {}): Phase7IntegrationArtifact | null {
+} = {}): FastBootstrapIntegrationArtifact | null {
   const recoveryPath = path.join(outputDir, recoveryPartialName)
-  const recovery = fs.existsSync(recoveryPath) ? readRecoveryArtifact(recoveryPath) : emptyPhase7RecoveryArtifact()
+  const recovery = fs.existsSync(recoveryPath)
+    ? readRecoveryArtifact(recoveryPath)
+    : emptyFastBootstrapRecoveryArtifact()
   const batchPaths = fs.existsSync(outputDir)
     ? fs
         .readdirSync(outputDir)
@@ -159,7 +164,7 @@ export function mergePhase7ArtifactOutputs({
 
   const issues: string[] = []
   if (!fs.existsSync(recoveryPath)) issues.push(`missing ${recoveryPartialName}`)
-  const batches: Phase7DirectLinkBatchArtifact[] = []
+  const batches: FastBootstrapDirectLinkBatchArtifact[] = []
   for (const batchPath of batchPaths) {
     try {
       batches.push(readDirectLinkBatchArtifact(batchPath))
@@ -168,22 +173,22 @@ export function mergePhase7ArtifactOutputs({
     }
   }
 
-  const byBatchIndex = new Map<number, Phase7DirectLinkBatchArtifact>()
+  const byBatchIndex = new Map<number, FastBootstrapDirectLinkBatchArtifact>()
   for (const batch of batches) {
     if (byBatchIndex.has(batch.batchIndex)) issues.push(`duplicate direct-link batch ${batch.batchIndex + 1}`)
     else byBatchIndex.set(batch.batchIndex, batch)
   }
-  for (let batchIndex = 0; batchIndex < phase7DirectLinkBatchCount; batchIndex += 1) {
+  for (let batchIndex = 0; batchIndex < fastBootstrapDirectLinkBatchCount; batchIndex += 1) {
     const batch = byBatchIndex.get(batchIndex)
-    if (!batch) issues.push(`missing direct-link batch ${batchIndex + 1}/${phase7DirectLinkBatchCount}`)
+    if (!batch) issues.push(`missing direct-link batch ${batchIndex + 1}/${fastBootstrapDirectLinkBatchCount}`)
     else if (!batch.complete)
-      issues.push(`incomplete direct-link batch ${batchIndex + 1}/${phase7DirectLinkBatchCount}`)
+      issues.push(`incomplete direct-link batch ${batchIndex + 1}/${fastBootstrapDirectLinkBatchCount}`)
   }
 
   const expectedCases = directLinkCases()
   const byCaseIndex = new Map<number, DirectLinkCase>()
   for (const batch of batches) {
-    if (batch.batchCount !== phase7DirectLinkBatchCount) {
+    if (batch.batchCount !== fastBootstrapDirectLinkBatchCount) {
       issues.push(`direct-link batch ${batch.batchIndex + 1} reports batchCount=${batch.batchCount}`)
     }
     if (batch.totalCaseCount !== expectedCases.length) {
@@ -210,15 +215,15 @@ export function mergePhase7ArtifactOutputs({
     directLinks.push(result)
   }
 
-  const artifact: Phase7IntegrationArtifact = { ...recovery, directLinks }
-  if (required || issues.length === 0) writePhase7IntegrationArtifact(artifact, outputDir)
-  if (issues.length > 0 && required) throw new Error(`Phase 7 artifact merge failed: ${issues.join('; ')}`)
+  const artifact: FastBootstrapIntegrationArtifact = { ...recovery, directLinks }
+  if (required || issues.length === 0) writeFastBootstrapIntegrationArtifact(artifact, outputDir)
+  if (issues.length > 0 && required) throw new Error(`Fast-bootstrap artifact merge failed: ${issues.join('; ')}`)
   return issues.length === 0 ? artifact : null
 }
 
-export function writePhase7IntegrationArtifact(
-  artifact: Phase7IntegrationArtifact,
-  outputDir = phase7OutputDir(),
+export function writeFastBootstrapIntegrationArtifact(
+  artifact: FastBootstrapIntegrationArtifact,
+  outputDir = fastBootstrapOutputDir(),
 ): { json: string; text: string } {
   const json = `${JSON.stringify(artifact, null, 2)}\n`
   const text = formatIntegrationArtifact(artifact)
@@ -228,9 +233,9 @@ export function writePhase7IntegrationArtifact(
   return { json, text }
 }
 
-export function formatIntegrationArtifact(artifact: Phase7IntegrationArtifact): string {
+export function formatIntegrationArtifact(artifact: FastBootstrapIntegrationArtifact): string {
   const lines = [
-    'Phase 7 integration matrix',
+    'Fast-bootstrap integration matrix',
     'fixture\tobserver\tobserver_before_writer\tobserver_ms\twriter_ms\tbackground_ms',
   ]
   for (const entry of artifact.startupRollout) {
@@ -306,13 +311,13 @@ export function formatIntegrationArtifact(artifact: Phase7IntegrationArtifact): 
   return `${lines.join('\n')}\n`
 }
 
-function readRecoveryArtifact(file: string): Phase7RecoveryArtifact {
+function readRecoveryArtifact(file: string): FastBootstrapRecoveryArtifact {
   const value = readJson(file)
   validateRecoveryArtifact(value)
   return value
 }
 
-function readDirectLinkBatchArtifact(file: string): Phase7DirectLinkBatchArtifact {
+function readDirectLinkBatchArtifact(file: string): FastBootstrapDirectLinkBatchArtifact {
   const value = readJson(file)
   validateDirectLinkBatchArtifact(value)
   return value
@@ -326,28 +331,29 @@ function readJson(file: string): unknown {
   }
 }
 
-function validateRecoveryArtifact(value: unknown): asserts value is Phase7RecoveryArtifact {
-  if (!isRecord(value) || value.schemaVersion !== 1) throw new Error('invalid Phase 7 recovery artifact schema')
+function validateRecoveryArtifact(value: unknown): asserts value is FastBootstrapRecoveryArtifact {
+  if (!isRecord(value) || value.schemaVersion !== 1) throw new Error('invalid Fast-bootstrap recovery artifact schema')
   for (const field of ['startupRollout', 'recoveryJourneys', 'writerJourneys', 'optionalRuntimeJourneys']) {
-    if (!Array.isArray(value[field])) throw new Error(`invalid Phase 7 recovery artifact field ${field}`)
+    if (!Array.isArray(value[field])) throw new Error(`invalid Fast-bootstrap recovery artifact field ${field}`)
   }
 }
 
-function validateDirectLinkBatchArtifact(value: unknown): asserts value is Phase7DirectLinkBatchArtifact {
-  if (!isRecord(value) || value.schemaVersion !== 1) throw new Error('invalid Phase 7 direct-link artifact schema')
+function validateDirectLinkBatchArtifact(value: unknown): asserts value is FastBootstrapDirectLinkBatchArtifact {
+  if (!isRecord(value) || value.schemaVersion !== 1)
+    throw new Error('invalid Fast-bootstrap direct-link artifact schema')
   if (!Number.isInteger(value.batchIndex) || (value.batchIndex as number) < 0) {
-    throw new Error('invalid Phase 7 direct-link artifact field batchIndex')
+    throw new Error('invalid Fast-bootstrap direct-link artifact field batchIndex')
   }
   for (const field of ['batchCount', 'totalCaseCount']) {
     if (!Number.isInteger(value[field]) || (value[field] as number) < 1) {
-      throw new Error(`invalid Phase 7 direct-link artifact field ${field}`)
+      throw new Error(`invalid Fast-bootstrap direct-link artifact field ${field}`)
     }
   }
   if ((value.batchIndex as number) >= (value.batchCount as number)) {
-    throw new Error('invalid Phase 7 direct-link artifact batch index')
+    throw new Error('invalid Fast-bootstrap direct-link artifact batch index')
   }
   if (typeof value.complete !== 'boolean' || !Array.isArray(value.directLinks)) {
-    throw new Error('invalid Phase 7 direct-link artifact payload')
+    throw new Error('invalid Fast-bootstrap direct-link artifact payload')
   }
   for (const entry of value.directLinks) {
     if (
@@ -356,7 +362,7 @@ function validateDirectLinkBatchArtifact(value: unknown): asserts value is Phase
       (entry.caseIndex as number) < 0 ||
       !isDirectLinkCase(entry.result)
     ) {
-      throw new Error('invalid Phase 7 direct-link artifact entry')
+      throw new Error('invalid Fast-bootstrap direct-link artifact entry')
     }
   }
 }

@@ -252,7 +252,7 @@ jobs:
           path: |
             test-results
             fast-bootstrap-results/startup-matrix.*
-            fast-bootstrap-results/phase7-integration.*
+            fast-bootstrap-results/fast-bootstrap-integration.*
           if-no-files-found: error
 
   verify:

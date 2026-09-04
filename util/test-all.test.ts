@@ -250,7 +250,7 @@ describe('test:all orchestration', () => {
       workflow.indexOf('name: playwright-test-results'),
       workflow.indexOf('\n\n  verify:'),
     )
-    expect(smokeUpload).toContain('fast-bootstrap-results/phase7-integration.*')
+    expect(smokeUpload).toContain('fast-bootstrap-results/fast-bootstrap-integration.*')
     expect(smokeUpload).toContain('if-no-files-found: error')
     const uiUpload = workflow.slice(workflow.indexOf('name: ui-coverage'), workflow.indexOf('\n\n  server:'))
     expect(uiUpload).toContain('if-no-files-found: error')

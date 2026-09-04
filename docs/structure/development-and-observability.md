@@ -235,7 +235,7 @@ Use Node.js 24 or newer, install Chromium once with
 `pnpm exec playwright install --with-deps chromium`, and run:
 
 ```sh
-pnpm verify:fast-bootstrap:phase7
+pnpm verify:fast-bootstrap
 ```
 
 This command runs `measure:fast-bootstrap` first: a production
@@ -266,7 +266,7 @@ Generated files are local evidence and are ignored by Git:
 | `bundle-boundaries.json` / `.txt` | Entry and immediate-startup closures, HTML-preload agreement, protected-boundary violations, and largest chunks. |
 | `initial-preload.json` / `.txt` | Initial JavaScript files, raw/gzip totals, largest file, and both budget comparisons. |
 | `startup-matrix.json` / `.txt` | Small/large cold/warm milestones, payload/cache totals, early mutation/generation counts, request UIDs, and safe trace summaries. |
-| `phase7-integration.json` / `.txt` | Observer flag-off/on timings, direct links, replay/event-gap results, takeover results, and optional-runtime failure/retry results. |
+| `fast-bootstrap-integration.json` / `.txt` | Observer flag-off/on timings, direct links, replay/event-gap results, takeover results, and optional-runtime failure/retry results. |
 
 `util/initial-preload-budgets.json` is authoritative. The ratified hard gates are
 921,600 bytes (900 KiB) total initial JavaScript gzip and 512,000 bytes (500
@@ -288,7 +288,7 @@ Interpret failures from the first failing layer:
    early-request counters. The JSON request UIDs and safe trace summaries identify
    the resource or bootstrap call responsible for a payload/timing change.
 3. For integration failures, read the matching section of
-   `phase7-integration.txt`: startup behavior, direct links, recovery, writer,
+   `fast-bootstrap-integration.txt`: startup behavior, direct links, recovery, writer,
    or optional runtime. The JSON retains
    exact revisions, command attempts, receipt acknowledgements, requested paths,
    capabilities, localized failure state, and Retry outcome. Playwright retains
@@ -302,8 +302,8 @@ Interpret failures from the first failing layer:
 CI runs `pnpm build:initial-preload` in its dedicated initial-preload lane and
 uploads both report families. The normal smoke lane discovers the integration
 spec with the other browser owners and uploads the startup matrix,
-`phase7-integration.*`, and Playwright results. The explicit
-`verify:fast-bootstrap:phase7` wrapper remains a local convenience that also
+`fast-bootstrap-integration.*`, and Playwright results. The explicit
+`verify:fast-bootstrap` wrapper remains a local convenience that also
 runs the standalone preload measurement first. Do not commit
 `fast-bootstrap-results/`, `test-results/`, `dist/`, trace data, or temporary
 fixture databases.

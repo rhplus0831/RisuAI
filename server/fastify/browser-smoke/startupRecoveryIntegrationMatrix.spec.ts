@@ -12,12 +12,12 @@ import {
   type ObserverShellMode,
 } from './fastBootstrapHarness.js'
 import {
-  emptyPhase7RecoveryArtifact,
-  writePhase7RecoveryPartial,
+  emptyFastBootstrapRecoveryArtifact,
+  writeFastBootstrapRecoveryPartial,
   type BrowserStartupTelemetry,
-  type Phase7RecoveryArtifact,
+  type FastBootstrapRecoveryArtifact,
   type RolloutStartupCase,
-} from './phase7IntegrationArtifact.js'
+} from './fastBootstrapIntegrationArtifact.js'
 
 interface ApiRequestRecord {
   method: string
@@ -26,13 +26,13 @@ interface ApiRequestRecord {
 }
 
 const previousProtocolMetrics = process.env.RISU_PROTOCOL_METRICS
-const artifact: Phase7RecoveryArtifact = emptyPhase7RecoveryArtifact()
+const artifact: FastBootstrapRecoveryArtifact = emptyFastBootstrapRecoveryArtifact()
 
 test.setTimeout(240_000)
 
 test.afterAll(async ({}, testInfo) => {
-  const machineOutput = writePhase7RecoveryPartial(artifact)
-  await testInfo.attach('phase7-integration.recovery.partial.json', {
+  const machineOutput = writeFastBootstrapRecoveryPartial(artifact)
+  await testInfo.attach('fast-bootstrap-integration.recovery.partial.json', {
     body: machineOutput,
     contentType: 'application/json',
   })
@@ -114,7 +114,7 @@ test('legacy and null shell state is repaired before built-browser bootstrap', a
 test('durable recovery replays offline work and committed work whose response was lost', async ({ browser }) => {
   for (const scenario of ['offline-before-send', 'response-lost-after-commit'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-      temporaryDirectoryPrefix: `risu-phase7-${scenario}-`,
+      temporaryDirectoryPrefix: `risu-fast-bootstrap-${scenario}-`,
     })
     const context = await browser.newContext()
     try {
@@ -217,7 +217,7 @@ test('durable recovery replays offline work and committed work whose response wa
 
 test('event-gap recovery performs an authoritative refresh before reconnecting', async ({ browser }) => {
   const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-    temporaryDirectoryPrefix: 'risu-phase7-event-gap-',
+    temporaryDirectoryPrefix: 'risu-fast-bootstrap-event-gap-',
   })
   const context = await browser.newContext()
   try {
@@ -344,7 +344,7 @@ test('event-gap recovery performs an authoritative refresh before reconnecting',
 
 test('multi-tab journey denies observer mutation, then safely promotes a takeover writer', async ({ browser }) => {
   const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-    temporaryDirectoryPrefix: 'risu-phase7-writer-takeover-',
+    temporaryDirectoryPrefix: 'risu-fast-bootstrap-writer-takeover-',
   })
   const writerContext = await browser.newContext()
   const observerContext = await browser.newContext()
@@ -432,7 +432,7 @@ test('multi-tab journey denies observer mutation, then safely promotes a takeove
 test('background runtimes cannot delay or fail shell, mutation, and chat readiness', async ({ browser }) => {
   for (const mode of ['slow', 'failed'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-      temporaryDirectoryPrefix: `risu-phase7-background-${mode}-`,
+      temporaryDirectoryPrefix: `risu-fast-bootstrap-background-${mode}-`,
     })
     const context = await browser.newContext()
     try {
@@ -446,7 +446,7 @@ test('background runtimes cannot delay or fail shell, mutation, and chat readine
           await route.fulfill({
             status: 503,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'phase7_optional_runtime_failure' }),
+            body: JSON.stringify({ error: 'fast_bootstrap_optional_runtime_failure' }),
           })
           return
         }
@@ -508,7 +508,7 @@ test('background runtimes cannot delay or fail shell, mutation, and chat readine
 test('inlay runtime stays route-local when slow or failed and recovers through Retry', async ({ browser }) => {
   for (const mode of ['slow', 'failed'] as const) {
     const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-      temporaryDirectoryPrefix: `risu-phase7-inlay-${mode}-`,
+      temporaryDirectoryPrefix: `risu-fast-bootstrap-inlay-${mode}-`,
     })
     const context = await browser.newContext()
     try {
@@ -528,7 +528,7 @@ test('inlay runtime stays route-local when slow or failed and recovers through R
           await route.fulfill({
             status: 503,
             contentType: 'application/json',
-            body: JSON.stringify({ error: 'phase7_inlay_failure' }),
+            body: JSON.stringify({ error: 'fast_bootstrap_inlay_failure' }),
           })
           return
         }
@@ -590,7 +590,7 @@ async function runRolloutStartupCase(
   observerMode: ObserverShellMode,
 ): Promise<RolloutStartupCase> {
   const harness = await startFastBootstrapHarness(database, {
-    temporaryDirectoryPrefix: `risu-phase7-${fixture}-${observerMode}-`,
+    temporaryDirectoryPrefix: `risu-fast-bootstrap-${fixture}-${observerMode}-`,
   })
   const telemetry: BrowserStartupTelemetry[] = []
   const unsubscribeMetrics = subscribeProtocolMetrics((metric) => {

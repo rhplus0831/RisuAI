@@ -44,7 +44,7 @@ The canonical command inventory and lane semantics are in
 | Completed agent-development verification | `pnpm test:agent` |
 | User-owned full local quality aggregate | `pnpm test:all` |
 | Full pinned compatibility differential | `pnpm prepare:compat-baseline && pnpm test:compat-harness` |
-| Startup and bundle verification | `pnpm verify:fast-bootstrap:phase7` |
+| Startup and bundle verification | `pnpm verify:fast-bootstrap` |
 
 During implementation, agents use the focused command only when it answers a
 concrete question. It accepts exactly one repository file, rejects directories,
@@ -161,7 +161,7 @@ family in four independently isolated batches. `startupRecoveryIntegrationMatrix
 runs flag-off/on startup, offline and response-loss replay, a real
 `event_replay_unavailable` recovery, multi-tab denial/takeover/promotion, and
 slow/failing optional-runtime Retry. Per-worker partials are merged after the
-Playwright run into `fast-bootstrap-results/phase7-integration.{json,txt}`, with
+Playwright run into `fast-bootstrap-results/fast-bootstrap-integration.{json,txt}`, with
 exact batch and route-index coverage validation. The disposable harness owns a
 temporary authenticated Fastify/SQLite instance per journey or direct-link
 batch. See

@@ -7,8 +7,11 @@ import {
   requiredResourcePaths,
   resourceSurfacesForRoute,
   startupRuntimeResourcePaths,
-} from './phase7DirectLinks.js'
-import { writePhase7DirectLinkBatchPartial, type Phase7DirectLinkBatchArtifact } from './phase7IntegrationArtifact.js'
+} from './fastBootstrapDirectLinks.js'
+import {
+  writeFastBootstrapDirectLinkBatchPartial,
+  type FastBootstrapDirectLinkBatchArtifact,
+} from './fastBootstrapIntegrationArtifact.js'
 import {
   closeFastBootstrapHarness,
   setObserverShellMode,
@@ -21,14 +24,14 @@ const batches = directLinkBatches(allCases)
 
 test.setTimeout(120_000)
 
-test.describe('Phase 7 direct-link matrix', () => {
+test.describe('Fast-bootstrap direct-link matrix', () => {
   test.describe.configure({ mode: 'parallel' })
 
   for (const batch of batches) {
     test(`batch ${batch.batchIndex + 1}/${batch.batchCount} hydrates ${batch.cases.length} empty-cache routes`, async ({
       browser,
     }, testInfo) => {
-      const partial: Phase7DirectLinkBatchArtifact = {
+      const partial: FastBootstrapDirectLinkBatchArtifact = {
         schemaVersion: 1,
         batchIndex: batch.batchIndex,
         batchCount: batch.batchCount,
@@ -37,7 +40,7 @@ test.describe('Phase 7 direct-link matrix', () => {
         directLinks: [],
       }
       const harness = await startFastBootstrapHarness(smallFastBootstrapFixture(), {
-        temporaryDirectoryPrefix: `risu-phase7-direct-links-${batch.batchIndex + 1}-`,
+        temporaryDirectoryPrefix: `risu-fast-bootstrap-direct-links-${batch.batchIndex + 1}-`,
       })
       let context: BrowserContext | undefined
       let cdp: CDPSession | undefined
@@ -124,8 +127,8 @@ test.describe('Phase 7 direct-link matrix', () => {
         await cdp?.detach().catch(() => undefined)
         await context?.close().catch(() => undefined)
         await closeFastBootstrapHarness(harness)
-        const output = writePhase7DirectLinkBatchPartial(partial)
-        await testInfo.attach(`phase7-direct-links-${batch.batchIndex + 1}-of-${batch.batchCount}.json`, {
+        const output = writeFastBootstrapDirectLinkBatchPartial(partial)
+        await testInfo.attach(`fast-bootstrap-direct-links-${batch.batchIndex + 1}-of-${batch.batchCount}.json`, {
           body: output,
           contentType: 'application/json',
         })

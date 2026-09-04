@@ -1,5 +1,5 @@
-import { mergePhase7ArtifactOutputs } from './phase7IntegrationArtifact.js'
+import { mergeFastBootstrapArtifactOutputs } from './fastBootstrapIntegrationArtifact.js'
 
 export default function globalTeardown(): void {
-  mergePhase7ArtifactOutputs({ required: process.env.RISU_PHASE7_ARTIFACT_REQUIRED === 'true' })
+  mergeFastBootstrapArtifactOutputs({ required: process.env.RISU_FAST_BOOTSTRAP_ARTIFACT_REQUIRED === 'true' })
 }

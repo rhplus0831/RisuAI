@@ -1,5 +1,5 @@
-import { resetPhase7ArtifactOutputs } from './phase7IntegrationArtifact.js'
+import { resetFastBootstrapArtifactOutputs } from './fastBootstrapIntegrationArtifact.js'
 
 export default function globalSetup(): void {
-  resetPhase7ArtifactOutputs()
+  resetFastBootstrapArtifactOutputs()
 }

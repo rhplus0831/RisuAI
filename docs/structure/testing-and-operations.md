@@ -24,7 +24,7 @@ environment variables live in
 | `pnpm report:initial-preload`      | Measure JavaScript referenced by built `index.html`, enforce the ratified total/largest-file budgets, and write JSON/text reports.                                          |
 | `pnpm build:initial-preload`       | Production build with the boundary plugin, followed by both boundary and initial-preload reports.                                                                          |
 | `pnpm measure:fast-bootstrap`      | Run the initial-preload build/report, browser-smoke build, and small/large cold/warm startup matrix.                                                                        |
-| `pnpm verify:fast-bootstrap:phase7` | Run the complete measurement command and the direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                              |
+| `pnpm verify:fast-bootstrap`        | Run the complete measurement command and the direct-link, replay, event-gap, writer-takeover, observer, and optional-runtime browser matrix.                              |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                                                                                |
 | `pnpm check:docs`                  | Validate the current documentation set: local Markdown targets/anchors, focused-index completeness, and unambiguous literal repository paths.                              |

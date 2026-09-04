@@ -7,7 +7,7 @@ import {
 } from '@risuai/shared-core/resource-manifest'
 import { parseRoute, routePathFromState, type AppRoute } from '@risuai/shared-core/router-route'
 
-export const phase7DirectLinkBatchCount = 4
+export const fastBootstrapDirectLinkBatchCount = 4
 
 export interface DirectLinkDefinition {
   path: string
@@ -40,7 +40,7 @@ export function directLinkCases(): DirectLinkDefinition[] {
     '/',
     '/grid',
     '/inlay',
-    '/phase7-not-found',
+    '/fast-bootstrap-not-found',
     '/character/fast-bootstrap-small-character',
     '/character/fast-bootstrap-small-character/fast-bootstrap-small-chat',
     ...settings.map((settingsMenuIndex) =>
@@ -53,14 +53,14 @@ export function directLinkCases(): DirectLinkDefinition[] {
   return paths.map((path) => ({
     path,
     route: parseRoute(path),
-    ...(path === '/phase7-not-found' ? { finalRoute: parseRoute('/') } : {}),
+    ...(path === '/fast-bootstrap-not-found' ? { finalRoute: parseRoute('/') } : {}),
     ...(path === '/playground/inlays' ? { finalRoute: parseRoute('/inlay') } : {}),
   }))
 }
 
 export function directLinkBatches(
   cases: readonly DirectLinkDefinition[] = directLinkCases(),
-  batchCount = phase7DirectLinkBatchCount,
+  batchCount = fastBootstrapDirectLinkBatchCount,
 ): DirectLinkBatch[] {
   if (!Number.isInteger(batchCount) || batchCount < 1) throw new Error('direct-link batch count must be positive')
   const batches = Array.from({ length: batchCount }, (_, batchIndex) => ({
