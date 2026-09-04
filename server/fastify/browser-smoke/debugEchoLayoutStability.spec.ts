@@ -33,11 +33,17 @@ interface HorizontalRectSnapshot {
 interface ChatSendLayoutSample {
   at: number
   control: string | null
+  controlInstance: number | null
+  controlFocused: boolean
+  controlOpacity: string | null
   composerRow: HorizontalRectSnapshot | null
   composer: HorizontalRectSnapshot | null
   projectedRow: HorizontalRectSnapshot | null
+  projectedRowInstance: number | null
   projectedSurface: HorizontalRectSnapshot | null
   loading: HorizontalRectSnapshot | null
+  loadingInstance: number | null
+  loadingCompact: boolean
 }
 
 let harness: FastBootstrapHarness
@@ -52,7 +58,7 @@ test.afterAll(async () => {
   await closeFastBootstrapHarness(harness)
 })
 
-test('debug echo send stays horizontally stable while the first token waits ten seconds', async ({
+test('debug echo send stays visually stable through the first-token wait and foreground recovery', async ({
   page,
 }, testInfo) => {
   test.setTimeout(45_000)
@@ -66,12 +72,26 @@ test('debug echo send stays horizontally stable while the first token waits ten 
   const sendButton = page.getByTestId('default-chat-send-button')
   await expect(composer).toBeVisible()
   await composer.fill(SENT_MESSAGE)
+  await waitForStableComposerGeometry(page)
   await startChatSendLayoutSampler(page)
 
   const sendStartedAt = Date.now()
   await sendButton.click()
   const projectedRow = page.locator('.chat-message-container[data-generation-display-projection="send"]')
   await expect(projectedRow).toHaveCount(1)
+  await expect(projectedRow.locator('.chat-generation-loading')).toContainText('Waiting for first token…')
+
+  let bootstrapRequests = 0
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/v1/bootstrap') bootstrapRequests += 1
+  })
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    document.dispatchEvent(new Event('visibilitychange'))
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+  await expect.poll(() => bootstrapRequests).toBeGreaterThan(0)
   await expect(projectedRow.locator('.chat-generation-loading')).toContainText('Waiting for first token…')
 
   await expect.poll(() => latestResponseMatches(page), { timeout: 20_000 }).toBe(true)
@@ -96,16 +116,28 @@ test('debug echo send stays horizontally stable while the first token waits ten 
   const activeControlSamples = samples.filter(
     (sample) => sample.control !== null && sample.composerRow && sample.composer,
   )
+  expect(new Set(activeControlSamples.map((sample) => sample.controlInstance).filter(Number.isFinite)).size).toBe(1)
+  expect(activeControlSamples.every((sample) => sample.controlOpacity === '1')).toBe(true)
+  expect(
+    activeControlSamples
+      .filter((sample) => sample.control !== 'default-chat-send-button')
+      .every((sample) => sample.controlFocused),
+  ).toBe(true)
   expect(horizontalSpread(activeControlSamples, (sample) => sample.composerRow?.left)).toBeLessThanOrEqual(1)
   expect(horizontalSpread(activeControlSamples, (sample) => sample.composerRow?.width)).toBeLessThanOrEqual(1)
   expect(horizontalSpread(activeControlSamples, (sample) => sample.composer?.left)).toBeLessThanOrEqual(1)
-  // The cancel spinner has a slightly different intrinsic border box from the
-  // send icon. Permit that small difference while rejecting the old label-sized jump.
-  expect(horizontalSpread(activeControlSamples, (sample) => sample.composer?.right)).toBeLessThanOrEqual(8)
-  expect(horizontalSpread(activeControlSamples, (sample) => sample.composer?.width)).toBeLessThanOrEqual(8)
+  expect(horizontalSpread(activeControlSamples, (sample) => sample.composer?.right)).toBeLessThanOrEqual(1)
+  expect(horizontalSpread(activeControlSamples, (sample) => sample.composer?.width)).toBeLessThanOrEqual(1)
 
   const projectedSamples = samples.filter((sample) => sample.projectedRow && sample.projectedSurface && sample.loading)
   expect(projectedSamples.length).toBeGreaterThan(30)
+  expect(new Set(projectedSamples.map((sample) => sample.projectedRowInstance).filter(Number.isFinite)).size).toBe(1)
+  const fullLoadingSamples = projectedSamples.filter((sample) => !sample.loadingCompact)
+  const compactLoadingSamples = projectedSamples.filter((sample) => sample.loadingCompact)
+  expect(new Set(fullLoadingSamples.map((sample) => sample.loadingInstance).filter(Number.isFinite)).size).toBe(1)
+  expect(
+    new Set(compactLoadingSamples.map((sample) => sample.loadingInstance).filter(Number.isFinite)).size,
+  ).toBeLessThanOrEqual(1)
   expect(horizontalSpread(projectedSamples, (sample) => sample.projectedRow?.left)).toBeLessThanOrEqual(1)
   expect(horizontalSpread(projectedSamples, (sample) => sample.projectedRow?.width)).toBeLessThanOrEqual(1)
   expect(horizontalSpread(projectedSamples, (sample) => sample.projectedSurface?.left)).toBeLessThanOrEqual(1)
@@ -120,6 +152,34 @@ function horizontalSpread(
   const values = samples.map(select).filter((value): value is number => Number.isFinite(value))
   expect(values.length).toBeGreaterThan(0)
   return Math.max(...values) - Math.min(...values)
+}
+
+async function waitForStableComposerGeometry(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let previous: DOMRect | null = null
+        let stableFrames = 0
+        const sample = () => {
+          const row = document.querySelector('[data-default-chat-composer-row]')
+          const current = row?.getBoundingClientRect() ?? null
+          if (
+            current &&
+            previous &&
+            Math.abs(current.left - previous.left) <= 0.25 &&
+            Math.abs(current.width - previous.width) <= 0.25
+          ) {
+            stableFrames += 1
+          } else {
+            stableFrames = 0
+          }
+          previous = current
+          if (stableFrames >= 3) resolve()
+          else requestAnimationFrame(sample)
+        }
+        requestAnimationFrame(sample)
+      }),
+  )
 }
 
 async function waitForBrowserSmokeLoaded(page: Page): Promise<void> {
@@ -191,6 +251,16 @@ async function latestResponseMatches(page: Page): Promise<boolean> {
 
 async function startChatSendLayoutSampler(page: Page): Promise<void> {
   await page.evaluate(() => {
+    const elementIds = new WeakMap<Element, number>()
+    let nextElementId = 0
+    const elementId = (element: Element | null): number | null => {
+      if (!element) return null
+      const existing = elementIds.get(element)
+      if (existing !== undefined) return existing
+      const id = ++nextElementId
+      elementIds.set(element, id)
+      return id
+    }
     const rect = (element: Element | null): HorizontalRectSnapshot | null => {
       if (!element) return null
       const bounds = element.getBoundingClientRect()
@@ -214,14 +284,21 @@ async function startChatSendLayoutSampler(page: Page): Promise<void> {
       const projectedRow = document.querySelector<HTMLElement>(
         '.chat-message-container[data-generation-display-projection="send"]',
       )
+      const loading = projectedRow?.querySelector<HTMLElement>('.chat-generation-loading') ?? null
       state.samples.push({
         at: performance.now(),
         control: control?.dataset.testid ?? null,
+        controlInstance: elementId(control),
+        controlFocused: control === document.activeElement,
+        controlOpacity: control ? getComputedStyle(control).opacity : null,
         composerRow: rect(document.querySelector('[data-default-chat-composer-row]')),
         composer: rect(document.querySelector('[data-testid="default-chat-composer"]')),
         projectedRow: rect(projectedRow),
+        projectedRowInstance: elementId(projectedRow),
         projectedSurface: rect(projectedRow?.querySelector('.risu-chat') ?? null),
-        loading: rect(projectedRow?.querySelector('.chat-generation-loading') ?? null),
+        loading: rect(loading),
+        loadingInstance: elementId(loading),
+        loadingCompact: loading?.classList.contains('chat-generation-loading-compact') ?? false,
       })
     }
     const sampleFrame = () => {

@@ -54,8 +54,10 @@ Important files:
 - `src/lib/ChatScreens/Chats.svelte` derives an ordinary-send presentation row
   from the active chat generation before a stream-owned assistant message
   exists. This UI-only row never enters the transcript owner. Once the exact
-  generation id appears, its stable activity presentation key is adopted by the
-  real assistant row and retained across activity settlement.
+  generation id appears, its stable operation-and-attempt presentation key is
+  adopted by the real assistant row and retained across activity settlement. A
+  matching active-job projection bridges foreground observer replacement so
+  the row and its loading animation are not remounted during reattach.
 - `src/ts/process/reattach.ts` coordinates background recovery by durable
   `(databaseLineage, operationId)` authority. `jobId` and `attemptNo` remain
   expiring stream descriptors, while local viewer/activity state is only an

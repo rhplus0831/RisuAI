@@ -310,12 +310,15 @@ remains as a compatibility projection. `chatGenerationLoading.ts` maps the typed
 phase to localized labels; the UI uses an indeterminate phase-colored track
 instead of presenting fabricated percentage completion.
 
-Before an ordinary send is admitted, the composer replaces Send with a compact,
-disabled spinner that preserves the Send button's width. Once its chat-keyed
-generation activity exists,
+Before an ordinary send is admitted, the composer's stable primary-control node
+changes from Send to a compact, `aria-disabled` spinner while retaining its
+width and focus. Once its chat-keyed generation activity exists,
 `Chats.svelte` projects a non-persisted assistant row immediately. The row keeps
-one presentation key while the stream-owned assistant `Message` is appended,
-then adopts that message without remounting. The first observable provider text
+one operation-and-attempt presentation key while the stream-owned assistant
+`Message` is appended, then adopts that message without remounting. A matching
+durable-job projection bridges foreground observer replacement, retaining the
+row, loader, latest phase, and start time while the local activity is handed
+off. The first observable provider text
 advances the activity to generating; `Chat.svelte` renders the growing response
 and a compact status footer together until finalization settles. Empty failed or
 cancelled attempts therefore lose only the transient row, while retained partial

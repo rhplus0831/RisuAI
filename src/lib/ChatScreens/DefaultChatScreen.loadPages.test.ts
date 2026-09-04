@@ -1676,6 +1676,59 @@ describe('DefaultChatScreen latest-message viewport anchoring', () => {
     expect(projectedRow.querySelector('.chat-generation-loading')).toBeNull()
   })
 
+  it('keeps the projected assistant and loader mounted while a foreground observer is replaced', async () => {
+    seedDatabase([2])
+    const generationTarget = captureActiveChatTargetForTest()!
+    const operationId = '11111111-1111-4111-8111-111111111111'
+    const job = {
+      chatId: 'chat-0',
+      jobId: 'foreground-job',
+      operationId,
+      attemptNo: 1,
+      mode: 'send' as const,
+    }
+    activeGenerationJobs.set([job])
+    const firstObserver = beginChatGenerationActivity({
+      target: generationTarget,
+      kind: 'message',
+      mode: 'send',
+      operationId,
+      attemptNo: 1,
+    })!
+    updateChatGenerationActivityPhase(firstObserver.id, 'waiting-for-model')
+    mountScreen()
+
+    await waitFor(() => expect(target.querySelectorAll('.chat-message-container')).toHaveLength(3))
+    const projectedRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    const projectedSurface = projectedRow.querySelector<HTMLElement>('.risu-chat')!
+    const loading = projectedRow.querySelector<HTMLElement>('.chat-generation-loading')!
+    const startedAt = projectedSurface.dataset.generationStartedAt
+    expect(projectedSurface.dataset.generationPhase).toBe('waiting-for-model')
+
+    finishChatGenerationActivity(firstObserver.id)
+    await settle()
+    expect(target.querySelector('.chat-message-container')).toBe(projectedRow)
+    expect(projectedRow.querySelector('.chat-generation-loading')).toBe(loading)
+    expect(projectedSurface.dataset.generationPhase).toBe('waiting-for-model')
+    expect(projectedSurface.dataset.generationStartedAt).toBe(startedAt)
+
+    const replacementObserver = beginChatGenerationActivity({
+      target: generationTarget,
+      kind: 'message',
+      mode: 'send',
+      operationId,
+      attemptNo: 1,
+    })!
+    await settle()
+    expect(target.querySelector('.chat-message-container')).toBe(projectedRow)
+    expect(projectedRow.querySelector('.chat-generation-loading')).toBe(loading)
+    expect(projectedSurface.dataset.generationPhase).toBe('waiting-for-model')
+    expect(projectedSurface.dataset.generationStartedAt).toBe(startedAt)
+
+    finishChatGenerationActivity(replacementObserver.id)
+    activeGenerationJobs.set([])
+  })
+
   it('keeps a newly appended assistant turn at the natural end while streaming and start-aligns it on completion', async () => {
     const resizeObservers = installResizeObserverHarness()
     seedDatabase([2])
@@ -4012,10 +4065,15 @@ describe('DefaultChatScreen transcript window state', () => {
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
     textarea.value = 'Send owns preflight'
     textarea.dispatchEvent(new Event('input', { bubbles: true }))
-    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+    const sendButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!
+    sendButton.focus()
+    sendButton.click()
     await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
     const preparingButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-preparing-button"]')
-    expect(preparingButton?.disabled).toBe(true)
+    expect(preparingButton).toBe(sendButton)
+    expect(document.activeElement).toBe(sendButton)
+    expect(preparingButton?.disabled).toBe(false)
+    expect(preparingButton?.getAttribute('aria-disabled')).toBe('true')
     expect(preparingButton?.getAttribute('aria-busy')).toBe('true')
     expect(preparingButton?.textContent).toBe('')
     expect(preparingButton?.querySelector('svg.animate-spin')).toBeTruthy()

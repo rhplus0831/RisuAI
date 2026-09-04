@@ -50,6 +50,7 @@
   import type { ChatGenerationActivity } from 'src/ts/process/generationActivity.svelte'
   import type { ChatGenerationLoadingPhase } from './chatGenerationLoading'
   import { scrollElementToContainerStart } from './chatScroll'
+  import type { ActiveGenerationJob } from 'src/ts/server/bootstrap'
 
   const getCurrentChatRoomId = () => chatId ?? null
 
@@ -70,6 +71,7 @@
     isGenerationActive = false,
     regenerateTargetMessageId = null,
     generationActivity = undefined,
+    generationJob = undefined,
     generationPhase = undefined,
     generationStage = 0,
     hasNewUnreadMessage = $bindable(false),
@@ -92,6 +94,7 @@
     isGenerationActive?: boolean
     regenerateTargetMessageId?: string | null
     generationActivity?: ChatGenerationActivity
+    generationJob?: ActiveGenerationJob
     generationPhase?: ChatGenerationLoadingPhase
     generationStage?: number
     hasNewUnreadMessage?: boolean
@@ -201,8 +204,75 @@
     }
     return generationActivity
   })
+  let activeAppendJob = $derived.by(() => {
+    if (
+      !isGenerationActive ||
+      generationJob?.chatId !== getCurrentChatRoomId() ||
+      (generationJob.mode !== undefined && generationJob.mode !== 'send')
+    ) {
+      return undefined
+    }
+    return generationJob
+  })
+  let activeAppendPresentationKey = $derived.by(() => {
+    const operationId = activeAppendActivity?.operationId ?? activeAppendJob?.operationId
+    const attemptNo = activeAppendActivity?.attemptNo ?? activeAppendJob?.attemptNo
+    if (operationId) {
+      return `generation-operation:${operationId}${attemptNo === undefined ? '' : `:attempt:${attemptNo}`}`
+    }
+    if (activeAppendJob?.jobId) return `generation-job:${activeAppendJob.jobId}`
+    return activeAppendActivity ? `generation-activity:${activeAppendActivity.id}` : null
+  })
+  const generationPhaseOrder: Record<ChatGenerationLoadingPhase, number> = {
+    starting: 0,
+    preparing: 1,
+    'checking-memory': 2,
+    'waiting-for-model': 3,
+    generating: 4,
+    finalizing: 5,
+    'input-hook': 6,
+  }
+  interface AppendGenerationPresentationSnapshot {
+    startedAt: number
+    phase: ChatGenerationLoadingPhase
+    stage: number
+    generationId?: string
+  }
+  let appendGenerationPresentationSnapshots: Record<string, AppendGenerationPresentationSnapshot> = $state({})
+  $effect(() => {
+    const key = activeAppendPresentationKey
+    if (!key) return
+    const previous = appendGenerationPresentationSnapshots[key]
+    const observedPhase = generationPhase ?? 'starting'
+    const nextPhase =
+      activeAppendActivity && (!previous || generationPhaseOrder[observedPhase] >= generationPhaseOrder[previous.phase])
+        ? observedPhase
+        : (previous?.phase ?? observedPhase)
+    const next: AppendGenerationPresentationSnapshot = {
+      startedAt: previous?.startedAt ?? activeAppendActivity?.startedAt ?? Date.now(),
+      phase: nextPhase,
+      stage: activeAppendActivity
+        ? Math.max(previous?.stage ?? 0, generationStage)
+        : (previous?.stage ?? generationStage),
+      ...(activeAppendActivity?.generationId || previous?.generationId
+        ? { generationId: activeAppendActivity?.generationId ?? previous?.generationId }
+        : {}),
+    }
+    if (
+      !previous ||
+      previous.startedAt !== next.startedAt ||
+      previous.phase !== next.phase ||
+      previous.stage !== next.stage ||
+      previous.generationId !== next.generationId
+    ) {
+      appendGenerationPresentationSnapshots = { [key]: next }
+    }
+  })
+  let activeAppendPresentation = $derived(
+    activeAppendPresentationKey ? appendGenerationPresentationSnapshots[activeAppendPresentationKey] : undefined,
+  )
   let activeAppendMessageIndex = $derived.by(() => {
-    const generationId = activeAppendActivity?.generationId
+    const generationId = activeAppendActivity?.generationId ?? activeAppendPresentation?.generationId
     if (!generationId) return -1
     return messages.findIndex(
       (message) =>
@@ -210,9 +280,6 @@
         (message.chatId === generationId || message.generationInfo?.generationId === generationId),
     )
   })
-  let activeAppendPresentationKey = $derived(
-    activeAppendActivity ? `generation-activity:${activeAppendActivity.id}` : null,
-  )
   let presentationKeyAliases: Record<string, string> = $state({})
   let appendPresentationKeyAliases: Record<string, string> = $state({})
   let regexDisplayReloadToken = $derived(
@@ -226,6 +293,7 @@
     void regexDisplayReloadToken
     void activeRegenerateProjection
     void activeAppendActivity
+    void activeAppendJob
     void activeAppendMessageIndex
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
@@ -310,18 +378,20 @@
       })
     }
 
-    if (activeAppendActivity && activeAppendMessageIndex < 0 && activeAppendPresentationKey) {
+    if ((activeAppendActivity || activeAppendJob) && activeAppendMessageIndex < 0 && activeAppendPresentationKey) {
       rows.unshift({
         key: `${currentChatId ?? 'unscoped'}:${activeAppendPresentationKey}`,
         message: {
           role: 'char',
           data: '',
           saying: currentCharacter.chaId,
-          time: activeAppendActivity.startedAt,
-          ...(activeAppendActivity.generationId
+          time: activeAppendPresentation?.startedAt ?? activeAppendActivity?.startedAt ?? Date.now(),
+          ...(activeAppendPresentation?.generationId || activeAppendActivity?.generationId
             ? {
-                chatId: activeAppendActivity.generationId,
-                generationInfo: { generationId: activeAppendActivity.generationId },
+                chatId: activeAppendPresentation?.generationId ?? activeAppendActivity?.generationId,
+                generationInfo: {
+                  generationId: activeAppendPresentation?.generationId ?? activeAppendActivity?.generationId,
+                },
               }
             : {}),
         },
@@ -690,7 +760,9 @@
     const currentChatRoomId = getCurrentChatRoomId()
 
     const activeAppendMessageId =
-      activeAppendMessageIndex >= 0 ? messages[activeAppendMessageIndex]?.chatId : activeAppendActivity?.generationId
+      activeAppendMessageIndex >= 0
+        ? messages[activeAppendMessageIndex]?.chatId
+        : (activeAppendActivity?.generationId ?? activeAppendPresentation?.generationId)
     if (activeAppendMessageId && activeAppendPresentationKey) {
       if (appendPresentationKeyAliases[activeAppendMessageId] !== activeAppendPresentationKey) {
         appendPresentationKeyAliases = {
@@ -946,9 +1018,15 @@
           : undefined}
         displayPriority={row.awaitInitialDisplayParse ? 'critical' : 'background'}
         generationPersistenceState={row.generationPersistenceState}
-        {generationPhase}
-        generationStartedAt={row.isAppendGenerationPresentation ? generationActivity?.startedAt : undefined}
-        {generationStage}
+        generationPhase={row.isAppendGenerationPresentation
+          ? (activeAppendPresentation?.phase ?? generationPhase)
+          : generationPhase}
+        generationStartedAt={row.isAppendGenerationPresentation
+          ? (activeAppendPresentation?.startedAt ?? generationActivity?.startedAt)
+          : undefined}
+        generationStage={row.isAppendGenerationPresentation
+          ? (activeAppendPresentation?.stage ?? generationStage)
+          : generationStage}
         disabled={row.message.disabled ?? false} />
     </div>
   {/each}

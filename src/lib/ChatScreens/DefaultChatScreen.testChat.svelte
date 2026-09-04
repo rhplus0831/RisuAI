@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { defaultChatScreenTestChatController } from './DefaultChatScreen.testChatController'
+  import type { ChatGenerationLoadingPhase } from './chatGenerationLoading'
 
   let {
     idx = -1,
@@ -11,6 +12,9 @@
     largePortrait = false,
     isGenerationLoading = false,
     isGenerationProjection = false,
+    generationPhase = undefined,
+    generationStartedAt = undefined,
+    generationStage = 0,
     halfStreamingTokensPerSecond = undefined,
     onInitialDisplayParseStart = undefined,
     onInitialDisplayParseSettled = undefined,
@@ -23,6 +27,9 @@
     largePortrait?: boolean
     isGenerationLoading?: boolean
     isGenerationProjection?: boolean
+    generationPhase?: ChatGenerationLoadingPhase
+    generationStartedAt?: number
+    generationStage?: number
     halfStreamingTokensPerSecond?: number
     onInitialDisplayParseStart?: (registration: symbol) => void
     onInitialDisplayParseSettled?: (registration: symbol) => void
@@ -54,7 +61,10 @@
   data-chat-index={idx}
   data-chat-name={name}
   data-chat-image={typeof img === 'string' ? img : ''}
-  data-chat-large-portrait={largePortrait ? 'true' : 'false'}>
+  data-chat-large-portrait={largePortrait ? 'true' : 'false'}
+  data-generation-phase={generationPhase}
+  data-generation-started-at={generationStartedAt}
+  data-generation-stage={generationStage}>
   {#if isGenerationLoading && (!isGenerationProjection || message.length === 0)}
     <div class="chat-generation-loading" data-generation-projection-loading={isGenerationProjection ? '' : undefined}>
     </div>

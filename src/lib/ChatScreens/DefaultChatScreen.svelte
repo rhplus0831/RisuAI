@@ -686,6 +686,46 @@
   let visibleChatProcessPhase = $derived(
     currentChatInputHookActivity ? ('input-hook' as const) : currentChatGenerationPhase,
   )
+  type ComposerPrimaryControlMode = 'preparing' | 'cancel' | 'convert' | 'send'
+  let composerPrimaryControlMode: ComposerPrimaryControlMode = $derived(
+    currentChatPreparationKind === 'send' && !currentChatOwnsGeneration && !hookRunActive
+      ? 'preparing'
+      : currentChatOwnsGeneration || hookRunActive
+        ? 'cancel'
+        : floatingDraftConversionActive
+          ? 'convert'
+          : 'send',
+  )
+  let composerPrimaryControlPreparing = $derived(composerPrimaryControlMode === 'preparing')
+  let composerPrimaryControlCancelling = $derived(composerPrimaryControlMode === 'cancel')
+  let composerPrimaryControlConverting = $derived(composerPrimaryControlMode === 'convert')
+  let composerPrimaryControlLabel = $derived(
+    composerPrimaryControlMode === 'cancel'
+      ? currentChatStopPending
+        ? language.generationStop.stopping
+        : currentChatStopFailed
+          ? language.generationStop.retry
+          : language.cancelGeneration
+      : composerPrimaryControlMode === 'convert'
+        ? language.inputHookConvert
+        : language.hotkeyDesc.send,
+  )
+  let composerPrimaryControlExpanded = $derived(
+    composerPrimaryControlMode === 'cancel' && (currentChatStopPending || currentChatStopFailed),
+  )
+
+  function handleComposerPrimaryControl(): void {
+    if (composerPrimaryControlMode === 'preparing') return
+    if (composerPrimaryControlMode === 'cancel') {
+      abortChat()
+      return
+    }
+    if (composerPrimaryControlMode === 'convert') {
+      toggleFloatingDraftConversion()
+      return
+    }
+    void send()
+  }
   let configuredChatLoadPages = $derived(getInitialChatLoadPages(chatLoadPageSettings()))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
@@ -2737,7 +2777,7 @@
           {/each}
           <div
             bind:this={composerRow}
-            class="chat-screen-content-width mt-2 mb-2 flex w-full items-stretch"
+            class="chat-composer-row chat-screen-content-width mt-2 mb-2 flex w-full items-stretch"
             style:z-index={floatingInputOpen ? 29 : undefined}
             data-default-chat-composer-row>
             {#if useChatSticker}
@@ -2799,70 +2839,62 @@
                 type="button"
                 data-testid="default-chat-cancel-button"
                 aria-label={language.generationReattachFailure.stop}
-                class="peer-focus:border-textcolor flex justify-center border-y border-yellow-500 items-center p-3 text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                class="chat-composer-attached-control peer-focus:border-textcolor flex justify-center border-y border-yellow-500 items-center p-3 text-yellow-500 hover:bg-yellow-500 hover:text-black transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={reattachRecoveryAction !== null}
                 onclick={() => void runReattachRecoveryAction(currentChatDeadGeneration!.jobId, 'stop')}
                 style:height={inputHeight}>
                 <TriangleAlertIcon aria-hidden="true" />
               </button>
-            {:else if currentChatPreparationKind === 'send' && !currentChatOwnsGeneration && !hookRunActive}
-              <button
-                type="button"
-                data-testid="default-chat-preparing-button"
-                aria-label={language.hotkeyDesc.send}
-                aria-busy="true"
-                disabled
-                class="peer-focus:border-textcolor flex w-12 shrink-0 justify-center border-y border-darkborderc items-center text-textcolor p-3 disabled:cursor-wait disabled:opacity-70"
-                style:height={inputHeight}>
-                <LoaderCircleIcon size={24} class="risu-ongoing-pulse animate-spin" aria-hidden="true" />
-              </button>
-            {:else if currentChatOwnsGeneration || hookRunActive}
-              <button
-                data-testid="default-chat-cancel-button"
-                aria-label={currentChatStopPending
-                  ? language.generationStop.stopping
-                  : currentChatStopFailed
-                    ? language.generationStop.retry
-                    : language.cancelGeneration}
-                aria-busy={currentChatStopPending}
-                disabled={currentChatStopPending || currentChatStoppedFinalizing}
-                class="peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors disabled:cursor-not-allowed disabled:opacity-70"
-                onclick={abortChat}
-                style:height={inputHeight}>
-                {#if currentChatStopFailed}
-                  <TriangleAlertIcon size={18} aria-hidden="true" />
-                {:else}
-                  <div
-                    class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage} chat-process-phase-{visibleChatProcessPhase}">
-                  </div>
-                {/if}
-                {#if currentChatStopPending}
-                  <span class="whitespace-nowrap text-sm">{language.generationStop.stopping}</span>
-                {:else if currentChatStopFailed}
-                  <span class="whitespace-nowrap text-sm">{language.generationStop.retry}</span>
-                {/if}
-              </button>
-            {:else if floatingDraftConversionActive}
-              <button
-                type="button"
-                data-testid="default-chat-convert-button"
-                aria-label={language.inputHookConvert}
-                aria-pressed={floatingDraftShowsOriginal}
-                title={language.inputHookConvert}
-                onclick={toggleFloatingDraftConversion}
-                class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors"
-                style:height={inputHeight}>
-                <RefreshCcwIcon />
-              </button>
             {:else}
               <button
-                data-testid="default-chat-send-button"
-                aria-label={language.hotkeyDesc.send}
-                onclick={send}
-                disabled={currentChatOwnsGeneration}
-                class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                data-testid={composerPrimaryControlConverting
+                  ? 'default-chat-convert-button'
+                  : composerPrimaryControlCancelling
+                    ? 'default-chat-cancel-button'
+                    : composerPrimaryControlPreparing
+                      ? 'default-chat-preparing-button'
+                      : 'default-chat-send-button'}
+                aria-label={composerPrimaryControlLabel}
+                aria-busy={composerPrimaryControlMode === 'preparing'
+                  ? 'true'
+                  : composerPrimaryControlMode === 'cancel' && currentChatStopPending
+                    ? 'true'
+                    : undefined}
+                aria-disabled={composerPrimaryControlMode === 'preparing' ? 'true' : undefined}
+                aria-pressed={composerPrimaryControlMode === 'convert' ? floatingDraftShowsOriginal : undefined}
+                title={composerPrimaryControlMode === 'convert' ? language.inputHookConvert : undefined}
+                disabled={composerPrimaryControlMode === 'cancel' &&
+                  (currentChatStopPending || currentChatStoppedFinalizing)}
+                class="chat-composer-primary-control chat-composer-attached-control peer-focus:border-textcolor flex justify-center gap-2 border-y border-darkborderc items-center text-textcolor p-3 transition-colors disabled:cursor-not-allowed disabled:opacity-70"
+                class:w-12={!composerPrimaryControlExpanded}
+                class:shrink-0={!composerPrimaryControlExpanded}
+                class:cursor-wait={composerPrimaryControlMode === 'preparing'}
+                class:hover:bg-blue-500={composerPrimaryControlMode !== 'preparing'}
+                class:hover:text-white={composerPrimaryControlMode !== 'preparing'}
+                class:button-icon-send={composerPrimaryControlMode === 'send'}
+                onclick={handleComposerPrimaryControl}
                 style:height={inputHeight}>
-                <Send />
+                {#if composerPrimaryControlMode === 'preparing'}
+                  <LoaderCircleIcon size={24} class="risu-ongoing-pulse animate-spin opacity-70" aria-hidden="true" />
+                {:else if composerPrimaryControlMode === 'cancel'}
+                  {#if currentChatStopFailed}
+                    <TriangleAlertIcon size={18} aria-hidden="true" />
+                  {:else}
+                    <div
+                      class="risu-ongoing-pulse loadmove chat-process-stage-{visibleChatProcessStage} chat-process-phase-{visibleChatProcessPhase}">
+                    </div>
+                  {/if}
+                  {#if currentChatStopPending}
+                    <span class="whitespace-nowrap text-sm">{language.generationStop.stopping}</span>
+                  {:else if currentChatStopFailed}
+                    <span class="whitespace-nowrap text-sm">{language.generationStop.retry}</span>
+                  {/if}
+                {:else if composerPrimaryControlMode === 'convert'}
+                  <RefreshCcwIcon />
+                {:else}
+                  <Send />
+                {/if}
               </button>
             {/if}
             {#if currentCharacter?.chaId !== '§playground'}
@@ -2875,7 +2907,7 @@
                 aria-haspopup="menu"
                 aria-controls="default-chat-overflow-menu"
                 onclick={toggleChatMenu}
-                class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
+                class="chat-composer-attached-control peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
                 style:height={inputHeight}>
                 <MenuIcon />
               </button>
@@ -2884,7 +2916,7 @@
                 type="button"
                 aria-label={language.addEmptyMessage}
                 onclick={() => appendCurrentChatEmptyCharMessage()}
-                class="peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
+                class="chat-composer-attached-control peer-focus:border-textcolor flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
                 style:height={inputHeight}>
                 <Plus />
               </button>
@@ -3193,6 +3225,7 @@
               isGenerationActive={currentChatOwnsGeneration}
               regenerateTargetMessageId={currentChatRegenerateTargetMessageId}
               generationActivity={currentChatGenerationActivity}
+              generationJob={currentChatGenerationJob}
               generationPhase={currentChatGenerationPhase}
               generationStage={currentChatGenerationStage}
               initialRowsPending={activeChatMessagesLoading}
@@ -3585,6 +3618,16 @@
   .floating-chat-composer textarea[data-testid='default-chat-composer'] {
     max-height: min(40dvh, 18rem);
     overflow-y: auto;
+  }
+
+  .chat-composer-row:focus-within .chat-composer-attached-control {
+    border-color: var(--risu-theme-textcolor);
+  }
+
+  .chat-composer-primary-control:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--risu-theme-borderc);
+    outline-offset: 2px;
   }
 
   .chat-process-stage-1,
