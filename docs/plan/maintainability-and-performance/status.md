@@ -605,3 +605,20 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   and injected chat/event/receipt failures. This is a correctness correction;
   SQL still examines chat JSON for matches and validates the loadout collection.
   Final combined aggregate remains pending until all implementation finishes.
+
+## Phase 4b: Shared Reference Discovery Primitive
+
+- `server/fastify/src/assetReferenceScan.ts` projects known reference fields in
+  source pages of at most 64 rows and spills distinct references/chat IDs to a
+  disposable SQLite file with a 2 MiB cache. Cooperative slices yield after
+  256 KiB or 4 ms; one existing oversized scalar or native legacy JSON projection
+  remains nonpreemptible and is reported by `largestRowBytes`.
+- The shared asset-owner vocabulary covers extracted/embedded precedence,
+  plugins, catalog entries, pending finalizations, and active/alternate message
+  rows. No authoritative transaction/iterator remains open across a yield, and
+  scratch cleanup leaves primary write counters unchanged. Signed rowid text
+  cursors preserve legacy 64-bit IDs without OFFSET or whole-body projection.
+- `assetReferenceScan.test.ts` passes 16 focused cases: owner parity against the
+  existing report, exclusions/malformed fields, alias/orphan ownership, signed
+  cursors, paged progress, oversized fields, cancellation and scratch recovery.
+  Backup/GC cutover and original latency acceptance are the next slice.
