@@ -109,6 +109,7 @@ const pendingMutationApi = vi.hoisted(() => ({
   scope: null as string | null,
 }))
 const ownershipApi = vi.hoisted(() => ({ count: vi.fn(() => 0), discard: vi.fn(), reset: vi.fn() }))
+const projectionLifecycleApi = vi.hoisted(() => ({ discard: vi.fn(async (_reason: string) => undefined) }))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyEvent: vi.fn(() => true), applySnapshot: vi.fn() }))
 const activeWriterApi = vi.hoisted(() => ({ adoptPendingOwner: vi.fn(), enterTakeover: vi.fn() }))
 const pushApi = vi.hoisted(() => ({
@@ -160,6 +161,12 @@ interface TestWriterEvent {
   sessionId: string | null
   epoch: number
 }
+
+// The lifecycle's real hydration/cache clearing has its own focused suite.
+// Keep bootstrap ordering independent of that cold dynamic import's duration.
+vi.mock('./observerProjectionLifecycle', () => ({
+  discardObserverProjectionState: projectionLifecycleApi.discard,
+}))
 
 vi.mock('./server/bootstrap', () => ({
   fetchServerBootstrap: bootstrapApi.fetch,
@@ -513,6 +520,7 @@ beforeEach(() => {
   ownershipApi.count.mockClear()
   ownershipApi.discard.mockReset()
   ownershipApi.reset.mockReset()
+  projectionLifecycleApi.discard.mockReset().mockResolvedValue(undefined)
   eventApi.subscriptions = []
   hydrationApi.readinessRefreshHook = null
   ownerMutationLifecycleApi.start.mockReturnValue(ownerMutationLifecycleApi.stop)
@@ -1797,11 +1805,26 @@ describe('API-backed client bootstrap', () => {
         order.push('refresh')
         return { status: 'ok', revision: 3 }
       })
+      let finishProjectionDiscard!: () => void
+      const projectionDiscard = new Promise<void>((resolve) => {
+        finishProjectionDiscard = resolve
+      })
+      projectionLifecycleApi.discard.mockImplementationOnce(async () => {
+        order.push('discard')
+        await projectionDiscard
+      })
 
       eventApi.subscriptions[0].onCommandEvent({ ...event, revision: 3 })
 
+      try {
+        await vi.waitFor(() => expect(projectionLifecycleApi.discard).toHaveBeenCalledExactlyOnceWith('lineage-change'))
+        expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'discard'])
+        expect(resourceApi.forceReplacement).not.toHaveBeenCalled()
+      } finally {
+        finishProjectionDiscard()
+      }
       await vi.waitFor(() => expect(resourceApi.forceReplacement).toHaveBeenCalledOnce())
-      expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'refresh'])
+      expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'discard', 'refresh'])
       expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { cacheRevision: false })
       expect(pendingMutationApi.prepare).toHaveBeenCalledWith({
         writerSessionId: getActiveWriterSessionId(),
