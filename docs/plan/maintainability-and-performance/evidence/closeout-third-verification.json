@@ -1,0 +1,53 @@
+{
+  "source": "a3f83bd622b52306309ff631ecfcf83e34075a7e",
+  "status": "failed-test-types-and-debounce-race",
+  "command": "pnpm test:agent",
+  "elapsedSeconds": 147.988,
+  "assessment": "All architecture inventories, frontend types, server tests and build pass. Newly reached downstream typechecks expose only test and smoke-projection typing gaps. One translator UI case races its real 250 ms debounce against synthetic remote marking. Repairs preserve all behavior and assertions.",
+  "typeErrors": [
+    "server/fastify/browser-smoke/selectedLocaleRuntime.spec.ts(47,100): error TS2339: Property 'language' does not exist on type 'BrowserSmokeDatabaseSnapshot'.",
+    "server/fastify/browser-smoke/selectedLocaleRuntime.spec.ts(57,100): error TS2339: Property 'language' does not exist on type 'BrowserSmokeDatabaseSnapshot'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1167,34): error TS18047: 'left' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1167,45): error TS18047: 'right' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1177,36): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1179,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1179,50): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1180,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1181,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1182,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1183,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1184,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1185,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1185,67): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1186,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1186,55): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1187,16): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/browser-smoke/transcriptResidency.spec.ts(1187,55): error TS18047: 'row' is possibly 'null'.",
+    "server/fastify/__tests__/maintenanceCosts.test.ts(172,31): error TS2345: Argument of type '{ startMs: number; durationMs: number; kind: number; }' is not assignable to parameter of type 'never'.",
+    "server/fastify/__tests__/maintenanceCosts.test.ts(216,31): error TS2345: Argument of type '{ startMs: number; durationMs: number; }' is not assignable to parameter of type 'never'.",
+    "server/fastify/__tests__/maintenanceStaging.test.ts(331,40): error TS2345: Argument of type 'Buffer<ArrayBufferLike>' is not assignable to parameter of type 'BodyInit | null | undefined'.",
+    "server/fastify/__tests__/templates.test.ts(488,7): error TS2345: Argument of type 'Mock<(text: string, loc: string) => string>' is not assignable to parameter of type '((text: string, loc: string | undefined) => string) | undefined'."
+  ],
+  "runtimeFailures": [
+    {
+      "case": "|frontend-dom| src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts > TranslatorPresetSettings server-backed edits > keeps reverted and net-dirty fields in the successor behind a remotely marked PATCH",
+      "failure": "AssertionError: expected 'superseded' to be 'persisted' // Object.is equality\n\nExpected: \"persisted\"\nReceived: \"superseded\"\n\n \u276f src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts:971:59\n    969|         expect(staged).toHaveLength(1)\n    970|       })\n    971|       await expect(beginPendingMutationDispatch(staged[0].handle)).res\u2026\n       |                                                           ^\n    972|\n    973|       await editMaxResponse(321)"
+    }
+  ],
+  "aggregateSummary": "[test:agent] completed in 2m 27.6s\n  FAIL  server and browser-smoke typecheck (21.3s)\n  PASS  test topology validation (3.8s)\n  PASS  current documentation validation (0.5s)\n  FAIL  frontend tests (1m 23.0s)\n  PASS  frontend check (42.7s)\n  PASS  server tests (45.4s)\n  PASS  browser-smoke build (14.9s)\n[ELIFECYCLE] Command failed with exit code 1.",
+  "commands": [
+    {
+      "name": "agent",
+      "command": [
+        "pnpm",
+        "test:agent"
+      ],
+      "environment": {},
+      "source": "a3f83bd622b52306309ff631ecfcf83e34075a7e",
+      "exitCode": 1,
+      "elapsedSeconds": 147.988,
+      "log": "/tmp/phase6-final-a3f83bd62/agent.log",
+      "artifacts": []
+    }
+  ]
+}

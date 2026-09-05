@@ -1004,3 +1004,22 @@ count now follows those exact seventeen added test references; the existing
 negative matrix test first validates the unmodified maintained pair, catching
 this mismatch in focused verification. Server/browser typechecks must still run
 past that inventory gate in the next complete aggregate.
+
+## Phase 6 Downstream Typechecks and Deterministic Remote Marking
+
+The [third aggregate at `a3f83bd62`](evidence/closeout-third-verification.json)
+passes every maintained inventory and reaches both downstream typechecks. Those
+identify only test/projection typing: optional locale already returned by the
+smoke producer, nullable compact observations, maintenance diagnostic arrays,
+Response archive bytes and the template parser's optional position. All are
+made explicit without weakening runtime assertions. Focused maintenance 1
+(matrix intentionally skipped), staging 7 and templates 72 pass. Native locale
+runtime 3 and transcript residency 12 pass with all cost/profile flags off.
+
+A translator fixture also allowed its real 250 ms local debounce to acknowledge
+a row before the test marked it as remote work. The two remote-mark fixtures
+now freeze only timeout scheduling while IndexedDB/crypto proceed, assert exact
+predecessor/successor data, then explicitly advance the debounce to verify replay
+blocks the successor. All 71 cases pass. The earlier production rollback model
+is unchanged; these are deterministic fixture repairs. Another full aggregate
+is required before final closeout.
