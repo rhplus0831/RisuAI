@@ -75,6 +75,15 @@ describe('F05 durable staging work probe', () => {
           },
         )
         expect(measured.result).toBe('persisted')
+        expect(measured.counters.normalizationClones?.count ?? 0).toBe(immutable ? 0 : fixture.requests)
+        expect(measured.counters.normalizationClones?.bytes ?? 0).toBe(
+          immutable
+            ? 0
+            : fixture.requests * new TextEncoder().encode(JSON.stringify({ patch: { username: text } })).byteLength,
+        )
+        expect(measured.counters.encryptedEnvelopeSerialization?.count).toBe(1)
+        expect(measured.counters.encryptedEnvelopeSerialization?.bytes).toBe(expectedPayloadBytes)
+
         const restored = await listPendingMutations()
         expect(restored).toHaveLength(1)
         expect(restored[0]?.intent.requests).toHaveLength(fixture.requests)

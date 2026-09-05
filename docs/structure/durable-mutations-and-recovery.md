@@ -57,6 +57,13 @@ outbox cannot provide crash recovery. IndexedDB/key-persistence failure can
 fall back to ordinary transport; unavailable secure randomness can fail staging
 before dispatch.
 
+Staging captures each mutable request body once as owned JSON; recursively frozen
+JSON bodies can be reused. Request limits, allowlisted paths, and canonical body
+shape are validated before persistence. Projection-target extraction reads that
+owned snapshot without another body copy. Exact placeholder replacement reuses
+the same normalization boundary even when it must stage a fresh successor.
+Encrypted-envelope serialization remains a separate required operation.
+
 Every ordinary browser command domain shares the same server revision, so
 `src/ts/server/commands.ts` serializes high-level mutations through one global
 queue. `runServerCommandSequence()` keeps a multi-step optimistic mutation in

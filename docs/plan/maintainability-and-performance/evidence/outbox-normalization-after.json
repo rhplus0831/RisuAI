@@ -1,0 +1,121 @@
+{
+  "finding": "F05",
+  "evidenceKind": "structural-work-counters",
+  "node": "v24.19.0",
+  "samples": [
+    {
+      "name": "small",
+      "requests": 1,
+      "textBytesPerRequest": 128,
+      "immutable": false,
+      "expectedPayloadBytes": 244,
+      "normalizationClones": {
+        "count": 1,
+        "bytes": 153
+      },
+      "encryptedEnvelopeSerialization": {
+        "count": 1,
+        "bytes": 244
+      },
+      "transportSerialization": {
+        "count": 0,
+        "bytes": 0
+      }
+    },
+    {
+      "name": "small",
+      "requests": 1,
+      "textBytesPerRequest": 128,
+      "immutable": true,
+      "expectedPayloadBytes": 244,
+      "normalizationClones": {
+        "count": 0,
+        "bytes": 0
+      },
+      "encryptedEnvelopeSerialization": {
+        "count": 1,
+        "bytes": 244
+      },
+      "transportSerialization": {
+        "count": 0,
+        "bytes": 0
+      }
+    },
+    {
+      "name": "intermediate-multi-request",
+      "requests": 8,
+      "textBytesPerRequest": 8192,
+      "immutable": false,
+      "expectedPayloadBytes": 66205,
+      "normalizationClones": {
+        "count": 8,
+        "bytes": 65736
+      },
+      "encryptedEnvelopeSerialization": {
+        "count": 1,
+        "bytes": 66205
+      },
+      "transportSerialization": {
+        "count": 0,
+        "bytes": 0
+      }
+    },
+    {
+      "name": "intermediate-multi-request",
+      "requests": 8,
+      "textBytesPerRequest": 8192,
+      "immutable": true,
+      "expectedPayloadBytes": 66205,
+      "normalizationClones": {
+        "count": 0,
+        "bytes": 0
+      },
+      "encryptedEnvelopeSerialization": {
+        "count": 1,
+        "bytes": 66205
+      },
+      "transportSerialization": {
+        "count": 0,
+        "bytes": 0
+      }
+    },
+    {
+      "name": "large-near-limit",
+      "requests": 1,
+      "textBytesPerRequest": 16776192,
+      "immutable": false,
+      "expectedPayloadBytes": 16776308,
+      "normalizationClones": {
+        "count": 1,
+        "bytes": 16776217
+      },
+      "encryptedEnvelopeSerialization": {
+        "count": 1,
+        "bytes": 16776308
+      },
+      "transportSerialization": {
+        "count": 0,
+        "bytes": 0
+      }
+    },
+    {
+      "name": "large-near-limit",
+      "requests": 1,
+      "textBytesPerRequest": 16776192,
+      "immutable": true,
+      "expectedPayloadBytes": 16776308,
+      "normalizationClones": {
+        "count": 0,
+        "bytes": 0
+      },
+      "encryptedEnvelopeSerialization": {
+        "count": 1,
+        "bytes": 16776308
+      },
+      "transportSerialization": {
+        "count": 0,
+        "bytes": 0
+      }
+    }
+  ]
+}

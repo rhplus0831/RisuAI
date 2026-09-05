@@ -4,12 +4,12 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phases 0, 1 and 2a accepted; executing Phase 2b outbox normalization.
+- State: Phases 0, 1, 2a and 2b accepted; executing Phase 2c cache maintenance.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2b.
-- Next task: normalize each staged durable intent once and derive target metadata
-  from the owned normalized snapshot, preserving public-helper validation.
+- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2c.
+- Next task: detach optional cache writes and coalesce bounded maintenance with
+  generation fences across invalidation and asynchronous storage boundaries.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence are recorded below; Phase 2 implementation is next.
@@ -23,7 +23,7 @@ selected [phase](phases/README.md) for implementation detail.
 | --- | --- | --- | --- |
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
-| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | 2a accepted; executing 2b; 2c–2d queued | Scoped metadata and organization capture |
+| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | 2a–2b accepted; executing 2c; 2d queued | Scoped metadata/organization capture and single outbox normalization |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Pending Phase 2 | None |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
@@ -37,7 +37,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F02 | Open; source-confirmed work | Preparation baseline, narrowed reads/clones, behavior parity |
 | F03 | Fixed; scoped metadata and organization captures | Final combined aggregate and recovery browser closeout pending |
 | F04 | Open; source-confirmed work | Resource progress independent of pruning; cache lifecycle proof |
-| F05 | Open; source-confirmed work | Single-normalization proof and durable-intent parity |
+| F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate and recovery browser closeout pending |
 | F06 | Open; measured bundle cost | Selected-locale loading and fresh preload comparison |
 | F07 | Open; source-confirmed work | Stall baseline, API progress, backup/GC consistency |
 | F08 | Open; measurement required | Residency baseline and recorded implementation/retention decision |
@@ -203,7 +203,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 2a: Organization Capture Accepted (F03 Closed)
 
-- Implementation: accompanying organization-capture commit; metadata precursor
+- Implementation: `4964b4cbc`; metadata precursor
   is `1dff5c13f`. Eight distinct typed captures now serve every live sidebar,
   compact list, branch and import caller. The legacy full-state declaration
   remains solely for compatibility inputs/tests; no live caller invokes it.
@@ -244,3 +244,30 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   deletion now predicts/binds its selection effect at capture/optimistic write
   and freezes scalar ownership before awaiting. Both helper and direct-projection
   regressions pass; core 223, sidebar 67 and compact-list 26 were rerun.
+
+## Phase 2b: Single Outbox Normalization Accepted
+
+- Implementation: accompanying outbox-normalization commit. Public staging and
+  exact replacement capture external intent once. A private continuation derives
+  projection targets and stages any required successor from that owned snapshot;
+  the public target helper still validates external input. No storage format or
+  receipt/replay ordering changes.
+- [After counters](evidence/outbox-normalization-after.json): mutable body copies
+  drop from 2/16/2 to 1/8/1, and processed bytes from
+  306/131,472/33,552,434 to 153/65,736/16,776,217. Recursively frozen JSON bodies
+  still need zero copies. The one encrypted-envelope serialization remains
+  244/66,205/16,776,308 bytes; transport serialization is outside this fixture.
+- Removing the redundant validation pass exposed JSON conversion that introduces
+  an invalid body shape or persisted base revision. The owned JSON result is now
+  checked before any staging effects. Tests also cover mutable caller edits,
+  request-list mutation during conversion, sparse requests, frozen non-JSON
+  canonicalization, cycles/BigInt, request/payload limits, public-helper validation,
+  exact placeholder correction and dispatch-race successor ownership.
+- Focused verification: `pnpm test -- src/ts/server/pendingMutationOutbox.test.ts`
+  (247 passed), `pnpm test -- src/ts/server/pendingMutationOutbox.crossTab.test.ts`
+  (6), and `pnpm test -- src/ts/server/pendingMutationOutbox.workCosts.svelte-node.test.ts`
+  (6). Exact replacement retains its undispatched receipt; ordinary restaging
+  and dispatched predecessors retain fresh-successor and drain semantics.
+- Current recovery guide updated. Prettier, whitespace, current-document and
+  explicit plan link/path checks pass. These counters meet F05's structural
+  budget and make no latency claim; encryption and required body ownership remain.

@@ -306,7 +306,11 @@ export function acceptPendingMutationLocalProjectionToken(token: PendingMutation
 }
 
 export function pendingMutationProjectionTargets(intent: DurableMutationIntent): string[] {
-  const normalized = normalizeIntent(intent)
+  return normalizedPendingMutationProjectionTargets(normalizeIntent(intent))
+}
+
+/** Read metadata only after the caller has captured/validated its owned intent. */
+function normalizedPendingMutationProjectionTargets(normalized: DurableMutationIntent): string[] {
   if (normalized.kind) {
     const operationId = generationOperationIdFromPendingIntent(normalized)
     return operationId ? [`generation-operation:${operationId}`] : []
@@ -522,6 +526,16 @@ export function stagePendingMutation(
 ): PendingMutationHandle {
   const semanticKey = normalizeOutboxKey(key)
   const normalizedIntent = normalizeIntent(intent)
+  return stageNormalizedPendingMutation(semanticKey, normalizedIntent, previous)
+}
+
+/** Internal continuation of the normalization ownership boundary. Replacement
+ * already owns a normalized snapshot and must not recapture its body. */
+function stageNormalizedPendingMutation(
+  semanticKey: string,
+  normalizedIntent: DurableMutationIntent,
+  previous?: PendingMutationHandle | null,
+): PendingMutationHandle {
   const scope = pendingMutationScope
   const replacePrevious =
     !!scope &&
@@ -561,7 +575,7 @@ export function stagePendingMutation(
     phase: 'staged',
     ready,
   }
-  recordPendingMutationProjectionTargets(handle, pendingMutationProjectionTargets(normalizedIntent))
+  recordPendingMutationProjectionTargets(handle, normalizedPendingMutationProjectionTargets(normalizedIntent))
   void ready.then(async (status) => {
     if (status !== 'persisted') retirePendingMutationProjectionGeneration(handle)
     if (status === 'persisted') {
@@ -605,7 +619,10 @@ export async function replaceStagedPendingMutationIntent(
   const replacement = await replacePendingMutationIntentExact(handle, normalizedIntent)
   if (replacement.status === 'replaced') {
     handle.phase = 'superseded'
-    recordPendingMutationProjectionTargets(replacement.handle, pendingMutationProjectionTargets(normalizedIntent))
+    recordPendingMutationProjectionTargets(
+      replacement.handle,
+      normalizedPendingMutationProjectionTargets(normalizedIntent),
+    )
     return replacement
   }
   if (replacement.status === 'unavailable') return { status: 'unavailable' }
@@ -613,7 +630,7 @@ export async function replaceStagedPendingMutationIntent(
   const scope = pendingMutationScope
   if (!scope || !pendingMutationScopeMatchesHandle(scope, handle)) return { status: 'superseded' }
   handle.phase = 'superseded'
-  const successor = stagePendingMutation(handle.key, normalizedIntent)
+  const successor = stageNormalizedPendingMutation(normalizeOutboxKey(handle.key), normalizedIntent)
   const persistence = await successor.ready
   return persistence === 'persisted' ? { status: 'successor', handle: successor } : { status: persistence }
 }
@@ -1415,34 +1432,38 @@ function normalizeIntent(value: unknown): DurableMutationIntent {
     throw new TypeError('Pending mutation intent must be an object')
   }
   const record = value as Partial<DurableMutationIntent>
-  if (record.version !== 1 || !Array.isArray(record.requests)) {
+  const { version, requests: inputRequests, kind, dependencyKeys: inputDependencyKeys } = record
+  if (version !== 1 || !Array.isArray(inputRequests)) {
     throw new TypeError('Unsupported pending mutation intent')
   }
   if (
-    record.kind !== undefined &&
-    record.kind !== 'generation-operation-submit' &&
-    record.kind !== 'generation-operation-cancel' &&
-    record.kind !== 'generation-operation-retry'
+    kind !== undefined &&
+    kind !== 'generation-operation-submit' &&
+    kind !== 'generation-operation-cancel' &&
+    kind !== 'generation-operation-retry'
   ) {
     throw new TypeError('Unsupported pending mutation intent kind')
   }
-  if (record.requests.length === 0 || record.requests.length > MAX_DURABLE_MUTATION_REQUESTS) {
+  const requestCount = inputRequests.length
+  if (!Number.isInteger(requestCount) || requestCount <= 0 || requestCount > MAX_DURABLE_MUTATION_REQUESTS) {
     throw new RangeError('Pending mutation request count is invalid')
   }
-  if (record.kind && record.requests.length !== 1) {
+  if (kind && requestCount !== 1) {
     throw new RangeError('Generation operation pending intents require exactly one request')
   }
+  // Capture the bounded request list before any body JSON conversion can run.
+  const requestInputs = Array.from({ length: requestCount }, (_, index) => inputRequests[index])
   let dependencyKeys: string[] = []
-  if (record.dependencyKeys !== undefined) {
-    if (!Array.isArray(record.dependencyKeys)) {
+  if (inputDependencyKeys !== undefined) {
+    if (!Array.isArray(inputDependencyKeys)) {
       throw new TypeError('Pending mutation dependency keys must be an array')
     }
-    dependencyKeys = normalizeDependencyKeys(record.dependencyKeys)
+    dependencyKeys = normalizeDependencyKeys(inputDependencyKeys)
   }
   return {
     version: 1,
-    ...(record.kind ? { kind: record.kind } : {}),
-    requests: record.requests.map((request) => normalizeRequest(request, record.kind)),
+    ...(kind ? { kind } : {}),
+    requests: requestInputs.map((request) => normalizeRequest(request, kind)),
     ...(dependencyKeys.length === 0 ? {} : { dependencyKeys }),
   }
 }
@@ -1484,37 +1505,42 @@ function normalizeRequest(value: unknown, kind?: DurableMutationIntent['kind']):
     throw new TypeError('Pending mutation request must be an object')
   }
   const request = value as Partial<DurableMutationRequest>
-  if (!['DELETE', 'PATCH', 'POST', 'PUT'].includes(request.method ?? '')) {
+  const { method: inputMethod, path, body: inputBody } = request
+  if (!['DELETE', 'PATCH', 'POST', 'PUT'].includes(inputMethod ?? '')) {
     throw new TypeError('Pending mutation request method is invalid')
   }
   if (
-    typeof request.path !== 'string' ||
-    !request.path.startsWith('/') ||
-    request.path.startsWith('//') ||
-    request.path.includes('..') ||
-    request.path.length > 2_048
+    typeof path !== 'string' ||
+    !path.startsWith('/') ||
+    path.startsWith('//') ||
+    path.includes('..') ||
+    path.length > 2_048
   ) {
     throw new TypeError('Pending mutation command path is invalid')
   }
-  const method = request.method as DurableMutationRequestMethod
+  const method = inputMethod as DurableMutationRequestMethod
   const generationOperationPathAllowed =
-    kind !== undefined && protocolDurableGenerationOperationMatches(kind, method, request.path)
-  const commandPathAllowed =
-    kind === undefined && findProtocolDurableCommandOperation(method, request.path) !== undefined
+    kind !== undefined && protocolDurableGenerationOperationMatches(kind, method, path)
+  const commandPathAllowed = kind === undefined && findProtocolDurableCommandOperation(method, path) !== undefined
   if (!generationOperationPathAllowed && !commandPathAllowed) {
     throw new TypeError('Pending mutation command path is not allowlisted')
   }
-  if (!request.body || typeof request.body !== 'object' || Array.isArray(request.body)) {
+  if (!inputBody || typeof inputBody !== 'object' || Array.isArray(inputBody)) {
     throw new TypeError('Pending mutation request body must be an object')
   }
-  if (kind === undefined && Object.prototype.hasOwnProperty.call(request.body, 'baseRevision')) {
+  if (kind === undefined && Object.prototype.hasOwnProperty.call(inputBody, 'baseRevision')) {
     throw new TypeError('Pending mutation intent must not persist a base revision')
   }
-  return {
-    method,
-    path: request.path,
-    body: isImmutableJsonSnapshot(request.body) ? request.body : cloneJsonValue(request.body),
+  const body = isImmutableJsonSnapshot(inputBody) ? inputBody : cloneJsonValue(inputBody)
+  // JSON conversion can change shape or introduce fields (for example toJSON).
+  // Validate the owned snapshot before any persistence or target registration.
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new TypeError('Pending mutation request body must be an object')
   }
+  if (kind === undefined && Object.prototype.hasOwnProperty.call(body, 'baseRevision')) {
+    throw new TypeError('Pending mutation intent must not persist a base revision')
+  }
+  return { method, path, body }
 }
 
 function isImmutableJsonSnapshot(value: unknown, ancestors = new Set<object>()): boolean {
@@ -1934,12 +1960,14 @@ function normalizeOutboxKey(key: string): string {
 }
 
 function normalizeDependencyKeys(value: readonly unknown[], enforceCount = true): string[] {
-  if (enforceCount && value.length > MAX_DURABLE_MUTATION_DEPENDENCY_KEYS) {
+  const count = value.length
+  if (!Number.isInteger(count) || count < 0 || (enforceCount && count > MAX_DURABLE_MUTATION_DEPENDENCY_KEYS)) {
     throw new RangeError('Pending mutation dependency key count is invalid')
   }
   return Array.from(
     new Set(
-      value.map((dependencyKey) => {
+      Array.from({ length: count }, (_, index) => {
+        const dependencyKey = value[index]
         if (typeof dependencyKey !== 'string') {
           throw new TypeError('Pending mutation dependency key is invalid')
         }

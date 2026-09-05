@@ -1,5 +1,6 @@
 import { IDBFactory } from 'fake-indexeddb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { measureJsonWork } from '../__tests__/browserWorkProbe'
 
 import {
   acceptPendingMutationLocalProjectionToken,
@@ -15,6 +16,7 @@ import {
   listPendingMutationPredecessors,
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
+  MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   isPendingMutationProjectionFenceCurrent,
   pendingMutationAgentCollectionProjectionTarget,
   pendingMutationAgentPresetCollectionProjectionTarget,
@@ -86,6 +88,127 @@ afterEach(async () => {
 })
 
 describe('pending mutation outbox', () => {
+  it.each(['replaced', 'successor'] as const)(
+    'owns one normalized snapshot when a prepared intent is %s',
+    async (expectedStatus) => {
+      const placeholder = stagePendingMutation('settings:runtime', settingsIntent('placeholder'))
+      await placeholder.ready
+      if (expectedStatus === 'successor') {
+        await expect(discardPendingMutation((await listPendingMutations())[0]!.handle)).resolves.toBe('deleted')
+      }
+      const input = settingsIntent('exact captured value')
+      const measured = await measureJsonWork(
+        async () => {
+          const replacement = replaceStagedPendingMutationIntent(placeholder, input)
+          input.requests[0]!.body.patch = { openAIKey: 'caller changed after capture' }
+          return replacement
+        },
+        (stack) => (stack.includes('normalizeRequest') ? 'normalization' : undefined),
+      )
+      expect(measured.result.status).toBe(expectedStatus)
+      expect(measured.counters.normalization?.count).toBe(1)
+      expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+        settingsIntent('exact captured value'),
+      ])
+      if (measured.result.status === 'successor')
+        expect(measured.result.handle.mutationId).not.toBe(placeholder.mutationId)
+    },
+  )
+
+  it.each([
+    { name: 'non-object body', body: [] },
+    { name: 'injected base revision', body: { baseRevision: 9 } },
+  ])('validates the owned JSON snapshot before staging a $name', ({ body }) => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { toJSON: () => body } }],
+    }
+    expect(() => stagePendingMutation('invalid-canonical-body', intent)).toThrow(TypeError)
+    expect(() => pendingMutationProjectionTargets(intent)).toThrow(TypeError)
+  })
+
+  it('captures request headers and membership before a body JSON conversion changes its caller', async () => {
+    const intent = settingsIntent('external')
+    const request = intent.requests[0]!
+    request.body = {
+      toJSON: () => {
+        request.path = '/unsafe-side-effect'
+        intent.requests.length = 0
+        return { patch: { openAIKey: 'owned' } }
+      },
+    }
+    await expect(stagePendingMutation('owned-headers', intent).ready).resolves.toBe('persisted')
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([settingsIntent('owned')])
+    expect(() => stagePendingMutation('sparse', { version: 1, requests: new Array(1) })).toThrow(
+      'request must be an object',
+    )
+  })
+
+  it('continues validating public projection helpers and request bounds', () => {
+    const intent = settingsIntent('external')
+    expect(pendingMutationProjectionTargets(intent)).toEqual([
+      pendingMutationSettingsFieldProjectionTarget('openAIKey'),
+    ])
+    intent.requests[0]!.path = '/unsafe-side-effect'
+    expect(() => pendingMutationProjectionTargets(intent)).toThrow('not allowlisted')
+    for (const requestCount of [0, 101]) {
+      expect(() =>
+        stagePendingMutation('request-limit', {
+          version: 1,
+          requests: Array.from({ length: requestCount }, () => settingsIntent('value').requests[0]!),
+        }),
+      ).toThrow('request count is invalid')
+    }
+    expect(() =>
+      stagePendingMutation('generation-limit', {
+        version: 1,
+        kind: 'generation-operation-submit',
+        requests: [
+          { method: 'POST', path: '/generation-operations', body: {} },
+          { method: 'POST', path: '/generation-operations', body: {} },
+        ],
+      }),
+    ).toThrow('exactly one request')
+  })
+
+  it('normalizes frozen non-JSON numbers and rejects frozen cycles or bigint instead of trusting them', async () => {
+    const input: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/runtime',
+          body: Object.freeze({ patch: Object.freeze({ temperature: NaN, topP: -0, username: undefined }) }),
+        },
+      ],
+    }
+    await expect(stagePendingMutation('canonical-values', input).ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]!.intent.requests[0]!.body).toEqual({
+      patch: { temperature: null, topP: 0 },
+    })
+    const cycle: Record<string, unknown> = {}
+    cycle.self = cycle
+    for (const patch of [Object.freeze(cycle), Object.freeze({ value: 1n })]) {
+      expect(() =>
+        stagePendingMutation('unsupported', {
+          version: 1,
+          requests: [{ method: 'PATCH', path: '/settings/runtime', body: Object.freeze({ patch }) }],
+        }),
+      ).toThrow(TypeError)
+    }
+    expect(await listPendingMutations()).toHaveLength(1)
+  })
+
+  it('keeps oversized staging and replacement unavailable without destroying the durable predecessor', async () => {
+    const placeholder = stagePendingMutation('settings:runtime', settingsIntent('keep predecessor'))
+    await placeholder.ready
+    const oversized = settingsIntent('x'.repeat(MAX_DURABLE_MUTATION_PAYLOAD_BYTES))
+    await expect(stagePendingMutation('oversized', oversized).ready).resolves.toBe('unavailable')
+    await expect(replaceStagedPendingMutationIntent(placeholder, oversized)).resolves.toEqual({ status: 'unavailable' })
+    expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([settingsIntent('keep predecessor')])
+    expect(placeholder.phase).toBe('staged')
+  })
+
   it('encrypts and restores complete generation-operation submit intents', async () => {
     const intent: DurableMutationIntent = {
       version: 1,
