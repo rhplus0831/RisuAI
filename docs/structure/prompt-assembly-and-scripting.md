@@ -48,7 +48,9 @@ cause the row or input-trigger effects to be applied a second time.
 `/api/v1/generate/preview-prompt` performs the same assembly and readiness
 checks without provider dispatch. It can return ordinary HTTP errors because
 SSE headers are not committed. Chat assembly errors become terminal SSE error
-frames. `/api/v1/generate/completion` is the lower-level shaped-message surface;
+frames. Message mutation/restoration envelopes preserve stored nullable
+`name`, `time`, and `translation` metadata; protocol validation accepts those
+nulls without coercing them or dropping full-history fields. `/api/v1/generate/completion` is the lower-level shaped-message surface;
 its provider contract belongs to
 [Providers And Models](providers-and-models.md#chat-dispatch-and-tool-transport).
 

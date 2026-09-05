@@ -346,7 +346,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3: Immutable Agent Reader Inputs Accepted
 
-- Implementation: accompanying shared Agent-input commit. Neutral Agent readers
+- Implementation: `eca180cd1`. Neutral Agent readers
   and validators accept deep readonly records and nested collections; resolution
   retains the borrowed preset identity while normalized records and execution
   steps remain owned mutable outputs. No aggregate server/browser state moves
@@ -357,3 +357,15 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   Frozen modular/legacy inputs and independent nested output edits are covered.
   Prettier, whitespace and documentation checks pass. This supports the ongoing
   immutable generation configuration cutover; F02/F09 remain open.
+
+## Phase 3: Nullable Message Wire Contract Corrected
+
+- Implementation: accompanying generation-wire correction. Command validation
+  already permits stored `time: null`, and generation restoration/mutation
+  envelopes preserve it, but the SSE schema previously accepted numbers only.
+  The schema now describes the supported nullable timestamp without changing
+  emitted payloads or normalizing full-history data.
+- `pnpm test -- packages/protocol/src/generationSse.test.ts`: six passed, including
+  null metadata round trips through mutation/restoration and invalid string
+  rejection. Prettier, whitespace and documentation checks pass. This correction
+  was exposed by concrete prompt types; full F09 acceptance is still pending.

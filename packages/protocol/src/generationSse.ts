@@ -97,7 +97,7 @@ export const PromptChatMessageSchema = Type.Object({
   translation: Type.Optional(Type.Union([PromptChatMessageTranslationSchema, Type.Null()])),
   saying: Type.Optional(Type.String()),
   chatId: Type.Optional(Type.String()),
-  time: Type.Optional(Type.Number()),
+  time: Type.Optional(Type.Union([Type.Number(), Type.Null()])),
   generationInfo: Type.Optional(PromptChatMessageGenerationInfoSchema),
   promptInfo: Type.Optional(PromptChatMessagePresetInfoSchema),
   name: Type.Optional(NullableStringSchema),

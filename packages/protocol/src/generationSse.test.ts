@@ -124,4 +124,44 @@ describe('generation SSE protocol', () => {
       }),
     ).toBe(true)
   })
+  it('preserves nullable stored timestamps in mutation and restoration payloads', () => {
+    const message = {
+      role: 'user',
+      data: 'accepted',
+      chatId: 'message',
+      name: null,
+      time: null,
+      translation: null,
+    } as const
+    const event: PromptChatEvent = {
+      type: 'message_patch',
+      patch: { ...emptyPatch, messageMutations: [{ type: 'append', source: 'user_message', index: 0, message }] },
+    }
+    expect(isPromptChatEvent(event)).toBe(true)
+    const roundTrip = parsePromptChatSseEvent('message_patch', JSON.parse(JSON.stringify(event)))
+    expect(roundTrip).toEqual(event)
+    const restore: PromptChatEvent = {
+      type: 'error',
+      error: 'restore',
+      restoration: {
+        chatId: 'chat-1',
+        characterId: 'character-1',
+        selectedCharID: 0,
+        chatPage: 0,
+        messages: [message],
+      },
+    }
+    expect(parsePromptChatSseEvent('error', JSON.parse(JSON.stringify(restore)))).toEqual(restore)
+    expect(
+      isPromptChatEvent({
+        ...event,
+        patch: {
+          ...event.patch,
+          messageMutations: [
+            { type: 'append', source: 'user_message', index: 0, message: { ...message, time: 'invalid' } },
+          ],
+        },
+      }),
+    ).toBe(false)
+  })
 })
