@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentPresetRecord, AgentPresetStepRecord } from './agentPresetRecords'
+import {
+  normalizeAgentConfiguration,
+  type AgentPresetRecord,
+  type AgentPresetStepRecord,
+  type ReadonlyAgentRecord,
+  type ReadonlyAgentPresetRecord,
+} from './agentPresetRecords'
 import { planAgentPreset, resolveAgentPresetForChat } from './agentPresetResolver'
 import { resolveModelProfile } from './model/modelProfileResolver'
 import type { Database } from './storage/database.svelte'
@@ -65,7 +71,78 @@ function preset(patch: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
   }
 }
 
+function deepFreezeInput<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(deepFreezeInput)
+    Object.freeze(value)
+  }
+  return value
+}
+
 describe('agent preset resolver', () => {
+  it('plans frozen modular defaults in dependency order and preserves borrowed preset selection identity', () => {
+    const configuration = normalizeAgentConfiguration(undefined, [
+      preset({
+        steps: [
+          step({ id: 'first', outputKey: 'first' }),
+          step({ id: 'parallel', outputKey: 'parallel' }),
+          step({
+            id: 'dependent',
+            outputKey: 'dependent',
+            dependencies: ['first', 'parallel'],
+            instruction: '{{agent::first}}',
+          }),
+          step({
+            id: 'after',
+            outputKey: 'after',
+            phase: 'afterMain',
+            inputScopes: ['mainDraft', 'previousAgentOutputs'],
+          }),
+        ],
+      }),
+    ])
+    const agentPresets: readonly ReadonlyAgentPresetRecord[] = deepFreezeInput(configuration.agentPresets)
+    const agents: readonly ReadonlyAgentRecord[] = deepFreezeInput(configuration.agents)
+    const database = Object.freeze({
+      agentPresets,
+      agents,
+      modelProfiles: Object.freeze([]),
+      agentPresetDefaultId: 'ap_default',
+    })
+    const before = JSON.stringify(database)
+    const result = resolveAgentPresetForChat({ database, generationSettings: Object.freeze({}) })
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('expected frozen inputs to be ready')
+    expect(result.preset).toBe(agentPresets[0])
+    expect(result.plan.beforeMain.dependencyLevels).toEqual([
+      { level: 0, stepIds: ['first', 'parallel'] },
+      { level: 1, stepIds: ['dependent'] },
+    ])
+    expect(result.plan.stableSteps.map(({ step }) => step.id)).toEqual(['first', 'parallel', 'dependent', 'after'])
+    expect(result.plan.namedOutputRegistry.map(({ key }) => key)).toEqual(['first', 'parallel', 'dependent', 'after'])
+    expect(result.plan.afterMain.steps[0].preparedInputs.map(({ scope }) => scope)).toEqual([
+      'previousAgentOutputs',
+      'mainDraft',
+    ])
+    expect(result.summary).toMatchObject({
+      beforeMainStepCount: 3,
+      afterMainStepCount: 1,
+      estimatedMaxCallsPerGeneration: 4,
+    })
+    result.plan.stableSteps[0].step.inputScopes.push('memoryContext')
+    result.plan.stableSteps[2].step.dependencies.push('other')
+    expect(JSON.stringify(database)).toBe(before)
+    expect(
+      resolveAgentPresetForChat({ database, generationSettings: Object.freeze({ agentPresetId: '' }) }),
+    ).toMatchObject({ status: 'none' })
+    expect(
+      resolveAgentPresetForChat({
+        database,
+        currentChat: Object.freeze({ generationSettings: Object.freeze({ agentPresetId: 'missing' }) }),
+      }),
+    ).toMatchObject({ status: 'missing', selectedPresetId: 'missing' })
+  })
+
   it('resolves absent, missing, and disabled selections without executing steps', () => {
     expect(resolveAgentPresetForChat({ database: db(), generationSettings: {} })).toMatchObject({
       status: 'none',

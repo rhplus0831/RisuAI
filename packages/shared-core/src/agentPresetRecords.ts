@@ -169,6 +169,15 @@ export interface AgentPresetRecord {
   updatedAt?: number
 }
 
+/** Read-only inputs retain every record field while allowing frozen nested collections. */
+type ReadonlyAgentValue<T> = T extends object ? { readonly [Key in keyof T]: ReadonlyAgentValue<T[Key]> } : T
+
+export type ReadonlyAgentRecord = ReadonlyAgentValue<AgentRecord>
+export type ReadonlyAgentPresetRecord = ReadonlyAgentValue<AgentPresetRecord>
+export type ReadonlyAgentPresetStepRecord = ReadonlyAgentValue<AgentPresetStepRecord>
+export type ReadonlyAgentPresetUseRecord = ReadonlyAgentValue<AgentPresetUseRecord>
+export type ReadonlyAgentToggleDefinition = ReadonlyAgentValue<AgentToggleDefinition>
+
 export type AgentPresetValidationIssueCode =
   | 'duplicate_id'
   | 'invalid_id'
@@ -252,8 +261,8 @@ export function normalizeAgentConfiguration(agentsValue: unknown, presetsValue: 
 }
 
 export function resolveAgentPresetSteps(
-  preset: AgentPresetRecord,
-  agents: readonly AgentRecord[],
+  preset: ReadonlyAgentPresetRecord,
+  agents: readonly ReadonlyAgentRecord[],
 ): AgentPresetStepRecord[] {
   if (!preset.agentUses) return preset.steps.map((step) => cloneStepRecord(step))
 
@@ -311,7 +320,7 @@ export function normalizeAgentPresetDefaultId(
   return agentPresets.some((preset) => preset.id === id) ? id : undefined
 }
 
-export function validateAgentRecords(value: readonly AgentRecord[]): AgentPresetValidationIssue[] {
+export function validateAgentRecords(value: readonly ReadonlyAgentRecord[]): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
   const seen = new Set<string>()
   value.forEach((agent, index) => {
@@ -327,7 +336,7 @@ export function validateAgentRecords(value: readonly AgentRecord[]): AgentPreset
   return issues
 }
 
-export function validateAgentRecord(agent: AgentRecord, path = 'agent'): AgentPresetValidationIssue[] {
+export function validateAgentRecord(agent: ReadonlyAgentRecord, path = 'agent'): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
   if (!isNonEmptyString(agent.id)) issues.push(issue('invalid_id', `${path}.id`, 'Agent id must be a non-empty string'))
   if (!isNonEmptyString(agent.name)) {
@@ -364,8 +373,8 @@ export function validateAgentRecord(agent: AgentRecord, path = 'agent'): AgentPr
 }
 
 export function validateAgentPresetRecords(
-  value: readonly AgentPresetRecord[],
-  agents: readonly AgentRecord[] = [],
+  value: readonly ReadonlyAgentPresetRecord[],
+  agents: readonly ReadonlyAgentRecord[] = [],
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
   const seen = new Set<string>()
@@ -385,9 +394,9 @@ export function validateAgentPresetRecords(
 }
 
 export function validateAgentPresetRecord(
-  preset: AgentPresetRecord,
+  preset: ReadonlyAgentPresetRecord,
   path = 'agentPreset',
-  agents: readonly AgentRecord[] = [],
+  agents: readonly ReadonlyAgentRecord[] = [],
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
 
@@ -526,7 +535,7 @@ export function validateAgentPresetRecord(
 }
 
 export function validateAgentPresetStepRecord(
-  step: AgentPresetStepRecord,
+  step: ReadonlyAgentPresetStepRecord,
   path = 'agentPresetStep',
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
@@ -614,7 +623,7 @@ export function validateAgentPresetStepRecord(
 }
 
 export function validateAgentPresetUseRecord(
-  use: AgentPresetUseRecord,
+  use: ReadonlyAgentPresetUseRecord,
   path = 'agentPresetUse',
 ): AgentPresetValidationIssue[] {
   const issues: AgentPresetValidationIssue[] = []
@@ -673,7 +682,7 @@ export function agentToggleStorageKey(agentId: string, toggleKey: string): strin
 }
 
 function validateAgentToggleDefinitions(
-  toggles: readonly AgentToggleDefinition[],
+  toggles: readonly ReadonlyAgentToggleDefinition[],
   instruction: string,
   path: string,
 ): AgentPresetValidationIssue[] {
@@ -964,17 +973,18 @@ function uniqueMigratedAgentId(stepId: string, presetId: string, usedIds: Set<st
   throw new Error('Unable to allocate migrated Agent id')
 }
 
-function cloneStepRecord(step: AgentPresetStepRecord): AgentPresetStepRecord {
+function cloneStepRecord(step: ReadonlyAgentPresetStepRecord): AgentPresetStepRecord {
+  const { toggles, lorebookInputs, ...fields } = step
   const clone: AgentPresetStepRecord = {
-    ...step,
+    ...fields,
     dependencies: [...step.dependencies],
     model: cloneModelSelection(step.model),
     runtime: { ...step.runtime },
     inputScopes: [...step.inputScopes],
     failurePolicy: cloneFailurePolicy(step.failurePolicy),
   }
-  if (step.toggles) clone.toggles = step.toggles.map(cloneAgentToggleDefinition)
-  if (step.lorebookInputs) clone.lorebookInputs = step.lorebookInputs.map(cloneAgentLorebookInput)
+  if ('toggles' in step) clone.toggles = toggles?.map(cloneAgentToggleDefinition)
+  if ('lorebookInputs' in step) clone.lorebookInputs = lorebookInputs?.map(cloneAgentLorebookInput)
   return clone
 }
 
@@ -988,7 +998,7 @@ function cloneFailurePolicy(policy: AgentPresetStepFailurePolicy): AgentPresetSt
   return policy.mode === 'fallbackText' ? { mode: 'fallbackText', text: policy.text } : { mode: policy.mode }
 }
 
-function cloneAgentToggleDefinition(toggle: AgentToggleDefinition): AgentToggleDefinition {
+function cloneAgentToggleDefinition(toggle: ReadonlyAgentToggleDefinition): AgentToggleDefinition {
   return { ...toggle, options: [...toggle.options] }
 }
 

@@ -317,7 +317,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3: Selected Repository Primitives Accepted; Cutover In Progress
 
-- Implementation: accompanying repository-primitives commit. New preflight
+- Implementation: `93d99a957`. New preflight
   loader returns selected configuration and separate owner metadata without
   reading transcripts/Hypa bodies. New assembly loader reads the selected target
   and required collection bodies; neither scans asset metadata. Root prompt
@@ -343,3 +343,17 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   and F09 remain open. Settings still occupy one configuration JSON row; its
   embedded profile/credential/agent arrays need explicit residual-cost evidence
   before final acceptance rather than a universal constant-cost claim.
+
+## Phase 3: Immutable Agent Reader Inputs Accepted
+
+- Implementation: accompanying shared Agent-input commit. Neutral Agent readers
+  and validators accept deep readonly records and nested collections; resolution
+  retains the borrowed preset identity while normalized records and execution
+  steps remain owned mutable outputs. No aggregate server/browser state moves
+  into shared-core, and selection/dependency/output ordering stays unchanged.
+- Exact focused tests: `pnpm test -- src/ts/agentPresetRecords.test.ts` (16),
+  `pnpm test -- src/ts/agentPresetResolver.test.ts` (12), and
+  `pnpm test -- packages/shared-core/src/agentPresetResolverParity.test.ts` (1).
+  Frozen modular/legacy inputs and independent nested output edits are covered.
+  Prettier, whitespace and documentation checks pass. This supports the ongoing
+  immutable generation configuration cutover; F02/F09 remain open.

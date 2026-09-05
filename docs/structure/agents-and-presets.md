@@ -1,7 +1,7 @@
 # Agents And Presets
 
 Last audited: 2026-08-09.
-Targeted source check: 2026-09-05 (browser Agent Preset owner and command boundary).
+Targeted source check: 2026-09-05 (Agent owner, command boundary, and immutable reader inputs).
 
 This guide owns reusable Agents, Agent Preset records and selection, model
 resolution, module/reference inputs, lorebook inputs, dependency execution,
@@ -22,7 +22,11 @@ output composition, and the command/compatibility surface. Start from the
 ## Record Model
 
 `packages/shared-core/src/agentPresetRecords.ts` is the schema and validation
-owner.
+owner. Its reader/validator inputs accept the deep readonly Agent, preset, use,
+step and toggle views exported alongside the mutable record types. Callers
+retain ownership of those records and nested arrays. Resolvers return the
+borrowed preset as readonly; normalized records and resolved execution steps
+are separately owned mutable outputs.
 
 An `AgentRecord` is reusable behavior: id/name/description/version,
 instruction, optional role-tagged ChatML mode, default model and runtime limits,

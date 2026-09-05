@@ -5,9 +5,15 @@ import {
   normalizeAgentPresets,
   resolveAgentPresetSteps,
   validateAgentRecord,
+  validateAgentRecords,
+  validateAgentPresetRecords,
+  validateAgentPresetStepRecord,
+  validateAgentPresetUseRecord,
   validateAgentPresetRecord,
   type AgentPresetRecord,
   type AgentPresetStepRecord,
+  type ReadonlyAgentRecord,
+  type ReadonlyAgentPresetRecord,
 } from './agentPresetRecords'
 
 function step(patch: Partial<AgentPresetStepRecord> = {}): AgentPresetStepRecord {
@@ -46,7 +52,90 @@ function preset(patch: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
   }
 }
 
+function deepFreezeInput<T>(value: T): T {
+  if (value && typeof value === 'object') {
+    Object.values(value).forEach(deepFreezeInput)
+    Object.freeze(value)
+  }
+  return value
+}
+
 describe('agent preset records', () => {
+  it('validates frozen modular inputs and returns independently mutable resolved and normalized records', () => {
+    const normalized = normalizeAgentConfiguration(undefined, [
+      preset({
+        steps: [
+          step({
+            toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['warm', 'formal'] }],
+            lorebookInputs: [{ key: 'setting', displayName: 'Setting', required: true }],
+            instruction: '{{agentToggle::tone}} {{agentInput::setting}}',
+            failurePolicy: { mode: 'fallbackText', text: 'Fallback' },
+          }),
+        ],
+      }),
+    ])
+    normalized.agentPresets[0].agentUses![0].modelOverride = { mode: 'modelProfile', profileId: 'fast' }
+    normalized.agentPresets[0].agentUses![0].runtimeOverride = { timeoutMs: 5_000 }
+    const agent: ReadonlyAgentRecord = deepFreezeInput(normalized.agents[0])
+    const inputPreset: ReadonlyAgentPresetRecord = deepFreezeInput(normalized.agentPresets[0])
+    const agents = Object.freeze([agent])
+    const before = JSON.stringify({ agent, inputPreset })
+
+    expect(validateAgentRecord(agent)).toEqual([])
+    expect(validateAgentRecords(agents)).toEqual([])
+    expect(validateAgentPresetRecords(Object.freeze([inputPreset]), agents)).toEqual([])
+    expect(validateAgentPresetUseRecord(inputPreset.agentUses![0])).toEqual([])
+    const resolved: AgentPresetStepRecord[] = resolveAgentPresetSteps(inputPreset, agents)
+    expect(resolved[0]).toMatchObject({
+      model: { mode: 'modelProfile', profileId: 'fast' },
+      runtime: { timeoutMs: 5_000, maxInputChars: 20_000 },
+      inputScopes: ['currentUserMessage', 'recentChatTail'],
+    })
+    resolved[0].dependencies.push('other')
+    resolved[0].inputScopes.push('memoryContext')
+    resolved[0].toggles![0].options.push('playful')
+    resolved[0].lorebookInputs![0].displayName = 'Edited'
+    resolved[0].runtime.timeoutMs = 10_000
+    resolved[0].model = { mode: 'inheritMain' }
+    resolved[0].failurePolicy = { mode: 'optional' }
+
+    const owned = normalizeAgentConfiguration(agents, Object.freeze([inputPreset]))
+    owned.agents[0].inputScopes.push('memoryContext')
+    owned.agents[0].toggles![0].options.push('playful')
+    owned.agentPresets[0].agentUses![0].dependencies.push('other')
+    owned.agentPresets[0].agentUses![0].runtimeOverride!.timeoutMs = 12_000
+    expect(JSON.stringify({ agent, inputPreset })).toBe(before)
+  })
+
+  it('copies every nested legacy step collection from frozen input without adding absent optional fields', () => {
+    const inputPreset: ReadonlyAgentPresetRecord = deepFreezeInput(
+      preset({
+        steps: [
+          step({
+            toggles: [{ key: 'tone', label: 'Tone', kind: 'select', options: ['warm'] }],
+            lorebookInputs: [{ key: 'setting', displayName: 'Setting', required: false }],
+            instruction: '{{agentToggle::tone}} {{agentInput::setting}}',
+          }),
+          step({ id: 'aps_second', outputKey: 'second', dependencies: ['aps_context'] }),
+        ],
+      }),
+    )
+    expect(validateAgentPresetRecord(inputPreset)).toEqual([])
+    expect(validateAgentPresetStepRecord(inputPreset.steps[0])).toEqual([])
+    const resolved: AgentPresetStepRecord[] = resolveAgentPresetSteps(inputPreset, Object.freeze([]))
+    expect(resolved).toEqual(inputPreset.steps)
+    expect(Object.hasOwn(resolved[1], 'toggles')).toBe(false)
+    expect(Object.hasOwn(resolved[1], 'lorebookInputs')).toBe(false)
+    resolved[0].toggles![0].options.push('formal')
+    resolved[0].lorebookInputs![0].required = true
+    resolved[1].dependencies.push('other')
+    resolved[1].inputScopes.push('memoryContext')
+    expect(inputPreset.steps[0].toggles![0].options).toEqual(['warm'])
+    expect(inputPreset.steps[0].lorebookInputs![0].required).toBe(false)
+    expect(inputPreset.steps[1].dependencies).toEqual(['aps_context'])
+    expect(inputPreset.steps[1].inputScopes).toEqual(['currentUserMessage', 'recentChatTail'])
+  })
+
   it('migrates embedded steps into standalone Agents and preset uses without deduplicating them', () => {
     const normalized = normalizeAgentConfiguration(undefined, [
       preset({ id: 'ap_a', steps: [step({ id: 'shared_name' })] }),

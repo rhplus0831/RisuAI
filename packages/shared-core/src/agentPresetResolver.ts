@@ -1,12 +1,12 @@
 import {
   AGENT_PRESET_STEP_INPUT_SCOPES,
-  type AgentPresetRecord,
+  type ReadonlyAgentPresetRecord,
   type AgentPresetStepDestination,
   type AgentPresetStepInputScope,
   type AgentPresetStepPhase,
   type AgentPresetStepRecord,
   type AgentPresetValidationIssue,
-  type AgentRecord,
+  type ReadonlyAgentRecord,
   isAgentPresetDirectOutputModifierStep,
   isAgentPresetUserInputModifierStep,
   isValidAgentPresetOutputKey,
@@ -198,20 +198,20 @@ export interface AgentPresetPlanningResult {
 export interface ResolveAgentPresetForChatInput {
   database: AgentPresetResolverDatabase
   currentCharacter?: unknown
-  currentChat?: { generationSettings?: ChatGenerationSettings }
-  generationSettings?: ChatGenerationSettings
+  currentChat?: { generationSettings?: Readonly<Pick<ChatGenerationSettings, 'agentPresetId'>> }
+  generationSettings?: Readonly<Pick<ChatGenerationSettings, 'agentPresetId'>>
   resolvedMainProfile?: ResolvedModelProfile | null
 }
 
 export interface PlanAgentPresetInput {
   database: AgentPresetResolverDatabase
-  preset: AgentPresetRecord
+  preset: ReadonlyAgentPresetRecord
   resolvedMainProfile?: ResolvedModelProfile | null
 }
 
 export interface AgentPresetResolverDatabase {
-  agentPresets: readonly AgentPresetRecord[]
-  agents: readonly AgentRecord[]
+  agentPresets: readonly ReadonlyAgentPresetRecord[]
+  agents: readonly ReadonlyAgentRecord[]
   modelProfiles: readonly { id: string; name: string }[]
   agentPresetDefaultId?: unknown
 }
@@ -233,14 +233,14 @@ export type AgentPresetResolution =
       status: 'disabled'
       ready: true
       selectedPresetId: string
-      preset: AgentPresetRecord
+      preset: ReadonlyAgentPresetRecord
       summary: AgentPresetStatusSummary
     }
   | {
       status: 'invalid'
       ready: false
       selectedPresetId: string
-      preset: AgentPresetRecord
+      preset: ReadonlyAgentPresetRecord
       issues: readonly AgentPresetValidationIssue[]
       summary: AgentPresetStatusSummary
     }
@@ -248,7 +248,7 @@ export type AgentPresetResolution =
       status: 'model_not_ready'
       ready: false
       selectedPresetId: string
-      preset: AgentPresetRecord
+      preset: ReadonlyAgentPresetRecord
       plan: AgentPresetExecutionPlan
       modelReadiness: readonly AgentPresetStepModelReadiness[]
       summary: AgentPresetStatusSummary
@@ -257,7 +257,7 @@ export type AgentPresetResolution =
       status: 'incomplete'
       ready: false
       selectedPresetId: string
-      preset: AgentPresetRecord
+      preset: ReadonlyAgentPresetRecord
       plan: AgentPresetExecutionPlan
       issues: readonly AgentPresetValidationIssue[]
       summary: AgentPresetStatusSummary
@@ -266,7 +266,7 @@ export type AgentPresetResolution =
       status: 'ready'
       ready: true
       selectedPresetId: string
-      preset: AgentPresetRecord
+      preset: ReadonlyAgentPresetRecord
       plan: AgentPresetExecutionPlan
       summary: AgentPresetStatusSummary
     }
@@ -386,7 +386,7 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
 }
 
 export function planAgentPreset(input: PlanAgentPresetInput): AgentPresetPlanningResult {
-  const agents = Array.isArray(input.database.agents) ? input.database.agents : []
+  const agents: readonly ReadonlyAgentRecord[] = Array.isArray(input.database.agents) ? input.database.agents : []
   const resolvedSteps = resolveAgentPresetSteps(input.preset, agents)
   const recordIssues = validateAgentPresetRecord(input.preset, 'agentPreset', agents)
   const planningIssues = validatePhaseLocalDependencies(resolvedSteps)
@@ -430,11 +430,11 @@ export function createAgentPresetStatusSummary({
   agents = [],
 }: {
   status: AgentPresetResolutionStatus
-  preset: AgentPresetRecord
+  preset: ReadonlyAgentPresetRecord
   issues?: readonly AgentPresetValidationIssue[]
   modelReadiness?: readonly AgentPresetStepModelReadiness[]
   disabledAsNoop?: boolean
-  agents?: readonly AgentRecord[]
+  agents?: readonly ReadonlyAgentRecord[]
 }): AgentPresetStatusSummary {
   const enabledSteps = disabledAsNoop ? [] : resolveAgentPresetSteps(preset, agents).filter((step) => step.enabled)
   const beforeMainStepCount = enabledSteps.filter((step) => step.phase === 'beforeMain').length
@@ -459,7 +459,7 @@ export function createAgentPresetStatusSummary({
 }
 
 function buildExecutionPlan(
-  preset: AgentPresetRecord,
+  preset: ReadonlyAgentPresetRecord,
   enabledSteps: readonly AgentPresetStepRecord[],
   modelReadinessByStepId: ReadonlyMap<string, AgentPresetStepModelReadiness>,
 ): AgentPresetExecutionPlan {
@@ -851,7 +851,7 @@ function directModifierStatus(enabledSteps: readonly AgentPresetStepRecord[]): A
 
 export function resolveEffectiveAgentPresetId(
   database: Pick<AgentPresetResolverDatabase, 'agentPresetDefaultId'>,
-  settings: ChatGenerationSettings | undefined,
+  settings: Readonly<Pick<ChatGenerationSettings, 'agentPresetId'>> | undefined,
 ): string | undefined {
   if (settings && Object.prototype.hasOwnProperty.call(settings, 'agentPresetId')) {
     return nonBlankAgentPresetId(settings.agentPresetId)
