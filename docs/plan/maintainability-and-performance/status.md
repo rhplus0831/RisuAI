@@ -684,3 +684,28 @@ new-upload detection, grace semantics or stale-scan cancellation.
 The batched implementation passes the 19 existing GC cases and 17 scheduling
 cases, including a held four-read batch that drains completely on cancellation
 before backup admission resumes. Final timing acceptance remains pending.
+
+## Phase 4 Backup Worker Decision Before Implementation
+
+The bounded asynchronous copier preserves correctness and allows request/stream
+progress, but repeated isolated measurements still exceed the original backup
+stall budget. V8 diagnostics show that long tiny-file traversal admits thousands
+of concurrent-probe responses and repeatedly triggers 16–26 ms collections in
+the API process. Directory buffering and small-file hash allocation reduce total
+work but do not resolve this failure. Keep those failed measurements visible.
+
+Move file copy/hash execution into two private Node worker threads per backup,
+with at most one batch of 16 file descriptors in flight per worker and no queued
+batches. Each worker handles its batch sequentially with a reusable 64 KiB hash
+buffer. No file payload crosses the worker message boundary. Shared cancellation
+is checked between files/hash reads; an uncancellable native copy must finish
+before worker drain. Close every worker before cleanup, publication or lease
+release. Reference discovery, snapshot authority, manifest/retention, and all
+live-file mutation policy remain in the existing main-thread owners.
+
+The test-seam Luna review supports keeping repository publication/lease tests
+and adding real-worker drain/bounds tests. Its packaging worker timed out;
+local source confirms `api:start` executes TS source through `tsx` and the
+existing bounded-regex worker already runs plain Node worker code. The new
+worker entry must execute in native Node without importing app/SQLite state,
+and exact tests must exercise that entry rather than only a fake executor.
