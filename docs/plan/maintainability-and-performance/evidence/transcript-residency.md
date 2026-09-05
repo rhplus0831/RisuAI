@@ -378,3 +378,66 @@ The successful compact test's in-memory attachment was not persisted by the
 list reporter; only its asserted outcomes are available for this run. The probe
 now writes those observations explicitly, and the final normal lane at the
 accepted clean cost source must retain them before closeout.
+
+## Accepted working-window costs and final native verification
+
+Runtime source `f384980479a3e0a82c7ab9b25771f6222a0275b5` is unchanged and clean
+through both final lanes. [Complete accepted cost evidence](transcript-after.json)
+retains ten measured journeys, 234 stages, eighteen 48-frame sweeps (864 frame
+samples), eighteen settlements and every original-budget comparison. One worker,
+one repetition and the original 30/180/600 fixture/profile matrix ran without
+competing tests, builds or research; trace and diagnostic/profile flags were off.
+Node 24.19.0 and Chromium 151.0.7922.34 ran on Linux x64, Ryzen 9 9950X with ten
+available CPUs. There are nine intentional functional-only skips in this lane.
+
+| Profile | Messages | Mounted after traversal | Post-GC heap MiB | Accumulated scroll p95 ms | Older-page layout+style p95 ms | Post-scroll settlement ms |
+| --- | --- | --- | --- | --- | --- | --- |
+| Desktop | 30 | 30 | 15.919 | 16.9 | — | 61.6 |
+| Desktop | 180 | 31 | 20.806 | 17.4 | 21.563 | 524.7 |
+| Desktop | 600 | 31 | 23.818 | 18.6 | 25.219 | 1,440.3 |
+| Mobile | 30 | 30 | 14.904 | 16.8 | — | 60.5 |
+| Mobile | 180 | 31 | 19.648 | 17.5 | 22.769 | 421.3 |
+| Mobile | 600 | 31 | 22.622 | 18.6 | 22.148 | 1,273.2 |
+| Mobile 4× CPU | 30 | 30 | 14.901 | 17.9 | — | 86.2 |
+| Mobile 4× CPU | 180 | 31 | 19.798 | 22.8 | 122.400 | 2,275.3 |
+| Mobile 4× CPU | 600 | 31 | 22.655 | 25.1 | 110.792 | 3,380.3 |
+
+All original scroll limits pass (33.8/33.8/35.2 ms); all large retained-heap
+limits pass (71.180/64.864/64.873 MiB); all large page layout/style limits pass
+(52.876/49.112/257.032 ms). Ordinary residency never exceeds 31 during the cost
+matrix, within the original hard limit of 76. Maximum visible-anchor drift is
+0.015625 pixels against one pixel. Every settlement ends with complete readable,
+source-correct viewport coverage and zero spacer pixels. Page work includes
+admission, source-body parsing and local-image completion. Post-scroll settlement
+is explicit and precedes the forced-GC heap sample, so bounded DOM does not imply
+instant arrival of every visible body during rapid movement.
+
+The large deep jumps take 1.272/2.239/4.129 seconds and 30 display-source responses
+each, compared with 20.726/17.211/74.686 seconds and 570 responses in the repeated
+baseline. These combine hydration, parsing and mounting. The full screenshot
+still mounts 36 rows temporarily, restores 30 and downloads 1,327,282 PNG bytes;
+its 3.992-second capture and canvas peak remain separate from ordinary heap.
+
+[Final native evidence](transcript-final-native.json) retains all sixteen case
+results and exact commands: transcript residency twelve, chat startup three,
+and debug-echo layout/recovery one. All ran sequentially at the same clean source
+with cost, profile, diagnostic and legacy environment flags unset. This includes
+eight separately accepted one-click saves with authoritative text checks,
+selection/copy, folded anchors, jump cancellation, keyboard gap navigation,
+legacy rollback, and screenshot success/failure/cancellation. The compact test
+retains all eighty per-row observations across two positions: forty source-text
+rows are visible, forty-six are mounted, wrapper and body heights are 20 pixels,
+and source text lies inside each wrapper. Both positions cover all 784 viewport
+pixels with zero spacer; settlements take 981.5/877.7 ms. Rapid movement has
+74/74 readable samples while admission is busy, then settles in 401.9 ms with
+31 mounted rows and complete coverage.
+
+This accepts F08 within the recorded rich-text and compact-layout envelope.
+Small-case heap and frame cost remain similar; the main measured improvement
+is the scaling case. Hydrated data still grows with explicit older-page loads;
+residency bounds DOM work, not the authoritative transcript or every parser cost.
+The current owner and residual workflow limits are documented in
+[the chat UI guide](../../../../src/docs/svelte-chat-ui.md#transcript-hydration-and-paging).
+Revisit on a supported layout exceeding the row/coverage/anchor budgets, loss of
+reserved interaction state, or a required workflow that needs unmounted DOM.
+Final aggregate and cross-feature recovery remain Phase 6 gates.

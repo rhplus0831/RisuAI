@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–4 accepted; Phase 5 viewport residency implementation authorized by remeasurement.
+- State: Phases 0–5 accepted; Phase 6 shared policy and final verification in progress.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: measure the revised 30-row working target with compact-layout growth at a
-  clean source commit; all original performance limits remain unchanged.
+- Next phase: [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md).
+- Next task: move the unchanged trigger compatibility catalog and diagnostics into
+  shared-core, then verify all findings together and archive the completed workstream.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -26,8 +26,8 @@ selected [phase](phases/README.md) for implementation detail.
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Accepted | [Bounded discovery/workers, guarded GC and original latency limits](evidence/maintenance-scheduling.md) |
-| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Implementing measured viewport bound | [Decision and repeated baseline](evidence/transcript-residency.md) |
-| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
+| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Accepted | [Original budgets and final native checks](evidence/transcript-residency.md#accepted-working-window-costs-and-final-native-verification) |
+| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Implementing shared owner | Final combined verification pending |
 
 ## Finding Dispositions
 
@@ -40,7 +40,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
 | F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
 | F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | Final combined aggregate pending |
-| F08 | Open; bounded residency implemented, progressive scrolling and anchor correction under verification | Unchanged full after-cost matrix and final native checks |
+| F08 | Fixed; bounded adaptive residency meets original costs and native interaction gates | Final combined aggregate pending |
 | F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
 | F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
 
@@ -903,3 +903,17 @@ legacy rollback and capture restoration pass. Focused residency 11,
 transcript-window 105 and startup 4 cases pass. The implementation now requires
 its clean-commit full unprofiled matrix; Phase 5 is not accepted by functional
 success alone.
+
+### Phase 5 accepted
+
+Source `f384980479a3e0a82c7ab9b25771f6222a0275b5` passes the full isolated ten-case
+unprofiled matrix and all sixteen final native cases. [Every measured stage,
+scroll frame and settlement](evidence/transcript-after.json) and [final native
+observations](evidence/transcript-final-native.json) are retained. Large
+scrolling p95 is 18.6/18.6/25.1 ms against original limits 33.8/33.8/35.2;
+retained heap and page layout/style also pass. Maximum measured ordinary
+residency is 31 and anchor drift is 0.015625 pixels. Compact native layouts
+show 40 visible source rows with 46 mounted, complete coverage and zero spacer.
+Large post-scroll settlement remains 1.440/1.273/3.380 seconds, measured before
+forced GC, with source-correct readable content. All earlier failures remain
+visible; no original budget or workload was relaxed. Phase 6 is now authorized.
