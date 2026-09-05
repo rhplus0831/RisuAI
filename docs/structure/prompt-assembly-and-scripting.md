@@ -84,6 +84,11 @@ lookups. The route's `createGenerationAssemblyResources()` memoizes only within
 that preparation; accepted sends, operation retries, and subsequent preparations
 read current authoritative inputs again.
 
+Repository query preparation retains at most 16 fixed SQLite programs per
+database in a weakly keyed map; it never caches query results. Selectors exceeding
+4,096 bound bytes bypass retention because prepared statements retain their
+last parameter values. Every invocation still reads authoritative rows.
+
 The settings document remains one JSON row, including profile credentials and
 embedded Agent records. Its parsing cost scales with configuration size. The
 selected result excludes unused extracted collections, unrelated character/chat

@@ -98,3 +98,24 @@ or reference index requiring authoritative rebuilds is introduced. Current
 ownership and rollback contracts live in
 [assets and saves](../../../structure/assets-and-saves.md) and
 [backend lifecycle](../../../structure/backend.md).
+
+Revisit triggers remain attached to these owners:
+
+- `repository.ts` owns synchronous public listing and journaled restore phases.
+  If a reported listing/restore stall is reproduced, add its actual manifest/file
+  dimensions to a separate latency probe before extending worker ownership;
+  the accepted backup/GC timings do not establish bounds for those operations.
+- `assetReferenceScan.ts` owns projected-row scanning. Revisit storage
+  projection/chunking when a single reported row or legacy parse exceeds the
+  four-millisecond cooperative target, or new supported reference-bearing data
+  cannot be projected without a full scalar. The current measured largest row
+  is 333 bytes; arbitrary existing values are not limited by that fixture.
+- `backupCopyWorker.ts` and its pool own uncancellable native copy/hash calls.
+  Revisit chunked copy when a reproduced cancellation/shutdown delay is dominated
+  by one file; retain drain-before-cleanup/publication while changing it. The
+  measured fixture uses 1 KiB assets and makes no single-large-file drain claim.
+- `assetGc.ts` owns conservative freshness stops. If repeated scheduled sweeps
+  remain stale or skipped and candidates grow across an otherwise quiescent
+  interval, inspect their recorded status/counts and reference/activity fences
+  before adding resumable progress. Never weaken reference protection to finish
+  a sweep during accepted writes.
