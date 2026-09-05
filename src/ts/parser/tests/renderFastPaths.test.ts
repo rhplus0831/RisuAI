@@ -109,6 +109,17 @@ describe('ParseMarkdown sentence paragraph mode gating', () => {
 })
 
 describe('trimMarkdown decoded-style sanitization', () => {
+  it('skips empty initial output while still sanitizing whitespace and nonempty markup', () => {
+    const sanitize = vi.spyOn(DOMPurify, 'sanitize')
+    expect(trimMarkdown('')).toBe('')
+    expect(sanitize).not.toHaveBeenCalled()
+
+    expect(trimMarkdown(' ')).toBe(' ')
+    expect(sanitize).toHaveBeenCalledTimes(1)
+    expect(trimMarkdown('<p onclick="alert(1)">safe</p><script>alert(1)</script>')).toBe('<p>safe</p>')
+    expect(sanitize).toHaveBeenCalledTimes(2)
+  })
+
   it('re-sanitizes markup introduced by decodeStyle', () => {
     const injectedCss = '</style><script data-security-marker>alert(1)</script>{color:red}'
     const payload = `<risu-style>${Buffer.from(injectedCss).toString('hex')}</risu-style>`

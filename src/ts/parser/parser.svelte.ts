@@ -1355,6 +1355,7 @@ export function chatHtmlRenderPolicyKey(): string {
 }
 
 export function trimMarkdown(data: string) {
+  if (data === '') return ''
   let sanitized = DOMPurify.sanitize(data, {
     ADD_TAGS: [
       'iframe',

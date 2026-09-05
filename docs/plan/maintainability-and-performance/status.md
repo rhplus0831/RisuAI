@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: verify bounded reuse of unchanged keyed row entries against the complete
-  unprofiled matrix; preserve the unchanged budgets and deferred-settlement evidence.
+- Next task: verify the exact-empty-body render fast path after identity reuse reduced
+  the throttled scroll miss; preserve all original budgets and settlement evidence.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -859,3 +859,13 @@ ordinary row entries (maximum 76), invalidates changed row records, and clears
 on full/legacy rendering, scope changes and destruction. Ten focused residency
 and 105 transcript-window tests pass; original unprofiled cost acceptance remains
 open. No sanitizer behavior, workload or numerical budget changes.
+
+### Phase 5 entry identity improves throttled scrolling; empty-body correction next
+
+The complete `4c4019e8a` comparison passes all ten journeys and every original
+budget except throttled accumulated scrolling: 39.5/39.8 ms p95 at 180/600 rows
+versus 35.2 ms. [All stages and the budget assessment](evidence/transcript-residency-entry-costs.json)
+are retained. The next narrow correction skips sanitizer work for exactly empty
+initial bodies while preserving every nonempty path; 13 focused parser tests
+pass. Geometry remains unchanged. Phase 5 stays open until original numeric
+limits and final native interactions pass together.

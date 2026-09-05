@@ -305,3 +305,26 @@ reactive nested message fields retain their subscriptions. No HTML/result cache
 or message copy is added. Ten focused geometry/admission/identity cases and
 105 transcript-window/interaction cases pass. A fresh unprofiled matrix must
 establish whether this reduces the remaining throttled frame cost enough.
+
+### Entry-identity comparison: smaller remaining throttled miss
+
+Source `4c4019e8a`; [all ten journeys and original-budget assessment](transcript-residency-entry-costs.json).
+The unprofiled matrix completes ten measured cases in 4.2 minutes, with eight
+intentional functional-only skips. All geometry/heap/page-layout gates pass;
+maximum ordinary residency is 61 and anchor drift is 0.015625 pixels.
+Large desktop/mobile/4× CPU retained heap is 29.194/27.497/27.617 MiB and
+older-page layout/style p95 is 27.282/25.313/138.107 ms. Large scrolling p95 is
+19.9/19.7/39.8 ms. Throttled 180-message scrolling is 39.5 ms, so both throttled
+scaling cases still exceed the unchanged 35.2 ms limit. Identity reuse materially
+reduces the preceding 63.9/60.6 ms results but does not yet accept Phase 5.
+
+Large post-scroll settlement remains explicit at 1.941/2.894/6.030 seconds;
+every settled viewport contains source-correct readable content and no spacer.
+The next narrow correction avoids sanitizing exactly empty initial bodies:
+`trimMarkdown('')` returns the same empty output immediately. All nonempty input,
+whitespace, hooks, decoded-style re-sanitization and downstream metadata retain
+their existing path. The preceding profile measured 67.936 ms of sanitization
+under blank-body construction versus 3.653 ms on later HTML updates. Thirteen
+focused parser cases pass, including unsafe decoded markup and image-policy
+changes. Geometry behavior is unchanged for this comparison; another complete
+unprofiled matrix remains required.

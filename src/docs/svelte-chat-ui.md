@@ -100,7 +100,9 @@ unchanged keyed row-entry objects, avoiding invalidation of every mounted row.
 most 76, and compares row reference, key and residency ID. Changed row records
 replace entries; nested reactive message fields remain observable. Eviction
 forgets entries immediately, and full/legacy rendering, chat changes and
-destruction clear this identity owner. It does not cache HTML or message copies.
+destruction clear this identity owner. It does not cache HTML or message copies. The parser also returns exactly empty
+initial bodies before sanitizer setup; nonempty HTML and decoded styles retain
+the existing sanitization path.
 
 Measured reverse-flow spacers preserve omitted height; a chat-scoped cache holds
 at most 2,048 fractional-pixel measurements and resets on width changes. A visible
