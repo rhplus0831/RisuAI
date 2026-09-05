@@ -120,3 +120,37 @@ restores native anchoring; interaction admission remains active. The existing
 real-browser cases also pass, including delayed display readiness, latest-row
 anchors, first-token waiting and foreground recovery. All 14 required native
 functional cases pass; unchanged full cost-matrix acceptance remains pending.
+
+## First isolated cutover measurement: scrolling still open
+
+Source `497aa1eaf`; [all ten retained cases](transcript-residency-first-costs.json).
+The unchanged isolated cost command completed ten measured cases in four minutes;
+seven functional-only cases were intentionally skipped. All measured geometry
+and row assertions passed. Every measurement/frame is retained; no sample or
+budget was removed. Functional success does not imply timing acceptance.
+
+| Profile | Messages | Mounted rows after traversal | Post-GC heap MiB | Scroll p95 ms | Older-page layout+style p95 ms |
+| --- | --- | --- | --- | --- | --- |
+| Desktop | 30 | 30 | 16.057 | 16.9 | — |
+| Desktop | 180 | 61 | 29.149 | 49.5 | 19.204 |
+| Desktop | 600 | 61 | 30.384 | 67.5 | 18.234 |
+| Mobile | 30 | 30 | 14.946 | 16.9 | — |
+| Mobile | 180 | 61 | 26.436 | 38.0 | 15.175 |
+| Mobile | 600 | 61 | 29.121 | 64.2 | 17.756 |
+| Mobile 4× CPU | 30 | 30 | 15.019 | 18.0 | — |
+| Mobile 4× CPU | 180 | 61 | 27.594 | 177.8 | 84.116 |
+| Mobile 4× CPU | 600 | 61 | 29.190 | 288.6 | 76.225 |
+
+All large heap and page-layout budgets pass, but rapid scrolling exceeds the
+original 33.8/33.8/35.2 ms limits. Phase 5 remains open. All accumulated windows
+remain at 61 mounted rows; maximum measured anchor drift is 0.015625 pixels.
+Large jumps take 2.325/2.343/6.352 seconds, with 60 display-source responses each.
+Screenshot materialization remains separate: 36 peak rows, 30 restored rows,
+1,327,282 PNG bytes and 3.576 seconds.
+
+Two independent read-only source checks identify per-frame window replacement,
+row construction and forced geometry as likely contributors. Background
+Markdown already uses a serial idle scheduler; the entire Chat subtree still
+mounts synchronously. A diagnostic CPU profile will distinguish that work before
+the next implementation. No phase acceptance, latency-budget amendment or
+fixture change is authorized by these failed measurements.

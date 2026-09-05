@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: verify the committed viewport residency cutover against the unchanged
-  transcript cost matrix and existing startup/layout browser checks.
+- Next task: reduce rapid-scroll row construction cost; the first cutover meets
+  heap/layout/row/anchor gates but exceeds the original scroll budgets.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -792,3 +792,12 @@ interaction admission remains active. Focused transcript-window 105, startup 4
 and transcript-owner 10 cases pass. Existing native startup (3) and debug-echo
 layout/recovery (1) cases pass: 14 native cases total. Unchanged full cost-matrix
 acceptance remains open.
+
+### Phase 5 first cost comparison remains unaccepted
+
+`497aa1eaf` passes all 14 native functional checks. The full isolated ten-case
+cost matrix passes row/anchor assertions and original large heap/page-layout
+budgets, but 600-row scrolling p95 is 67.5/64.2/288.6 ms versus unchanged limits
+33.8/33.8/35.2. [Every sample is retained](evidence/transcript-residency-first-costs.json).
+Phase 5 stays open for measured scroll-cost correction; Phase 6 implementation
+still waits for its acceptance.
