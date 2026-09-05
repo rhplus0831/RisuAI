@@ -25,8 +25,13 @@ The finite server domain covers settings, provider/memory views, metadata-only
 preflight, character, chat, message, lore, regex, and prompt metadata. Known
 misspellings and wrong value types fail strict compilation. Runtime decoders
 check persisted known fields against a schema generated from those types; they
-preserve identity and unknown extension data without coercion, defaults, field
-stripping, or deep copies. Error messages include domain/path and omit values.
+preserve valid-input identity and unknown extension data without validator
+coercion, defaults, field stripping, or deep copies. The explicit compatibility
+exception is `normalizeLegacyHypaSelection`: a malformed non-null/non-string
+stable Hypa ID becomes `null` in a shallow root overlay, preserving established
+no-selection behavior. Preflight also overlays its enclosing input when needed;
+nested identities and the original input remain unchanged. Three decoder cases
+cover numeric, boolean and object IDs. Error messages include domain/path and omit values.
 Sparse supported options and nullable stored message metadata remain valid.
 
 CBS gets an explicit finite adapter with required scalar defaults. Lua full-chat

@@ -92,8 +92,12 @@ bodies, and asset metadata. Legacy embedded-character storage has an explicit
 
 `server/fastify/src/prompt/serverTypes.ts` owns finite generation, provider,
 memory, preflight, and nested record views. `generationInputDecoder.ts` validates
-unknown persisted inputs without coercion, defaults, field stripping, or graph
-cloning. Its checked-in schema and standalone validators are generated from those types
+unknown persisted inputs without validator coercion, defaults, field stripping,
+or graph cloning. One compatibility adapter preserves established Hypa selection
+behavior: a present, non-null, non-string `selectedHypaV3PresetId` becomes `null`
+in a shallow root overlay (and a preflight envelope when needed). Nested objects
+and the caller's input remain unchanged; valid input retains identity.
+Its checked-in schema and standalone validators are generated from those types
 by `util/generation-input-schema.ts`; the decoder regression checks schema,
 JavaScript and finite declaration synchronization plus runtime-Ajv parity.
 Production does not compile the schema during startup.
