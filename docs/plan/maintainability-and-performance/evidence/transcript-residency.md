@@ -219,3 +219,28 @@ body/hydration updates can alter it ahead of the reconciliation frame. That
 addition requires the fresh cost build and final native run. Failure-only probe
 serialization preserves completed samples and the failing sampled stage before
 throwing, without additional reads/writes on successful measurement paths.
+
+### Anchor-corrected comparison: page-settlement probe gap
+
+Source `76db02c20`; [four completed journeys and the full partial failure](transcript-residency-anchor-first-costs.json).
+Desktop30/180/600 and mobile30 complete. Desktop600 preserves all 38 older-page
+anchors and records 19.8 ms scrolling p95, 29.672 MiB retained heap, and 29.036
+ms older-page layout/style p95. Its separately measured post-scroll settlement
+is 2.902 seconds. These partial results do not accept the whole matrix.
+
+Mobile180 stops at older-page4 with a reported 548-pixel delta. The captured
+row109 was already 1,451.234 pixels below the viewport top; the viewport is only
+784 pixels tall. The probe chose the last mounted DOM row without checking its
+visibility. Its previous page completion waited for currently mounted bodies
+and images, but did not wait for progressive admission to finish, so the next
+scroll could land in a still-unmounted gap. The retained partial report contains
+all preceding stages, the actual failing sample, and separately timestamped
+post-failure row/spacer geometry; later measured cases did not run.
+
+The probe correction includes admission completion in each existing measured
+page action, verifies current bodies/images again after settling frames, and
+requires a visible anchor when the unchanged older-edge scroll is applied.
+It preserves the exact page count, scroll positions, 48-frame sweep, and original
+row/heap/layout/one-pixel budgets. This strengthens page completion and includes
+deferred work in the measured page cost. A fresh complete matrix remains
+required; the offscreen assertion is not silently deleted or treated as a pass.

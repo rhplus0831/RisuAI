@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: verify the progressive-admission anchor correction and finish the
-  unchanged full scroll/heap/layout matrix; partial failed journeys must be retained.
+- Next task: verify complete page admission and visible anchors in the strengthened probe,
+  then finish the full scroll/heap/layout matrix with unchanged workloads and budgets.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -824,3 +824,15 @@ are retained; that version did not serialize the failed journey's earlier stages
 The next probe preserves partial failed journeys. Anchor selection is being
 corrected from component insertion order to visual first-row order. Phase 5
 remains open; no tolerance or fixture is changed.
+
+### Phase 5 page-settlement probe correction
+
+At `76db02c20`, desktop30/180/600 and mobile30 complete; desktop600 passes all
+38 older-page anchors and records 19.8 ms scroll p95 and 29.672 MiB retained
+heap. Mobile180 then reports 548 pixels against an anchor that was already
+below the viewport at capture. The old page-completion helper did not wait for
+progressive admission, and its last-mounted-row anchor could be offscreen.
+[The four journeys and complete partial failure](evidence/transcript-residency-anchor-first-costs.json)
+are retained. The next probe includes admission/body/image completion in page
+cost and requires a visible anchor. No workload or acceptance budget changes;
+Phase 5 remains open until a complete comparison and final native checks pass.

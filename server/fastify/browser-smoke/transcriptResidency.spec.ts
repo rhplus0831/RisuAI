@@ -1221,26 +1221,46 @@ async function waitForRenderedRows(page: Page, timeout = 30_000): Promise<void> 
   await expect
     .poll(
       () =>
-        page
-          .locator(ROWS)
-          .evaluateAll(
-            (rows) =>
-              rows.length > 0 &&
-              rows.every((row) => row.querySelector('.chat-message-body')?.textContent?.includes('Residency row')),
-          ),
+        page.locator(WINDOW).evaluate(async (owner) => {
+          const read = () => {
+            const rows = Array.from(
+              owner.querySelectorAll<HTMLElement>('.risu-chat[data-risu-message-id^="residency-message-"]'),
+            )
+            return {
+              ids: rows.map((row) => row.dataset.risuMessageId),
+              windowRows: owner.getAttribute('data-transcript-window-rows'),
+              ready:
+                owner.isConnected &&
+                owner.getAttribute('aria-busy') === 'false' &&
+                rows.length > 0 &&
+                rows.every(
+                  (row) =>
+                    row.querySelector('.chat-message-body')?.textContent?.includes('Residency row') &&
+                    Array.from(row.querySelectorAll<HTMLImageElement>('img[alt^="Residency image"]')).every(
+                      (image) => image.complete && image.naturalWidth > 0,
+                    ),
+                ),
+            }
+          }
+          const before = read()
+          if (!before.ready) return false
+          // Keep the existing three settling frames inside the measured action,
+          // then recheck every current row: an admitted or resized row can change
+          // the residency window while previously ready bodies are settling.
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+          )
+          const after = read()
+          return (
+            after.ready &&
+            after.windowRows === before.windowRows &&
+            after.ids.length === before.ids.length &&
+            after.ids.every((id, index) => id === before.ids[index])
+          )
+        }),
       { timeout },
     )
     .toBe(true)
-  await expect
-    .poll(() =>
-      page
-        .locator(`${ROWS} img[alt^="Residency image"]`)
-        .evaluateAll((images) =>
-          images.every((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
-        ),
-    )
-    .toBe(true)
-  await settleFrames(page)
 }
 
 async function settleFrames(page: Page): Promise<void> {
@@ -1264,19 +1284,20 @@ async function currentAnchor(page: Page): Promise<Anchor | null> {
   })
 }
 
-async function scrollToOlderEdge(page: Page): Promise<Anchor | null> {
+async function scrollToOlderEdge(page: Page): Promise<Anchor> {
   return page.locator(TRANSCRIPT).evaluate((transcript) => {
     transcript.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }))
     transcript.scrollTop = -transcript.scrollHeight
-    const rows = transcript.querySelectorAll<HTMLElement>('.risu-chat[data-risu-message-id]')
-    const oldest = rows.item(rows.length - 1)
-    const anchor = oldest
-      ? {
-          id: oldest.dataset.risuMessageId!,
-          top: oldest.getBoundingClientRect().top - transcript.getBoundingClientRect().top,
-        }
-      : null
+    const viewport = transcript.getBoundingClientRect()
+    const visible = Array.from(transcript.querySelectorAll<HTMLElement>('.risu-chat[data-risu-message-id]'))
+      .filter((row) => Number(row.dataset.chatIndex) >= 0)
+      .map((row) => ({ id: row.dataset.risuMessageId!, rect: row.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom)
+      .sort((left, right) => left.rect.top - right.rect.top)
+    const first = visible[0]
+    const anchor = first ? { id: first.id, top: first.rect.top - viewport.top } : null
     transcript.dispatchEvent(new Event('scroll'))
+    if (!anchor) throw new Error('Older-edge scroll has no viewport-intersecting resident message to anchor')
     return anchor
   })
 }
