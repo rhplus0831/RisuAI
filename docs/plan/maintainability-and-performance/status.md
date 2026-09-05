@@ -33,7 +33,7 @@ selected [phase](phases/README.md) for implementation detail.
 
 | Finding | Disposition | Missing completion evidence |
 | --- | --- | --- |
-| F01 | Fixed; targeted creation and pre-normalization receipt fingerprint | Final combined aggregate remains pending |
+| F01 | Creation fixed; confirmed Agent Preset deletion follow-up in progress | Targeted delete cleanup/preservation plus final aggregate |
 | F02 | Fixed within recorded configuration-row/legacy exceptions; selected reads and bounded query programs | Final combined aggregate pending |
 | F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
@@ -65,9 +65,10 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 ## Decisions and Exceptions
 
-- The ten audited findings remain the scope. F01–F06 and F09 are fixed with the
-  explicit F02 configuration/legacy exceptions below. F07, F08 and F10 retain
-  their implementation/decision gates. No finding is silently deferred or added.
+- The ten audited findings remain the scope. F02–F06 and F09 are fixed with the
+  explicit F02 configuration/legacy exceptions below. F01 creation is fixed and
+  its confirmed deletion follow-up remains open; F07, F08 and F10 retain their
+  implementation/decision gates. No finding is silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
 - F08 retains an implementation decision gate. A measured decision to keep
@@ -105,6 +106,16 @@ needed to reproduce them here or in the owning phase's bounded slice record.
   339,610-byte configuration fixture exceeds the original large 1.066/2.812 ms
   preparation budgets, or when those collections move out of the settings row.
   Remove the legacy exception when pre-extraction input support is retired.
+
+- 2026-09-05, F01 correctness follow-up: the remaining ordinary
+  `deleteAgentPresetCommand` broad writer was reproduced at `2e2c321e9` in a
+  dedicated disposable HTTP fixture. DELETE returns 200 with correct selection
+  cleanup, but both affected and unaffected chats lose BardWiki settings,
+  documents, versions, search and links (each family 2 to 0). Scope now includes
+  targeted settings/affected-chat cleanup for this caller under F01; intentional
+  import/restore replacement writers remain separate. The dedicated regression
+  must pass preservation, rollback and replay before closeout. No performance
+  budget changes or new finding IDs are introduced.
 
 Future amendments belong here with date, affected finding, evidence, owner,
 residual cost, and revisit condition. If an amendment changes stable scope or
@@ -526,7 +537,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 4a: Backup Copy and Ownership Slice Implemented
 
-- Implementation: accompanying backup slice. Exclusive protection spans SQLite's
+- Implementation: `2e2c321e9`. Exclusive protection spans SQLite's
   await, required-byte verification, asynchronous copying, publication or cleanup.
   Shared save/staging leases close the races around mutable compatibility files
   and multi-await live asset conversion. Same-hash/size restore fallback preserves

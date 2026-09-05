@@ -70,3 +70,14 @@ incorrect, repair it or temporarily reject creation with a clear error; do not
 restore the known destructive path as a routine rollback. This phase prevents
 future deletion. Recovery of already-lost production data is a separate task
 requiring evidence from that environment.
+
+## Confirmed Broad-Writer Follow-Up
+
+The closeout inventory reproduced the same BardWiki cascade through ordinary
+`deleteAgentPresetCommand()` in `server/fastify/src/commands/agentPresets.ts`.
+The explicit F01 amendment in status requires targeted settings and matching
+chat/loadout selection cleanup for this caller too. Preserve its revision,
+receipt, event, default and cleanup-count behavior; do not rewrite surviving
+character/chat rows or expand this follow-up into intentional import/restore
+replacement writers. The dedicated regression is
+`server/fastify/__tests__/agentPresetDeletionSafety.test.ts`.
