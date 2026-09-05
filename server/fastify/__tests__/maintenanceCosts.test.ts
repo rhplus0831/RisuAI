@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
-import { runAssetGc } from '../src/assetGc.js'
+import { ASSET_GC_RESULT_LIMIT, runAssetGc } from '../src/assetGc.js'
 import { openDatabase } from '../src/db.js'
 import {
   assetPath,
@@ -47,6 +47,12 @@ const NOW = 1_800_000_000_000
 const OLD_MTIME = (NOW - 2 * 60 * 60_000) / 1000
 const SAVE_BYTES = Buffer.from('synthetic compatibility save\n'.repeat(32))
 const immediate = () => new Promise<void>((resolve) => setImmediate(resolve))
+// Recorded before the scheduling changes: half the original large-fixture
+// median maximum stall/response. These do not constrain total completion time.
+const LARGE_BUDGETS_MS = {
+  backup: { maxEventLoopGapMs: 7.924, maxApiResponseMs: 8.142 },
+  gc: { maxEventLoopGapMs: 16.117, maxApiResponseMs: 16.576 },
+}
 
 interface Fixture {
   dataDir: string
@@ -286,9 +292,17 @@ async function runFixture(assetCount: number) {
     expect(backup.value.assetCount).toBe(assetCount)
     verifyBackup(fixture, backup.value.id)
     const gc = await observe(app, assertion, () => runAssetGc(fixture.dataDir, { db: fixture.db, now: () => NOW }))
-    expect(gc.value.deletedAssetIds.slice().sort()).toEqual(fixture.orphanIds.slice().sort())
+    expect(gc.value.status).toBe('completed')
+    expect(gc.value.deletedAssetCount).toBe(fixture.orphanIds.length)
+    expect(gc.value.deletedStrayFileCount).toBe(0)
+    expect(gc.value.deletedStrayFiles).toEqual([])
+    expect(gc.value.deletedAssetIds).toHaveLength(Math.min(fixture.orphanIds.length, ASSET_GC_RESULT_LIMIT))
+    expect(gc.value.deletedAssetIds.every((id) => fixture.orphanIds.includes(id))).toBe(true)
+    expect(new Set(gc.value.deletedAssetIds).size).toBe(gc.value.deletedAssetIds.length)
+    expect(gc.value.resultsTruncated).toBe(fixture.orphanIds.length > ASSET_GC_RESULT_LIMIT)
     expect(gc.value.scannedOrphans).toBe(fixture.orphanIds.length)
     expect(gc.value.skippedByGrace).toBe(0)
+    expect(gc.value.referenceScan?.referenceCount).toBe(fixture.referencedIds.length)
     expect(
       getAllAssetMetadata(fixture.db)
         .map((asset) => asset.id)
@@ -316,13 +330,38 @@ async function runFixture(assetCount: number) {
         compatibilitySaveBytes: SAVE_BYTES.length,
       },
       backup: backup.observation,
-      gc: gc.observation,
+      gc: {
+        ...gc.observation,
+        status: gc.value.status,
+        scannedOrphans: gc.value.scannedOrphans,
+        skippedByGrace: gc.value.skippedByGrace,
+        deletedAssetCount: gc.value.deletedAssetCount,
+        deletedStrayFileCount: gc.value.deletedStrayFileCount,
+        retainedDeletedAssetIds: gc.value.deletedAssetIds.length,
+        retainedDeletedStrayFiles: gc.value.deletedStrayFiles.length,
+        resultLimit: ASSET_GC_RESULT_LIMIT,
+        resultsTruncated: gc.value.resultsTruncated,
+        referenceScan: gc.value.referenceScan,
+      },
     }
   } finally {
     await app?.close()
     fixture.db.close()
     fs.rmSync(fixture.dataDir, { recursive: true, force: true })
   }
+}
+
+function expectProgress(result: Awaited<ReturnType<typeof runFixture>>): void {
+  expect(result.backup.eventLoopTurnsAfterSnapshot).toBeGreaterThan(0)
+  expect(result.backup.apiResponsesAfterSnapshot).toBeGreaterThan(0)
+  expect(result.gc.eventLoopTurns).toBeGreaterThan(0)
+  expect(result.gc.apiResponsesDuringWork).toBeGreaterThan(0)
+}
+
+function median(values: number[]): number {
+  const sorted = values.slice().sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
 }
 
 describe('maintenance cost probe', () => {
@@ -333,8 +372,7 @@ describe('maintenance cost probe', () => {
       expect(result.backup.sqliteSnapshotMs).not.toBeNull()
       expect(result.backup.apiRequests).toBeGreaterThan(0)
       expect(result.gc.apiRequests).toBeGreaterThan(0)
-      // Responsiveness is reported, never asserted to remain at the blocking
-      // baseline. Phase 4 adds positive progress gates after choosing bounds.
+      expectProgress(result)
     } finally {
       vi.unstubAllEnvs()
     }
@@ -361,7 +399,7 @@ describe('maintenance cost probe', () => {
           memoryMethod:
             'Samples at operation boundaries, recursive-copy completion, and heartbeat; process maxRSS is lifetime high-water, not per-operation peak',
           phaseMethod:
-            'Real node:sqlite backup marks; post-snapshot includes copies and manifest; recursive cp timings sum calls and exclude retention, which createBackup does not run',
+            'Real node:sqlite backup marks; post-snapshot includes reference scanning, all file copying, cleanup, and manifest; directoryCopy timings/counts cover recursive cp calls only, so bounded copyFile work is included in post-snapshot time even when directoryCopy is zero; createBackup does not run retention',
         }
         console.log('MAINTENANCE_COST_ENV', JSON.stringify(environment))
         const samples: Array<{ repetition: number } & Awaited<ReturnType<typeof runFixture>>> = []
@@ -373,12 +411,34 @@ describe('maintenance cost probe', () => {
             console.log('MAINTENANCE_COST', JSON.stringify(sample))
           }
         }
+        const largeSamples = samples.filter((sample) => sample.fixture.assetCount === 2000)
+        const largeMediansMs = {
+          backup: {
+            maxEventLoopGapMs: median(largeSamples.map((sample) => sample.backup.maxEventLoopGapMs)),
+            maxApiResponseMs: median(largeSamples.map((sample) => sample.backup.maxApiResponseMs)),
+          },
+          gc: {
+            maxEventLoopGapMs: median(largeSamples.map((sample) => sample.gc.maxEventLoopGapMs)),
+            maxApiResponseMs: median(largeSamples.map((sample) => sample.gc.maxApiResponseMs)),
+          },
+        }
         const artifactDir = path.resolve(import.meta.dirname, '../../../fast-bootstrap-results/maintainability')
         fs.mkdirSync(artifactDir, { recursive: true })
         fs.writeFileSync(
           path.join(artifactDir, 'maintenance-costs.json'),
-          `${JSON.stringify({ environment, samples }, null, 2)}\n`,
+          `${JSON.stringify({ environment, samples, largeMediansMs, largeBudgetsMs: LARGE_BUDGETS_MS }, null, 2)}\n`,
         )
+        // Retain every measured sample before asserting comparison budgets, so
+        // noisy or regressed runs remain inspectable instead of disappearing.
+        for (const sample of samples) expectProgress(sample)
+        for (const operation of ['backup', 'gc'] as const) {
+          expect(largeMediansMs[operation].maxEventLoopGapMs).toBeLessThanOrEqual(
+            LARGE_BUDGETS_MS[operation].maxEventLoopGapMs,
+          )
+          expect(largeMediansMs[operation].maxApiResponseMs).toBeLessThanOrEqual(
+            LARGE_BUDGETS_MS[operation].maxApiResponseMs,
+          )
+        }
       } finally {
         vi.unstubAllEnvs()
       }

@@ -16,7 +16,8 @@ import {
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from './maintenanceCoordinator.js'
 import { BackupAssetError, copyBackupAssets, copyBackupDirectory } from './backupFiles.js'
-import { buildAssetGcRisuSaveAssetReport } from './assetGc.js'
+import { scanAssetReferences, type AssetReferenceMarks } from './assetReferenceScan.js'
+import { setImmediate as yieldMaintenanceTurn } from 'node:timers/promises'
 import { getSchemaState } from './db.js'
 import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
@@ -3619,6 +3620,9 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
     const effectiveContentType = resolveEffectiveAssetContentType(asset)
     return effectiveContentType === asset.contentType ? asset : { ...asset, contentType: effectiveContentType }
   })
+  // Deduplicated uploads can refresh only file mtime, with no SQLite write.
+  // Fence any reference scan suspended before this upload-to-reference window.
+  if (normalizedAssets.length > 0) getMaintenanceCoordinator(dataDir).noteAssetActivity()
 
   const createdResults: AddAssetResult[] = []
   const results: AddAssetResult[] = []
@@ -4076,31 +4080,59 @@ async function createBackupUnderLease(
     lease.signal.throwIfAborted()
 
     let revision: number
-    let assets: PersistedAsset[]
-    let requiredIds: Set<string>
+    let assetCount = 0
     const snapshotDb = new DatabaseSync(backupSqlite, { readOnly: true })
+    let references: AssetReferenceMarks | undefined
     try {
       revision = getSchemaState(snapshotDb).revision
-      assets = getAllAssetMetadata(snapshotDb)
-      // This synchronous reference projection is the same complete source used
-      // by GC, including operational pending finalizations and catalog entries.
-      // It is intentionally separate from the bounded file-copy protocol.
-      const report = buildAssetGcRisuSaveAssetReport(snapshotDb, assets)
-      if (report.missing.length > 0) {
-        throw new BackupAssetError(`Required backup asset metadata is missing: ${report.missing[0].id}`)
+      references = await scanAssetReferences(snapshotDb, {
+        scratchPath: path.join(dir, '.asset-references.sqlite'),
+        signal: lease.signal,
+      })
+      const hasMetadata = snapshotDb.prepare('SELECT 1 FROM assets WHERE id = ?')
+      for await (const ids of references.referencePages()) {
+        for (const assetId of ids)
+          if (!hasMetadata.get(assetId)) {
+            throw new BackupAssetError(`Required backup asset metadata is missing: ${assetId}`)
+          }
       }
-      requiredIds = new Set(report.referenced.map((reference) => reference.id))
+      const firstPage = snapshotDb.prepare(
+        'SELECT CAST(rowid AS TEXT) AS cursor, id, ext, size, content_type AS contentType FROM assets ORDER BY rowid LIMIT 64',
+      )
+      const nextPage = snapshotDb.prepare(
+        'SELECT CAST(rowid AS TEXT) AS cursor, id, ext, size, content_type AS contentType FROM assets WHERE rowid > CAST(? AS INTEGER) ORDER BY rowid LIMIT 64',
+      )
+      async function* metadata(): AsyncGenerator<PersistedAsset> {
+        let cursor: string | undefined
+        while (true) {
+          lease.signal.throwIfAborted()
+          const rows = (cursor === undefined ? firstPage.all() : nextPage.all(cursor)) as unknown as Array<
+            PersistedAsset & { cursor: string }
+          >
+          if (!rows.length) return
+          cursor = rows[rows.length - 1].cursor
+          for (const asset of rows) {
+            assetCount++
+            yield asset
+          }
+          await yieldMaintenanceTurn()
+        }
+      }
+      await copyBackupAssets({
+        from: assetsDir(dataDir),
+        to: path.join(dir, 'assets'),
+        assets: metadata(),
+        requiredIds: references,
+        signal: lease.signal,
+        restoreFallbackDir: options.restoreFallbackDir,
+      })
     } finally {
-      snapshotDb.close()
+      try {
+        await references?.close()
+      } finally {
+        snapshotDb.close()
+      }
     }
-    await copyBackupAssets({
-      from: assetsDir(dataDir),
-      to: path.join(dir, 'assets'),
-      assets,
-      requiredIds,
-      signal: lease.signal,
-      restoreFallbackDir: options.restoreFallbackDir,
-    })
     await copyBackupDirectory(saveDir(dataDir), path.join(dir, 'save'), lease.signal)
     const manifest: BackupManifest = {
       _version: BACKUP_MANIFEST_VERSION,
@@ -4109,7 +4141,7 @@ async function createBackupUnderLease(
       kind: options.kind ?? 'manual',
       createdAt: new Date().toISOString(),
       revision,
-      assetCount: assets.length,
+      assetCount,
     }
     const pendingManifest = path.join(dir, '.manifest.json')
     await fs.promises.writeFile(pendingManifest, JSON.stringify(manifest), { signal: lease.signal })

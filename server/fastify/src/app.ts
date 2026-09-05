@@ -353,11 +353,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     assetGcOptions === null
       ? null
       : setInterval(() => {
-          try {
-            runAssetGc(config.dataDir, { ...assetGcOptions, db })
-          } catch (err) {
+          void runAssetGc(config.dataDir, { ...assetGcOptions, db }).catch((err) => {
             app.log.error({ err }, 'asset GC sweep failed')
-          }
+          })
         }, assetGcOptions.intervalMs ?? ASSET_GC_INTERVAL_MS)
   assetGcTimer?.unref()
   let generationFinalizationRetryTimer: ReturnType<typeof setInterval> | null = null

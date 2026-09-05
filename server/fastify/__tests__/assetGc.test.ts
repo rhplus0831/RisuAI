@@ -82,10 +82,10 @@ function embedChatRowMessage(chatId: string, messageData: string): void {
   db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), chatId)
 }
 
-function runGcAndExpectReferencesSurvive(
+async function runGcAndExpectReferencesSurvive(
   referenceIds: readonly string[],
   options: { repositoryParity?: boolean } = {},
-): void {
+): Promise<void> {
   const referencedFiles = referenceIds.map((id) => writeAssetFile(id, OLD_MTIME))
   const orphanFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
 
@@ -95,7 +95,7 @@ function runGcAndExpectReferencesSurvive(
     )
   }
 
-  const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+  const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
   expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
   for (const file of referencedFiles) expect(existsSync(file)).toBe(true)
@@ -113,7 +113,7 @@ afterEach(() => {
 })
 
 describe('runAssetGc', () => {
-  it('reclaims only orphaned assets past the grace window and keeps referenced plus shared assets', () => {
+  it('reclaims only orphaned assets past the grace window and keeps referenced plus shared assets', async () => {
     const database = {
       characters: [
         { chaId: 'char-a', image: REFERENCED, emotionImages: [['happy', SHARED]] },
@@ -125,7 +125,7 @@ describe('runAssetGc', () => {
     const sharedFile = writeAssetFile(SHARED, OLD_MTIME)
     const orphanOldFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(result.skippedByGrace).toBe(0)
@@ -141,18 +141,18 @@ describe('runAssetGc', () => {
     ).toEqual([REFERENCED, SHARED].sort())
   })
 
-  it('defers old orphan reclamation while uploads are active and converges after quiescence', () => {
+  it('defers old orphan reclamation while uploads are active and converges after quiescence', async () => {
     seedDatabase({ characters: [{ chaId: 'char-a', image: REFERENCED }] }, [asset(REFERENCED), asset(ORPHAN_OLD)])
     const recentReferencedFile = writeAssetFile(REFERENCED, FRESH_MTIME)
     const oldStagedFile = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
 
-    const active = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const active = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(active.deletedAssetIds).toEqual([])
     expect(active.skippedByGrace).toBe(1)
     expect(existsSync(oldStagedFile)).toBe(true)
 
-    const idle = runAssetGc(dataDir, {
+    const idle = await runAssetGc(dataDir, {
       db,
       graceMs: GRACE_MS,
       now: () => NOW + GRACE_MS + 60_000,
@@ -162,11 +162,11 @@ describe('runAssetGc', () => {
     expect(existsSync(recentReferencedFile)).toBe(true)
   })
 
-  it('never deletes a just-uploaded (within-grace) asset even if not yet referenced', () => {
+  it('never deletes a just-uploaded (within-grace) asset even if not yet referenced', async () => {
     seedDatabase({ characters: [] }, [asset(ORPHAN_FRESH)])
     const freshFile = writeAssetFile(ORPHAN_FRESH, FRESH_MTIME)
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([])
     expect(result.skippedByGrace).toBe(1)
@@ -174,7 +174,7 @@ describe('runAssetGc', () => {
     expect(getAllAssetMetadata(db).map((a) => a.id)).toEqual([ORPHAN_FRESH])
   })
 
-  it('keeps cataloged inlay bytes until catalog deletion makes them collectible', () => {
+  it('keeps cataloged inlay bytes until catalog deletion makes them collectible', async () => {
     insertAssetMetadataBatch(db, [asset(ORPHAN_OLD)])
     const file = writeAssetFile(ORPHAN_OLD, OLD_MTIME)
     upsertInlayCatalogEntry(db, {
@@ -185,39 +185,39 @@ describe('runAssetGc', () => {
       height: 1,
     })
 
-    expect(runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW }).deletedAssetIds).toEqual([])
+    expect((await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })).deletedAssetIds).toEqual([])
     expect(existsSync(file)).toBe(true)
 
     expect(deleteInlayCatalogEntry(db, ORPHAN_OLD)).toBe(true)
-    expect(runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW }).deletedAssetIds).toEqual([ORPHAN_OLD])
+    expect((await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })).deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(existsSync(file)).toBe(false)
   })
 
-  it('drops a metadata entry whose backing file is already gone', () => {
+  it('drops a metadata entry whose backing file is already gone', async () => {
     seedDatabase({ characters: [] }, [asset(ORPHAN_OLD)])
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(getAllAssetMetadata(db)).toEqual([])
   })
 
-  it('sweeps stray, unreferenced, grace-aged files with no metadata entry', () => {
+  it('sweeps stray, unreferenced, grace-aged files with no metadata entry', async () => {
     seedDatabase({ characters: [] }, [])
     const strayOld = writeAssetFile(STRAY_OLD, OLD_MTIME)
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedStrayFiles).toEqual([`${STRAY_OLD}.png`])
     expect(existsSync(strayOld)).toBe(false)
   })
 
-  it('is a no-op when nothing is reclaimed', () => {
+  it('is a no-op when nothing is reclaimed', async () => {
     const database = { characters: [{ chaId: 'char-a', image: REFERENCED }] }
     seedDatabase(database, [asset(REFERENCED)])
     writeAssetFile(REFERENCED, OLD_MTIME)
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([])
     expect(result.deletedStrayFiles).toEqual([])
@@ -251,7 +251,7 @@ describe('runAssetGc', () => {
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
   })
 
-  it('reports identical referenced/missing/orphaned sets to the hydrated walker', () => {
+  it('reports identical referenced/missing/orphaned sets to the hydrated walker', async () => {
     const MISSING = '9'.repeat(64)
     const database = {
       userIcon: REFERENCED,
@@ -288,7 +288,7 @@ describe('runAssetGc', () => {
     expect(scoped.orphaned.map((entry) => entry.id)).toEqual([ORPHAN_OLD])
   })
 
-  it('preserves references from settings, collection rows, character rows, chat rows, and messages', () => {
+  it('preserves references from settings, collection rows, character rows, chat rows, and messages', async () => {
     const database = {
       userIcon: SETTINGS_REF,
       customBackground: `assets/${SETTINGS_REF}.png`,
@@ -349,7 +349,7 @@ describe('runAssetGc', () => {
       [SETTINGS_REF, COLLECTION_REF, CHARACTER_REF, CHAT_ROW_REF, MESSAGE_REF, NOTIFICATION_IMAGE_REF].sort(),
     )
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(result.scannedOrphans).toBe(1)
@@ -357,7 +357,7 @@ describe('runAssetGc', () => {
     expect(existsSync(orphanFile)).toBe(false)
   })
 
-  it('keeps assets referenced only by SQLite chat-message inlay tokens', () => {
+  it('keeps assets referenced only by SQLite chat-message inlay tokens', async () => {
     const database = { characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a' }] }] }
     seedDatabase(database, [asset(REFERENCED), asset(ORPHAN_OLD)])
     const referencedFile = writeAssetFile(REFERENCED, OLD_MTIME)
@@ -375,14 +375,14 @@ describe('runAssetGc', () => {
       },
     ])
 
-    const result = runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
+    const result = await runAssetGc(dataDir, { db, graceMs: GRACE_MS, now: () => NOW })
 
     expect(result.deletedAssetIds).toEqual([ORPHAN_OLD])
     expect(existsSync(referencedFile)).toBe(true)
     expect(existsSync(orphanFile)).toBe(false)
   })
 
-  it('keeps assets referenced only by nested NovelAI and WaveSpeed image settings', () => {
+  it('keeps assets referenced only by nested NovelAI and WaveSpeed image settings', async () => {
     seedDatabase(
       {
         NAIImgConfig: {
@@ -394,28 +394,28 @@ describe('runAssetGc', () => {
       [asset(NAI_I2I_REF), asset(NAI_CHARACTER_REF), asset(WAVESPEED_REF), asset(ORPHAN_OLD)],
     )
 
-    runGcAndExpectReferencesSurvive([NAI_I2I_REF, NAI_CHARACTER_REF, WAVESPEED_REF])
+    await runGcAndExpectReferencesSurvive([NAI_I2I_REF, NAI_CHARACTER_REF, WAVESPEED_REF])
   })
 
-  it('keeps an asset referenced only by a split model preset image', () => {
+  it('keeps an asset referenced only by a split model preset image', async () => {
     seedDatabase({ modelPresets: [{ id: 'model-preset', image: MODEL_PRESET_REF }] }, [
       asset(MODEL_PRESET_REF),
       asset(ORPHAN_OLD),
     ])
 
-    runGcAndExpectReferencesSurvive([MODEL_PRESET_REF])
+    await runGcAndExpectReferencesSurvive([MODEL_PRESET_REF])
   })
 
-  it('keeps an asset referenced only by a split prompt preset image', () => {
+  it('keeps an asset referenced only by a split prompt preset image', async () => {
     seedDatabase({ promptPresets: [{ id: 'prompt-preset', image: `assets/${PROMPT_PRESET_REF}.webp` }] }, [
       asset(PROMPT_PRESET_REF),
       asset(ORPHAN_OLD),
     ])
 
-    runGcAndExpectReferencesSurvive([PROMPT_PRESET_REF])
+    await runGcAndExpectReferencesSurvive([PROMPT_PRESET_REF])
   })
 
-  it('keeps an asset referenced only by a durable alternate-row inlay', () => {
+  it('keeps an asset referenced only by a durable alternate-row inlay', async () => {
     seedDatabase({ characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a' }] }] }, [
       asset(ALTERNATE_MESSAGE_REF),
       asset(ORPHAN_OLD),
@@ -426,10 +426,10 @@ describe('runAssetGc', () => {
       data: `rerolled {{inlayed::${ALTERNATE_MESSAGE_REF}}}`,
     })
 
-    runGcAndExpectReferencesSurvive([ALTERNATE_MESSAGE_REF])
+    await runGcAndExpectReferencesSurvive([ALTERNATE_MESSAGE_REF])
   })
 
-  it('keeps assets referenced only by first-message and alternate-greeting inlays', () => {
+  it('keeps assets referenced only by first-message and alternate-greeting inlays', async () => {
     seedDatabase(
       {
         characters: [
@@ -443,10 +443,10 @@ describe('runAssetGc', () => {
       [asset(FIRST_MESSAGE_REF), asset(ALTERNATE_GREETING_REF), asset(ORPHAN_OLD)],
     )
 
-    runGcAndExpectReferencesSurvive([FIRST_MESSAGE_REF, ALTERNATE_GREETING_REF])
+    await runGcAndExpectReferencesSurvive([FIRST_MESSAGE_REF, ALTERNATE_GREETING_REF])
   })
 
-  it('keeps inlays in other character text fields that feed rendered markdown', () => {
+  it('keeps inlays in other character text fields that feed rendered markdown', async () => {
     seedDatabase(
       {
         characters: [
@@ -461,10 +461,10 @@ describe('runAssetGc', () => {
       [asset(CHARACTER_RENDERED_TEXT_REF), asset(ORPHAN_OLD)],
     )
 
-    runGcAndExpectReferencesSurvive([CHARACTER_RENDERED_TEXT_REF])
+    await runGcAndExpectReferencesSurvive([CHARACTER_RENDERED_TEXT_REF])
   })
 
-  it('keeps inlays referenced only by pending generation-finalization payloads', () => {
+  it('keeps inlays referenced only by pending generation-finalization payloads', async () => {
     seedDatabase({ characters: [] }, [asset(PENDING_MESSAGE_REF), asset(PENDING_ALTERNATE_REF), asset(ORPHAN_OLD)])
     enqueueGenerationFinalizationRetry(db, {
       generationId: 'generation-a',
@@ -497,10 +497,10 @@ describe('runAssetGc', () => {
     })
     markGenerationFinalizationRetryFailure(db, 'generation-terminal', 'terminal fixture', true)
 
-    runGcAndExpectReferencesSurvive([PENDING_MESSAGE_REF, PENDING_ALTERNATE_REF], { repositoryParity: false })
+    await runGcAndExpectReferencesSurvive([PENDING_MESSAGE_REF, PENDING_ALTERNATE_REF], { repositoryParity: false })
   })
 
-  it('keeps an asset referenced only by nested plugin custom storage JSON', () => {
+  it('keeps an asset referenced only by nested plugin custom storage JSON', async () => {
     seedDatabase(
       {
         pluginCustomStorage: {
@@ -512,6 +512,6 @@ describe('runAssetGc', () => {
       [asset(PLUGIN_STORAGE_REF), asset(ORPHAN_OLD)],
     )
 
-    runGcAndExpectReferencesSurvive([PLUGIN_STORAGE_REF])
+    await runGcAndExpectReferencesSurvive([PLUGIN_STORAGE_REF])
   })
 })

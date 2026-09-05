@@ -335,11 +335,11 @@ describe('backup maintenance ownership', () => {
     const backup = track(createBackup(db, dataDir))
     await entered.promise
     expect(getMaintenanceCoordinator(dataDir).isReclamationBlocked()).toBe(true)
-    expect(runAssetGc(dataDir, { db, graceMs: 0 }).deletedAssetIds).toEqual([])
+    expect((await runAssetGc(dataDir, { db, graceMs: 0 })).deletedAssetIds).toEqual([])
     expect(fs.existsSync(assetPath(dataDir, orphan))).toBe(true)
     resumed.resolve()
     await backup
-    expect(runAssetGc(dataDir, { db, graceMs: 0 }).deletedAssetIds).toEqual([orphan.id])
+    expect((await runAssetGc(dataDir, { db, graceMs: 0 })).deletedAssetIds).toEqual([orphan.id])
   })
 
   it('permits authenticated API, command SSE, and upload progress while excluding destructive peers and save writes', async () => {

@@ -37,7 +37,7 @@ wired through those boundaries.
 | `server/fastify/src/messageTranslationJobs.ts`, `greetingTranslationJobs.ts` | Separate process-local registries for running and bounded recent terminal message/greeting translation recovery exposed through runtime bootstrap. |
 | `server/fastify/src/translation/` | Google, DeepL, DeepLX, and LLM translation, translator pipelines, normalized greeting storage, and generated-message automatic follow-up. |
 | `server/fastify/src/pushNotifications.ts` | Web Push VAPID key loading/generation, subscription persistence, and best-effort completion pushes. |
-| `server/fastify/src/assetGc.ts` | Periodic reference-counted asset garbage collection. |
+| `server/fastify/src/assetGc.ts`, `server/fastify/src/assetReferenceScan.ts` | Periodic cooperative reference discovery and fenced asset reclamation; scanner shared with backup verification. |
 | `server/fastify/src/streamJobs.ts`, `streamBackpressure.ts` | Process-local proxy stream jobs and bounded stream writes for slow clients. |
 | `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants. |
 | `server/fastify/src/providerOperations.ts`, `embeddingOperations.ts`, `tts.ts` | Fixed, validated provider catalog/account/translation, remote embedding, and TTS operation boundaries with server-side credential resolution. |
@@ -370,7 +370,9 @@ Shutdown first closes maintenance admission and signals cooperative cancellation
 in `preClose`, while active HTTP requests can still clean up. `onClose` drains
 maintenance leases before stopping workers/timers, removing registry jobs,
 settling generation runners, and closing SQLite. An aborted copy keeps ownership
-until every started filesystem operation and cleanup finishes. Cancelled backup
+until every started filesystem operation and cleanup finishes; GC also retains
+its lease until scratch cleanup completes. Overlapping sweeps are skipped and
+timer promise failures are logged. Cancelled backup
 HTTP responses close their connection so keep-alive does not hold server drain
 open. The data-directory coordinator is reopened only after the previous owner
 has drained; see [Backups](assets-and-saves.md#backups).

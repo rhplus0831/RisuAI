@@ -622,3 +622,28 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   existing report, exclusions/malformed fields, alias/orphan ownership, signed
   cursors, paged progress, oversized fields, cancellation and scratch recovery.
   Backup/GC cutover and original latency acceptance are the next slice.
+
+## Phase 4b: Backup/GC Cutover Implemented; Timing Open
+
+- Backup reference verification now uses the shared scanner over its captured
+  SQLite database and streams metadata in 64-row pages into the two file workers.
+  GC owns one maintenance lease, discovers asynchronously, and reclaims at most
+  16 candidates per transaction/turn. Stale write, lineage, external-connection,
+  staging or upload-activity fences retain the remaining candidates. Canonical
+  unlink occurs only immediately after successful commit with no intervening await.
+- Exact focused checks pass: scanner 16, GC 19, GC scheduling 16, backup
+  maintenance 22, backups 53, local backup database 4, and the default small
+  maintenance probe 1 (matrix skipped). Held GC tests prove real authenticated
+  HTTP and command SSE progress, reference/upload races, cancellation/drain,
+  commit failure byte preservation, re-upload after a committed batch, and full
+  counts with a 1,024-entry result cap. Existing backup interleavings still pass.
+- The first isolated matrix retains all nine samples in
+  [maintenance investigation](evidence/maintenance-investigation.json).
+  Every fixture makes API/turn progress during GC and post-snapshot backup.
+  Large GC median max-gap/API is 13.306/13.794 ms, within original
+  16.117/16.576 ms limits. Backup 16.244/16.773 ms exceeds 7.924/8.142 ms;
+  Phase 4 remains open. Median large total completion is 1,181.697 ms backup
+  and 594.333 ms GC, versus 23.690/32.234 ms baseline; async overhead is visible.
+- A separate exact `serverLoadCostHarness.test.ts` run exposed a Phase 3 prompt
+  fixture returning HTTP 400; diagnosis is pending. This does not invalidate
+  the dedicated maintenance cases, and no final aggregate has been run.

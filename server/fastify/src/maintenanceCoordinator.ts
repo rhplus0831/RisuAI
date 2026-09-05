@@ -19,7 +19,7 @@ export interface MaintenanceLease {
   release(): void
 }
 
-type LeaseCategory = 'exclusive' | 'save' | 'staging'
+type LeaseCategory = 'exclusive' | 'save' | 'staging' | 'gc'
 
 /**
  * Admission is immediate: callers either own a lease or receive maintenance_busy.
@@ -32,6 +32,7 @@ export class MaintenanceCoordinator {
   private exclusive: MaintenanceLease | undefined
   private saveMutations = 0
   private assetStaging = 0
+  private gc: MaintenanceLease | undefined
   private activity = 0
   private protection = 0
   private closePromise: Promise<void> | undefined
@@ -69,6 +70,12 @@ export class MaintenanceCoordinator {
     this.assertAdmission(signal)
     if (this.exclusive || this.assetStaging >= ASSET_STAGING_LIMIT) throw new MaintenanceBusyError()
     return this.acquire('staging', 'asset_staging', signal)
+  }
+
+  beginGc(signal?: AbortSignal): MaintenanceLease | undefined {
+    if (this.state !== 'open' || this.gc || this.isReclamationBlocked()) return undefined
+    this.assertAdmission(signal)
+    return this.acquire('gc', 'asset_gc', signal)
   }
 
   isReclamationBlocked(): boolean {
@@ -112,6 +119,7 @@ export class MaintenanceCoordinator {
         if (category === 'exclusive') this.exclusive = undefined
         if (category === 'save') this.saveMutations -= 1
         if (category === 'staging') this.assetStaging -= 1
+        if (category === 'gc') this.gc = undefined
         if (category !== 'save') this.protection += 1
         this.finishDrain()
       },
@@ -120,6 +128,7 @@ export class MaintenanceCoordinator {
     if (category === 'exclusive') this.exclusive = lease
     if (category === 'save') this.saveMutations += 1
     if (category === 'staging') this.assetStaging += 1
+    if (category === 'gc') this.gc = lease
     if (category !== 'save') this.protection += 1
     return lease
   }

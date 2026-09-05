@@ -1,7 +1,7 @@
 # Assets And Saves
 
 Last audited: 2026-08-30.
-Targeted source check: 2026-09-05 (backup copying, maintenance ownership and restore publication).
+Targeted source check: 2026-09-05 (bounded backup/GC discovery, maintenance ownership and restore publication).
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -20,7 +20,8 @@ paths.
 | --- | --- |
 | `server/fastify/src/routes/assets.ts` | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe. |
 | `server/fastify/src/repository.ts` | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks. |
-| `server/fastify/src/assetGc.ts` | Reference-counted asset garbage collection over a minimal SQLite reference shape. |
+| `server/fastify/src/assetGc.ts` | Cooperative asset discovery and transactionally fenced reclamation. |
+| `server/fastify/src/assetReferenceScan.ts` | Shared backup/GC reference projection with paged sources and disposable SQLite membership. |
 | `server/fastify/src/risuSave/assetReferences.ts` | Known-field asset-reference walker for import/export/GC reports. |
 | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters, asset URL normalization, and bulk-upload existence probing. |
 | `src/ts/server/inlayCatalog.ts` | Browser catalog projection validation and revision-aware acknowledgement application. |
@@ -71,9 +72,9 @@ field. `src/ts/process/stableDiff.ts` reads and encodes the asset only while
 constructing the provider request. Imported base64-only settings and inline
 fallbacks for an unreadable imported asset reference remain supported.
 
-`runAssetGc()` walks known asset-reference fields through the shared save-report
-walker, using a minimal SQLite reference shape rather than a full repository
-load. That shape covers root and nested image settings (including NovelAI I2I,
+`runAssetGc()` asynchronously scans known asset-reference fields through
+`assetReferenceScan.ts` and the shared save-report walker. Its projection covers
+root and nested image settings (including NovelAI I2I,
 NovelAI character reference, and WaveSpeed reference image), module assets,
 persona icons, bot/model/prompt preset images, character/chat reference fields,
 and inlay tokens in character-rendered text. Column-only scans add active and
@@ -88,13 +89,30 @@ fields. Portable discovery and legacy `.bin` rewriting consume the declarative
 owner vocabulary in `server/fastify/src/risuSave/assetOwnerCatalog.ts`; their
 shape-specific handlers remain separate and are exercised against the same
 positive corpus plus an arbitrary-JSON negative. Operational-only references
-(pending finalization rows and catalog membership) are appended only in the GC
-report because they are not part of an exported database; message-table scans
-are shared by repository export reports and GC. A grace window protects
+(pending finalization rows and catalog membership) are included by maintenance
+discovery because they must survive backups and GC, even though they are not
+part of an exported database. A grace window protects
 upload-then-reference races. If any valid asset file is newer than that grace
 window, GC treats upload/import staging as active and defers every orphan and
 stray-file reclamation for the sweep; ordinary aging makes later sweeps
 converge. GC remains revision-free and emits no command events.
+
+Discovery finalizes each primary iterator before yielding, pages at most 64
+rows, and yields after 256 KiB or 4 ms of projected work. Distinct reference and
+chat IDs spill to a disposable SQLite file with a 2 MiB cache. One oversized
+existing field or native legacy JSON projection can exceed a slice;
+`largestRowBytes` reports that residual. Scratch files are removed on completion,
+cancellation or failure and recovered at the next attempt after a crash.
+
+Only one sweep owns a directory. Before each batch of at most 16 candidates,
+GC checks SQLite total changes, external-connection data version, lineage, and
+maintenance/upload activity captured before discovery. A changed fence stops
+the sweep conservatively. Metadata is revalidated and deleted inside a SQLite
+transaction; canonical file removal follows successful commit in the same JS
+turn, with no asynchronous unlink tail. Failed commits retain bytes, and failed
+unlinks remain retryable strays. Deduplicated uploads also advance the activity
+fence even when only file mtime changes. Results retain at most 1,024 deleted
+IDs/names plus full counts and a completed/skipped/stale/cancelled status.
 
 ### Inlay Catalog
 
@@ -390,6 +408,8 @@ Two asynchronous file workers copy captured asset metadata and legacy directory
 extras; required references include operational pending-finalization, catalog
 and plugin-storage owners. Missing required metadata/bytes, wrong size or wrong
 hash prevents publication. A temporary manifest is renamed only after completion.
+The captured SQLite database uses the same bounded reference scanner as GC;
+metadata is streamed in 64-row pages while scratch membership remains open.
 Directory traversal buffers one entry at each of at most 32 levels, and hash
 streams use 64 KiB buffers. Deeper legacy extras fail closed. Existing optional
 orphan bytes are copied when present; missing orphan files retain their missing
@@ -404,7 +424,8 @@ hold their lease through filesystem cleanup; local/Realm live asset conversion
 holds staging ownership through commit or rollback. Temporary multipart intake
 does not hold a live-state lease while waiting for network bytes. Ordinary
 commands and immutable synchronous uploads remain responsive; GC defers while
-backup or staging protection is active.
+backup or staging protection is active. An active sweep excludes exclusive
+maintenance, and staging begun during its awaits invalidates that sweep.
 
 Import/restore owns one lease across its nested safety snapshot and destructive
 transaction. A write fence captured before safety copying checks revision,

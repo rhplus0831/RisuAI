@@ -73,7 +73,7 @@ async function* directoryEntries(
   from: string,
   to: string,
   signal: AbortSignal,
-  skip: ReadonlySet<string> = new Set(),
+  skip: { has(name: string): boolean } = new Set(),
   depth = 0,
 ): AsyncGenerator<CopyEntry> {
   if (depth >= BACKUP_DIRECTORY_DEPTH_LIMIT) throw new Error('backup_directory_depth_exceeded')
@@ -110,7 +110,7 @@ export async function copyBackupDirectory(
   from: string,
   to: string,
   signal: AbortSignal,
-  skip?: ReadonlySet<string>,
+  skip?: { has(name: string): boolean },
 ): Promise<void> {
   await consumeBounded(directoryEntries(from, to, signal, skip), signal, async (entry, copySignal) => {
     copySignal.throwIfAborted()
@@ -129,8 +129,8 @@ export async function copyBackupDirectory(
 export async function copyBackupAssets(options: {
   from: string
   to: string
-  assets: readonly PersistedAsset[]
-  requiredIds: ReadonlySet<string>
+  assets: AsyncIterable<PersistedAsset> | Iterable<PersistedAsset>
+  requiredIds: { has(id: string): boolean }
   signal: AbortSignal
   restoreFallbackDir?: string
 }): Promise<void> {
@@ -157,5 +157,7 @@ export async function copyBackupAssets(options: {
     // damage. Referenced bytes must be recoverable before publication.
     if (requiredIds.has(asset.id)) await verifyAsset(target, asset, copySignal)
   })
-  await copyBackupDirectory(from, to, signal, new Set(assets.map((asset) => `${asset.id}.${asset.ext}`)))
+  // Copied metadata-owned files already exist at the destination. Use their
+  // presence instead of retaining a corpus-sized filename Set for the extras.
+  await copyBackupDirectory(from, to, signal, { has: (name) => fs.existsSync(path.join(to, name)) })
 }
