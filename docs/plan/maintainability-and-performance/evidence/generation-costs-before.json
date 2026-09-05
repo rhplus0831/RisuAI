@@ -1,0 +1,2252 @@
+{
+  "runtime": "v24.19.0",
+  "architecture": "x64",
+  "logicalCpus": 10,
+  "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+  "samples": [
+    {
+      "axis": "unrelated",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4
+      },
+      "snapshotBytes": 2790,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 4,
+        "cloneBytes": 4308,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 3,
+        "cloneBytes": 3550,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 5368,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.4526819999998679,
+          0.40682300000003124,
+          0.324387999999999
+        ],
+        "assemblyMs": [
+          2.4082710000000134,
+          2.2718620000000556,
+          2.3815400000000864
+        ]
+      }
+    },
+    {
+      "axis": "unrelated",
+      "dimensions": {
+        "unrelatedCharacters": 12,
+        "unrelatedChats": 36,
+        "unrelatedHistoryRows": 288,
+        "unusedRowsPerCollection": 12,
+        "unrelatedAssets": 96,
+        "targetHistory": 4
+      },
+      "snapshotBytes": 264325,
+      "assetSnapshotBytes": 11905,
+      "preflight": {
+        "cloneCalls": 4,
+        "cloneBytes": 265843,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 35364,
+            "jsonColumnBytes": 33556
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 37,
+            "returnedBytes": 94388,
+            "jsonColumnBytes": 90190
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 24,
+            "returnedBytes": 56698,
+            "jsonColumnBytes": 55856
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 28358,
+            "jsonColumnBytes": 27928
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 28033,
+            "jsonColumnBytes": 27645
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 55226,
+            "jsonColumnBytes": 54744
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 96,
+            "returnedBytes": 12001,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 35364,
+            "jsonColumnBytes": 33556
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 37,
+            "returnedBytes": 94388,
+            "jsonColumnBytes": 90190
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 24,
+            "returnedBytes": 56698,
+            "jsonColumnBytes": 55856
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 28358,
+            "jsonColumnBytes": 27928
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 28033,
+            "jsonColumnBytes": 27645
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 55226,
+            "jsonColumnBytes": 54744
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 96,
+            "returnedBytes": 12001,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 3,
+        "cloneBytes": 265085,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 266903,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 35364,
+            "jsonColumnBytes": 33556
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 37,
+            "returnedBytes": 94388,
+            "jsonColumnBytes": 90190
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 24,
+            "returnedBytes": 56698,
+            "jsonColumnBytes": 55856
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 28358,
+            "jsonColumnBytes": 27928
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 28033,
+            "jsonColumnBytes": 27645
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 13,
+            "returnedBytes": 55226,
+            "jsonColumnBytes": 54744
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 96,
+            "returnedBytes": 12001,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          1.2868690000000242,
+          0.9863370000000486,
+          1.0656179999998585
+        ],
+        "assemblyMs": [
+          2.623980999999958,
+          2.8119899999999234,
+          3.314775000000054
+        ]
+      }
+    },
+    {
+      "axis": "unrelated",
+      "dimensions": {
+        "unrelatedCharacters": 48,
+        "unrelatedChats": 144,
+        "unrelatedHistoryRows": 1152,
+        "unusedRowsPerCollection": 48,
+        "unrelatedAssets": 384,
+        "targetHistory": 4
+      },
+      "snapshotBytes": 1049413,
+      "assetSnapshotBytes": 47617,
+      "preflight": {
+        "cloneCalls": 4,
+        "cloneBytes": 1050931,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 139512,
+            "jsonColumnBytes": 132664
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 145,
+            "returnedBytes": 376808,
+            "jsonColumnBytes": 360190
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 96,
+            "returnedBytes": 226906,
+            "jsonColumnBytes": 223544
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 113066,
+            "jsonColumnBytes": 111448
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 111625,
+            "jsonColumnBytes": 110193
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 220574,
+            "jsonColumnBytes": 218760
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 384,
+            "returnedBytes": 48001,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 139512,
+            "jsonColumnBytes": 132664
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 145,
+            "returnedBytes": 376808,
+            "jsonColumnBytes": 360190
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 96,
+            "returnedBytes": 226906,
+            "jsonColumnBytes": 223544
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 113066,
+            "jsonColumnBytes": 111448
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 111625,
+            "jsonColumnBytes": 110193
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 220574,
+            "jsonColumnBytes": 218760
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 384,
+            "returnedBytes": 48001,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 3,
+        "cloneBytes": 1050173,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 1051991,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 139512,
+            "jsonColumnBytes": 132664
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 145,
+            "returnedBytes": 376808,
+            "jsonColumnBytes": 360190
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 96,
+            "returnedBytes": 226906,
+            "jsonColumnBytes": 223544
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 113066,
+            "jsonColumnBytes": 111448
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 111625,
+            "jsonColumnBytes": 110193
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 49,
+            "returnedBytes": 220574,
+            "jsonColumnBytes": 218760
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 384,
+            "returnedBytes": 48001,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          3.4061289999999644,
+          2.9147239999999783,
+          2.5204039999998713
+        ],
+        "assemblyMs": [
+          7.399503000000095,
+          5.0837590000001,
+          4.0606840000000375
+        ]
+      }
+    },
+    {
+      "axis": "history",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4
+      },
+      "snapshotBytes": 2790,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 4,
+        "cloneBytes": 4308,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 3,
+        "cloneBytes": 3550,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 5368,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 693,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.2811149999999998,
+          0.31930800000009185,
+          0.2764360000001034
+        ],
+        "assemblyMs": [
+          1.9129990000001271,
+          1.4179160000001048,
+          1.2975870000000214
+        ]
+      }
+    },
+    {
+      "axis": "history",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 40
+      },
+      "snapshotBytes": 7314,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 4,
+        "cloneBytes": 17880,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 40,
+            "returnedBytes": 6981,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 40,
+            "returnedBytes": 6981,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 3,
+        "cloneBytes": 12598,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 27988,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 40,
+            "returnedBytes": 6981,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.40025199999990946,
+          0.5187869999999748,
+          0.7283939999999802
+        ],
+        "assemblyMs": [
+          7.699775999999929,
+          6.031762000000072,
+          5.83200399999987
+        ]
+      }
+    },
+    {
+      "axis": "history",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 160
+      },
+      "snapshotBytes": 22554,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 4,
+        "cloneBytes": 63600,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 160,
+            "returnedBytes": 28101,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 160,
+            "returnedBytes": 28101,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 3,
+        "cloneBytes": 43078,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 104188,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "characters": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 687,
+            "jsonColumnBytes": 540
+          },
+          "chats": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 368,
+            "jsonColumnBytes": 250
+          },
+          "modules": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 4,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "model_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 142,
+            "jsonColumnBytes": 108
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "assets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 160,
+            "returnedBytes": 28101,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.7700660000000425,
+          0.7734619999998813,
+          0.6457479999999123
+        ],
+        "assemblyMs": [
+          14.255745999999817,
+          13.598195000000032,
+          14.402043000000049
+        ]
+      }
+    }
+  ]
+}
