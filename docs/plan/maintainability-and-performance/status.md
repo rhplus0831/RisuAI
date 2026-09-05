@@ -33,7 +33,7 @@ selected [phase](phases/README.md) for implementation detail.
 
 | Finding | Disposition | Missing completion evidence |
 | --- | --- | --- |
-| F01 | Creation fixed; confirmed Agent Preset deletion follow-up in progress | Targeted delete cleanup/preservation plus final aggregate |
+| F01 | Fixed; targeted creation and Agent Preset deletion cleanup preserve dependent rows | Final combined aggregate pending |
 | F02 | Fixed within recorded configuration-row/legacy exceptions; selected reads and bounded query programs | Final combined aggregate pending |
 | F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
@@ -67,7 +67,7 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 - The ten audited findings remain the scope. F02–F06 and F09 are fixed with the
   explicit F02 configuration/legacy exceptions below. F01 creation is fixed and
-  its confirmed deletion follow-up remains open; F07, F08 and F10 retain their
+  its confirmed deletion follow-up is fixed; F07, F08 and F10 retain their
   implementation/decision gates. No finding is silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
@@ -585,3 +585,23 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   names plus complete counts, and candidate/file traversal remains paged.
   Existing grace/staging protection remains. These bounds complement the original
   unchanged API/event-loop latency targets; final isolated comparison is pending.
+
+## F01 Follow-up Accepted: Agent Preset Deletion
+
+- The dedicated deletion reproduction at `2e2c321e9` returned HTTP 200 and
+  correct cleanup counters but deleted all settings/document/version/search/link
+  rows for both affected and unrelated BardWiki chats. Scope amendment
+  `9ca9bc918` authorized the targeted correction.
+- `server/fastify/src/commands/agentPresets.ts` now uses the existing targeted
+  cross-owner mutation boundary, loads settings, selects matching chat payloads,
+  and updates only those chats and matching stored loadout positions. It retains
+  complete Agent/preset/loadout validation, default cleanup, legacy embedded
+  owners, one revision/event, receipt replay, and atomic rollback. Character and
+  chat identities are never replaced by this ordinary deletion.
+- Exact focused checks: `agentPresetDeletionSafety.test.ts` 13,
+  `commands.test.ts` 241, and `commandMutationReceipts.test.ts` 12 passed. The
+  dedicated test observes physical SQL writes and all five affected BardWiki
+  families, unrelated messages/owners, malformed-input rejection, receipt replay,
+  and injected chat/event/receipt failures. This is a correctness correction;
+  SQL still examines chat JSON for matches and validates the loadout collection.
+  Final combined aggregate remains pending until all implementation finishes.

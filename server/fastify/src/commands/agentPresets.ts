@@ -31,9 +31,16 @@ import {
   type AgentPresetStepPhase,
   type AgentPresetStepRecord,
 } from '@risuai/shared-core/agent-preset-records'
-import { EntityNotFoundError, extractSettings, ValidationError, writeSettingsOnly } from '../repository.js'
 import {
-  applyMessageFreeJsonCommandMutation,
+  EntityNotFoundError,
+  extractSettings,
+  loadSettingsFromSqlite,
+  ValidationError,
+  writeSettingsOnly,
+  writeSingleChatRowExact,
+  writeSingleCollectionRow,
+} from '../repository.js'
+import {
   applyTargetedCommandMutation,
   TARGETED_MUTATION_PATHS,
   type CommandMutationReceiptKey,
@@ -205,23 +212,28 @@ export function deleteAgentPresetCommand(
 }> {
   const presetId = readNonEmptyString(args.presetId, 'presetId')
 
-  return applyMessageFreeJsonCommandMutation({
+  return applyTargetedCommandMutation({
     db: args.db,
     dataDir: args.dataDir,
     baseRevision: args.baseRevision,
     eventSink: args.eventSink,
     ...(args.eventOrigin ? { eventOrigin: args.eventOrigin } : {}),
     ...(args.mutationReceiptKey ? { mutationReceiptKey: args.mutationReceiptKey } : {}),
-    mutate(database) {
-      const target = readDatabaseTarget(database)
+    mutationPath: TARGETED_MUTATION_PATHS.crossOwner,
+    skipDatabaseLoad: true,
+    mutate(_database, innerDb) {
+      const target = readDatabaseTarget(loadSettingsFromSqlite(innerDb))
       const { agents, presets } = currentAgentConfiguration(target)
       const index = requireAgentPresetIndex(presets, presetId)
       presets.splice(index, 1)
       target.agentPresets = readPresetCollectionForWrite(presets, agents)
       const clearedDefault = target.agentPresetDefaultId === presetId
       normalizeAgentPresetDefault(target)
-      const clearedChatCount = clearChatAgentPresetSelections(target, presetId)
-      const clearedLoadoutCount = clearLoadoutAgentPresetSelections(target, presetId)
+      const clearedChatCount = clearStoredChatAgentPresetSelections(innerDb, target, presetId)
+      const clearedLoadoutCount = clearStoredLoadoutAgentPresetSelections(innerDb, target, presetId)
+      // Keep any legacy embedded owners intact; only normalized rows selected
+      // above are written separately. Import/recovery owns their extraction.
+      writeSettingsOnly(innerDb, target)
       return {
         event: { ...COMMAND_EVENT_CATALOG.agentPresetDeleted, id: presetId },
         extra: { presetId, clearedDefault, clearedChatCount, clearedLoadoutCount },
@@ -1347,6 +1359,68 @@ function validateFullIdOrder(
   }
 }
 
+/** Select only affected normalized chat payloads. Deleting a preset must not
+ * replace their parent rows: doing so cascades into unrelated BardWiki state. */
+function clearStoredChatAgentPresetSelections(
+  db: DatabaseSync,
+  settings: Record<string, unknown>,
+  presetId: string,
+): number {
+  const rows = db
+    .prepare(
+      `SELECT id, character_id, data_json FROM chats
+       WHERE json_extract(data_json, '$.generationSettings.agentPresetId') = ? ORDER BY id`,
+    )
+    .all(presetId) as unknown as Array<{ id: string; character_id: string; data_json: string }>
+  for (const row of rows) {
+    const { chat } = requireStrictChatLocation(
+      [{ chaId: row.character_id, chats: [JSON.parse(row.data_json)] }],
+      row.id,
+    )
+    delete chat.generationSettings!.agentPresetId
+    writeSingleChatRowExact(db, row.id, chat)
+  }
+  // Mirror the repository's pre-extraction read precedence without rewriting
+  // characters or converting embedded state during an ordinary deletion.
+  if (!db.prepare('SELECT 1 FROM characters LIMIT 1').get() && Array.isArray(settings.characters)) {
+    return rows.length + clearChatAgentPresetSelections(settings, presetId)
+  }
+  return rows.length
+}
+
+function clearStoredLoadoutAgentPresetSelections(
+  db: DatabaseSync,
+  settings: Record<string, unknown>,
+  presetId: string,
+): number {
+  const rows = db.prepare('SELECT position, data_json FROM loadouts ORDER BY position').all() as unknown as Array<{
+    position: number
+    data_json: string
+  }>
+  const target = {
+    ...settings,
+    loadouts:
+      rows.length > 0
+        ? rows.map((row) => JSON.parse(row.data_json))
+        : hasOwn(settings, 'loadouts')
+          ? settings.loadouts
+          : [],
+  }
+  // Preserve the collection's strict validation and duplicate-id rules while
+  // limiting physical updates to rows that actually reference this preset.
+  const loadouts = ensureLoadoutCollection(target)
+  let cleared = 0
+  for (let index = 0; index < loadouts.length; index++) {
+    const loadout = loadouts[index]
+    if (loadout.agentPresetId !== presetId) continue
+    delete loadout.agentPresetId
+    delete loadout.agentPresetName
+    if (rows.length > 0) writeSingleCollectionRow(db, 'loadouts', rows[index].position, loadout)
+    cleared += 1
+  }
+  return cleared
+}
+
 function clearChatAgentPresetSelections(target: Record<string, unknown>, presetId: string): number {
   let cleared = 0
   const characters = readStrictAgentSelectionCharacters(target)
@@ -1383,18 +1457,6 @@ function readStrictAgentSelectionCharacters(target: Record<string, unknown>): Ch
     }
     return character
   })
-}
-
-function clearLoadoutAgentPresetSelections(target: Record<string, unknown>, presetId: string): number {
-  let cleared = 0
-  const loadouts = ensureLoadoutCollection(target)
-  for (const loadout of loadouts) {
-    if (loadout.agentPresetId !== presetId) continue
-    delete loadout.agentPresetId
-    delete loadout.agentPresetName
-    cleared += 1
-  }
-  return cleared
 }
 
 function normalizeAgentPresetDefault(target: Record<string, unknown>): void {

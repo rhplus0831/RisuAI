@@ -245,6 +245,13 @@ Agent create/update/duplicate/delete/reorder, preset metadata/default/order,
 and preset-use create/update/delete/reorder. They validate the complete Agent
 and preset collections before committing one revision/event.
 
+Deleting an Agent Preset updates settings and only the chat/loadout rows that
+select that preset. It preserves character/chat row identities and their
+BardWiki dependents, while clearing the matching default and selection labels.
+The complete loadout collection is still validated; unrelated chat bodies are
+not materialized. Legacy embedded selections remain in their settings-owned
+representation until explicit import/recovery extracts them.
+
 `/agent-presets/:id/uses` is the canonical modular wiring surface. Older
 `/agent-presets/:id/steps` commands are compatibility adapters over the same
 records. Legacy embedded steps normalize into one standalone Agent and one use
