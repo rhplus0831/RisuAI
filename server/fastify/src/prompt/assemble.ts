@@ -548,7 +548,7 @@ export interface AssemblyState {
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
   /** `{{position::}}` resolver shared by the template / render walkers. */
-  positionParser?: (text: string, loc: string) => string
+  positionParser?: (text: string, loc: string | undefined) => string
   /** The base character-description row, retained across lorebook insertion. */
   descriptionBasePrompt?: PromptMessage
   /** Index of the base character-description row after lorebook placement. */

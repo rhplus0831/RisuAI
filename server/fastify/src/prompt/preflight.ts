@@ -59,7 +59,9 @@ export interface PreflightInput {
   descriptionBaseIndex?: number
 }
 
-function positionParserFor(report: LorebookActivationReport | undefined): (text: string, loc: string) => string {
+function positionParserFor(
+  report: LorebookActivationReport | undefined,
+): (text: string, loc: string | undefined) => string {
   if (!report) return (text) => text
   return createPositionParser(report)
 }

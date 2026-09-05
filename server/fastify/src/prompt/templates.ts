@@ -268,7 +268,7 @@ export interface ContentCardDeps {
   unformated: UnformatedPromptSlots
   usingPromptTemplate: boolean
   /** `{{position::}}` and `@@inject_at` substitution supplied by the caller. */
-  positionParser: (text: string, loc: string) => string
+  positionParser: (text: string, loc: string | undefined) => string
   /** Index of the base character-description row after lorebook placement. */
   descriptionBaseIndex?: number
   /**
@@ -579,7 +579,7 @@ export function renderByTemplate(
   unformated: UnformatedPromptSlots,
   promptTemplate: PromptItem[],
   usingPromptTemplate: boolean,
-  positionParser: (text: string, loc: string) => string = (text) => text,
+  positionParser: (text: string, loc: string | undefined) => string = (text) => text,
   memories: PromptMessage[] = [],
   stableCardCache?: StableCardRenderCache,
   descriptionBaseIndex?: number,
@@ -693,7 +693,7 @@ export interface RenderFinalPromptArgs {
   /** Memory rows for the `memory` template card. */
   memories?: PromptMessage[]
   /** `{{position::}}` and `@@inject_at` substitution supplied by the caller. */
-  positionParser?: (text: string, loc: string) => string
+  positionParser?: (text: string, loc: string | undefined) => string
   /** Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
   isContinue?: boolean
   /**

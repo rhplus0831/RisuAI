@@ -99,7 +99,9 @@ JavaScript and finite declaration synchronization plus runtime-Ajv parity.
 Production does not compile the schema during startup.
 Imported extension data survives but is absent from ordinary consumer types.
 Invalid known fields identify the domain/path without echoing values. Sparse
-supported legacy fields and nullable message metadata remain supported.
+supported legacy fields and nullable message metadata remain supported. Unfiled
+chats retain `folderId: null`; plain prompt cards may omit `type2`, passing an
+undefined location through the existing position parser without a new default.
 
 Resolved configuration is deeply readonly by type. Effective request settings
 use a writable scalar overlay and owned global variables; selected nested

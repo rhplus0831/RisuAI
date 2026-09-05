@@ -373,7 +373,7 @@ export type FastifyChat = {
   bilingualDisplay?: boolean
   bilingualEmphasis?: 'original' | 'translation'
   hypaV3Data?: ServerSerializableHypaV3Data
-  folderId?: string
+  folderId?: string | null
   lastDate?: number
   bookmarks?: string[]
   bookmarkNames?: { [chatId: string]: string }

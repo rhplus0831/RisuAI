@@ -445,6 +445,25 @@ describe('content cards (renderByTemplate)', () => {
     expect(botOut[0].role).toBe('assistant')
   })
 
+  it('renders a plain card with omitted location and passes that absence to position parsing', () => {
+    const db = makeDatabase()
+    const positionParser = vi.fn((text: string, location: string | undefined) =>
+      location === undefined ? `legacy ${text}` : `located ${text}`,
+    )
+    const template: PromptItem[] = [{ type: 'plain', text: 'prompt', role: 'system' }]
+    const { formated } = renderByTemplate(
+      ctxFor(db),
+      makeCharacter({ replaceGlobalNote: 'global note replacement' }),
+      makeSlots(),
+      template,
+      true,
+      positionParser,
+    )
+    expect(formated).toEqual([{ role: 'system', content: 'legacy prompt' }])
+    expect(positionParser).toHaveBeenCalledExactlyOnceWith('prompt', undefined)
+    expect(Object.hasOwn(template[0], 'type2')).toBe(false)
+  })
+
   it('applies replaceGlobalNote ({{original}}) on a globalNote card', () => {
     const db = makeDatabase()
     const { formated: out } = renderByTemplate(

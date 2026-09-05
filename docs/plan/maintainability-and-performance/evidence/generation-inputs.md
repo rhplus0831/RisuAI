@@ -168,3 +168,19 @@ Shared readonly Agent tests and nullable wire correction are separate accepted
 commits recorded in status. Prettier, whitespace, current-document and explicit
 plan-document checks pass. The final combined aggregate remains the gate after
 all implementation phases; user/CI compatibility lanes are separate evidence.
+
+## Compatibility Follow-up from the Combined Load Harness
+
+The unchanged hydration fixture exposed two supported sparse values rejected by
+finite decoding: unfiled chats persist `folderId: null`, and command-normalized
+plain prompt cards may omit `type2`. The chat command/protocol explicitly accepts
+null. Prompt command normalization retains omitted `type2`, and the existing
+renderer passes an undefined location to the position parser without treating
+it as main/global-note content. The finite contract now preserves both forms;
+no default, coercion, clone, fixture repair, or runtime parser change was added.
+
+Regenerated schema/runtime validators have the same compilation policy. Exact
+focused checks pass: decoder/drift/Ajv parity 26, strict compiler 1, templates 72,
+and the full server load harness 38. The harness now reports early generation
+failures directly and checks GC keyset-page bounds plus plugin-only references.
+This follow-up closes the observed rejection; final aggregate remains pending.

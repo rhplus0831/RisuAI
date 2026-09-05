@@ -1353,7 +1353,9 @@ export function resolvePosition(text: string, report: LorebookActivationReport, 
  * Non-lore `@@inject_at` entries intentionally remain in the report so their
  * append / prepend / replace operation can run here.
  */
-export function createPositionParser(report: LorebookActivationReport): (text: string, loc: string) => string {
+export function createPositionParser(
+  report: LorebookActivationReport,
+): (text: string, loc: string | undefined) => string {
   const injections = report.actives.filter((entry) => entry.inject !== null && !entry.inject.lore)
 
   return (text, loc) => {
@@ -1390,7 +1392,7 @@ export interface LorebookContext {
    * Shared `{{position::}}` and `@@inject_at` resolver for template preflight
    * and final rendering.
    */
-  positionParser: (text: string, loc: string) => string
+  positionParser: (text: string, loc: string | undefined) => string
   /** `pos === 'depth' && depth > 0` or `reverse_depth` (via `getDepthPrompts`). */
   depthPrompts: LoreEntryActive[]
 }

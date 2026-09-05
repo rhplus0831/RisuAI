@@ -69,6 +69,10 @@ describe('generation input concrete contracts', () => {
       database.globalChatVariables.owned = 'changed';
       database.temperature = 50;
       chat.generationSettings = {modelPresetId:'model', sidebarToggles:{test:'1'}};
+      chat.folderId = null;
+      chat.folderId = 'folder';
+      // @ts-expect-error a folder ownership value is a string or null
+      chat.folderId = 42;
       // @ts-expect-error unknown top-level fields cannot escape the contract
       database.temperatur = 50;
       // @ts-expect-error settings values are concrete

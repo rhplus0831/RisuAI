@@ -15,7 +15,7 @@ export type PromptRole = 'user' | 'bot' | 'system'
 export interface PromptItemPlain {
   id?: string
   type: 'plain' | 'jailbreak' | 'cot'
-  type2: 'normal' | 'globalNote' | 'main'
+  type2?: 'normal' | 'globalNote' | 'main'
   text: string
   role: PromptRole
   name?: string

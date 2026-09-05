@@ -9480,7 +9480,7 @@
           "type": "string"
         }
       },
-      "required": ["type", "type2", "text", "role"]
+      "required": ["type", "text", "role"]
     },
     "record197": {
       "type": "object",
@@ -19247,7 +19247,7 @@
           "type": "string"
         }
       },
-      "required": ["type", "type2", "text", "role"]
+      "required": ["type", "text", "role"]
     },
     "record403": {
       "type": "object",
@@ -19992,7 +19992,14 @@
           "$ref": "#/$defs/record426"
         },
         "folderId": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string"
+            }
+          ]
         },
         "lastDate": {
           "type": "number"

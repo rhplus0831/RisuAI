@@ -877,8 +877,8 @@ describe('server load-count harness on the large-corpus fixture', () => {
     // Audit M1 regression: assembly resolved its database through
     // `loadPersistedWithMessages`, paying the whole-table messages +
     // chat_hypa_v3 parse per send/preview. The scoped assembly loader joins
-    // only the target chat; `loadPersisted`'s character/collection reads are
-    // the path's legitimate remaining breadth.
+    // only the target chat. Selected generation now also reads the chosen
+    // character and configuration owners without rebuilding their collections.
     const { result: res, loadCountByTable } = await withServerLoadInstrumentation(() =>
       harness.app.inject({
         method: 'POST',
@@ -887,7 +887,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
         payload: { chatId: fixture.hot.chatId, characterId: fixture.hot.characterId },
       }),
     )
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(200)
     const body = res.json()
     expect(body.stopSending).toBeUndefined()
     // The target transcript actually hydrated: the hot chat's last message
@@ -1568,7 +1568,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         durable: true,
       },
     })
-    await paused.waitForProvider
+    await Promise.race([
+      paused.waitForProvider,
+      Promise.resolve(request).then((response) => {
+        throw new Error(`Generation ended before provider dispatch: ${response.statusCode} ${response.body}`)
+      }),
+    ])
 
     const {
       result: res,
@@ -1629,7 +1634,12 @@ describe('server load-count harness on the large-corpus fixture', () => {
         durable: true,
       },
     })
-    await paused.waitForProvider
+    await Promise.race([
+      paused.waitForProvider,
+      Promise.resolve(request).then((response) => {
+        throw new Error(`Generation ended before provider dispatch: ${response.statusCode} ${response.body}`)
+      }),
+    ])
 
     const {
       result: res,
@@ -1664,8 +1674,10 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const characterRef = '3'.repeat(64)
     const messageRef = '4'.repeat(64)
     const orphan = '5'.repeat(64)
+    const pluginRef = '6'.repeat(64)
     await importDatabase({
       userIcon: settingRef,
+      pluginCustomStorage: { 'gc-plugin': { nested: { asset: pluginRef } } },
       modules: [{ assets: [['module', collectionRef]] }],
       personas: [{ icon: collectionRef }],
       botPresets: [{ image: collectionRef }],
@@ -1697,14 +1709,20 @@ describe('server load-count harness on the large-corpus fixture', () => {
         asset(characterRef),
         asset(messageRef),
         asset(orphan),
+        asset(pluginRef),
       ])
 
       const observed = await withServerLoadInstrumentation(() =>
         runAssetGc(harness.dataDir, { db, graceMs: 0, now: () => Date.now() }),
       )
 
+      expect(observed.result.status).toBe('completed')
       expect(observed.result.deletedAssetIds).toEqual([orphan])
-      expect(observed.loadCountByTable.assets).toBe(1)
+      expect(observed.result.referenceScan?.referenceCount).toBe(5)
+      // Each paged walk reads its data and then an empty terminal page. Raw
+      // metadata/plugin payloads remain visible to the corpus classifier; every
+      // such read must have the bounded LIMIT and advance by its indexed key.
+      expect(observed.loadCountByTable.assets).toBe(2)
       expect(observed.loadCountByTable.characters ?? 0).toBe(0)
       expect(observed.loadCountByTable.chats ?? 0).toBe(0)
       expect(observed.loadCountByTable.modules ?? 0).toBe(0)
@@ -1712,10 +1730,17 @@ describe('server load-count harness on the large-corpus fixture', () => {
       expect(observed.loadCountByTable.bot_presets ?? 0).toBe(0)
       expect(observed.loadCountByTable.messages ?? 0).toBe(0)
       expect(observed.loadCountByTable.chat_hypa_v3 ?? 0).toBe(0)
-      // Plugin storage is the bounded arbitrary-JSON exception: GC must scan
-      // every value_json string candidate, while all structured corpus tables
-      // stay on scalar json_extract projections.
-      expect(observed.loadCountByTable.plugin_custom_storage).toBe(1)
+      // Plugin storage remains the arbitrary-JSON exception; the nested
+      // reference above must survive while structured owners use projections.
+      expect(observed.loadCountByTable.plugin_custom_storage).toBe(2)
+      const assetPages = observed.corpusLoads.filter((load) => load.table === 'assets')
+      const pluginPages = observed.corpusLoads.filter((load) => load.table === 'plugin_custom_storage')
+      for (const load of [...assetPages, ...pluginPages]) {
+        expect(load.sql).toMatch(/ORDER BY (?:id|rowid) LIMIT 64$/i)
+        expect(load.sql).not.toMatch(/\bOFFSET\b/i)
+      }
+      expect(assetPages.every((load) => /WHERE id > \?/i.test(load.sql))).toBe(true)
+      expect(pluginPages[1].sql).toMatch(/WHERE rowid > CAST\(\? AS INTEGER\)/i)
       expect(
         observed.corpusLoads
           .filter((load) => load.table !== 'assets' && load.table !== 'plugin_custom_storage')

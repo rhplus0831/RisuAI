@@ -185,6 +185,18 @@ describe('selected generation persistence decoder', () => {
     }
   })
 
+  it('preserves a plain prompt card with omitted legacy location without supplying a default', () => {
+    const card = { type: 'plain', role: 'system', text: 'legacy prompt' }
+    const input = { promptPresets: [{ id: 'preset', promptTemplate: [card] }] }
+    const decoded = decodeGenerationSettings(input)
+    expect(decoded).toBe(input)
+    expect(decoded.promptPresets?.[0].promptTemplate?.[0]).toBe(card)
+    expect(Object.hasOwn(card, 'type2')).toBe(false)
+    expect(() => decodeGenerationSettings({ promptTemplate: [{ ...card, type2: 42 }] })).toThrow(
+      GenerationInputValidationError,
+    )
+  })
+
   it.each([null, [], undefined])('preserves explicit template ownership value %j', (template) => {
     const input =
       template === undefined
@@ -192,6 +204,21 @@ describe('selected generation persistence decoder', () => {
         : { promptTemplate: template, promptPresets: [{ id: 'preset', promptTemplate: template }] }
     expect(decodeGenerationSettings(input)).toBe(input)
     expect(Object.hasOwn(input, 'promptTemplate')).toBe(template !== undefined)
+  })
+
+  it.each([null, 'folder'])('preserves supported chat folder ownership %j without copying', (folderId) => {
+    const input = selectedDatabaseWithMessage({ role: 'user', data: 'accepted' })
+    const chat = input.characters[0].chats[0]
+    chat.folderId = folderId
+    expect(decodeGenerationDatabase(input)).toBe(input)
+    expect(decodeGenerationDatabase(input).characters[0].chats[0]).toBe(chat)
+    expect(chat.folderId).toBe(folderId)
+    expect(() =>
+      decodeGenerationDatabase({
+        ...input,
+        characters: [{ ...input.characters[0], chats: [{ ...chat, folderId: 42 }] }],
+      }),
+    ).toThrow('Invalid database generation input at /characters/0/chats/0/folderId')
   })
 
   it('round-trips every nullable message metadata field accepted by commands and SQLite', () => {
