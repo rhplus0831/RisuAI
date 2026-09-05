@@ -10,8 +10,8 @@ deleting/reinserting existing rows or cascading away existing BardWiki data.
 
 ## Read First
 
-- [Data and events](../../../structure/data-and-events.md) and
-  [BardWiki lifecycle](../../../structure/bardwiki.md).
+- [Data and events](../../../../docs/structure/data-and-events.md) and
+  [BardWiki lifecycle](../../../../docs/structure/bardwiki.md).
 - `server/fastify/src/routes/commands.ts`: both character creation endpoints.
 - `server/fastify/src/commands/mutations.ts`: message-free versus targeted
   transaction helpers; `server/fastify/src/repository.ts`: broad rewrite and

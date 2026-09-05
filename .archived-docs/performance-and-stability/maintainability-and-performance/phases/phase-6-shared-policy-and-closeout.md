@@ -6,7 +6,7 @@ gates accepted. Progress belongs in [status.md](../status.md).
 ## 6a: One Trigger Compatibility Owner
 
 Read [shared-core ownership](../../../../packages/shared-core/README.md) and
-[scripting](../../../structure/prompt-assembly-and-scripting.md). Owners:
+[scripting](../../../../docs/structure/prompt-assembly-and-scripting.md). Owners:
 `src/ts/process/triggerServerSupport.ts`,
 `server/fastify/src/prompt/triggerCompatibility.ts`, and
 `server/fastify/__tests__/triggerCompatibilityOwnership.test.ts`.

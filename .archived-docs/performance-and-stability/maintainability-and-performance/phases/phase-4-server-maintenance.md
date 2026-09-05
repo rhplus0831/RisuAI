@@ -10,8 +10,8 @@ Progress belongs in [status.md](../status.md).
 Permit API and stream progress during long backup copies and asset sweeps while
 preserving the consistency currently provided by synchronous execution.
 
-Read [assets and saves](../../../structure/assets-and-saves.md) and
-[backend lifecycle](../../../structure/backend.md). Owners:
+Read [assets and saves](../../../../docs/structure/assets-and-saves.md) and
+[backend lifecycle](../../../../docs/structure/backend.md). Owners:
 `server/fastify/src/repository.ts`, `server/fastify/src/routes/backups.ts`,
 `server/fastify/src/assetGc.ts`, `server/fastify/src/risuSave/assetReferences.ts`,
 and `server/fastify/src/app.ts`.

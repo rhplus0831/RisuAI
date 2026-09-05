@@ -19,20 +19,20 @@ criteria. `status.md` alone owns the moving execution cursor, implementation
 commits, decisions, and verification results. Phase documents own detailed work
 and acceptance criteria. Shipped behavior remains grounded in
 [STRUCTURE.md](../../../STRUCTURE.md) and the
-[current architecture guides](../../structure/README.md).
+[current architecture guides](../../../docs/structure/README.md).
 
 ## Historical Basis
 
-- [Mutation-range narrowing](../../../.archived-docs/protocol-and-persistence/mutation-range-narrowing/README.md)
+- [Mutation-range narrowing](../../protocol-and-persistence/mutation-range-narrowing/README.md)
   established targeted writers, physical-write metrics, and row-stability
   checks. It explicitly retained broad character creation as an infrequent
   operation. BardWiki's current foreign-key relationships invalidate the
   assumption that this remains merely a performance exception.
-- [Frontend clone narrowing](../../../.archived-docs/performance-and-stability/frontend-performance/plan.md)
+- [Frontend clone narrowing](../frontend-performance/plan.md)
   established scoped rollback and clone-cost checks, while retaining broad
   snapshots for structural operations. Reuse that foundation and recheck the
   remaining callers against their actual mutation scope.
-- [Cross-runtime boundaries](../../../.archived-docs/architecture-and-migration/cross-runtime-boundaries/PLAN.md)
+- [Cross-runtime boundaries](../../architecture-and-migration/cross-runtime-boundaries/PLAN.md)
   established protocol/shared-core ownership and the stable-plan, mutable-status,
   bounded-phase format used here. Existing package separation does not by itself
   prove that a prompt input typed as `any` is maintainable.
@@ -150,7 +150,7 @@ applies; do not create concurrent edits to shared owners by default.
 
 ## Validation and Completion
 
-Use the current [test workflow](../../tests/README.md#running-the-suite), not
+Use the current [test workflow](../../../docs/tests/README.md#running-the-suite), not
 commands copied from historical plans. During a slice run
 `pnpm test -- <one-test-or-source-file>` for a concrete diagnostic. When the
 implementation batch is complete, run `pnpm test:agent`; add `pnpm check:docs`

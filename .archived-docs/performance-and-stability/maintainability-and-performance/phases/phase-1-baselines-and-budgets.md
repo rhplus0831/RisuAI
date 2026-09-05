@@ -11,9 +11,9 @@ findings; do not build a general observability framework.
 
 ## Existing Foundations
 
-- [Development and observability](../../../structure/development-and-observability.md),
-  [test workflow](../../../tests/README.md), and the
-  [prior mutation-range baseline](../../../../.archived-docs/protocol-and-persistence/mutation-range-narrowing/phases/phase-0-baseline-foundations.md).
+- [Development and observability](../../../../docs/structure/development-and-observability.md),
+  [test workflow](../../../../docs/tests/README.md), and the
+  [prior mutation-range baseline](../../../protocol-and-persistence/mutation-range-narrowing/phases/phase-0-baseline-foundations.md).
 - `server/fastify/src/protocolMetrics.ts` and
   `server/fastify/__tests__/helpers/commandMetricGates.ts`.
 - `src/ts/__tests__/renderCostHarness.ts`,

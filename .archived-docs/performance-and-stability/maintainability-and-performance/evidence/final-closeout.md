@@ -103,12 +103,12 @@ ordinary prompt generation uses `loadPersistedForGenerationAssembly`.
   is introduced. Revisit classification when supported server execution changes,
   updating the shared catalog and consumer behavior tests together.
 
-Current contracts and downstream navigation are in [data/events](../../../structure/data-and-events.md),
-[mutation recovery](../../../structure/durable-mutations-and-recovery.md),
-[resources/cache](../../../structure/server-resources-and-bridges.md),
-[prompt/scripting](../../../structure/prompt-assembly-and-scripting.md),
-[assets/saves](../../../structure/assets-and-saves.md),
-[backend](../../../structure/backend.md), [chat UI](../../../../src/docs/svelte-chat-ui.md),
+Current contracts and downstream navigation are in [data/events](../../../../docs/structure/data-and-events.md),
+[mutation recovery](../../../../docs/structure/durable-mutations-and-recovery.md),
+[resources/cache](../../../../docs/structure/server-resources-and-bridges.md),
+[prompt/scripting](../../../../docs/structure/prompt-assembly-and-scripting.md),
+[assets/saves](../../../../docs/structure/assets-and-saves.md),
+[backend](../../../../docs/structure/backend.md), [chat UI](../../../../src/docs/svelte-chat-ui.md),
 [navigation UI](../../../../src/docs/svelte-navigation-ui.md),
 [locale UI](../../../../src/docs/svelte-ui.md#localization), and
 [shared-core](../../../../packages/shared-core/README.md).
@@ -202,3 +202,11 @@ file in this workstream explicitly with `validateCurrentDocumentation`, no
 index specs or path exemptions. Archival preserves the plan, phases, status and
 all earlier failed/accepted evidence; moved links and the archive/active indexes
 are repaired and revalidated.
+
+Final documentation results: 49 current documents and 23 active workstream
+documents passed before the move; 49 current documents and all 25 archived
+workstream/index documents passed afterward. All 66 workstream files were
+preserved, with all 43 non-Markdown SHA-256 digests unchanged; only Markdown
+links and closeout prose were adapted. No live code/tooling references the
+former active-plan path. Both temporary generation comparison worktrees were
+removed after their raw measurements were retained.

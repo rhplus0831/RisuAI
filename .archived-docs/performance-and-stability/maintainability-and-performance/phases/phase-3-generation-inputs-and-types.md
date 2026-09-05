@@ -8,8 +8,8 @@ baselines available. Progress belongs in [status.md](../status.md).
 Give preflight and assembly explicit domain inputs, reducing unrelated loading
 and cloning while making required fields compiler-checkable.
 
-Read [prompt assembly and scripting](../../../structure/prompt-assembly-and-scripting.md),
-[providers/models](../../../structure/providers-and-models.md), and
+Read [prompt assembly and scripting](../../../../docs/structure/prompt-assembly-and-scripting.md),
+[providers/models](../../../../docs/structure/providers-and-models.md), and
 [durable generation](../../../../src/docs/generation-client.md). Source owners:
 
 - `server/fastify/src/repository.ts`: `loadPersistedForAssembly` and scoped loaders.
@@ -100,8 +100,8 @@ Existing owners include `server/fastify/__tests__/assemble.test.ts`,
 `server/fastify/__tests__/generationOperationsStartup.test.ts`, and
 `server/fastify/browser-smoke/acceptedSendProtocol.spec.ts`. Select additional
 effective-settings, scripting, and memory cases from
-[prompting tests](../../../tests/prompting-generation-and-streaming.md) and
-[scripting tests](../../../tests/scripting-parsing-and-automation.md).
+[prompting tests](../../../../docs/tests/prompting-generation-and-streaming.md) and
+[scripting tests](../../../../docs/tests/scripting-parsing-and-automation.md).
 
 Use exact focused tests plus cost probes, `pnpm check:server`, and the final
 `pnpm test:agent` workflow. Record relevant user/CI compatibility evidence; do

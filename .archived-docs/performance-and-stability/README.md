@@ -4,6 +4,7 @@ Chronological performance investigations and their closed remediation records.
 
 | Record                                                                           | Scope                                                                                                                             |
 | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [`maintainability-and-performance/`](maintainability-and-performance/PLAN.md) | Completed ten-finding remediation: data preservation, scoped browser/generation work, scheduled maintenance, transcript residency and shared policy; [final evidence and residual owners](maintainability-and-performance/evidence/final-closeout.md). |
 | [`frontend-test-architecture/`](frontend-test-architecture/README.md)            | Completed N/S/D/B frontend test capability migration, formal benchmarks, routing enforcement, and accepted final budget decision. |
 | [`test-suite-effectiveness-audit/`](test-suite-effectiveness-audit/README.md)    | Completed exhaustive test-value audit, remediation record, historical manifests, retained frontend routing input, and final evidence. |
 | [`frontend-performance/`](frontend-performance/README.md)                        | Frontend deep-clone and projection-write narrowing.                                                                               |

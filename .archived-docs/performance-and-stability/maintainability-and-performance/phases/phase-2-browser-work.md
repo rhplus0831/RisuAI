@@ -7,7 +7,7 @@ Findings: F03, F05, F04, F06. Dependency: Phase 1 baselines accepted. Execute
 
 Owners: `src/ts/chatCommands.ts`, `src/lib/SideBars/SideChatList.svelte`.
 Read [navigation UI](../../../../src/docs/svelte-navigation-ui.md) and
-[mutation recovery](../../../structure/durable-mutations-and-recovery.md).
+[mutation recovery](../../../../docs/structure/durable-mutations-and-recovery.md).
 
 - Classify each remaining `currentChatStateSnapshot` caller by actual writes.
   Start with folder folding/metadata, then create/delete/reorder organization.
@@ -52,7 +52,7 @@ Use `src/ts/server/pendingMutationOutbox.test.ts` and
 
 Owners: `src/ts/server/resourceCache.ts`, `src/ts/server/resourceReads.ts`,
 `src/ts/server/hydrationReads.ts`.
-Read the [cache protocol](../../../structure/server-resources-and-bridges.md#cache-protocol).
+Read the [cache protocol](../../../../docs/structure/server-resources-and-bridges.md#cache-protocol).
 
 - Keep authenticated hash confirmation and value validation on the resource
   read path. Separate cache writes from global eviction scheduling; determine

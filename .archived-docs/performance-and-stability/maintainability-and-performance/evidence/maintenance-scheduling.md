@@ -96,8 +96,8 @@ existing synchronous costs. Continuous accepted writes may stop GC conservativel
 quiescent later sweeps reclaim remaining candidates. No new public job protocol
 or reference index requiring authoritative rebuilds is introduced. Current
 ownership and rollback contracts live in
-[assets and saves](../../../structure/assets-and-saves.md) and
-[backend lifecycle](../../../structure/backend.md).
+[assets and saves](../../../../docs/structure/assets-and-saves.md) and
+[backend lifecycle](../../../../docs/structure/backend.md).
 
 Revisit triggers remain attached to these owners:
 
