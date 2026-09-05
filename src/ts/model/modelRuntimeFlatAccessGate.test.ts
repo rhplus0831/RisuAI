@@ -47,6 +47,30 @@ const fields = [
 ] as const
 
 const inventory: readonly InventoryEntry[] = [
+  {
+    path: 'server/fastify/src/prompt/cbsAdapter.ts',
+    marker: 'database.aiModel',
+    classification: 'effective-projection',
+    expectedCount: 1,
+    reason:
+      'checked generation projection adapted to required legacy CBS scalars; resolved prompt scope takes precedence',
+  },
+  {
+    path: 'server/fastify/src/prompt/cbsAdapter.ts',
+    marker: 'database.subModel',
+    classification: 'effective-projection',
+    expectedCount: 1,
+    reason:
+      'checked generation projection adapted to required legacy CBS scalars; resolved prompt scope takes precedence',
+  },
+  {
+    path: 'server/fastify/src/prompt/cbsAdapter.ts',
+    marker: 'database.maxContext',
+    classification: 'effective-projection',
+    expectedCount: 1,
+    reason:
+      'checked generation projection adapted to required legacy CBS scalars; resolved prompt scope takes precedence',
+  },
   // Effective database projections intentionally feed legacy-shaped helpers.
   {
     path: 'server/fastify/src/translation/rawMessageTranslation.ts',

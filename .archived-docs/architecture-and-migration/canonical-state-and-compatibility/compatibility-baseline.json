@@ -638,7 +638,7 @@
           "path": "server/fastify/src/repository.ts",
           "kind": "identifier",
           "value": "projectSelectedPromptTemplate",
-          "expectedCount": 3
+          "expectedCount": 4
         },
         {
           "path": "src/ts/storage/database.svelte.ts",
@@ -676,7 +676,7 @@
           "path": "server/fastify/src/repository.ts",
           "kind": "text",
           "value": "prompt_templates",
-          "expectedCount": 3
+          "expectedCount": 4
         }
       ]
     },

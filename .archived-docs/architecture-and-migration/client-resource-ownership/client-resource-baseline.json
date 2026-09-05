@@ -115,7 +115,7 @@
       "files": [
         {
           "file": "src/lib/Others/ChatList.svelte.test.ts",
-          "count": 6
+          "count": 8
         },
         {
           "file": "src/lib/SideBars/SideChatList.svelte.test.ts",
@@ -123,7 +123,7 @@
         },
         {
           "file": "src/ts/chatCommands.test.ts",
-          "count": 620
+          "count": 634
         },
         {
           "file": "src/ts/process/mcp/risuaccess/tests/characters.setCharacterInfo.test.ts",
@@ -1067,7 +1067,7 @@
       "files": [
         {
           "file": "src/ts/server/resourceState.svelte.test.ts",
-          "count": 110
+          "count": 111
         }
       ]
     },

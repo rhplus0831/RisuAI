@@ -6,11 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
-import {
-  BROAD_WRITE_TABLES,
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 
 // Phase 6 (the message-free ceiling) regression. Each test PROVES a Tier-5
 // route's floor was correct and the documented blocker is load-bearing. Phase 8
@@ -23,16 +19,18 @@ import {
 //     `targeted-character-row` (Phase 8b + follow-up): the orphan cleanup now
 //     loops the targeted deleteChatMessages/deleteChatHypaV3 over the removed
 //     chat(s) instead of hydrating every message of every chat.
-//   * DELETE modules/:id stays `message-free`: `removeModuleReferences` strips
-//     the id across characters, chats, the loadouts collection, and settings, so
-//     no single-table lever applies and it writes the full broad set.
+//   * DELETE modules/:id uses `targeted-cross-owner`: matching references in
+//     characters, chats, loadouts and settings are stripped without broad
+//     collection replacement.
 //   * POST characters/:id/chats GRADUATED to `targeted-character-row` (H2): the
 //     duplicate-message-id validation is handled by the indexed
 //     `activeMessageIdExists` lookup, so the route keeps corpus-wide uniqueness
 //     without hydrating every chat message.
-//   * POST characters and POST characters/create-and-select stay `message-free`
-//     (their dropped id-repair side effects are the recorded unblock
-//     conditions, not done here). POST modules graduated to targeted-collection.
+//   * POST characters and POST characters/create-and-select GRADUATED to
+//     `targeted-character-row`: identity/order projection plus keyed inserts
+//     preserve unrelated rows and BardWiki dependents. The dedicated
+//     characterCreationSafety suite guards preservation, replay and rollback.
+//     POST modules graduated to targeted-collection.
 //   * PUT characters/:id/scripts and PUT characters/:id/triggers GRADUATED to
 //     `targeted-character-row` (Phase 8a): the normalization is validate-only via
 //     discard, so only the target character row is written.
@@ -373,8 +371,8 @@ describe('message-validation create floor', () => {
   })
 })
 
-describe('message-free create + normalization floors', () => {
-  it('POST characters appends one character at the message-free floor', async () => {
+describe('targeted creation and normalization floors', () => {
+  it('POST characters appends one character at the targeted append range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const { metric } = await runCommand({
@@ -383,13 +381,13 @@ describe('message-free create + normalization floors', () => {
       payload: { baseRevision: revision, character: { chaId: 'char-c', name: 'C' } },
     })
 
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'settings'])
     assertCommandMetricGate(metric)
     expect(readCharacterIds()).toEqual(['char-a', 'char-b', 'char-c'])
   })
 
-  it('POST characters/create-and-select appends + selects at the message-free floor', async () => {
+  it('POST characters/create-and-select appends + selects at the targeted append range', async () => {
     const revision = await importDatabase(seedDatabase())
 
     const { metric } = await runCommand({
@@ -398,8 +396,8 @@ describe('message-free create + normalization floors', () => {
       payload: { baseRevision: revision, character: { chaId: 'char-d', name: 'D' } },
     })
 
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters', 'settings'])
     assertCommandMetricGate(metric)
     expect(readCharacterIds()).toEqual(['char-a', 'char-b', 'char-d'])
     expect(readSettings().currentChar).toBe(2)
