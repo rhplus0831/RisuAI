@@ -3142,7 +3142,7 @@ export const languageEnglish = {
     title: 'BardWiki',
     description:
       'Structured, chat-scoped memory stored as linked Markdown documents. Confirmed turns, automatic updates, and rebuilds can call the selected model in the background and may incur provider cost.',
-    enabledByDefault: 'Enable BardWiki for new chats',
+    enabledByDefault: 'Enable BardWiki by default (new and existing chats without an override)',
     memoryMode: 'Memory mode',
     modeHypa: 'Hypa only',
     modeBardWiki: 'BardWiki only',

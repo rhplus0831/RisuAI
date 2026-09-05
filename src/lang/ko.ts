@@ -3048,7 +3048,7 @@ export const languageKorean = {
     title: 'BardWiki',
     description:
       '연결된 Markdown 문서로 저장되는 채팅별 구조화 메모리입니다. 대화 확인, 자동 업데이트, 재구성은 선택한 모델을 백그라운드에서 호출하며 제공자 비용이 발생할 수 있습니다.',
-    enabledByDefault: '새 채팅에서 BardWiki 사용',
+    enabledByDefault: 'BardWiki 기본 사용 (별도 설정이 없는 새 채팅 및 기존 채팅)',
     memoryMode: '메모리 모드',
     modeHypa: 'Hypa만 사용',
     modeBardWiki: 'BardWiki만 사용',
