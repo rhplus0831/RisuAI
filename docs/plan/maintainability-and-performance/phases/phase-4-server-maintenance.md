@@ -1,6 +1,8 @@
 # Phase 4: Server Maintenance Scheduling
 
-Finding: F07. Dependency: Phase 3 accepted and Phase 1 maintenance baseline.
+Finding: F07. Dependency: Phase 3 correctness/type/structural gates and Phase 1
+maintenance baseline. The recorded sequencing amendment permits slice 4a while
+Phase 3 timing closure proceeds; Phase 4 acceptance still requires Phase 3 accepted.
 Progress belongs in [status.md](../status.md).
 
 ## Objective and Owners

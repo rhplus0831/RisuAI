@@ -4,7 +4,7 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phases 0–2 accepted; executing Phase 3 generation inputs and types.
+- State: Phases 0–2 accepted; closing Phase 3 timing and implementing independent Phase 4a backup scheduling.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md), final acceptance.
@@ -25,7 +25,7 @@ selected [phase](phases/README.md) for implementation detail.
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Final acceptance | Selected loaders, checked views and immutable working ownership; final measurements pending |
-| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
+| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Executing 4a under sequencing amendment | Backup consistency design accepted; phase acceptance still waits for Phase 3 |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
 
@@ -81,6 +81,16 @@ needed to reproduce them here or in the owning phase's bounded slice record.
   message selection, per-message copy, in-app search, jumps, export, and
   temporary full-transcript screenshots. The phase document is authoritative
   for this accepted constraint change.
+
+- 2026-09-05, sequencing amendment for F02/F07: Phase 3's finite types,
+  structural scope and behavior gates pass (181 chat, 69 durable, 18 loader and
+  11 browser cases); only the small timing comparison remains open. Phase 4a
+  backup implementation may proceed under a separate owner while that bounded
+  timing issue is resolved. Backup edits own repository maintenance/lifecycle;
+  validator edits own generated validation artifacts. No shared-file edits or
+  concurrent performance runs are allowed. Phase 4 acceptance and all later
+  phase gates still require Phase 3 timing accepted; this is no finding deferral
+  or budget change. Revisit sequencing if either owner exposes a dependency.
 
 Future amendments belong here with date, affected finding, evidence, owner,
 residual cost, and revisit condition. If an amendment changes stable scope or
@@ -420,7 +430,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3: Bounded Query Program Reuse Implemented
 
-- Implementation: accompanying statement-reuse commit. Profiling found native
+- Implementation: `cb914e641`. Profiling found native
   SQLite preparation/read work dominant in the small fixture; repeated CBS
   adapters account for less than 0.001 ms per assembly and are left unchanged.
   Selected readers reuse at most 16 fixed programs per connection, with at most
@@ -440,3 +450,34 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   incorrectly applied to this explicit legacy exception.
 - Timing acceptance remains open. All matched measurements are retained for
   final comparison; startup validator compilation is the next bounded change.
+
+## Phase 4a: Design and Bounds Accepted Before Implementation
+
+- Two read-only Luna areas cross-checked backup and GC interleavings. One
+  coordinator per normalized data directory admits one exclusive backup/import/
+  restore/delete operation with zero queued operations, four compatibility-save
+  mutations or four operations staging live assets across awaits, and one GC
+  sweep. Conflicting admission returns transient HTTP 503 `maintenance_busy`.
+  Successful backup HTTP responses still wait for completed publication.
+- Backup filesystem work uses two workers, at most 32 pending directory entries,
+  and 64 KiB stream buffers. An exclusive lease starts before SQLite's backup
+  await and lasts through verification, publication or failure cleanup. Internal
+  safety snapshots and retention reuse an explicit owner token. No SQLite
+  transaction spans an await. Shutdown rejects admission, signals cancellation,
+  and drains leases before closing SQLite.
+- Required references come from the captured SQLite snapshot, including pending
+  finalization/catalog/plugin-storage surfaces. Missing metadata or required
+  bytes cannot publish success. Existing optional orphan files and directory
+  extras remain included when encountered; extras are not claimed to share the
+  SQLite snapshot's exact instant. Compatibility writes/removes and multi-await
+  live staging are excluded throughout capture. Raw synchronous uploads remain
+  allowed and may add harmless extras.
+- Restore recovery policy: only its automatic safety snapshot may fill missing
+  captured-live bytes from the verified, pinned restore source by identical hash
+  and declared size. It does not repair or change live files during capture.
+  Missing in both locations, or corrupt fallback bytes, still fails closed.
+  This preserves recovery after live-file loss without incomplete-success backups.
+- Existing synchronous reference-report work is an explicit intermediate 4a
+  residual; the later bounded scan must cover backup verification as well as GC
+  before Phase 4 latency acceptance. Restore's existing journal/synchronous
+  swap transaction remains authoritative.

@@ -120,7 +120,7 @@ New concerns require their own evidence and an explicit scope decision in
 | [1. Baselines and acceptance budgets](phases/phase-1-baselines-and-budgets.md) | Comparable fixtures, cost measurements, and explicit completion targets. | Phase 0 accepted. |
 | [2. Browser work reduction](phases/phase-2-browser-work.md) | Scoped rollback, single outbox normalization, deferred/coalesced cache maintenance, selected-locale loading. | Phase 1; execute 2a through 2d separately. |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | Narrow, typed preparation and deliberate dynamic-script access. | Phase 2 complete; Phase 1 generation baseline. |
-| [4. Server maintenance scheduling](phases/phase-4-server-maintenance.md) | Responsive backup/GC work with explicit consistency boundaries. | Phase 3 complete; Phase 1 maintenance baseline. |
+| [4. Server maintenance scheduling](phases/phase-4-server-maintenance.md) | Responsive backup/GC work with explicit consistency boundaries. | Phase 3 correctness/type/structural gates and Phase 1 maintenance baseline; Phase 3 timing acceptance before Phase 4 acceptance. |
 | [5. Transcript residency decision](phases/phase-5-transcript-residency.md) | Evidence-backed implementation or documented retention of current paging. | Phase 4 complete; remeasure after earlier UI changes. |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | Duplicate policy removed; all findings have verified dispositions and current docs. | Prior phase gates satisfied. |
 
