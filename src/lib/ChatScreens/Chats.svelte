@@ -5,7 +5,18 @@
   import type { character, Database, Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characterImage'
-  import { ReloadChatPointer } from 'src/ts/stores.svelte'
+  import { ReloadChatPointer, popupStore } from 'src/ts/stores.svelte'
+  import { language } from 'src/lang'
+  import {
+    buildTranscriptResidency,
+    TranscriptHeightCache,
+    transcriptRowAtOffset,
+    transcriptRowOffsets,
+    TRANSCRIPT_WORKING_ROWS,
+  } from './transcriptResidency'
+  import { TRANSCRIPT_INTERACTION_CONTEXT } from './transcriptInteraction'
+  import { createTranscriptReservations } from './transcriptReservations'
+  import { TRANSCRIPT_MESSAGE_VIEW_CONTEXT, createTranscriptMessageViewOwner } from './transcriptMessageView'
   import { createSimpleCharacter, createSimpleCharacterMemo } from 'src/ts/simpleCharacter'
   import {
     RegexDisplayReloadPointer,
@@ -319,11 +330,36 @@
       getGenerationFinalizationPersistencesForChat(currentChatId),
     )
     const lastMemoryId = currentChatMetadata?.lastMemory
-    const { loadStart, loadEnd } = getTranscriptWindowRange({
+    const { loadStart, loadEnd: configuredLoadEnd } = getTranscriptWindowRange({
       messageCount: messages.length,
       loadPages,
       foldedMessageIndex: chatFoldedStateMessageIndex.index,
     })
+    // Send/streaming can reduce the ordinary page count while an older editor
+    // or selection is still owned. Retain its already-hydrated logical range;
+    // DOM residency below remains bounded independently of that range.
+    void reservationRevision
+    const windowPins = new Set([...reservations.ids(), ...singletonPins])
+    if (jumpMessageId) windowPins.add(jumpMessageId)
+    for (const id of [
+      regenerateTargetMessageId,
+      activeRegenerateProjection?.targetMessageId,
+      activeRegenerateProjection?.generationId,
+      activeAppendMessageIndex >= 0 ? messages[activeAppendMessageIndex]?.chatId : undefined,
+    ]) {
+      if (id) windowPins.add(id)
+    }
+    let loadEnd = configuredLoadEnd
+    if (windowPins.size > 0) {
+      for (let index = 0; index < configuredLoadEnd; index++) {
+        const id = messages[index]?.chatId
+        if (id && windowPins.has(id)) {
+          loadEnd = index
+          break
+        }
+      }
+    }
+    if (pressedLogicalEnd !== null) loadEnd = Math.min(loadEnd, pressedLogicalEnd)
 
     const reloadPointerMap = get(ReloadChatPointer)
     const rows: {
@@ -368,7 +404,7 @@
       const isAppendGenerationPresentation = activeAppendMessageIndex === i && activeAppendPresentationKey !== null
       const presentationRowKey =
         (message.chatId ? appendPresentationKeyAliases[message.chatId] : undefined) ??
-        (isAppendGenerationPresentation ? activeAppendPresentationKey : `${presentationKey}:${i}:${reloadPointer}`)
+        (isAppendGenerationPresentation ? activeAppendPresentationKey : `${presentationKey}:${reloadPointer}`)
       rows.push({
         key: `${currentChatId ?? 'unscoped'}:${presentationRowKey}`,
         message,
@@ -423,6 +459,304 @@
     }
 
     return rows
+  })
+
+  // Hydration owns chatRows. Only this layer decides which of those rows mount.
+  const heights = new TranscriptHeightCache()
+  const rowElements = new Map<string, HTMLElement>()
+  let residencyScope = untrack(() => chatId)
+  let heightRevision = $state(0)
+  let reservationRevision = $state(0)
+  let residentStart = $state(0)
+  let singletonPins = $state<string[]>([])
+  let jumpMessageId = $state<string | null>(null)
+  let residencyFrame: number | null = null
+  let residencyUpdating = false
+  let residencyAgain = false
+  let measuredWidth = 0
+  let residencyScrollTop = 0
+  let residencyAnchor: { id: string; top: number } | null = null
+  let residencyNavigationEpoch = 0
+  let residencyJumpRun = 0
+  let pressedLogicalEnd = $state<number | null>(null)
+  let pressedPointerId: number | null = null
+  let pressReleaseTimer: ReturnType<typeof setTimeout> | null = null
+  const legacyPaging = (() => {
+    try {
+      return localStorage.getItem('risu-transcript-legacy-paging') === '1'
+    } catch {
+      return false
+    }
+  })()
+  const fullResidency = $derived(loadPages === Infinity || legacyPaging)
+  const residencyMode = $derived(loadPages === Infinity ? 'capture' : legacyPaging ? 'legacy' : 'bounded')
+  const reservations = createTranscriptReservations(() => {
+    untrack(() => reservationRevision++)
+    scheduleResidency()
+  })
+  const messageViews = createTranscriptMessageViewOwner()
+  setContext(TRANSCRIPT_INTERACTION_CONTEXT, reservations)
+  setContext(TRANSCRIPT_MESSAGE_VIEW_CONTEXT, messageViews)
+  const residencyIds = $derived(chatRows.map((row) => row.message.chatId ?? row.key))
+  const rowOffsets = $derived.by(() => {
+    void heightRevision
+    return legacyPaging ? [] : transcriptRowOffsets(residencyIds, heights)
+  })
+  const pinnedIds = $derived.by(() => {
+    void reservationRevision
+    const ids = new Set(reservations.ids())
+    // These are singleton owners: latest, jump, generation targets
+    // (including transient old/new IDs), focus, popup trigger, and two
+    // selection endpoints. Transitional overlap consumes the working budget.
+    if (residencyIds[0]) ids.add(residencyIds[0])
+    if (jumpMessageId) ids.add(jumpMessageId)
+    for (const row of chatRows) {
+      if (row.isRegenerationTarget || row.isAppendGenerationPresentation || row.generationDisplayProjection) {
+        ids.add(row.message.chatId ?? row.key)
+      }
+    }
+    for (const id of singletonPins) ids.add(id)
+    return ids
+  })
+  const residentEntries = $derived(
+    buildTranscriptResidency(chatRows, residencyIds, rowOffsets, residentStart, pinnedIds, fullResidency),
+  )
+  const residentRowCount = $derived(residentEntries.filter((entry) => entry.kind === 'row').length)
+
+  function rowIdForNode(node: Node | null): string | null {
+    const element = node instanceof Element ? node : node?.parentElement
+    const row = element?.closest<HTMLElement>('[data-transcript-row-id]')
+    return row && chatBody?.contains(row) ? (row.dataset.transcriptRowId ?? null) : null
+  }
+
+  function collectSingletonPins(): void {
+    const selection = document.getSelection()
+    const next = [
+      rowIdForNode(document.activeElement),
+      popupStore.children ? rowIdForNode(popupStore.trigger) : null,
+      selection && !selection.isCollapsed ? rowIdForNode(selection.anchorNode) : null,
+      selection && !selection.isCollapsed ? rowIdForNode(selection.focusNode) : null,
+    ].filter((id): id is string => id !== null)
+    if (next.length !== singletonPins.length || next.some((id, index) => id !== singletonPins[index])) {
+      singletonPins = next
+    }
+  }
+
+  function captureResidencyAnchor(): { id: string; top: number } | null {
+    if (!scrollContainer) return null
+    const viewport = scrollContainer.getBoundingClientRect()
+    for (const [id, element] of rowElements) {
+      const rect = element.getBoundingClientRect()
+      if (rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom) {
+        return { id, top: rect.top - viewport.top }
+      }
+    }
+    return null
+  }
+
+  function handleResidencyFocusChange(): void {
+    collectSingletonPins()
+    scheduleResidency()
+  }
+
+  function beginResidencyPress(event: PointerEvent): void {
+    if (!event.isPrimary || event.button !== 0 || !rowIdForNode(event.target as Node | null)) return
+    if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
+    pressReleaseTimer = null
+    pressedPointerId = event.pointerId
+    pressedLogicalEnd = chatRows.at(-1)?.idx ?? null
+    residencyNavigationEpoch++
+  }
+
+  function endResidencyPress(event: PointerEvent): void {
+    if (pressedPointerId !== event.pointerId) return
+    if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
+    // A focus change during pointerdown can release the previous oldest pin.
+    // Keep geometry until the pointerup/click sequence has reached its handler.
+    pressReleaseTimer = setTimeout(releaseResidencyPress, 0)
+  }
+
+  function releaseResidencyPress(): void {
+    if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
+    pressReleaseTimer = null
+    pressedPointerId = null
+    pressedLogicalEnd = null
+    scheduleResidency()
+  }
+
+  function scheduleResidency(): void {
+    if (chatsComponentDestroyed || legacyPaging) return
+    if (residencyUpdating) {
+      residencyAgain = true
+      return
+    }
+    if (residencyFrame !== null || typeof requestAnimationFrame !== 'function') return
+    residencyFrame = requestAnimationFrame(() => {
+      residencyFrame = null
+      void reconcileResidency()
+    })
+  }
+
+  async function reconcileResidency(): Promise<void> {
+    if (!chatBody || !scrollContainer || chatsComponentDestroyed || pressedLogicalEnd !== null) return
+    residencyUpdating = true
+    const scope = chatId
+    const container = scrollContainer
+    const navigationEpoch = residencyNavigationEpoch
+    const canAnchor = currentTranscriptAnchor() === 'free' && !jumpMessageId && !fullResidency
+    const anchor = canAnchor
+      ? Math.abs(container.scrollTop - residencyScrollTop) < 0.5
+        ? (residencyAnchor ?? captureResidencyAnchor())
+        : captureResidencyAnchor()
+      : null
+    try {
+      collectSingletonPins()
+      let changed = false
+      const width = chatBody.clientWidth
+      if (measuredWidth && Math.abs(width - measuredWidth) >= 1) {
+        heights.clear()
+        changed = true
+      }
+      measuredWidth = width
+      for (const [id, element] of rowElements) {
+        changed = heights.set(id, element.getBoundingClientRect().height) || changed
+      }
+      if (changed) heightRevision++
+      const focusedSpacer = document.activeElement?.closest('[data-transcript-spacer]')
+      if (!fullResidency && !jumpMessageId && !(focusedSpacer && chatBody.contains(focusedSpacer))) {
+        const viewport = container.getBoundingClientRect()
+        const origin = chatBody.getBoundingClientRect().bottom - appliedLatestMessageSpacerHeight()
+        const center = transcriptRowAtOffset(rowOffsets, origin - (viewport.top + viewport.bottom) / 2)
+        residentStart = Math.max(0, center - Math.floor(TRANSCRIPT_WORKING_ROWS / 2))
+      }
+      await tick()
+      if (chatsComponentDestroyed || scope !== chatId || container !== scrollContainer) return
+      let preservedAnchor = false
+      if (
+        anchor &&
+        navigationEpoch === residencyNavigationEpoch &&
+        currentTranscriptAnchor() === 'free' &&
+        !jumpMessageId &&
+        !fullResidency
+      ) {
+        const element = rowElements.get(anchor.id)
+        if (element) {
+          const delta = element.getBoundingClientRect().top - container.getBoundingClientRect().top - anchor.top
+          if (Math.abs(delta) > 0.01) {
+            container.scrollTop += delta
+          }
+          preservedAnchor = true
+        }
+      }
+      // Preserve the intended offset across consecutive parser/image resizes.
+      // Recapturing the browser's rounded scroll position after each correction
+      // would accumulate fractional-pixel error across the newly mounted rows.
+      residencyAnchor = preservedAnchor ? anchor : captureResidencyAnchor()
+      residencyScrollTop = container.scrollTop
+    } finally {
+      residencyUpdating = false
+      if (residencyAgain) {
+        residencyAgain = false
+        scheduleResidency()
+      }
+    }
+  }
+
+  function measureTranscriptRow(element: HTMLElement, id: string) {
+    rowElements.set(id, element)
+    const observer =
+      legacyPaging || typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleResidency)
+    observer?.observe(element)
+    scheduleResidency()
+    return {
+      update(nextId: string) {
+        if (nextId === id) return
+        if (rowElements.get(id) === element) rowElements.delete(id)
+        id = nextId
+        rowElements.set(id, element)
+        scheduleResidency()
+      },
+      destroy() {
+        observer?.disconnect()
+        if (rowElements.get(id) === element) rowElements.delete(id)
+      },
+    }
+  }
+
+  export async function prepareMessageJump(
+    index: number,
+    expectedChatId = chatId,
+  ): Promise<((preservedTop?: number) => void) | null> {
+    if (
+      chatsComponentDestroyed ||
+      expectedChatId !== chatId ||
+      !chatBody?.isConnected ||
+      !scrollContainer?.contains(chatBody)
+    )
+      return null
+    const position = chatRows.findIndex((row) => row.idx === index)
+
+    if (position < 0) return null
+    releaseTranscriptToUser()
+    residencyNavigationEpoch++
+    const run = ++residencyJumpRun
+    const id = residencyIds[position]
+    jumpMessageId = id
+    residentStart = Math.max(0, position - Math.floor(TRANSCRIPT_WORKING_ROWS / 2))
+    await tick()
+    return (preservedTop?: number) => {
+      if (jumpMessageId !== id || run !== residencyJumpRun) return
+      residencyNavigationEpoch++
+      jumpMessageId = null
+      residencyAnchor = preservedTop !== undefined ? { id, top: preservedTop } : captureResidencyAnchor()
+      residencyScrollTop = scrollContainer?.scrollTop ?? 0
+      scheduleResidency()
+    }
+  }
+
+  async function showResidencyGap(start: number, end: number): Promise<void> {
+    const position = end <= residentStart ? end - 1 : start
+    const row = chatRows[position]
+    if (!row) return
+    const release = await prepareMessageJump(row.idx)
+    if (!release) return
+    try {
+      const element = rowElements.get(residencyIds[position])
+      if (element) {
+        scrollElementToContainerStart(element, scrollContainer)
+        element.focus({ preventScroll: true })
+      }
+    } finally {
+      release()
+    }
+  }
+
+  $effect.pre(() => {
+    const scope = chatId
+    untrack(() => {
+      if (residencyScope === scope) return
+      residencyScope = scope
+      reservations.reset()
+      messageViews.reset()
+      heights.clear()
+      heightRevision++
+      residentStart = 0
+      singletonPins = []
+      jumpMessageId = null
+      residencyAnchor = null
+      measuredWidth = 0
+      pressedLogicalEnd = null
+      pressedPointerId = null
+      if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
+      pressReleaseTimer = null
+    })
+  })
+  $effect(() => {
+    void chatRows
+    void fullResidency
+    void popupStore.trigger
+    void popupStore.children
+    scheduleResidency()
   })
 
   // The row that reveals the dynamic (swipe) icons. Comment rows — e.g. the
@@ -636,6 +970,7 @@
 
     latestMessageResizeObserver = new ResizeObserver(() => {
       if (target !== latestMessageResizeTarget) return
+      scheduleResidency()
       scheduleLatestMessageAlignmentReassert()
     })
     latestMessageResizeObserver.observe(target)
@@ -655,6 +990,7 @@
 
     scrollContainerResizeObserver = new ResizeObserver(() => {
       if (target !== scrollContainerResizeTarget) return
+      scheduleResidency()
       scheduleLatestMessageAlignmentReassert()
     })
     scrollContainerResizeObserver.observe(target)
@@ -662,6 +998,7 @@
   }
 
   export const scrollToLatestMessage = () => {
+    residentStart = 0
     hasNewUnreadMessage = false
     const chatRoomId = getCurrentChatRoomId()
     markChatRead(chatRoomId)
@@ -670,6 +1007,7 @@
   }
 
   export const scrollToNaturalEnd = () => {
+    residentStart = 0
     hasNewUnreadMessage = false
     const chatRoomId = getCurrentChatRoomId()
     markChatRead(chatRoomId)
@@ -714,11 +1052,13 @@
   }
 
   export const handleTranscriptUserInteraction = () => {
+    residencyNavigationEpoch++
     transcriptUserIntentPending = true
     if (currentTranscriptAnchor() === 'start') releaseTranscriptToUser()
   }
 
   export const handleTranscriptScroll = () => {
+    scheduleResidency()
     if (isAligningLatestMessage) return
 
     const isAtLatestPosition = transcriptIsAtLatestPosition()
@@ -844,6 +1184,8 @@
 
   onDestroy(() => {
     chatsComponentDestroyed = true
+    if (residencyFrame !== null) cancelAnimationFrame(residencyFrame)
+    if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
     displayScheduler.destroy()
     releaseDisplaySourceChat(getCurrentChatRoomId())
     initialDisplayReadiness.destroy()
@@ -978,7 +1320,22 @@
   })
 </script>
 
-<div class="chat-screen-content-width flex flex-col-reverse" bind:this={chatBody}>
+<svelte:document
+  onpointerdown={beginResidencyPress}
+  onpointerup={endResidencyPress}
+  onpointercancel={endResidencyPress}
+  onselectionchange={handleResidencyFocusChange}
+  onfocusin={handleResidencyFocusChange}
+  onfocusout={scheduleResidency} />
+<svelte:window onblur={releaseResidencyPress} />
+
+<div
+  class="chat-screen-content-width flex flex-col-reverse"
+  bind:this={chatBody}
+  data-transcript-window-rows={chatRows.length}
+  data-transcript-resident-rows={residentRowCount}
+  data-transcript-residency-mode={residencyMode}
+  style:overflow-anchor={legacyPaging ? 'auto' : 'none'}>
   {#if chatRows.length > 0}
     <div
       class="shrink-0"
@@ -987,68 +1344,83 @@
       style={`height: ${latestMessageScrollSpacerHeight}px`}>
     </div>
   {/if}
-  {#each chatRows as row (row.key)}
-    <div
-      class="chat-message-container"
-      data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}
-      data-generation-display-projection={row.generationPresentationMode}>
-      <Chat
-        message={row.generationDisplayProjection ? (row.generationDisplayProjection.text ?? '') : row.message.data}
-        translation={row.generationDisplayProjection ? null : (row.message.translation ?? null)}
-        isLastMemory={row.isLastMemory}
-        idx={row.idx}
-        totalLength={messages.length}
-        img={row.img}
-        {onReroll}
-        {unReroll}
-        {onNewReroll}
-        {onSelectRerollCandidate}
-        {rerollTarget}
-        rerollIcon="dynamic"
-        displayChatId={row.scopeId}
-        displayMessageId={row.message.chatId ?? null}
-        character={row.character}
-        largePortrait={row.largePortrait}
-        messageGenerationInfo={row.message.generationInfo}
-        role={row.message.role}
-        name={row.name}
-        isComment={row.message.isComment ?? false}
-        isGenerationLoading={row.isRegenerationTarget ||
-          row.isAppendGenerationPresentation ||
-          row.generationDisplayProjection !== undefined ||
-          (isGenerationActive &&
-            row.idx === messages.length - 1 &&
-            row.message.role === 'char' &&
-            row.message.data === '')}
-        isGenerationProjection={row.isAppendGenerationPresentation || row.generationDisplayProjection !== undefined}
-        generationPresentationMode={row.generationPresentationMode}
-        isChatGenerating={isGenerationActive}
-        halfStreamingTokensPerSecond={row.isAppendGenerationPresentation ||
-        (row.idx === messages.length - 1 && row.message.role === 'char')
-          ? activeHalfStreamingTokensPerSecond
-          : undefined}
-        autoTranslateOnReady={typeof row.message.chatId === 'string' &&
-          $automaticTranslationMessageIds.includes(row.message.chatId) &&
-          !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
-        onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
-        onInitialDisplayParseStart={row.awaitInitialDisplayParse
-          ? (registration) => initialDisplayReadiness.start(row.scopeId, registration)
-          : undefined}
-        onInitialDisplayParseSettled={row.awaitInitialDisplayParse
-          ? (registration) => initialDisplayReadiness.settle(row.scopeId, registration)
-          : undefined}
-        displayPriority={row.awaitInitialDisplayParse ? 'critical' : 'background'}
-        generationPersistenceState={row.generationPersistenceState}
-        generationPhase={row.isAppendGenerationPresentation
-          ? (activeAppendPresentation?.phase ?? generationPhase)
-          : generationPhase}
-        generationStartedAt={row.isAppendGenerationPresentation
-          ? (activeAppendPresentation?.startedAt ?? generationActivity?.startedAt)
-          : undefined}
-        generationStage={row.isAppendGenerationPresentation
-          ? (activeAppendPresentation?.stage ?? generationStage)
-          : generationStage}
-        disabled={row.message.disabled ?? false} />
-    </div>
+  {#each residentEntries as entry (entry.key)}
+    {#if entry.kind === 'spacer'}
+      <div class="relative shrink-0" data-transcript-spacer style:height={`${entry.height}px`}>
+        <button
+          type="button"
+          class="sr-only focus:not-sr-only"
+          onclick={() => showResidencyGap(entry.start, entry.end)}>
+          {language.transcriptShowMessages(chatRows[entry.end - 1].idx + 1, chatRows[entry.start].idx + 1)}
+        </button>
+      </div>
+    {:else}
+      {@const row = entry.row}
+      <div
+        class="chat-message-container shrink-0"
+        data-transcript-row-id={entry.id}
+        tabindex="-1"
+        use:measureTranscriptRow={entry.id}
+        data-risu-dyna-icons={row.key === dynaIconRowKey ? 'true' : undefined}
+        data-generation-display-projection={row.generationPresentationMode}>
+        <Chat
+          message={row.generationDisplayProjection ? (row.generationDisplayProjection.text ?? '') : row.message.data}
+          translation={row.generationDisplayProjection ? null : (row.message.translation ?? null)}
+          isLastMemory={row.isLastMemory}
+          idx={row.idx}
+          totalLength={messages.length}
+          img={row.img}
+          {onReroll}
+          {unReroll}
+          {onNewReroll}
+          {onSelectRerollCandidate}
+          {rerollTarget}
+          rerollIcon="dynamic"
+          displayChatId={row.scopeId}
+          displayMessageId={row.message.chatId ?? null}
+          character={row.character}
+          largePortrait={row.largePortrait}
+          messageGenerationInfo={row.message.generationInfo}
+          role={row.message.role}
+          name={row.name}
+          isComment={row.message.isComment ?? false}
+          isGenerationLoading={row.isRegenerationTarget ||
+            row.isAppendGenerationPresentation ||
+            row.generationDisplayProjection !== undefined ||
+            (isGenerationActive &&
+              row.idx === messages.length - 1 &&
+              row.message.role === 'char' &&
+              row.message.data === '')}
+          isGenerationProjection={row.isAppendGenerationPresentation || row.generationDisplayProjection !== undefined}
+          generationPresentationMode={row.generationPresentationMode}
+          isChatGenerating={isGenerationActive}
+          halfStreamingTokensPerSecond={row.isAppendGenerationPresentation ||
+          (row.idx === messages.length - 1 && row.message.role === 'char')
+            ? activeHalfStreamingTokensPerSecond
+            : undefined}
+          autoTranslateOnReady={typeof row.message.chatId === 'string' &&
+            $automaticTranslationMessageIds.includes(row.message.chatId) &&
+            !$serverOwnedGeneratedMessageIds.has(row.message.chatId)}
+          onAutoTranslationEligibilityConsumed={() => consumeAutomaticTranslationEligibility(row.message.chatId ?? '')}
+          onInitialDisplayParseStart={row.awaitInitialDisplayParse
+            ? (registration) => initialDisplayReadiness.start(row.scopeId, registration)
+            : undefined}
+          onInitialDisplayParseSettled={row.awaitInitialDisplayParse
+            ? (registration) => initialDisplayReadiness.settle(row.scopeId, registration)
+            : undefined}
+          displayPriority={row.awaitInitialDisplayParse ? 'critical' : 'background'}
+          generationPersistenceState={row.generationPersistenceState}
+          generationPhase={row.isAppendGenerationPresentation
+            ? (activeAppendPresentation?.phase ?? generationPhase)
+            : generationPhase}
+          generationStartedAt={row.isAppendGenerationPresentation
+            ? (activeAppendPresentation?.startedAt ?? generationActivity?.startedAt)
+            : undefined}
+          generationStage={row.isAppendGenerationPresentation
+            ? (activeAppendPresentation?.stage ?? generationStage)
+            : generationStage}
+          disabled={row.message.disabled ?? false} />
+      </div>
+    {/if}
   {/each}
 </div>

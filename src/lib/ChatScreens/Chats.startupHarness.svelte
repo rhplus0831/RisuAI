@@ -2,7 +2,10 @@
   import Chats from './Chats.svelte'
   import { getCharacterResourceOwner } from '../../ts/server/resourceState.svelte'
   import { getChatMessageOwnerState } from '../../ts/server/chatMessageHydration.svelte'
-  let { characterId, chatId }: { characterId: string; chatId: string } = $props()
+  let { characterId, chatId, loadPages = 6 }: { characterId: string; chatId: string; loadPages?: number } = $props()
+  export function setLoadPages(value: number) {
+    loadPages = value
+  }
   const character = $derived(getCharacterResourceOwner(characterId))
   const messages = $derived(getChatMessageOwnerState(chatId)?.messages ?? [])
 </script>
@@ -14,7 +17,7 @@
     {messages}
     currentUsername="User"
     userIcon=""
-    loadPages={6}
+    {loadPages}
     rerollTarget={null}
     onReroll={() => {}}
     unReroll={() => {}}

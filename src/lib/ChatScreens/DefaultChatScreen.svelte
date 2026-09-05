@@ -393,7 +393,7 @@
   let chatContentInlineEnd: number | null = $state(null)
   let chatContentFixedInlineEnd: number | null = $state(null)
   let refreshChatContentGeometry = () => {}
-  let chatsInstance: any = $state()
+  let chatsInstance: ReturnType<typeof Chats> | undefined = $state()
   let isScrollingToMessage = $state(false)
   type ChatPreparationKind = 'send' | 'hook' | 'reroll'
   const preparingSendTargetKeys = new SvelteMap<string, ChatPreparationKind>()
@@ -448,6 +448,8 @@
   })
 
   onDestroy(() => {
+    scrollToMessageRunId += 1
+    if (activeScreenshotOperation) restoreScreenshotWindow(activeScreenshotOperation)
     if (activeTranscriptWindowIdentity !== null) {
       storeComposerDraft(activeTranscriptWindowIdentity)
     }
@@ -1042,7 +1044,7 @@
   function beginScreenshotOperation(): ScreenshotOperation | null {
     const target = captureActiveChatTarget()
     const transcriptIdentity = getActiveTranscriptWindowIdentity()
-    if (!target || !transcriptIdentity || !isActiveChatTargetFresh(target)) return null
+    if (!activeChatOpen || !target || !transcriptIdentity || !isActiveChatTargetFresh(target)) return null
 
     const operation = {
       target,
@@ -1059,6 +1061,8 @@
   function isCurrentScreenshotOperation(operation: ScreenshotOperation): boolean {
     return (
       activeScreenshotOperation === operation &&
+      !composerComponentDestroyed &&
+      activeChatOpen &&
       getActiveTranscriptWindowIdentity() === operation.transcriptIdentity &&
       isActiveChatTargetFresh(operation.target)
     )
@@ -1074,6 +1078,23 @@
     }
     activeScreenshotOperation = null
   }
+
+  let transcriptRouteWasVisible = false
+  $effect.pre(() => {
+    // The chat-list route can keep this screen owner alive with the same
+    // selected chat. Cancel on visibility loss before a quick return can make
+    // an old capture appear current again.
+    const visible = activeChatOpen
+    untrack(() => {
+      if (transcriptRouteWasVisible && !visible) {
+        scrollToMessageRunId += 1
+        isScrollingToMessage = false
+      }
+      transcriptRouteWasVisible = visible
+      if (visible) return
+      if (activeScreenshotOperation) restoreScreenshotWindow(activeScreenshotOperation)
+    })
+  })
 
   function markComposerDraftChanged(
     fields: ComposerDraftField | ComposerDraftField[] = ['message', 'translation', 'files', 'draft', 'btw'],
@@ -1591,9 +1612,13 @@
     }
 
     const runId = ++scrollToMessageRunId
-    const isCurrentJump = () => scrollToMessageRunId === runId && getActiveTranscriptWindowIdentity() === targetIdentity
+    const isCurrentJump = () =>
+      !composerComponentDestroyed &&
+      scrollToMessageRunId === runId &&
+      getActiveTranscriptWindowIdentity() === targetIdentity
 
-    // Forces the loading of past messages not rendered on the screen
+    // Hydration and DOM residency are separate; pin only this jump's target.
+    let releaseResidentTarget: (() => void) | undefined
     isScrollingToMessage = true
     try {
       const totalMessages = renderChat.length
@@ -1613,6 +1638,25 @@
           return
         }
       }
+
+      // A bookmark can enter an already-hydrated chat without expanding its
+      // window. Wait for its Chats binding/entry alignment in that case too.
+      await tick()
+      if (!isCurrentJump()) return
+
+      // Client navigation can publish its queued jump before the chat route
+      // becomes visible. Wait for the live transcript, not a stale binding or
+      // a single Svelte flush; keep the same identity fence while waiting.
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (!isCurrentJump()) return
+        if (activeChatOpen && chatsInstance) {
+          releaseResidentTarget = (await chatsInstance.prepareMessageJump(index, currentChatId)) ?? undefined
+          if (releaseResidentTarget) break
+        }
+        await sleep(100)
+      }
+      if (!releaseResidentTarget) return
+      if (!isCurrentJump()) return
 
       let element: Element | null = null
       // Poll for element existence (max 5 seconds)
@@ -1659,6 +1703,7 @@
         }
 
         element.scrollIntoView({ behavior: 'instant', block: 'start' })
+
         if (!isCurrentJump()) {
           return
         }
@@ -1676,6 +1721,7 @@
         }, 2000)
       }
     } finally {
+      releaseResidentTarget?.()
       if (scrollToMessageRunId === runId) {
         isScrollingToMessage = false
       }
@@ -3256,9 +3302,41 @@
                   ) {
                     return
                   }
-                  chatFoldedState.data = null
-                  chatFoldedStateMessageIndex.index = -1
-                  loadPages = Math.max(loadPages, nextLoadPages)
+                  const identity = getActiveTranscriptWindowIdentity()
+                  const anchor = chatScrollContainer
+                    ?.querySelector<HTMLElement>(`[data-chat-index="${foldedMessageIndex}"]`)
+                    ?.closest<HTMLElement>('[data-transcript-row-id]')
+                  const top =
+                    anchor && chatScrollContainer
+                      ? anchor.getBoundingClientRect().top - chatScrollContainer.getBoundingClientRect().top
+                      : 0
+                  const releaseBefore = await chatsInstance?.prepareMessageJump(foldedMessageIndex, currentChatId)
+                  if (!releaseBefore) return
+                  let releaseAfter: ((preservedTop?: number) => void) | null | undefined
+                  try {
+                    if (
+                      !activeChatOpen ||
+                      getActiveTranscriptWindowIdentity() !== identity ||
+                      chatFoldedState.data !== liveFoldedTarget
+                    )
+                      return
+                    chatFoldedState.data = null
+                    chatFoldedStateMessageIndex.index = -1
+                    loadPages = Math.max(loadPages, nextLoadPages)
+                    await tick()
+                    if (!activeChatOpen || getActiveTranscriptWindowIdentity() !== identity) return
+                    // Unfolding moves this stable row within the logical array.
+                    // Keep it mounted and preserve its offset while selecting
+                    // the new working window around that same message.
+                    releaseAfter = await chatsInstance?.prepareMessageJump(foldedMessageIndex, currentChatId)
+                    if (anchor?.isConnected && chatScrollContainer && releaseAfter) {
+                      chatScrollContainer.scrollTop +=
+                        anchor.getBoundingClientRect().top - chatScrollContainer.getBoundingClientRect().top - top
+                    }
+                  } finally {
+                    releaseAfter?.(anchor ? top : undefined)
+                    releaseBefore()
+                  }
                 }}>
                 {language.loadMore}
               </Button>

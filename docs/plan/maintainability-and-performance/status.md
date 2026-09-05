@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: implement the recorded viewport residency design, then verify the unchanged
-  transcript cost matrix and native browser interactions.
+- Next task: verify the committed viewport residency cutover against the unchanged
+  transcript cost matrix and existing startup/layout browser checks.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -761,3 +761,34 @@ and at most 8 singleton navigation/presentation pins (76 total). Measured
 height/spacers remain separate from hydrated data. Full screenshot capture is
 a temporary explicit exception; the existing paging path remains a diagnostic
 rollback. Acceptance is pending implementation and real-browser evidence.
+
+### Phase 5 interaction ownership and cutover refinement
+
+`9c8e678d2` commits bounded interaction reservations and finite translation view
+preferences before the DOM cutover. Focused checks pass: Chat 63, partial editors
+12, interaction scopes 5, view cache 3 and reservation manager 3. The first seven
+native integration cases pass on the uncommitted cutover; final validation and
+cost acceptance remain pending.
+
+Inspection of overlapping generation presentation identities refines the initial
+eight-singleton estimate: at most ten singleton IDs may coexist. They consume
+the shared budget before working rows; the working window shrinks below 60 when
+needed, preserving the original 76-row hard limit. No timing, heap or row budget
+is raised. Active reserved/focused/selected older rows also keep their already
+hydrated logical range when an ordinary page count shrinks; mounted DOM stays
+within that same bound.
+
+### Phase 5 DOM cutover verification
+
+The ten-case native functional lane passes with trace/diagnostics off. Desktop
+and mobile preserve the folded target within one pixel, mounted-message
+selection/copy and drafts survive traversal, eight separately accepted saves
+retain exact authoritative text, and capture failure/cancellation restores the
+bound. Pending image-backed jumps cannot move a reopened route. The 180-row
+legacy rollback mounts every logical row without spacers and preserves all ten
+older-page anchors, deep jump and latest navigation. The fallback bypasses
+residency geometry/observers and restores native anchoring; its existing
+interaction admission remains active. Focused transcript-window 105, startup 4
+and transcript-owner 10 cases pass. Existing native startup (3) and debug-echo
+layout/recovery (1) cases pass: 14 native cases total. Unchanged full cost-matrix
+acceptance remains open.

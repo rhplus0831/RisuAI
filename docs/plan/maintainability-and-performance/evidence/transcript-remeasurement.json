@@ -7062,50 +7062,6 @@
           "max": 668.1875
         },
         "elapsedMs": 3171.9000000953674,
-        "resources": [
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/messages",
-            "durationMs": 2.799999952316284,
-            "responseEndMs": 1406.5,
-            "transferBytes": 1149
-          },
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/display-sources",
-            "durationMs": 3.700000047683716,
-            "responseEndMs": 1514.8000000715256,
-            "transferBytes": 944
-          },
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/display-sources",
-            "durationMs": 4.200000047683716,
-            "responseEndMs": 1541.6000000238419,
-            "transferBytes": 852
-          },
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/display-sources",
-            "durationMs": 2.899999976158142,
-            "responseEndMs": 1621.2000000476837,
-            "transferBytes": 1194
-          },
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/display-sources",
-            "durationMs": 3.5,
-            "responseEndMs": 1722.7000000476837,
-            "transferBytes": 1036
-          },
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/display-sources",
-            "durationMs": 3.700000047683716,
-            "responseEndMs": 1806.6000000238419,
-            "transferBytes": 944
-          },
-          {
-            "path": "/api/v1/chats/transcript-residency-chat/display-sources",
-            "durationMs": 3.5,
-            "responseEndMs": 1897.2000000476837,
-            "transferBytes": 1122
-          }
-        ],
         "responseEndToSettledMs": 2597.100000023842,
         "anchorDeltaPx": null,
         "heapUsedBytes": 60812788,
@@ -7113,7 +7069,11 @@
         "layoutMs": 162.857,
         "styleMs": 111.05600000000001,
         "scriptMs": 47.77099999999998,
-        "taskMs": 2863.5229999999997
+        "taskMs": 2863.5229999999997,
+        "resourceCount": 7,
+        "displaySourceRequests": 6,
+        "resourceTransferBytes": 7241,
+        "resourceDurationMs": 24.300000071525574
       }
     }
   ]

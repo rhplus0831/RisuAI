@@ -72,75 +72,77 @@ vi.mock('../../lang', () => ({
     {},
     {
       get: (_target, property) =>
-        property === 'errors'
-          ? {
-              emptyText: 'emptyText',
-              chatGenerationSettingsIncomplete: 'Chat generation settings are incomplete.',
-              chatGenerationSettingsIncompleteWithMissing: (missing: string) =>
-                `Chat generation settings are incomplete. Missing: ${missing}.`,
-            }
-          : property === 'composerDraftRecovery'
+        property === 'transcriptShowMessages'
+          ? (from: number, to: number) => `Show messages ${from}–${to}`
+          : property === 'errors'
             ? {
-                storageFailed: 'composerDraftStorageFailed',
-                sendFailed: (detail: string) => `composerSendFailed:${detail}`,
-                sendFailureDetails: {
-                  chatGenerationSettings: 'chatGenerationSettingsSaveFailed',
-                  personaSettings: 'personaSettingsSaveFailed',
-                  characterDefinitions: 'characterDefinitionsSaveFailed',
-                  activeChatMissing: 'activeChatMissing',
-                  preparation: 'sendPreparationFailed',
-                  staging: 'sendStagingFailed',
-                  queuedConfirmation: 'queuedConfirmationFailed',
-                  queuedConflict: 'queuedRevisionConflict',
-                  queuedServerUnavailable: 'queuedServerUnavailable',
-                  appendNotAccepted: 'appendNotAccepted',
-                },
+                emptyText: 'emptyText',
+                chatGenerationSettingsIncomplete: 'Chat generation settings are incomplete.',
+                chatGenerationSettingsIncompleteWithMissing: (missing: string) =>
+                  `Chat generation settings are incomplete. Missing: ${missing}.`,
               }
-            : property === 'acceptedSendRecovery'
+            : property === 'composerDraftRecovery'
               ? {
-                  generationFailed: 'acceptedSendGenerationFailed',
-                  generationInProgress: 'acceptedSendGenerationInProgress',
-                  abandoned: 'acceptedSendAbandoned',
-                  providerMayHaveRun: 'acceptedSendProviderMayHaveRun',
-                  providerMayHaveRunConfirm: 'acceptedSendProviderMayHaveRunConfirm',
-                  retry: 'acceptedSendRetry',
-                  retrying: 'acceptedSendRetrying',
+                  storageFailed: 'composerDraftStorageFailed',
+                  sendFailed: (detail: string) => `composerSendFailed:${detail}`,
+                  sendFailureDetails: {
+                    chatGenerationSettings: 'chatGenerationSettingsSaveFailed',
+                    personaSettings: 'personaSettingsSaveFailed',
+                    characterDefinitions: 'characterDefinitionsSaveFailed',
+                    activeChatMissing: 'activeChatMissing',
+                    preparation: 'sendPreparationFailed',
+                    staging: 'sendStagingFailed',
+                    queuedConfirmation: 'queuedConfirmationFailed',
+                    queuedConflict: 'queuedRevisionConflict',
+                    queuedServerUnavailable: 'queuedServerUnavailable',
+                    appendNotAccepted: 'appendNotAccepted',
+                  },
                 }
-              : property === 'generationStop'
+              : property === 'acceptedSendRecovery'
                 ? {
-                    stopping: 'Stopping acknowledged operation',
-                    failed: 'Stop acknowledgement failed',
-                    retry: 'Retry Stop',
-                    savingStoppedPartial: 'Saving stopped partial',
+                    generationFailed: 'acceptedSendGenerationFailed',
+                    generationInProgress: 'acceptedSendGenerationInProgress',
+                    abandoned: 'acceptedSendAbandoned',
+                    providerMayHaveRun: 'acceptedSendProviderMayHaveRun',
+                    providerMayHaveRunConfirm: 'acceptedSendProviderMayHaveRunConfirm',
+                    retry: 'acceptedSendRetry',
+                    retrying: 'acceptedSendRetrying',
                   }
-                : property === 'generationReattachFailure'
+                : property === 'generationStop'
                   ? {
-                      message: 'generationReattachMessage',
-                      lastError: (error: string) => `generationReattachLastError:${error}`,
-                      retry: 'Retry',
-                      refresh: 'Refresh',
-                      stop: 'Stop',
-                      sidebarWarning: (name: string) => `generationReattachWarning:${name}`,
+                      stopping: 'Stopping acknowledged operation',
+                      failed: 'Stop acknowledgement failed',
+                      retry: 'Retry Stop',
+                      savingStoppedPartial: 'Saving stopped partial',
                     }
-                  : property === 'agentPresets'
+                  : property === 'generationReattachFailure'
                     ? {
-                        progressBeforeMain: 'beforeMain',
-                        progressAfterMain: 'afterMain',
-                        progressLabel: (name: string) => name,
-                        progressActiveSteps: (names: string) => names,
-                        progressWaiting: 'waiting',
+                        message: 'generationReattachMessage',
+                        lastError: (error: string) => `generationReattachLastError:${error}`,
+                        retry: 'Retry',
+                        refresh: 'Refresh',
+                        stop: 'Stop',
+                        sidebarWarning: (name: string) => `generationReattachWarning:${name}`,
                       }
-                    : property === 'bardWiki'
-                      ? { workspaceTitle: 'BardWiki workspace' }
-                      : property === 'chatPostGenerationProgressModuleScript'
-                        ? (name: string) => name
-                        : property === 'chatPostGenerationProgressCharacterScript'
+                    : property === 'agentPresets'
+                      ? {
+                          progressBeforeMain: 'beforeMain',
+                          progressAfterMain: 'afterMain',
+                          progressLabel: (name: string) => name,
+                          progressActiveSteps: (names: string) => names,
+                          progressWaiting: 'waiting',
+                        }
+                      : property === 'bardWiki'
+                        ? { workspaceTitle: 'BardWiki workspace' }
+                        : property === 'chatPostGenerationProgressModuleScript'
                           ? (name: string) => name
-                          : property === 'chatPostGenerationProgressWithComment'
-                            ? (owner: string) => owner
-                            : property === 'chatPostGenerationProgressLabel'
+                          : property === 'chatPostGenerationProgressCharacterScript'
+                            ? (name: string) => name
+                            : property === 'chatPostGenerationProgressWithComment'
                               ? (owner: string) => owner
-                              : String(property),
+                              : property === 'chatPostGenerationProgressLabel'
+                                ? (owner: string) => owner
+                                : String(property),
     },
   ),
 }))
@@ -2520,7 +2522,10 @@ describe('DefaultChatScreen transcript window state', () => {
     ScrollToMessageStore.value = 5
     await waitFor(() => {
       const indexes = messageRowIndexes()
-      expect(indexes).toHaveLength(200)
+      expect(target.querySelector('[data-transcript-window-rows]')?.getAttribute('data-transcript-window-rows')).toBe(
+        '200',
+      )
+      expect(indexes.length).toBeLessThanOrEqual(76)
       expect(indexes).toContain(5)
     })
 

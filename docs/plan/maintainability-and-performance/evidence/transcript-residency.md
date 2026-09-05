@@ -50,10 +50,13 @@ supported measured envelope remains the same 30/180/600 rich-text histories.
   (inline/popup/partial editors, confirmations, translations). Multiple operations
   on the same row share its slot. An additional user operation beyond that limit
   reports a localized request to finish an existing operation without discarding
-  drafts; automatic translation waits for availability. At most eight additional
-  singleton rows cover the latest row, navigation target, generation/reroll
-  presentation, focus, a popup owner and the two selection endpoints. Thus
-  ordinary residency is at most 76 rows regardless of hydrated history length.
+  drafts; automatic translation waits for availability. Singleton pins cover the latest row, navigation target, generation/reroll
+  presentation, focus, a popup owner and the two selection endpoints. Up to
+  four generation identities may briefly coexist (old/new regeneration IDs,
+  target and append presentation), so there can be ten singleton IDs. Pins
+  consume the shared budget first: reduce the working window below 60 when
+  needed to keep the original **76-row hard limit**. This refines the initial
+  eight-singleton estimate without increasing the accepted row bound.
 - Existing latest-start/latest-end/user-free scroll ownership remains authoritative.
   A stable visible message and offset anchor compensates for eviction, older
   loads and measured media growth. Jump mounts its hydrated target before seeking
@@ -74,4 +77,46 @@ Acceptance requires the unchanged cost matrix plus native browser proof of the
 row bound, one-pixel anchor tolerance, interaction preservation and capture
 restoration. Revisit if any supported fixture exceeds these bounds/budgets, an
 interaction loses owned state, or a newly supported workflow needs unmounted
-DOM. Implementation and after evidence are pending.
+DOM. Interaction ownership shipped in `9c8e678d2`: focused Chat 63, partial-editor 12,
+interaction-scope 5, view-cache 3 and reservation-manager 3 tests pass. The first
+seven native cases pass on the in-progress cutover, including editing, selection,
+copy, folded history and capture success/failure/cancellation. They exposed a
+queued bookmark entering before its route/component and a hidden-but-retained
+screen allowing capture revival; both have focused fixes pending the cutover
+commit. Final native verification and unchanged after-cost evidence remain open.
+
+### Cutover correctness checks
+
+`b5371f408` gives inline/popup editors a separate draft and preserves stable
+message identity through unrelated earlier deletions. Chat 66 and partial-edit
+freshness 11 cases pass, including unchanged-source rejection. On the working
+cutover, the eight-case native run passes without diagnostic instrumentation:
+`/tmp/phase5-transcript-functional-final-6.log`. The stress case retains eight
+drafts through viewport movement and a page setting reduction, refuses a ninth
+without losing work, verifies exactly one accepted save per message plus exact
+authoritative saved text, then returns to a fresh 14-row configured window after
+release. It also tests keyboard activation of a stable, named spacer control.
+
+The pointer stress exposed focus releasing an older pin between pointerdown
+and pointerup, changing reverse-scroll geometry and losing the click. A bounded
+pointer hold now retains the logical lower edge and defers residency geometry
+until the click sequence finishes; cancel/blur/destroy release it. A read-only
+review also found generation IDs being pinned after logical truncation and an
+old jump surviving a hidden route. Generation identities now protect the lower
+logical bound before truncation; visible-route departure/destruction invalidate
+pending jumps while initial bookmark handoff can still wait for its new route.
+The older-generation page-reduction component regression passes, along with the
+105-case transcript-window suite. The expanded nine-case native run passes:
+desktop/mobile unfolding stays within one pixel and a pending image-backed jump
+cannot move the reopened chat through its old wait deadline or image completion.
+The fold regression first exposed 3–5 pixel drift: the corrected owner retains
+the intended folded-row offset through successive parser/image changes instead
+of recapturing rounded browser scroll positions. The original tolerance is
+unchanged. The final ten-case functional lane also passes diagnostic rollback
+with 180 mounted rows, no spacers, ten older-page anchors within one pixel, deep
+jump and latest navigation. It bypasses residency observers/reconciliation and
+restores native anchoring; interaction admission remains active. The existing
+`chatStartupRendering.spec.ts` (3) and `debugEchoLayoutStability.spec.ts` (1)
+real-browser cases also pass, including delayed display readiness, latest-row
+anchors, first-token waiting and foreground recovery. All 14 required native
+functional cases pass; unchanged full cost-matrix acceptance remains pending.

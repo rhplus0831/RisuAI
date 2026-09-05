@@ -61,7 +61,7 @@ state until its messages arrive and a retryable error state after failed
 hydration.
 
 `@risuai/shared-core/chat-load-pages` normalizes two durable Advanced settings:
-`chatLoadInitialPages` controls the initial resident tail and
+`chatLoadInitialPages` controls the initial hydrated display tail and
 `chatLoadAdditionalPages` controls each ordinary expansion. Their defaults are
 30 and 15. `DefaultChatScreen.svelte` reads both helpers, resets to the
 configured initial count when the chat identity changes, and adds the
@@ -77,6 +77,44 @@ jump expands and hydrates the necessary window only after its target route is
 current. `DefaultChatScreen.loadPages.test.ts`, the shared-core load-page tests,
 `src/ts/setting/advancedSettingsData.test.ts`, and
 `src/ts/server/chatMessageHydration.test.ts` guard this boundary.
+
+`Chats.svelte` separately selects DOM residency from that logical window using
+`transcriptResidency.ts`. It mounts up to 60 working rows and reserves room for
+active interactions, the latest row, a jump target, generation presentation,
+focus, popup ownership and selection endpoints. Pins consume the shared budget
+first, including temporary old/new generation identities: ordinary committed
+DOM contains at most 76 message rows. Already-hydrated pinned rows retain their
+logical range when send/streaming or a settings change reduces the page count.
+Hydration, persisted messages and pending mutations keep their existing owners.
+
+Measured reverse-flow spacers preserve omitted height; a chat-scoped cache holds
+at most 2,048 fractional-pixel measurements and resets on width changes. A visible
+stable message and offset anchor corrects free scrolling after row/media changes.
+The intended fractional offset survives successive corrections so browser scroll
+rounding does not accumulate across parser/image updates.
+Existing start/end anchors still own entry and followed generation. Navigation
+waits for the live chat route/component, mounts and pins its target, then releases
+it after alignment; a navigation epoch fences stale geometry corrections.
+Leaving a visible chat cancels its pending jump even when the same selected
+chat is reopened. Unfolding pins the previous folded target through the logical
+window change and restores its measured offset.
+Keyboard and screen-reader users can activate named “Show messages” buttons in
+spacers. A focused spacer keeps its range stable until activation or blur.
+A row pointer press retains its logical lower bound and defers residency
+geometry until pointerup/click completes; changing focus cannot move a Save
+button between press and release. Cancellation, blur and destruction release
+that short-lived hold.
+
+Native browser text-find sees mounted messages; cross-message drag selection is
+limited by residency. Individual mounted-message selection/copy, per-message
+copy, existing in-app navigation/search and data export remain available. Full
+chat screenshots temporarily use `loadPages = Infinity` outside the ordinary
+bound and restore the saved window on success, failure, hidden-route cancellation
+or destruction. A quick return to the same chat cannot revive an old capture.
+The local diagnostic key `risu-transcript-legacy-paging=1`, set before chat mount,
+retains the previous paging path for rollback, bypassing residency height observers
+and reconciliation and restoring native scroll anchoring. It does not enforce
+the row bound; interaction admission and stable draft ownership still apply.
 
 On chat entry, `Chats.svelte` waits for the newest persisted row to render and
 aligns the beginning of that row with the transcript scrollport's start. A
@@ -118,6 +156,11 @@ stable IDs so hydration, optimistic structural edits, rollback, and selection
 invalidate the relevant reads; unrelated message bodies and settings do not
 rebuild those indexes. Mutation handlers retain their separate live ownership
 and asynchronous freshness checks.
+Inline and popup message drafts have their own state, independent of display
+props. Stable row keys keep their editors mounted when an unrelated earlier row
+is removed; full/partial saves still require the captured IDs and unchanged
+source (and translation where applicable). Missing-ID callers retain strict
+index checks.
 `ChatBody.svelte` renders parsed content, while `ChatBodyParseMemo.ts` owns
 parser/LLM-detection memoization and dependency signatures for character, chat,
 modules, settings, CBS state, and reload epochs. Stale HTML or unexpectedly

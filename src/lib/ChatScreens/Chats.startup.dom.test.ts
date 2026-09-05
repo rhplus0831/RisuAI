@@ -15,6 +15,10 @@ import * as parser from '../../ts/parser/parser.svelte'
 import ChatsHarness from './Chats.startupHarness.svelte'
 import { invalidateModuleRenderRevision } from '../../ts/moduleRenderRevision'
 import { reloadGuiDisplay } from '../../ts/stores.svelte'
+import {
+  beginGenerationDisplayProjection,
+  resetGenerationDisplayProjectionsForTests,
+} from '../../ts/process/generationDisplayProjection.svelte'
 const scheduledDisplay = vi.hoisted(() => vi.fn())
 vi.mock('./chatDisplayScheduler', async (importActual) => {
   const actual = await importActual<typeof import('./chatDisplayScheduler')>()
@@ -54,10 +58,74 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   resetStartupReadinessForTests()
+  resetGenerationDisplayProjectionsForTests()
   document.body.innerHTML = ''
 })
 
 describe('chat startup rendering', () => {
+  it('keeps diagnostic legacy paging available beyond the ordinary residency bound', async () => {
+    seedRenderCostMessages(180)
+    const character = charactersResourceState.characters[0]
+    const chat = character.chats[0]
+    vi.spyOn(parser, 'ParseMarkdown').mockImplementation(async (html) => `<p>${html}</p>`)
+    localStorage.setItem('risu-transcript-legacy-paging', '1')
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ChatsHarness, {
+      target,
+      props: { chatId: chat.id, characterId: character.chaId, loadPages: 180 },
+    })
+    try {
+      await flush()
+      expect(target.querySelectorAll('.risu-chat')).toHaveLength(180)
+      expect(target.querySelector('[data-transcript-residency-mode="legacy"]')).not.toBeNull()
+      expect(target.querySelector('[data-transcript-spacer]')).toBeNull()
+      component.setLoadPages(15)
+      await flush()
+      expect(target.querySelectorAll('.risu-chat')).toHaveLength(15)
+    } finally {
+      await unmount(component)
+      localStorage.removeItem('risu-transcript-legacy-paging')
+    }
+  })
+
+  it('keeps an older regeneration row through a page reduction before selecting bounded DOM residency', async () => {
+    seedRenderCostMessages(180)
+    const character = charactersResourceState.characters[0]
+    const chat = character.chats[0]
+    const messageId = chat.message[5].chatId!
+    vi.spyOn(parser, 'ParseMarkdown').mockImplementation(async (html) => `<p>${html}</p>`)
+    beginGenerationDisplayProjection({
+      operationId: 'older-regeneration',
+      attemptNo: 1,
+      characterId: character.chaId,
+      chatId: chat.id,
+      mode: 'regenerate',
+      targetMessageId: messageId,
+      projectionEpoch: 1,
+    })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ChatsHarness, {
+      target,
+      props: { chatId: chat.id, characterId: character.chaId, loadPages: 180 },
+    })
+    try {
+      await flush()
+      const projected = target.querySelector(`[data-risu-message-id="${messageId}"]`)
+      expect(projected).not.toBeNull()
+      component.setLoadPages(15)
+      await flush()
+      expect(target.querySelector(`[data-risu-message-id="${messageId}"]`)).toBe(projected)
+      expect(target.querySelectorAll('.risu-chat').length).toBeLessThanOrEqual(76)
+      resetGenerationDisplayProjectionsForTests()
+      await flush()
+      expect(target.querySelectorAll('.risu-chat')).toHaveLength(15)
+    } finally {
+      await unmount(component)
+    }
+  })
+
   it('retains rendered body nodes during reloads and discards superseded parse results', async () => {
     seedRenderCostMessages(2)
     const character = charactersResourceState.characters[0]

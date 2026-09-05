@@ -17,7 +17,6 @@ import {
 // Per-action trace snapshots materialize the entire measured DOM and distort
 // residency timings. Functional checks still run in real Chromium.
 test.use({ trace: 'off' })
-test.describe.configure({ mode: 'serial' })
 
 // Opt into the complete cost matrix with RISU_TRANSCRIPT_COSTS=1 and run through
 // the focused runner in isolation with RISU_BROWSER_SMOKE_WORKERS=1. Optional
@@ -26,7 +25,14 @@ test.describe.configure({ mode: 'serial' })
 // before jumping is explicitly warm. These are measurements, not latency gates.
 const TRANSCRIPT = '[data-default-chat-transcript]'
 const ROWS = `${TRANSCRIPT} .risu-chat[data-risu-message-id^="residency-message-"]`
+const WINDOW = `${TRANSCRIPT} [data-transcript-window-rows]`
+const ORDINARY_ROW_LIMIT = 76
+const LEGACY_PAGING = process.env.RISU_TRANSCRIPT_LEGACY_PAGING === '1'
 const MEASURE_COSTS = process.env.RISU_TRANSCRIPT_COSTS === '1'
+const DIAGNOSTICS = !MEASURE_COSTS && process.env.RISU_TRANSCRIPT_DIAGNOSTICS === '1'
+// An isolated one-worker run remains sequential. Functional cases are
+// independent, so one product failure should not suppress all other evidence.
+test.describe.configure({ mode: MEASURE_COSTS ? 'serial' : 'default' })
 const SIZES = MEASURE_COSTS ? [30, 180, 600] : [30]
 const REPETITIONS = Number(process.env.RISU_TRANSCRIPT_REPETITIONS ?? 1)
 if (!Number.isInteger(REPETITIONS) || REPETITIONS < 1 || REPETITIONS > 5) {
@@ -48,6 +54,8 @@ interface Stage {
   startedAtMs: number
   elapsedMs: number
   mountedRows: number
+  windowRows: number
+  residencyMode: string | null
   transcriptElements: number
   documentElements: number
   rowHeightRange: { min: number; max: number }
@@ -77,8 +85,12 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
           isMobile: profile.mobile,
           hasTouch: profile.mobile,
         })
-        await context.addInitScript(() => performance.setResourceTimingBufferSize(2000))
+        await context.addInitScript((legacyPaging) => {
+          performance.setResourceTimingBufferSize(2000)
+          if (legacyPaging) localStorage.setItem('risu-transcript-legacy-paging', '1')
+        }, LEGACY_PAGING)
         const page = await context.newPage()
+        if (DIAGNOSTICS) await installScrollDiagnostics(page)
         const cdp = await context.newCDPSession(page)
         const errors: string[] = []
         const stages: Stage[] = []
@@ -96,10 +108,10 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
           await configureGeneration(page)
           await waitForRenderedRows(page)
 
-          let mounted = await page.locator(ROWS).count()
+          let loaded = await windowRows(page)
           let olderLoads = 0
-          while (mounted < messageCount) {
-            const previousMounted = mounted
+          while (loaded < messageCount) {
+            const previousLoaded = loaded
             let anchor: Anchor | null = null
             stages.push(
               await measure(
@@ -108,16 +120,16 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
                 `older-page-${++olderLoads}`,
                 async () => {
                   anchor = await scrollToOlderEdge(page)
-                  await expect.poll(() => page.locator(ROWS).count()).toBeGreaterThan(previousMounted)
+                  await expect.poll(() => windowRows(page)).toBeGreaterThan(previousLoaded)
                   await waitForRenderedRows(page)
                 },
                 () => anchor,
               ),
             )
-            mounted = await page.locator(ROWS).count()
-            expect(mounted).toBeLessThanOrEqual(messageCount)
+            loaded = await windowRows(page)
+            expect(loaded).toBe(Math.min(messageCount, previousLoaded + RESIDENCY_ADDITIONAL_ROWS))
           }
-          expect(mounted).toBe(messageCount)
+          expect(loaded).toBe(messageCount)
           const accumulatedScroll = await sampleScrolling(page, cdp)
           const retainedAccumulated = await retainedHeap(cdp)
 
@@ -149,11 +161,16 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
               if (await sidebarDialog.isVisible()) await page.keyboard.press('Escape')
               const target = page.locator(`${ROWS}[data-chat-index="5"]`)
               await expect(target).toHaveClass(/ring-blue-500/)
-              await expect(target).toBeInViewport()
+              try {
+                await expect(target).toBeInViewport()
+              } catch (error) {
+                await recordJumpFailure(page, testInfo)
+                throw error
+              }
               await waitForRenderedRows(page, 30_000 * profile.cpuRate)
             }),
           )
-          await expect(page.locator(ROWS)).toHaveCount(messageCount)
+          await expect.poll(() => windowRows(page)).toBe(messageCount)
 
           // Change an already decoded local image's height to isolate late media
           // geometry from hydration and network work. Record the actual anchor drift.
@@ -227,6 +244,12 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
             fullCostMatrix: MEASURE_COSTS,
             warmupRuns: 0,
             traceRecording: false,
+            residency: {
+              mode: LEGACY_PAGING ? 'legacy' : 'bounded',
+              ordinaryMountedRowLimit: LEGACY_PAGING ? null : ORDINARY_ROW_LIMIT,
+              rollbackFlag: 'localStorage.risu-transcript-legacy-paging=1',
+              windowRows: 'Logical paged display window; independent of hydrated data and mounted DOM rows.',
+            },
             cache:
               'Fresh origin/context through accumulated traversal; warm reload before bookmark/jump/stream stages.',
             fixture: {
@@ -240,7 +263,7 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
               streamChunks: RESIDENCY_STREAM_CHUNKS.length,
             },
             attribution:
-              'Resource durations measure hydration/display-source request delivery. responseEndToSettledMs includes scheduling, parser, mounting and image decoding; it is NOT isolated parser CPU. CDP scriptMs also includes other JavaScript. CDP layout/style are reported independently. Browser polling, CDP sampling, and three settling animation frames are included in stage wall times. Provider release is manually gated; first-chunk time can include remaining generation preparation after projected-row admission. Actual mounted counts expose any window reset on send.',
+              'Resource durations measure hydration/display-source request delivery. responseEndToSettledMs includes scheduling, parser, mounting and image decoding; it is NOT isolated parser CPU. CDP scriptMs also includes other JavaScript. CDP layout/style are reported independently. Browser polling, CDP sampling, and three settling animation frames are included in stage wall times. Provider release is manually gated; first-chunk time can include remaining generation preparation after projected-row admission. Actual mounted and logical window counts expose any window reset on send. The cost journey has no continuous DOM observer; separate functional cases check transient row bounds.',
             workflows: {
               interactive: ['ordinary older-page traversal', 'bookmark jump', 'streaming', 'late image resize'],
               fullDataOnly:
@@ -325,11 +348,744 @@ test('transcript residency screenshot is temporary full materialization', async 
   }
 })
 
+// Functional interaction journeys have continuous DOM observation. Keep them
+// outside the cost matrix so their fixtures, clipboard hooks, and observer work
+// cannot change the before/after timing journey.
+for (const mobile of [false, true]) {
+  test(`transcript residency preserves editing, selection and copy ${mobile ? 'mobile' : 'desktop'}`, async ({
+    browser,
+  }, testInfo) => {
+    test.skip(MEASURE_COSTS || LEGACY_PAGING)
+    test.setTimeout(180_000)
+    const harness = await startTranscriptResidencyHarness(180)
+    const context = await browser.newContext({
+      viewport: mobile ? { width: 390, height: 844 } : { width: 1280, height: 800 },
+      isMobile: mobile,
+      hasTouch: mobile,
+    })
+    const page = await context.newPage()
+    if (DIAGNOSTICS) await installScrollDiagnostics(page)
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    try {
+      await page.goto(`${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`)
+      await waitForReady(page)
+      await waitForRenderedRows(page)
+      await page.evaluate(async () => {
+        await window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({
+          disableAutoPopupMessageEditor: true,
+          useChatCopy: true,
+        })
+        Reflect.set(window, '__residencyCopiedText', '')
+        Object.defineProperty(navigator.clipboard, 'write', {
+          configurable: true,
+          value: async (items: ClipboardItem[]) => {
+            const text = await (await items[0].getType('text/plain')).text()
+            Reflect.set(window, '__residencyCopiedText', text)
+          },
+        })
+        Object.defineProperty(navigator.clipboard, 'writeText', {
+          configurable: true,
+          value: async (text: string) => Reflect.set(window, '__residencyCopiedText', text),
+        })
+      })
+      await observeOrdinaryRowBound(page)
+      await bookmarkJump(page, testInfo)
+      await expect.poll(() => windowRows(page)).toBe(180)
+      await waitForRenderedRows(page)
+      const target = page.locator(`${ROWS}[data-chat-index="5"]`)
+      await clickMessageAction(page, 5, 'edit')
+      const editor = target.getByRole('textbox')
+      await expect(editor).toBeVisible()
+      const original = await editor.inputValue()
+      const draft = `${original}\n\nPreserved resident editor draft.`
+      await editor.fill(draft)
+      await scrollToLatestEdge(page)
+      await expect(page.locator(`${ROWS}[data-chat-index="179"]`)).toBeInViewport()
+      await expect(editor).toHaveValue(draft)
+      await expect(editor).toBeFocused()
+      await clickMessageAction(page, 5, 'edit')
+      await expect(target.getByRole('textbox')).toHaveCount(0)
+      await expect(target.locator('.chat-message-body')).toContainText('Preserved resident editor draft.')
+
+      // Select text in one mounted message, then move the viewport away without
+      // changing selection. Its row must remain available until selection ends.
+      const selected = await target.locator('.chat-message-body').evaluate((body) => {
+        const text = document.createTreeWalker(body, NodeFilter.SHOW_TEXT).nextNode()!
+        const range = document.createRange()
+        range.setStart(text, 0)
+        range.setEnd(text, Math.min(15, text.textContent!.length))
+        const selection = window.getSelection()!
+        selection.removeAllRanges()
+        selection.addRange(range)
+        document.dispatchEvent(new Event('selectionchange'))
+        return selection.toString()
+      })
+      expect(selected).toContain('Residency row')
+      await scrollToLatestEdge(page)
+      await expect(target).toHaveCount(1)
+      expect(await page.evaluate(() => window.getSelection()?.toString())).toBe(selected)
+      await page.evaluate(() => {
+        window.getSelection()?.removeAllRanges()
+        document.dispatchEvent(new Event('selectionchange'))
+      })
+      await bookmarkJump(page, testInfo)
+      await clickMessageAction(page, 5, 'copy')
+      await expect
+        .poll(() => page.evaluate(() => Reflect.get(window, '__residencyCopiedText')))
+        .toContain('Preserved resident editor draft.')
+      // Closing the copy alert restores ordinary keyboard navigation; the
+      // composer remains a reachable named textbox after an evicted-row jump.
+      const ok = page.getByRole('button', { name: 'OK', exact: true })
+      if (await ok.isVisible()) await ok.click()
+      await page.getByTestId('default-chat-composer').focus()
+      await expect(page.getByTestId('default-chat-composer')).toBeFocused()
+      await page.keyboard.press('Tab')
+      expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true)
+
+      // The real branch-source link opens a folded history. Expanding it must
+      // retain the same logical history while returning to ordinary residency.
+      await bookmarkJump(page, testInfo)
+      await clickMessageAction(page, 5, 'branch')
+      await page.getByRole('button', { name: 'YES', exact: true }).click()
+      const branchSource = page.getByRole('button', {
+        name: 'This chat has been branched from Transcript Residency Chat.',
+        exact: true,
+      })
+      await expect(branchSource).toBeVisible()
+      await branchSource.click()
+      const loadMore = page.getByRole('button', { name: 'Load More', exact: true })
+      await expect(loadMore).toBeVisible()
+      await loadMore.scrollIntoViewIfNeeded()
+      await loadMore.focus()
+      await settleFrames(page)
+      const foldedAnchor = await readFoldGeometry(page)
+      await loadMore.evaluate((button) => {
+        button.addEventListener(
+          'click',
+          () => {
+            const transcript = document.querySelector('[data-default-chat-transcript]')!
+            const row = transcript.querySelector('[data-chat-index="5"]')!
+            Reflect.set(window, '__residencyFoldClick', {
+              top: row.getBoundingClientRect().top - transcript.getBoundingClientRect().top,
+              scrollTop: transcript.scrollTop,
+            })
+          },
+          { capture: true, once: true },
+        )
+      })
+      expect(
+        await page
+          .locator(ROWS)
+          .evaluateAll((rows) => rows.every((row) => Number((row as HTMLElement).dataset.chatIndex) <= 5)),
+      ).toBe(true)
+      await loadMore.click()
+      await expect.poll(() => windowRows(page)).toBe(180)
+      await expect(page.locator(WINDOW)).toHaveAttribute('data-transcript-residency-mode', 'bounded')
+      await expect(target).toHaveCount(1)
+      await waitForRenderedRows(page)
+      const unfoldedAnchor = await readFoldGeometry(page)
+      if (Math.abs(unfoldedAnchor.top - foldedAnchor.top) > 1) {
+        console.error(
+          'Transcript fold anchor failure:',
+          JSON.stringify({
+            before: foldedAnchor,
+            click: await page.evaluate(() => Reflect.get(window, '__residencyFoldClick')),
+            after: unfoldedAnchor,
+          }),
+        )
+      }
+      expect(
+        Math.abs(unfoldedAnchor.top - foldedAnchor.top),
+        'Unfolding preserves the folded message offset',
+      ).toBeLessThanOrEqual(1)
+      await assertObservedOrdinaryRowBound(page)
+      expect(errors).toEqual([])
+    } finally {
+      harness.releaseAll()
+      await context.close()
+      await closeFastBootstrapHarness(harness)
+    }
+  })
+}
+
+for (const outcome of ['failure', 'cancellation'] as const) {
+  test(`transcript residency restores ordinary rows after screenshot ${outcome}`, async ({ page }) => {
+    test.skip(MEASURE_COSTS || LEGACY_PAGING)
+    test.setTimeout(180_000)
+    const harness = await startTranscriptResidencyHarness(90)
+    const downloads: string[] = []
+    page.on('download', (download) => downloads.push(download.suggestedFilename()))
+    try {
+      const url = `${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`
+      await page.setViewportSize({ width: 1280, height: 800 })
+      await page.goto(url)
+      await waitForReady(page)
+      await waitForRenderedRows(page)
+      await observeOrdinaryRowBound(page)
+      if (outcome === 'failure') {
+        await page.evaluate(() => {
+          HTMLCanvasElement.prototype.toDataURL = () => {
+            throw new Error('Intentional residency screenshot encoding failure')
+          }
+        })
+      }
+      await page.getByTestId('default-chat-menu-button').click()
+      await page.getByTestId('default-chat-screenshot-button').click()
+      await expect(page.locator(WINDOW)).toHaveAttribute('data-transcript-residency-mode', 'capture')
+      if (outcome === 'failure') {
+        await expect(page.getByText('Error while taking screenshot', { exact: true })).toBeVisible({ timeout: 120_000 })
+      } else {
+        // Route identity loss cancels the existing screenshot operation. Return
+        // through client navigation to verify its finally block cannot leave the
+        // next transcript in full materialization mode.
+        await page.evaluate((characterId) => {
+          window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo(`/character/${characterId}`)
+        }, RESIDENCY_CHARACTER_ID)
+        await expect(page.locator(TRANSCRIPT)).toHaveCount(0)
+        await page.evaluate(
+          ({ characterId, chatId }) => {
+            window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo(`/character/${characterId}/${chatId}`)
+          },
+          { characterId: RESIDENCY_CHARACTER_ID, chatId: RESIDENCY_CHAT_ID },
+        )
+        await waitForReady(page)
+      }
+      await expect(page.locator(WINDOW)).toHaveAttribute('data-transcript-residency-mode', 'bounded')
+      await expect.poll(() => windowRows(page)).toBe(RESIDENCY_INITIAL_ROWS)
+      await expect(page.locator(ROWS)).toHaveCount(RESIDENCY_INITIAL_ROWS)
+      await settleFrames(page)
+      await assertObservedOrdinaryRowBound(page, true)
+      expect(downloads).toEqual([])
+    } finally {
+      harness.releaseAll()
+      await page.close()
+      await closeFastBootstrapHarness(harness)
+    }
+  })
+}
+
+test('transcript residency bounds eight editors through page reset and keyboard gap navigation', async ({
+  page,
+}, testInfo) => {
+  test.skip(MEASURE_COSTS || LEGACY_PAGING)
+  test.setTimeout(180_000)
+  const harness = await startTranscriptResidencyHarness(180)
+  const errors: string[] = []
+  const acceptedMessageEdits: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('response', (response) => {
+    const pathname = new URL(response.url()).pathname
+    if (
+      response.status() === 200 &&
+      response.request().method() === 'PATCH' &&
+      pathname.startsWith('/api/v1/commands/messages/residency-message-')
+    ) {
+      acceptedMessageEdits.push(decodeURIComponent(pathname.split('/').at(-1)!))
+    }
+  })
+  if (DIAGNOSTICS) await installScrollDiagnostics(page)
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto(`${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`)
+    await waitForReady(page)
+    await waitForRenderedRows(page)
+    await page.evaluate(async () => {
+      await window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ disableAutoPopupMessageEditor: true })
+      const events: unknown[] = []
+      Reflect.set(window, '__residencyEditorEvents', events)
+      for (const type of ['pointerdown', 'pointerup', 'click']) {
+        document.addEventListener(
+          type,
+          (event) => {
+            if (!(event.target instanceof Element) || !event.target.closest('[data-default-chat-transcript]')) return
+            if (events.length >= 64) events.shift()
+            const action = event.target.closest('[data-risu-message-action]')
+            const row = event.target.closest('.risu-chat')
+            events.push({
+              type,
+              time: performance.now(),
+              phase: Reflect.get(window, '__residencyEditorPhase'),
+              row: row?.getAttribute('data-chat-index'),
+              action: action?.getAttribute('data-risu-message-action'),
+              label: action?.getAttribute('aria-label'),
+              disabled: action?.hasAttribute('disabled'),
+              path: event
+                .composedPath()
+                .slice(0, 4)
+                .map((node) => (node instanceof Element ? node.outerHTML.slice(0, 180) : String(node))),
+            })
+          },
+          true,
+        )
+      }
+    })
+    await observeOrdinaryRowBound(page)
+    await bookmarkJump(page, testInfo)
+    await waitForRenderedRows(page)
+
+    // A screen reader can discover the omitted region by its named button;
+    // keyboard activation mounts its boundary message and transfers focus.
+    const gap = page.getByRole('button', { name: /^Show messages \d+–\d+$/ }).first()
+    await expect(gap).toHaveAccessibleName(/^Show messages \d+–\d+$/)
+    const gapLabel = (await gap.innerText()).trim()
+    await gap.focus()
+    await settleFrames(page)
+    await expect(gap).toBeFocused()
+    // Focusing an offscreen control scrolls it into view. Its announced range
+    // must remain stable until activation or blur.
+    await expect(gap).toHaveAccessibleName(gapLabel)
+    const gapRange = gapLabel.match(/^Show messages (\d+)–(\d+)$/)!
+    const boundaryIndex = Number(gapRange[1]) - 1
+    const boundary = page.locator(`${ROWS}[data-chat-index="${boundaryIndex}"]`)
+    await expect(boundary).toHaveCount(0)
+    await page.keyboard.press('Enter')
+    await expect(boundary).toBeInViewport()
+    await expect(page.locator(`[data-transcript-row-id="residency-message-${boundaryIndex}"]`)).toBeFocused()
+
+    await bookmarkJump(page, testInfo)
+    await waitForRenderedRows(page)
+    const drafts = new Map<number, string>()
+    for (let index = 5; index < 13; index++) {
+      await clickMessageAction(page, index, 'edit')
+      const editor = page.locator(`${ROWS}[data-chat-index="${index}"]`).getByRole('textbox')
+      const draft = `${await editor.inputValue()}\n\nRetained editor ${index}.`
+      drafts.set(index, draft)
+      await editor.fill(draft)
+    }
+    await expect(page.locator(`${ROWS} textarea`)).toHaveCount(8)
+    await clickMessageAction(page, 13, 'edit')
+    await expect(
+      page.getByRole('dialog', {
+        name: 'Finish an edit or wait for a message action to complete before starting another. Up to eight messages can have active actions at once.',
+        exact: true,
+      }),
+    ).toBeVisible()
+    await expect(page.locator(`${ROWS}[data-chat-index="13"]`).getByRole('textbox')).toHaveCount(0)
+    await page.getByRole('button', { name: 'OK', exact: true }).click()
+
+    await scrollToLatestEdge(page)
+    for (const [index, draft] of drafts) {
+      await expect(page.locator(`${ROWS}[data-chat-index="${index}"]`).getByRole('textbox')).toHaveValue(draft)
+    }
+    // The configured ordinary page count shrinks immediately. Its already
+    // hydrated logical range can remain extended while the eight editors own
+    // older rows; their DOM stays within the same finite residency envelope.
+    await page.evaluate(async () => {
+      await window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ chatLoadInitialPages: 15 })
+    })
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          Reflect.get(window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot(), 'chatLoadInitialPages'),
+        ),
+      )
+      .toBe(15)
+    await settleFrames(page)
+    await scrollToLatestEdge(page)
+    for (const [index, draft] of drafts) {
+      await expect(page.locator(`${ROWS}[data-chat-index="${index}"]`).getByRole('textbox')).toHaveValue(draft)
+    }
+    await expect(page.locator(`${ROWS} textarea`)).toHaveCount(8)
+    for (const [index, draft] of drafts) {
+      const row = page.locator(`${ROWS}[data-chat-index="${index}"]`)
+      await expect(row.getByRole('textbox'), `Editor ${index} retains its draft while siblings save`).toHaveValue(draft)
+      await expect(row.locator('[data-risu-message-action="edit"]')).toHaveAttribute('aria-label', 'Save')
+      await page.evaluate((index) => Reflect.set(window, '__residencyEditorPhase', `save-${index}`), index)
+      await clickMessageAction(page, index, 'edit')
+      await expect(page.locator(`${ROWS}[data-chat-index="${index}"]`).getByRole('textbox')).toHaveCount(0)
+    }
+    await expect.poll(() => acceptedMessageEdits.length).toBe(8)
+    expect(acceptedMessageEdits.sort()).toEqual([...drafts.keys()].map((index) => `residency-message-${index}`).sort())
+    const saved = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/chats/${RESIDENCY_CHAT_ID}/messages?start=5&limit=8`,
+      headers: { 'risu-auth': harness.assertion },
+    })
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json().message).toEqual(
+      [...drafts].map(([index, data]) => expect.objectContaining({ chatId: `residency-message-${index}`, data })),
+    )
+    await page.getByTestId('default-chat-composer').focus()
+    await page.evaluate(() => {
+      window.getSelection()?.removeAllRanges()
+      document.dispatchEvent(new Event('selectionchange'))
+    })
+    await scrollToLatestEdge(page)
+    // Clicking older editors can legitimately trigger the existing older-page
+    // loader. A fresh settings change proves every reservation was released.
+    await page.evaluate(async () => {
+      await window.__RISU_FASTIFY_BROWSER_SMOKE__!.patchRuntimeSettings({ chatLoadInitialPages: 14 })
+    })
+    await expect.poll(() => windowRows(page)).toBe(14)
+    await expect(page.locator(ROWS)).toHaveCount(14)
+    await assertObservedOrdinaryRowBound(page)
+    expect(errors).toEqual([])
+  } catch (error) {
+    const state = await page.evaluate(() => ({
+      rows: Array.from(document.querySelectorAll<HTMLElement>('[data-default-chat-transcript] .risu-chat')).map(
+        (row) => ({
+          id: row.dataset.risuMessageId,
+          index: row.dataset.chatIndex,
+          editAction: row.querySelector('[data-risu-message-action="edit"]')?.getAttribute('aria-label'),
+          disabled: row.querySelector('[data-risu-message-action="edit"]')?.hasAttribute('disabled'),
+          draft: row.querySelector('textarea')?.value,
+        }),
+      ),
+      focused: document.activeElement?.outerHTML.slice(0, 500),
+      events: Reflect.get(window, '__residencyEditorEvents'),
+    }))
+    await testInfo.attach('editor-residency-failure', {
+      body: Buffer.from(JSON.stringify(state, null, 2)),
+      contentType: 'application/json',
+    })
+    console.error('Transcript editor failure state:', JSON.stringify(state))
+    throw error
+  } finally {
+    harness.releaseAll()
+    await page.close()
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
+test('transcript residency cancels a pending jump when its route is hidden and reopened', async ({ page }) => {
+  test.skip(MEASURE_COSTS || LEGACY_PAGING)
+  test.setTimeout(180_000)
+  const harness = await startTranscriptResidencyHarness(180)
+  let releaseImage!: () => void
+  const imageGate = new Promise<void>((resolve) => {
+    releaseImage = resolve
+  })
+  let imageRequested = false
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto(`${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`)
+    await waitForReady(page)
+    await waitForRenderedRows(page)
+    const fixtureRows = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/chats/${RESIDENCY_CHAT_ID}/messages?start=5&limit=2`,
+      headers: { 'risu-auth': harness.assertion },
+    })
+    expect(fixtureRows.statusCode).toBe(200)
+    const [target, imageRow] = fixtureRows.json().message as Array<{ data: string }>
+    const png = Buffer.from(imageRow.data.match(/src="data:image\/png;base64,([^"]+)"/)![1], 'base64')
+    // Only this functional fixture gains a same-origin delayed image. The cost
+    // matrix continues to use the original unmodified eager local PNG rows.
+    await page.route('**/transcript-pending-jump.png', async (route) => {
+      imageRequested = true
+      await imageGate
+      await route.fulfill({ contentType: 'image/png', body: png }).catch(() => undefined)
+    })
+    const mutation = await page.evaluate(
+      async ({ messageId, data }) => {
+        const headers = await window.__RISU_FASTIFY_BROWSER_SMOKE__!.activeWriterHeaders()
+        let baseRevision = (await (await fetch('/api/v1/bootstrap', { headers })).json()).revision
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const response = await fetch(`/api/v1/commands/messages/${messageId}`, {
+            method: 'PATCH',
+            headers: { ...headers, 'content-type': 'application/json' },
+            body: JSON.stringify({ baseRevision, patch: { data } }),
+          })
+          const body = await response.json()
+          if (response.status !== 409 || body.error !== 'revision_conflict') return response.status
+          baseRevision = body.currentRevision
+        }
+        return 409
+      },
+      {
+        messageId: 'residency-message-5',
+        data: `${target.data}\n\n<img alt="Pending jump gate" src="/transcript-pending-jump.png" loading="eager" width="240" height="96">`,
+      },
+    )
+    expect(mutation).toBe(200)
+    await observeOrdinaryRowBound(page)
+    const expand = page.locator('[data-risu-sidebar-toggle="expand"]')
+    if (await expand.isVisible()) await expand.click()
+    await page.locator('[data-risu-chat-action="back-to-chat-list"]').click()
+    await page.locator('[data-risu-chat-action="bookmarks"]').click()
+    const bookmark = page.locator('[data-risu-bookmark-id="residency-message-5"]')
+    await expect(bookmark).toBeVisible()
+    await bookmark.locator('button[aria-expanded]').click()
+    await expect.poll(() => imageRequested).toBe(true)
+    await bookmark.getByRole('button', { name: 'Go to Chat' }).click()
+    const pendingTarget = page.locator(`${ROWS}[data-chat-index="5"]`)
+    await expect(pendingTarget).toHaveCount(1)
+    await expect(pendingTarget.locator('img[alt="Pending jump gate"]')).toHaveCount(1)
+    await expect(pendingTarget).not.toHaveClass(/ring-blue-500/)
+    // Let the existing jump enter its image wait after mounting the target.
+    await expect
+      .poll(() =>
+        pendingTarget.evaluate((row) => {
+          const image = row.querySelector<HTMLImageElement>('img[alt="Pending jump gate"]')!
+          return !image.complete
+        }),
+      )
+      .toBe(true)
+    await settleFrames(page)
+    await page.evaluate((characterId) => {
+      window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo(`/character/${characterId}`)
+    }, RESIDENCY_CHARACTER_ID)
+    await expect(page.locator(TRANSCRIPT)).toHaveCount(0)
+    await page.evaluate(
+      ({ characterId, chatId }) => {
+        window.__RISU_FASTIFY_BROWSER_SMOKE__!.navigateTo(`/character/${characterId}/${chatId}`)
+      },
+      { characterId: RESIDENCY_CHARACTER_ID, chatId: RESIDENCY_CHAT_ID },
+    )
+    await waitForReady(page)
+    // Reopening the same chat can retain its logical page window; the new
+    // mounted viewport must start at the latest row and stay independently bounded.
+    await expect(page.locator(WINDOW)).toHaveAttribute('data-transcript-residency-mode', 'bounded')
+    const latest = page.locator(`${ROWS}[data-chat-index="179"]`)
+    await expect(latest).toBeInViewport()
+    await expect(pendingTarget).toHaveCount(0)
+    // The production jump's image wait has a four-second deadline. Keep the
+    // image held through that deadline, then verify its delayed completion too.
+    await page.waitForTimeout(4_200)
+    await expect(latest).toBeInViewport()
+    await expect(pendingTarget).toHaveCount(0)
+    releaseImage()
+    await settleFrames(page)
+    await expect(latest).toBeInViewport()
+    await expect(page.locator(WINDOW)).toHaveAttribute('data-transcript-residency-mode', 'bounded')
+    await assertObservedOrdinaryRowBound(page)
+    expect(errors).toEqual([])
+  } finally {
+    releaseImage()
+    harness.releaseAll()
+    await page.close()
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
+test('transcript legacy paging rollback traverses 180 mounted rows without spacers', async ({ page }, testInfo) => {
+  test.skip(MEASURE_COSTS)
+  test.setTimeout(180_000)
+  const harness = await startTranscriptResidencyHarness(180)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.addInitScript(() => localStorage.setItem('risu-transcript-legacy-paging', '1'))
+  try {
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto(`${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`)
+    await waitForReady(page)
+    await expect(page.locator(WINDOW)).toHaveAttribute('data-transcript-residency-mode', 'legacy')
+    await expect(page.locator(ROWS)).toHaveCount(RESIDENCY_INITIAL_ROWS)
+    await waitForRenderedRows(page)
+    for (let loaded = RESIDENCY_INITIAL_ROWS; loaded < 180; loaded += RESIDENCY_ADDITIONAL_ROWS) {
+      const anchor = await scrollToOlderEdge(page)
+      await expect(page.locator(ROWS)).toHaveCount(loaded + RESIDENCY_ADDITIONAL_ROWS)
+      await waitForRenderedRows(page)
+      expect(await windowRows(page)).toBe(loaded + RESIDENCY_ADDITIONAL_ROWS)
+      if (anchor) {
+        const top = await page
+          .locator(`${ROWS}[data-risu-message-id="${anchor.id}"]`)
+          .evaluate(
+            (row) =>
+              row.getBoundingClientRect().top -
+              row.closest('[data-default-chat-transcript]')!.getBoundingClientRect().top,
+          )
+        expect(Math.abs(top - anchor.top), 'Legacy older-page anchor').toBeLessThanOrEqual(1)
+      }
+    }
+    await expect(page.locator(ROWS)).toHaveCount(180)
+    expect(await page.locator(ROWS).count()).toBeGreaterThan(ORDINARY_ROW_LIMIT)
+    await expect(page.locator(`${TRANSCRIPT} [data-transcript-spacer]`)).toHaveCount(0)
+    await bookmarkJump(page, testInfo)
+    await waitForRenderedRows(page)
+    await expect(page.locator(ROWS)).toHaveCount(180)
+    await scrollToLatestEdge(page)
+    await expect(page.locator(`${ROWS}[data-chat-index="179"]`)).toBeInViewport()
+    await expect(page.locator(`${TRANSCRIPT} [data-transcript-spacer]`)).toHaveCount(0)
+    expect(errors).toEqual([])
+  } finally {
+    harness.releaseAll()
+    await page.close()
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
+async function readFoldGeometry(page: Page) {
+  return page.locator(`${ROWS}[data-chat-index="5"]`).evaluate((row) => {
+    const transcript = row.closest('[data-default-chat-transcript]')!
+    const wrapper = row.closest('.chat-message-container')!
+    return {
+      top: row.getBoundingClientRect().top - transcript.getBoundingClientRect().top,
+      height: row.getBoundingClientRect().height,
+      wrapperTop: wrapper.getBoundingClientRect().top - transcript.getBoundingClientRect().top,
+      wrapperHeight: wrapper.getBoundingClientRect().height,
+      scrollTop: transcript.scrollTop,
+      scrollHeight: transcript.scrollHeight,
+    }
+  })
+}
+
+async function bookmarkJump(page: Page, testInfo: TestInfo): Promise<void> {
+  const expand = page.locator('[data-risu-sidebar-toggle="expand"]')
+  if (await expand.isVisible()) await expand.click()
+  await page.locator('[data-risu-chat-action="back-to-chat-list"]').click()
+  await page.locator('[data-risu-chat-action="bookmarks"]').click()
+  await page
+    .locator('[data-risu-bookmark-id="residency-message-5"]')
+    .getByRole('button', { name: 'Go to Chat' })
+    .click()
+  const sidebarDialog = page.locator('[data-risu-responsive-shell="shared-sidebar-dialog"]')
+  if (await sidebarDialog.isVisible()) await page.keyboard.press('Escape')
+  const target = page.locator(`${ROWS}[data-chat-index="5"]`)
+  try {
+    await expect(target).toHaveClass(/ring-blue-500/)
+    await expect(target).toBeInViewport()
+  } catch (error) {
+    await recordJumpFailure(page, testInfo)
+    throw error
+  }
+}
+
+async function clickMessageAction(page: Page, index: number, action: 'edit' | 'copy' | 'branch'): Promise<void> {
+  const row = page.locator(`${ROWS}[data-chat-index="${index}"]`)
+  const selector = `[data-risu-message-action="${action}"]`
+  const direct = row.locator(selector)
+  if (await direct.count()) await direct.click()
+  else {
+    await row.getByRole('button', { name: 'More actions', exact: true }).click()
+    await page.locator('#risu-popup-menu').locator(selector).click()
+  }
+}
+
+async function scrollToLatestEdge(page: Page): Promise<void> {
+  await page.locator(TRANSCRIPT).evaluate((transcript) => {
+    transcript.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true }))
+    transcript.scrollTop = 0
+    transcript.dispatchEvent(new Event('scroll'))
+  })
+  await settleFrames(page)
+}
+
+async function observeOrdinaryRowBound(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const state = { peakOrdinaryRows: 0, peakCaptureRows: 0, observer: null as MutationObserver | null }
+    const sample = () => {
+      const transcript = document.querySelector('[data-default-chat-transcript]')
+      const mode = transcript?.querySelector<HTMLElement>('[data-transcript-window-rows]')?.dataset
+        .transcriptResidencyMode
+      const count = Array.from(transcript?.querySelectorAll<HTMLElement>('.risu-chat[data-chat-index]') ?? []).filter(
+        (row) => Number(row.dataset.chatIndex) >= 0,
+      ).length
+      if (mode === 'capture') state.peakCaptureRows = Math.max(state.peakCaptureRows, count)
+      else state.peakOrdinaryRows = Math.max(state.peakOrdinaryRows, count)
+    }
+    state.observer = new MutationObserver(sample)
+    state.observer.observe(document.body, { childList: true, subtree: true })
+    sample()
+    Reflect.set(window, '__residencyOrdinaryBound', state)
+  })
+}
+
+async function assertObservedOrdinaryRowBound(page: Page, expectCapture = false): Promise<void> {
+  const result = await page.evaluate(() => {
+    const state = Reflect.get(window, '__residencyOrdinaryBound') as {
+      peakOrdinaryRows: number
+      peakCaptureRows: number
+      observer: MutationObserver
+    }
+    state.observer.disconnect()
+    Reflect.deleteProperty(window, '__residencyOrdinaryBound')
+    return { ordinary: state.peakOrdinaryRows, capture: state.peakCaptureRows }
+  })
+  expect(result.ordinary).toBeGreaterThan(0)
+  expect(result.ordinary).toBeLessThanOrEqual(ORDINARY_ROW_LIMIT)
+  if (expectCapture) expect(result.capture).toBe(90)
+}
+
 async function waitForReady(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__?.isLoaded() ?? false), { timeout: 30_000 })
     .toBe(true)
   await expect(page.locator(TRANSCRIPT)).toBeVisible()
+}
+
+async function windowRows(page: Page): Promise<number> {
+  const value = await page.locator(WINDOW).getAttribute('data-transcript-window-rows')
+  expect(value).not.toBeNull()
+  return Number(value)
+}
+
+async function recordJumpFailure(page: Page, testInfo: TestInfo): Promise<void> {
+  const geometry = await page.evaluate(() => {
+    const target = document.querySelector('.risu-chat[data-chat-index="5"]')
+    const ancestors = []
+    for (let element = target; element; element = element.parentElement) {
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      ancestors.push({
+        tag: element.tagName,
+        className: element.className,
+        rect: { top: rect.top, left: rect.left, height: rect.height, width: rect.width },
+        scrollTop: element.scrollTop,
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+        overflow: style.overflow,
+        transform: style.transform,
+      })
+    }
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-default-chat-transcript] .risu-chat')).map(
+      (row) => ({ index: row.dataset.chatIndex, top: row.getBoundingClientRect().top }),
+    )
+    return {
+      width: innerWidth,
+      height: innerHeight,
+      scrollX,
+      scrollY,
+      ancestors,
+      rows,
+      timeline: Reflect.get(window, '__residencyScrollDiagnostics'),
+    }
+  })
+  await testInfo.attach('jump-failure-geometry', {
+    body: Buffer.from(JSON.stringify(geometry, null, 2)),
+    contentType: 'application/json',
+  })
+  await testInfo.attach('jump-failure-screenshot', { body: await page.screenshot(), contentType: 'image/png' })
+  console.error('Transcript jump failure geometry:', JSON.stringify(geometry))
+}
+
+async function installScrollDiagnostics(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const timeline: unknown[] = []
+    Reflect.set(window, '__residencyScrollDiagnostics', timeline)
+    function record(operation: string, element: Element, value?: unknown) {
+      if (timeline.length >= 400) timeline.shift()
+      timeline.push({
+        operation,
+        time: performance.now(),
+        value,
+        index: element.getAttribute('data-chat-index'),
+        top: element.getBoundingClientRect().top,
+        scrollTop: document.querySelector('[data-default-chat-transcript]')?.scrollTop,
+        stack: new Error().stack?.split('\n').slice(2, 6),
+      })
+    }
+    const originalScrollIntoView = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (...args) {
+      const tracked = this.hasAttribute('data-chat-index')
+      if (tracked) record('scrollIntoView:before', this, args)
+      originalScrollIntoView.apply(this, args)
+      if (tracked) record('scrollIntoView:after', this, args)
+    }
+    const originalScrollTop = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop')!
+    Object.defineProperty(Element.prototype, 'scrollTop', {
+      ...originalScrollTop,
+      set(value: number) {
+        const tracked = (this as Element).hasAttribute('data-default-chat-transcript')
+        if (tracked) record('scrollTop:before', this, value)
+        originalScrollTop.set!.call(this, value)
+        if (tracked) record('scrollTop:after', this, value)
+      },
+    })
+  })
 }
 
 async function waitForRenderedRows(page: Page, timeout = 30_000): Promise<void> {
@@ -425,6 +1181,7 @@ async function snapshot(
   const dom = await page.evaluate(
     (input) => {
       const transcript = document.querySelector('[data-default-chat-transcript]')
+      const windowOwner = transcript?.querySelector<HTMLElement>('[data-transcript-window-rows]')
       const rows = Array.from(transcript?.querySelectorAll<HTMLElement>('.risu-chat[data-chat-index]') ?? []).filter(
         (row) => Number(row.dataset.chatIndex) >= 0,
       )
@@ -449,6 +1206,8 @@ async function snapshot(
       const ended = performance.now()
       return {
         mountedRows: rows.length,
+        windowRows: Number(windowOwner?.dataset.transcriptWindowRows ?? 0),
+        residencyMode: windowOwner?.dataset.transcriptResidencyMode ?? null,
         transcriptElements: transcript?.querySelectorAll('*').length ?? 0,
         documentElements: document.querySelectorAll('*').length,
         rowHeightRange: {
@@ -472,6 +1231,13 @@ async function snapshot(
   const heap = (await cdp.send('Runtime.getHeapUsage')) as { usedSize: number }
   const counters = (await cdp.send('Memory.getDOMCounters')) as { nodes: number }
   const delta = (key: string) => ((metrics[key] ?? 0) - (before[key] ?? 0)) * 1000
+  if (!LEGACY_PAGING && dom.residencyMode !== 'capture') {
+    expect(dom.mountedRows, `${name}: ordinary mounted rows`).toBeLessThanOrEqual(ORDINARY_ROW_LIMIT)
+  }
+  if (anchor) {
+    expect(dom.anchorDeltaPx, `${name}: anchor ${anchor.id} remains mounted`).not.toBeNull()
+    expect(Math.abs(dom.anchorDeltaPx!), `${name}: anchor drift`).toBeLessThanOrEqual(1)
+  }
   return {
     name,
     startedAtMs,
