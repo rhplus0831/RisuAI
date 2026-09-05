@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–5 accepted; Phase 6 aggregate repairs implemented and focused checks pass; repeating combined verification.
+- State: Phases 0–5 accepted; Phase 6 aggregate and recovery pass; final small generation timing remains open.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md).
-- Next task: repeat the agent aggregate and affected isolated/browser measurements
-  at the repaired source, then record final evidence and archive.
+- Next task: profile and resolve the final small generation preparation timing miss
+  without changing its original budget, then finish evidence and archival.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -34,7 +34,7 @@ selected [phase](phases/README.md) for implementation detail.
 | Finding | Disposition | Missing completion evidence |
 | --- | --- | --- |
 | F01 | Fixed; targeted creation and Agent Preset deletion cleanup preserve dependent rows | Final combined aggregate pending |
-| F02 | Fixed within recorded configuration-row/legacy exceptions; selected reads and bounded query programs | Final combined aggregate pending |
+| F02 | Selected reads and bounded query programs implemented within recorded exceptions | Final small preparation timing miss under investigation |
 | F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
@@ -1023,3 +1023,31 @@ predecessor/successor data, then explicitly advance the debounce to verify repla
 blocks the successor. All 71 cases pass. The earlier production rollback model
 is unchanged; these are deterministic fixture repairs. Another full aggregate
 is required before final closeout.
+
+## Phase 6 Aggregate Accepted; Small Timing Recheck Open
+
+At `e9af657a5163ef5bb30cf5c7ba33e1a8c7c97503`, `pnpm test:agent` passes all seven
+lanes in 145.869 seconds: protocol/shared/Fastify/browser types, inventories,
+topology, current docs, all 8,207 frontend and 3,994 server tests (five existing
+skips), frontend types and smoke build. Refreshed deterministic costs and all
+26 exact browser specs / 37 recovery/startup journeys pass at that source.
+Production preload remains 159,566 gzip bytes and immediate closure 1,163,265,
+with English-only static locale membership; all original bundle limits pass.
+
+[Every refreshed cost](evidence/closeout-costs-second.json) remains retained.
+The three-process/nine-sample small generation medians miss original limits:
+0.464013/2.600956 ms versus 0.453/2.409. Large generation, maintenance, cache,
+locale, and prior transcript acceptance remain valid; this does not accept the
+remaining small-case gate. No workload, warmup, repetition or threshold changes.
+
+A predeclared [three-cycle alternating comparison](evidence/closeout-generation-paired.json)
+of accepted `bc7e4ad2d` and current `e9af657a5` retains all six complete processes.
+The accepted control now measures 0.471006/2.685228 ms; current measures
+0.403998/2.801477. Both miss small assembly, while current large preparation
+passes at 0.265634/1.794493 ms. Static review finds no leaked instrumentation or
+per-database cache issue: spies restore before timing and the small fixture uses
+fewer than sixteen warmed query programs. Identical later four-message/fresh-DB
+fixtures are much faster, indicating process warmup sensitivity. This explains
+why another blind retry is insufficient. A separate opt-in profile of the first
+small timing journey will guide a bounded correction; original absolute budgets
+remain the acceptance gate.
