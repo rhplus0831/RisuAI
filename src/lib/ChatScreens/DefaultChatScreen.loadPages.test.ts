@@ -2437,7 +2437,7 @@ describe('DefaultChatScreen transcript window state', () => {
     })
   })
 
-  it('resizes the mounted transcript when the configured initial load count changes', async () => {
+  it('resizes the logical transcript while bounding DOM when the configured initial load count changes', async () => {
     seedDatabase([80])
     mountScreen()
     await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
@@ -2453,9 +2453,12 @@ describe('DefaultChatScreen transcript window state', () => {
     getResourceDatabase().chatLoadInitialPages = 60
     await waitFor(() => {
       expect(loadPageMocks.hydrateActiveChatWindow).toHaveBeenCalledWith(60)
+      expect(document.querySelector('[data-transcript-window-rows]')?.getAttribute('data-transcript-window-rows')).toBe(
+        '60',
+      )
       const indexes = messageRowIndexes()
-      expect(indexes).toHaveLength(60)
-      expect(indexes).toContain(20)
+      expect(indexes.length).toBeGreaterThanOrEqual(30)
+      expect(indexes.length).toBeLessThanOrEqual(31)
       expect(indexes).toContain(79)
       expect(indexes).not.toContain(19)
     })

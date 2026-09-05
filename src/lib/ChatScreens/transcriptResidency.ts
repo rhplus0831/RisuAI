@@ -1,7 +1,13 @@
-export const TRANSCRIPT_WORKING_ROWS = 60
+export const TRANSCRIPT_WORKING_ROWS = 30
+export const TRANSCRIPT_MAX_WORKING_ROWS = 60
 export const TRANSCRIPT_MAX_RESIDENT_ROWS = 76
 export const TRANSCRIPT_HEIGHT_ENTRIES = 2048
 export const TRANSCRIPT_ESTIMATED_ROW_HEIGHT = 360
+
+/** Dense custom layouts can need more rows than the normal overscan target. */
+export function growTranscriptWorkingRows(current: number, visibleRows: number): number {
+  return visibleRows >= current - 4 ? Math.min(TRANSCRIPT_MAX_WORKING_ROWS, current + 15) : current
+}
 
 /** Geometry belongs to the displayed chat, never to the hydrated message owner. */
 export class TranscriptHeightCache {
@@ -92,8 +98,12 @@ export function advanceTranscriptResidents(
   start: number,
   center: number,
   pinned: ReadonlySet<string>,
+  workingRows = TRANSCRIPT_WORKING_ROWS,
 ): { ids: string[]; pending: boolean } {
-  const budget = Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinned.size))
+  const budget = Math.max(
+    0,
+    Math.min(workingRows, TRANSCRIPT_MAX_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinned.size),
+  )
   const first = Math.max(0, Math.min(start, ids.length - budget))
   const desired = ids.slice(first, first + budget)
   const desiredIds = new Set(desired)
@@ -127,11 +137,15 @@ export function buildTranscriptResidency<T extends { key: string }>(
   pinned: ReadonlySet<string>,
   full: boolean,
   admitted?: ReadonlySet<string>,
+  requestedWorkingRows = TRANSCRIPT_WORKING_ROWS,
 ): TranscriptResidencyEntry<T>[] {
   // Transitional generation can briefly expose old/new presentation IDs
   // together. Protected owners consume the shared row budget before the
   // working window, so that overlap never increases the hard limit.
-  const workingRows = Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinned.size))
+  const workingRows = Math.max(
+    0,
+    Math.min(requestedWorkingRows, TRANSCRIPT_MAX_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinned.size),
+  )
   const windowStart = Math.max(0, Math.min(start, rows.length - workingRows))
   const windowEnd = windowStart + workingRows
   const entries: TranscriptResidencyEntry<T>[] = []

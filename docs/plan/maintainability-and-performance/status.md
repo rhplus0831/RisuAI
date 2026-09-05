@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: reduce remaining offscreen-resident layout cost, preserving measured geometry
-  and protected interactions; the original throttled scroll budget remains open.
+- Next task: measure the revised 30-row working target with compact-layout growth at a
+  clean source commit; all original performance limits remain unchanged.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -116,6 +116,20 @@ needed to reproduce them here or in the owning phase's bounded slice record.
   import/restore replacement writers remain separate. The dedicated regression
   must pass preservation, rollback and replay before closeout. No performance
   budget changes or new finding IDs are introduced.
+
+- 2026-09-06, F08 working-window refinement before implementation: repeated
+  complete matrices retain a 39.0/39.5 ms throttled scrolling miss while the
+  initial 30-row case passes at 17.6 ms and visible rich-text coverage uses only
+  two or three rows. Reduce normal overscan from 60 to 30 working rows without
+  raising the original 76-row hard ceiling or changing protected interactions.
+  Preserve compact custom layouts with bounded growth in 15-row increments to
+  the prior 60-row maximum when nearly the working target number of resident rows are visible.
+  Growth is sticky for the displayed chat, avoiding admission-size oscillation;
+  scope replacement resets the 30-row target. Existing pin-budget subtraction
+  still enforces 76. This changes an implementation overscan choice, not the
+  original workload or numerical acceptance limits. Complete native interaction,
+  compact-viewport and unprofiled cost verification are required. CSS containment
+  is rejected because it changes positioning/clipping of supported custom HTML.
 
 Future amendments belong here with date, affected finding, evidence, owner,
 residual cost, and revisit condition. If an amendment changes stable scope or
@@ -878,3 +892,14 @@ versus 35.2 ms. [All measurements and budget comparisons](evidence/transcript-re
 remain retained. The next investigation is offscreen-resident layout work;
 anchors and protected interactions remain required gates. No acceptance limits
 or workloads have changed, and Phase 6 still waits for Phase 5 acceptance.
+
+### Phase 5 compact-aware working-window verification
+
+The 30-row normal target, bounded growth to 60 for dense viewports, and existing
+76-row hard ceiling pass all twelve native cases, including genuine 20-pixel
+source rows with more than 30 visible messages and complete viewport coverage.
+All eight native accepted saves, selection, jumps, folded anchors, rapid movement,
+legacy rollback and capture restoration pass. Focused residency 11,
+transcript-window 105 and startup 4 cases pass. The implementation now requires
+its clean-commit full unprofiled matrix; Phase 5 is not accepted by functional
+success alone.

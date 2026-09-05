@@ -1037,6 +1037,176 @@ test('transcript residency promotes readable visible messages during rapid movem
   }
 })
 
+test('transcript residency expands its working window to fill a compact message viewport', async ({
+  browser,
+}, testInfo) => {
+  test.skip(MEASURE_COSTS || LEGACY_PAGING)
+  test.setTimeout(180_000)
+  const harness = await startTranscriptResidencyHarness(180)
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const page = await context.newPage()
+  const cdp = await context.newCDPSession(page)
+  await cdp.send('Performance.enable')
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.goto(`${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`)
+    await waitForReady(page)
+    await waitForRenderedRows(page)
+    await observeOrdinaryRowBound(page)
+    for (let loaded = RESIDENCY_INITIAL_ROWS; loaded < 180; loaded += RESIDENCY_ADDITIONAL_ROWS) {
+      const anchor = await scrollToOlderEdge(page)
+      await expect.poll(() => windowRows(page)).toBe(loaded + RESIDENCY_ADDITIONAL_ROWS)
+      await waitForRenderedRows(page)
+      const top = await page
+        .locator(`${ROWS}[data-risu-message-id="${anchor.id}"]`)
+        .evaluate(
+          (row) =>
+            row.getBoundingClientRect().top -
+            row.closest('[data-default-chat-transcript]')!.getBoundingClientRect().top,
+        )
+      expect(Math.abs(top - anchor.top), 'Compact setup older-page anchor').toBeLessThanOrEqual(1)
+    }
+    // Exercise a real compact presentation while retaining the fixture's parsed
+    // source text. Only row chrome is hidden; no synthetic coverage or text is added.
+    await page.addStyleTag({
+      content: `
+        ${TRANSCRIPT} [data-transcript-row-id] {
+          position: relative !important;
+          height: 20px !important;
+          min-height: 20px !important;
+          max-height: 20px !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: 0 !important;
+          overflow: hidden !important;
+        }
+        ${ROWS} {
+          position: static !important;
+          height: 20px !important;
+          min-height: 20px !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: 0 !important;
+          visibility: hidden !important;
+        }
+        ${ROWS} :has(.chat-message-body) {
+          position: static !important;
+        }
+        ${ROWS} .chat-message-body {
+          position: absolute !important;
+          display: block !important;
+          top: 0 !important;
+          left: 0 !important;
+          width: 100% !important;
+          height: 20px !important;
+          min-height: 20px !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          border: 0 !important;
+          font-size: 12px !important;
+          line-height: 20px !important;
+          white-space: nowrap !important;
+          overflow: hidden !important;
+          visibility: visible !important;
+        }
+        ${ROWS} .chat-message-body p {
+          margin: 0 !important;
+          line-height: 20px !important;
+        }
+      `,
+    })
+    await waitForRenderedRows(page)
+    await bookmarkJump(page, testInfo)
+    await waitForRenderedRows(page)
+
+    const observations = []
+    for (const fraction of [0.5, 0.65]) {
+      await page.locator(TRANSCRIPT).evaluate((transcript, position) => {
+        transcript.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true }))
+        transcript.scrollTop = -(transcript.scrollHeight - transcript.clientHeight) * position
+        transcript.dispatchEvent(new Event('scroll'))
+      }, fraction)
+      const settlement = await measureScrollSettlement(page, cdp, `compact-${fraction}`)
+      const geometry = await page.locator(TRANSCRIPT).evaluate((transcript) => {
+        const viewport = transcript.getBoundingClientRect()
+        return Array.from(transcript.querySelectorAll<HTMLElement>('[data-transcript-row-id]'))
+          .map((wrapper) => {
+            const row = wrapper.querySelector<HTMLElement>('.risu-chat[data-chat-index]')
+            const body = row?.querySelector<HTMLElement>('.chat-message-body')
+            const bounds = wrapper.getBoundingClientRect()
+            if (!row || !body || Number(row.dataset.chatIndex) < 0) return null
+            const textNodes = document.createTreeWalker(body, NodeFilter.SHOW_TEXT)
+            let textNode: Node | null
+            let sourceBounds: DOMRect | null = null
+            const marker = `Residency row ${row.dataset.chatIndex}.`
+            while ((textNode = textNodes.nextNode())) {
+              const start = textNode.textContent?.indexOf(marker) ?? -1
+              if (start < 0) continue
+              const range = document.createRange()
+              range.setStart(textNode, start)
+              range.setEnd(textNode, start + marker.length)
+              sourceBounds = range.getBoundingClientRect()
+              break
+            }
+            return {
+              id: row.dataset.risuMessageId,
+              index: Number(row.dataset.chatIndex),
+              top: bounds.top - viewport.top,
+              bottom: bounds.bottom - viewport.top,
+              wrapperHeight: bounds.height,
+              computedWrapperHeight: getComputedStyle(wrapper).height,
+              rowHeight: row.getBoundingClientRect().height,
+              bodyHeight: body.getBoundingClientRect().height,
+              bodyVisibility: getComputedStyle(body).visibility,
+              sourceTop: sourceBounds ? sourceBounds.top - viewport.top : null,
+              sourceBottom: sourceBounds ? sourceBounds.bottom - viewport.top : null,
+            }
+          })
+          .filter((row) => row !== null && row.bottom > 0 && row.top < viewport.height)
+          .sort((left, right) => left.top - right.top)
+      })
+      observations.push({ fraction, settlement, geometry })
+      expect(settlement.windowRows).toBe(180)
+      expect(settlement.viewport.height / 20, 'Viewport requires more than the default working rows').toBeGreaterThan(
+        30,
+      )
+      expect(settlement.viewport.visibleRows.length, 'Working residency expands for compact messages').toBeGreaterThan(
+        30,
+      )
+      expect(geometry.map((row) => row.id)).toEqual(settlement.viewport.visibleRows.map((row) => row.id))
+      for (const row of geometry) {
+        expect(row.id).toBe(`residency-message-${row.index}`)
+        expect(row.computedWrapperHeight).toBe('20px')
+        expect(row.wrapperHeight).toBe(20)
+        expect(row.rowHeight).toBe(20)
+        expect(row.bodyHeight).toBe(20)
+        expect(row.bodyVisibility).toBe('visible')
+        expect(row.sourceTop, `Rendered source marker exists in ${row.id}`).not.toBeNull()
+        expect(row.sourceTop!).toBeGreaterThanOrEqual(row.top)
+        expect(row.sourceBottom!).toBeLessThanOrEqual(row.bottom)
+      }
+    }
+    await assertObservedOrdinaryRowBound(page)
+    const compactReport = { source: sourceAnchor(), observations }
+    const directory = path.resolve('fast-bootstrap-results/maintainability')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      path.join(directory, 'transcript-compact-viewport.json'),
+      `${JSON.stringify(compactReport, null, 2)}\n`,
+    )
+    await testInfo.attach('compact-viewport-observations', {
+      body: Buffer.from(JSON.stringify(compactReport, null, 2)),
+      contentType: 'application/json',
+    })
+    expect(errors).toEqual([])
+  } finally {
+    harness.releaseAll()
+    await context.close()
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
 async function readFoldGeometry(page: Page) {
   return page.locator(`${ROWS}[data-chat-index="5"]`).evaluate((row) => {
     const transcript = row.closest('[data-default-chat-transcript]')!

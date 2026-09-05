@@ -79,13 +79,18 @@ current. `DefaultChatScreen.loadPages.test.ts`, the shared-core load-page tests,
 `src/ts/server/chatMessageHydration.test.ts` guard this boundary.
 
 `Chats.svelte` separately selects DOM residency from that logical window using
-`transcriptResidency.ts`. It mounts up to 60 working rows and reserves room for
+`transcriptResidency.ts`. It starts with 30 working rows and reserves room for
 active interactions, the latest row, a jump target, generation presentation,
 focus, popup ownership and selection endpoints. Pins consume the shared budget
 first, including temporary old/new generation identities: ordinary committed
 DOM contains at most 76 message rows. Already-hydrated pinned rows retain their
 logical range when send/streaming or a settings change reduces the page count.
 Hydration, persisted messages and pending mutations keep their existing owners.
+Dense custom layouts expand the working target by 15, up to 60, when at least
+`workingTarget - 4` resident rows intersect the viewport. Growth is retained for
+the displayed chat and resets on chat replacement, avoiding target oscillation.
+The existing measurement pass supplies this count; no CSS containment or second
+geometry pass is added. Pins still consume the shared 76-row budget first.
 
 For long windows, viewport movement admits the nearest missing ordinary row
 and evicts at most one old ordinary row per animation frame. Already admitted

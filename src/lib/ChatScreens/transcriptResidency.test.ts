@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   advanceTranscriptResidents,
   buildTranscriptResidency,
+  growTranscriptWorkingRows,
   TranscriptResidencyEntryOwner,
   TranscriptHeightCache,
   TRANSCRIPT_HEIGHT_ENTRIES,
@@ -11,6 +12,15 @@ import {
 } from './transcriptResidency'
 
 describe('transcript residency geometry', () => {
+  it('uses thirty rows normally and grows sticky overscan only for dense visible layouts', () => {
+    expect(growTranscriptWorkingRows(30, 4)).toBe(30)
+    expect(growTranscriptWorkingRows(30, 25)).toBe(30)
+    expect(growTranscriptWorkingRows(30, 26)).toBe(45)
+    expect(growTranscriptWorkingRows(45, 2)).toBe(45)
+    expect(growTranscriptWorkingRows(45, 41)).toBe(60)
+    expect(growTranscriptWorkingRows(60, 1000)).toBe(60)
+  })
+
   it('keeps unchanged keyed row signals stable while replacing changed data and spacer geometry', () => {
     const rows = Array.from({ length: 180 }, (_, index) => ({ key: `id-${index}`, text: `message ${index}` }))
     const ids = rows.map((row) => row.key)
@@ -55,29 +65,29 @@ describe('transcript residency geometry', () => {
   it('admits the nearest missing row every frame without reconstructing intermediate windows', () => {
     const ids = Array.from({ length: 600 }, (_, index) => `id-${index}`)
     const pins = new Set([ids[0], ids[500]])
-    let previous = ids.slice(0, 60)
-    for (let frame = 0; frame < 60; frame++) {
+    let previous = ids.slice(0, 30)
+    for (let frame = 0; frame < 30; frame++) {
       const center = frame < 10 ? 100 + frame * 20 : 400
-      const next = advanceTranscriptResidents(ids, previous, center - 30, center, pins)
+      const next = advanceTranscriptResidents(ids, previous, center - 15, center, pins)
       expect(next.ids.filter((id) => !previous.includes(id))).toHaveLength(1)
       expect(previous.filter((id) => !next.ids.includes(id) && !pins.has(id)).length).toBeLessThanOrEqual(1)
       expect(next.ids).toContain(ids[center])
       expect(next.ids.length + pins.size).toBeLessThanOrEqual(76)
       previous = next.ids
     }
-    let settled = advanceTranscriptResidents(ids, previous, 370, 400, pins)
+    let settled = advanceTranscriptResidents(ids, previous, 385, 400, pins)
     for (let frame = 0; settled.pending && frame < 60; frame++) {
-      settled = advanceTranscriptResidents(ids, settled.ids, 370, 400, pins)
+      settled = advanceTranscriptResidents(ids, settled.ids, 385, 400, pins)
     }
     expect(settled.pending).toBe(false)
-    for (const id of ids.slice(370, 430)) expect(settled.ids).toContain(id)
+    for (const id of ids.slice(385, 415)) expect(settled.ids).toContain(id)
   })
 
   it('drops obsolete chat rows and makes room for new protected owners before admission', () => {
     const ids = Array.from({ length: 600 }, (_, index) => `id-${index}`)
     const pins = new Set(ids.slice(0, 18))
     const previous = [...ids.slice(100, 160), 'deleted-message']
-    const next = advanceTranscriptResidents(ids, previous, 300, 330, pins)
+    const next = advanceTranscriptResidents(ids, previous, 300, 330, pins, 60)
     expect(next.ids).toHaveLength(58)
     expect(next.ids).not.toContain('deleted-message')
     const rows = ids.map((key) => ({ key }))
@@ -89,6 +99,7 @@ describe('transcript residency geometry', () => {
       pins,
       false,
       new Set(next.ids),
+      60,
     )
     expect(entries.filter((entry) => entry.kind === 'row')).toHaveLength(76)
     for (const id of pins) expect(entries.some((entry) => entry.kind === 'row' && entry.id === id)).toBe(true)
@@ -98,10 +109,10 @@ describe('transcript residency geometry', () => {
   it('settles an asymmetric pin-reduced window without alternating its boundary rows', () => {
     const ids = Array.from({ length: 200 }, (_, index) => `id-${index}`)
     const pins = new Set(ids.slice(0, 18))
-    const next = advanceTranscriptResidents(ids, ids.slice(71, 129), 70, 100, pins)
+    const next = advanceTranscriptResidents(ids, ids.slice(71, 129), 70, 100, pins, 60)
     expect(next.pending).toBe(false)
     expect(new Set(next.ids)).toEqual(new Set(ids.slice(70, 128)))
-    const repeated = advanceTranscriptResidents(ids, next.ids, 70, 100, pins)
+    const repeated = advanceTranscriptResidents(ids, next.ids, 70, 100, pins, 60)
     expect(repeated.pending).toBe(false)
     expect(new Set(repeated.ids)).toEqual(new Set(next.ids))
   })
@@ -134,9 +145,9 @@ describe('transcript residency geometry', () => {
     const pins = new Set(ids.slice(0, 18))
     const entries = buildTranscriptResidency(rows, ids, offsets, 100, pins, false)
     const resident = entries.filter((entry) => entry.kind === 'row')
-    expect(resident).toHaveLength(76)
+    expect(resident).toHaveLength(48)
     for (const id of pins) expect(resident.some((entry) => entry.id === id)).toBe(true)
-    expect(resident.filter((entry) => !pins.has(entry.id))).toHaveLength(58)
+    expect(resident.filter((entry) => !pins.has(entry.id))).toHaveLength(30)
   })
 
   it('keeps a finite measurement cache and restores estimates on width/chat reset', () => {
@@ -168,6 +179,6 @@ describe('transcript residency geometry', () => {
     const capture = buildTranscriptResidency(rows, ids, offsets, 100, new Set(), true)
     expect(capture.map((entry) => entry.key)).toEqual(ids)
     const restored = buildTranscriptResidency(rows, ids, offsets, 100, new Set(), false)
-    expect(restored.filter((entry) => entry.kind === 'row').map((entry) => entry.key)).toEqual(ids.slice(100, 160))
+    expect(restored.filter((entry) => entry.kind === 'row').map((entry) => entry.key)).toEqual(ids.slice(100, 130))
   })
 })

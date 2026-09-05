@@ -42,7 +42,7 @@ supported measured envelope remains the same 30/180/600 rich-text histories.
 
 ## Cutover bounds and preserved workflows
 
-- A working viewport window contains at most 60 rows, with measured-height
+- The initial working viewport proposal contains at most 60 rows, with measured-height
   spacers for omitted rows and stable message IDs. A chat-scoped height cache
   retains at most 2,048 measurements and invalidates on width changes. Existing
   bounded parser/display caches keep their current limits.
@@ -342,3 +342,39 @@ with complete readable viewport coverage and zero spacers. The small empty-body
 optimization does not establish a meaningful timing improvement or accept F08.
 The remaining investigation concerns layout work inside offscreen resident rows;
 any change must still preserve measured geometry and protected interactions.
+
+### Working-window refinement with compact-layout growth
+
+The recorded decision now starts ordinary overscan at 30 rows (the existing
+initial page size). Repeated rich-text fixtures show two or three visible rows;
+the preceding 60-row working window retained substantial offscreen layout work.
+The original 76-row hard ceiling and protected interaction rules remain the
+acceptance boundaries. Compact custom layouts can grow the working target in
+15-row increments up to the prior maximum of 60 whenever at least
+`workingTarget - 4` resident rows intersect the viewport. The existing geometry
+pass supplies the count. Growth is sticky for the chat and scope replacement
+resets it; there is no oscillating size target or changed CSS containment.
+
+Centering, jumps and pin-budget subtraction use the current target. Admission
+starts from actually mounted row IDs, so a larger desired window cannot count
+not-yet-mounted rows as resident. The at-most-one ordinary admission per frame
+remains, and full/legacy materialization keeps its explicit bypass. Eleven
+focused geometry/admission/identity/growth tests and 105 transcript-window cases
+pass; configured 60-row hydration remains a logical-window assertion with bounded
+DOM. A new normal-only native case uses genuine 20-pixel source-text rows and
+requires more than 30 visible rows with full viewport coverage. Complete native
+and unprofiled cost acceptance remain pending.
+
+All twelve normal native cases pass on the working-window refinement, including
+the compact viewport, rapid readable progress, folded anchors, eight one-click
+accepted edits, pending jump cancellation, selection/copy, and capture cleanup.
+Startup-focused cases also pass (4). These are functional results from parent
+`41bd1cafe` plus the recorded working-window worktree, not clean-commit timing
+acceptance. The next unprofiled matrix will use the committed implementation.
+[Working-window functional evidence](transcript-working-window-functional.json)
+retains all 74 rapid-motion samples (all readable while admission is busy),
+31 final rows, 522.2 ms settlement and complete 784-pixel viewport coverage.
+The successful compact test's in-memory attachment was not persisted by the
+list reporter; only its asserted outcomes are available for this run. The probe
+now writes those observations explicitly, and the final normal lane at the
+accepted clean cost source must retain them before closeout.

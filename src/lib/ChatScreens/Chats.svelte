@@ -10,6 +10,7 @@
   import {
     advanceTranscriptResidents,
     buildTranscriptResidency,
+    growTranscriptWorkingRows,
     TranscriptResidencyEntryOwner,
     TranscriptHeightCache,
     transcriptRowAtOffset,
@@ -471,6 +472,7 @@
   let heightRevision = $state(0)
   let reservationRevision = $state(0)
   let residentStart = $state(0)
+  let workingRowLimit = $state(TRANSCRIPT_WORKING_ROWS)
   let admittedResidents = $state<string[] | null>(null)
   let residencyPending = $state(false)
   let singletonPins = $state<string[]>([])
@@ -539,11 +541,9 @@
           : new Set(
               admittedResidents
                 .filter((id) => !pinnedIds.has(id))
-                .slice(
-                  0,
-                  Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinnedIds.size)),
-                ),
+                .slice(0, Math.max(0, Math.min(workingRowLimit, TRANSCRIPT_MAX_RESIDENT_ROWS - pinnedIds.size))),
             ),
+        workingRowLimit,
       ),
       fullResidency,
     ),
@@ -668,21 +668,32 @@
         changed = true
       }
       measuredWidth = width
+      const viewport = container.getBoundingClientRect()
+      let visibleRows = 0
       for (const [id, element] of rowElements) {
-        changed = heights.set(id, element.getBoundingClientRect().height) || changed
+        const rect = element.getBoundingClientRect()
+        changed = heights.set(id, rect.height) || changed
+        if (rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom) visibleRows++
       }
       if (changed) heightRevision++
+      if (!fullResidency) workingRowLimit = growTranscriptWorkingRows(workingRowLimit, visibleRows)
       const focusedSpacer = document.activeElement?.closest('[data-transcript-spacer]')
-      let center = jumpMessageId ? residencyIds.indexOf(jumpMessageId) : residentStart + TRANSCRIPT_WORKING_ROWS / 2
+      let center = jumpMessageId ? residencyIds.indexOf(jumpMessageId) : residentStart + workingRowLimit / 2
       if (!fullResidency && !jumpMessageId && !(focusedSpacer && chatBody.contains(focusedSpacer))) {
-        const viewport = container.getBoundingClientRect()
         const origin = chatBody.getBoundingClientRect().bottom - appliedLatestMessageSpacerHeight()
         center = transcriptRowAtOffset(rowOffsets, origin - (viewport.top + viewport.bottom) / 2)
-        residentStart = Math.max(0, center - Math.floor(TRANSCRIPT_WORKING_ROWS / 2))
+        residentStart = Math.max(0, center - Math.floor(workingRowLimit / 2))
       }
       if (!fullResidency && !(focusedSpacer && chatBody.contains(focusedSpacer))) {
-        const previous = residentEntries.filter((entry) => entry.kind === 'row').map((entry) => entry.id)
-        const next = advanceTranscriptResidents(residencyIds, previous, residentStart, center, pinnedIds)
+        const previous = [...rowElements.keys()]
+        const next = advanceTranscriptResidents(
+          residencyIds,
+          previous,
+          residentStart,
+          center,
+          pinnedIds,
+          workingRowLimit,
+        )
         // A released pin transfers to ordinary residency without destroying its
         // component between frames (including a just-highlighted jump target).
         const nextResidents = [...pinnedIds, ...next.ids]
@@ -775,7 +786,7 @@
         TRANSCRIPT_MAX_RESIDENT_ROWS,
       )
     }
-    residentStart = Math.max(0, position - Math.floor(TRANSCRIPT_WORKING_ROWS / 2))
+    residentStart = Math.max(0, position - Math.floor(workingRowLimit / 2))
     await tick()
     return (preservedTop?: number) => {
       if (jumpMessageId !== id || run !== residencyJumpRun) return
@@ -810,6 +821,7 @@
       if (residencyScope === scope) return
       residencyScope = scope
       residencyEntries.clear()
+      workingRowLimit = TRANSCRIPT_WORKING_ROWS
       reservations.reset()
       messageViews.reset()
       heights.clear()
