@@ -22,7 +22,8 @@ import {
   assetById,
   assetPath,
   isValidAssetId,
-  loadPersistedForAssembly,
+  loadPersistedForGenerationAssembly,
+  loadPersistedForGenerationPreflight,
   writeSingleChatRow,
   writeSingleChatRowExact,
   writeSingleCharacterRow,
@@ -45,10 +46,15 @@ import {
 } from '../prompt/assemble.js'
 import {
   applyProfileBoundGenerationFields,
-  buildEffectiveGenerationConfig,
+  resolveGenerationPreflightConfiguration,
   isChatGenerationSettingsIncompleteAssemblyError,
   isModelProfileGenerationGuardAssemblyError,
 } from '../prompt/effectiveGenerationConfig.js'
+import {
+  decodeGenerationDatabase,
+  decodeGenerationPreflightInputs,
+  GenerationInputValidationError,
+} from '../prompt/generationInputDecoder.js'
 import type { ResolveStoredAsset, StoredAssetPurpose } from '../prompt/assetLookup.js'
 import { requireChatLocationExact } from '../commands/chats.js'
 import { createMessageRecord, validateUniqueMessageIds } from '../commands/messages.js'
@@ -289,11 +295,10 @@ export interface GenerationFinalizationRetryLogger {
 }
 
 function fallbackProfileDatabase(database: Database, profileId: string): Database {
-  const cloned = structuredClone(database)
-  const bindings = { ...(cloned.modelRoleProfiles ?? {}) } as Record<string, unknown>
-  bindings.chatMain = { mode: 'profile', profileId }
-  cloned.modelRoleProfiles = bindings as Database['modelRoleProfiles']
-  return cloned
+  return {
+    ...database,
+    modelRoleProfiles: { ...database.modelRoleProfiles, chatMain: { mode: 'profile', profileId } },
+  }
 }
 
 function resolvePolicyProfiles(database: Database, resolvedPrimary?: ResolvedModelProfile): ResolvedModelProfile[] {
@@ -340,7 +345,7 @@ function materializePolicyProfileDatabase(
   profile: ResolvedModelProfile,
   forceNonStreaming: boolean,
 ): Database {
-  const effective = structuredClone(database)
+  const effective: Database = { ...database }
   applyProfileBoundGenerationFields(effective, profile)
   if (forceNonStreaming) {
     effective.halfStreaming = false
@@ -423,7 +428,7 @@ function dispatchProviderWithPolicies(
       const database =
         profileIndex === 0
           ? escape
-            ? ({ ...policyDatabase, halfStreaming: false, useStreaming: false } as Database)
+            ? { ...policyDatabase, halfStreaming: false, useStreaming: false }
             : policyDatabase
           : materializePolicyProfileDatabase(policyDatabase, profile, escape)
       for (let attempt = 0; attempt <= retries; attempt++) {
@@ -927,10 +932,48 @@ export function createRequestScopedStoredAssetResolver(
   }
 }
 
+/** A fresh factory belongs to one preparation phase. Accepted sends and retries
+ * create another factory after their own revision/append boundary. */
+export function createGenerationAssemblyResources(
+  db: DatabaseSync,
+  dataDir: string,
+  target: Pick<AssembleInput, 'characterId' | 'chatId'>,
+): { loadDatabase(): Database | null; resolveSpeakerName(characterId: string): string | undefined } {
+  let database: Database | null = null
+  let loaded = false
+  const speakerNames = new Map<string, string | undefined>()
+  return {
+    loadDatabase() {
+      if (loaded) return database
+      const persisted = loadPersistedForGenerationAssembly(db, dataDir, target)
+      if (persisted.database === null && persisted.missingTarget && persisted.missingTarget !== 'database') {
+        throw new EntityNotFoundError(generationTargetMissingMessage(persisted.missingTarget, target))
+      }
+      database = persisted.database === null ? null : decodeGenerationDatabase(persisted.database)
+      for (const [id, name] of Object.entries(persisted.speakerNames ?? {})) speakerNames.set(id, name)
+      for (const owner of database?.characters ?? []) speakerNames.set(owner.chaId, owner.name)
+      loaded = true
+      return database
+    },
+    resolveSpeakerName(characterId) {
+      return speakerNames.get(characterId)
+    },
+  }
+}
+
+function generationTargetMissingMessage(
+  missing: 'database' | 'character' | 'chat' | undefined,
+  target: Pick<AssembleInput, 'characterId' | 'chatId'>,
+): string {
+  if (missing === 'character') return `character not found: ${target.characterId}`
+  if (missing === 'chat') return `chat not found: ${target.chatId}`
+  return 'database not found'
+}
+
 function loadDatabaseDeps(
   dataDir: string,
   db: DatabaseSync,
-  chatId: string,
+  target: Pick<AssembleInput, 'characterId' | 'chatId'>,
   measurement?: PromptAssemblyMeasurement,
   signal?: AbortSignal,
   agentPresetProgress?: AgentPresetProgressReporter,
@@ -942,6 +985,7 @@ function loadDatabaseDeps(
     diagnostics: emptyPromptMemoryQueryDiagnostics(),
   }
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(db, dataDir)
+  const resources = createGenerationAssemblyResources(db, dataDir, target)
   return {
     signal,
     assetDataDir: dataDir,
@@ -950,9 +994,7 @@ function loadDatabaseDeps(
       if (databaseLoaded) return database
       databaseLoaded = true
       const startedAt = measurement ? protocolNowMs() : 0
-      // Assembly reads only the target chat's transcript hydrate
-      // that chat alone; every sibling chat stays `message = []`.
-      database = loadPersistedForAssembly(db, dataDir, chatId).database as Database | null
+      database = resources.loadDatabase()
       if (measurement) {
         measurement.databaseLoadCount += 1
         measurement.databaseLoadMs += protocolDurationMs(startedAt)
@@ -968,6 +1010,7 @@ function loadDatabaseDeps(
     },
     getDatabase: () => database,
     resolveStoredAsset,
+    resolveSpeakerName: resources.resolveSpeakerName,
     recordAssemblyStageTiming: measurement
       ? (stage, durationMs) => addMeasurementMs(measurement, stage, durationMs)
       : undefined,
@@ -991,7 +1034,7 @@ async function assemblePromptWithMetrics(
   }
   const metricStartedAt = protocolMetricsEnabled() ? protocolNowMs() : 0
   const startedAt = Date.now()
-  const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal, agentPresetProgress)
+  const deps = loadDatabaseDeps(dataDir, db, input, measurement, signal, agentPresetProgress)
   deps.onPromptMemoryJobEnqueued = options.onPromptMemoryJobEnqueued
   try {
     const database = deps.loadDatabase()
@@ -1066,54 +1109,19 @@ function inspectChatGenerationSettings(
   db: DatabaseSync,
 ): GenerationSettingsPreflightResult {
   try {
-    const database = loadPersistedForAssembly(db, dataDir, input.chatId).database as Database | null
-    if (!database) {
-      return { status: 'defer', failure: { error: new EntityNotFoundError('database not found') } }
+    const loaded = loadPersistedForGenerationPreflight(db, dataDir, input)
+    if (!loaded.preflightInputs) {
+      const message = generationTargetMissingMessage(loaded.missingTarget, input)
+      return { status: 'defer', failure: { error: new EntityNotFoundError(message) } }
     }
-
-    const selectedCharID = database.characters.findIndex((c: character) => c.chaId === input.characterId)
-    if (selectedCharID === -1) {
-      return {
-        status: 'defer',
-        failure: { error: new EntityNotFoundError(`character not found: ${input.characterId}`) },
-      }
-    }
-    const currentChar = database.characters[selectedCharID]
-    if (!currentChar) {
-      return {
-        status: 'defer',
-        failure: { error: new EntityNotFoundError(`character not found: ${input.characterId}`) },
-      }
-    }
-
-    const chatPage = currentChar.chats.findIndex((ch: Chat) => ch.id === input.chatId)
-    if (chatPage === -1) {
-      return {
-        status: 'defer',
-        failure: { error: new EntityNotFoundError(`chat not found: ${input.chatId}`) },
-      }
-    }
-    const currentChat = currentChar.chats[chatPage]
-    if (!currentChat) {
-      return {
-        status: 'defer',
-        failure: { error: new EntityNotFoundError(`chat not found: ${input.chatId}`) },
-      }
-    }
-
-    const effective = buildEffectiveGenerationConfig({
-      database,
-      currentChar,
-      currentChat: structuredClone(currentChat),
-      selectedCharID,
-      chatPage,
-    })
+    const selected = decodeGenerationPreflightInputs(loaded.preflightInputs)
+    const effective = resolveGenerationPreflightConfiguration(selected)
     return {
       status: 'ready',
       hypaContextTruncationCheckRequired:
         isPersistingMode(input.mode) &&
-        !(effective.database.hypaV3 === true && effective.currentChar.supaMemory === true) &&
-        effective.currentChat.hypaContextTruncationAcknowledged !== true,
+        !(effective.database.hypaV3 === true && selected.currentChar.supaMemory === true) &&
+        selected.currentChat.hypaContextTruncationAcknowledged !== true,
     }
   } catch (err) {
     if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
@@ -1121,6 +1129,9 @@ function inspectChatGenerationSettings(
     }
     if (isModelProfileGenerationGuardAssemblyError(err)) {
       return { status: 'rejected', statusCode: err.statusCode, body: err.body }
+    }
+    if (err instanceof GenerationInputValidationError) {
+      return { status: 'rejected', statusCode: 400, body: { error: err.message } }
     }
     return { status: 'defer', failure: { error: err } }
   }
@@ -1161,6 +1172,10 @@ function sendAssemblyHttpError(reply: FastifyReply, err: unknown): boolean {
   }
   if (isModelProfileGenerationGuardAssemblyError(err)) {
     reply.code(err.statusCode).send(err.body)
+    return true
+  }
+  if (err instanceof GenerationInputValidationError) {
+    reply.code(400).send({ error: err.message })
     return true
   }
   if (err instanceof EntityNotFoundError) {

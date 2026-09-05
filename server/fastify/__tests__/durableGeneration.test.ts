@@ -8,7 +8,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
-import { openDatabase } from '../src/db.js'
+import { bumpRevision, getSchemaState, openDatabase } from '../src/db.js'
 import { MessageTranslationJobRegistry } from '../src/messageTranslationJobs.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
@@ -1354,6 +1354,114 @@ describe('Durable generation', () => {
     } finally {
       db.close()
     }
+  })
+
+  it('rejects a malformed known configuration before accepting a user message or operation', async () => {
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare("UPDATE settings SET data_json = json_set(data_json, '$.temperature', ?) WHERE id = 1").run(
+        'malformed-private-fixture-value',
+      )
+    } finally {
+      db.close()
+    }
+    let providerCalls = 0
+    providerImpl = () => {
+      providerCalls += 1
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId,
+        acceptedMessageId,
+        baseRevision: authority.revision,
+      }),
+    )
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('/database/temperature')
+    expect(body.error).not.toContain('malformed-private-fixture-value')
+    expect(providerCalls).toBe(0)
+    const stored = new DatabaseSync(path.join(harness.dataDir, 'risu.db'), { readOnly: true })
+    try {
+      expect(
+        stored.prepare('SELECT COUNT(*) AS count FROM generation_operations WHERE operation_id = ?').get(operationId),
+      ).toEqual({ count: 0 })
+      expect(stored.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+        count: 0,
+      })
+      expect(getSchemaState(stored).revision).toBe(authority.revision)
+    } finally {
+      stored.close()
+    }
+  })
+
+  it('loads configuration and the accepted message freshly after preflight and append', async () => {
+    await seedDatabase({
+      ...fixtureDatabase,
+      promptPresets: [
+        { ...fixtureDatabase.promptPresets[0], formatingOrder: ['main', 'description', 'chats', 'lastChat'] },
+      ],
+    })
+    const authority = await operationAuthority()
+    const operationId = randomUUID()
+    const acceptedMessageId = randomUUID()
+    const acceptedText = 'Accepted text must enter the new assembly snapshot'
+    const updatedPrompt = 'Selected prompt changed after acceptance'
+    let configurationRevision = 0
+    let dispatchedPrompt = ''
+    let dispatchedSetting: unknown
+    // This synchronous boundary is after acceptance committed and before the
+    // detached runner assembles. Model an intervening committed config edit.
+    durableLifecycleHook = (transition) => {
+      if (transition !== 'registered') return
+      const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+      try {
+        expect(db.prepare('SELECT COUNT(*) AS count FROM messages WHERE uid = ?').get(acceptedMessageId)).toEqual({
+          count: 1,
+        })
+        db.exec('BEGIN IMMEDIATE')
+        db.prepare(
+          "UPDATE prompt_presets SET data_json = json_set(data_json, '$.mainPrompt', ?) WHERE json_extract(data_json, '$.id') = ?",
+        ).run(updatedPrompt, DURABLE_PROMPT_PRESET_ID)
+        configurationRevision = bumpRevision(db)
+        db.exec('COMMIT')
+      } finally {
+        db.close()
+      }
+    }
+    providerImpl = (context) => {
+      dispatchedPrompt = JSON.stringify(context.result.formated)
+      dispatchedSetting = context.database.mainPrompt
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'Fresh preparation reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    }
+    const response = await postAtomicOperation(
+      authority.databaseLineage,
+      atomicSendRequest({
+        operationId,
+        acceptedMessageId,
+        baseRevision: authority.revision,
+        text: acceptedText,
+      }),
+    )
+    expect(response.status).toBe(201)
+    await waitFor(async () => {
+      const status = await operationStatus(operationId)
+      return status.operation.state === 'completed' ? status : undefined
+    })
+    expect(configurationRevision).toBe(authority.revision + 2)
+    expect(dispatchedSetting).toBe(updatedPrompt)
+    expect(dispatchedPrompt).toContain(updatedPrompt)
+    expect(dispatchedPrompt).toContain(acceptedText)
   })
 
   it('shares one SQLite same-chat claim across protocol operations and the compatibility route', async () => {

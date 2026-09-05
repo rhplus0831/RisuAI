@@ -177,6 +177,10 @@ describe('selected generation repository inputs', () => {
       )
       const preflight = observed(db, () => loadPersistedForGenerationPreflight(db, directory, target))
       expect(preflight.result.generationScope).toBe('selected')
+      expect(preflight.result).not.toHaveProperty('missingTarget')
+      expect(preflight.calls.some(({ sql }) => sql.startsWith('SELECT 1 AS present FROM characters WHERE id'))).toBe(
+        false,
+      )
       expect(preflight.returnedRows).toBeLessThanOrEqual(6)
       expect(preflight.calls.some(({ sql }) => /\b(?:messages|chat_hypa_v3|assets)\b/i.test(sql))).toBe(false)
       expect(preflight.result.preflightInputs?.currentChar).toEqual({ chaId: target.characterId })
@@ -441,19 +445,66 @@ describe('selected generation repository inputs', () => {
 
   it('defers missing database, selected owner and mismatched chat ownership without broad fallback', () => {
     const { db, directory } = openFixture(fixture(1))
-    for (const missing of [
-      { ...target, chatId: 'missing' },
-      { ...target, characterId: 'missing' },
-      { ...target, characterId: 'character-0' },
+    for (const { selection, missingTarget } of [
+      { selection: { ...target, chatId: 'missing' }, missingTarget: 'chat' },
+      { selection: { ...target, characterId: 'missing' }, missingTarget: 'character' },
+      { selection: { ...target, characterId: 'character-0' }, missingTarget: 'chat' },
     ]) {
-      expect(loadPersistedForGenerationPreflight(db, directory, missing)).toEqual({
+      expect(loadPersistedForGenerationPreflight(db, directory, selection)).toEqual({
         generationScope: 'selected',
         preflightInputs: null,
+        missingTarget,
       })
-      expect(loadPersistedForGenerationAssembly(db, directory, missing).database).toBeNull()
+      expect(loadPersistedForGenerationAssembly(db, directory, selection).database).toBeNull()
     }
     db.exec('DELETE FROM settings')
-    expect(loadPersistedForGenerationPreflight(db, directory, target).preflightInputs).toBeNull()
+    expect(loadPersistedForGenerationPreflight(db, directory, target)).toEqual({
+      generationScope: 'selected',
+      preflightInputs: null,
+      missingTarget: 'database',
+    })
+  })
+
+  it('distinguishes missing owners in embedded legacy state without borrowing another character chat', () => {
+    const database = fixture(1)
+    const { db, directory } = openFixture(database)
+    db.exec('DELETE FROM characters')
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(database))
+    for (const { selection, missingTarget } of [
+      { selection: { ...target, characterId: 'missing' }, missingTarget: 'character' },
+      { selection: { ...target, chatId: 'missing' }, missingTarget: 'chat' },
+      { selection: { ...target, characterId: 'character-0' }, missingTarget: 'chat' },
+    ]) {
+      expect(loadPersistedForGenerationPreflight(db, directory, selection)).toEqual({
+        generationScope: 'legacy',
+        generationLegacyReason: 'embedded-characters',
+        preflightInputs: null,
+        missingTarget,
+      })
+    }
+  })
+
+  it('keeps modern ownership authoritative over embedded data and rejects mismatched stored identities', () => {
+    const database = fixture(1)
+    const { db, directory } = openFixture(database)
+    const embedded = fixture()
+    records(embedded.characters)[0].chaId = 'character-0'
+    db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(embedded))
+    expect(loadPersistedForGenerationPreflight(db, directory, { ...target, characterId: 'character-0' })).toEqual({
+      generationScope: 'selected',
+      preflightInputs: null,
+      missingTarget: 'chat',
+    })
+    db.prepare("UPDATE chats SET data_json = json_set(data_json, '$.id', ?) WHERE id = ?").run(
+      'wrong-chat',
+      target.chatId,
+    )
+    expect(loadPersistedForGenerationPreflight(db, directory, target).missingTarget).toBe('chat')
+    db.prepare("UPDATE characters SET data_json = json_set(data_json, '$.chaId', ?) WHERE id = ?").run(
+      'wrong-character',
+      target.characterId,
+    )
+    expect(loadPersistedForGenerationPreflight(db, directory, target).missingTarget).toBe('character')
   })
 
   it('does not read sibling speaker names when the target has no saying IDs', () => {

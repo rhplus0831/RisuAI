@@ -5,13 +5,22 @@ import { performance } from 'node:perf_hooks'
 import type { DatabaseSync, SQLInputValue, SQLOutputValue } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it, vi } from 'vitest'
+import type { AgentRecord, AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
 import { openDatabase } from '../src/db.js'
 import { assemblePrompt, type AssembleInput } from '../src/prompt/assemble.js'
 import { buildEffectiveGenerationConfig } from '../src/prompt/effectiveGenerationConfig.js'
 import { bootPromptVariables } from '../src/prompt/promptVariablesBoot.js'
 import type { FastifyCharacter, FastifyChat, FastifyDatabase } from '../src/prompt/serverTypes.js'
-import { insertAssetMetadataBatch, loadPersistedForAssembly, writePersistedWithMessages } from '../src/repository.js'
-import { preflightGenerationOperationSettings } from '../src/routes/generationChat.js'
+import {
+  insertAssetMetadataBatch,
+  loadPersistedForGenerationAssembly,
+  writePersistedWithMessages,
+} from '../src/repository.js'
+import {
+  createGenerationAssemblyResources,
+  preflightGenerationOperationSettings,
+} from '../src/routes/generationChat.js'
+import { decodeGenerationDatabase } from '../src/prompt/generationInputDecoder.js'
 
 // Deterministic work counters, not a latency benchmark. These probes deliberately
 // assert semantics instead of pinning the inefficient baseline as desired work.
@@ -57,6 +66,7 @@ interface ReadCost {
 interface PhaseCost {
   cloneCalls: number
   cloneBytes: number
+  databaseAggregateClones: number
   reads: Record<string, ReadCost>
 }
 
@@ -178,11 +188,12 @@ function fixtureDatabase(unrelated: number, targetHistory: number) {
 }
 
 async function measure<T>(db: DatabaseSync, run: () => T | Promise<T>): Promise<{ result: T; cost: PhaseCost }> {
-  const cost: PhaseCost = { cloneCalls: 0, cloneBytes: 0, reads: {} }
+  const cost: PhaseCost = { cloneCalls: 0, cloneBytes: 0, databaseAggregateClones: 0, reads: {} }
   const clone = globalThis.structuredClone
   const cloneSpy = vi.spyOn(globalThis, 'structuredClone').mockImplementation((value, options) => {
     cost.cloneCalls += 1
     cost.cloneBytes += bytes(value)
+    if (value && typeof value === 'object' && 'characters' in value) cost.databaseAggregateClones += 1
     return clone(value, options)
   })
   const prepare = db.prepare.bind(db)
@@ -233,9 +244,7 @@ async function timings(db: DatabaseSync, dataDir: string) {
     preflightGenerationOperationSettings(input, dataDir, db)
     const preflightMs = performance.now() - started
     started = performance.now()
-    const result = await assemblePrompt(input, {
-      loadDatabase: () => loadPersistedForAssembly(db, dataDir, input.chatId).database,
-    })
+    const result = await assemblePrompt(input, createGenerationAssemblyResources(db, dataDir, input))
     const assemblyMs = performance.now() - started
     expect(result.stopSending).toBe(false)
     if (repetition >= 0) {
@@ -246,13 +255,46 @@ async function timings(db: DatabaseSync, dataDir: string) {
   return samples
 }
 
-async function probe(unrelated: number, targetHistory: number) {
+async function probe(unrelated: number, targetHistory: number, unusedConfigurationRecords = 0) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-costs-'))
   const db = openDatabase(dataDir)
   try {
+    const fixture = fixtureDatabase(unrelated, targetHistory)
+    if (unusedConfigurationRecords > 0) {
+      Object.assign(fixture, {
+        agents: Array.from(
+          { length: unusedConfigurationRecords },
+          (_, index) =>
+            ({
+              id: `unused-config-agent-${index}`,
+              name: `Unused Agent ${index}`,
+              version: 1,
+              instruction: payload,
+              description: payload,
+              modelDefaults: { mode: 'inheritMain' },
+              runtimeDefaults: {},
+              inputScopes: [],
+              outputFormat: 'text',
+            }) satisfies AgentRecord,
+        ),
+        agentPresets: Array.from(
+          { length: unusedConfigurationRecords },
+          (_, index) =>
+            ({
+              id: `unused-config-preset-${index}`,
+              name: `Unused Agent Preset ${index}`,
+              version: 1,
+              enabled: true,
+              description: payload,
+              agentUses: [],
+              steps: [],
+            }) satisfies AgentPresetRecord,
+        ),
+      })
+    }
     writePersistedWithMessages(db, dataDir, {
       _version: 1,
-      database: fixtureDatabase(unrelated, targetHistory),
+      database: fixture,
       assets: [],
     })
     insertAssetMetadataBatch(
@@ -267,11 +309,11 @@ async function probe(unrelated: number, targetHistory: number) {
 
     const preflight = await measure(db, () => preflightGenerationOperationSettings(input, dataDir, db))
     expect(preflight.result).toEqual({ status: 'ready' })
-    const load = await measure(db, () => loadPersistedForAssembly(db, dataDir, input.chatId))
-    const database: FastifyDatabase = load.result.database
+    const load = await measure(db, () => loadPersistedForGenerationAssembly(db, dataDir, input))
+    const database: FastifyDatabase = decodeGenerationDatabase(load.result.database)
     const currentChar: FastifyCharacter = database.characters.find(
       (character: FastifyCharacter) => character.chaId === input.characterId,
-    )
+    )!
     const currentChat = currentChar.chats.find((chat) => chat.id === input.chatId)!
     expect(currentChat.message).toHaveLength(targetHistory)
     const originalTarget = JSON.stringify(currentChat)
@@ -286,9 +328,7 @@ async function probe(unrelated: number, targetHistory: number) {
     )
     expect(effective.result.currentChat).not.toBe(currentChat)
     const assembly = await measure(db, () =>
-      assemblePrompt(input, {
-        loadDatabase: () => loadPersistedForAssembly(db, dataDir, input.chatId).database,
-      }),
+      assemblePrompt(input, createGenerationAssemblyResources(db, dataDir, input)),
     )
     expect(assembly.result.stopSending).toBe(false)
     expect(assembly.result.formated?.length).toBeGreaterThan(0)
@@ -302,6 +342,7 @@ async function probe(unrelated: number, targetHistory: number) {
         unusedRowsPerCollection: unrelated,
         unrelatedAssets: unrelated * 8,
         targetHistory,
+        unusedConfigurationRecords,
       },
       snapshotBytes: bytes(load.result.database),
       assetSnapshotBytes: bytes(load.result.assets),
@@ -325,6 +366,18 @@ describe('generation preparation work counters', () => {
     for (const unrelated of unrelatedSizes) results.push(await probe(unrelated, 4))
     for (const result of results) {
       expect(result.prompt).toEqual(results[0].prompt)
+      expect(result.snapshotBytes).toBeLessThanOrEqual(2_790)
+      expect(result.assetSnapshotBytes).toBe(2)
+      expect(result.preflight.reads.messages?.rows ?? 0).toBe(0)
+      expect(Object.values(result.preflight.reads).reduce((sum, read) => sum + read.rows, 0)).toBeLessThanOrEqual(6)
+      expect(Object.values(result.assembly.reads).reduce((sum, read) => sum + read.rows, 0)).toBeLessThanOrEqual(10)
+      expect(result.preflight.cloneBytes).toBeLessThanOrEqual(4_308)
+      expect(result.effective.cloneBytes).toBeLessThanOrEqual(3_550)
+      expect(result.assembly.cloneBytes).toBeLessThanOrEqual(5_368)
+      for (const cost of [result.preflight, result.load, result.effective, result.assembly]) {
+        expect(cost.databaseAggregateClones).toBe(0)
+        expect(cost.reads.assets?.rows ?? 0).toBe(0)
+      }
       reportRows.push({ axis: 'unrelated', ...result, prompt: undefined })
     }
   })
@@ -335,8 +388,32 @@ describe('generation preparation work counters', () => {
     for (const history of historySizes) results.push(await probe(0, history))
     expect(results[2].snapshotBytes).toBeGreaterThan(results[0].snapshotBytes)
     expect(bytes(results[2].prompt)).toBeGreaterThan(bytes(results[0].prompt))
+    expect(results[2].assembly.cloneBytes).toBeLessThanOrEqual(104_188)
+    expect(Object.values(results[2].assembly.reads).reduce((sum, read) => sum + read.rows, 0)).toBeLessThanOrEqual(166)
     for (const result of results) {
+      expect(result.preflight.reads.messages?.rows ?? 0).toBe(0)
+      expect(result.preflight.databaseAggregateClones).toBe(0)
+      expect(result.assembly.databaseAggregateClones).toBe(0)
       reportRows.push({ axis: 'history', ...result, prompt: undefined })
     }
+  })
+  it('records retained configuration-row parsing separately from selected captured data', async () => {
+    bootPromptVariables()
+    const results = []
+    for (const count of unrelatedSizes) results.push(await probe(0, 4, count))
+    for (const result of results) {
+      expect(result.prompt).toEqual(results[0].prompt)
+      expect(result.snapshotBytes).toBe(results[0].snapshotBytes)
+      expect(result.preflight.cloneBytes).toBe(results[0].preflight.cloneBytes)
+      expect(result.assembly.cloneBytes).toBe(results[0].assembly.cloneBytes)
+      expect(result.preflight.databaseAggregateClones).toBe(0)
+      expect(result.assembly.databaseAggregateClones).toBe(0)
+      reportRows.push({ axis: 'configuration-row', ...result, prompt: undefined })
+    }
+    // This audit counter deliberately exposes the remaining settings-row parse
+    // instead of claiming that constant selected output bytes imply constant IO.
+    expect(results[2].load.reads.settings.jsonColumnBytes).toBeGreaterThan(
+      results[0].load.reads.settings.jsonColumnBytes,
+    )
   })
 })

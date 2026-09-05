@@ -1,7 +1,7 @@
 # Prompt Assembly And Scripting
 
 Last audited: 2026-08-30.
-Targeted source check: 2026-09-05 (CBS and regex display-activation ownership).
+Targeted source check: 2026-09-05 (selected generation inputs, immutable configuration, and checked scripting boundaries).
 
 This guide owns server prompt construction, CBS and history variables,
 lorebook and memory injection, prompt-template precedence, generation
@@ -73,6 +73,48 @@ prompt-only. The route emits an assembly `message_patch` only from an accepted
 assembly persistence result; ordinary working mutations remain available only
 to legacy viewers. `info.generationDisplayProjection` fences transient display
 text by operation, attempt, target message, generation, and projection epoch.
+
+## Generation Input Ownership
+
+`server/fastify/src/repository.ts` gives preflight selected configuration plus
+character/chat readiness metadata; it reads no transcript or Hypa body. Assembly
+separately reloads the selected owners and complete target history. Selected
+model/prompt/persona/Hypa IDs and module IDs/namespaces use indexed collection
+lookups. The route's `createGenerationAssemblyResources()` memoizes only within
+that preparation; accepted sends, operation retries, and subsequent preparations
+read current authoritative inputs again.
+
+The settings document remains one JSON row, including profile credentials and
+embedded Agent records. Its parsing cost scales with configuration size. The
+selected result excludes unused extracted collections, unrelated character/chat
+bodies, and asset metadata. Legacy embedded-character storage has an explicit
+`embedded-characters` compatibility path. Required assets resolve on demand.
+
+`server/fastify/src/prompt/serverTypes.ts` owns finite generation, provider,
+memory, preflight, and nested record views. `generationInputDecoder.ts` validates
+unknown persisted inputs without coercion, defaults, field stripping, or graph
+cloning. Its checked-in schema is generated from those types by
+`util/generation-input-schema.ts`; the decoder regression checks synchronization.
+Imported extension data survives but is absent from ordinary consumer types.
+Invalid known fields identify the domain/path without echoing values. Sparse
+supported legacy fields and nullable message metadata remain supported.
+
+Resolved configuration is deeply readonly by type. Effective request settings
+use a writable scalar overlay and owned global variables; selected nested
+configuration stays borrowed and readonly. Mutable character state excludes
+sibling chats, while working and authoritative target transcripts are separate
+owned snapshots. Provider-policy fallback changes only its settings overlay.
+Module lore child activation uses local envelopes instead of editing borrowed
+configuration. No runtime freeze is applied to a caller-owned graph.
+
+Supported CBS/Lua history APIs inspect the current working character/chat;
+their character-id argument is not a sibling-chat selector. Referenced speaker
+names and misses are captured synchronously when assembly starts. Lua full-chat
+replacement keeps role/data and cannot introduce a new speaker ID, so subsequent
+name resolution needs neither sibling bodies nor a later database query.
+Working-character names remain primary. The finite CBS adapter supplies its
+required scalar defaults, and Lua JSON/history and edit-trigger results have
+named shape checks before they enter typed execution state.
 
 ## Effective Configuration And Assembly Order
 

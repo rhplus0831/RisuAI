@@ -2341,6 +2341,8 @@ interface GenerationReadScope {
   generationScope: 'selected' | 'legacy'
   /** Only pre-extraction embedded characters need the broad compatibility read. */
   generationLegacyReason?: 'embedded-characters'
+  /** Failure detail for the route's existing missing-entity errors. */
+  missingTarget?: 'database' | 'character' | 'chat'
 }
 
 export interface GenerationPreflightLoad extends GenerationReadScope {
@@ -2371,6 +2373,11 @@ interface GenerationSelectedRows {
   speakerNames?: Readonly<Record<string, string>>
 }
 
+interface GenerationSelectedLoad extends GenerationReadScope {
+  rows: GenerationSelectedRows | null
+  missingTarget?: GenerationPreflightLoad['missingTarget']
+}
+
 /**
  * Readiness requires selected configuration and owner metadata, not transcripts,
  * Hypa chat bodies, or character descriptions. Keep the raw records unknown at
@@ -2386,6 +2393,7 @@ export function loadPersistedForGenerationPreflight(
     generationScope: loaded.generationScope,
     ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
     preflightInputs: loaded.rows,
+    ...(loaded.missingTarget ? { missingTarget: loaded.missingTarget } : {}),
   }
 }
 
@@ -2405,6 +2413,7 @@ export function loadPersistedForGenerationAssembly(
       ...emptyPersisted(),
       generationScope: loaded.generationScope,
       ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+      ...(loaded.missingTarget ? { missingTarget: loaded.missingTarget } : {}),
     }
   const { database, currentChar, currentChat } = loaded.rows
   hydrateGenerationTargetChat(db, currentChat, target.chatId)
@@ -2474,11 +2483,11 @@ function loadGenerationSelectedRows(
   dataDir: string,
   target: GenerationLoadTarget,
   includeHistory: boolean,
-): GenerationReadScope & { rows: GenerationSelectedRows | null } {
+): GenerationSelectedLoad {
   // Preserve the existing inline-secret repair boundary and its credential
   // semantics. This one settings document remains configuration-scoped work.
   const settings = loadSettingsFromSqlite(db)
-  if (!settings) return { generationScope: 'selected', rows: null }
+  if (!settings) return { generationScope: 'selected', rows: null, missingTarget: 'database' }
   const characterProjection = includeHistory
     ? 'character.data_json'
     : `json_object('chaId', json_extract(character.data_json, '$.chaId'),
@@ -2509,18 +2518,17 @@ function loadGenerationSelectedRows(
     if (embeddedCharacters.length > 0 && !db.prepare('SELECT 1 AS present FROM characters LIMIT 1').get()) {
       return loadLegacyGenerationSelectedRows(db, dataDir, target, includeHistory)
     }
-    return { generationScope: 'selected', rows: null }
+    const characterExists = db
+      .prepare("SELECT 1 AS present FROM characters WHERE id = ? AND json_extract(data_json, '$.chaId') = ?")
+      .get(target.characterId, target.characterId)
+    return { generationScope: 'selected', rows: null, missingTarget: characterExists ? 'chat' : 'character' }
   }
   const currentChar = JSON.parse(row.character_json) as unknown
   const currentChat = parseStoredChatRow(row.chat_json)
-  if (
-    !isRecord(currentChar) ||
-    !isRecord(currentChat) ||
-    currentChar.chaId !== target.characterId ||
-    currentChat.id !== target.chatId
-  ) {
-    return { generationScope: 'selected', rows: null }
-  }
+  if (!isRecord(currentChar) || currentChar.chaId !== target.characterId)
+    return { generationScope: 'selected', rows: null, missingTarget: 'character' }
+  if (!isRecord(currentChat) || currentChat.id !== target.chatId)
+    return { generationScope: 'selected', rows: null, missingTarget: 'chat' }
   if (!includeHistory) {
     removeNullGenerationMetadata(currentChar)
     removeNullGenerationMetadata(currentChat)
@@ -2693,16 +2701,17 @@ function loadLegacyGenerationSelectedRows(
   dataDir: string,
   target: GenerationLoadTarget,
   includeHistory: boolean,
-): GenerationReadScope & { rows: GenerationSelectedRows | null } {
+): GenerationSelectedLoad {
   // Pre-extraction settings already contain the embedded library JSON. Keep the
   // old collection precedence/repair behavior but never scan asset metadata or
   // hydrate transcripts during preflight.
   const database = loadPersistedDatabase(db, dataDir)
   const scope = { generationScope: 'legacy' as const, generationLegacyReason: 'embedded-characters' as const }
-  if (!isRecord(database)) return { ...scope, rows: null }
+  if (!isRecord(database)) return { ...scope, rows: null, missingTarget: 'database' }
   const currentChar = generationRecords(database.characters).find((character) => character.chaId === target.characterId)
-  const currentChat = generationRecords(currentChar?.chats).find((chat) => chat.id === target.chatId)
-  if (!currentChar || !currentChat) return { ...scope, rows: null }
+  if (!currentChar) return { ...scope, rows: null, missingTarget: 'character' }
+  const currentChat = generationRecords(currentChar.chats).find((chat) => chat.id === target.chatId)
+  if (!currentChat) return { ...scope, rows: null, missingTarget: 'chat' }
   const settings = { ...database }
   delete settings.characters
   if (includeHistory) {

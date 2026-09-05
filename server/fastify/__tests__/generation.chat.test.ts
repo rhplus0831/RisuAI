@@ -939,7 +939,7 @@ describe('POST /api/v1/generate/chat', () => {
         clientCapabilities: { compactPromptEvent: true },
       },
     })
-    expect(res.statusCode).toBe(200)
+    expect(res.statusCode, res.body).toBe(200)
 
     const events = parseEvents(res.body)
     expect(events.map((e) => e.type)).toEqual([
@@ -2899,7 +2899,7 @@ describe('POST /api/v1/generate/chat', () => {
       })
 
       expect(response.statusCode).toBe(200)
-      expect(providerPrompts).toHaveLength(1)
+      expect(providerPrompts, response.body).toHaveLength(1)
       expect(providerPrompts[0].some((row) => row.content === 'hello Tess')).toBe(true)
       expect(providerPrompts[0].every((row) => !row.content.includes('SECRET'))).toBe(true)
       const events = parseEvents(response.body)
@@ -9404,7 +9404,14 @@ describe('POST /api/v1/generate/preview-prompt', () => {
 
   it('materializes fallback-profile runtime settings and records the successful fallback model', async () => {
     const attempts: Array<{ profileId?: string; database: Record<string, unknown>; outputTokens?: number }> = []
+    let primaryDatabase: ChatProviderDispatchContext['database'] | undefined
     const dispatchProvider = vi.fn((context: ChatProviderDispatchContext) => {
+      if (context.profile?.profileId === 'primary-profile') primaryDatabase = context.database
+      else {
+        expect(context.database.characters).toBe(primaryDatabase?.characters)
+        expect(primaryDatabase?.temperature).toBe(10)
+        expect(primaryDatabase?.modelRoleProfiles?.chatMain).toEqual({ mode: 'profile', profileId: 'primary-profile' })
+      }
       attempts.push({
         profileId: context.profile?.profileId,
         database: structuredClone(context.database) as unknown as Record<string, unknown>,

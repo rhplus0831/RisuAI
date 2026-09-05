@@ -41,7 +41,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
 | F07 | Open; source-confirmed work | Stall baseline, API progress, backup/GC consistency |
 | F08 | Open; large baseline exceeds heap/page-layout budgets | Recorded implementation/retention decision and after evidence |
-| F09 | Open; source-confirmed type gap | Explicit prompt views and compiler-enforced boundary coverage |
+| F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
 | F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
 
 ## Verification Ledger
@@ -379,7 +379,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3: Concrete Immutable Consumer Contracts Implemented
 
-- Implementation: accompanying type/consumer commit. Finite settings and all six
+- Implementation: `8de501a4a`. Finite settings and all six
   participating record views replace the unrestricted prompt contract. Five
   persistence/provider/memory/preflight boundaries validate a generated schema,
   preserve imported extension data, and reject invalid known fields without
@@ -398,3 +398,22 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   median 2.190 to 2.792 ms. The original 2.409 ms budget is unchanged. F02 and
   the phase gate remain open while this added per-request work is investigated.
   Root route/cost/durable integration is still the next separate commit.
+
+## Phase 3: Selected Route Cutover Implemented
+
+- Implementation: accompanying selected-route commit. Both readiness and actual
+  assembly use selected repository inputs; direct preview retains ID-specific
+  missing-entity errors, and malformed known inputs reject before acceptance.
+  Accepted sends/retries build a new snapshot after their own revision boundary.
+  Provider fallback preserves primary settings and shares readonly configuration.
+- Exact focused tests: generation chat 181, durable generation 69, selected
+  loaders 16, operation startup 1, and structural preparation costs 3. Accepted
+  send browser 11 passes. The durable fixture changes a prompt between acceptance
+  and assembly and verifies the new prompt plus accepted message. Invalid known
+  input leaves message/operation/revision/provider state untouched.
+- All original structural budgets pass: selected snapshot 2,715 bytes, preflight
+  5 rows with zero messages, four-message assembly 9 rows, zero asset rows and
+  zero aggregate database clones. Extra configuration-row parsing is exposed
+  separately. No numeric timing budget was raised; the small-case timing gate
+  remains open. [Matched investigation samples](evidence/generation-timing-investigation.json)
+  retain all three before/after cycles, including failures.
