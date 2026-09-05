@@ -1,4 +1,7 @@
 const languageKoreanBase = {
+  transcriptShowMessages: (from: number, to: number) => `${from}–${to}번 메시지 표시`,
+  transcriptInteractionLimit:
+    '다른 작업을 시작하려면 편집을 마치거나 메시지 작업이 완료될 때까지 기다려 주세요. 동시에 최대 8개 메시지에서 작업할 수 있습니다.',
   diagnostics: {
     title: '진단',
     description:
