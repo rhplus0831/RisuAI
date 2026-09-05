@@ -1163,7 +1163,7 @@ test('transcript residency expands its working window to fill a compact message 
               sourceBottom: sourceBounds ? sourceBounds.bottom - viewport.top : null,
             }
           })
-          .filter((row) => row !== null && row.bottom > 0 && row.top < viewport.height)
+          .filter((row): row is NonNullable<typeof row> => row !== null && row.bottom > 0 && row.top < viewport.height)
           .sort((left, right) => left.top - right.top)
       })
       observations.push({ fraction, settlement, geometry })

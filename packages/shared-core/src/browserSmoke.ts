@@ -23,6 +23,7 @@ export interface BrowserSmokeCharacterSnapshot {
 /** The browser-smoke consumer projection, not the application's database owner. */
 export interface BrowserSmokeDatabaseSnapshot {
   characters: BrowserSmokeCharacterSnapshot[]
+  language?: string
   showMemoryLimit?: boolean
   streamGeminiThoughts?: boolean
 }
