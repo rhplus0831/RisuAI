@@ -364,7 +364,12 @@ import {
 } from './DefaultChatScreen.composerDrafts'
 import { initializeDraftRecoveryScope, resetDraftRecoveryScopeForTests } from 'src/ts/server/draftRecoveryScope'
 import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
-import { charactersResourceState, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
+import {
+  charactersResourceState,
+  collectionsResourceState,
+  replaceResourceDatabase,
+  settingsResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import {
   additionalChatMenu,
   additionalFloatingActionButtons,
@@ -374,6 +379,7 @@ import {
 } from 'src/ts/stores.svelte'
 import { presetTemplate, type Database, type Message } from 'src/ts/storage/database.svelte'
 import { _setPluginRuntimePhaseForTesting } from 'src/ts/plugins/plugins.svelte'
+import { beginStartupAttempt, recordStartupCapabilityFailure } from 'src/ts/startupReadiness'
 import {
   createActiveChatGenerationSettingsIncompleteMessage,
   resolveActiveChatGenerationSettings,
@@ -535,6 +541,8 @@ function seedDatabase(messageCounts: number[]) {
     hypaV3: false,
     inputHooks: [],
     newMessageButtonStyle: 'bottom-center',
+    modules: [],
+    promptPresets: [],
     personas: [{ id: 'persona-default', name: 'User', icon: '', largePortrait: false, personaPrompt: '', note: '' }],
     playMessage: false,
     personaPrompt: '',
@@ -928,6 +936,73 @@ describe('DefaultChatScreen persona presentation', () => {
 })
 
 describe('DefaultChatScreen initial display readiness', () => {
+  it('waits for persona, module, display settings and plugins before mounting rows, independently of generation resources', async () => {
+    seedDatabase([2])
+    defaultChatScreenTestChatController.hold()
+    collectionsResourceState.statuses.personas = 'loading'
+    collectionsResourceState.statuses.modules = 'loading'
+    settingsResourceState.groupStatuses.display = 'loading'
+    settingsResourceState.groupStatuses.providers = 'loading'
+    settingsResourceState.groupStatuses.memory = 'loading'
+    _setPluginRuntimePhaseForTesting('loading')
+    mountScreen()
+    await settle()
+
+    const assertWaiting = () => {
+      expect(messageRowIndexes()).toEqual([])
+      expect(defaultChatScreenTestChatController.pendingCount()).toBe(0)
+      expect(target.querySelector('[data-chat-loading-mode="display"]')).toBeTruthy()
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    }
+    assertWaiting()
+    collectionsResourceState.statuses.personas = 'ready'
+    await settle()
+    assertWaiting()
+    collectionsResourceState.statuses.modules = 'ready'
+    settingsResourceState.groupStatuses.display = 'ready'
+    await settle()
+    assertWaiting()
+    _setPluginRuntimePhaseForTesting('ready')
+    await waitFor(() => expect(defaultChatScreenTestChatController.pendingCount()).toBe(2))
+    expect(messageRowIndexes()).toEqual([1, 0])
+    expect(target.querySelector('[data-chat-loading-mode="display"]')).toBeTruthy()
+    while (defaultChatScreenTestChatController.releaseNext()) {}
+    await waitFor(() => expect(target.querySelector('[data-chat-message-skeleton]')).toBeNull())
+
+    // A refresh of display dependencies must not replace an already-visible transcript.
+    collectionsResourceState.statuses.personas = 'loading'
+    _setPluginRuntimePhaseForTesting('loading')
+    await settle()
+    expect(messageRowIndexes()).toEqual([1, 0])
+    expect(target.querySelector('[data-chat-message-skeleton]')).toBeNull()
+  })
+
+  it.each(['resource', 'plugin', 'plugin-resources'] as const)(
+    'exposes a retryable %s failure instead of an indefinite display skeleton',
+    async (failure) => {
+      seedDatabase([1])
+      if (failure === 'resource') settingsResourceState.groupStatuses.media = 'error'
+      else if (failure === 'plugin') _setPluginRuntimePhaseForTesting('error')
+      else {
+        _setPluginRuntimePhaseForTesting('idle')
+        recordStartupCapabilityFailure(beginStartupAttempt(), 'plugin-initialization-failed', 'plugins-ready')
+      }
+      mountScreen()
+      await settle()
+      expect(messageRowIndexes()).toEqual([])
+      expect(target.querySelector('[data-chat-message-skeleton]')).toBeNull()
+      const error = target.querySelector('[data-testid="chat-display-dependency-error"]')
+      expect(error?.getAttribute('role')).toBe('alert')
+      expect(error?.querySelector('button')?.textContent).toBe('retry')
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+
+      settingsResourceState.groupStatuses.media = 'ready'
+      _setPluginRuntimePhaseForTesting('ready')
+      await waitFor(() => expect(messageRowIndexes()).toEqual([0]))
+      expect(target.querySelector('[data-testid="chat-display-dependency-error"]')).toBeNull()
+    },
+  )
+
   it('shows the message skeleton until the newest two cold row parses settle', async () => {
     defaultChatScreenTestChatController.hold()
     seedDatabase([4])

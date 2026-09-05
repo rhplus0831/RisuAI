@@ -44,6 +44,7 @@
     displayLayer?: DisplaySourceLayer
     streaming?: boolean
     displayPriority?: DisplaySourcePriority
+    parseRevision?: string
     role: string | null
     translated: boolean
     translating: boolean
@@ -66,6 +67,7 @@
     displayLayer = 'original',
     streaming = false,
     displayPriority = 'normal',
+    parseRevision = '',
     role,
     translated = $bindable(false),
     translating = $bindable(false),
@@ -80,8 +82,7 @@
   const displayScheduler = getContext<ChatDisplayScheduler | undefined>(CHAT_DISPLAY_SCHEDULER)
   let queuedDisplay: AbortController | undefined
 
-  // svelte-ignore non_reactive_update
-  let lastParsed = ''
+  let lastParsed = $state('')
   let lastTranslationDetectionKey = ''
   let markParsingRun = 0
   const initialDisplayParseRegistration = Symbol('initial-display-parse')
@@ -197,7 +198,6 @@
     // track 'translated' and 'retranslate' state
     translated
     retranslate
-    let lastParsedQueue = ''
     let mode = 'notrim' as const
     const cbsConditions = getCbsCondition()
 
@@ -238,7 +238,6 @@
           })
         : `automatic:${automaticTranslation}`
       if (detectTranslation && detectionKey !== lastTranslationDetectionKey) {
-        lastParsedQueue = ''
         lastTranslationDetectionKey = detectionKey
         let translateText = false
         try {
@@ -317,7 +316,6 @@
           if (!marked.ok) {
             return marked.value
           }
-          lastParsedQueue = marked.value
           setTimeout(() => {
             if (runId === markParsingRun) {
               retranslate = false
@@ -365,7 +363,6 @@
           if (!translated.ok) {
             return translated.value
           }
-          lastParsedQueue = translated.value
           setTimeout(() => {
             if (runId === markParsingRun) {
               retranslate = false
@@ -406,7 +403,6 @@
           if (!translated.ok) {
             return translated.value
           }
-          lastParsedQueue = translated.value
           setTimeout(() => {
             if (runId === markParsingRun) {
               retranslate = false
@@ -437,13 +433,10 @@
         if (!marked.ok) {
           return marked.value
         }
-        lastParsedQueue = marked.value
         return marked.value
       }
     } finally {
-      // Preserve the last successful body while a newer parse is pending.
       if (runId === markParsingRun) {
-        lastParsed = lastParsedQueue
         settleInitialDisplayParse()
       }
     }
@@ -543,6 +536,7 @@
     // the parser are snapshots; their UI activation is controlled by the
     // explicit reload pointers instead of deep subscriptions per chat row.
     const inputs = [
+      parseRevision,
       regexDisplayReloadToken,
       parseData,
       parseCharacter,
@@ -579,14 +573,21 @@
   })
 
   $effect(() => {
-    markParsingResult
+    const result = markParsingResult
+    let cancelled = false
+    void result.then((html) => {
+      if (cancelled || html === undefined) return
+      lastParsed = html
+    })
+    return () => {
+      cancelled = true
+    }
+  })
+
+  $effect(() => {
+    lastParsed
     checkImg()
-    markParsingResult.then(checkImg)
   })
 </script>
 
-{#await markParsingResult}
-  {@html renderParsedChatBody(lastParsed)}
-{:then md}
-  {@html renderParsedChatBody(md)}
-{/await}
+{@html renderParsedChatBody(lastParsed)}

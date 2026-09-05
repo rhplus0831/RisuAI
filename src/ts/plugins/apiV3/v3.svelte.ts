@@ -1996,6 +1996,8 @@ export async function executePluginV3(plugin: RisuPlugin, generation = ensureV3G
   try {
     assertV3InstanceCurrent(instance)
     host.run(iframe, plugin.script)
+    await host.waitForInitialization()
+    assertV3InstanceCurrent(instance)
   } catch (error) {
     await unloadV3PluginInstance(instance)
     throw error

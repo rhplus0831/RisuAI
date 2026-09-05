@@ -6,6 +6,8 @@ type MsgType =
   | 'RESPONSE'
   | 'RELEASE_INSTANCE'
   | 'ABORT_SIGNAL'
+  | 'INITIALIZED'
+  | 'INITIALIZATION_ERROR'
 
 interface RpcMessage {
   type: MsgType
@@ -487,9 +489,29 @@ export class SandboxHost {
   private runCleanup: (() => void) | null = null
   private pendingExecutions = new Map<string, PendingExecution>()
   private activeStreamCleanups = new Set<() => void>()
+  private initialization: Promise<void> | null = null
 
   constructor(apiFactory: any) {
     this.apiFactory = apiFactory
+  }
+
+  /** The guest must finish its awaited startup work before its hooks are usable. */
+  public waitForInitialization(timeoutMs = 30_000): Promise<void> {
+    if (!this.initialization || !this.runCleanup) return Promise.reject(new Error(SANDBOX_TERMINATED_MESSAGE))
+    const initialization = this.initialization
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Plugin initialization timed out')), timeoutMs)
+      void initialization.then(
+        () => {
+          clearTimeout(timer)
+          resolve()
+        },
+        (error) => {
+          clearTimeout(timer)
+          reject(error)
+        },
+      )
+    })
   }
 
   public executeInIframe(code: string): Promise<any> {
@@ -895,6 +917,15 @@ export class SandboxHost {
 
   public run(container: HTMLElement | HTMLIFrameElement, userCode: string) {
     this.terminate()
+    const initializationId = 'init_' + Math.random().toString(36).substring(2)
+    let resolveInitialization!: () => void
+    let rejectInitialization!: (error: Error) => void
+    this.initialization = new Promise<void>((resolve, reject) => {
+      resolveInitialization = resolve
+      rejectInitialization = reject
+    })
+    // Existing host callers can still use run() solely for its cleanup handle.
+    void this.initialization.catch(() => undefined)
 
     if (container instanceof HTMLIFrameElement) {
       this.iframe = container
@@ -923,6 +954,14 @@ export class SandboxHost {
     const messageHandler = async (event: MessageEvent) => {
       if (event.source !== this.iframe.contentWindow) return
       const data = event.data as RpcMessage
+
+      if (data.reqId === initializationId) {
+        if (data.type === 'INITIALIZED') resolveInitialization()
+        else if (data.type === 'INITIALIZATION_ERROR') {
+          rejectInitialization(new Error(data.error || 'Plugin initialization failed'))
+        }
+        return
+      }
 
       if (data.type === 'CALLBACK_RETURN') {
         const req = this.pendingCallbacks.get(data.reqId!)
@@ -1025,6 +1064,8 @@ export class SandboxHost {
     const cleanup = () => {
       if (this.runCleanup !== cleanup) return
       this.runCleanup = null
+      rejectInitialization(new Error(SANDBOX_TERMINATED_MESSAGE))
+      this.initialization = null
       window.removeEventListener('message', messageHandler)
       this.iframe.remove()
       this.cleanupRuntimeState()
@@ -1050,11 +1091,16 @@ export class SandboxHost {
           <script>
               document.querySelector('meta#csp-meta')?.remove();
               (async () => {
+                try {
                   ${GUEST_BRIDGE_SCRIPT}
 
-                  (async () => {
+                  await (async () => {
                       ${userCode}
                   })()
+                  parent.postMessage({ type: 'INITIALIZED', reqId: ${inlineScriptString(initializationId)} }, '*');
+                } catch (error) {
+                  parent.postMessage({ type: 'INITIALIZATION_ERROR', reqId: ${inlineScriptString(initializationId)}, error: error?.message || String(error) }, '*');
+                }
               })();
           </script>
         </body>

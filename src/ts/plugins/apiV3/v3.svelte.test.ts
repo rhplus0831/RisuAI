@@ -522,6 +522,9 @@ function capturedSettingsRollback(): () => void {
 }
 
 beforeEach(async () => {
+  // Happy DOM does not execute the nested guest frame; host handshake behavior
+  // is covered by factory.test.ts and the real browser startup regression.
+  vi.spyOn(SandboxHost.prototype, 'waitForInitialization').mockResolvedValue(undefined)
   document.body.innerHTML = ''
   mockServerCommands.canUse = false
   mockSelectedCharID.set('char-a')
@@ -1451,6 +1454,33 @@ describe('V3 plugin settings rollback', () => {
 })
 
 describe('V3 plugin permissions', () => {
+  it('keeps plugin loading pending until the guest finishes initialization', async () => {
+    const plugin = seedV3Plugin('awaited-startup')
+    mockDbState.db.plugins = [plugin]
+    let release!: () => void
+    vi.mocked(SandboxHost.prototype.waitForInitialization).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+    const settled = vi.fn()
+    const loading = loadV3Plugins([plugin]).then(settled)
+    await vi.waitFor(() => expect(SandboxHost.prototype.waitForInitialization).toHaveBeenCalledOnce())
+    expect(settled).not.toHaveBeenCalled()
+    release()
+    await loading
+    expect(settled).toHaveBeenCalledOnce()
+  })
+
+  it('unloads a guest whose initialization fails', async () => {
+    const plugin = seedV3Plugin('failed-startup')
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(SandboxHost.prototype.waitForInitialization).mockRejectedValueOnce(new Error('Startup failed'))
+    await expect(loadV3Plugins([plugin])).rejects.toThrow('Startup failed')
+    expect(getV3PluginInstance(plugin.name)).toBeUndefined()
+    expect(document.querySelector('iframe')).toBeNull()
+  })
+
   it('does not create a V3 guest when trusted browser runtime access is denied', async () => {
     const plugin = { ...seedV3Plugin('denied-runtime'), script: 'globalThis.ran = true' }
     mockDbState.db.plugins = [plugin]

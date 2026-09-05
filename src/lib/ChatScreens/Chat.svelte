@@ -2423,7 +2423,7 @@
       onclick={handleMessageBodyClick}
       style:font-size="{0.875 * ((displaySettings.zoomsize ?? 100) / 100)}rem"
       style:line-height="{(displaySettings.lineHeight ?? 1.25) * ((displaySettings.zoomsize ?? 100) / 100)}rem">
-      {#key `${totalLengthPointer}|${chatReloadPointer}|${chatScopePointer}`}
+      {#key `${chatScopePointer}|${displayMessageId ?? messageRowId ?? idx}`}
         {#if hasServerRawTranslationTarget()}
           <ChatBody
             {character}
@@ -2436,6 +2436,7 @@
             displayLayer={displaySourceLayer}
             streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
             {displayPriority}
+            parseRevision={`${totalLengthPointer}|${chatReloadPointer}`}
             {bodyRoot}
             modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
             role={role ?? null}
@@ -2457,6 +2458,7 @@
             displayLayer={displaySourceLayer}
             streaming={isChatGenerating && idx === totalLength - 1 && role === 'char'}
             {displayPriority}
+            parseRevision={`${totalLengthPointer}|${chatReloadPointer}`}
             {bodyRoot}
             modelShortName={messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''}
             role={role ?? null}

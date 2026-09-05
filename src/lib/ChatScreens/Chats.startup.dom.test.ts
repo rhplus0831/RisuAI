@@ -13,6 +13,8 @@ import {
 } from '../../ts/startupReadiness'
 import * as parser from '../../ts/parser/parser.svelte'
 import ChatsHarness from './Chats.startupHarness.svelte'
+import { invalidateModuleRenderRevision } from '../../ts/moduleRenderRevision'
+import { reloadGuiDisplay } from '../../ts/stores.svelte'
 const scheduledDisplay = vi.hoisted(() => vi.fn())
 vi.mock('./chatDisplayScheduler', async (importActual) => {
   const actual = await importActual<typeof import('./chatDisplayScheduler')>()
@@ -56,6 +58,46 @@ afterEach(() => {
 })
 
 describe('chat startup rendering', () => {
+  it('retains rendered body nodes during reloads and discards superseded parse results', async () => {
+    seedRenderCostMessages(2)
+    const character = charactersResourceState.characters[0]
+    const chat = character.chats[0]
+    const parse = vi.spyOn(parser, 'ParseMarkdown').mockImplementation(async (html) => `<p>${html}</p>`)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(ChatsHarness, { target, props: { chatId: chat.id, characterId: character.chaId } })
+    const pending: Array<(html: string) => void> = []
+    try {
+      await flush()
+      const bodies = [...target.querySelectorAll('.chat-message-body p')]
+      expect(bodies).toHaveLength(2)
+      parse.mockImplementation(() => new Promise((resolve) => pending.push(resolve)))
+
+      invalidateModuleRenderRevision()
+      await flush()
+      expect(pending).toHaveLength(2)
+      expect([...target.querySelectorAll('.chat-message-body p')]).toEqual(bodies)
+      for (const message of chat.message) expect(target.textContent).toContain(message.data)
+
+      reloadGuiDisplay()
+      await flush()
+      expect(pending).toHaveLength(4)
+      expect([...target.querySelectorAll('.chat-message-body p')]).toEqual(bodies)
+      pending.slice(2).forEach((resolve) => resolve('<p>Current display result</p>'))
+      await flush()
+      expect(target.querySelectorAll('.chat-message-body p')).toHaveLength(2)
+      expect(target.textContent).toContain('Current display result')
+
+      pending.slice(0, 2).forEach((resolve) => resolve('<p>Superseded display result</p>'))
+      await flush()
+      expect(target.textContent).not.toContain('Superseded display result')
+      expect(target.textContent).toContain('Current display result')
+    } finally {
+      pending.forEach((resolve) => resolve(''))
+      await unmount(component)
+    }
+  })
+
   it('keeps all rows mounted, progressively parses older bodies, and ignores unrelated character hydration', async () => {
     resetStartupReadinessForTests()
     const startupAttempt = beginStartupAttempt()

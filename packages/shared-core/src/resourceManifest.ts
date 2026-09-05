@@ -610,6 +610,29 @@ export const RESOURCE_SURFACE_MANIFEST = {
       collection('translatorPresets', ['interact']),
     ],
   },
+  'runtime:chat-display': {
+    family: 'runtime',
+    owners: ['src/lib/ChatScreens/DefaultChatScreen.svelte', 'src/lib/ChatScreens/ChatBody.svelte'],
+    requirements: [
+      group('display', ['render']),
+      group('advanced', ['render']),
+      group('media', ['render']),
+      group('modules', ['render']),
+      group('agents', ['render']),
+      group('language', ['render']),
+      group('prompt', ['render']),
+      collection('modules', ['render']),
+      collection('promptPresets', ['render']),
+      collection('personas', ['render']),
+      standalone('selectedPersonaId', ['render']),
+      standalone('selectedPersona', ['render']),
+      standalone('personaPrompt', ['render']),
+      standalone('userIcon', ['render']),
+      standalone('userNote', ['render']),
+    ],
+    notes:
+      'Initial transcript/greeting parsing needs display settings and effective module/persona inputs plus the separately initialized plugin runtime; generation recovery and background readiness do not gate display.',
+  },
   'runtime:chat-generation': {
     family: 'runtime',
     owners: [
@@ -830,12 +853,12 @@ export function resourceSurfacesForRoute(route: AppRoute): ResourceSurfaceId[] {
       const playgroundSurface =
         PLAYGROUND_RESOURCE_SURFACE_BY_INDEX[route.index as keyof typeof PLAYGROUND_RESOURCE_SURFACE_BY_INDEX]
       if (playgroundSurface) surfaces.push(playgroundSurface)
-      if (route.index === 2) surfaces.push('runtime:chat-generation')
+      if (route.index === 2) surfaces.push('runtime:chat-display', 'runtime:chat-generation')
       return surfaces
     }
     case 'character':
       surfaces.push('route:character')
-      if (route.chatId) surfaces.push('route:character-chat', 'runtime:chat-generation')
+      if (route.chatId) surfaces.push('route:character-chat', 'runtime:chat-display', 'runtime:chat-generation')
       return surfaces
   }
 }

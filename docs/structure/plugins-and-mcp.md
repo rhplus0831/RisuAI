@@ -29,7 +29,12 @@ does not execute browser plugin code.
 Plugin startup is an explicit readiness step, not part of the minimal shell
 load. `src/ts/bootstrap.ts` loads the plugin runtime resource, enabled plugins,
 and synchronization after writer/resource startup. Runtime state in
-`plugins.svelte.ts` moves through `idle`, `loading`, `error`, and `ready`; a load
+`plugins.svelte.ts` moves through `idle`, `loading`, `error`, and `ready`.
+V3 readiness waits for each guest's awaited top-level initialization to finish,
+including display-hook registration. The host accepts only the current run's
+initialization acknowledgement and rejects guest errors, teardown, or a
+30-second initialization timeout. This also gates the first chat display parse.
+A load
 failure records the `plugins-ready` capability failure and blocks generation
 recovery without discarding the coherent shell. The localized startup Retry
 reruns plugin initialization and then generation recovery rather than replaying

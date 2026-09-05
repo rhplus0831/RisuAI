@@ -93,7 +93,8 @@
     easyPanelStore,
   } from '../../ts/stores.svelte'
   import { createSimpleCharacter } from '../../ts/simpleCharacter'
-  import { pluginRuntimeStateStore } from '../../ts/plugins/plugins.svelte'
+  import { pluginRuntimeStateStore, retryPluginRuntime } from '../../ts/plugins/plugins.svelte'
+  import { startupCoordinatorStore } from 'src/ts/startupReadiness'
   import {
     RegexDisplayReloadPointer,
     RegexDisplayReloadScope,
@@ -246,6 +247,7 @@
   import { cleanAutoSuggestionInput } from 'src/ts/model/autoSuggestionCleanup'
   import type { SettingsGroup } from '@risuai/shared-core/settings-groups'
   import { displaySettingForPaint } from 'src/ts/gui/displaySettings'
+  import { chatDisplayDependencyStatus } from './chatDisplayReadiness'
   const composerFileOperationGuard = createLatestOperationGuard<string>()
   const composerOperationGuard = createLatestOperationGuard<string>()
 
@@ -737,6 +739,52 @@
     activeChatOpen && hasChatMessageHydrationFailed(currentChatId, renderChat.length),
   )
   let activeChatDisplayLoading = $state(false)
+  let displayDependencyScope = $state<string | null>(null)
+  let displayDependenciesReleased = $state(false)
+  let retryingDisplayDependencies = $state(false)
+  let displayDependencyStatus = $derived(
+    chatDisplayDependencyStatus(
+      $pluginRuntimeStateStore.phase,
+      $startupCoordinatorStore.failures.pluginsReady !== undefined,
+    ),
+  )
+  let activeChatDisplayDependenciesPending = $derived(
+    activeChatOpen && (displayDependencyScope !== currentChatId || !displayDependenciesReleased),
+  )
+
+  $effect.pre(() => {
+    const scope = activeChatOpen ? currentChatId : null
+    if (scope !== displayDependencyScope || activeChatMessagesLoading) {
+      displayDependencyScope = scope
+      displayDependenciesReleased = false
+    }
+    // Later dependency reloads reparse mounted bodies and retain their HTML.
+    // Only chat entry or an authoritative transcript re-stub starts a new gate.
+    if (scope && !activeChatMessagesLoading && displayDependencyStatus === 'ready') {
+      displayDependenciesReleased = true
+    }
+  })
+
+  async function retryChatDisplayDependencies(): Promise<void> {
+    if (retryingDisplayDependencies) return
+    retryingDisplayDependencies = true
+    try {
+      const { ensureResourceSurfaces } = await import('src/ts/server/routeResourceLoader')
+      await Promise.all([
+        ensureResourceSurfaces(['runtime:chat-display']),
+        $pluginRuntimeStateStore.phase === 'error' || $startupCoordinatorStore.failures.pluginsReady
+          ? $startupCoordinatorStore.failures.pluginsReady
+            ? import('src/ts/bootstrap').then(({ retryPluginStartup }) => retryPluginStartup())
+            : retryPluginRuntime()
+          : Promise.resolve(),
+      ])
+    } catch (error) {
+      // Resource/plugin owners retain the failure and keep Retry available.
+      console.warn('Chat display dependencies could not be loaded:', error)
+    } finally {
+      retryingDisplayDependencies = false
+    }
+  }
 
   $effect(() => {
     if (!currentCharacter || isServerCharacterShell(currentCharacter)) return
@@ -3105,7 +3153,9 @@
         class="default-chat-screen relative flex min-h-0 w-full flex-1 flex-col-reverse overflow-y-auto"
         class:fastify-chat-theme={chatTheme === 'fastify'}
         data-default-chat-transcript
-        data-chat-initial-display-pending={activeChatDisplayLoading ? '' : undefined}
+        data-chat-initial-display-pending={activeChatDisplayLoading || activeChatDisplayDependenciesPending
+          ? ''
+          : undefined}
         onwheel={() => chatsInstance?.handleTranscriptUserInteraction()}
         ontouchstart={() => chatsInstance?.handleTranscriptUserInteraction()}
         onpointerdown={(event) => {
@@ -3150,11 +3200,27 @@
           </div>
         {/if}
 
-        {#if activeChatDisplayLoading && !activeChatMessagesLoading}
+        {#if activeChatDisplayLoading && !activeChatMessagesLoading && !activeChatDisplayDependenciesPending}
           {@render chatMessageSkeleton('display')}
         {/if}
         {#if activeChatMessagesLoading}
           {@render chatMessageSkeleton('hydration')}
+        {:else if activeChatDisplayDependenciesPending}
+          {#if displayDependencyStatus === 'error'}
+            <div
+              class="chat-screen-content-width flex flex-col items-center gap-3 p-6 text-textcolor2"
+              role="alert"
+              data-testid="chat-display-dependency-error">
+              <span>{language.chatDataLoadFailed}</span>
+              <button
+                type="button"
+                class="rounded-md border border-darkborderc px-3 py-2 text-textcolor"
+                disabled={retryingDisplayDependencies}
+                onclick={retryChatDisplayDependencies}>{language.retry}</button>
+            </div>
+          {:else}
+            {@render chatMessageSkeleton('display')}
+          {/if}
         {:else if currentChat[0]?.data?.startsWith(coldStorageHeader)}
           {#await preLoadChat($selectedCharID, currentCharacter?.chatPage ?? 0)}
             <div class="chat-screen-content-width w-full flex justify-center text-textcolor2 italic mb-12">

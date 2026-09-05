@@ -12,6 +12,54 @@ afterEach(() => {
 })
 
 describe('SandboxHost lifecycle', () => {
+  it('waits for the current guest initialization and ignores foreign or stale acknowledgements', async () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const host = new SandboxHost({})
+    host.run(iframe, '')
+    const reqId = iframe.srcdoc.match(/init_[a-z0-9]+/)![0]
+    const ready = vi.fn()
+    const initialized = host.waitForInitialization().then(ready)
+    window.dispatchEvent(new MessageEvent('message', { source: window, data: { type: 'INITIALIZED', reqId } }))
+    window.dispatchEvent(
+      new MessageEvent('message', { source: iframe.contentWindow, data: { type: 'INITIALIZED', reqId: 'old-run' } }),
+    )
+    await Promise.resolve()
+    expect(ready).not.toHaveBeenCalled()
+    window.dispatchEvent(
+      new MessageEvent('message', { source: iframe.contentWindow, data: { type: 'INITIALIZED', reqId } }),
+    )
+    await initialized
+    expect(ready).toHaveBeenCalledOnce()
+    host.terminate()
+  })
+
+  it.each(['error', 'terminate', 'timeout'] as const)('rejects guest initialization on %s', async (failure) => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const host = new SandboxHost({})
+    host.run(iframe, '')
+    const reqId = iframe.srcdoc.match(/init_[a-z0-9]+/)![0]
+    const pending = host.waitForInitialization(failure === 'timeout' ? 0 : 30_000)
+    const rejection = expect(pending).rejects.toThrow(
+      failure === 'error'
+        ? 'Startup script failed'
+        : failure === 'terminate'
+          ? 'Sandbox host terminated'
+          : 'Plugin initialization timed out',
+    )
+    if (failure === 'error') {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: iframe.contentWindow,
+          data: { type: 'INITIALIZATION_ERROR', reqId, error: 'Startup script failed' },
+        }),
+      )
+    } else if (failure === 'terminate') host.terminate()
+    await rejection
+    host.terminate()
+  })
+
   it('removes CSP-addressable subresource egress without a reusable script nonce', () => {
     const iframe = document.createElement('iframe')
     document.body.appendChild(iframe)

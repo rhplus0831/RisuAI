@@ -4,6 +4,7 @@
 // hydrated control case proves the greeting still paints after hydration.
 
 import { mount, tick, unmount } from 'svelte'
+import { _setPluginRuntimePhaseForTesting } from 'src/ts/plugins/plugins.svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 interface TestStore<T> {
@@ -328,6 +329,8 @@ function seedDatabase(character: Record<string, unknown>) {
     fixedChatTextarea: false,
     hypaV3: false,
     newMessageButtonStyle: 'bottom-center',
+    modules: [],
+    promptPresets: [],
     personas: [{ id: 'persona-default', name: 'User', icon: '', largePortrait: false, personaPrompt: '', note: '' }],
     playMessage: false,
     personaPrompt: '',
@@ -362,6 +365,7 @@ function greetingBubble(): HTMLElement | null {
 }
 
 beforeEach(() => {
+  _setPluginRuntimePhaseForTesting('ready')
   shellMocks.hydrateActiveChat.mockClear()
   shellMocks.hydrationFailed = false
   shellMocks.hydrationPending = false

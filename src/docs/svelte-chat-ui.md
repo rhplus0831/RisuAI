@@ -110,6 +110,10 @@ and asynchronous freshness checks.
 parser/LLM-detection memoization and dependency signatures for character, chat,
 modules, settings, CBS state, and reload epochs. Stale HTML or unexpectedly
 expensive rerenders often start at that memo boundary.
+Reload epochs and nearby transcript length are explicit `ChatBody` parse inputs;
+only chat/message identity changes replace the body component. Its HTML stays
+mounted while a replacement parse runs, and superseded results cannot replace
+the current display.
 `Chats.svelte` keeps its compact display-character projection separate from
 the row list, so unrelated row-list updates retain the parser input identity.
 Each `ChatBody` also retains its last two finalized HTML results, bounded to
@@ -147,6 +151,19 @@ Per-collection indexes retain all extensions so merging preserves character-firs
 and module-order precedence, including deterministic same-extension variants.
 
 ### Intermediate Display And Cold Hydration
+
+Before mounting an open chat's transcript or greeting, `DefaultChatScreen`
+waits for `runtime:chat-display` resources and plugin initialization. This
+surface owns persona, effective-module, and parser/display settings; it does
+not wait for generation recovery, provider/model readiness, or background work.
+Plugin readiness includes the guest's awaited top-level initialization, with
+guest errors, teardown, and a 30-second initialization timeout surfaced through
+the existing plugin failure/retry state.
+`chatDisplayReadiness.ts` reads the same manifest that the route loader uses.
+Failures expose a transcript-local Retry action. The gate releases once per
+chat entry (or authoritative transcript re-stub), so subsequent resource or
+plugin reloads keep the existing transcript visible. Composer and sidebar stay
+mounted throughout this initial gate.
 
 Supported `ChatBody` parses negotiate server-owned intermediate display
 processing without moving HTML rendering. `Chat.svelte` supplies the stable

@@ -182,7 +182,7 @@ describe('route resource manifest', () => {
       'shared:playground-shell',
       PLAYGROUND_RESOURCE_SURFACE_BY_INDEX[index],
     ]
-    if (index === 2) expected.push('runtime:chat-generation')
+    if (index === 2) expected.push('runtime:chat-display', 'runtime:chat-generation')
     expect(resourceSurfacesForRoute(route)).toEqual(expected)
   })
 
@@ -196,6 +196,7 @@ describe('route resource manifest', () => {
       'shared:app-shell',
       'route:character',
       'route:character-chat',
+      'runtime:chat-display',
       'runtime:chat-generation',
     ])
   })

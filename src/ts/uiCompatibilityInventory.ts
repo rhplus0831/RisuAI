@@ -283,6 +283,7 @@ export const phase4ControlInventory: readonly UiCompatibilityControlGroup[] = [
     source: 'src/lib/ChatScreens/DefaultChatScreen.svelte',
     owner: 'local-ui',
     controls: [
+      'testid:chat-display-dependency-error',
       'testid:chat-hydration-error',
       'testid:default-chat-composer',
       'testid:default-chat-menu-button',
