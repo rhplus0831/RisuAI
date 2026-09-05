@@ -139,6 +139,15 @@ write-back. Targeted repository writers update only the owning row/table inside
 the mutation transaction; exact character/chat loaders and writers bypass
 unrelated normalization, and row-level edits preserve unrelated rowids.
 
+Normal character creation, including create-and-select with an optional empty
+chat, uses a targeted append transaction. It validates order from settings and
+character identities/trash status, checks duplicate IDs directly, and inserts
+only the new character and optional chat plus the settings order/selection
+update. It never deletes/reinserts existing chats, so BardWiki foreign-key
+records, greeting translations, messages, and unrelated collections survive.
+The HTTP preservation, physical-write, receipt replay, and atomic rollback
+contract is guarded by `server/fastify/__tests__/characterCreationSafety.test.ts`.
+
 Sparse command contracts cover settings objects/global scripts, preset and
 persona field patches, chat generation settings (including nested sidebar
 toggles), prompt/lorebook rows, shared provider credentials, reusable

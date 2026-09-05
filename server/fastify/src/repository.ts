@@ -975,6 +975,41 @@ export function nextCharacterRowPosition(db: DatabaseSync): number {
   return row.position
 }
 
+/** Identity/order projection for appending a character. Never materialize the
+ * unrelated character or chat bodies, collections, messages, or asset catalog.
+ * The caller validates the settings order and writes inside its transaction. */
+export function loadCharacterAppendState(db: DatabaseSync): {
+  settings: JsonRecord
+  characters: Array<{ chaId: string; trashTime?: number }>
+} {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) {
+    throw new ValidationError('database must be an object before character commands can run')
+  }
+  const rows = db
+    .prepare(
+      `SELECT id, json_extract(data_json, '$.chaId') AS stored_id,
+        json_extract(data_json, '$.trashTime') AS trash_time
+       FROM characters ORDER BY position`,
+    )
+    .all()
+  const characters = rows.map((row) => {
+    if (typeof row.id !== 'string' || row.stored_id !== row.id) {
+      throw new ValidationError('character.chaId must match its stored character id')
+    }
+    if (row.trash_time !== null && typeof row.trash_time !== 'number') {
+      throw new ValidationError('character.trashTime must be a number')
+    }
+    return { chaId: row.id, ...(row.trash_time === null ? {} : { trashTime: row.trash_time }) }
+  })
+  // Legacy embedded characters require the explicit import/recovery boundary;
+  // an append must never hide them behind the first normalized SQLite row.
+  if (characters.length === 0 && Array.isArray(settings.characters) && settings.characters.length > 0) {
+    throw new ValidationError('embedded characters must be imported before creating a character')
+  }
+  return { settings, characters }
+}
+
 /** INSERT one brand-new character row at the supplied position. `chats` is
  *  stripped to match the storage contract (chats live in the `chats` table). */
 export function insertCharacterRow(db: DatabaseSync, position: number, character: JsonRecord): void {

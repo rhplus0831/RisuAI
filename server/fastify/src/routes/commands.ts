@@ -16,7 +16,6 @@ import {
 import {
   applyCharacterSelectionCommandMutation,
   applyJsonCommandMutation,
-  applyMessageFreeJsonCommandMutation,
   applyTargetedCommandMutation,
   readBaseRevision,
   TARGETED_MUTATION_PATHS,
@@ -370,6 +369,9 @@ import {
   extractSettings,
   initializeDefaultDatabase,
   insertCharacterChatRow,
+  insertCharacterRow,
+  loadCharacterAppendState,
+  nextCharacterRowPosition,
   replacePluginStorage,
   RevisionMismatchError,
   ValidationError,
@@ -5914,32 +5916,39 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
+      // Fingerprint the submitted intent before creation normalizes its fields.
+      const mutationContext = commandMutationContext(req, eventSink)
       const character = createCharacterRecord(body.character, { assetDb: db })
       const initialChat = readInitialCharacterChat(body.initialChat)
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         characterId: string
         selectedCharacterId: string | null
       }>({
         db,
         dataDir,
         baseRevision,
-        ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureCharacterDatabaseObject(database)
-          const characters = readStrictCharacterCollection(target)
+        ...mutationContext,
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const { settings: target, characters } = loadCharacterAppendState(innerDb)
+          validateStrictSelectedIndex(target, 'currentChar', characters.length)
           const characterOrder = readCharacterOrder(target.characterOrder)
           validateFullCharacterOrder(characters, characterOrder)
-          if (findCharacterIndex(characters, character.chaId) !== -1) {
+          if (characterRowExists(innerDb, character.chaId)) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
-          if (initialChat && chatIdExists(characters, initialChat.id)) {
+          if (initialChat && chatRowExists(innerDb, initialChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
           character.chatFolders = []
           character.chatPage = initialChat ? 0 : -1
+          insertCharacterRow(innerDb, nextCharacterRowPosition(innerDb), character)
+          if (initialChat) insertCharacterChatRow(innerDb, character.chaId, 0, initialChat)
           characters.push(character)
           updateCharacterOrderForPatchedRow(target, character.chaId, character)
+          writeSettingsOnly(innerDb, target)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreated, id: character.chaId },
             extra: {
@@ -5966,35 +5975,42 @@ export function registerCommandRoutes(
     try {
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
+      // Fingerprint the submitted intent before creation normalizes its fields.
+      const mutationContext = commandMutationContext(req, eventSink)
       const character = createCharacterRecord(body.character, { assetDb: db })
       const initialChat = readInitialCharacterChat(body.initialChat)
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       character.lastInteraction = lastInteraction
-      const result = applyMessageFreeJsonCommandMutation<{
+      const result = applyTargetedCommandMutation<{
         characterId: string
         selectedCharacterId: string | null
       }>({
         db,
         dataDir,
         baseRevision,
-        ...commandMutationContext(req, eventSink),
-        mutate(database) {
-          const target = ensureCharacterDatabaseObject(database)
-          const characters = readStrictCharacterCollection(target)
+        ...mutationContext,
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        skipDatabaseLoad: true,
+        mutate(_database, innerDb) {
+          const { settings: target, characters } = loadCharacterAppendState(innerDb)
+          validateStrictSelectedIndex(target, 'currentChar', characters.length)
           const characterOrder = readCharacterOrder(target.characterOrder)
           validateFullCharacterOrder(characters, characterOrder)
-          if (findCharacterIndex(characters, character.chaId) !== -1) {
+          if (characterRowExists(innerDb, character.chaId)) {
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
-          if (initialChat && chatIdExists(characters, initialChat.id)) {
+          if (initialChat && chatRowExists(innerDb, initialChat.id)) {
             throw new ValidationError(`Duplicate chat id: ${initialChat.id}`)
           }
           character.chats = initialChat ? [initialChat] : []
           character.chatFolders = []
           character.chatPage = initialChat ? 0 : -1
+          insertCharacterRow(innerDb, nextCharacterRowPosition(innerDb), character)
+          if (initialChat) insertCharacterChatRow(innerDb, character.chaId, 0, initialChat)
           characters.push(character)
           updateCharacterOrderForPatchedRow(target, character.chaId, character)
           target.currentChar = requireCharacterIndex(characters, character.chaId)
+          writeSettingsOnly(innerDb, target)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreatedAndSelected, id: character.chaId },
             extra: {
