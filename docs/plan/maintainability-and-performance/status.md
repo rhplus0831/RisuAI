@@ -992,3 +992,15 @@ not waive the combined gate. No finding is archived or described as fully closed
 
 All repairs are implemented; another aggregate remains required. The first
 failed aggregate and its passing cost/native evidence stay retained separately.
+
+## Phase 6 Second Combined Verification: Companion Inventory Count
+
+At `fcc14488c`, all 680 frontend files / 8,207 tests and 219 server files /
+3,994 tests pass; five existing skips remain. Frontend types report zero errors
+and warnings, and the build passes. [The second aggregate](evidence/closeout-second-verification.json)
+still fails because the resource-owner gap matrix retained 4,215 references
+while the separately reviewed current inventory totals 4,232. Its companion
+count now follows those exact seventeen added test references; the existing
+negative matrix test first validates the unmodified maintained pair, catching
+this mismatch in focused verification. Server/browser typechecks must still run
+past that inventory gate in the next complete aggregate.

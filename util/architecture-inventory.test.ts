@@ -212,6 +212,8 @@ describe('client resource ownership gate', () => {
         'utf8',
       ),
     ) as ClientResourceOwnerGapMatrix
+    expect(validateClientResourceOwnerGapMatrix(REPO_ROOT, baseline, matrix)).toEqual([])
+
     delete matrix.policies['lorebook:test-fixture']
     matrix.owners.lorebook.capabilities.aggregateSnapshot = 'complete'
     matrix.foundations['lorebook-page-standalone'].ownerApi = 'src/ts/server/lorebookPageOwner.svelte.ts#missingOwner'
