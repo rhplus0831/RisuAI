@@ -348,6 +348,7 @@ import {
 import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
 import { alertError, alertRequiredSelect, waitAlert } from './alert'
 import { language } from 'src/lang'
+import * as languageRuntime from 'src/lang'
 import { updateHeightMode } from './gui/heightMode'
 import {
   clearAppliedServerResourceRevision,
@@ -576,6 +577,42 @@ describe('API-backed client bootstrap', () => {
     getDatabase().promptPresetsId = 0
 
     expect(currentGlobalPromptTemplateOwnerId()).toBeNull()
+  })
+
+  it.each([false, true])(
+    'holds first shell capability for selected locale readiness (observer=%s)',
+    async (observer) => {
+      __observerShellFlagTestHooks.setOverride(observer)
+      let release!: () => void
+      const readiness = vi.spyOn(languageRuntime, 'awaitLanguageReady').mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve
+        }),
+      )
+      const loading = loadData()
+      await vi.waitFor(() => expect(readiness).toHaveBeenCalledOnce())
+      expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+      expect(getStartupCoordinatorSnapshot().capabilities.canRenderShell).toBe(false)
+      expect(eventApi.subscribe).not.toHaveBeenCalled()
+      expect(backgroundReady()).toBe(false)
+      release()
+      await loading
+      expect(getStartupCoordinatorSnapshot().capabilities.canRenderShell).toBe(true)
+      expect(backgroundReady()).toBe(true)
+    },
+  )
+
+  it('retries locale loading in a resumed projection step without rehydrating the shell', async () => {
+    const failure = new Error('locale chunk unavailable')
+    vi.spyOn(languageRuntime, 'awaitLanguageReady').mockRejectedValueOnce(failure)
+    const selection = vi.spyOn(languageRuntime, 'changeLanguage')
+    await loadData()
+    expect(alertError).toHaveBeenCalledExactlyOnceWith(failure)
+    expect(resourceApi.loadInitial).toHaveBeenCalledOnce()
+    expect(selection).toHaveBeenCalledTimes(2)
+    expect(selection).toHaveBeenNthCalledWith(1, 'en')
+    expect(selection).toHaveBeenNthCalledWith(2, 'en')
+    expect(backgroundReady()).toBe(true)
   })
 
   it('keeps the conservative writer-first boundary when the observer flag is disabled', async () => {

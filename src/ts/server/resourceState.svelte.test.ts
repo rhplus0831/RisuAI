@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { isServerCharacterShell, type character } from '../storage/database.svelte'
+import * as languageRuntime from '../../lang'
 import type { AgentPresetStepRecord } from '../agentPresetRecords'
 import type { TranslatorPresetStep } from '../translator/presets'
 import {
@@ -1635,6 +1636,34 @@ describe('resource-scoped database state', () => {
     })
     expect(collectionsResourceState.revisions.pluginCustomStorage).toBe(4)
     expect(collectionsResourceState.revision).toBe(4)
+  })
+
+  it('applies settings and revision fences synchronously while the locale load is pending', async () => {
+    applySettingsResource({ revision: 1, settings: { language: 'en' } })
+    let finish!: (applied: boolean) => void
+    const pending = new Promise<boolean>((resolve) => {
+      finish = resolve
+    })
+    const loading = vi.spyOn(languageRuntime, 'changeLanguage').mockReturnValueOnce(pending)
+    try {
+      const applied = applySettingsGroupResource(
+        {
+          revision: 10,
+          group: 'language',
+          settings: { language: 'ko' },
+        },
+        ['language'],
+      )
+      expect(applied).toBe(true)
+      expect(getResourceDatabase().language).toBe('ko')
+      expect(settingsResourceState.groupRevisions.language).toBe(10)
+      expect(applySettingsResource({ revision: 9, settings: { language: 'en' } })).toBe(false)
+      expect(loading).toHaveBeenCalledExactlyOnceWith('ko')
+      finish(true)
+      await pending
+    } finally {
+      loading.mockRestore()
+    }
   })
 
   it('merges settings groups with omitted-key deletion and independent revisions', () => {

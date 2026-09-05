@@ -78,7 +78,7 @@ import {
 import { replayPendingMutations } from '../server/pendingMutationReplay'
 import { MODEL_ROLES } from '@risuai/shared-core/model-roles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
-import { changeLanguage, language as activeLanguage } from '../../lang'
+import { awaitLanguageReady, changeLanguage, language as activeLanguage } from '../../lang'
 import { SETTINGS_BRIDGE_MUTATION_KEY } from '../server/settingsMutationKey'
 import { defaultColorScheme } from '../gui/colorscheme'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
@@ -1206,7 +1206,7 @@ describe('mergeServerResourceCharacterRow', () => {
     expect(captureDestructiveRefreshEpoch()).toBe(afterFullReplace)
   })
 
-  it('applies the runtime language side effect when a targeted projection merges language', () => {
+  it('applies the runtime language side effect when a targeted projection merges language', async () => {
     seedDatabase([])
     changeLanguage('en')
     expect(activeLanguage.showHelp).toBe('Show Help')
@@ -1214,6 +1214,7 @@ describe('mergeServerResourceCharacterRow', () => {
     mergeServerResourceFields({ language: 'ko' } as Partial<Database>)
 
     expect(getDatabase().language).toBe('ko')
+    await awaitLanguageReady()
     expect(activeLanguage.showHelp).toBe('도움말 보기')
   })
 

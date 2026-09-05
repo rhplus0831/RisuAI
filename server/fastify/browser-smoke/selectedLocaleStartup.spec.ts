@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import fs from 'node:fs'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
+import { observeFirstComposerLabel, selectedLocaleAssets } from './selectedLocaleFixture.js'
 import {
   closeFastBootstrapHarness,
   smallFastBootstrapFixture,
@@ -13,6 +14,7 @@ import {
 // below includes the selected chat route and smoke instrumentation.
 test('selected locale is usable on cold startup and refresh', async ({ browser }, testInfo) => {
   test.setTimeout(180_000)
+  const localeAssets = selectedLocaleAssets()
   const results: Array<{
     scripts: Array<{ path: string; transferBytes: number; encodedBodyBytes: number }>
     [key: string]: unknown
@@ -28,15 +30,7 @@ test('selected locale is usable on cold startup and refresh', async ({ browser }
         const page = await context.newPage()
         const errors: string[] = []
         page.on('pageerror', (error) => errors.push(error.message))
-        await page.addInitScript(() => {
-          const observation = { firstComposerLabel: null as string | null }
-          Object.assign(window, { __localeStartupObservation: observation })
-          new MutationObserver(() => {
-            if (observation.firstComposerLabel !== null) return
-            const composer = document.querySelector('[data-testid="default-chat-composer"]')
-            if (composer) observation.firstComposerLabel = composer.getAttribute('aria-label')
-          }).observe(document, { childList: true, subtree: true, attributes: true })
-        })
+        await observeFirstComposerLabel(page)
         try {
           for (const cache of ['cold', 'warm'] as const) {
             if (cache === 'cold') {
@@ -70,7 +64,12 @@ test('selected locale is usable on cold startup and refresh', async ({ browser }
               (total, file) => total + gzipSync(fs.readFileSync(path.resolve('dist', file))).byteLength,
               0,
             )
-            results.push({ locale, cache, repetition, ...snapshot, gzipBytes })
+            const loadedNonEnglishLocales = [...localeAssets]
+              .filter(([, file]) => distinctPaths.includes(file))
+              .map(([code]) => code)
+            expect(loadedNonEnglishLocales).toEqual(locale === 'en' ? [] : [locale])
+            expect(gzipBytes).toBeLessThan(1_393_734)
+            results.push({ locale, cache, repetition, ...snapshot, gzipBytes, loadedNonEnglishLocales })
             expect(errors).toEqual([])
           }
         } finally {

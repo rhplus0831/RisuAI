@@ -58,14 +58,14 @@ describe('changeLanguage same-code cache', () => {
   it('repeated same-code changeLanguage calls reuse the applied language object without clone work', async () => {
     const { cloneSpy, langModule, languageKorean } = await loadLanguageModule()
 
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
     const firstKoreanLanguage = langModule.language
 
     expect(firstKoreanLanguage.formating.main).toBe(languageKorean.formating.main)
     expect(cloneSpy).toHaveBeenCalledTimes(1)
 
-    langModule.changeLanguage('ko')
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
 
     expect(langModule.language).toBe(firstKoreanLanguage)
     expect(langModule.language.formating.main).toBe(languageKorean.formating.main)
@@ -75,12 +75,12 @@ describe('changeLanguage same-code cache', () => {
   it('switching between languages rebuilds language objects and merged strings', async () => {
     const { cloneSpy, langModule, languageKorean, languageSpanish } = await loadLanguageModule()
 
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
     const koreanLanguage = langModule.language
 
     expect(koreanLanguage.formating.main).toBe(languageKorean.formating.main)
 
-    langModule.changeLanguage('es')
+    await langModule.changeLanguage('es')
     const spanishLanguage = langModule.language
 
     expect(spanishLanguage).not.toBe(koreanLanguage)
@@ -92,18 +92,18 @@ describe('changeLanguage same-code cache', () => {
   it('switching back to English changes identity once and then reuses the English object', async () => {
     const { cloneSpy, langModule, languageEnglish } = await loadLanguageModule()
 
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
     const koreanLanguage = langModule.language
 
-    langModule.changeLanguage('en')
+    await langModule.changeLanguage('en')
     const englishLanguage = langModule.language
 
-    expect(englishLanguage).toBe(languageEnglish)
+    expect(englishLanguage).toBe(await langModule.getLanguageForCode('en'))
     expect(englishLanguage).not.toBe(koreanLanguage)
     expect(englishLanguage.formating.main).toBe(languageEnglish.formating.main)
     expect(cloneSpy).toHaveBeenCalledTimes(1)
 
-    langModule.changeLanguage('en')
+    await langModule.changeLanguage('en')
 
     expect(langModule.language).toBe(englishLanguage)
     expect(cloneSpy).toHaveBeenCalledTimes(1)
@@ -112,31 +112,31 @@ describe('changeLanguage same-code cache', () => {
   it('unknown language codes resolve to English and share the English cache key', async () => {
     const { cloneSpy, langModule, languageEnglish } = await loadLanguageModule()
 
-    langModule.changeLanguage('unknown-language')
+    await langModule.changeLanguage('unknown-language')
     const firstFallbackLanguage = langModule.language
 
-    expect(firstFallbackLanguage).toBe(languageEnglish)
+    expect(firstFallbackLanguage).toBe(await langModule.getLanguageForCode('en'))
     expect(firstFallbackLanguage.formating.main).toBe(languageEnglish.formating.main)
     expect(cloneSpy).toHaveBeenCalledTimes(0)
 
-    langModule.changeLanguage('en')
-    langModule.changeLanguage('still-unknown')
+    await langModule.changeLanguage('en')
+    await langModule.changeLanguage('still-unknown')
 
     expect(langModule.language).toBe(firstFallbackLanguage)
     expect(cloneSpy).toHaveBeenCalledTimes(0)
 
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
     const koreanLanguage = langModule.language
 
-    langModule.changeLanguage('not-a-supported-language')
+    await langModule.changeLanguage('not-a-supported-language')
     const fallbackAfterSwitch = langModule.language
 
-    expect(fallbackAfterSwitch).toBe(languageEnglish)
+    expect(fallbackAfterSwitch).toBe(await langModule.getLanguageForCode('en'))
     expect(fallbackAfterSwitch).not.toBe(koreanLanguage)
     expect(cloneSpy).toHaveBeenCalledTimes(1)
 
-    langModule.changeLanguage('another-unknown-language')
-    langModule.changeLanguage('en')
+    await langModule.changeLanguage('another-unknown-language')
+    await langModule.changeLanguage('en')
 
     expect(langModule.language).toBe(fallbackAfterSwitch)
     expect(cloneSpy).toHaveBeenCalledTimes(1)
@@ -145,7 +145,7 @@ describe('changeLanguage same-code cache', () => {
   it('Korean uses translated model profile shell strings', async () => {
     const { langModule, languageEnglish, languageKorean } = await loadLanguageModule()
 
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
 
     expect(langModule.language.modelProfiles.settingsTitle).toBe(languageKorean.modelProfiles.settingsTitle)
     expect(langModule.language.modelProfiles.settingsTitle).not.toBe(languageEnglish.modelProfiles.settingsTitle)
@@ -170,7 +170,7 @@ describe('changeLanguage same-code cache', () => {
   it('Korean uses translated provider operation strings and formatters', async () => {
     const { langModule, languageEnglish, languageKorean } = await loadLanguageModule()
 
-    langModule.changeLanguage('ko')
+    await langModule.changeLanguage('ko')
 
     expect(langModule.language.errors.imageGenerationResponseMalformed).toBe(
       languageKorean.errors.imageGenerationResponseMalformed,
@@ -283,5 +283,150 @@ describe('changeLanguage same-code cache', () => {
 
     expect(languageVietnamese.playground.inlayDeleteMultipleConfirm.replace('{count}', '3')).toContain('3 tài sản')
     expect(languageVietnamese.playground.inlayTotalAssets.replace('{count}', '3')).toBe('Tổng cộng 3 tài sản')
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+async function controlledLanguageModule() {
+  vi.resetModules()
+  const load = vi.fn<(code: string) => Promise<Record<string, unknown>>>()
+  vi.doMock('./loadLanguagePack', () => ({ loadLanguagePack: load }))
+  const cloneSpy = vi.fn(cloneWithFunctions)
+  vi.stubGlobal('safeStructuredClone', cloneSpy)
+  return { load, cloneSpy, lang: await import('./index') }
+}
+
+describe('selected language loading', () => {
+  afterEach(() => vi.doUnmock('./loadLanguagePack'))
+
+  it('has an immediate English fallback without requesting a deferred pack', async () => {
+    const { lang, load, cloneSpy } = await controlledLanguageModule()
+    expect(lang.language.showHelp).toBe('Show Help')
+    await lang.changeLanguage('unknown')
+    expect(load).not.toHaveBeenCalled()
+    expect(cloneSpy).not.toHaveBeenCalled()
+  })
+
+  it('memoizes concurrent requests and merges partial nested packs over English once', async () => {
+    const { lang, load, cloneSpy } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    load.mockReturnValue(korean.promise)
+    const first = lang.getLanguageForCode('ko')
+    const second = lang.getLanguageForCode('ko')
+    const selecting = lang.changeLanguage('ko')
+    expect(first).toBe(second)
+    expect(load).toHaveBeenCalledExactlyOnceWith('ko')
+    expect(lang.language.showHelp).toBe('Show Help')
+    korean.resolve({ showHelp: 'Korean help', errors: { toomuchtoken: 'Korean token' } })
+    await selecting
+    expect(lang.language.showHelp).toBe('Korean help')
+    expect(lang.language.errors.toomuchtoken).toBe('Korean token')
+    expect(lang.language.errors.networkFetch).toEqual(expect.any(String))
+    expect(lang.language.errors.imageGenerationFailed(502)).toContain('502')
+    expect(cloneSpy).toHaveBeenCalledTimes(1)
+    expect(await lang.getLanguageForCode('ko')).toBe(await first)
+  })
+
+  it('does not apply an older pack that finishes after the latest selected pack', async () => {
+    const { lang, load } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    const spanish = deferred<Record<string, unknown>>()
+    load.mockImplementation((code) => (code === 'ko' ? korean.promise : spanish.promise))
+    const first = lang.changeLanguage('ko')
+    const latest = lang.changeLanguage('es')
+    spanish.resolve({ showHelp: 'Spanish' })
+    expect(await latest).toBe(true)
+    korean.resolve({ showHelp: 'Korean' })
+    expect(await first).toBe(false)
+    expect(lang.language.showHelp).toBe('Spanish')
+  })
+
+  it('fences A to B to A even when A is already applied and B is pending', async () => {
+    const { lang, load } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    load.mockReturnValue(korean.promise)
+    const first = lang.changeLanguage('ko')
+    await lang.changeLanguage('en')
+    korean.resolve({ showHelp: 'Korean' })
+    expect(await first).toBe(false)
+    expect(lang.language.showHelp).toBe('Show Help')
+    await lang.changeLanguage('ko')
+    expect(lang.language.showHelp).toBe('Korean')
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('applies only the latest same-code pending selection', async () => {
+    const { lang, load } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    load.mockReturnValue(korean.promise)
+    const first = lang.changeLanguage('ko')
+    const second = lang.changeLanguage('ko')
+    korean.resolve({ showHelp: 'Korean' })
+    expect(await first).toBe(false)
+    expect(await second).toBe(true)
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['replace', 'cancel'])('does not surface a failed obsolete selection after %s', async (action) => {
+    const { lang, load } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    load.mockReturnValue(korean.promise)
+    const obsolete = lang.changeLanguage('ko')
+    if (action === 'replace') await lang.changeLanguage('en')
+    else lang.cancelLanguageChange(obsolete)
+    korean.reject(new Error('obsolete chunk failure'))
+    expect(await obsolete).toBe(false)
+    await lang.awaitLanguageReady()
+    expect(lang.language.showHelp).toBe('Show Help')
+  })
+
+  it('retries a failed import without claiming that its locale was applied', async () => {
+    const { lang, load } = await controlledLanguageModule()
+    load.mockRejectedValueOnce(new Error('chunk unavailable')).mockResolvedValueOnce({ showHelp: 'Korean' })
+    const selection = lang.changeLanguage('ko')
+    await expect(selection).rejects.toThrow('chunk unavailable')
+    await expect(lang.awaitLanguageReady()).rejects.toThrow('chunk unavailable')
+    expect(lang.language.showHelp).toBe('Show Help')
+    expect(await lang.changeLanguage('ko')).toBe(true)
+    await lang.awaitLanguageReady()
+    expect(lang.language.showHelp).toBe('Korean')
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it('releases readiness for a replacement without waiting for an abandoned chunk', async () => {
+    const { lang, load } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    load.mockReturnValue(korean.promise)
+    void lang.changeLanguage('ko')
+    const ready = lang.awaitLanguageReady()
+    await lang.changeLanguage('en')
+    await ready
+    expect(lang.language.showHelp).toBe('Show Help')
+    korean.reject(new Error('obsolete failure'))
+    await lang.awaitLanguageReady()
+  })
+
+  it('cancels only a surface-owned current pending selection', async () => {
+    const { lang, load } = await controlledLanguageModule()
+    const korean = deferred<Record<string, unknown>>()
+    load.mockReturnValue(korean.promise)
+    const first = lang.changeLanguage('ko')
+    lang.cancelLanguageChange(first)
+    await lang.awaitLanguageReady()
+    const latest = lang.changeLanguage('ko')
+    lang.cancelLanguageChange(first)
+    korean.resolve({ showHelp: 'Korean' })
+    expect(await first).toBe(false)
+    expect(await latest).toBe(true)
+    expect(lang.language.showHelp).toBe('Korean')
   })
 })

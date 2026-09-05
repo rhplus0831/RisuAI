@@ -73,6 +73,7 @@ import MobileCharacters, {
   resolveMobileRelativeTimeLocale,
 } from '../Mobile/MobileCharacters.svelte'
 import { changeLanguage, language } from 'src/lang'
+import { installLanguageReactivity } from 'src/lang/reactivity'
 import { languageKorean } from 'src/lang/ko'
 import { languageSpanish } from 'src/lang/es'
 import { MobileSearch, selectedCharID } from 'src/ts/stores.svelte'
@@ -247,6 +248,7 @@ function gridAction(listKind: GridCatalogListKind, characterId: string, actionKi
 }
 
 beforeEach(() => {
+  installLanguageReactivity()
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
@@ -720,7 +722,7 @@ describe('GridCatalog derived lists', () => {
         makeCharacter({ chaId: 'unknown-time', name: 'Unknown Time', lastInteraction: 0 }),
       ],
     } as any)
-    changeLanguage('ko')
+    await changeLanguage('ko')
 
     mountMobileCharacters()
     await tick()
@@ -735,7 +737,7 @@ describe('GridCatalog derived lists', () => {
     expect(agoText('unknown-time')).toBe(languageKorean.unknownInteractionTime)
 
     settingsResourceState.value.language = 'es'
-    changeLanguage('es')
+    await changeLanguage('es')
     await tick()
 
     expect(agoText('known-time')).toBe(new Intl.RelativeTimeFormat('es', { style: 'short' }).format(-2, 'hour'))

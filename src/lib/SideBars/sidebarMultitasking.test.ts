@@ -46,7 +46,7 @@ describe('sidebar multitasking projections', () => {
     ])
   })
 
-  it('uses the selected language fallback for empty and whitespace-only pinned chat names', () => {
+  it('uses the selected language fallback for empty and whitespace-only pinned chat names', async () => {
     const unnamedChats = [
       {
         chaId: 'char-a',
@@ -70,7 +70,7 @@ describe('sidebar multitasking projections', () => {
       '  Named chat  ',
     ])
 
-    changeLanguage('ko')
+    await changeLanguage('ko')
     expect(collectPinnedChats(unnamedChats, ['char-a']).map((item) => item.chatName)).toEqual([
       languageKorean.unnamedPinnedChat,
       languageKorean.unnamedPinnedChat,

@@ -5,10 +5,12 @@ import strip from '@rollup/plugin-strip'
 import tailwindcss from '@tailwindcss/vite'
 import { createBundleBoundaryReportPlugin } from './util/bundle-boundary-report'
 import { createViteBuildWarningPolicy } from './util/vite-warning-policy'
+import { createLocaleChunkUrlsPlugin } from './util/locale-chunk-urls'
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
+      createLocaleChunkUrlsPlugin(process.cwd()),
       svelte({
         preprocess: vitePreprocess(),
       }),

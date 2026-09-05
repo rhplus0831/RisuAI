@@ -4,12 +4,12 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phases 0, 1 and 2a–2c accepted; executing Phase 2d selected-locale loading.
+- State: Phases 0–2 accepted; executing Phase 3 generation inputs and types.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2d.
-- Next task: load only the fallback and selected locale, preserving synchronous
-  resource application, readiness, selection ordering, and retry after load failure.
+- Next phase: [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md), slice 3a.
+- Next task: define concrete server-owned generation views, then narrow selected
+  configuration/history reads and separate immutable configuration from working state.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -23,8 +23,8 @@ selected [phase](phases/README.md) for implementation detail.
 | --- | --- | --- | --- |
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
-| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | 2a–2c accepted; executing 2d | Scoped rollback, single outbox normalization, bounded background cache |
-| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Pending Phase 2 | None |
+| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
+| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Executing 3a | Accepted dependency/type inventory; explicit views next |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
@@ -38,7 +38,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
-| F06 | Open; measured bundle cost | Selected-locale loading and fresh preload comparison |
+| F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
 | F07 | Open; source-confirmed work | Stall baseline, API progress, backup/GC consistency |
 | F08 | Open; large baseline exceeds heap/page-layout budgets | Recorded implementation/retention decision and after evidence |
 | F09 | Open; source-confirmed type gap | Explicit prompt views and compiler-enforced boundary coverage |
@@ -65,7 +65,7 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 ## Decisions and Exceptions
 
-- The ten audited findings remain the scope. F01 and F03–F05 are fixed; the
+- The ten audited findings remain the scope. F01 and F03–F06 are fixed; the
   other findings have accepted baselines and remain open until their owning
   implementation/decision phases. No finding has been silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
@@ -274,7 +274,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 2c: Background Cache Maintenance Accepted
 
-- Implementation: accompanying cache-maintenance commit.
+- Implementation: `6b9b632f9`.
   [Ownership, numeric bounds, lifecycle and verification record](evidence/cache-maintenance.md)
   includes structural counters and retained built-browser journeys.
 - Cold/warm/eight-read scenarios now perform 4/3/3 prunes versus ten before;
@@ -295,3 +295,22 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   lost-response, writer/lineage and sidebar recovery evidence. Current guides,
   Prettier, whitespace and both documentation validators pass. Final aggregate
   remains the combined gate after all implementation phases.
+
+## Phase 2d: Selected Locale Accepted
+
+- Implementation: accompanying selected-locale commit.
+  [Loading contract and all before/after evidence](evidence/locale-loading.md)
+  records the exact fixtures, commands, readiness medians, and retry regression.
+- Initial HTML JavaScript falls from 389,721 to 159,433 gzip bytes (59.09%);
+  only English appears in either static startup closure. Immediate closure
+  gzip falls from 1,377,316 to 1,148,933. Existing budgets are unchanged.
+- Twelve isolated English/Korean cold/refresh cases preserve the first localized
+  composer, improve all four median readiness comparisons, and request only
+  English or English plus Korean. Required selected-pack transfer stays accounted.
+- Three real-browser switching/failure journeys pass. A native Chromium failed-
+  module cache prevented memo-only retries; build-owned URL references with a
+  retry query resolve that actual failure without prefetching other packs.
+- Focused language, startup, resource/database, onboarding, settings, reactive UI
+  and build-report tests pass as enumerated in the evidence. Current guides and
+  both documentation validators, Prettier and whitespace checks pass. Phase 2
+  meets its budgets; final aggregate remains pending until all implementation ends.

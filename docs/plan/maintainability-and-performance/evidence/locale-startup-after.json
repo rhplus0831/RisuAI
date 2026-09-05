@@ -1,0 +1,765 @@
+{
+  "browserVersion": "151.0.7922.34",
+  "cpuThrottle": 1,
+  "closures": [
+    [
+      "assets/Accordion-CsW8lpiA.js",
+      "assets/BarIcon-BBbLKmtG.js",
+      "assets/BaseRoundedButton-qwnFVAy-.js",
+      "assets/Button-Cg51KdmP.js",
+      "assets/Chat-DmSDK6gO.js",
+      "assets/CheckInput-DKTY70Yg.js",
+      "assets/CustomModelsSettings-BnoYDS-G.js",
+      "assets/Help-C0WDeIP7.js",
+      "assets/Icon-COiG-aKy.js",
+      "assets/NumberInput-DISx1j5P.js",
+      "assets/OptionInput-DlHr0Hbd.js",
+      "assets/PluginDefinedIcon-07p0VHdN.js",
+      "assets/PushNotificationWarning-DQndZ8RR.js",
+      "assets/RealmPopUp-B14fjzbx.js",
+      "assets/SecretInput-CfdqXmIi.js",
+      "assets/SelectInput-t3XIK7bb.js",
+      "assets/SettingRenderer-DdG5_TJc.js",
+      "assets/SliderInput-C64r55ut.js",
+      "assets/TextAreaInput-NC_vUvi4.js",
+      "assets/TextInput-BwTzE7-s.js",
+      "assets/Toggles-D8Rbo3QE.js",
+      "assets/__vite-browser-external-B4XnkN8Y.js",
+      "assets/alert-DrATgyUH.js",
+      "assets/appStartup-CE_4an36.js",
+      "assets/arrow-left-DUAlVPCc.js",
+      "assets/arrow-up-D1N0NRPT.js",
+      "assets/assetList-CijAuDz0.js",
+      "assets/bardWikiJobEvents-DA1L6ew2.js",
+      "assets/bardWikiResource-DKBFw1An.js",
+      "assets/book-open-CLcZRnCO.js",
+      "assets/bootstrap-CURZmBnP.js",
+      "assets/bootstrap-CpsF31qu.js",
+      "assets/bot-BUc2qfuX.js",
+      "assets/buffer-D46Mdhc-.js",
+      "assets/buffer-DCVZ7vEA.js",
+      "assets/cbsRegistry-CZFCIg6n.js",
+      "assets/character-ByKtjK-k.js",
+      "assets/characterAdditionalAssetUpload-QO6UyCGm.js",
+      "assets/characterCommands-zIBBC8F1.js",
+      "assets/characterDisplayName-CxHxBIPi.js",
+      "assets/chatGenerationTogglePresets-CKU8jvTI.js",
+      "assets/chatTranscriptOwner-D_Zf1duk.js",
+      "assets/check-BGouFmdv.js",
+      "assets/chevron-right-CJ2rjbZ9.js",
+      "assets/chunk-BneVvdWh.js",
+      "assets/client-oYTjO2QF.js",
+      "assets/commands-C7XJQAWb.js",
+      "assets/confirmSettingsItemRemoval-CG7P38td.js",
+      "assets/copy-BC6QKgNd.js",
+      "assets/coreStores.svelte-CqJA2-Oc.js",
+      "assets/customBackgroundSetting-BKX71HMc.js",
+      "assets/customBackgroundSetting-CXbjGvJK.js",
+      "assets/database.svelte-COg6Cub-.js",
+      "assets/diagnostics-C6MSHu2h.js",
+      "assets/disclose-version-V8pQYR0f.js",
+      "assets/download-D8q5dGU-.js",
+      "assets/effects-DkA59sem.js",
+      "assets/folder-C3hoIaAn.js",
+      "assets/generationPersistenceState-BaEFaZ82.js",
+      "assets/generationRuntimeBridge-Dg3ZCemz.js",
+      "assets/globe-bInL4jVM.js",
+      "assets/hard-drive-upload-D8PcOdEU.js",
+      "assets/heightMode-NhF4_sOl.js",
+      "assets/index-BVBpSDjG.js",
+      "assets/index-client-Bnj7Gsrv.js",
+      "assets/index-client-DD5WzU_S.js",
+      "assets/internalmcp-Bip5VcIT.js",
+      "assets/lang-CXH8cMxy.js",
+      "assets/languages-B5PnxYzO.js",
+      "assets/legacy-BPouAmnF.js",
+      "assets/legacyMemoryMigrationNotice-mdwlW8xI.js",
+      "assets/list-BeNdWftm.js",
+      "assets/maximize-2-BsKbPGCi.js",
+      "assets/memoryJobEvents-BKxf-tDt.js",
+      "assets/messageTranslationJobs-bzN5gv5l.js",
+      "assets/mobileCharacterRows-8_ZO4Zue.js",
+      "assets/modalBackdropDismiss-CbtZ-prI.js",
+      "assets/modalFocusTrap-DCFYVtz8.js",
+      "assets/modellist-DGE5qWwR.js",
+      "assets/moduleRenderRevision-Cm1vpSKS.js",
+      "assets/modules-BZ_8T9K-.js",
+      "assets/observer.svelte-9WjmTXqg.js",
+      "assets/observerRouteIntent-CSoigSFl.js",
+      "assets/package-CJc62KSi.js",
+      "assets/pencil-yqMMDLxX.js",
+      "assets/plus-td23BoEZ.js",
+      "assets/polyfill-DxzhO-V0.js",
+      "assets/power-off-BDHKTIkv.js",
+      "assets/preload-helper-Bpu8oJ--.js",
+      "assets/promptPresetModelOverrides.svelte-DXJbtu_7.js",
+      "assets/pushNotificationSetting-BY2SjtlM.js",
+      "assets/pushNotificationSetting-ZHcKC33R.js",
+      "assets/refresh-ccw-Dz1smKZc.js",
+      "assets/resourceReads-CLg_-o1u.js",
+      "assets/resourceState.svelte-DMw_p-ya.js",
+      "assets/rotate-ccw-Bvc25MXk.js",
+      "assets/routeIntentPrefetch-ByVSVwrY.js",
+      "assets/routeOperation-xBqP6Z3p.js",
+      "assets/routerRoute-CWhuexxC.js",
+      "assets/runtimeEffects.svelte-tVjTzJMk.js",
+      "assets/save-T-CuJKgc.js",
+      "assets/settings-Dm8RR2XB.js",
+      "assets/smile-v7sZJcC0.js",
+      "assets/sortable.core.esm-D1Nn_c6a.js",
+      "assets/stores.svelte-BsKP3tnd.js",
+      "assets/tooltip-B8urS1wH.js",
+      "assets/trash-BT9GdgV_.js",
+      "assets/user-YOSAKSqA.js",
+      "assets/util-2_t9cDXU.js",
+      "assets/utils-B463fJLq.js",
+      "assets/volume-2-ClWLx-UG.js",
+      "assets/x-By83avPJ.js"
+    ],
+    [
+      "assets/Accordion-CsW8lpiA.js",
+      "assets/BarIcon-BBbLKmtG.js",
+      "assets/BaseRoundedButton-qwnFVAy-.js",
+      "assets/Button-Cg51KdmP.js",
+      "assets/Chat-DmSDK6gO.js",
+      "assets/CheckInput-DKTY70Yg.js",
+      "assets/CustomModelsSettings-BnoYDS-G.js",
+      "assets/Help-C0WDeIP7.js",
+      "assets/Icon-COiG-aKy.js",
+      "assets/NumberInput-DISx1j5P.js",
+      "assets/OptionInput-DlHr0Hbd.js",
+      "assets/PluginDefinedIcon-07p0VHdN.js",
+      "assets/PushNotificationWarning-DQndZ8RR.js",
+      "assets/RealmPopUp-B14fjzbx.js",
+      "assets/SecretInput-CfdqXmIi.js",
+      "assets/SelectInput-t3XIK7bb.js",
+      "assets/SettingRenderer-DdG5_TJc.js",
+      "assets/SliderInput-C64r55ut.js",
+      "assets/TextAreaInput-NC_vUvi4.js",
+      "assets/TextInput-BwTzE7-s.js",
+      "assets/Toggles-D8Rbo3QE.js",
+      "assets/__vite-browser-external-B4XnkN8Y.js",
+      "assets/alert-DrATgyUH.js",
+      "assets/appStartup-CE_4an36.js",
+      "assets/arrow-left-DUAlVPCc.js",
+      "assets/arrow-up-D1N0NRPT.js",
+      "assets/assetList-CijAuDz0.js",
+      "assets/bardWikiJobEvents-DA1L6ew2.js",
+      "assets/bardWikiResource-DKBFw1An.js",
+      "assets/book-open-CLcZRnCO.js",
+      "assets/bootstrap-CURZmBnP.js",
+      "assets/bootstrap-CpsF31qu.js",
+      "assets/bot-BUc2qfuX.js",
+      "assets/buffer-D46Mdhc-.js",
+      "assets/buffer-DCVZ7vEA.js",
+      "assets/cbsRegistry-CZFCIg6n.js",
+      "assets/character-ByKtjK-k.js",
+      "assets/characterAdditionalAssetUpload-QO6UyCGm.js",
+      "assets/characterCommands-zIBBC8F1.js",
+      "assets/characterDisplayName-CxHxBIPi.js",
+      "assets/chatGenerationTogglePresets-CKU8jvTI.js",
+      "assets/chatTranscriptOwner-D_Zf1duk.js",
+      "assets/check-BGouFmdv.js",
+      "assets/chevron-right-CJ2rjbZ9.js",
+      "assets/chunk-BneVvdWh.js",
+      "assets/client-oYTjO2QF.js",
+      "assets/commands-C7XJQAWb.js",
+      "assets/confirmSettingsItemRemoval-CG7P38td.js",
+      "assets/copy-BC6QKgNd.js",
+      "assets/coreStores.svelte-CqJA2-Oc.js",
+      "assets/customBackgroundSetting-BKX71HMc.js",
+      "assets/customBackgroundSetting-CXbjGvJK.js",
+      "assets/database.svelte-COg6Cub-.js",
+      "assets/diagnostics-C6MSHu2h.js",
+      "assets/disclose-version-V8pQYR0f.js",
+      "assets/download-D8q5dGU-.js",
+      "assets/effects-DkA59sem.js",
+      "assets/folder-C3hoIaAn.js",
+      "assets/generationPersistenceState-BaEFaZ82.js",
+      "assets/generationRuntimeBridge-Dg3ZCemz.js",
+      "assets/globe-bInL4jVM.js",
+      "assets/hard-drive-upload-D8PcOdEU.js",
+      "assets/heightMode-NhF4_sOl.js",
+      "assets/index-BVBpSDjG.js",
+      "assets/index-client-Bnj7Gsrv.js",
+      "assets/index-client-DD5WzU_S.js",
+      "assets/internalmcp-Bip5VcIT.js",
+      "assets/ko-C-UB8ENY.js",
+      "assets/lang-CXH8cMxy.js",
+      "assets/languages-B5PnxYzO.js",
+      "assets/legacy-BPouAmnF.js",
+      "assets/legacyMemoryMigrationNotice-mdwlW8xI.js",
+      "assets/list-BeNdWftm.js",
+      "assets/maximize-2-BsKbPGCi.js",
+      "assets/memoryJobEvents-BKxf-tDt.js",
+      "assets/messageTranslationJobs-bzN5gv5l.js",
+      "assets/mobileCharacterRows-8_ZO4Zue.js",
+      "assets/modalBackdropDismiss-CbtZ-prI.js",
+      "assets/modalFocusTrap-DCFYVtz8.js",
+      "assets/modellist-DGE5qWwR.js",
+      "assets/moduleRenderRevision-Cm1vpSKS.js",
+      "assets/modules-BZ_8T9K-.js",
+      "assets/observer.svelte-9WjmTXqg.js",
+      "assets/observerRouteIntent-CSoigSFl.js",
+      "assets/package-CJc62KSi.js",
+      "assets/pencil-yqMMDLxX.js",
+      "assets/plus-td23BoEZ.js",
+      "assets/polyfill-DxzhO-V0.js",
+      "assets/power-off-BDHKTIkv.js",
+      "assets/preload-helper-Bpu8oJ--.js",
+      "assets/promptPresetModelOverrides.svelte-DXJbtu_7.js",
+      "assets/pushNotificationSetting-BY2SjtlM.js",
+      "assets/pushNotificationSetting-ZHcKC33R.js",
+      "assets/refresh-ccw-Dz1smKZc.js",
+      "assets/resourceReads-CLg_-o1u.js",
+      "assets/resourceState.svelte-DMw_p-ya.js",
+      "assets/rotate-ccw-Bvc25MXk.js",
+      "assets/routeIntentPrefetch-ByVSVwrY.js",
+      "assets/routeOperation-xBqP6Z3p.js",
+      "assets/routerRoute-CWhuexxC.js",
+      "assets/runtimeEffects.svelte-tVjTzJMk.js",
+      "assets/save-T-CuJKgc.js",
+      "assets/settings-Dm8RR2XB.js",
+      "assets/smile-v7sZJcC0.js",
+      "assets/sortable.core.esm-D1Nn_c6a.js",
+      "assets/stores.svelte-BsKP3tnd.js",
+      "assets/tooltip-B8urS1wH.js",
+      "assets/trash-BT9GdgV_.js",
+      "assets/user-YOSAKSqA.js",
+      "assets/util-2_t9cDXU.js",
+      "assets/utils-B463fJLq.js",
+      "assets/volume-2-ClWLx-UG.js",
+      "assets/x-By83avPJ.js"
+    ]
+  ],
+  "results": [
+    {
+      "locale": "en",
+      "cache": "cold",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 505.10000002384186,
+          "observer-ready": 555.2999999523163,
+          "writer-ready": 562,
+          "plugins-ready": 713,
+          "chat-ready": 749.6000000238419,
+          "background-ready": 757.1999999284744
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 505.10000002384186,
+          "observer-ready": 555.2999999523163,
+          "writer-ready": 562,
+          "plugins-ready": 713,
+          "chat-ready": 749.6000000238419,
+          "background-ready": 757.1999999284744
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 505.6999999284744,
+            "completedAtMs": 757.5
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "gzipBytes": 1165325,
+      "loadedNonEnglishLocales": [],
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1237335,
+        "encodedBodyBytes": 1203735
+      }
+    },
+    {
+      "locale": "en",
+      "cache": "warm",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 171.5,
+          "observer-ready": 215,
+          "writer-ready": 218.60000002384186,
+          "plugins-ready": 325.89999997615814,
+          "chat-ready": 354.5,
+          "background-ready": 360.3000000715256
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 171.5,
+          "observer-ready": 215,
+          "writer-ready": 218.60000002384186,
+          "plugins-ready": 325.89999997615814,
+          "chat-ready": 354.5,
+          "background-ready": 360.3000000715256
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 171.70000004768372,
+            "completedAtMs": 360.60000002384186
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "gzipBytes": 1165325,
+      "loadedNonEnglishLocales": [],
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1203735
+      }
+    },
+    {
+      "locale": "en",
+      "cache": "cold",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 484,
+          "observer-ready": 529.1000000238419,
+          "writer-ready": 536.6000000238419,
+          "plugins-ready": 672,
+          "chat-ready": 699.7999999523163,
+          "background-ready": 708.6999999284744
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 484,
+          "observer-ready": 529.1000000238419,
+          "writer-ready": 536.6000000238419,
+          "plugins-ready": 672,
+          "chat-ready": 699.7999999523163,
+          "background-ready": 708.6999999284744
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 484.39999997615814,
+            "completedAtMs": 708.8999999761581
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "gzipBytes": 1165325,
+      "loadedNonEnglishLocales": [],
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1237335,
+        "encodedBodyBytes": 1203735
+      }
+    },
+    {
+      "locale": "en",
+      "cache": "warm",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 66.60000002384186,
+          "observer-ready": 208.29999995231628,
+          "writer-ready": 212.39999997615814,
+          "plugins-ready": 325.10000002384186,
+          "chat-ready": 361.89999997615814,
+          "background-ready": 367.89999997615814
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 66.60000002384186,
+          "observer-ready": 208.29999995231628,
+          "writer-ready": 212.39999997615814,
+          "plugins-ready": 325.10000002384186,
+          "chat-ready": 361.89999997615814,
+          "background-ready": 367.89999997615814
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 66.79999995231628,
+            "completedAtMs": 368.39999997615814
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "gzipBytes": 1165325,
+      "loadedNonEnglishLocales": [],
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1203735
+      }
+    },
+    {
+      "locale": "en",
+      "cache": "cold",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 481.5,
+          "observer-ready": 519.3000000715256,
+          "writer-ready": 526.8000000715256,
+          "plugins-ready": 649.8999999761581,
+          "chat-ready": 683.1000000238419,
+          "background-ready": 684.2000000476837
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 481.5,
+          "observer-ready": 519.3000000715256,
+          "writer-ready": 526.8000000715256,
+          "plugins-ready": 649.8999999761581,
+          "chat-ready": 683.1000000238419,
+          "background-ready": 684.2000000476837
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 482,
+            "completedAtMs": 684.5
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "gzipBytes": 1165325,
+      "loadedNonEnglishLocales": [],
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 1237335,
+        "encodedBodyBytes": 1203735
+      }
+    },
+    {
+      "locale": "en",
+      "cache": "warm",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 159.89999997615814,
+          "observer-ready": 204.20000004768372,
+          "writer-ready": 208.70000004768372,
+          "plugins-ready": 326.2999999523163,
+          "chat-ready": 368.2999999523163,
+          "background-ready": 371.39999997615814
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 159.89999997615814,
+          "observer-ready": 204.20000004768372,
+          "writer-ready": 208.70000004768372,
+          "plugins-ready": 326.2999999523163,
+          "chat-ready": 368.2999999523163,
+          "background-ready": 371.39999997615814
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 160,
+            "completedAtMs": 371.7000000476837
+          }
+        ]
+      },
+      "firstComposerLabel": "Message input",
+      "gzipBytes": 1165325,
+      "loadedNonEnglishLocales": [],
+      "scripts": {
+        "closure": 0,
+        "fileCount": 112,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1203735
+      }
+    },
+    {
+      "locale": "ko",
+      "cache": "cold",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 596.1000000238419,
+          "observer-ready": 663,
+          "writer-ready": 678.4000000953674,
+          "plugins-ready": 826.8000000715256,
+          "chat-ready": 867.7000000476837,
+          "background-ready": 872.3000000715256
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 596.1000000238419,
+          "observer-ready": 663,
+          "writer-ready": 678.4000000953674,
+          "plugins-ready": 826.8000000715256,
+          "chat-ready": 867.7000000476837,
+          "background-ready": 872.3000000715256
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 596.7000000476837,
+            "completedAtMs": 872.8000000715256
+          }
+        ]
+      },
+      "firstComposerLabel": "메시지 입력",
+      "gzipBytes": 1227554,
+      "loadedNonEnglishLocales": [
+        "ko"
+      ],
+      "scripts": {
+        "closure": 1,
+        "fileCount": 113,
+        "transferBytes": 1300204,
+        "encodedBodyBytes": 1266304
+      }
+    },
+    {
+      "locale": "ko",
+      "cache": "warm",
+      "repetition": 0,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 155.20000004768372,
+          "observer-ready": 203.5,
+          "writer-ready": 215.20000004768372,
+          "plugins-ready": 326.40000009536743,
+          "chat-ready": 354.8000000715256,
+          "background-ready": 357.7000000476837
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 155.20000004768372,
+          "observer-ready": 203.5,
+          "writer-ready": 215.20000004768372,
+          "plugins-ready": 326.40000009536743,
+          "chat-ready": 354.8000000715256,
+          "background-ready": 357.7000000476837
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 155.40000009536743,
+            "completedAtMs": 357.90000009536743
+          }
+        ]
+      },
+      "firstComposerLabel": "메시지 입력",
+      "gzipBytes": 1227554,
+      "loadedNonEnglishLocales": [
+        "ko"
+      ],
+      "scripts": {
+        "closure": 1,
+        "fileCount": 113,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1266304
+      }
+    },
+    {
+      "locale": "ko",
+      "cache": "cold",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 472,
+          "observer-ready": 525,
+          "writer-ready": 538.8999999761581,
+          "plugins-ready": 677.3999999761581,
+          "chat-ready": 716.5,
+          "background-ready": 717.8999999761581
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 472,
+          "observer-ready": 525,
+          "writer-ready": 538.8999999761581,
+          "plugins-ready": 677.3999999761581,
+          "chat-ready": 716.5,
+          "background-ready": 717.8999999761581
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 472.5,
+            "completedAtMs": 718.1999999284744
+          }
+        ]
+      },
+      "firstComposerLabel": "메시지 입력",
+      "gzipBytes": 1227554,
+      "loadedNonEnglishLocales": [
+        "ko"
+      ],
+      "scripts": {
+        "closure": 1,
+        "fileCount": 113,
+        "transferBytes": 1300204,
+        "encodedBodyBytes": 1266304
+      }
+    },
+    {
+      "locale": "ko",
+      "cache": "warm",
+      "repetition": 1,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 177.20000004768372,
+          "observer-ready": 226.80000007152557,
+          "writer-ready": 240.80000007152557,
+          "plugins-ready": 360.8000000715256,
+          "chat-ready": 393.7000000476837,
+          "background-ready": 399.89999997615814
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 177.20000004768372,
+          "observer-ready": 226.80000007152557,
+          "writer-ready": 240.80000007152557,
+          "plugins-ready": 360.8000000715256,
+          "chat-ready": 393.7000000476837,
+          "background-ready": 399.89999997615814
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 177.30000007152557,
+            "completedAtMs": 400.2000000476837
+          }
+        ]
+      },
+      "firstComposerLabel": "메시지 입력",
+      "gzipBytes": 1227554,
+      "loadedNonEnglishLocales": [
+        "ko"
+      ],
+      "scripts": {
+        "closure": 1,
+        "fileCount": 113,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1266304
+      }
+    },
+    {
+      "locale": "ko",
+      "cache": "cold",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 477.7000000476837,
+          "observer-ready": 531,
+          "writer-ready": 547.5,
+          "plugins-ready": 683.7000000476837,
+          "chat-ready": 711.7000000476837,
+          "background-ready": 717.1000000238419
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 477.7000000476837,
+          "observer-ready": 531,
+          "writer-ready": 547.5,
+          "plugins-ready": 683.7000000476837,
+          "chat-ready": 711.7000000476837,
+          "background-ready": 717.1000000238419
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 478.3000000715256,
+            "completedAtMs": 717.4000000953674
+          }
+        ]
+      },
+      "firstComposerLabel": "메시지 입력",
+      "gzipBytes": 1227554,
+      "loadedNonEnglishLocales": [
+        "ko"
+      ],
+      "scripts": {
+        "closure": 1,
+        "fileCount": 113,
+        "transferBytes": 1300204,
+        "encodedBodyBytes": 1266304
+      }
+    },
+    {
+      "locale": "ko",
+      "cache": "warm",
+      "repetition": 2,
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 170.10000002384186,
+          "observer-ready": 219.60000002384186,
+          "writer-ready": 235.20000004768372,
+          "plugins-ready": 342.60000002384186,
+          "chat-ready": 379.3000000715256,
+          "background-ready": 381.90000009536743
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 170.10000002384186,
+          "observer-ready": 219.60000002384186,
+          "writer-ready": 235.20000004768372,
+          "plugins-ready": 342.60000002384186,
+          "chat-ready": 379.3000000715256,
+          "background-ready": 381.90000009536743
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 170.30000007152557,
+            "completedAtMs": 382.2000000476837
+          }
+        ]
+      },
+      "firstComposerLabel": "메시지 입력",
+      "gzipBytes": 1227554,
+      "loadedNonEnglishLocales": [
+        "ko"
+      ],
+      "scripts": {
+        "closure": 1,
+        "fileCount": 113,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1266304
+      }
+    }
+  ]
+}

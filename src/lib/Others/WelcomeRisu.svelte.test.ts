@@ -5,7 +5,8 @@ const welcomeMocks = vi.hoisted(() => ({
   applyOnboardingServerBackedSettings: vi.fn(),
   persistServerBackedSettingsPatchWithSettlement: vi.fn(),
   updateSelectedPersonaFieldWithOutcome: vi.fn(),
-  changeLanguage: vi.fn(),
+  changeLanguage: vi.fn(async () => true),
+  cancelLanguageChange: vi.fn(),
   alertError: vi.fn(),
   alertNormal: vi.fn(),
   updateTextThemeAndCSS: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock('../ChatScreens/Chat.svelte', async () => {
 
 vi.mock('src/lang', () => ({
   changeLanguage: welcomeMocks.changeLanguage,
+  cancelLanguageChange: welcomeMocks.cancelLanguageChange,
   language: {
     apiKey: 'API Key',
     hotkeyDesc: {
@@ -268,7 +270,8 @@ beforeEach(() => {
   })
   welcomeMocks.alertError.mockReset()
   welcomeMocks.alertNormal.mockReset()
-  welcomeMocks.changeLanguage.mockReset()
+  welcomeMocks.changeLanguage.mockReset().mockResolvedValue(true)
+  welcomeMocks.cancelLanguageChange.mockReset()
   welcomeMocks.updateTextThemeAndCSS.mockReset()
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -342,6 +345,45 @@ describe('WelcomeRisu onboarding setup completion', () => {
     expect(target.textContent).not.toContain('Set up now')
     expect(textInput().value).toBe('Ada')
     expect(welcomeMocks.alertError).toHaveBeenCalledWith('Persona save failed')
+  })
+
+  it('waits for the selected locale before persisting or advancing onboarding', async () => {
+    const loading = createDeferred<boolean>()
+    welcomeMocks.changeLanguage.mockReturnValueOnce(loading.promise)
+    await mountWelcome()
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).not.toHaveBeenCalled()
+    expect(target.textContent).toContain('Choose your language')
+    loading.resolve(true)
+    await flushAsync()
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).toHaveBeenCalledWith({ language: 'en' })
+    expect(target.textContent).toContain('Welcome')
+  })
+
+  it('keeps a failed locale load retryable without persisting the unavailable choice', async () => {
+    Object.defineProperty(navigator, 'language', { configurable: true, value: 'fr-FR' })
+    welcomeMocks.changeLanguage.mockRejectedValueOnce(new Error('chunk unavailable'))
+    await mountWelcome()
+    await clickChoice('Deutsch')
+    await flushAsync()
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).not.toHaveBeenCalled()
+    expect(buttonWithText('Deutsch').disabled).toBe(false)
+    expect(target.querySelector('[role="alert"]')?.textContent).toBe('Settings save failed')
+    await clickChoice('Deutsch')
+    await flushAsync()
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).toHaveBeenCalledWith({ language: 'de' })
+    expect(target.textContent).toContain('Welcome')
+  })
+
+  it('cancels its own pending locale on unmount and ignores its later completion', async () => {
+    const loading = createDeferred<boolean>()
+    welcomeMocks.changeLanguage.mockReturnValueOnce(loading.promise)
+    await mountWelcome()
+    unmount(component!)
+    component = undefined
+    expect(welcomeMocks.cancelLanguageChange).toHaveBeenCalledExactlyOnceWith(loading.promise)
+    loading.resolve(true)
+    await flushAsync()
+    expect(welcomeMocks.persistServerBackedSettingsPatchWithSettlement).not.toHaveBeenCalled()
   })
 
   it('does not advance browser-language auto-selection before an accepted receipt', async () => {

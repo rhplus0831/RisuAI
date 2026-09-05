@@ -12,7 +12,7 @@ import {
 import { alertError, alertMd, alertRequiredSelect, waitAlert } from './alert'
 import { updateReducedMotion } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
-import { language } from 'src/lang'
+import { awaitLanguageReady, changeLanguage, language } from 'src/lang'
 import { resolveUniquePromptPreset } from '@risuai/shared-core/effective-prompt-template'
 import { updateGuisize } from './gui/guisize'
 import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
@@ -415,6 +415,10 @@ async function loadPreWriterObserverShell(): Promise<boolean> {
   updateHeightMode()
   updateGuisize()
   if (settingsResourceState.value.botSettingAtStart) botMakerMode.set(true)
+  // A resumed projection step must retry a failed chunk even when hydration
+  // was already completed in an earlier startup attempt.
+  void changeLanguage(settingsResourceState.value.language)
+  await awaitLanguageReady()
   recordStartupMilestone('observer-ready')
   return true
 }
@@ -880,6 +884,8 @@ export async function loadWebInitialDatabase(options: { coordinated?: boolean } 
     updateHeightMode()
     updateGuisize()
     if (settingsResourceState.value.botSettingAtStart) botMakerMode.set(true)
+    void changeLanguage(settingsResourceState.value.language)
+    await awaitLanguageReady()
     recordStartupMilestone('observer-ready')
   })
   await runWriterStep('writer-runtime-services', () => {

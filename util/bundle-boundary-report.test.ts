@@ -79,6 +79,49 @@ afterEach(() => {
 })
 
 describe('bundle boundary report', () => {
+  it('keeps explicitly emitted locale retry entries out of the HTML closure', () => {
+    const bundle = baselineBundle()
+    bundle['assets/ko.js'] = chunk({
+      fileName: 'assets/ko.js',
+      name: 'ko',
+      facadeModuleId: '/repo/src/lang/ko.ts',
+      isEntry: true,
+      modules: ['/repo/src/lang/ko.ts'],
+    })
+    const report = createBundleBoundaryReport(bundle, '/repo')
+    expect(report.initial.chunkFiles).toEqual(['assets/index.js', 'assets/shared.js'])
+    expect(report.locales.passes).toBe(true)
+    bundle['assets/unexpected.js'] = chunk({
+      fileName: 'assets/unexpected.js',
+      name: 'unexpected',
+      facadeModuleId: '/repo/src/unexpected.ts',
+      isEntry: true,
+    })
+    expect(() => createBundleBoundaryReport(bundle, '/repo')).toThrow('exactly one application entry')
+  })
+
+  it.each(['initial', 'immediateStartup'] as const)('rejects a non-English pack in the %s static closure', (scope) => {
+    const bundle = baselineBundle(['/repo/src/main.ts', '/repo/src/lang/en.ts'])
+    bundle['assets/ko.js'] = chunk({ fileName: 'assets/ko.js', name: 'ko', modules: ['/repo/src/lang/ko.ts'] })
+    const owner = bundle[scope === 'initial' ? 'assets/index.js' : 'assets/appStartup.js']
+    if (owner.type !== 'chunk') throw new Error('Expected chunk fixture')
+    owner.imports.push('assets/ko.js')
+    const report = createBundleBoundaryReport(bundle, '/repo')
+    expect(report.locales.passes).toBe(false)
+    expect(report.locales[scope]).toContain('src/lang/ko.ts')
+    expect(formatBundleBoundaryReport(report)).toContain('Selected-locale boundaries: FAIL')
+  })
+
+  it('allows English fallback and leaves selection-triggered packs outside both static closures', () => {
+    const bundle = baselineBundle(['/repo/src/main.ts', '/repo/src/lang/en.ts'])
+    bundle['assets/ko.js'] = chunk({ fileName: 'assets/ko.js', name: 'ko', modules: ['/repo/src/lang/ko.ts'] })
+    const owner = bundle['assets/appStartup.js']
+    if (owner.type !== 'chunk') throw new Error('Expected chunk fixture')
+    owner.dynamicImports.push('assets/ko.js')
+    const report = createBundleBoundaryReport(bundle, '/repo')
+    expect(report.locales).toEqual({ initial: ['src/lang/en.ts'], immediateStartup: [], passes: true })
+  })
+
   it('keeps dynamic database work out of the initial closure while reporting immediate startup', () => {
     const report = createBundleBoundaryReport(baselineBundle(), '/repo')
 

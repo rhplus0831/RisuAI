@@ -1,7 +1,7 @@
 # Client Runtime Guide
 
 Last audited: 2026-08-31.
-Targeted source check: 2026-09-05 (module organization, model ownership, and diagnostics).
+Targeted source check: 2026-09-05 (module organization, model ownership, diagnostics, and locale readiness).
 
 This file covers browser TypeScript coordinators that influence visible Svelte
 UI. For component ownership and UI triage, start with the
@@ -52,8 +52,8 @@ or preload failures stay on the localized preloader/reload surface owned by
 `src/ts/entryLoadError.ts`.
 
 `src/appStartup.ts` installs the router, push-notification listeners,
-viewport/root-scroll coordinators, and shared completion-audio context unlocking
-before mounting `App.svelte`. It then optionally installs the Fastify browser
+viewport/root-scroll coordinators, language property-read subscriptions, and
+shared completion-audio context unlocking before mounting `App.svelte`. It then optionally installs the Fastify browser
 smoke hook, calls `loadData()`, initializes hotkeys and likely-route warming,
 and removes the preloading element.
 
@@ -71,8 +71,8 @@ generation operations consume the narrow capabilities directly.
 1. Start the best-effort startup telemetry publisher. If the temporary observer
    rollout is enabled, perform a read-only bootstrap without caching its
    revision as command authority and load `GET /api/v1/resources/shell`. A
-   coherent initialized shell may publish
-   `observer-ready` and render the dedicated read-only observer UI while writer
+   coherent initialized shell starts its selected locale download immediately
+   and waits for that locale before publishing `observer-ready` and render the dedicated read-only observer UI while writer
    acquisition continues. A failed or uninitialized observer read falls back to
    the conservative writer-first boundary.
 2. Adopt the sole pending-mutation writer identity, if one exists, then fetch

@@ -239,8 +239,30 @@ surfaces. Registration and unload contracts belong to
 ## Localization
 
 `src/lang/en.ts` is the complete UI string contract. Other language files are
-deep partials merged over English by `src/lang/index.ts`. Data-driven settings
-prefer `labelKey`, `helpKey`, and option `labelKey`; `fallbackLabel` is an escape
+deep partials merged over English by `src/lang/index.ts`. English remains a
+synchronous entry/error fallback. `getLanguageForCode()` loads and memoizes only
+the selected pack; `changeLanguage()` applies English or a cached pack immediately
+and otherwise returns a promise for the latest selection. Superseded or canceled
+selections resolve false, including late failures. A failed current selection
+keeps the last applied language and can be retried.
+
+Synchronous database/resource projection starts language loading without delaying
+its revision result. Bootstrap overlaps that load with shell setup and awaits
+`awaitLanguageReady()` before publishing shell readiness, including resumed
+startup retries. `src/lang/reactivity.ts` installs property-read subscriptions
+before mounting the app so live imported labels repaint after deferred loading;
+the language entry itself has no Svelte dependency. Settings handle load failures
+through the existing error dialog; onboarding waits before persisting and cancels
+its own pending selection when destroyed.
+
+`src/lang/loadLanguagePack.ts` uses six literal dynamic imports for ordinary
+loading. Browsers retain failed module URLs, so retries use a fresh query on
+build-owned chunk URLs emitted by `util/locale-chunk-urls.ts`; successful packs
+remain memoized. URLs never come from error text or server data. The bundle
+report rejects non-English packs in either static startup closure, and browser
+startup checks allow only the selected non-English asset to be requested.
+
+Data-driven settings prefer `labelKey`, `helpKey`, and option `labelKey`; `fallbackLabel` is an escape
 hatch. Add every new visible frontend string to English first.
 
 `src/lib/UI/MainMenu.svelte` uses `language.openRisuRealm` for the Open Risu

@@ -68,6 +68,11 @@ export interface BundleBoundaryReport {
     violations: BundleBoundaryViolation[]
   }
   immediateStartup: BundleBoundaryClosureReport
+  locales: {
+    initial: string[]
+    immediateStartup: string[]
+    passes: boolean
+  }
   chunks: BundleBoundaryChunkReport[]
 }
 
@@ -158,6 +163,24 @@ function initialViolations(
   )
 }
 
+function localeBoundaryReport(
+  initialFiles: string[],
+  startupFiles: string[],
+  chunks: Map<string, BundleBoundaryChunkReport>,
+): BundleBoundaryReport['locales'] {
+  const localeModules = (files: string[]) =>
+    [...new Set(files.flatMap((file) => chunks.get(file)?.modules ?? []))]
+      .filter((module) => /^src\/lang\/(?:en|cn|de|es|ko|vi|zh-Hant)\.ts$/.test(module))
+      .sort()
+  const initial = localeModules(initialFiles)
+  const immediateStartup = localeModules(startupFiles)
+  return {
+    initial,
+    immediateStartup,
+    passes: [...initial, ...immediateStartup].every((module) => module === 'src/lang/en.ts'),
+  }
+}
+
 export function createBundleBoundaryReport(bundle: BundleOutputInput, rootDir: string): BundleBoundaryReport {
   const chunks = Object.values(bundle)
     .filter((output): output is BundleChunkInput => output.type === 'chunk')
@@ -182,8 +205,15 @@ export function createBundleBoundaryReport(bundle: BundleOutputInput, rootDir: s
     .sort((left, right) => left.file.localeCompare(right.file))
 
   const entryChunks = chunks.filter((chunk) => chunk.isEntry)
-  if (entryChunks.length !== 1) throw new Error(`Expected exactly one bundle entry chunk, found ${entryChunks.length}`)
-  const entryChunk = entryChunks[0]
+  // Locale retry URLs explicitly emit these same deferred chunks. They are
+  // build entries, but do not enter the HTML's static import closure.
+  const applicationEntries = entryChunks.filter(
+    (chunk) => !/^src\/lang\/(?:cn|de|es|ko|vi|zh-Hant)\.ts$/.test(chunk.facadeModule ?? ''),
+  )
+  if (applicationEntries.length !== 1) {
+    throw new Error(`Expected exactly one application entry chunk, found ${applicationEntries.length}`)
+  }
+  const entryChunk = applicationEntries[0]
   if (entryChunk.facadeModule !== ENTRY_MODULE) {
     throw new Error(`Expected ${ENTRY_MODULE} as the bundle entry, found ${entryChunk.facadeModule ?? 'no facade'}`)
   }
@@ -206,6 +236,7 @@ export function createBundleBoundaryReport(bundle: BundleOutputInput, rootDir: s
       violations,
     },
     immediateStartup: closureReport(startupChunkFiles, chunksByFile),
+    locales: localeBoundaryReport(initialChunkFiles, startupChunkFiles, chunksByFile),
     chunks,
   }
 }
@@ -263,6 +294,9 @@ export function formatBundleBoundaryReport(report: BundleBoundaryReport): string
     `Immediate appStartup closure: ${report.immediateStartup.chunkFiles.length} files / ${report.immediateStartup.moduleCount} modules / ${kibibytes(report.immediateStartup.gzipBytes)} gzip`,
     `HTML preload closure: ${report.initial.htmlMatchesEntryClosure === undefined ? 'NOT CHECKED' : report.initial.htmlMatchesEntryClosure ? 'PASS' : 'FAIL'}`,
     `Protected initial boundaries: ${report.initial.violations.length === 0 ? 'PASS' : 'FAIL'}`,
+    `Selected-locale boundaries: ${report.locales.passes ? 'PASS' : 'FAIL'}`,
+    `Initial locale modules: ${report.locales.initial.join(', ') || '(none)'}`,
+    `Immediate appStartup locale modules: ${report.locales.immediateStartup.join(', ') || '(none)'}`,
   ]
 
   for (const violation of report.initial.violations) {
@@ -337,7 +371,7 @@ export function runBundleBoundaryReportCli(argv = process.argv.slice(2)): number
   process.stdout.write(human)
   if (options.jsonOutput) writeOutput(options.jsonOutput, `${JSON.stringify(report, null, 2)}\n`)
   if (options.textOutput) writeOutput(options.textOutput, human)
-  return report.initial.passes ? 0 : 1
+  return report.initial.passes && report.locales.passes ? 0 : 1
 }
 
 const executedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : ''

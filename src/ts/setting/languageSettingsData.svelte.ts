@@ -7,7 +7,6 @@
 
 import type { SettingItem } from './types'
 import { changeLanguage, language } from 'src/lang'
-import { sleep } from '../util'
 import { alertNormal, alertConfirm, alertError, alertWait } from '../alert'
 import { downloadFile } from '../globalApi.svelte'
 import { selectFileByDom } from '../filePicker'
@@ -43,9 +42,11 @@ export const languageSettingsItems: SettingItem[] = [
       ],
     },
     onChange: async (val, ctx) => {
-      await sleep(10)
-      changeLanguage(ctx.db.language)
-      langState.changed = true
+      try {
+        if (await changeLanguage(ctx.db.language)) langState.changed = true
+      } catch (error) {
+        alertError(error)
+      }
     },
   },
 

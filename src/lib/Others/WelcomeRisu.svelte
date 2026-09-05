@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Send } from '@lucide/svelte'
-  import { changeLanguage, language } from 'src/lang'
+  import { cancelLanguageChange, changeLanguage, language } from 'src/lang'
   import { getPersonaOwnerStateSnapshot, settingsResourceState } from 'src/ts/server/resourceState.svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
@@ -31,6 +31,7 @@
   let languageAttemptId = 0
   let apiKeyAttemptId = 0
   let activeLanguageAttempt: LanguagePersistenceAttempt | null = null
+  let pendingLanguageLoad: Promise<boolean> | null = null
   let activeApiKeyAttempt: ApiKeyPersistenceAttempt | null = null
   const queuedSettlementSubscriptions = new Set<QueuedSettlementSubscription>()
 
@@ -153,6 +154,7 @@
 
   onDestroy(() => {
     mounted = false
+    if (pendingLanguageLoad) cancelLanguageChange(pendingLanguageLoad)
     invalidatePendingSetupRun()
     languageAttemptId += 1
     apiKeyAttemptId += 1
@@ -185,16 +187,24 @@
     activeLanguageAttempt = attempt
     languagePersistencePending = true
     clearMatchingPersistenceError('language')
-    changeLanguage(attempt.language)
-
+    const languageLoad = changeLanguage(attempt.language)
+    pendingLanguageLoad = languageLoad
     let receipt: ServerBackedSettingsPersistenceReceipt
     try {
+      const applied = await languageLoad
+      if (pendingLanguageLoad === languageLoad) pendingLanguageLoad = null
+      if (!isCurrentLanguageAttempt(attempt)) return
+      if (!applied) {
+        languagePersistencePending = false
+        return
+      }
       receipt = await persistServerBackedSettingsPatchWithSettlement({ language: attempt.language })
     } catch {
+      if (pendingLanguageLoad === languageLoad) pendingLanguageLoad = null
       if (!isCurrentLanguageAttempt(attempt)) return
       languagePersistencePending = false
       onboardingPersistenceError = { kind: 'language', attemptId: attempt.attemptId }
-      changeLanguage(settingsResourceState.value.language)
+      void changeLanguage(settingsResourceState.value.language)
       return
     }
 
@@ -202,7 +212,7 @@
     languagePersistencePending = false
     if (receipt.status === 'failed') {
       onboardingPersistenceError = { kind: 'language', attemptId: attempt.attemptId }
-      changeLanguage(settingsResourceState.value.language)
+      void changeLanguage(settingsResourceState.value.language)
       return
     }
 

@@ -15,8 +15,10 @@ import {
 } from './ts/server/pushNotifications'
 import { backgroundReady, recordStartupMilestone } from './ts/startupReadiness'
 import { startLikelyCharacterRouteWarmup } from './ts/server/routeResourceLoader'
+import { installLanguageReactivity } from './lang/reactivity'
 
 export function startApplication() {
+  installLanguageReactivity()
   installRouter()
   installPushNotificationNavigationListener()
   installPushNotificationForegroundCleanup()

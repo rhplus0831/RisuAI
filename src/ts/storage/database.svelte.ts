@@ -3536,7 +3536,7 @@ export function setDatabase(data: Database) {
   data.useMonacoEditorOnDesktop ??= false
   data.useMonacoEditorOnMobile ??= false
   data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
-  changeLanguage(data.language)
+  void changeLanguage(data.language)
   setDatabaseLite(data)
 }
 
@@ -3547,7 +3547,7 @@ export function applyServerResourceDatabase(data: Database, revision?: number) {
   data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
   normalizeNestedPromptTemplates(data)
   normalizeAgentPresetSettings(data)
-  changeLanguage(data.language)
+  void changeLanguage(data.language)
   setDatabaseLite(data, revision)
   reapplyPendingPresetProjectionsMutable()
   createDestructiveRefreshToken('server-resource-database-replace')
@@ -3614,7 +3614,7 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
     )
   }
   if (typeof fields.language === 'string') {
-    changeLanguage(fields.language)
+    void changeLanguage(fields.language)
   }
   reapplyPendingPresetProjectionsMutable()
 }

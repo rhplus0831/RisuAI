@@ -3308,7 +3308,7 @@ function preserveResidentCharacterChatBodies(
 }
 
 function applyRuntimeLanguage(value: unknown): void {
-  changeLanguage(typeof value === 'string' ? value : 'en')
+  void changeLanguage(typeof value === 'string' ? value : 'en')
 }
 
 function shouldUseCharacterPointerResource(property: 'characterOrder' | 'currentChar'): boolean {
