@@ -35,6 +35,7 @@ const chatBodyMocks = vi.hoisted(() => ({
 
 vi.mock('../../ts/parser/parser.svelte', () => ({
   addMetadataToElement: chatBodyMocks.addMetadataToElement,
+  chatHtmlRenderPolicyKey: () => 'false|false',
   getDistance: chatBodyMocks.getDistance,
   ParseMarkdown: chatBodyMocks.ParseMarkdown,
   postTranslationParse: chatBodyMocks.postTranslationParse,

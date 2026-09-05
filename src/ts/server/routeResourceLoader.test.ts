@@ -38,6 +38,19 @@ vi.mock('./resourceReads', () => ({
   fetchServerStandaloneSetting: loaderMocks.standalone,
 }))
 
+vi.mock('./characterShellHydration.svelte', () => ({
+  hydrateCharacterShell: async (
+    characterId: string,
+    options: { signal: AbortSignal | null; minimumRevision?: number },
+  ) => {
+    const result = await loaderMocks.refresh(
+      { characterIds: [characterId], minimumRevision: options.minimumRevision },
+      { signal: options.signal },
+    )
+    return result.status === 'ok'
+  },
+}))
+
 vi.mock('./chatMessageHydration.svelte', () => ({
   hydrateActiveChat: loaderMocks.activeChat,
   hydrateChatMessageWindow: loaderMocks.routeChat,

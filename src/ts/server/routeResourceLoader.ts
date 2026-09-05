@@ -16,6 +16,7 @@ import {
 } from './resourceManifest'
 import { refreshServerResourceTargets, type ServerResourceRefreshResult } from './resourceInvalidation'
 import { fetchServerStandaloneSetting } from './resourceReads'
+import { hydrateCharacterShell } from './characterShellHydration.svelte'
 import { lorebookPageOwner } from './lorebookPageOwner.svelte'
 import {
   applyStandaloneSettingResource,
@@ -481,8 +482,7 @@ async function loadProjection(
         : { identity, ok: false, error: 'Character shell is unavailable' }
     case 'selected-character': {
       if (route?.kind !== 'character') return { identity, ok: true }
-      const result = await refreshServerResourceTargets({ characterIds: [route.chaId], minimumRevision }, { signal })
-      return refreshResult(identity, result)
+      return { identity, ok: await hydrateCharacterShell(route.chaId, { signal, minimumRevision }) }
     }
     case 'inlay-catalog': {
       const result = await refreshServerResourceTargets({ inlayCatalog: true, minimumRevision }, { signal })

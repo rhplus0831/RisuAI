@@ -1,7 +1,16 @@
 import { writable } from 'svelte/store'
+import DOMPurify from 'dompurify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { language } from '../../../lang'
-import { ParseMarkdown, parseThoughtsAndTools, risuChatParser, trimMarkdown } from '../parser.svelte'
+import {
+  ParseMarkdown,
+  chatHtmlRenderPolicyKey,
+  parseThoughtsAndTools,
+  risuChatParser,
+  trimMarkdown,
+} from '../parser.svelte'
+import { createChatBodyRenderMemo } from '../../../lib/ChatScreens/ChatBodyRenderMemo'
+import { pruneEmptyBilingualPairs } from '../../translator/bilingualInterleave'
 import { settingsResourceState } from '../../server/resourceState.svelte'
 
 const mocks = vi.hoisted(() => ({
@@ -110,6 +119,29 @@ describe('trimMarkdown decoded-style sanitization', () => {
 
     expect(root.querySelector('script')).toBeNull()
     expect(output).not.toContain('<script')
+  })
+
+  it('reuses sanitized HTML without retaining stale image policy or decoded unsafe markup', () => {
+    const sanitize = vi.spyOn(DOMPurify, 'sanitize')
+    const render = createChatBodyRenderMemo((html) => pruneEmptyBilingualPairs(trimMarkdown(html)))
+    const injected = Buffer.from('</style><script>alert(1)</script>{color:red}').toString('hex')
+    const input = `<img src="https://example.test/image.png"><risu-style>${injected}</risu-style>`
+    const visible = render(input, '', chatHtmlRenderPolicyKey())
+    const calls = sanitize.mock.calls.length
+    expect(visible).toContain('https://example.test/image.png')
+    expect(visible).not.toContain('<script')
+    expect(render(input, '', chatHtmlRenderPolicyKey())).toBe(visible)
+    expect(sanitize).toHaveBeenCalledTimes(calls)
+    settingsResourceState.value.hideAllImages = true
+    const hidden = render(input, '', chatHtmlRenderPolicyKey())
+    expect(hidden).toContain('/none.webp')
+    expect(hidden).not.toContain('https://example.test/image.png')
+    expect(hidden).not.toContain('<script')
+    const hiddenCalls = sanitize.mock.calls.length
+    // Loading/error policies use the same effective value as the sanitizer.
+    settingsResourceState.groupStatuses.display = 'error'
+    expect(render(input, '', chatHtmlRenderPolicyKey())).toBe(visible)
+    expect(sanitize).toHaveBeenCalledTimes(hiddenCalls)
   })
 })
 

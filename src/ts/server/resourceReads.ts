@@ -1,4 +1,5 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { peekCachedServerCommandRevision } from './commands'
 import type { Chat, character } from '../storage/database.svelte'
 import {
   SERVER_CHARACTER_SUMMARY_VERSION,
@@ -314,14 +315,74 @@ export async function fetchServerCharacters(
   }
 }
 
-export async function fetchServerCharacter(
-  characterId: string,
-  signal?: AbortSignal | null,
-): Promise<ServerResourceReadResult<ServerCharacterResourcePayload>> {
+type CharacterRead = ServerResourceReadResult<ServerCharacterResourcePayload>
+interface SharedCharacterRead {
+  controller: AbortController
+  promise: Promise<CharacterRead>
+  subscribers: number
+  settled: boolean
+}
+const characterReads = new Map<string, SharedCharacterRead>()
+
+/** Share transport only; each hydration/route owner retains its own apply fences. */
+export async function fetchServerCharacter(characterId: string, signal?: AbortSignal | null): Promise<CharacterRead> {
   if (!nonEmptyString(characterId)) {
     return { status: 'error', error: 'Character id is required' }
   }
-  const result = await requestServerResourceJson(`${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}`, signal)
+  const cancelled = (): CharacterRead => ({ status: 'error', error: 'Character request was cancelled' })
+  if (signal?.aborted) return cancelled()
+  const revision = peekCachedServerCommandRevision()
+  const auth = await getNodeServerProxyAuth()
+  if (signal?.aborted) return cancelled()
+  // A newer revision or authentication scope needs a fresh read.
+  const key = JSON.stringify([characterId, revision, auth])
+  let request = characterReads.get(key)
+  if (!request || request.controller.signal.aborted) {
+    const controller = new AbortController()
+    const created: SharedCharacterRead = {
+      controller,
+      subscribers: 0,
+      settled: false,
+      promise: fetchServerCharacterOnce(characterId, controller.signal, auth).finally(() => {
+        created.settled = true
+        if (characterReads.get(key) === created) characterReads.delete(key)
+      }),
+    }
+    characterReads.set(key, created)
+    request = created
+  }
+  const shared = request
+  shared.subscribers += 1
+  return new Promise<CharacterRead>((resolve, reject) => {
+    let finished = false
+    const finish = (complete: () => void) => {
+      if (finished) return
+      finished = true
+      signal?.removeEventListener('abort', abort)
+      shared.subscribers -= 1
+      if (shared.subscribers === 0 && !shared.settled) {
+        if (characterReads.get(key) === shared) characterReads.delete(key)
+        shared.controller.abort()
+      }
+      complete()
+    }
+    const abort = () => finish(() => resolve(cancelled()))
+    signal?.addEventListener('abort', abort, { once: true })
+    shared.promise.then(
+      (result) => finish(() => resolve(result)),
+      (error) => finish(() => reject(error)),
+    )
+  })
+}
+
+async function fetchServerCharacterOnce(
+  characterId: string,
+  signal: AbortSignal,
+  auth: string,
+): Promise<CharacterRead> {
+  const result = await requestServerResourceJson(`${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}`, signal, {
+    auth,
+  })
   if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
@@ -642,11 +703,11 @@ function resourceReadFailure(
 async function requestServerResourceJson(
   endpoint: string,
   signal?: AbortSignal | null,
-  options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+  options: { method?: 'GET' | 'POST'; body?: unknown; auth?: string } = {},
 ): Promise<ServerResourceJsonRequestResult> {
   if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
-  const auth = await getNodeServerProxyAuth()
+  const auth = options.auth ?? (await getNodeServerProxyAuth())
   const method = options.method ?? 'GET'
   let response: Response
   try {

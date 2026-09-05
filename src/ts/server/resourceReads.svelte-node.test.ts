@@ -14,6 +14,7 @@ vi.mock('../observerProjectionLifecycle', () => ({
 
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
 import { clearResourceCache, sha256JsonValue } from './resourceCache'
+import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
 import {
   SERVER_CHARACTER_SHELL_MARKER,
   SERVER_CHARACTER_SUMMARY_VERSION,
@@ -760,5 +761,71 @@ describe('server resource read clients', () => {
       '/api/v1/characters/order',
       '/api/v1/characters/char%2Fone/selection',
     ])
+  })
+
+  it('shares overlapping character reads and isolates cancellation from the other subscriber', async () => {
+    let resolve!: (response: Response) => void
+    let transportSignal!: AbortSignal
+    const fetchMock = vi.fn((_input: unknown, init: RequestInit) => {
+      transportSignal = init.signal as AbortSignal
+      return new Promise<Response>((done) => {
+        resolve = done
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const route = new AbortController()
+    const shell = new AbortController()
+    const first = fetchServerCharacter('overlap', route.signal)
+    const second = fetchServerCharacter('overlap', shell.signal)
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    route.abort()
+    await expect(first).resolves.toMatchObject({ status: 'error' })
+    expect(transportSignal.aborted).toBe(false)
+    resolve(jsonResponse({ revision: 11, character: { chaId: 'overlap', name: 'Shared', chats: [] } }))
+    await expect(second).resolves.toMatchObject({ status: 'ok', character: { name: 'Shared' } })
+    const later = fetchServerCharacter('overlap')
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    resolve(jsonResponse({ revision: 12, character: { chaId: 'overlap', name: 'Fresh', chats: [] } }))
+    await expect(later).resolves.toMatchObject({ status: 'ok', revision: 12 })
+  })
+
+  it('aborts transport after the last subscriber leaves and does not reuse an older revision read', async () => {
+    const pending: { signal: AbortSignal; resolve(response: Response): void }[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        (_input: unknown, init: RequestInit) =>
+          new Promise<Response>((resolve) => {
+            pending.push({ signal: init.signal as AbortSignal, resolve })
+          }),
+      ),
+    )
+    setCachedServerCommandRevision(10)
+    const firstController = new AbortController()
+    const first = fetchServerCharacter('revision-read', firstController.signal)
+    const secondController = new AbortController()
+    const second = fetchServerCharacter('revision-read', secondController.signal)
+    await vi.waitFor(() => expect(pending).toHaveLength(1))
+    firstController.abort()
+    expect(pending[0].signal.aborted).toBe(false)
+    secondController.abort()
+    await Promise.all([first, second])
+    expect(pending[0].signal.aborted).toBe(true)
+    const third = fetchServerCharacter('revision-read')
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    setCachedServerCommandRevision(11)
+    const fourth = fetchServerCharacter('revision-read')
+    await vi.waitFor(() => expect(pending).toHaveLength(3))
+    pending.forEach(({ resolve }, index) =>
+      resolve(
+        jsonResponse({
+          revision: 9 + index,
+          character: { chaId: 'revision-read', name: 'Row', chats: [] },
+        }),
+      ),
+    )
+    await expect(third).resolves.toMatchObject({ revision: 10 })
+    await expect(fourth).resolves.toMatchObject({ revision: 11 })
+    clearCachedServerCommandRevision()
   })
 })

@@ -16,3 +16,17 @@ export function createSimpleCharacter(char: character, customscript: customscrip
 
   return simpleChar
 }
+
+/** Preserve parser inputs when a parent projection changes only unrelated fields. */
+export function createSimpleCharacterMemo() {
+  let previous: simpleCharacterArgument | null = null
+  let previousReload: unknown
+  return (char: character, scripts: customscript[] | undefined, reload: unknown) => {
+    const next = createSimpleCharacter(char, scripts)
+    if (next && previous && reload === previousReload && Object.keys(next).every((key) => next[key] === previous[key]))
+      return previous
+    previousReload = reload
+    previous = next
+    return next
+  }
+}

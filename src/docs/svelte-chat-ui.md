@@ -110,6 +110,22 @@ and asynchronous freshness checks.
 parser/LLM-detection memoization and dependency signatures for character, chat,
 modules, settings, CBS state, and reload epochs. Stale HTML or unexpectedly
 expensive rerenders often start at that memo boundary.
+`Chats.svelte` keeps its compact display-character projection separate from
+the row list, so unrelated row-list updates retain the parser input identity.
+Each `ChatBody` also retains its last two finalized HTML results, bounded to
+1 MiB of input/output strings per mounted body. Content, model metadata, image
+hiding policy and watermark applicability are part of that cache key; a miss
+still sanitizes markup, including a second pass after decoded styles, before
+pruning bilingual pairs and adding metadata. Unmounting releases this cache.
+
+The newest two messages parse immediately and own initial display readiness.
+Older rows keep their mounted controls and last rendered body while
+`chatDisplayScheduler.ts` waits for initial display and optional startup work
+to settle. It then starts one older-message parse per idle turn, waiting for
+that parse to finish before starting the next. Queued work is cancelled on
+input changes, chat switches and unmount; older rows never block the initial
+readiness registrations. The configured transcript window and scroll anchors
+remain owned by the existing paging and viewport code.
 Module-dependent signatures use a compact client render revision plus active
 module ids; they never embed module assets, regex definitions, or triggers in a
 per-message key. Parse and LLM-detection memo keys are bounded by both entry

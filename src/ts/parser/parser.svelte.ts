@@ -1349,6 +1349,11 @@ export async function ParseMarkdown(
   return trimMarkdown(data)
 }
 
+/** Read on cache hits too, so image policy changes still invalidate rendered bodies. */
+export function chatHtmlRenderPolicyKey(): string {
+  return `${Boolean(parserSetting('hideAllImages'))}|${aiWatermarkingLawApplies()}`
+}
+
 export function trimMarkdown(data: string) {
   let sanitized = DOMPurify.sanitize(data, {
     ADD_TAGS: [

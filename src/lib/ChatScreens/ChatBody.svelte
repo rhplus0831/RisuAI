@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte'
+  import { getContext, onDestroy, untrack } from 'svelte'
   import { sleep } from 'src/ts/util'
   import { alertError } from '../../ts/alert'
   import {
     addMetadataToElement,
+    chatHtmlRenderPolicyKey,
     getDistance,
     postTranslationParse,
     trimMarkdown,
@@ -12,6 +13,8 @@
   } from '../../ts/parser/parser.svelte'
   import { translateHTML } from '../../ts/translator/translator'
   import { pruneEmptyBilingualPairs } from '../../ts/translator/bilingualInterleave'
+  import { createChatBodyRenderMemo } from './ChatBodyRenderMemo'
+  import { CHAT_DISPLAY_SCHEDULER, type ChatDisplayScheduler } from './chatDisplayScheduler'
   import { getModuleAssets } from 'src/ts/process/modules'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import {
@@ -74,6 +77,8 @@
     onInitialDisplayParseSettled = () => {},
   }: Props = $props()
   const parseOwners = createChatBodyParseOwnerReaders()
+  const displayScheduler = getContext<ChatDisplayScheduler | undefined>(CHAT_DISPLAY_SCHEDULER)
+  let queuedDisplay: AbortController | undefined
 
   // svelte-ignore non_reactive_update
   let lastParsed = ''
@@ -100,7 +105,11 @@
     onInitialDisplayParseSettled(initialDisplayParseRegistration)
   }
 
-  onDestroy(settleInitialDisplayParse)
+  onDestroy(() => {
+    queuedDisplay?.abort()
+    markParsingRun += 1
+    settleInitialDisplayParse()
+  })
 
   function getCbsCondition() {
     try {
@@ -122,8 +131,13 @@
     alertError(`Error while parsing chat message: ${translated}, ${parsingError.message}, ${parsingError.stack}`)
   }
 
+  const finalizeBody = createChatBodyRenderMemo((html, model) =>
+    addMetadataToElement(pruneEmptyBilingualPairs(trimMarkdown(html)), model),
+  )
   function renderParsedChatBody(html: string): string {
-    return addMetadataToElement(pruneEmptyBilingualPairs(trimMarkdown(html)), modelShortName)
+    const policy = chatHtmlRenderPolicyKey()
+    const model = modelShortName
+    return untrack(() => finalizeBody(html ?? '', model, policy))
   }
 
   function automaticClientTranslationEnabled(): boolean {
@@ -427,7 +441,7 @@
         return marked.value
       }
     } finally {
-      // Since trimMarkdown is fast, we don't need to cache it.
+      // Preserve the last successful body while a newer parse is pending.
       if (runId === markParsingRun) {
         lastParsed = lastParsedQueue
         settleInitialDisplayParse()
@@ -511,6 +525,8 @@
     }
   }
 
+  let previousParseInputs: unknown[] = []
+  let previousParse: Promise<string> | undefined
   let markParsingResult = $derived.by(() => {
     void regexDisplayReloadToken
     const parseData = msgDisplay
@@ -526,19 +542,40 @@
     // These local inputs intentionally restart parsing. Database reads made by
     // the parser are snapshots; their UI activation is controlled by the
     // explicit reload pointers instead of deep subscriptions per chat row.
-    void translated
-    void retranslate
-    void allowClientTranslation
-    void firstMessage
-    void role
-    void parseChatId
-    void parseMessageId
-    void parseDisplayLayer
-    void parseStreaming
-    void parseDisplayPriority
-    void parseName
+    const inputs = [
+      regexDisplayReloadToken,
+      parseData,
+      parseCharacter,
+      parseIndex,
+      parseChatId,
+      parseMessageId,
+      parseDisplayLayer,
+      parseStreaming,
+      parseDisplayPriority,
+      parseName,
+      translated,
+      retranslate,
+      allowClientTranslation,
+      firstMessage,
+      role,
+    ]
+    if (previousParse && inputs.every((input, index) => input === previousParseInputs[index])) return previousParse
+    previousParseInputs = inputs
 
-    return untrack(() => markParsing(parseData, parseCharacter, parseIndex))
+    previousParse = untrack(() => {
+      queuedDisplay?.abort()
+      // Invalidate a previous in-flight parse even when its replacement queues.
+      markParsingRun += 1
+      const controller = new AbortController()
+      queuedDisplay = controller
+      if (!displayScheduler || parseDisplayPriority !== 'background') {
+        return markParsing(parseData, parseCharacter, parseIndex)
+      }
+      return displayScheduler
+        .run(() => markParsing(parseData, parseCharacter, parseIndex), controller.signal)
+        .then((html) => html ?? lastParsed)
+    })
+    return previousParse
   })
 
   $effect(() => {

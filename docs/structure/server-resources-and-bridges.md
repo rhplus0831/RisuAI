@@ -244,6 +244,16 @@ results. Post-route chat and prompt targets finish only after route selection is
 known. Route failure state belongs to the route surface and is retryable without
 clearing the coherent shell.
 
+Route loading and selected-shell hydration share one character hydration task
+through application in `characterShellHydration.svelte.ts`. Selection changes
+release the selected subscriber without cancelling a still-current route; a
+cancelled route likewise leaves the selected subscriber intact. Row identity,
+selection and request-start revision fences remain in force.
+Other overlapping character detail reads share transport in `resourceReads.ts`
+when the character, authentication and known revision match. The transport is
+aborted only after every subscriber leaves, and completed reads are removed
+immediately, so a later refresh still reads the server.
+
 ### Endpoint Index
 
 | Data | Endpoint | Browser owner |

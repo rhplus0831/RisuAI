@@ -1,10 +1,12 @@
 <script lang="ts">
-  import { onDestroy, tick, untrack } from 'svelte'
+  import { onDestroy, setContext, tick, untrack } from 'svelte'
+  import { CHAT_DISPLAY_SCHEDULER, createChatDisplayScheduler } from './chatDisplayScheduler'
+  import { backgroundReady, startupCoordinatorStore } from 'src/ts/startupReadiness'
   import type { character, Database, Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characterImage'
   import { ReloadChatPointer } from 'src/ts/stores.svelte'
-  import { createSimpleCharacter } from 'src/ts/simpleCharacter'
+  import { createSimpleCharacter, createSimpleCharacterMemo } from 'src/ts/simpleCharacter'
   import {
     RegexDisplayReloadPointer,
     RegexDisplayReloadScope,
@@ -170,6 +172,8 @@
   let transcriptAnchorKey: string | null = null
   let pendingGeneratedMessageEndKey: string | null = null
   let chatsComponentDestroyed = false
+  const displayScheduler = createChatDisplayScheduler()
+  setContext(CHAT_DISPLAY_SCHEDULER, displayScheduler)
   const initialDisplayReadiness = createInitialDisplayReadiness((pending) => {
     initialDisplayPending = pending
   }, tick)
@@ -289,6 +293,17 @@
     }),
   )
 
+  // Row-list changes (including unrelated hydration) must not create a new
+  // parser character for every unchanged message.
+  const memoizedDisplayCharacter = createSimpleCharacterMemo()
+  const displayCharacter = $derived(
+    memoizedDisplayCharacter(
+      currentCharacter,
+      untrack(() => currentCharacter.customscript),
+      regexDisplayReloadToken,
+    ),
+  )
+
   const chatRows = $derived.by(() => {
     void regexDisplayReloadToken
     void activeRegenerateProjection
@@ -297,10 +312,7 @@
     void activeAppendMessageIndex
     const charImage = getCharImage(currentCharacter.image, 'css')
     const userImage = getCharImage(userIcon, 'css')
-    const simpleChar = createSimpleCharacter(
-      currentCharacter,
-      untrack(() => currentCharacter.customscript),
-    )
+    const simpleChar = displayCharacter
     const currentChatId = chatId ?? null
     recordChatRowsBuild(currentChatId)
     const generationPersistenceLookup = buildGenerationPersistenceStateLookup(
@@ -832,6 +844,7 @@
 
   onDestroy(() => {
     chatsComponentDestroyed = true
+    displayScheduler.destroy()
     releaseDisplaySourceChat(getCurrentChatRoomId())
     initialDisplayReadiness.destroy()
     latestMessageAlignmentVersion += 1
@@ -848,7 +861,15 @@
   })
 
   $effect.pre(() => {
+    displayScheduler.setScope(getCurrentChatRoomId())
     initialDisplayReadiness.updateScope(getCurrentChatRoomId(), chatRows.length > 0, initialRowsPending)
+  })
+
+  $effect(() => {
+    // Subscribe to the semantic startup signal, including localized failures.
+    // Older rows never participate in the newest-row readiness registrations.
+    void $startupCoordinatorStore
+    displayScheduler.setPaused(initialDisplayPending || initialRowsPending || !backgroundReady())
   })
 
   $effect(() => {

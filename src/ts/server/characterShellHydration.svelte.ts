@@ -20,11 +20,16 @@ export interface CharacterShellHydrationOptions {
   signal?: AbortSignal | null
   supersede?: boolean
   timeoutMs?: number
+  minimumRevision?: number
 }
 
 interface InFlightCharacterHydration {
   controller: AbortController
   promise: Promise<boolean>
+  subscribers: Set<{ selectionFence?: SelectedCharacterHydrationFence }>
+  minimumRevision: number
+  settled: boolean
+  target: unknown
 }
 
 interface SelectedCharacterHydrationFence {
@@ -46,7 +51,7 @@ export function startSelectedCharacterShellHydration(): void {
   stopSelectionSubscription = selectedCharID.subscribe(() => {
     selectedRequestAbort?.abort()
     selectedRequestAbort = new AbortController()
-    void hydrateSelectedCharacterShell({ signal: selectedRequestAbort.signal, supersede: true })
+    void hydrateSelectedCharacterShell({ signal: selectedRequestAbort.signal })
   })
 }
 
@@ -81,24 +86,42 @@ export async function hydrateCharacterShell(
   selectionFence?: SelectedCharacterHydrationFence,
 ): Promise<boolean> {
   const existing = getCharacterResourceOwner(characterId)
-  if (!isServerCharacterShell(existing)) return false
+  if (!isServerCharacterShell(existing)) return !!existing
+  if (options.signal?.aborted) return false
 
   const current = inFlight.get(characterId)
-  if (current && !options.supersede) return current.promise
+  const baselineRevision = Math.max(peekCachedServerCommandRevision() ?? 0, options.minimumRevision ?? 0)
+  if (
+    current &&
+    current.target === existing &&
+    !options.supersede &&
+    !current.controller.signal.aborted &&
+    current.minimumRevision >= baselineRevision
+  ) {
+    return subscribeToCharacterHydration(characterId, current, options.signal, selectionFence)
+  }
   if (current) {
     current.controller.abort()
     inFlight.delete(characterId)
   }
-  if (options.signal?.aborted) return false
 
   const generation = shellHydrationGeneration
-  const baselineRevision = peekCachedServerCommandRevision()
   const targetShell = existing
   const controller = new AbortController()
+  const shared: InFlightCharacterHydration = {
+    controller,
+    promise: null!,
+    subscribers: new Set(),
+    minimumRevision: baselineRevision,
+    settled: false,
+    target: existing,
+  }
+  const targetHasSubscriber = () =>
+    [...shared.subscribers].some((subscriber) =>
+      targetStillMatches(characterId, targetShell, subscriber.selectionFence),
+    )
   const timeoutMs = normalizedTimeoutMs(options.timeoutMs)
   let timedOut = false
-  const abortFromCaller = () => controller.abort()
-  options.signal?.addEventListener('abort', abortFromCaller, { once: true })
   const timeout = setTimeout(() => {
     timedOut = true
     controller.abort()
@@ -110,7 +133,7 @@ export async function hydrateCharacterShell(
       result = await fetchServerCharacter(characterId, controller.signal)
     } catch (error) {
       if (generation === shellHydrationGeneration && !controller.signal.aborted) {
-        if (targetStillMatches(characterId, targetShell, selectionFence)) {
+        if (targetHasSubscriber()) {
           setCharacterShellHydrationState(characterId, 'error', 'unavailable')
         }
         shellHydrationWarning(characterId, error instanceof Error ? error.message : String(error))
@@ -118,7 +141,7 @@ export async function hydrateCharacterShell(
       return false
     }
     if (generation !== shellHydrationGeneration || controller.signal.aborted) {
-      if (timedOut && targetStillMatches(characterId, targetShell, selectionFence)) {
+      if (timedOut && targetHasSubscriber()) {
         setCharacterShellHydrationState(characterId, 'error', 'timeout')
         shellHydrationWarning(characterId, 'request timed out')
       }
@@ -126,7 +149,7 @@ export async function hydrateCharacterShell(
     }
     if (result.status !== 'ok') {
       const error = result.status === 'unavailable' ? 'unavailable' : 'invalid-response'
-      if (targetStillMatches(characterId, targetShell, selectionFence)) {
+      if (targetHasSubscriber()) {
         setCharacterShellHydrationState(characterId, 'error', error)
       }
       shellHydrationWarning(characterId, result.status === 'error' ? result.error : 'server resource read unavailable')
@@ -138,13 +161,13 @@ export async function hydrateCharacterShell(
       }
       return false
     }
-    if (!targetStillMatches(characterId, targetShell, selectionFence)) {
+    if (!targetHasSubscriber()) {
       return false
     }
 
     const applied = applyCharacterResource(result)
     if (!applied) {
-      if (targetStillMatches(characterId, targetShell, selectionFence)) {
+      if (targetHasSubscriber()) {
         setCharacterShellHydrationState(characterId, 'error', 'invalid-response')
       }
       return false
@@ -154,15 +177,48 @@ export async function hydrateCharacterShell(
     void hydrateActiveCharacterLorebook()
     return true
   })().finally(() => {
+    shared.settled = true
     clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', abortFromCaller)
     if (inFlight.get(characterId)?.promise === request) {
       inFlight.delete(characterId)
     }
   })
 
-  inFlight.set(characterId, { controller, promise: request })
-  return request
+  shared.promise = request
+  inFlight.set(characterId, shared)
+  return subscribeToCharacterHydration(characterId, shared, options.signal, selectionFence)
+}
+
+function subscribeToCharacterHydration(
+  characterId: string,
+  shared: InFlightCharacterHydration,
+  signal?: AbortSignal | null,
+  selectionFence?: SelectedCharacterHydrationFence,
+): Promise<boolean> {
+  const subscriber = { selectionFence }
+  shared.subscribers.add(subscriber)
+  return new Promise((resolve, reject) => {
+    let finished = false
+    const finish = (complete: () => void) => {
+      if (finished) return
+      finished = true
+      signal?.removeEventListener('abort', abort)
+      shared.subscribers.delete(subscriber)
+      if (!shared.settled && shared.subscribers.size === 0) {
+        if (inFlight.get(characterId) === shared) inFlight.delete(characterId)
+        shared.controller.abort()
+      }
+      complete()
+    }
+    const abort = () => finish(() => resolve(false))
+    signal?.addEventListener('abort', abort, { once: true })
+    if (signal?.aborted) abort()
+    shared.promise.then(
+      (result) =>
+        finish(() => resolve(result && (!selectionFence || selectedTargetStillMatches(characterId, selectionFence)))),
+      (error) => finish(() => reject(error)),
+    )
+  })
 }
 
 export function retryCharacterShellHydration(characterId: string): Promise<boolean> {
@@ -194,6 +250,12 @@ function targetStillMatches(
   // independently fenced writes, but reject any actual row replacement.
   if (!isServerCharacterShell(currentTarget) || currentTarget !== targetShell) return false
   if (!selectionFence) return true
+  return selectedTargetStillMatches(characterId, selectionFence)
+}
+
+function selectedTargetStillMatches(characterId: string, selectionFence: SelectedCharacterHydrationFence): boolean {
+  const currentTarget = getCharacterResourceOwner(characterId)
+  if (!currentTarget) return false
   return (
     get(selectedCharID) === selectionFence.selectedIndex &&
     charactersResourceState.currentChar === selectionFence.selectedIndex &&

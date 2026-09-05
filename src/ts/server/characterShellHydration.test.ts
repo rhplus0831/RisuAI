@@ -302,6 +302,34 @@ describe('character shell hydration', () => {
     expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(true)
   })
 
+  it('keeps route hydration alive when the selected-character subscriber changes selection', async () => {
+    const response = deferred<{ status: 'ok'; revision: number; character: Record<string, unknown> }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+    const route = hydrateCharacterShell('char-1')
+    startSelectedCharacterShellHydration()
+    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
+    const signal = projectionState.fetchResource.mock.calls[0][1] as AbortSignal
+    selectedCharID.set(-1)
+    expect(signal.aborted).toBe(false)
+    response.resolve({ status: 'ok', revision: 1, character: hydratedCharacter() })
+    await expect(route).resolves.toBe(true)
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
+  })
+
+  it('cancels a route subscriber without cancelling selected-character hydration', async () => {
+    const response = deferred<{ status: 'ok'; revision: number; character: Record<string, unknown> }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+    const routeController = new AbortController()
+    const route = hydrateCharacterShell('char-1', { signal: routeController.signal })
+    const selected = hydrateSelectedCharacterShell()
+    routeController.abort()
+    await expect(route).resolves.toBe(false)
+    expect((projectionState.fetchResource.mock.calls[0][1] as AbortSignal).aborted).toBe(false)
+    response.resolve({ status: 'ok', revision: 1, character: hydratedCharacter() })
+    await expect(selected).resolves.toBe(true)
+    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
+  })
+
   it('times out a stalled request, retains the shell, and exposes retry state', async () => {
     vi.useFakeTimers()
     vi.spyOn(console, 'warn').mockImplementation(() => undefined)
