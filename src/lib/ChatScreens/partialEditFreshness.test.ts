@@ -42,6 +42,38 @@ describe('resolveFreshPartialEditSave', () => {
     })
   })
 
+  it('allows the same stable message to move while requiring unchanged source data', () => {
+    expect(resolveFreshPartialEditSave(makeDetail(), makeLive({ chatIndex: 1 }))).toEqual({
+      ok: true,
+      detail: makeDetail(),
+    })
+    expect(resolveFreshPartialEditSave(makeDetail(), makeLive({ chatIndex: 1, data: 'changed source' }))).toEqual({
+      ok: false,
+      reason: 'source-data-changed',
+    })
+    expect(resolveFreshPartialEditSave(makeDetail(), makeLive({ chatIndex: 1, messageId: 'message-b' })).ok).toBe(false)
+    expect(resolveFreshPartialEditSave(makeDetail(), makeLive({ chatIndex: 1, chatId: 'chat-b' })).ok).toBe(false)
+  })
+
+  it('requires both stable IDs to relax the position check', () => {
+    for (const ids of [{ chatId: undefined }, { messageId: undefined }]) {
+      expect(resolveFreshPartialEditSave(makeDetail(ids), makeLive({ ...ids, chatIndex: 1 }))).toEqual({
+        ok: false,
+        reason: 'chat-index-changed',
+      })
+    }
+  })
+
+  it('allows a relocated translation edit only while its captured translation remains current', () => {
+    const detail = makeDetail({ layer: 'translation', sourceData: 'translated source' })
+    expect(
+      resolveFreshPartialEditSave(detail, makeLive({ chatIndex: 1, translationText: 'translated source' })),
+    ).toEqual({ ok: true, detail })
+    expect(resolveFreshPartialEditSave(detail, makeLive({ chatIndex: 1, translationText: 'new translation' }))).toEqual(
+      { ok: false, reason: 'source-data-changed' },
+    )
+  })
+
   it('rejects changed message data while the modal is open', () => {
     expect(resolveFreshPartialEditSave(makeDetail(), makeLive({ data: 'alpha newer omega' }))).toEqual({
       ok: false,

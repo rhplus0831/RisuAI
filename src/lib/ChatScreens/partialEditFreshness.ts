@@ -46,7 +46,15 @@ export function resolveFreshPartialEditSave(
     return { ok: false, reason: 'missing-live-message' }
   }
 
-  if (live.chatIndex !== detail.chatIndex) {
+  const sameStableIdentity =
+    !!normalizeOptionalId(detail.chatId) &&
+    !!normalizeOptionalId(detail.messageId) &&
+    normalizeOptionalId(live.chatId) === normalizeOptionalId(detail.chatId) &&
+    normalizeOptionalId(live.messageId) === normalizeOptionalId(detail.messageId)
+
+  // A mounted editor follows its stable row through unrelated earlier deletions.
+  // Legacy callers without both IDs must still match the captured position.
+  if (live.chatIndex !== detail.chatIndex && !sameStableIdentity) {
     return { ok: false, reason: 'chat-index-changed' }
   }
 

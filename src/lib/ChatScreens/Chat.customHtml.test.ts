@@ -632,6 +632,31 @@ function mountCustomHtmlRows(
   }
 }
 
+function mountStableMessageRow(messageId: string) {
+  const chat = testDatabaseState.db.characters[0].chats[0]
+  components.push(
+    mount(Chat, {
+      target,
+      props: {
+        get message() {
+          return chat.message.find((message) => message.chatId === messageId)?.data ?? ''
+        },
+        get idx() {
+          return chat.message.findIndex((message) => message.chatId === messageId)
+        },
+        get totalLength() {
+          return chat.message.length
+        },
+        name: 'Template Bot',
+        isLastMemory: false,
+        role: 'char',
+        displayMessageId: messageId,
+        displayChatId: chat.id,
+      },
+    }) as MountedComponent,
+  )
+}
+
 function mountPopupList() {
   components.push(mount(PopupList, { target }) as MountedComponent)
 }
@@ -1301,6 +1326,79 @@ describe('transcript interaction reservations', () => {
     components = []
     await settle()
     expect(unsubscribe).toHaveBeenCalledOnce()
+  })
+})
+
+describe('stable message editor identity', () => {
+  it('keeps the inline draft and saves to the same message after an earlier row is deleted', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(3, null as unknown as string)
+    mountStableMessageRow('message-1')
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const editor = target.querySelector<HTMLTextAreaElement>('.message-edit-area')!
+    expect(editor).not.toBeNull()
+    editor.value = 'kept inline draft'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    testDatabaseState.db.characters[0].chats[0].message.splice(0, 1)
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBe(editor)
+    expect(editor.value).toBe('kept inline draft')
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-1',
+      { data: 'kept inline draft' },
+      expect.anything(),
+    )
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('visible message 2')
+  })
+
+  it('keeps the popup draft after an earlier row is deleted', async () => {
+    const pendingEditorWait = deferred<void>()
+    customHtmlMocks.sleep.mockReturnValueOnce(pendingEditorWait.promise)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(3, null as unknown as string)
+    testDatabaseState.db.disableAutoPopupMessageEditor = false
+    mountStableMessageRow('message-1')
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(popUpEditorStore.open).toBe(true)
+    popUpEditorStore.value = 'kept popup draft'
+    testDatabaseState.db.characters[0].chats[0].message.splice(0, 1)
+    await settle()
+    expect(popUpEditorStore.open).toBe(true)
+    popUpEditorStore.open = false
+    pendingEditorWait.resolve()
+    await settle()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'message-1',
+      { data: 'kept popup draft' },
+      expect.anything(),
+    )
+  })
+
+  it('does not overwrite a changed source after relocation', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    seedDatabase(3, null as unknown as string)
+    mountStableMessageRow('message-1')
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    const editor = target.querySelector<HTMLTextAreaElement>('.message-edit-area')!
+    editor.value = 'stale draft'
+    editor.dispatchEvent(new Event('input', { bubbles: true }))
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message.splice(0, 1)
+    chat.message[0].data = 'newer authoritative text'
+    await settle()
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
+    expect(chat.message[0].data).toBe('newer authoritative text')
+    expect(chat.message[1].data).toBe('visible message 2')
   })
 })
 

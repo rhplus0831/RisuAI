@@ -178,6 +178,7 @@
 
   let translating = $state(false)
   let editMode = $state(false)
+  let messageEditText = $state('')
   let statusMessage: string = $state('')
   let retranslate = $state(false)
   let editTranslationMode = $state(false)
@@ -333,6 +334,7 @@
     messageId?: string
     messageReference: Message
     messageIndex: number
+    sourceData: string
   }
 
   let {
@@ -415,7 +417,7 @@
     shouldUseStableMessageEditor({
       editMode,
       index: idx,
-      message,
+      message: editMode ? messageEditText : message,
       theme: displaySettings.theme,
     }),
   )
@@ -460,6 +462,7 @@
       messageId: liveMessage.chatId || undefined,
       messageReference: liveMessage,
       messageIndex: idx,
+      sourceData: liveMessage.data,
     }
   }
 
@@ -473,7 +476,8 @@
   }
 
   function isCurrentMessageEditorTarget(target: MessageEditorTarget): boolean {
-    if (idx !== target.messageIndex) return false
+    // Stable message identity survives unrelated insertions/removals before this row.
+    if (!target.messageId && idx !== target.messageIndex) return false
 
     const owner = mutableActiveChatOwner()
     if (!owner) return false
@@ -498,6 +502,7 @@
     const liveMessage = chat.message?.[idx]
     return (
       !!liveMessage &&
+      liveMessage.data === target.sourceData &&
       matchesMessageEditorIdentity(
         liveMessage.chatId || undefined,
         target.messageId,
@@ -511,6 +516,7 @@
     editMode = false
     messageEditOriginalText = null
     messageEditTarget = null
+    messageEditText = ''
   }
 
   function beginMessageEdit() {
@@ -524,6 +530,7 @@
     }
     messageEditTarget = target
     messageEditOriginalText = message
+    messageEditText = message
     editMode = true
   }
 
@@ -554,9 +561,10 @@
     pendingMessageEdits += 1
     editMode = false
     try {
-      await edit(target)
+      await edit(target, messageEditText)
     } finally {
       pendingMessageEdits -= 1
+      if (!editMode) messageEditText = ''
     }
   }
 
@@ -586,9 +594,8 @@
     }
 
     autoPopupMessageEditorOpen = true
-    messageEditOriginalText ??= message
-    const initialValue = message
-    const sessionId = openPopupEditorSession(message)
+    const initialValue = messageEditText
+    const sessionId = openPopupEditorSession(messageEditText)
     activeAutoPopupMessageSessionId = sessionId
 
     try {
@@ -597,7 +604,7 @@
         if (
           messageEditTarget !== target ||
           !editMode ||
-          message !== initialValue ||
+          messageEditText !== initialValue ||
           !isCurrentMessageEditorTarget(target)
         ) {
           closePopupEditorSession(sessionId)
@@ -606,7 +613,7 @@
       }
 
       if (!isPopupEditorSessionCurrent(sessionId)) return
-      if (messageEditTarget !== target || !editMode || message !== initialValue) {
+      if (messageEditTarget !== target || !editMode || messageEditText !== initialValue) {
         closePopupEditorSession(sessionId)
         return
       }
@@ -616,7 +623,7 @@
         return
       }
 
-      message = popUpEditorStore.value
+      messageEditText = popUpEditorStore.value
       await saveMessageEdit()
     } finally {
       if (activeAutoPopupMessageSessionId === sessionId) activeAutoPopupMessageSessionId = null
@@ -1508,21 +1515,22 @@
     })
   }
 
-  async function edit(target: MessageEditorTarget) {
+  async function edit(target: MessageEditorTarget, nextData: string) {
     const originalText = messageEditOriginalText
     messageEditOriginalText = null
     messageEditTarget = null
-    if (originalText !== null && message === originalText) return
+    if (originalText !== null && nextData === originalText) return
     if (!isCurrentMessageEditorTarget(target)) return
 
     const previous = currentChatScopedSnapshot()
     const chat = mutableActiveChatOwner()?.chat
     if (!chat) return
     const liveMessage = chat.message[idx]
-    if (!liveMessage || liveMessage.data === message) return
+    if (!liveMessage || liveMessage.data === nextData) return
 
+    message = nextData
     const messageId = liveMessage.chatId
-    const patch = sourceEditPatch(liveMessage, message)
+    const patch = sourceEditPatch(liveMessage, nextData)
     invalidateTranslationUiForSourceEdit(patch)
     if (canUseServerCommands()) {
       if (messageId) {
@@ -2462,7 +2470,7 @@
       }} />
   {:else if editMode && !isGenerationLoading}
     <AutoresizeArea
-      bind:value={message}
+      bind:value={messageEditText}
       ariaLabel={language.messageInput}
       popupEditor
       stableHeight={useStableMessageEditor}
@@ -3481,7 +3489,7 @@
               <textarea
                 aria-label={language.messageInput}
                 class="grow h-138 sm:h-96 overflow-y-auto bg-transparent text-black p-2 mb-2 resize-none message-edit-area"
-                bind:value={message}></textarea>
+                bind:value={messageEditText}></textarea>
             {:else}
               <div class="grow h-138 sm:h-96 overflow-y-auto p-2 mb-2 sm:mb-0">
                 {@render textBox()}
