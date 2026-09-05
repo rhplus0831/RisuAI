@@ -48,6 +48,22 @@ state. Active stream viewers and job attachments remain process-local. Current
 browser state is rebuilt from concrete REST resources rather than a cached
 database projection.
 
+Ordered collection tables keep their position primary keys. Generation-selected
+lookups also use non-unique JSON-expression ID indexes on model presets, prompt
+presets, personas, modules and Hypa presets, plus a module namespace index.
+Non-unique indexes preserve existing duplicate-ID resolution rules. These are
+derived, idempotently created structures; index creation does not advance the
+domain revision or rewrite payloads.
+
+`loadPersistedForGenerationPreflight()` supplies selected configuration plus
+separate character/chat metadata. `loadPersistedForGenerationAssembly()` supplies
+one selected character/chat and its transcript/Hypa state, selected collection
+owners and only the required default-scaffold root template. Both return raw
+unknown JSON for the generation domain's validation boundary. Speaker-name
+snapshots include only IDs referenced by that target history. Pre-extraction
+embedded characters have a named compatibility scope; the historical assembly
+and display loaders remain separate owners.
+
 Prompt-template ownership follows the split-preset contract. Modern template
 bodies are persisted as `promptPresets[].promptTemplate` inside
 `prompt_presets.data_json` rows. The selected owner is projected through the

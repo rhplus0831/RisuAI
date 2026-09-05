@@ -298,7 +298,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 2d: Selected Locale Accepted
 
-- Implementation: accompanying selected-locale commit.
+- Implementation: `8bc5a83b6`.
   [Loading contract and all before/after evidence](evidence/locale-loading.md)
   records the exact fixtures, commands, readiness medians, and retry regression.
 - Initial HTML JavaScript falls from 389,721 to 159,433 gzip bytes (59.09%);
@@ -314,3 +314,32 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   and build-report tests pass as enumerated in the evidence. Current guides and
   both documentation validators, Prettier and whitespace checks pass. Phase 2
   meets its budgets; final aggregate remains pending until all implementation ends.
+
+## Phase 3: Selected Repository Primitives Accepted; Cutover In Progress
+
+- Implementation: accompanying repository-primitives commit. New preflight
+  loader returns selected configuration and separate owner metadata without
+  reading transcripts/Hypa bodies. New assembly loader reads the selected target
+  and required collection bodies; neither scans asset metadata. Root prompt
+  cards are read only for the exact selected default scaffold's absent-body
+  fallback. Explicit null/empty/owned bodies and nondefault absence stay distinct.
+- ID and module-namespace expression indexes prevent hidden unrelated JSON scans
+  behind selected lookups. Duplicate prompt owners fail closed, module ID/
+  namespace matching preserves collection order, and nonempty extracted tables
+  retain precedence over embedded fallback. Index setup is idempotent and does
+  not advance the revision.
+- Referenced speaker names and misses are captured synchronously, including
+  initial user/named rows because later role changes can expose their speaker
+  ID. Supported Lua/V2 operations cannot introduce new saying IDs: full-history
+  replacement keeps only role/data, and other mutations edit/remove existing
+  fields. The captured name map therefore needs no later SQL lookup or broad
+  sibling-character shells. Existing working-character lookup remains primary.
+- `pnpm test -- server/fastify/__tests__/generationInputLoaders.test.ts`: 14
+  passed. Tests cover row/asset scope, indexed query plans, ordering/duplicates,
+  legacy embedded scope, template ownership, stable Hypa selection and speaker
+  snapshot behavior. Prettier, whitespace and documentation checks pass.
+- Route cutover, concrete type/schema closure, immutable configuration/working
+  ownership, combined cost/timing and browser evidence remain in progress. F02
+  and F09 remain open. Settings still occupy one configuration JSON row; its
+  embedded profile/credential/agent arrays need explicit residual-cost evidence
+  before final acceptance rather than a universal constant-cost claim.

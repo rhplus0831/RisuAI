@@ -9,7 +9,10 @@ import {
   normalizeDatabaseDefaults,
 } from './databaseDefaults.js'
 import { rebuildAllBardWikiDerivedState } from './bardWikiRepository.js'
-import { repairStoredChatGenerationSettings } from './chatGenerationSettingsStorage.js'
+import {
+  normalizeStoredChatGenerationSettings,
+  repairStoredChatGenerationSettings,
+} from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
 import { getSchemaState } from './db.js'
 import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
@@ -54,6 +57,8 @@ import {
 } from '@risuai/shared-core/hypa-v3-preset-selection-identity'
 import { normalizeAgentConfiguration, normalizeAgentPresetDefaultId } from '@risuai/shared-core/agent-preset-records'
 import { getCanonicalTranslatorPresets } from '@risuai/shared-core/translator-presets'
+import { parseModuleIntegration, resolveAgentPresetModuleIntegration } from '@risuai/shared-core/module-integration'
+import { resolveEffectiveAgentPresetId } from '@risuai/shared-core/agent-preset-resolver'
 
 const PLUGIN_CUSTOM_STORAGE_EMPTY_SENTINEL_KEY = '__risu_internal_plugin_custom_storage_empty__'
 
@@ -206,6 +211,16 @@ export function createCollectionTables(db: DatabaseSync): void {
       )
     `)
   }
+  // These non-unique derived indexes preserve imported duplicate-ID semantics
+  // while keeping selected generation reads off unrelated collection JSON.
+  for (const tableName of ['modules', 'model_presets', 'prompt_presets', 'personas', 'hypa_v3_presets']) {
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_generation_${tableName}_id ON ${tableName} (json_extract(data_json, '$.id'))`,
+    )
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_generation_modules_namespace ON modules (json_extract(data_json, '$.namespace'))",
+  )
   db.exec(`
     CREATE TABLE IF NOT EXISTS plugin_custom_storage (
       key TEXT PRIMARY KEY,
@@ -2315,6 +2330,407 @@ export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chat
     }
   })
   return persisted
+}
+
+export interface GenerationLoadTarget {
+  characterId: string
+  chatId: string
+}
+
+interface GenerationReadScope {
+  generationScope: 'selected' | 'legacy'
+  /** Only pre-extraction embedded characters need the broad compatibility read. */
+  generationLegacyReason?: 'embedded-characters'
+}
+
+export interface GenerationPreflightLoad extends GenerationReadScope {
+  preflightInputs: { database: unknown; currentChar: unknown; currentChat: unknown } | null
+}
+
+export interface GenerationPersisted extends Persisted, GenerationReadScope {
+  /** Captured referenced names, including explicit misses; never fake sibling characters. */
+  speakerNames?: Readonly<Record<string, string | undefined>>
+}
+
+type GenerationCollectionTable = 'model_presets' | 'prompt_presets' | 'personas' | 'modules' | 'hypa_v3_presets'
+
+interface GenerationTargetRow {
+  character_json: string
+  chat_json: string
+  model_presets_present: number
+  prompt_presets_present: number
+  personas_present: number
+  modules_present: number
+  hypa_v3_presets_present: number
+}
+
+interface GenerationSelectedRows {
+  database: JsonRecord
+  currentChar: JsonRecord
+  currentChat: JsonRecord
+  speakerNames?: Readonly<Record<string, string>>
+}
+
+/**
+ * Readiness requires selected configuration and owner metadata, not transcripts,
+ * Hypa chat bodies, or character descriptions. Keep the raw records unknown at
+ * the public boundary so the prompt-owned decoder must validate them.
+ */
+export function loadPersistedForGenerationPreflight(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+): GenerationPreflightLoad {
+  const loaded = loadGenerationSelectedRows(db, dataDir, target, false)
+  return {
+    generationScope: loaded.generationScope,
+    ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+    preflightInputs: loaded.rows,
+  }
+}
+
+/**
+ * Ordinary generation loads one character/chat and selected collection owners.
+ * Asset bytes stay behind the existing request-scoped stored-asset resolver.
+ * The historical assembly loader remains available for explicit legacy callers.
+ */
+export function loadPersistedForGenerationAssembly(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+): GenerationPersisted {
+  const loaded = loadGenerationSelectedRows(db, dataDir, target, true)
+  if (!loaded.rows)
+    return {
+      ...emptyPersisted(),
+      generationScope: loaded.generationScope,
+      ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+    }
+  const { database, currentChar, currentChat } = loaded.rows
+  hydrateGenerationTargetChat(db, currentChat, target.chatId)
+  const speakerNames = captureGenerationSpeakerNames(db, currentChar, currentChat, loaded.rows.speakerNames)
+  currentChar.chatPage = 0
+  currentChar.chats = [currentChat]
+  database.currentChar = 0
+  database.characters = [currentChar]
+  return {
+    _version: PERSISTED_VERSION,
+    database,
+    assets: [],
+    generationScope: loaded.generationScope,
+    ...(loaded.generationLegacyReason ? { generationLegacyReason: loaded.generationLegacyReason } : {}),
+    ...(speakerNames ? { speakerNames } : {}),
+  }
+}
+
+function captureGenerationSpeakerNames(
+  db: DatabaseSync,
+  currentChar: JsonRecord,
+  currentChat: JsonRecord,
+  embeddedNames?: Readonly<Record<string, string>>,
+): Readonly<Record<string, string | undefined>> | undefined {
+  // Scripts can change a stored message's role while preserving its saying ID.
+  // Capture all existing references before any awaited script/provider work.
+  const ids = new Set(
+    generationRecords(currentChat.message).flatMap((message) =>
+      typeof message.saying === 'string' && message.saying !== '' ? [message.saying] : [],
+    ),
+  )
+  if (ids.size === 0) return undefined
+  const names: Record<string, string | undefined> = {}
+  const pending: string[] = []
+  for (const id of ids) {
+    const name =
+      id === currentChar.chaId
+        ? currentChar.name
+        : embeddedNames && Object.prototype.hasOwnProperty.call(embeddedNames, id)
+          ? embeddedNames[id]
+          : undefined
+    Object.defineProperty(names, id, {
+      value: typeof name === 'string' ? name : undefined,
+      enumerable: true,
+      writable: true,
+    })
+    // A legacy embedded snapshot is complete, including a missing ID. Do not
+    // replace that absence with a later SQL lookup against another snapshot.
+    if (id !== currentChar.chaId && !embeddedNames) pending.push(id)
+  }
+  if (pending.length > 0) {
+    const rows = db
+      .prepare(
+        `SELECT id, json_extract(data_json, '$.name') AS name FROM characters
+      WHERE id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(pending))
+    for (const row of rows) {
+      if (typeof row.id === 'string' && typeof row.name === 'string') names[row.id] = row.name
+    }
+  }
+  return names
+}
+
+function loadGenerationSelectedRows(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+  includeHistory: boolean,
+): GenerationReadScope & { rows: GenerationSelectedRows | null } {
+  // Preserve the existing inline-secret repair boundary and its credential
+  // semantics. This one settings document remains configuration-scoped work.
+  const settings = loadSettingsFromSqlite(db)
+  if (!settings) return { generationScope: 'selected', rows: null }
+  const characterProjection = includeHistory
+    ? 'character.data_json'
+    : `json_object('chaId', json_extract(character.data_json, '$.chaId'),
+        'modules', json(character.data_json -> '$.modules'),
+        'supaMemory', json(character.data_json -> '$.supaMemory'))`
+  const chatProjection = includeHistory
+    ? 'chat.data_json'
+    : `json_object('id', json_extract(chat.data_json, '$.id'),
+        'generationSettings', json(chat.data_json -> '$.generationSettings'),
+        'modules', json(chat.data_json -> '$.modules'),
+        'hypaContextTruncationAcknowledged', json(chat.data_json -> '$.hypaContextTruncationAcknowledged'))`
+  // Presence checks share the target result row. Empty extracted tables retain
+  // their embedded compatibility value; an ID miss in a nonempty table cannot.
+  const row = db
+    .prepare(
+      `SELECT ${characterProjection} AS character_json, ${chatProjection} AS chat_json,
+      EXISTS(SELECT 1 FROM model_presets) AS model_presets_present,
+      EXISTS(SELECT 1 FROM prompt_presets) AS prompt_presets_present,
+      EXISTS(SELECT 1 FROM personas) AS personas_present,
+      EXISTS(SELECT 1 FROM modules) AS modules_present,
+      EXISTS(SELECT 1 FROM hypa_v3_presets) AS hypa_v3_presets_present
+    FROM chats AS chat JOIN characters AS character ON character.id = chat.character_id
+    WHERE chat.id = ? AND character.id = ?`,
+    )
+    .get(target.chatId, target.characterId) as unknown as GenerationTargetRow | undefined
+  if (!row) {
+    const embeddedCharacters = Array.isArray(settings.characters) ? settings.characters : []
+    if (embeddedCharacters.length > 0 && !db.prepare('SELECT 1 AS present FROM characters LIMIT 1').get()) {
+      return loadLegacyGenerationSelectedRows(db, dataDir, target, includeHistory)
+    }
+    return { generationScope: 'selected', rows: null }
+  }
+  const currentChar = JSON.parse(row.character_json) as unknown
+  const currentChat = parseStoredChatRow(row.chat_json)
+  if (
+    !isRecord(currentChar) ||
+    !isRecord(currentChat) ||
+    currentChar.chaId !== target.characterId ||
+    currentChat.id !== target.chatId
+  ) {
+    return { generationScope: 'selected', rows: null }
+  }
+  if (!includeHistory) {
+    removeNullGenerationMetadata(currentChar)
+    removeNullGenerationMetadata(currentChat)
+  }
+  const database = selectGenerationConfiguration(db, settings, row, currentChar, currentChat, includeHistory)
+  return { generationScope: 'selected', rows: { database, currentChar, currentChat } }
+}
+
+function removeNullGenerationMetadata(record: JsonRecord): void {
+  for (const key of Object.keys(record)) if (record[key] === null) delete record[key]
+}
+
+function selectGenerationConfiguration(
+  db: DatabaseSync,
+  settings: JsonRecord,
+  presence: GenerationTargetRow,
+  currentChar: JsonRecord,
+  currentChat: JsonRecord,
+  includeHistory: boolean,
+): JsonRecord {
+  const chatSettings = normalizeStoredChatGenerationSettings(currentChat.generationSettings)
+  const read = (table: GenerationCollectionTable, field: string, id: unknown, limit = 1) =>
+    readGenerationCollectionSelection(db, table, settings[field], presence[`${table}_present`], id, limit)
+  const modelPresets = read('model_presets', 'modelPresets', chatSettings?.modelPresetId)
+  const promptPresets = read('prompt_presets', 'promptPresets', chatSettings?.promptPresetId, 2)
+  const personas = read('personas', 'personas', chatSettings?.personaId)
+  const agentPresetId = resolveEffectiveAgentPresetId(
+    {
+      agentPresetDefaultId:
+        typeof settings.agentPresetDefaultId === 'string' ? settings.agentPresetDefaultId : undefined,
+    },
+    chatSettings,
+  )
+  const agentPresets = agentPresetId
+    ? generationRecords(settings.agentPresets)
+        .filter((preset) => preset.id === agentPresetId)
+        .slice(0, 1)
+    : []
+  const agentIds = new Set(generationRecords(agentPresets[0]?.agentUses).map((use) => use.agentId))
+  const agents = generationRecords(settings.agents).filter((agent) => agentIds.has(agent.id))
+  const promptPreset = promptPresets.length === 1 ? promptPresets[0] : undefined
+  const identifiers = [
+    ...new Set([
+      ...generationStringArray(settings.enabledModules),
+      ...generationStringArray(currentChar.modules),
+      ...generationStringArray(currentChat.modules),
+      ...generationStringArray(personas[0]?.modules),
+      ...parseModuleIntegration(promptPreset?.moduleIntergration),
+      ...parseModuleIntegration(resolveAgentPresetModuleIntegration(agentPresets, agentPresetId)),
+    ]),
+  ]
+  const modules = readGenerationModules(db, settings.modules, presence.modules_present, identifiers, includeHistory)
+  const database = { ...settings }
+  for (const field of COLLECTION_FIELDS) delete database[field]
+  delete database.characters
+  delete database.pluginCustomStorage
+  Object.assign(database, { modelPresets, promptPresets, personas, modules, agents, agentPresets })
+  database.modelPresetsId = modelPresets.length ? 0 : -1
+  database.promptPresetsId = promptPresets.length ? 0 : -1
+  if (
+    promptPreset &&
+    isDefaultPromptPreset(promptPreset) &&
+    !Object.prototype.hasOwnProperty.call(promptPreset, 'promptTemplate')
+  ) {
+    const rootTemplate = loadCollectionFieldFromSqlite(db, 'prompt_templates')
+    if (rootTemplate !== null) database.promptTemplate = rootTemplate
+    else if (Object.prototype.hasOwnProperty.call(settings, 'promptTemplate'))
+      database.promptTemplate = settings.promptTemplate
+  }
+  projectSelectedPromptTemplate(database, database.promptPresetsId)
+  database.selectedPersona = selectedPersonaIndexFromStableId(database)
+  if (includeHistory) {
+    database.hypaV3Presets = read('hypa_v3_presets', 'hypaV3Presets', settings.selectedHypaV3PresetId, 2)
+    projectSelectedHypaV3PresetCompatibilityIndex(database)
+  }
+  return database
+}
+
+function readGenerationCollectionSelection(
+  db: DatabaseSync,
+  table: GenerationCollectionTable,
+  embedded: unknown,
+  tablePresent: number,
+  id: unknown,
+  limit: number,
+): JsonRecord[] {
+  if (typeof id !== 'string' || id.trim() === '') return []
+  if (!tablePresent)
+    return generationRecords(embedded)
+      .filter((record) => record.id === id)
+      .slice(0, limit)
+  const rows = db
+    .prepare(
+      `SELECT data_json FROM ${table}
+    WHERE json_extract(data_json, '$.id') = ? ORDER BY position LIMIT ?`,
+    )
+    .all(id, limit)
+  return rows.flatMap((row) => {
+    const parsed: unknown = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : undefined
+    return isRecord(parsed) && parsed.id === id ? [parsed] : []
+  })
+}
+
+function readGenerationModules(
+  db: DatabaseSync,
+  embedded: unknown,
+  tablePresent: number,
+  identifiers: readonly string[],
+  includeBodies: boolean,
+): JsonRecord[] {
+  if (identifiers.length === 0) return []
+  let records: JsonRecord[]
+  if (!tablePresent) {
+    const wanted = new Set(identifiers)
+    records = generationRecords(embedded).filter(
+      (module) =>
+        (typeof module.id === 'string' && wanted.has(module.id)) ||
+        (typeof module.namespace === 'string' && wanted.has(module.namespace)),
+    )
+  } else {
+    const projection = includeBodies
+      ? 'data_json'
+      : `json_object('id', json_extract(data_json, '$.id'),
+      'namespace', json_extract(data_json, '$.namespace'),
+      'customModuleToggle', json_extract(data_json, '$.customModuleToggle'))`
+    const selection = JSON.stringify(identifiers)
+    const rows = db
+      .prepare(
+        `SELECT ${projection} AS data_json FROM modules
+      WHERE json_extract(data_json, '$.id') IN (SELECT value FROM json_each(?))
+        OR json_extract(data_json, '$.namespace') IN (SELECT value FROM json_each(?))
+      ORDER BY position`,
+      )
+      .all(selection, selection)
+    records = rows.flatMap((row) => {
+      const parsed: unknown = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : undefined
+      return isRecord(parsed) ? [parsed] : []
+    })
+  }
+  // The shared activation resolver deduplicates only after a matching row and
+  // preserves collection order. Keep matching duplicate rows here so it remains
+  // the single owner of that policy.
+  return includeBodies
+    ? records
+    : records.map((module) => {
+        const metadata = { id: module.id, namespace: module.namespace, customModuleToggle: module.customModuleToggle }
+        removeNullGenerationMetadata(metadata)
+        return metadata
+      })
+}
+
+function generationRecords(value: unknown): JsonRecord[] {
+  return Array.isArray(value) ? value.filter(isRecord) : []
+}
+
+function generationStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+function hydrateGenerationTargetChat(db: DatabaseSync, chat: JsonRecord, chatId: string): void {
+  const messages = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
+  if (messages && messages.length > 0) chat.message = messages
+  else if (!Array.isArray(chat.message)) chat.message = []
+  const hypa = getChatHypaV3GroupedByIds(db, [chatId])
+  if (hypa.has(chatId)) chat.hypaV3Data = hypa.get(chatId)
+}
+
+function loadLegacyGenerationSelectedRows(
+  db: DatabaseSync,
+  dataDir: string,
+  target: GenerationLoadTarget,
+  includeHistory: boolean,
+): GenerationReadScope & { rows: GenerationSelectedRows | null } {
+  // Pre-extraction settings already contain the embedded library JSON. Keep the
+  // old collection precedence/repair behavior but never scan asset metadata or
+  // hydrate transcripts during preflight.
+  const database = loadPersistedDatabase(db, dataDir)
+  const scope = { generationScope: 'legacy' as const, generationLegacyReason: 'embedded-characters' as const }
+  if (!isRecord(database)) return { ...scope, rows: null }
+  const currentChar = generationRecords(database.characters).find((character) => character.chaId === target.characterId)
+  const currentChat = generationRecords(currentChar?.chats).find((chat) => chat.id === target.chatId)
+  if (!currentChar || !currentChat) return { ...scope, rows: null }
+  const settings = { ...database }
+  delete settings.characters
+  if (includeHistory) {
+    const speakerNames: Record<string, string> = {}
+    for (const character of generationRecords(database.characters)) {
+      if (
+        typeof character.chaId === 'string' &&
+        typeof character.name === 'string' &&
+        !Object.prototype.hasOwnProperty.call(speakerNames, character.chaId)
+      ) {
+        Object.defineProperty(speakerNames, character.chaId, { value: character.name, enumerable: true })
+      }
+    }
+    return { ...scope, rows: { database: settings, currentChar, currentChat, speakerNames } }
+  }
+  const characterMetadata = {
+    chaId: currentChar.chaId,
+    modules: currentChar.modules,
+    supaMemory: currentChar.supaMemory,
+  }
+  const chatMetadata = {
+    id: currentChat.id,
+    generationSettings: currentChat.generationSettings,
+    modules: currentChat.modules,
+    hypaContextTruncationAcknowledged: currentChat.hypaContextTruncationAcknowledged,
+  }
+  repairStoredChatGenerationSettings(chatMetadata)
+  return { ...scope, rows: { database: settings, currentChar: characterMetadata, currentChat: chatMetadata } }
 }
 
 /**
