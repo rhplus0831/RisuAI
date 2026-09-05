@@ -99,6 +99,8 @@ owned by the separate display scheduler.
 Measured reverse-flow spacers preserve omitted height; a chat-scoped cache holds
 at most 2,048 fractional-pixel measurements and resets on width changes. A visible
 stable message and offset anchor corrects free scrolling after row/media changes.
+It chooses the first visible row by geometry and captures a changed user scroll
+position synchronously before awaited updates can alter that position.
 The intended fractional offset survives successive corrections so browser scroll
 rounding does not accumulate across parser/image updates.
 Existing start/end anchors still own entry and followed generation. Navigation

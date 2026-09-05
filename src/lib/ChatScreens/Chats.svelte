@@ -564,13 +564,17 @@
   function captureResidencyAnchor(): { id: string; top: number } | null {
     if (!scrollContainer) return null
     const viewport = scrollContainer.getBoundingClientRect()
+    let anchor: { id: string; top: number } | null = null
     for (const [id, element] of rowElements) {
       const rect = element.getBoundingClientRect()
       if (rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom) {
-        return { id, top: rect.top - viewport.top }
+        const top = rect.top - viewport.top
+        // Insertion order changes during progressive admission. Anchor the
+        // first visible row, not a lower neighbor that may finish parsing.
+        if (!anchor || top < anchor.top) anchor = { id, top }
       }
     }
-    return null
+    return anchor
   }
 
   function handleResidencyFocusChange(): void {
@@ -1122,6 +1126,18 @@
   }
 
   export const handleTranscriptScroll = () => {
+    if (
+      scrollContainer &&
+      Math.abs(scrollContainer.scrollTop - residencyScrollTop) >= 0.5 &&
+      currentTranscriptAnchor() === 'free' &&
+      !jumpMessageId &&
+      !fullResidency
+    ) {
+      // Capture the user's new position before an awaited body/older-page
+      // update can change geometry ahead of the next reconciliation frame.
+      residencyAnchor = captureResidencyAnchor()
+      residencyScrollTop = scrollContainer.scrollTop
+    }
     scheduleResidency()
     if (isAligningLatestMessage) return
 

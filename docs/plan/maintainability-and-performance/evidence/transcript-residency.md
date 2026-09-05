@@ -198,3 +198,24 @@ from unprofiled cost acceptance. Focused transcript-window 105, startup 4 and
 geometry/admission 8 tests pass. The rapid-motion report records parent HEAD
 `4154dade9` plus this progressive-admission worktree; the next isolated cost
 report must use its clean implementation commit.
+
+### First progressive cost attempt: older-page anchor remains open
+
+Source `547f927b3`; [retained completed journeys and failure](transcript-residency-progressive-first-costs.json).
+Desktop30/180 complete with scrolling p95 16.9/18.3 ms; desktop180 has 1.161
+seconds of separately measured settlement and 26.285 MiB retained heap. The
+next desktop600 journey stops at older-page31 with 13 pixels of anchor drift.
+Remaining serial cases do not run. The original one-pixel tolerance is unchanged.
+That probe wrote journeys only after completion, so the failed journey's earlier
+in-memory stages are unavailable; failure-only partial serialization is now
+required before another comparison.
+
+Progressive insertion makes Map order differ from visual row order. The next
+anchor correction selects the first visible row by geometry; preserving a lower
+neighbor while its body finishes parsing can otherwise move the oldest row.
+All eleven native cases pass with visual-order anchoring. A subsequent related
+correction captures a changed free-scroll position synchronously, before awaited
+body/hydration updates can alter it ahead of the reconciliation frame. That
+addition requires the fresh cost build and final native run. Failure-only probe
+serialization preserves completed samples and the failing sampled stage before
+throwing, without additional reads/writes on successful measurement paths.

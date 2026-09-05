@@ -79,6 +79,8 @@ interface Stage {
   responseEndToSettledMs: number | null
   anchorDeltaPx: number | null
 }
+const failedStages = new WeakMap<Error, { stage: Stage; anchor: Anchor | null }>()
+const failedScrolls = new WeakMap<Error, unknown>()
 
 for (let repetition = 0; repetition < REPETITIONS; repetition++) {
   for (const profile of PROFILES) {
@@ -105,6 +107,8 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
         const cdp = await context.newCDPSession(page)
         const errors: string[] = []
         const stages: Stage[] = []
+        const completedScrolls: Record<string, unknown> = {}
+        let olderLoads = 0
         page.on('pageerror', (error) => errors.push(error.message))
         await cdp.send('Performance.enable')
         await cdp.send('Emulation.setCPUThrottlingRate', { rate: profile.cpuRate })
@@ -120,7 +124,6 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
           await waitForRenderedRows(page)
 
           let loaded = await windowRows(page)
-          let olderLoads = 0
           while (loaded < messageCount) {
             const previousLoaded = loaded
             let anchor: Anchor | null = null
@@ -142,7 +145,9 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
           }
           expect(loaded).toBe(messageCount)
           const accumulatedScroll = await sampleScrolling(page, cdp, 'accumulated')
+          completedScrolls.accumulatedScroll = accumulatedScroll
           const retainedAccumulated = await retainedHeap(cdp)
+          completedScrolls.retainedAccumulated = retainedAccumulated
 
           // Navigation reload resets the ordinary mount window; storage/HTTP caches
           // are now warm. Opening bookmarks can fully hydrate data independently of
@@ -233,7 +238,9 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
             }),
           )
           const finalScroll = await sampleScrolling(page, cdp, 'final')
+          completedScrolls.finalScroll = finalScroll
           const retainedAfterStream = await retainedHeap(cdp)
+          completedScrolls.retainedAfterStream = retainedAfterStream
           expect(errors).toEqual([])
           await attachReport(testInfo, {
             source: sourceAnchor(),
@@ -288,6 +295,29 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
             retainedAccumulated,
             retainedAfterStream,
           })
+        } catch (error) {
+          await recordJourneyFailure(page, testInfo, error, {
+            source: sourceAnchor(),
+            runtime: { node: process.version, browser: browser.version(), platform: `${os.platform()} ${os.arch()}` },
+            profile,
+            repetition,
+            fullCostMatrix: MEASURE_COSTS,
+            diagnosticCpuProfiling: CPU_PROFILE,
+            residencyMode: LEGACY_PAGING ? 'legacy' : 'bounded',
+            fixture: {
+              messageCount,
+              initialRows: RESIDENCY_INITIAL_ROWS,
+              additionalRows: RESIDENCY_ADDITIONAL_ROWS,
+              olderLoads,
+              images: Math.ceil(messageCount / 6),
+              serializedBytes: Buffer.byteLength(JSON.stringify(transcriptResidencyFixture(messageCount))),
+              streamChunks: RESIDENCY_STREAM_CHUNKS.length,
+            },
+            stages,
+            ...completedScrolls,
+            pageErrors: errors,
+          }).catch((reportError) => console.error('Failed to retain transcript failure report:', reportError))
+          throw error
         } finally {
           harness.releaseAll()
           await context.close()
@@ -1265,8 +1295,23 @@ async function measure(
 ): Promise<Stage> {
   const before = await readMetrics(cdp)
   const start = await page.evaluate(() => performance.now())
-  await action()
-  return snapshot(page, cdp, name, start, before, anchor())
+  try {
+    await action()
+    return await snapshot(page, cdp, name, start, before, anchor())
+  } catch (error) {
+    if (error instanceof Error && !failedStages.has(error)) {
+      // A timeout or action assertion can fail before its normal snapshot.
+      // Only this failure path performs the extra diagnostic sampling.
+      try {
+        const anchored = anchor()
+        const stage = await snapshot(page, cdp, name, start, before, anchored, false)
+        failedStages.set(error, { stage, anchor: anchored })
+      } catch {
+        // A closed browser must not replace the original action failure.
+      }
+    }
+    throw error
+  }
 }
 
 async function snapshot(
@@ -1276,6 +1321,7 @@ async function snapshot(
   startedAtMs: number,
   before: Metrics,
   anchor: Anchor | null = null,
+  verify = true,
 ): Promise<Stage> {
   const dom = await page.evaluate(
     (input) => {
@@ -1330,14 +1376,7 @@ async function snapshot(
   const heap = (await cdp.send('Runtime.getHeapUsage')) as { usedSize: number }
   const counters = (await cdp.send('Memory.getDOMCounters')) as { nodes: number }
   const delta = (key: string) => ((metrics[key] ?? 0) - (before[key] ?? 0)) * 1000
-  if (!LEGACY_PAGING && dom.residencyMode !== 'capture') {
-    expect(dom.mountedRows, `${name}: ordinary mounted rows`).toBeLessThanOrEqual(ORDINARY_ROW_LIMIT)
-  }
-  if (anchor) {
-    expect(dom.anchorDeltaPx, `${name}: anchor ${anchor.id} remains mounted`).not.toBeNull()
-    expect(Math.abs(dom.anchorDeltaPx!), `${name}: anchor drift`).toBeLessThanOrEqual(1)
-  }
-  return {
+  const stage: Stage = {
     name,
     startedAtMs,
     ...dom,
@@ -1348,6 +1387,74 @@ async function snapshot(
     scriptMs: delta('ScriptDuration'),
     taskMs: delta('TaskDuration'),
   }
+  if (verify) {
+    try {
+      if (!LEGACY_PAGING && dom.residencyMode !== 'capture') {
+        expect(dom.mountedRows, `${name}: ordinary mounted rows`).toBeLessThanOrEqual(ORDINARY_ROW_LIMIT)
+      }
+      if (anchor) {
+        expect(dom.anchorDeltaPx, `${name}: anchor ${anchor.id} remains mounted`).not.toBeNull()
+        expect(Math.abs(dom.anchorDeltaPx!), `${name}: anchor drift`).toBeLessThanOrEqual(1)
+      }
+    } catch (error) {
+      if (error instanceof Error) failedStages.set(error, { stage, anchor })
+      throw error
+    }
+  }
+  return stage
+}
+
+async function recordJourneyFailure(
+  page: Page,
+  testInfo: TestInfo,
+  error: unknown,
+  completed: Record<string, unknown>,
+) {
+  const geometry = await page
+    .evaluate(() => {
+      const transcript = document.querySelector('[data-default-chat-transcript]')
+      if (!transcript) return { transcriptMissing: true }
+      const viewport = transcript.getBoundingClientRect()
+      return {
+        capturedAtMs: performance.now(),
+        scrollTop: transcript.scrollTop,
+        scrollHeight: transcript.scrollHeight,
+        clientHeight: transcript.clientHeight,
+        busy: transcript.querySelector('[data-transcript-window-rows]')?.getAttribute('aria-busy'),
+        rows: Array.from(transcript.querySelectorAll<HTMLElement>('[data-transcript-row-id]')).map((wrapper) => {
+          const row = wrapper.querySelector<HTMLElement>('.risu-chat[data-chat-index]')
+          const bounds = wrapper.getBoundingClientRect()
+          return {
+            id: wrapper.dataset.transcriptRowId,
+            index: row?.dataset.chatIndex,
+            top: bounds.top - viewport.top,
+            height: bounds.height,
+            text: row?.querySelector('.chat-message-body')?.textContent,
+          }
+        }),
+        spacers: Array.from(transcript.querySelectorAll('[data-transcript-spacer]')).map((spacer) => {
+          const bounds = spacer.getBoundingClientRect()
+          return { top: bounds.top - viewport.top, height: bounds.height }
+        }),
+      }
+    })
+    .catch((captureError) => ({ captureError: String(captureError) }))
+  const report = {
+    status: 'failed',
+    ...completed,
+    failedStage: error instanceof Error ? failedStages.get(error) : undefined,
+    failedScroll: error instanceof Error ? failedScrolls.get(error) : undefined,
+    failureGeometry: geometry,
+    error: error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : String(error),
+    attribution:
+      'Failed-stage counters precede their assertions. Detailed geometry is captured after failure; no extra sampling or file writes occur on the successful measurement path.',
+  }
+  const directory = path.resolve('fast-bootstrap-results/maintainability/transcript-failures')
+  mkdirSync(directory, { recursive: true })
+  const reportPath = path.join(directory, `${testInfo.title.replace(/[^a-zA-Z0-9-]+/g, '-')}-${Date.now()}.json`)
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`)
+  console.error('Transcript partial failure report:', reportPath)
+  await testInfo.attach('transcript-partial-failure', { path: reportPath, contentType: 'application/json' })
 }
 
 async function retainedHeap(cdp: CDPSession): Promise<{ usedSize: number; totalSize: number }> {
@@ -1397,8 +1504,7 @@ async function sampleScrolling(page: Page, cdp: CDPSession, phase: 'accumulated'
   }
   const after = await readMetrics(cdp)
   const sorted = [...frames].sort((a, b) => a - b)
-  const settlement = await measureScrollSettlement(page, cdp, phase)
-  return {
+  const scroll = {
     ...(cpuProfilePath ? { diagnosticCpuProfile: cpuProfilePath } : {}),
     frameIntervalsMs: frames,
     p50Ms: sorted[Math.floor(sorted.length * 0.5)],
@@ -1406,7 +1512,13 @@ async function sampleScrolling(page: Page, cdp: CDPSession, phase: 'accumulated'
     maxMs: sorted.at(-1),
     layoutMs: ((after.LayoutDuration ?? 0) - (before.LayoutDuration ?? 0)) * 1000,
     styleMs: ((after.RecalcStyleDuration ?? 0) - (before.RecalcStyleDuration ?? 0)) * 1000,
-    settlement,
+  }
+  try {
+    const settlement = await measureScrollSettlement(page, cdp, phase)
+    return { ...scroll, settlement }
+  } catch (error) {
+    if (error instanceof Error) failedScrolls.set(error, { phase, ...scroll })
+    throw error
   }
 }
 

@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: reduce rapid-scroll row construction cost; the first cutover meets
-  heap/layout/row/anchor gates but exceeds the original scroll budgets.
+- Next task: verify the progressive-admission anchor correction and finish the
+  unchanged full scroll/heap/layout matrix; partial failed journeys must be retained.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -40,7 +40,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
 | F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
 | F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | Final combined aggregate pending |
-| F08 | Open; large baseline exceeds heap/page-layout budgets | Recorded implementation/retention decision and after evidence |
+| F08 | Open; bounded residency implemented, progressive scrolling and anchor correction under verification | Unchanged full after-cost matrix and final native checks |
 | F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
 | F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
 
@@ -813,3 +813,14 @@ readable progress during rapid motion followed by complete viewport coverage.
 The [retained profile and movement evidence](evidence/transcript-residency.md)
 separates diagnostics, pending placeholders and settled work. Original scroll,
 heap and page-layout acceptance still requires the next isolated matrix.
+
+### Phase 5 progressive comparison interrupted by anchor failure
+
+At `547f927b3`, desktop30/180 scrolling is within the original budget (16.9/18.3
+ms p95), with separately measured settlement. Desktop600 fails older-page31
+at 13 pixels of drift; six later measured cases and screenshot do not run.
+[Completed journeys and the failure](evidence/transcript-residency-progressive-first-costs.json)
+are retained; that version did not serialize the failed journey's earlier stages.
+The next probe preserves partial failed journeys. Anchor selection is being
+corrected from component insertion order to visual first-row order. Phase 5
+remains open; no tolerance or fixture is changed.
