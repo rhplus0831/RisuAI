@@ -94,7 +94,13 @@ rapidly passed intermediate windows do not each create 60 components. Protected
 interaction/navigation rows mount immediately. Small windows, first render and
 explicit full capture retain their existing admission behavior. The transcript
 reports `aria-busy` while ordinary residency is filling; body parsing remains
-owned by the separate display scheduler.
+owned by the separate display scheduler. Geometry/admission updates also reuse
+unchanged keyed row-entry objects, avoiding invalidation of every mounted row.
+`TranscriptResidencyEntryOwner` retains only the current ordinary entries, at
+most 76, and compares row reference, key and residency ID. Changed row records
+replace entries; nested reactive message fields remain observable. Eviction
+forgets entries immediately, and full/legacy rendering, chat changes and
+destruction clear this identity owner. It does not cache HTML or message copies.
 
 Measured reverse-flow spacers preserve omitted height; a chat-scoped cache holds
 at most 2,048 fractional-pixel measurements and resets on width changes. A visible

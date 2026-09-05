@@ -10,6 +10,7 @@
   import {
     advanceTranscriptResidents,
     buildTranscriptResidency,
+    TranscriptResidencyEntryOwner,
     TranscriptHeightCache,
     transcriptRowAtOffset,
     transcriptRowOffsets,
@@ -503,6 +504,7 @@
   setContext(TRANSCRIPT_INTERACTION_CONTEXT, reservations)
   setContext(TRANSCRIPT_MESSAGE_VIEW_CONTEXT, messageViews)
   const residencyIds = $derived(chatRows.map((row) => row.message.chatId ?? row.key))
+  const residencyEntries = new TranscriptResidencyEntryOwner<(typeof chatRows)[number]>()
   const rowOffsets = $derived.by(() => {
     void heightRevision
     return legacyPaging ? [] : transcriptRowOffsets(residencyIds, heights)
@@ -524,20 +526,26 @@
     return ids
   })
   const residentEntries = $derived(
-    buildTranscriptResidency(
-      chatRows,
-      residencyIds,
-      rowOffsets,
-      residentStart,
-      pinnedIds,
+    residencyEntries.reuse(
+      buildTranscriptResidency(
+        chatRows,
+        residencyIds,
+        rowOffsets,
+        residentStart,
+        pinnedIds,
+        fullResidency,
+        admittedResidents === null || chatRows.length <= TRANSCRIPT_WORKING_ROWS
+          ? undefined
+          : new Set(
+              admittedResidents
+                .filter((id) => !pinnedIds.has(id))
+                .slice(
+                  0,
+                  Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinnedIds.size)),
+                ),
+            ),
+      ),
       fullResidency,
-      admittedResidents === null || chatRows.length <= TRANSCRIPT_WORKING_ROWS
-        ? undefined
-        : new Set(
-            admittedResidents
-              .filter((id) => !pinnedIds.has(id))
-              .slice(0, Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinnedIds.size))),
-          ),
     ),
   )
   const residentRowCount = $derived(residentEntries.filter((entry) => entry.kind === 'row').length)
@@ -801,6 +809,7 @@
     untrack(() => {
       if (residencyScope === scope) return
       residencyScope = scope
+      residencyEntries.clear()
       reservations.reset()
       messageViews.reset()
       heights.clear()
@@ -1263,6 +1272,7 @@
   })
 
   onDestroy(() => {
+    residencyEntries.clear()
     chatsComponentDestroyed = true
     if (residencyFrame !== null) cancelAnimationFrame(residencyFrame)
     if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)

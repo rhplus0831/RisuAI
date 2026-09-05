@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: reduce the remaining throttled per-frame row work identified by the complete
-  progressive matrix; preserve the unchanged workloads, budgets and settlement evidence.
+- Next task: verify bounded reuse of unchanged keyed row entries against the complete
+  unprofiled matrix; preserve the unchanged budgets and deferred-settlement evidence.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -848,3 +848,14 @@ post-scroll settlement is 9.100 seconds, fully retained. [All samples and budget
 results](evidence/transcript-residency-progressive-costs.json) are recorded;
 functional success does not accept performance. A focused profile of the current
 one-row admission must guide the remaining correction before Phase 6.
+
+### Phase 5 keyed-item invalidation correction
+
+The [current progressive profile](evidence/transcript-progressive-scroll-profile.json)
+at `493c4feb8` attributes nearly all sampled `mark_reactions` work to keyed-each
+item signal updates. Every geometry/admission rebuild created new wrappers for
+all mounted rows. Bounded identity reuse now retains only unchanged current
+ordinary row entries (maximum 76), invalidates changed row records, and clears
+on full/legacy rendering, scope changes and destruction. Ten focused residency
+and 105 transcript-window tests pass; original unprofiled cost acceptance remains
+open. No sanitizer behavior, workload or numerical budget changes.

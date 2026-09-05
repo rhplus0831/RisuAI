@@ -54,6 +54,37 @@ export type TranscriptResidencyEntry<T> =
   | { key: string; kind: 'row'; row: T; id: string }
   | { key: string; kind: 'spacer'; height: number; start: number; end: number }
 
+/** Preserve keyed item signals for unchanged rows during geometry/admission updates. */
+export class TranscriptResidencyEntryOwner<T> {
+  private entries = new Map<string, Extract<TranscriptResidencyEntry<T>, { kind: 'row' }>>()
+
+  get size() {
+    return this.entries.size
+  }
+
+  reuse(next: TranscriptResidencyEntry<T>[], full: boolean): TranscriptResidencyEntry<T>[] {
+    if (full) {
+      this.clear()
+      return next
+    }
+    const retained = new Map<string, Extract<TranscriptResidencyEntry<T>, { kind: 'row' }>>()
+    const result = next.map((entry) => {
+      if (entry.kind !== 'row') return entry
+      const previous = this.entries.get(entry.key)
+      const stable = previous && previous.row === entry.row && previous.id === entry.id ? previous : entry
+      if (retained.size < TRANSCRIPT_MAX_RESIDENT_ROWS) retained.set(entry.key, stable)
+      return stable
+    })
+    // Evicted rows are forgotten immediately; full capture never grows this owner.
+    this.entries = retained
+    return result
+  }
+
+  clear() {
+    this.entries.clear()
+  }
+}
+
 /** Replace at most one ordinary component per frame, nearest the viewport first. */
 export function advanceTranscriptResidents(
   ids: readonly string[],

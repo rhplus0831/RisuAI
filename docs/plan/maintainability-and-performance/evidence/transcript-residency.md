@@ -278,3 +278,30 @@ per-frame work with one-row admission. The next correction must reduce actual
 frame cost without changing the 48-frame input, hiding deferred work, or raising
 budgets. Existing caches and background parsing are part of the current source;
 their presence alone is not evidence that row construction is cheap.
+
+### Progressive profile: unchanged keyed-item invalidation
+
+[The second diagnostic profile](transcript-progressive-scroll-profile.json) uses
+source `493c4feb8` (documentation-only changes after `de102e8e3`), the existing
+optional profile flags, and the unchanged mobile 4× CPU/600-message journey.
+Its 2.393-second sampled sweep excludes separately measured settlement and is
+not acceptance timing. Native/unattributed `(program)` samples account for
+46.92%; inclusive groups overlap and cannot be added as independent costs.
+
+Row construction is now 8.54% inclusive, sanitization 2.99%, and reconciliation
+10.44%. The remaining reactive invalidation/dirtiness functions consume 9.03%
+self time before their downstream derived/read work. Of 112.716 ms in
+`mark_reactions`, 111.083 ms comes from keyed-each item signal updates.
+Source and compiled code agree: `buildTranscriptResidency` recreated all row
+entry wrappers on each geometry/admission change; the immutable keyed Svelte
+each compares these objects by identity before invalidating their descendants.
+A stable nested row reference alone does not prevent that initial propagation.
+
+The correction reuses entries only when row reference, key and residency ID
+are unchanged. Its owner retains only current ordinary entries (maximum 76),
+forgets evicted entries, and clears/bypasses full materialization, legacy mode,
+chat replacement and destruction. Changed row records still replace entries;
+reactive nested message fields retain their subscriptions. No HTML/result cache
+or message copy is added. Ten focused geometry/admission/identity cases and
+105 transcript-window/interaction cases pass. A fresh unprofiled matrix must
+establish whether this reduces the remaining throttled frame cost enough.

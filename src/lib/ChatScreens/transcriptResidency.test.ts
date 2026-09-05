@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   advanceTranscriptResidents,
   buildTranscriptResidency,
+  TranscriptResidencyEntryOwner,
   TranscriptHeightCache,
   TRANSCRIPT_HEIGHT_ENTRIES,
   TRANSCRIPT_MAX_RESIDENT_ROWS,
@@ -10,6 +11,47 @@ import {
 } from './transcriptResidency'
 
 describe('transcript residency geometry', () => {
+  it('keeps unchanged keyed row signals stable while replacing changed data and spacer geometry', () => {
+    const rows = Array.from({ length: 180 }, (_, index) => ({ key: `id-${index}`, text: `message ${index}` }))
+    const ids = rows.map((row) => row.key)
+    const heights = new TranscriptHeightCache()
+    const owner = new TranscriptResidencyEntryOwner<(typeof rows)[number]>()
+    const build = () => buildTranscriptResidency(rows, ids, transcriptRowOffsets(ids, heights), 30, new Set(), false)
+    const first = owner.reuse(build(), false)
+    heights.set(ids[0], 123.5)
+    rows[40] = { ...rows[40], text: 'accepted edit' }
+    const next = owner.reuse(build(), false)
+    for (const entry of next) {
+      const previous = first.find((candidate) => candidate.key === entry.key)!
+      if (entry.kind === 'row' && entry.id !== ids[40]) expect(entry).toBe(previous)
+      else expect(entry).not.toBe(previous)
+    }
+    expect(next.find((entry) => entry.kind === 'row' && entry.id === ids[40])).toMatchObject({
+      row: { text: 'accepted edit' },
+    })
+    expect(next[0]).toMatchObject({ kind: 'spacer', height: 29 * 360 + 123.5 })
+  })
+
+  it('forgets evicted row entries and clears bounded identity reuse on full materialization and chat reset', () => {
+    const rows = Array.from({ length: 600 }, (_, index) => ({ key: `id-${index}` }))
+    const ids = rows.map((row) => row.key)
+    const offsets = transcriptRowOffsets(ids, new TranscriptHeightCache())
+    const owner = new TranscriptResidencyEntryOwner<(typeof rows)[number]>()
+    const build = (start: number, full = false) => buildTranscriptResidency(rows, ids, offsets, start, new Set(), full)
+    const first = owner.reuse(build(0), false)[0]
+    for (let start = 60; start < rows.length; start += 60) {
+      owner.reuse(build(start), false)
+      expect(owner.size).toBeLessThanOrEqual(76)
+    }
+    const returned = owner.reuse(build(0), false)[0]
+    expect(returned).not.toBe(first)
+    expect(owner.reuse(build(0, true), true)).toHaveLength(600)
+    expect(owner.size).toBe(0)
+    expect(owner.reuse(build(0), false)[0]).not.toBe(returned)
+    owner.clear()
+    expect(owner.size).toBe(0)
+  })
+
   it('admits the nearest missing row every frame without reconstructing intermediate windows', () => {
     const ids = Array.from({ length: 600 }, (_, index) => `id-${index}`)
     const pins = new Set([ids[0], ids[500]])
