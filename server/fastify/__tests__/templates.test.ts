@@ -478,7 +478,9 @@ describe('content cards (renderByTemplate)', () => {
 
   it('applies a Global Note position injection once after composing {{original}}', () => {
     const db = makeDatabase()
-    const positionParser = vi.fn((text: string, loc: string) => (loc === 'globalNote' ? `${text} INJECTED` : text))
+    const positionParser = vi.fn((text: string, loc: string | undefined) =>
+      loc === 'globalNote' ? `${text} INJECTED` : text,
+    )
     const { formated: out } = renderByTemplate(
       ctxFor(db),
       makeCharacter({ replaceGlobalNote: '[[{{original}}]]' }),

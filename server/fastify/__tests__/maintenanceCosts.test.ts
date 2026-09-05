@@ -163,7 +163,7 @@ async function observe<T>(
     sampledPeakRssBytes: initialMemory.rss,
     processLifetimePeakRssBytes: 0,
   }
-  const diagnostics =
+  const diagnostics: Observation['diagnostics'] =
     process.env.RISU_MAINTENANCE_DIAGNOSTICS === '1' ? (observation.diagnostics = { gc: [], gaps: [] }) : undefined
   const gcObserver = diagnostics
     ? new PerformanceObserver((list) => {

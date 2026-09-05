@@ -328,7 +328,10 @@ describe('maintenance admission for compatibility files and import staging', () 
       }
       vi.stubGlobal(
         'fetch',
-        vi.fn(async () => new Response(characterArchive(), { headers: { 'content-type': 'application/charx' } })),
+        vi.fn(
+          async () =>
+            new Response(new Uint8Array(characterArchive()), { headers: { 'content-type': 'application/charx' } }),
+        ),
       )
       const pendingImport = (
         source === 'local'
