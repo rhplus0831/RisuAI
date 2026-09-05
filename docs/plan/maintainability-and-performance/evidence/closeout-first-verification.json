@@ -1,0 +1,365 @@
+{
+  "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+  "status": "failed-combined-verification",
+  "assessment": "All isolated cost/bundle assessments and all 26 native specs (37 journeys) pass at this source. The first post-implementation aggregate fails; none of its failures is waived. Retained exact failures guide focused repairs before another aggregate.",
+  "command": "pnpm test:agent",
+  "elapsedSeconds": 148.79,
+  "aggregateSummary": "[test:agent] completed in 2m 28.4s\n  FAIL  server and browser-smoke typecheck (8.5s)\n  PASS  test topology validation (3.7s)\n  PASS  current documentation validation (0.5s)\n  FAIL  frontend tests (1m 29.7s)\n  FAIL  frontend check (52.3s)\n  FAIL  server tests (40.7s)\n  PASS  browser-smoke build (13.8s)\n[ELIFECYCLE] Command failed with exit code 1.",
+  "frontend": "5 files failed / 675 passed; 6 tests failed / 8201 passed / 3 skipped",
+  "server": "6 files failed / 213 passed; 7 tests failed / 3981 passed / 2 skipped",
+  "architectureErrors": [
+    "[architecture-inventory] compatibility surface prompt-top-level-projection probe drifted: server/fastify/src/repository.ts identifier \"projectSelectedPromptTemplate\" expected 3, observed 4",
+    "[architecture-inventory] compatibility surface prompt-sqlite-mirror probe drifted: server/fastify/src/repository.ts text \"prompt_templates\" expected 3, observed 4",
+    "[architecture-inventory] client resource ownership inventory drifted; regenerate and review the baseline"
+  ],
+  "typeErrors": "/home/codex/risuai-fastify/src/ts/chatOrganization.workCosts.dom.test.ts:129:51\nError: Argument of type '(() => ChatCreateSnapshot) | (() => ChatFolderCreateSnapshot) | (() => ChatDeleteSnapshot) | (() => ChatFolderDeleteSnapshot) | (() => ChatOrderSnapshot) | (() => ChatForkSnapshot) | (() => ChatResetSnapshot) | (() => ChatImportSnapshot)' is not assignable to parameter of type '() => ChatCreateSnapshot'.\n  Type '() => commands.ChatFolderCreateSnapshot' is not assignable to type '() => ChatCreateSnapshot'.\n    Type 'ChatFolderCreateSnapshot' is missing the following properties from type 'ChatCreateSnapshot': chatId, previousChat, attemptedChat, previousSelectedChatId, attemptedSelectedChatId \n        const message = messages[0]\n        const captured = withCloneInstrumentation(capture.run)\n        expect(captured.result).not.toBeNull()\n\n/home/codex/risuai-fastify/server/fastify/src/repository.ts:1037:22\nError: Type '{ trashTime?: SQLOutputValue; chaId: string; }[]' is not assignable to type '{ chaId: string; trashTime?: number; }[]'.\n  Type '{ trashTime?: SQLOutputValue; chaId: string; }' is not assignable to type '{ chaId: string; trashTime?: number; }'.\n    Types of property 'trashTime' are incompatible.\n      Type 'SQLOutputValue' is not assignable to type 'number'.\n        Type 'string' is not assignable to type 'number'. \n  }\n  return { settings, characters }\n}\n\n/home/codex/risuai-fastify/server/fastify/src/prompt/luaRuntime.ts:863:5\nError: Type 'SimpleCharacterArgument' is missing the following properties from type 'FastifyCharacter': name, firstMessage, desc, notes, and 23 more. \n  if ((type === undefined || type === null) && typeof char.chaId === 'string') {\n    return char\n  }\n\n/home/codex/risuai-fastify/src/ts/server/resourceCacheDelivery.svelte-node.test.ts:210:29\nError: Argument of type 'Promise<{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }> | Promise<ServerPromptPresetTemplateResult> | Promise<...> | Promise<...> | Promise<...> | Promise<...>' is not assignable to parameter of type 'Promise<{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }>'.\n  Type 'Promise<ServerPromptPresetTemplateResult>' is not assignable to type 'Promise<{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }>'.\n    Type 'ServerPromptPresetTemplateResult' is not assignable to type '{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }'.\n      Type '{ status: \"ok\"; revision: number; promptPresetId: string; promptTemplate: unknown[]; selectedFallbackPromptTemplate?: unknown[]; }' is not assignable to type '{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }'.\n        Type '{ status: \"ok\"; revision: number; promptPresetId: string; promptTemplate: unknown[]; selectedFallbackPromptTemplate?: unknown[]; }' is missing the following properties from type '{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; }': presetId, preset \n        vi.stubGlobal('fetch', fetchMock)\n        expect(await within(fixture.read())).toMatchObject({ status: 'ok', revision: 2 })\n        expect(fetchMock).toHaveBeenCalledTimes(1)\n\n/home/codex/risuai-fastify/src/ts/server/resourceCacheDelivery.svelte-node.test.ts:241:29\nError: Argument of type 'Promise<{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }> | Promise<ServerPromptPresetTemplateResult> | Promise<...> | Promise<...> | Promise<...> | Promise<...>' is not assignable to parameter of type 'Promise<{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }>'.\n  Type 'Promise<ServerPromptPresetTemplateResult>' is not assignable to type 'Promise<{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }>'.\n    Type 'ServerPromptPresetTemplateResult' is not assignable to type '{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }'.\n      Type '{ status: \"ok\"; revision: number; promptPresetId: string; promptTemplate: unknown[]; selectedFallbackPromptTemplate?: unknown[]; }' is not assignable to type '{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; } | { status: \"error\"; error: string; } | { status: \"unavailable\"; }'.\n        Type '{ status: \"ok\"; revision: number; promptPresetId: string; promptTemplate: unknown[]; selectedFallbackPromptTemplate?: unknown[]; }' is missing the following properties from type '{ status: \"ok\"; revision: number; presetId: string; preset: Record<string, unknown>; }': presetId, preset \n        }\n        expect(await within(read)).toMatchObject({ status: 'ok', revision: 2 })\n        await flushResourceCacheMaintenanceForTests()\n\n====================================",
+  "failures": [
+    {
+      "case": "|frontend-node| src/lang/index.test.ts > changeLanguage same-code cache > defines every English translation path directly in Korean",
+      "failure": "AssertionError: expected [ 'transcriptShowMessages', \u2026(1) ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   \"transcriptShowMessages\",\n+   \"transcriptInteractionLimit\",\n+ ]\n\n \u276f src/lang/index.test.ts:189:81\n    187|     const koreanPaths = new Set(leafPaths(languageKorean))\n    188|\n    189|     expect(leafPaths(languageEnglish).filter((path) => !koreanPaths.ha\u2026\n       |                                                                                 ^\n    190|   })\n    191|"
+    },
+    {
+      "case": "|frontend-node| src/ts/model/modelRuntimeFlatAccessGate.test.ts > flat model/runtime access closed world > classifies every database-shaped access and enumerates ordinary-pending consumers",
+      "failure": "AssertionError: new flat model/runtime access is unclassified; the failure lists exact file, marker, and source lines: expected [ \u2026(3) ] to deeply equal []\n\n- Expected\n+ Received\n\n- []\n+ [\n+   \"server/fastify/src/prompt/cbsAdapter.ts:database.aiModel (line 88) (add an exact file/marker classification)\",\n+   \"server/fastify/src/prompt/cbsAdapter.ts:database.subModel (line 89) (add an exact file/marker classification)\",\n+   \"server/fastify/src/prompt/cbsAdapter.ts:database.maxContext (line 90) (add an exact file/marker classification)\",\n+ ]\n\n \u276f src/ts/model/modelRuntimeFlatAccessGate.test.ts:618:7\n    616|       unclassified,\n    617|       'new flat model/runtime access is unclassified; the failure list\u2026\n    618|     ).toEqual([])\n       |       ^\n    619|\n    620|     // Keep this manifest explicit even when the current Phase 2 slice\u2026"
+    },
+    {
+      "case": "|frontend-dom| src/ts/bootstrap.test.ts > API-backed client bootstrap > reconciles replacement ownership before applying a cross-tab state.restored event",
+      "failure": "AssertionError: expected \"vi.fn()\" to be called once, but got 0 times\n \u276f src/ts/bootstrap.test.ts:1803:67\n    1801|       eventApi.subscriptions[0].onCommandEvent({ ...event, revision: 3\u2026\n    1802|\n    1803|       await vi.waitFor(() => expect(resourceApi.forceReplacement).toHa\u2026\n       |                                                                   ^\n    1804|       expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'refresh\u2026\n    1805|       expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { \u2026"
+    },
+    {
+      "case": "|frontend-dom| src/ts/bootstrap.test.ts > API-backed client bootstrap > reconciles replacement ownership before applying a cross-tab state.imported event",
+      "failure": "AssertionError: expected \"vi.fn()\" to be called once, but got 2 times\n \u276f src/ts/bootstrap.test.ts:1803:67\n    1801|       eventApi.subscriptions[0].onCommandEvent({ ...event, revision: 3\u2026\n    1802|\n    1803|       await vi.waitFor(() => expect(resourceApi.forceReplacement).toHa\u2026\n       |                                                                   ^\n    1804|       expect(order).toEqual(['bootstrap', 'prepare', 'reset', 'refresh\u2026\n    1805|       expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledWith(null, { \u2026"
+    },
+    {
+      "case": "|frontend-dom| src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts > sendChat fixtures (/chat route-backed prompt assembly) > assembles inlay multimodal bytes server-side with byte parity to the local golden",
+      "failure": "AssertionError: expected false to be true // Object.is equality\n\n- Expected\n+ Received\n\n- true\n+ false\n\n \u276f src/ts/process/__tests__/sendChat.fixtures.serverBacked.test.ts:850:18\n    848|       clearCachedServerCommandRevision()\n    849|       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs \u2026\n    850|       expect(ok).toBe(true)\n       |                  ^\n    851|\n    852|       // The browser resolved the legacy inlay id to a server asset id\u2026"
+    },
+    {
+      "case": "|frontend-dom| src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts > TranslatorPresetSettings server-backed edits > reasserts a retryable optimistic delete after an authoritative collection projection",
+      "failure": "AssertionError: expected [ 'preset-a', 'preset-b' ] to deeply equal [ 'preset-b' ]\n\n- Expected\n+ Received\n\n  [\n+   \"preset-a\",\n    \"preset-b\",\n  ]\n\n \u276f src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte.test.ts:2217:74\n    2215|         },\n    2216|       ])\n    2217|       expect(getDatabase().translatorPresets.map((preset) => preset.id\u2026\n       |                                                                          ^\n    2218|       expect(getDatabase().translatorPrompt).toBe('old prompt A')\n    2219|"
+    },
+    {
+      "case": "__tests__/bardWikiTypeOwnership.test.ts > BardWiki server type ownership > keeps BardWiki production consumers behind Fastify-owned inputs",
+      "failure": "AssertionError: expected 'import type { ProviderGenerationSetti\u2026' to contain 'import type { ChatDispatchDatabase } \u2026'\n\n- Expected\n+ Received\n\n- import type { ChatDispatchDatabase } from './prompt/chatDispatch.js'\n+ import type { ProviderGenerationSettings } from './prompt/serverTypes.js'\n+\n+ /** BardWiki provider work consumes selected provider settings and optional display names. */\n+ export type BardWikiGenerationDatabase = ProviderGenerationSettings\n+\n+ /** Narrow prompt row shape authored by BardWiki server code. */\n+ export interface BardWikiChatRow {\n+   role: 'system' | 'user' | 'assistant' | 'function'\n+   content: string\n+   memo?: string\n+   removable?: boolean\n+ }\n+\n\n \u276f __tests__/bardWikiTypeOwnership.test.ts:28:59\n     26|     }\n     27|\n     28|     expect(source('server/fastify/src/bardWikiTypes.ts')).toContain(\n       |                                                           ^\n     29|       \"import type { ChatDispatchDatabase } from './prompt/chatDispatc\u2026\n     30|     )"
+    },
+    {
+      "case": "__tests__/commandMessageFreeCeiling.test.ts > message-free create + normalization floors > POST characters appends one character at the message-free floor",
+      "failure": "AssertionError: expected 'targeted-character-row' to be 'message-free' // Object.is equality\n\nExpected: \"message-free\"\nReceived: \"targeted-character-row\"\n\n \u276f __tests__/commandMessageFreeCeiling.test.ts:386:33\n    384|     })\n    385|\n    386|     expect(metric.mutationPath).toBe('message-free')\n       |                                 ^\n    387|     expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])\n    388|     assertCommandMetricGate(metric)"
+    },
+    {
+      "case": "__tests__/commandMessageFreeCeiling.test.ts > message-free create + normalization floors > POST characters/create-and-select appends + selects at the message-free floor",
+      "failure": "AssertionError: expected 'targeted-character-row' to be 'message-free' // Object.is equality\n\nExpected: \"message-free\"\nReceived: \"targeted-character-row\"\n\n \u276f __tests__/commandMessageFreeCeiling.test.ts:401:33\n    399|     })\n    400|\n    401|     expect(metric.mutationPath).toBe('message-free')\n       |                                 ^\n    402|     expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])\n    403|     assertCommandMetricGate(metric)"
+    },
+    {
+      "case": "__tests__/databaseTypeOwnership.test.ts > Fastify application-model type ownership > keeps bounded row contracts structural at the Fastify boundary",
+      "failure": "AssertionError: expected 'import type {\\n  MODEL_PRESET_FIELDS,\u2026' to contain 'export interface FastifyChat'\n\n- Expected\n+ Received\n\n- export interface FastifyChat\n+ import type {\n+   MODEL_PRESET_FIELDS,\n+   PROMPT_PRESET_FIELDS,\n+   PROMPT_PRESET_MODEL_OVERRIDE_FIELDS,\n+ } from '@risuai/shared-core/preset-split'\n+ import type { ChatGenerationSettings } from '@risuai/shared-core/chat-generation-settings'\n+ import type { AgentRecord, AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'\n+ import type {\n+   ModelProfileRecord,\n+   ModelProfileRecordRuntimeOptions,\n+   ModelProfileRecordProviderOptions,\n+   ModelRoleProfileMap,\n+ } from '@risuai/shared-core/model-profile-records'\n+ import type { ProviderCredentialRecord } from '@risuai/shared-core/provider-credential-records'\n+ import type {\n+   LegacyFallbackModelMap,\n+   LegacySeperateModelMap,\n+   NormalizedModelRoleOverrides,\n+ } from '@risuai/shared-core/model-roles'\n+ import type { LLMFormat, LLMTokenizer, LLMFlags } from '@risuai/shared-core/model-types'\n+ import type { ScriptModelOverrides } from '@risuai/shared-core/script-model-overrides'\n+ import type { BardWikiGlobalSettings } from '@risuai/protocol'\n+ import type { HypaV3Settings } from '../memoryPlanner.js'\n+ import type { ServerModule, ServerModuleRegexScript, ServerModuleLorebook } from './moduleDescriptors.js'\n+ import type { ServerTriggerScript } from './triggerDescriptors.js'\n+ import type { PromptTemplateCard } from './promptTemplate.js'\n+ import type { PromptMessage } from './promptMessage.js'\n+\n+ /** Present persisted fields remain optional: downstream domains own their legacy defaults. */\n+ export type GenerationSettings = {\n+   adaptiveThinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'\n+   additionalParams?: [string, string][]\n+   additionalPrompt?: string\n+   agentPresetDefaultId?: string\n+   agentPresets?: AgentPresetRecord[]\n+   agents?: AgentRecord[]\n+   aiModel?: string\n+   applyAdditionalParamsToAll?: boolean\n+   autofillRequestUrl?: boolean\n+   automaticCachePoint?: boolean\n+   banCharacterset?: string[]\n+   bardWiki?: BardWikiGlobalSettings\n+   bias?: [string, number][]\n+   chainOfThought?: boolean\n+   claude1HourCaching?: boolean\n+   claudeAPIKey?: string\n+   cohereAPIKey?: string\n+   complexRegexCompatibilityMode?: 'strict' | 'worker'\n+   complexRegexDisplayTimeoutMs?: number\n+   complexRegexInputTimeoutMs?: number\n+   complexRegexOutputTimeoutMs?: number\n+   customAPIFormat?: LLMFormat\n+   customFlags?: LLMFlags[]\n+   customModels?: {\n+     id: string\n+     internalId: string\n+     url: string\n+     format: LLMFormat\n+     tokenizer: LLMTokenizer\n+     key: string\n+     name: string\n+     params: string\n+     flags: LLMFlags[]\n+   }[]\n+   customProxyRequestModel?: string\n+   customTokenizer?: string\n+   dallEQuality?: string\n+   deepseekReasoningEffort?: 'high' | 'max'\n+   deepseekThinkingType?: 'off' | 'enabled'\n+   descriptionPrefix?: string\n+   dynamicAssets?: boolean\n+   dynamicAssetsEditDisplay?: boolean\n+   dynamicOutput?: ServerDynamicOutput\n+   echoDelay?: number\n+   echoMessage?: string\n+   enableCustomFlags?: boolean\n+   enabledModules?: string[]\n+   extractJson?: string\n+   fallbackModels?: Partial<LegacyFallbackModelMap>\n+   fallbackWhenBlankResponse?: boolean\n+   falLora?: string\n+   falLoraScale?: number\n+   falModel?: string\n+   forceReplaceUrl?: string\n+   formatingOrder?: Array<\n+     | 'main'\n+     | 'jailbreak'\n+     | 'chats'\n+     | 'lorebook'\n+     | 'globalNote'\n+     | 'authorNote'\n+     | 'lastChat'\n+     | 'description'\n+     | 'postEverything'\n+     | 'personaPrompt'\n+   >\n+   frequencyPenalty?: number\n+   generationSeed?: number\n+   genTime?: number\n+   globalChatVariables?: { [key: string]: string }\n+   globalNote?: string\n+   globalscript?: ServerModuleRegexScript[]\n+   google?: {\n+     accessToken?: string\n+     projectId?: string\n+   }\n+   googleClaudeTokenizing?: boolean\n+   gptVisionQuality?: string\n+   groupOtherBotRole?: string\n+   groupTemplate?: string\n+   halfStreaming?: boolean\n+   hordeConfig?: ServerHordeConfig\n+   hypaCustomSettings?: {\n+     url: string\n+     key: string\n+     model: string\n+   }\n+   hypaModel?: string\n+   hypaV3?: boolean\n+   hypaV3Key?: string\n+   hypaV3Presets?: Array<{ id: string; name: string; settings: Partial<HypaV3Settings> }>\n+   ImagenAspectRatio?: string\n+   ImagenImageSize?: string\n+   ImagenModel?: string\n+   ImagenPersonGeneration?: string\n+   instructChatTemplate?: string\n+   jailbreak?: string\n+   jailbreakToggle?: boolean\n+   JinjaTemplate?: string\n+   jsonSchema?: string\n+   jsonSchemaEnabled?: boolean\n+   koboldURL?: string\n+   localStopStrings?: string[]\n+   loreBookDepth?: number\n+   loreBookToken?: number\n+   mainPrompt?: string\n+   mancerHeader?: string\n+   maxContext?: number\n+   maxResponse?: number\n+   min_p?: number\n+   mistralKey?: string\n+   modelPresets?: ServerModelPreset[]\n+   modelPresetsId?: number\n+   modelProfiles?: ServerModelProfile[]\n+   modelRoleProfiles?: Partial<ModelRoleProfileMap>\n+   modelRoles?: Partial<NormalizedModelRoleOverrides>\n+   modelRuntimeDefaults?: ServerModelRuntimeOptions\n+   modelTools?: string[]\n+   moduleIntergration?: string\n+   modules?: ServerModule[]\n+   NAII2I?: boolean\n+   NAIImgConfig?: Partial<ServerNAIImgConfig>\n+   NAIImgModel?: string\n+   nanogptKey?: string\n+   nanogptProvider?: string\n+   nanogptRequestModel?: string\n+   nanogptRequestModelName?: string\n+   nanogptSubscriptionState?: string\n+   nanogptUseSubscriptionEndpoint?: boolean\n+   newOAIHandle?: boolean\n+   OaiCompAPIKeys?: { [key: string]: string }\n+   OAIPrediction?: string\n+   ollamaApiKey?: string\n+   ollamaCloudModel?: string\n+   ollamaCloudModelName?: string\n+   ollamaModel?: string\n+   ollamaModelName?: string\n+   ollamaModelSource?: 'local' | 'cloud'\n+   ollamaRequestFormat?: LLMFormat\n+   ollamaThinkingMode?: 'auto' | 'off' | 'on' | 'low' | 'medium' | 'high'\n+   ollamaURL?: string\n+   ooba?: ServerOobaSettings\n+   openAIFlexProcessing?: boolean\n+   openAIKey?: string\n+   openrouterFallback?: boolean\n+   openrouterKey?: string\n+   openrouterMiddleOut?: boolean\n+   openrouterProvider?: {\n+     order?: string[]\n+     only?: string[]\n+     ignore?: string[]\n+   }\n+   openrouterRequestModel?: string\n+   outputImageModal?: boolean\n+   personaPrompt?: string\n+   personas?: ServerPersona[]\n+   PresensePenalty?: number\n+   presetRegex?: ServerModuleRegexScript[]\n+   promptInfoInsideChat?: boolean\n+   promptPreprocess?: boolean\n+   promptPresets?: ServerPromptPreset[]\n+   promptPresetsId?: number\n+   promptSettings?: ServerPromptSettings\n+   promptTemplate?: PromptTemplateCard[] | null\n+   promptTextInfoInsideChat?: boolean\n+   providerCredentials?: ProviderCredentialRecord[]\n+   proxyKey?: string\n+   reasoningEffort?: number\n+   regexOutputSizeLimitMiB?: number\n+   removeIncompleteResponse?: boolean\n+   repetition_penalty?: number\n+   requestHistoryLimit?: number\n+   requestRetrys?: number\n+   reverseProxyOobaArgs?: ServerOobaChatCompletionRequestParams\n+   reverseProxyOobaMode?: boolean\n+   sdConfig?: ServerSdConfig\n+   sdProvider?: string\n+   selectedHypaV3PresetId?: string | null\n+   selectedPersona?: number\n+   selectedPersonaId?: string | null\n+   seperateModels?: Partial<LegacySeperateModelMap>\n+   seperateModelsForAxModels?: boolean\n+   seperateParameters?: ServerSeparateParameterSettings\n+   seperateParametersByModel?: boolean\n+   seperateParametersEnabled?: boolean\n+   stabilityModel?: string\n+   stabllityStyle?: string\n+   streamGeminiThoughts?: boolean\n+   strictJsonSchema?: boolean\n+   systemContentReplacement?: string\n+   systemRoleReplacement?: 'user' | 'assistant'\n+   temperature?: number\n+   templateDefaultVariables?: string\n+   textgenWebUIBlockingURL?: string\n+   thinkingTokens?: number\n+   thinkingType?: 'off' | 'budget' | 'adaptive'\n+   top_a?: number\n+   top_k?: number\n+   top_p?: number\n+   ttsAutoSpeech?: boolean\n+   username?: string\n+   useSayNothing?: boolean\n+   useStreaming?: boolean\n+   verbosity?: number\n+   vertexClientEmail?: string\n+   vertexPrivateKey?: string\n+   vertexRegion?: string\n+   voyageApiKey?: string\n+   wavespeedImage?: {\n+     key: string\n+     model: string\n+     loras: Array<{ path: string; scale: number }>\n+     reference_mode: string\n+     reference_image: string\n+     reference_base64image: string\n+   }\n+   subModel?: string\n+   language?: string\n+   userIcon?: string\n+   userNote?: string\n+   customPromptTemplateToggle?: string\n+ }\n+\n+ /** A request-local selected-owner view, never the persistence authority. */\n+ export type FastifyDatabase = WorkingGenerationSettings & { characters: FastifyCharacter[]; currentChar?: number }\n+ export type ServerModelPreset = Pick<\n+   GenerationSettings,\n+   Extract<(typeof MODEL_PRESET_FIELDS)[number], keyof GenerationSettings>\n+ > & { id: string; name?: string; reasonEffort?: number }\n+ export type ServerPromptPreset = Pick<\n+   GenerationSettings,\n+   Extract<\n+     (typeof PROMPT_PRESET_FIELDS)[number] | (typeof PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)[number],\n+     keyof GenerationSettings\n+   >\n+ > & {\n+   id: string\n+   name?: string\n+   archived?: boolean\n+   overrideModelParameters?: boolean\n+   overrideModelOthers?: boolean\n+   recommendedModelPresetId?: string | null\n+   regex?: ServerModuleRegexScript[]\n+   reasonEffort?: number\n+ }\n+ export type ServerPersona = {\n+   id: string\n+   name?: string\n+   displayName?: string\n+   icon?: string\n+   personaPrompt?: string\n+   note?: string\n+   largePortrait?: boolean\n+   modules?: string[]\n+ }\n+ export type GenerationPreflightCharacter = Pick<FastifyCharacter, 'chaId' | 'modules' | 'supaMemory'>\n+ export type GenerationPreflightChat = Pick<\n+   FastifyChat,\n+   'id' | 'generationSettings' | 'hypaContextTruncationAcknowledged' | 'modules'\n+ >\n+ export type GenerationPreflightInputs = {\n+   database: GenerationPreflightSettings\n+   currentChar: GenerationPreflightCharacter\n+   currentChat: GenerationPreflightChat\n+ }\n+\n+ export type FastifyCharacter = {\n+   type?: 'character'\n+   name: string\n+   firstMessage: string\n+   desc: string\n+   notes: string\n+   chats: FastifyChat[]\n+   chatFolders: Array<{ id: string; name?: string; color?: string; folded: boolean }>\n+   chatPage: number\n+   viewScreen: 'emotion' | 'none' | 'imggen'\n+   bias: Array<[string, number]>\n+   emotionImages: Array<[string, string]>\n+   globalLore: FastifyLoreBook[]\n+   chaId: string\n+   sdData: Array<[string, string]>\n+   customscript: FastifyCustomScript[]\n+   utilityBot: boolean\n+   exampleMessage: string\n+   creatorNotes: string\n+   systemPrompt: string\n+   postHistoryInstructions: string\n+   alternateGreetings: string[]\n+   tags: string[]\n+   creator: string\n+   characterVersion: string\n+   personality: string\n+   scenario: string\n+   firstMsgIndex: number\n+   replaceGlobalNote: string\n+   additionalText: string\n+   defaultVariables?: string\n+   triggerscript: ServerTriggerScript[]\n+   inlayViewScreen?: boolean\n+   newGenData?: { prompt: string; negative: string; instructions: string; emotionInstructions: string }\n+   displayName?: string\n+   image?: string\n+   nickname?: string\n+   supaMemory?: boolean\n+   additionalAssets?: Array<[string, string, string]>\n+   lowLevelAccess?: boolean\n+   modules?: string[]\n+   scriptModelOverrides?: ScriptModelOverrides\n+   scriptstate?: Record<string, string | number | boolean>\n+   loreSettings?: { tokenBudget: number; scanDepth: number; recursiveScanning: boolean; fullWordMatching?: boolean }\n+   depth_prompt?: { depth: number; prompt: string }\n+   backgroundHTML?: string\n+   backgroundCSS?: string\n+   removedQuotes?: boolean\n+   escapeOutput?: boolean\n+   doNotChangeSeperateModels?: boolean\n+   prebuiltAssetCommand?: boolean\n+   prebuiltAssetStyle?: string\n+   prebuiltAssetExclude?: string[]\n+   extentions?: Record<string, unknown>\n+ }\n+\n+ export type FastifyChat = {\n+   message: FastifyMessage[]\n+   note: string\n+   name: string\n+   localLore: FastifyLoreBook[]\n+   generationSettings?: ChatGenerationSettings\n+   sdData?: string\n+   lastMemory?: string\n+   hypaContextTruncationAcknowledged?: boolean\n+   suggestMessages?: string[]\n+   isStreaming?: boolean\n+   scriptstate?: { [key: string]: string | number | boolean }\n+   modules?: string[]\n+   id?: string\n+   bindedPersona?: string\n+   fmIndex?: number\n+   selectedDraftHookId?: string\n+   translatorPresetId?: string\n+   autoTranslate?: boolean\n+   autoTranslateBotOnly?: boolean\n+   bilingualDisplay?: boolean\n+   bilingualEmphasis?: 'original' | 'translation'\n+   hypaV3Data?: ServerSerializableHypaV3Data\n+   folderId?: string | null\n+   lastDate?: number\n+   bookmarks?: string[]\n+   bookmarkNames?: { [chatId: string]: string }\n+   pinned?: boolean\n+ }\n+\n+ export type FastifyMessage = {\n+   role: 'user' | 'char'\n+   data: string\n+   translation?: FastifyMessageTranslation | null\n+   saying?: string\n+   chatId?: string\n+   time?: number | null\n+   generationInfo?: FastifyMessageGenerationInfo\n+   promptInfo?: FastifyMessagePresetInfo\n+   name?: string | null\n+   otherUser?: boolean\n+   disabled?: false | true | 'allBefore'\n+   isComment?: boolean\n+ }\n+\n+ export type ServerDynamicOutput = {\n+   autoAdjustSchema?: boolean\n+   dynamicMessages?: boolean\n+   dynamicMemory?: boolean\n+   dynamicResponseTiming?: boolean\n+   dynamicOutputPrompt?: boolean\n+   showTypingEffect?: boolean\n+   dynamicRequest?: boolean\n+ }\n+\n+ export type ServerSeparateParameters = {\n+   temperature?: number\n+   top_k?: number\n+   repetition_penalty?: number\n+   min_p?: number\n+   top_a?: number\n+   top_p?: number\n+   frequency_penalty?: number\n+   presence_penalty?: number\n+   reasoning_effort?: number\n+   thinking_tokens?: number\n+   thinking_type?: 'off' | 'budget' | 'adaptive'\n+   deepseek_thinking_type?: 'off' | 'enabled'\n+   adaptive_thinking_effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'\n+   deepseek_reasoning_effort?: 'high' | 'max'\n+   outputImageModal?: boolean\n+   verbosity?: number\n+ }\n+\n+ export type ServerHordeConfig = {\n+   apiKey?: string\n+   model?: string\n+   softPrompt?: string\n+ }\n+\n+ export type ServerSdConfig = {\n+   width: number\n+   height: number\n+   sampler_name: string\n+   script_name: string\n+   denoising_strength: number\n+   enable_hr: boolean\n+   hr_scale: number\n+   hr_upscaler: string\n+ }\n+\n+ export type ServerNAIImgConfig = {\n+   width: number\n+   height: number\n+   sampler: string\n+   noise_schedule: string\n+   steps: number\n+   scale: number\n+   cfg_rescale: number\n+   sm: boolean\n+   sm_dyn: boolean\n+   noise: number\n+   strength: number\n+   image: string\n+   base64image: string\n+   InfoExtracted: number\n+   autoSmea: boolean\n+   use_coords: boolean\n+   legacy_uc: boolean\n+   v4_prompt: ServerNAIImgConfigV4Prompt\n+   v4_negative_prompt: ServerNAIImgConfigV4NegativePrompt\n+   reference_image_multiple?: string[]\n+   reference_strength_multiple?: number[]\n+   vibe_data?: ServerNAIVibeData\n+   vibe_model_selection?: string\n+   variety_plus: boolean\n+   decrisp: boolean\n+   reference_mode: string\n+   character_image: string\n+   character_base64image: string\n+   style_aware: boolean\n+ }\n+\n+ export type ServerNAIImgConfigV4Prompt = {\n+   caption: ServerNAIImgConfigV4Caption\n+   use_coords: boolean\n+   use_order: boolean\n+ }\n+\n+ export type ServerNAIImgConfigV4NegativePrompt = {\n+   caption: ServerNAIImgConfigV4Caption\n+   legacy_uc: boolean\n+ }\n+\n+ export type ServerNAIImgConfigV4Caption = {\n+   base_caption: string\n+   char_captions: ServerNAIImgConfigV4CharCaption[]\n+ }\n+\n+ export type ServerNAIImgConfigV4CharCaption = {\n+   char_caption: string\n+   centers: {\n+     x: number\n+     y: number\n+   }[]\n+ }\n+\n+ export type ServerNAIVibeData = {\n+   identifier: string\n+   version: number\n+   type: string\n+   image: string\n+   id: string\n+   encodings: {\n+     [key: string]: {\n+       [key: string]: ServerNAIVibeEncoding\n+     }\n+   }\n+   name: string\n+   thumbnail: string\n+   createdAt: number\n+   importInfo: {\n+     model: string\n+     information_extracted: number\n+     strength: number\n+   }\n+ }\n+\n+ export type ServerNAIVibeEncoding = {\n+   encoding: string\n+   params: {\n+     information_extracted: number\n+   }\n+ }\n+\n+ export type ServerOobaSettings = {\n+   max_new_tokens?: number\n+   do_sample?: boolean\n+   temperature?: number\n+   top_p?: number\n+   typical_p?: number\n+   repetition_penalty?: number\n+   encoder_repetition_penalty?: number\n+   top_k?: number\n+   min_length?: number\n+   no_repeat_ngram_size?: number\n+   num_beams?: number\n+   penalty_alpha?: number\n+   length_penalty?: number\n+   early_stopping?: boolean\n+   seed?: number\n+   add_bos_token?: boolean\n+   truncation_length?: number\n+   ban_eos_token?: boolean\n+   skip_special_tokens?: boolean\n+   top_a?: number\n+   tfs?: number\n+   epsilon_cutoff?: number\n+   eta_cutoff?: number\n+   formating?: {\n+     header: string\n+     systemPrefix: string\n+     userPrefix: string\n+     assistantPrefix: string\n+     seperator: string\n+     useName: boolean\n+   }\n+ }\n+\n+ export type FastifyMessageTranslation = {\n+   text: string\n+   source: 'raw'\n+   sourceHash: string\n+   targetLanguage: string\n+   inputLanguage: string\n+   translatorType: 'google' | 'deepl' | 'deeplX' | 'llm'\n+   settingsHash: string\n+   updatedAt: number\n+ }\n+\n+ export type FastifyMessageGenerationInfo = {\n+   model?: string\n+   generationId?: string\n+   databaseLineage?: string\n+   operationId?: string\n+   acceptedMessageId?: string\n+   attemptNo?: number\n+   jobId?: string\n+   effectLedgerKeyType?: 'operation' | 'generation'\n+   effectLedgerKeyId?: string\n+   effectLedgerCharacterId?: string\n+   effectLedgerChatId?: string\n+   inputTokens?: number\n+   outputTokens?: number\n+   maxContext?: number\n+   agentPreset?: Record<string, unknown>\n+   stageTiming?: {\n+     stage1?: number\n+     stage2?: number\n+     stage3?: number\n+     stage4?: number\n+   }\n+ }\n+\n+ export type FastifyMessagePresetInfo = {\n+   promptName?: string\n+   promptToggles?: { key: string; value: string }[]\n+   promptText?: PromptMessage[]\n+ }\n+\n+ export type FastifyLoreBook = DeepReadonly<ServerModuleLorebook>\n+ export type FastifyCustomScript = ServerModuleRegexScript\n+ export type ServerSeparateParameterSettings = {\n+   memory?: ServerSeparateParameters\n+   emotion?: ServerSeparateParameters\n+   translate?: ServerSeparateParameters\n+   otherAx?: ServerSeparateParameters\n+   scriptMain?: ServerSeparateParameters\n+   scriptAux?: ServerSeparateParameters\n+   overrides?: Record<string, ServerSeparateParameters>\n+ }\n+ export type ServerPromptSettings = {\n+   assistantPrefill?: string\n+   postEndInnerFormat?: string\n+   sendChatAsSystem?: boolean\n+   sendName?: boolean\n+   utilOverride?: boolean\n+   customChainOfThought?: boolean\n+   maxThoughtTagDepth?: number\n+   trimStartNewChat?: boolean\n+ }\n+ export type ServerSerializableHypaV3Data = {\n+   summaries: Array<{ text: string; chatMemos: string[]; isImportant: boolean; categoryId?: string; tags?: string[] }>\n+   categories?: Array<{ id: string; name: string }>\n+   lastSelectedSummaries?: number[]\n+   metrics?: {\n+     lastImportantSummaries: number[]\n+     lastRecentSummaries: number[]\n+     lastSimilarSummaries: number[]\n+     lastRandomSummaries: number[]\n+   }\n+   modalSettings?: {\n+     displayMode: string\n+     displayRangeFrom: number\n+     displayRangeTo: number\n+     displayRecentCount: number\n+     displayImportant: boolean\n+     displaySelected: boolean\n+   }\n+ }\n+\n+ export type ServerOobaChatCompletionRequestParams = {\n+   mode?: 'instruct' | 'chat' | 'chat-instruct'\n+   turn_template?: string\n+   name1_instruct?: string\n+   name2_instruct?: string\n+   context_instruct?: string\n+   system_message?: string\n+   name1?: string\n+   name2?: string\n+   context?: string\n+   greeting?: string\n+   chat_instruct_command?: string\n+   preset?: string\n+   tokenizer?: string\n+   min_p?: number\n+   top_k?: number\n+   repetition_penalty?: number\n+   repetition_penalty_range?: number\n+   typical_p?: number\n+   tfs?: number\n+   top_a?: number\n+   epsilon_cutoff?: number\n+   eta_cutoff?: number\n+   guidance_scale?: number\n+   negative_prompt?: string\n+   penalty_alpha?: number\n+   mirostat_mode?: number\n+   mirostat_tau?: number\n+   mirostat_eta?: number\n+   temperature_last?: boolean\n+   do_sample?: boolean\n+   seed?: number\n+   encoder_repetition_penalty?: number\n+   no_repeat_ngram_size?: number\n+   min_length?: number\n+   num_beams?: number\n+   length_penalty?: number\n+   early_stopping?: boolean\n+   truncation_length?: number\n+   max_tokens_second?: number\n+   custom_token_bans?: string\n+   auto_max_new_tokens?: boolean\n+   ban_eos_token?: boolean\n+   add_bos_token?: boolean\n+   skip_special_tokens?: boolean\n+   grammar_string?: string\n+ }\n+\n+ export type ProviderGenerationSettings = WorkingGenerationSettings & {\n+   currentChar?: number\n+   characters?: Array<{ name?: string }>\n+ }\n+ export type MemoryGenerationSettings = WorkingGenerationSettings & {\n+   characters?: Array<{ chaId?: string; name?: string; chats?: Array<GenerationPreflightChat & { name?: string }> }>\n+ }\n+\n+ /** Concrete known provider/runtime fields replace the shared validation-input unknowns. */\n+ export type ServerModelRuntimeOptions = Omit<ModelProfileRecordRuntimeOptions, 'dynamicOutput'> & {\n+   dynamicOutput?: ServerDynamicOutput\n+ }\n+ export type ServerModelProviderOptions = Omit<ModelProfileRecordProviderOptions, 'reverseProxy'> & {\n+   reverseProxy?: {\n+     autofillRequestUrl?: boolean\n+     oobaSystemHoist?: boolean\n+     oobaArgs?: ServerOobaChatCompletionRequestParams\n+   }\n+ }\n+ export type ServerModelProfile = Omit<ModelProfileRecord, 'runtimeOptions' | 'providerOptions'> & {\n+   runtimeOptions?: ServerModelRuntimeOptions\n+   providerOptions?: ServerModelProviderOptions\n+ }\n+\n+ /** Resolved configuration is a value graph; only working state owns mutations. */\n+ export type DeepReadonly<T> = T extends object ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> } : T\n+ export type ResolvedGenerationSettings = DeepReadonly<GenerationSettings>\n+\n+ /** Request-owned scalar overlay; nested configuration remains readonly. */\n+ export type WorkingGenerationSettings = Omit<\n+   { -readonly [Key in keyof ResolvedGenerationSettings]: ResolvedGenerationSettings[Key] },\n+   'globalChatVariables'\n+ > & { globalChatVariables?: Record<string, string> }\n+\n+ /** Preflight needs module toggle metadata, without executable module bodies. */\n+ export type GenerationPreflightModule = Pick<DeepReadonly<ServerModule>, 'id' | 'namespace' | 'customModuleToggle'>\n+ export type GenerationConfigurationSettings<Module extends GenerationPreflightModule> = Omit<\n+   WorkingGenerationSettings,\n+   'modules'\n+ > & { modules?: readonly Module[] }\n+ export type GenerationPreflightSettings = GenerationConfigurationSettings<GenerationPreflightModule>\n+ export type ResolvedGenerationConfigurationSettings<Module extends GenerationPreflightModule> = Omit<\n+   ResolvedGenerationSettings,\n+   'modules'\n+ > & { readonly modules?: readonly Module[] }\n+\n\n \u276f __tests__/databaseTypeOwnership.test.ts:50:21\n     48|       'FastifyMessagePresetInfo',\n     49|     ]) {\n     50|       expect(owner).toContain(`export interface ${typeName}`)\n       |                     ^\n     51|       expect(owner).not.toContain(`type ${typeName} = any`)\n     52|     }"
+    },
+    {
+      "case": "__tests__/moduleDescriptorOwnership.test.ts > module descriptor server type ownership > keeps module, regex, and lorebook records aligned with browser descriptors",
+      "failure": "AssertionError: expected 'export interface customscript {\\n    \u2026' to be 'export interface customscript {\\n    \u2026' // Object.is equality\n\n- Expected\n+ Received\n\n@@ -1,8 +1,8 @@\n  export interface customscript {\n      id?: string;\n-     comment: string;\n+     comment?: string;\n      in: string;\n      out: string;\n      type: string;\n      flag?: string;\n      ableFlag?: boolean;\n\n \u276f __tests__/moduleDescriptorOwnership.test.ts:50:40\n     48|     expect(server.get('MCPModule')).toBe(browserModules.get('MCPModule\u2026\n     49|     expect(server.get('RisuModule')).toBe(browserModules.get('RisuModu\u2026\n     50|     expect(server.get('customscript')).toBe(browserDatabase.get('custo\u2026\n       |                                        ^\n     51|     expect(server.get('loreBook')).toBe(browserDatabase.get('loreBook'\u2026\n     52|   })"
+    },
+    {
+      "case": "__tests__/risuSaveImportRoute.test.ts > multipart .risu import route > fails import closed when its safety snapshot cannot be created",
+      "failure": "AssertionError: expected 200 to be 500 // Object.is equality\n\n- Expected\n+ Received\n\n- 500\n+ 200\n\n \u276f __tests__/risuSaveImportRoute.test.ts:401:33\n    399|       payload: { database: { version: 1, tag: 'must-not-be-imported' }\u2026\n    400|     })\n    401|     expect(imported.statusCode).toBe(500)\n       |                                 ^\n    402|     expect(imported.json()).toEqual({ error: 'automatic_backup_failed'\u2026\n    403|     expect(listBackups(harness.dataDir)).toEqual([])"
+    },
+    {
+      "case": "__tests__/valueTypeOwnership.test.ts > Fastify value type ownership > keeps server/fastify/src/prompt/boundedRegex.ts behind its exported server-owned value interface",
+      "failure": "AssertionError: expected { \u2026(5) } to match object { \u2026(2) }\n(5 matching properties omitted from actual)\n\n- Expected\n+ Received\n\n  {\n-   \"complexRegexCompatibilityMode\": \"'strict' | 'worker'\",\n-   \"regexOutputSizeLimitMiB\": \"number\",\n+   \"complexRegexCompatibilityMode?\": \"'strict' | 'worker'\",\n+   \"complexRegexDisplayTimeoutMs?\": \"number\",\n+   \"complexRegexInputTimeoutMs?\": \"number\",\n+   \"complexRegexOutputTimeoutMs?\": \"number\",\n+   \"regexOutputSizeLimitMiB?\": \"number\",\n  }\n\n \u276f __tests__/valueTypeOwnership.test.ts:35:54\n     33|   ] as const)('keeps %s behind its exported server-owned value interfa\u2026\n     34|     const owner = parseSource(file, fs.readFileSync(path.join(repoRoot\u2026\n     35|     expect(exportedInterfaceProperties(owner, name)).toMatchObject(pro\u2026\n       |                                                      ^\n     36|     for (const specifier of moduleSpecifiers(owner)) {\n     37|       const target = resolveModule(repoRoot, file, specifier)"
+    }
+  ],
+  "completedCommands": [
+    {
+      "name": "metadata",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "src/ts/chatCommands.workCosts.dom.test.ts"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 2.532,
+      "log": "/tmp/phase6-final-bc7e4ad2d/metadata.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/metadata-F03-browser-work.json"
+      ]
+    },
+    {
+      "name": "organization",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "src/ts/chatOrganization.workCosts.dom.test.ts"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 2.229,
+      "log": "/tmp/phase6-final-bc7e4ad2d/organization.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/organization-F03-organization-browser-work.json"
+      ]
+    },
+    {
+      "name": "outbox",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "src/ts/server/pendingMutationOutbox.workCosts.svelte-node.test.ts"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 2.122,
+      "log": "/tmp/phase6-final-bc7e4ad2d/outbox.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/outbox-F05-browser-work.json"
+      ]
+    },
+    {
+      "name": "cache",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "src/ts/server/resourceCache.workCosts.svelte-node.test.ts"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 2.404,
+      "log": "/tmp/phase6-final-bc7e4ad2d/cache.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/cache-F04-browser-work.json"
+      ]
+    },
+    {
+      "name": "server-load",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/__tests__/serverLoadCostHarness.test.ts"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 6.721,
+      "log": "/tmp/phase6-final-bc7e4ad2d/server-load.log",
+      "artifacts": []
+    },
+    {
+      "name": "generation-1",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/__tests__/generationPreparationCosts.test.ts"
+      ],
+      "environment": {
+        "RISU_GENERATION_COST_TIMING": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 4.007,
+      "log": "/tmp/phase6-final-bc7e4ad2d/generation-1.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/generation-1-generation-costs.json"
+      ]
+    },
+    {
+      "name": "generation-2",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/__tests__/generationPreparationCosts.test.ts"
+      ],
+      "environment": {
+        "RISU_GENERATION_COST_TIMING": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 3.659,
+      "log": "/tmp/phase6-final-bc7e4ad2d/generation-2.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/generation-2-generation-costs.json"
+      ]
+    },
+    {
+      "name": "generation-3",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/__tests__/generationPreparationCosts.test.ts"
+      ],
+      "environment": {
+        "RISU_GENERATION_COST_TIMING": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 3.771,
+      "log": "/tmp/phase6-final-bc7e4ad2d/generation-3.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/generation-3-generation-costs.json"
+      ]
+    },
+    {
+      "name": "maintenance",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/__tests__/maintenanceCosts.test.ts"
+      ],
+      "environment": {
+        "RISU_MAINTENANCE_COSTS": "1",
+        "RISU_MAINTENANCE_COST_REPETITIONS": "3"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 8.13,
+      "log": "/tmp/phase6-final-bc7e4ad2d/maintenance.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/maintenance-maintenance-costs.json"
+      ]
+    },
+    {
+      "name": "locale-startup",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/browser-smoke/selectedLocaleStartup.spec.ts"
+      ],
+      "environment": {
+        "RISU_BROWSER_SMOKE_WORKERS": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 25.345,
+      "log": "/tmp/phase6-final-bc7e4ad2d/locale-startup.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/locale-startup-locale-startup.json"
+      ]
+    },
+    {
+      "name": "startupRecoveryIntegrationMatrix",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/browser-smoke/startupRecoveryIntegrationMatrix.spec.ts"
+      ],
+      "environment": {
+        "RISU_BROWSER_SMOKE_WORKERS": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 35.363,
+      "log": "/tmp/phase6-final-bc7e4ad2d/startupRecoveryIntegrationMatrix.log",
+      "artifacts": []
+    },
+    {
+      "name": "visibleStateRecovery",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/browser-smoke/visibleStateRecovery.spec.ts"
+      ],
+      "environment": {
+        "RISU_BROWSER_SMOKE_WORKERS": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 19.795,
+      "log": "/tmp/phase6-final-bc7e4ad2d/visibleStateRecovery.log",
+      "artifacts": []
+    },
+    {
+      "name": "startupCachePopulationMatrix",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/browser-smoke/startupCachePopulationMatrix.spec.ts"
+      ],
+      "environment": {
+        "RISU_BROWSER_SMOKE_WORKERS": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 18.16,
+      "log": "/tmp/phase6-final-bc7e4ad2d/startupCachePopulationMatrix.log",
+      "artifacts": []
+    },
+    {
+      "name": "acceptedSendProtocol",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/browser-smoke/acceptedSendProtocol.spec.ts"
+      ],
+      "environment": {
+        "RISU_BROWSER_SMOKE_WORKERS": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 37.973,
+      "log": "/tmp/phase6-final-bc7e4ad2d/acceptedSendProtocol.log",
+      "artifacts": []
+    },
+    {
+      "name": "selectedLocaleRuntime",
+      "command": [
+        "pnpm",
+        "test",
+        "--",
+        "server/fastify/browser-smoke/selectedLocaleRuntime.spec.ts"
+      ],
+      "environment": {
+        "RISU_BROWSER_SMOKE_WORKERS": "1"
+      },
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 18.967,
+      "log": "/tmp/phase6-final-bc7e4ad2d/selectedLocaleRuntime.log",
+      "artifacts": []
+    },
+    {
+      "name": "initial-preload",
+      "command": [
+        "pnpm",
+        "build:initial-preload"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 0,
+      "elapsedSeconds": 19.17,
+      "log": "/tmp/phase6-final-bc7e4ad2d/initial-preload.log",
+      "artifacts": [
+        "/tmp/phase6-final-bc7e4ad2d/initial-preload.json",
+        "/tmp/phase6-final-bc7e4ad2d/bundle-boundaries.json"
+      ]
+    },
+    {
+      "name": "agent",
+      "command": [
+        "pnpm",
+        "test:agent"
+      ],
+      "environment": {},
+      "source": "bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3",
+      "exitCode": 1,
+      "elapsedSeconds": 148.79,
+      "log": "/tmp/phase6-final-bc7e4ad2d/agent.log",
+      "artifacts": []
+    }
+  ]
+}

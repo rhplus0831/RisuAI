@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–5 accepted; Phase 6 implementation complete; final combined verification in progress.
+- State: Phases 0–5 accepted; Phase 6 aggregate exposed compatibility, type and stale test/inventory gaps; focused repairs in progress.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md).
-- Next task: run final deterministic costs, isolated measurements, native recovery
-  and agent aggregate; record final dispositions and archive the completed workstream.
+- Next task: repair every observed aggregate failure, rerun affected focused checks,
+  then repeat the combined gate before final evidence and archival.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -939,3 +939,23 @@ browser/server/package identity and immutable cyclic behavior. Current prompt,
 domain and package guides are updated; current docs (49), explicit plan docs
 (22), Prettier and whitespace checks pass. All planned implementation is now
 complete. Final cost, recovery and agent aggregate checks are next.
+
+## Phase 6 First Combined Verification: Repairs Required
+
+Source `bc7e4ad2d8e8da5adc84fc04d3a91eb36cc5a2b3` passes all deterministic work
+checks, three isolated generation processes, the nine-sample maintenance matrix,
+twelve locale startup journeys, production preload boundaries and twenty-five
+additional native recovery cases (26 specs / 37 journeys together). [All first
+closeout costs](evidence/closeout-costs-first.json) retain every sample and original
+budget assessment. Initial HTML is 159,571 gzip bytes; generation small/large
+and maintenance original limits pass.
+
+The first post-implementation `pnpm test:agent` fails in 148.79 seconds:
+architecture inventory drift, five type errors, six frontend test failures and
+seven server test failures. [Exact failures and command ledger](evidence/closeout-first-verification.json)
+are retained. Investigation identifies a supported custom-model record without
+`params` rejected by finite decoding, missing Korean transcript keys, test generic
+and legacy-character type gaps, stale architectural/metric ownership expectations,
+and asynchronous test seams that still model former bootstrap, retry and backup
+publication paths. These require focused repairs; passing cost/native lanes do
+not waive the combined gate. No finding is archived or described as fully closed.
