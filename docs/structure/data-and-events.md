@@ -64,6 +64,14 @@ snapshots include only IDs referenced by that target history. Pre-extraction
 embedded characters have a named compatibility scope; the historical assembly
 and display loaders remain separate owners.
 
+Selected reads reuse at most 16 fixed SQLite query programs per connection,
+without caching rows or configuration. SQLite retains the last bound parameters;
+selectors exceeding 4,096 aggregate bytes therefore use an uncached program.
+Each invocation binds its current target and reads authoritative data again,
+including after accepted sends, ordinary writes and lineage replacement. A
+connection-scoped weak map prevents sharing programs between databases. Cost
+probes observe statement execution, so reuse cannot hide returned rows.
+
 Prompt-template ownership follows the split-preset contract. Modern template
 bodies are persisted as `promptPresets[].promptTemplate` inside
 `prompt_presets.data_json` rows. The selected owner is projected through the

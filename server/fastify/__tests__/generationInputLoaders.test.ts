@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import type { DatabaseSync, SQLInputValue, SQLOutputValue } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   resolveEffectivePromptTemplate,
@@ -133,34 +133,71 @@ afterEach(() => {
 
 function observed<T>(db: DatabaseSync, run: () => T) {
   const calls: Array<{ sql: string; rows: number }> = []
-  const prepare = db.prepare.bind(db)
-  const spy = vi.spyOn(db, 'prepare').mockImplementation((sql) => {
-    const statement = prepare(sql)
-    const capture = (value: Record<string, SQLOutputValue>[] | Record<string, SQLOutputValue> | undefined) => {
-      calls.push({ sql, rows: Array.isArray(value) ? value.length : value ? 1 : 0 })
-    }
-    const all = statement.all.bind(statement)
-    statement.all = (...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>) => {
-      const result: ReturnType<typeof all> = Reflect.apply(all, statement, parameters)
-      capture(result)
-      return result
-    }
-    const get = statement.get.bind(statement)
-    statement.get = (...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>) => {
-      const result: ReturnType<typeof get> = Reflect.apply(get, statement, parameters)
-      capture(result)
-      return result
-    }
-    return statement
+  const prototype: StatementSync = Object.getPrototypeOf(db.prepare('SELECT 1'))
+  const originalAll = prototype.all
+  const originalGet = prototype.get
+  const allSpy = vi.spyOn(prototype, 'all').mockImplementation(function (
+    this: StatementSync,
+    ...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>
+  ) {
+    const result = Reflect.apply(originalAll, this, parameters)
+    calls.push({ sql: this.sourceSQL, rows: result.length })
+    return result
+  })
+  const getSpy = vi.spyOn(prototype, 'get').mockImplementation(function (
+    this: StatementSync,
+    ...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>
+  ) {
+    const result = Reflect.apply(originalGet, this, parameters)
+    calls.push({ sql: this.sourceSQL, rows: result ? 1 : 0 })
+    return result
   })
   try {
     return { result: run(), calls, returnedRows: calls.reduce((sum, call) => sum + call.rows, 0) }
   } finally {
-    spy.mockRestore()
+    allSpy.mockRestore()
+    getSpy.mockRestore()
   }
 }
 
 describe('selected generation repository inputs', () => {
+  it('reuses fixed query programs while reading later writes and other connections independently', () => {
+    const { db, directory } = openFixture(fixture())
+    loadPersistedForGenerationAssembly(db, directory, target)
+    const prepare = vi.spyOn(db, 'prepare')
+    const repeated = observed(db, () => loadPersistedForGenerationAssembly(db, directory, target))
+    expect(repeated.returnedRows).toBe(9)
+    expect(prepare.mock.calls.map(([sql]) => sql)).toEqual(['SELECT 1'])
+    prepare.mockRestore()
+
+    db.prepare(
+      "UPDATE prompt_presets SET data_json = json_set(data_json, '$.mainPrompt', ?) WHERE json_extract(data_json, '$.id') = ?",
+    ).run('Changed after preparation', 'selected-prompt')
+    db.prepare("UPDATE messages SET json = json_set(json, '$.data', ?) WHERE chat_id = ? AND seq = 0").run(
+      'Changed stored history',
+      target.chatId,
+    )
+    const changed = record(loadPersistedForGenerationAssembly(db, directory, target).database)
+    expect(records(changed.promptPresets)[0].mainPrompt).toBe('Changed after preparation')
+    expect(records(records(records(changed.characters)[0].chats)[0].message)[0].data).toBe('Changed stored history')
+    const other = openFixture(fixture())
+    const independent = record(loadPersistedForGenerationAssembly(other.db, other.directory, target).database)
+    expect(records(independent.promptPresets)[0].mainPrompt).toBe('Hello')
+  })
+
+  it('does not retain oversized selector bindings in cached query programs', () => {
+    const { db, directory } = openFixture(fixture())
+    loadPersistedForGenerationPreflight(db, directory, target)
+    const prepare = vi.spyOn(db, 'prepare')
+    const oversized = { ...target, characterId: 'large-selector-'.repeat(400) }
+    loadPersistedForGenerationPreflight(db, directory, oversized)
+    loadPersistedForGenerationPreflight(db, directory, oversized)
+    expect(prepare.mock.calls.filter(([sql]) => sql.includes('FROM chats AS chat JOIN characters'))).toHaveLength(2)
+    prepare.mockClear()
+    loadPersistedForGenerationPreflight(db, directory, target)
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
   it('holds fixed selected read/output scope across unrelated characters, collections and assets', () => {
     const databaseBytes: number[] = []
     const preflightBytes: number[] = []

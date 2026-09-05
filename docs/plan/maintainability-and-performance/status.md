@@ -401,7 +401,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3: Selected Route Cutover Implemented
 
-- Implementation: accompanying selected-route commit. Both readiness and actual
+- Implementation: `0afc940ca`. Both readiness and actual
   assembly use selected repository inputs; direct preview retains ID-specific
   missing-entity errors, and malformed known inputs reject before acceptance.
   Accepted sends/retries build a new snapshot after their own revision boundary.
@@ -417,3 +417,26 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   separately. No numeric timing budget was raised; the small-case timing gate
   remains open. [Matched investigation samples](evidence/generation-timing-investigation.json)
   retain all three before/after cycles, including failures.
+
+## Phase 3: Bounded Query Program Reuse Implemented
+
+- Implementation: accompanying statement-reuse commit. Profiling found native
+  SQLite preparation/read work dominant in the small fixture; repeated CBS
+  adapters account for less than 0.001 ms per assembly and are left unchanged.
+  Selected readers reuse at most 16 fixed programs per connection, with at most
+  4,096 aggregate parameter bytes per retained program. Larger selectors bypass
+  reuse. No rows, snapshots, or configuration values are memoized.
+- A repeated ordinary assembly performs zero new query compilations while still
+  returning all nine expected rows. Later prompt/history writes and independent
+  connections remain fresh. Oversized selectors demonstrably recompile and do
+  not replace the retained small-selector program. Instrumentation now observes
+  statement execution and restores its prototype spies before timing.
+- Exact focused checks: selected loaders 18, preparation probes 4, chat generation
+  181 and durable generation 69. Structural budgets remain unchanged and pass.
+  The named embedded-character compatibility axis is now measured at 0/12/48
+  unrelated units: selected output 2,277/140,134/553,918 bytes and total settings
+  JSON read 4,222/600,872/2,393,168 bytes per preparation. It still performs zero
+  aggregate database clones or asset metadata reads; no ordinary-path budget is
+  incorrectly applied to this explicit legacy exception.
+- Timing acceptance remains open. All matched measurements are retained for
+  final comparison; startup validator compilation is the next bounded change.

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { cpus, tmpdir } from 'node:os'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
-import type { DatabaseSync, SQLInputValue, SQLOutputValue } from 'node:sqlite'
+import type { DatabaseSync, SQLInputValue, SQLOutputValue, StatementSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { AgentRecord, AgentPresetRecord } from '@risuai/shared-core/agent-preset-records'
@@ -196,41 +196,46 @@ async function measure<T>(db: DatabaseSync, run: () => T | Promise<T>): Promise<
     if (value && typeof value === 'object' && 'characters' in value) cost.databaseAggregateClones += 1
     return clone(value, options)
   })
-  const prepare = db.prepare.bind(db)
-  const prepareSpy = vi.spyOn(db, 'prepare').mockImplementation((sql) => {
-    const statement = prepare(sql)
+  // Observe execution on StatementSync, including reused prepared programs.
+  // Restore every spy before isolated timing; cached programs must never retain
+  // the counter's serialization work or closures from a previous phase.
+  const prototype: StatementSync = Object.getPrototypeOf(db.prepare('SELECT 1'))
+  const originalAll = prototype.all
+  const originalGet = prototype.get
+  function capture(sql: string, value: Record<string, SQLOutputValue> | Record<string, SQLOutputValue>[] | undefined) {
     const table = /\bFROM\s+([a-z_]+)/i.exec(sql)?.[1] ?? 'other'
-    function capture(value: Record<string, SQLOutputValue> | Record<string, SQLOutputValue>[] | undefined) {
-      const rows = Array.isArray(value) ? value : value ? [value] : []
-      const read = (cost.reads[table] ??= { calls: 0, rows: 0, returnedBytes: 0, jsonColumnBytes: 0 })
-      read.calls += 1
-      read.rows += rows.length
-      read.returnedBytes += bytes(value)
-      for (const row of rows) {
-        for (const [key, item] of Object.entries(row)) {
-          if (key.endsWith('_json') && typeof item === 'string') read.jsonColumnBytes += Buffer.byteLength(item)
-        }
+    const rows = Array.isArray(value) ? value : value ? [value] : []
+    const read = (cost.reads[table] ??= { calls: 0, rows: 0, returnedBytes: 0, jsonColumnBytes: 0 })
+    read.calls += 1
+    read.rows += rows.length
+    read.returnedBytes += bytes(value)
+    for (const row of rows)
+      for (const [key, item] of Object.entries(row)) {
+        if (key.endsWith('_json') && typeof item === 'string') read.jsonColumnBytes += Buffer.byteLength(item)
       }
-    }
-    const all = statement.all.bind(statement)
-    const get = statement.get.bind(statement)
-    statement.all = (...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>) => {
-      const value: ReturnType<typeof all> = Reflect.apply(all, statement, parameters)
-      capture(value)
-      return value
-    }
-    statement.get = (...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>) => {
-      const value: ReturnType<typeof get> = Reflect.apply(get, statement, parameters)
-      capture(value)
-      return value
-    }
-    return statement
+  }
+  const allSpy = vi.spyOn(prototype, 'all').mockImplementation(function (
+    this: StatementSync,
+    ...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>
+  ) {
+    const value = Reflect.apply(originalAll, this, parameters)
+    capture(this.sourceSQL, value)
+    return value
+  })
+  const getSpy = vi.spyOn(prototype, 'get').mockImplementation(function (
+    this: StatementSync,
+    ...parameters: Array<SQLInputValue | Record<string, SQLInputValue>>
+  ) {
+    const value = Reflect.apply(originalGet, this, parameters)
+    capture(this.sourceSQL, value)
+    return value
   })
   try {
     return { result: await run(), cost }
   } finally {
     cloneSpy.mockRestore()
-    prepareSpy.mockRestore()
+    allSpy.mockRestore()
+    getSpy.mockRestore()
   }
 }
 
@@ -255,7 +260,7 @@ async function timings(db: DatabaseSync, dataDir: string) {
   return samples
 }
 
-async function probe(unrelated: number, targetHistory: number, unusedConfigurationRecords = 0) {
+async function probe(unrelated: number, targetHistory: number, unusedConfigurationRecords = 0, legacyEmbedded = false) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-generation-costs-'))
   const db = openDatabase(dataDir)
   try {
@@ -292,11 +297,21 @@ async function probe(unrelated: number, targetHistory: number, unusedConfigurati
         ),
       })
     }
-    writePersistedWithMessages(db, dataDir, {
-      _version: 1,
-      database: fixture,
-      assets: [],
-    })
+    if (legacyEmbedded) {
+      // The named compatibility path sees embedded unused modules too. Keep
+      // those records valid at the real execution decoder, not just SQL JSON.
+      fixture.modules = fixture.modules.map((module) => ({ ...module, description: payload, lorebook: [] }))
+      fixture.modelPresets = fixture.modelPresets.map((preset) =>
+        'customFlags' in preset ? { ...preset, name: payload, customFlags: [] } : preset,
+      )
+      db.prepare('INSERT INTO settings (id, data_json) VALUES (1, ?)').run(JSON.stringify(fixture))
+    } else {
+      writePersistedWithMessages(db, dataDir, {
+        _version: 1,
+        database: fixture,
+        assets: [],
+      })
+    }
     insertAssetMetadataBatch(
       db,
       Array.from({ length: unrelated * 8 }, (_, index) => ({
@@ -310,6 +325,7 @@ async function probe(unrelated: number, targetHistory: number, unusedConfigurati
     const preflight = await measure(db, () => preflightGenerationOperationSettings(input, dataDir, db))
     expect(preflight.result).toEqual({ status: 'ready' })
     const load = await measure(db, () => loadPersistedForGenerationAssembly(db, dataDir, input))
+    expect(load.result.generationScope).toBe(legacyEmbedded ? 'legacy' : 'selected')
     const database: FastifyDatabase = decodeGenerationDatabase(load.result.database)
     const currentChar: FastifyCharacter = database.characters.find(
       (character: FastifyCharacter) => character.chaId === input.characterId,
@@ -343,6 +359,7 @@ async function probe(unrelated: number, targetHistory: number, unusedConfigurati
         unrelatedAssets: unrelated * 8,
         targetHistory,
         unusedConfigurationRecords,
+        legacyEmbedded,
       },
       snapshotBytes: bytes(load.result.database),
       assetSnapshotBytes: bytes(load.result.assets),
@@ -415,5 +432,23 @@ describe('generation preparation work counters', () => {
     expect(results[2].load.reads.settings.jsonColumnBytes).toBeGreaterThan(
       results[0].load.reads.settings.jsonColumnBytes,
     )
+  })
+
+  it('measures the named embedded-character compatibility path separately', async () => {
+    bootPromptVariables()
+    const results = []
+    for (const unrelated of unrelatedSizes) results.push(await probe(unrelated, 4, 0, true))
+    for (const result of results) {
+      expect(result.prompt).toEqual(results[0].prompt)
+      expect(result.preflight.reads.messages?.rows ?? 0).toBe(0)
+      expect(result.preflight.databaseAggregateClones).toBe(0)
+      expect(result.assembly.databaseAggregateClones).toBe(0)
+      expect(result.assembly.reads.assets?.rows ?? 0).toBe(0)
+      reportRows.push({ axis: 'legacy-embedded', ...result, prompt: undefined })
+    }
+    expect(results[2].load.reads.settings.jsonColumnBytes).toBeGreaterThan(
+      results[0].load.reads.settings.jsonColumnBytes,
+    )
+    expect(results[2].snapshotBytes).toBeGreaterThan(results[0].snapshotBytes)
   })
 })

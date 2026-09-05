@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { backup as backupSqliteDatabase, DatabaseSync } from 'node:sqlite'
+import { backup as backupSqliteDatabase, DatabaseSync, type SQLInputValue, type StatementSync } from 'node:sqlite'
 import { SERVER_CHARACTER_SHELL_MARKER, type ServerCharacterSummary } from '@risuai/protocol/character-summary-resource'
 import {
   createInitialDatabase,
@@ -650,6 +650,13 @@ export function createSettingsTable(db: DatabaseSync): void {
 
 export function loadSettingsFromSqlite(db: DatabaseSync): Record<string, unknown> | null {
   const row = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+  return parseAndRepairSettingsRow(db, row)
+}
+
+function parseAndRepairSettingsRow(
+  db: DatabaseSync,
+  row: { data_json: string } | undefined,
+): Record<string, unknown> | null {
   if (!row) return null
   const parsed = JSON.parse(row.data_json)
   if (!isRecord(parsed)) return null
@@ -2356,6 +2363,33 @@ export interface GenerationPersisted extends Persisted, GenerationReadScope {
 
 type GenerationCollectionTable = 'model_presets' | 'prompt_presets' | 'personas' | 'modules' | 'hypa_v3_presets'
 
+// Cache fixed query programs, never configuration or query results. SQLite
+// keeps the last parameter bindings on a prepared statement, so large dynamic
+// selectors bypass this cache instead of retaining an unbounded request value.
+const GENERATION_STATEMENT_LIMIT = 16
+const GENERATION_STATEMENT_BINDING_BYTES = 4096
+const generationStatements = new WeakMap<DatabaseSync, Map<string, StatementSync>>()
+
+function prepareGenerationRead(
+  db: DatabaseSync,
+  sql: string,
+  parameters: readonly SQLInputValue[] = [],
+): StatementSync {
+  const parameterBytes = parameters.reduce<number>(
+    (size, value) =>
+      size + (typeof value === 'string' ? Buffer.byteLength(value) : ArrayBuffer.isView(value) ? value.byteLength : 8),
+    0,
+  )
+  if (parameterBytes > GENERATION_STATEMENT_BINDING_BYTES) return db.prepare(sql)
+  let statements = generationStatements.get(db)
+  if (!statements) generationStatements.set(db, (statements = new Map()))
+  const cached = statements.get(sql)
+  if (cached) return cached
+  const statement = db.prepare(sql)
+  if (statements.size < GENERATION_STATEMENT_LIMIT) statements.set(sql, statement)
+  return statement
+}
+
 interface GenerationTargetRow {
   character_json: string
   chat_json: string
@@ -2486,7 +2520,10 @@ function loadGenerationSelectedRows(
 ): GenerationSelectedLoad {
   // Preserve the existing inline-secret repair boundary and its credential
   // semantics. This one settings document remains configuration-scoped work.
-  const settings = loadSettingsFromSqlite(db)
+  const settings = parseAndRepairSettingsRow(
+    db,
+    prepareGenerationRead(db, 'SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined,
+  )
   if (!settings) return { generationScope: 'selected', rows: null, missingTarget: 'database' }
   const characterProjection = includeHistory
     ? 'character.data_json'
@@ -2501,9 +2538,9 @@ function loadGenerationSelectedRows(
         'hypaContextTruncationAcknowledged', json(chat.data_json -> '$.hypaContextTruncationAcknowledged'))`
   // Presence checks share the target result row. Empty extracted tables retain
   // their embedded compatibility value; an ID miss in a nonempty table cannot.
-  const row = db
-    .prepare(
-      `SELECT ${characterProjection} AS character_json, ${chatProjection} AS chat_json,
+  const row = prepareGenerationRead(
+    db,
+    `SELECT ${characterProjection} AS character_json, ${chatProjection} AS chat_json,
       EXISTS(SELECT 1 FROM model_presets) AS model_presets_present,
       EXISTS(SELECT 1 FROM prompt_presets) AS prompt_presets_present,
       EXISTS(SELECT 1 FROM personas) AS personas_present,
@@ -2511,8 +2548,8 @@ function loadGenerationSelectedRows(
       EXISTS(SELECT 1 FROM hypa_v3_presets) AS hypa_v3_presets_present
     FROM chats AS chat JOIN characters AS character ON character.id = chat.character_id
     WHERE chat.id = ? AND character.id = ?`,
-    )
-    .get(target.chatId, target.characterId) as unknown as GenerationTargetRow | undefined
+    [target.chatId, target.characterId],
+  ).get(target.chatId, target.characterId) as unknown as GenerationTargetRow | undefined
   if (!row) {
     const embeddedCharacters = Array.isArray(settings.characters) ? settings.characters : []
     if (embeddedCharacters.length > 0 && !db.prepare('SELECT 1 AS present FROM characters LIMIT 1').get()) {
@@ -2620,12 +2657,12 @@ function readGenerationCollectionSelection(
     return generationRecords(embedded)
       .filter((record) => record.id === id)
       .slice(0, limit)
-  const rows = db
-    .prepare(
-      `SELECT data_json FROM ${table}
+  const rows = prepareGenerationRead(
+    db,
+    `SELECT data_json FROM ${table}
     WHERE json_extract(data_json, '$.id') = ? ORDER BY position LIMIT ?`,
-    )
-    .all(id, limit)
+    [id, limit],
+  ).all(id, limit)
   return rows.flatMap((row) => {
     const parsed: unknown = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : undefined
     return isRecord(parsed) && parsed.id === id ? [parsed] : []
@@ -2655,14 +2692,14 @@ function readGenerationModules(
       'namespace', json_extract(data_json, '$.namespace'),
       'customModuleToggle', json_extract(data_json, '$.customModuleToggle'))`
     const selection = JSON.stringify(identifiers)
-    const rows = db
-      .prepare(
-        `SELECT ${projection} AS data_json FROM modules
+    const rows = prepareGenerationRead(
+      db,
+      `SELECT ${projection} AS data_json FROM modules
       WHERE json_extract(data_json, '$.id') IN (SELECT value FROM json_each(?))
         OR json_extract(data_json, '$.namespace') IN (SELECT value FROM json_each(?))
       ORDER BY position`,
-      )
-      .all(selection, selection)
+      [selection, selection],
+    ).all(selection, selection)
     records = rows.flatMap((row) => {
       const parsed: unknown = typeof row.data_json === 'string' ? JSON.parse(row.data_json) : undefined
       return isRecord(parsed) ? [parsed] : []
@@ -2689,11 +2726,17 @@ function generationStringArray(value: unknown): string[] {
 }
 
 function hydrateGenerationTargetChat(db: DatabaseSync, chat: JsonRecord, chatId: string): void {
-  const messages = getChatMessagesGroupedByIds(db, [chatId]).get(chatId)
-  if (messages && messages.length > 0) chat.message = messages
+  const messages = prepareGenerationRead(
+    db,
+    'SELECT json FROM messages WHERE alternate = 0 AND chat_id = ? ORDER BY seq',
+    [chatId],
+  ).all(chatId) as { json: string }[]
+  if (messages.length > 0) chat.message = messages.map((row) => JSON.parse(row.json) as unknown)
   else if (!Array.isArray(chat.message)) chat.message = []
-  const hypa = getChatHypaV3GroupedByIds(db, [chatId])
-  if (hypa.has(chatId)) chat.hypaV3Data = hypa.get(chatId)
+  const hypa = prepareGenerationRead(db, 'SELECT json FROM chat_hypa_v3 WHERE chat_id = ?', [chatId]).get(chatId) as
+    | { json: string }
+    | undefined
+  if (hypa) chat.hypaV3Data = JSON.parse(hypa.json) as unknown
 }
 
 function loadLegacyGenerationSelectedRows(
