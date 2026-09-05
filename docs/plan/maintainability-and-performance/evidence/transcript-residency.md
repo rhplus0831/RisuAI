@@ -328,3 +328,17 @@ under blank-body construction versus 3.653 ms on later HTML updates. Thirteen
 focused parser cases pass, including unsafe decoded markup and image-policy
 changes. Geometry behavior is unchanged for this comparison; another complete
 unprofiled matrix remains required.
+
+### Exact-empty-body comparison: original throttled budget still open
+
+Source `ba47e4f6d`; [complete matrix and original-budget assessment](transcript-residency-empty-costs.json).
+All ten measured journeys pass in four minutes, with eight intentional skips.
+Throttled accumulated scrolling remains 39.0/39.5 ms p95 at 180/600 messages
+against 35.2 ms. Every other original budget passes: large desktop/mobile/4× CPU
+heap is 29.214/27.447/27.582 MiB, older-page layout/style p95 is
+25.054/27.275/121.241 ms, and ordinary residency/anchor maxima remain
+61 rows/0.015625 pixels. Large post-scroll settlement is 2.923/2.925/5.847 seconds
+with complete readable viewport coverage and zero spacers. The small empty-body
+optimization does not establish a meaningful timing improvement or accept F08.
+The remaining investigation concerns layout work inside offscreen resident rows;
+any change must still preserve measured geometry and protected interactions.

@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: verify the exact-empty-body render fast path after identity reuse reduced
-  the throttled scroll miss; preserve all original budgets and settlement evidence.
+- Next task: reduce remaining offscreen-resident layout cost, preserving measured geometry
+  and protected interactions; the original throttled scroll budget remains open.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -869,3 +869,12 @@ are retained. The next narrow correction skips sanitizer work for exactly empty
 initial bodies while preserving every nonempty path; 13 focused parser tests
 pass. Geometry remains unchanged. Phase 5 stays open until original numeric
 limits and final native interactions pass together.
+
+### Phase 5 exact-empty-body comparison remains unaccepted
+
+The complete `ba47e4f6d` comparison passes all ten journeys and every original
+budget except throttled accumulated scrolling: 39.0/39.5 ms p95 at 180/600 rows
+versus 35.2 ms. [All measurements and budget comparisons](evidence/transcript-residency-empty-costs.json)
+remain retained. The next investigation is offscreen-resident layout work;
+anchors and protected interactions remain required gates. No acceptance limits
+or workloads have changed, and Phase 6 still waits for Phase 5 acceptance.
