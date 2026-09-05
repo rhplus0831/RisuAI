@@ -8,8 +8,8 @@ Updated: 2026-09-06
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: verify complete page admission and visible anchors in the strengthened probe,
-  then finish the full scroll/heap/layout matrix with unchanged workloads and budgets.
+- Next task: reduce the remaining throttled per-frame row work identified by the complete
+  progressive matrix; preserve the unchanged workloads, budgets and settlement evidence.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -836,3 +836,15 @@ progressive admission, and its last-mounted-row anchor could be offscreen.
 are retained. The next probe includes admission/body/image completion in page
 cost and requires a visible anchor. No workload or acceptance budget changes;
 Phase 5 remains open until a complete comparison and final native checks pass.
+
+### Phase 5 complete progressive matrix remains unaccepted
+
+`de102e8e3` completes all ten measured journeys with strengthened page settlement
+and visible anchors. Every ordinary stage stays at or below 61 rows; maximum
+anchor drift is 0.015625 pixels. Original large heap and page-layout limits pass.
+Desktop/mobile scrolling also passes, but 4× CPU p95 is 63.9 ms at 180 messages
+and 60.6 ms at 600 against the unchanged 35.2 ms limit. The large throttled
+post-scroll settlement is 9.100 seconds, fully retained. [All samples and budget
+results](evidence/transcript-residency-progressive-costs.json) are recorded;
+functional success does not accept performance. A focused profile of the current
+one-row admission must guide the remaining correction before Phase 6.

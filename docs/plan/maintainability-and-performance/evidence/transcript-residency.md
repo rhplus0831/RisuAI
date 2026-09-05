@@ -244,3 +244,37 @@ It preserves the exact page count, scroll positions, 48-frame sweep, and origina
 row/heap/layout/one-pixel budgets. This strengthens page completion and includes
 deferred work in the measured page cost. A fresh complete matrix remains
 required; the offscreen assertion is not silently deleted or treated as a pass.
+
+### Complete progressive comparison: throttled scrolling still fails
+
+Source `de102e8e3`; [all ten journeys and original-budget assessment](transcript-residency-progressive-costs.json).
+The isolated unprofiled matrix completes in 4.8 minutes: ten measured cases pass
+functional assertions; eight independent functional-only cases are skipped.
+All ordinary stages stay at or below 61 rows, and every older-page anchor is
+within 0.015625 pixels. All measured settlements cover the complete viewport
+with source-correct readable content and zero visible spacer pixels.
+
+| Profile | Messages | Post-GC heap MiB | Scroll p95 ms | Older-page layout+style p95 ms | Post-scroll settlement ms |
+| --- | --- | --- | --- | --- | --- |
+| Desktop | 30 | 16.106 | 16.9 | — | 63.7 |
+| Desktop | 180 | 26.235 | 17.6 | 25.051 | 1,070.3 |
+| Desktop | 600 | 29.645 | 20.2 | 26.913 | 2,956.3 |
+| Mobile | 30 | 15.059 | 16.9 | — | 59.7 |
+| Mobile | 180 | 24.595 | 17.5 | 26.442 | 1,020.8 |
+| Mobile | 600 | 27.916 | 19.7 | 26.221 | 2,905.1 |
+| Mobile 4× CPU | 30 | 15.042 | 17.5 | — | 81.0 |
+| Mobile 4× CPU | 180 | 24.700 | 63.9 | 127.881 | 5,893.3 |
+| Mobile 4× CPU | 600 | 28.041 | 60.6 | 160.869 | 9,099.7 |
+
+All original heap and older-page layout/style limits pass, including the now
+fully settled page stages. Desktop/mobile scrolling passes, but 4× CPU
+scrolling at 180/600 messages exceeds the original 35.2 ms p95 limit. Deferred
+settlement also remains material and is reported separately, not omitted from
+retained heap preparation. Screenshot mode peaks at 36 rows, restores 30,
+and exports 1,327,282 PNG bytes in 3.695 seconds.
+
+Phase 5 remains unaccepted. A new focused CPU profile will identify the remaining
+per-frame work with one-row admission. The next correction must reduce actual
+frame cost without changing the 48-frame input, hiding deferred work, or raising
+budgets. Existing caches and background parsing are part of the current source;
+their presence alone is not evidence that row construction is cheap.
