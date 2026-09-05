@@ -1,13 +1,25 @@
+import Ajv from 'ajv'
+import * as standalone from '../src/prompt/generationInputValidators.js'
 import { DatabaseSync } from 'node:sqlite'
 import { createMessageTable, getChatMessages } from '../src/messageStore.js'
 import { createMessageRecord } from '../src/commands/messages.js'
 import fs from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { generateGenerationInputSchema, generationInputSchemaPath } from '../../../util/generation-input-schema.js'
+import {
+  generateGenerationInputArtifacts,
+  generationInputSchemaPath,
+  generationInputValidatorsPath,
+  generationInputValidatorTypesPath,
+  generationInputValidationOptions,
+  generationInputSchemaId,
+  generationInputValidatorRoots,
+} from '../../../util/generation-input-schema.js'
 import {
   decodeGenerationSettings,
   decodeGenerationDatabase,
   decodeGenerationPreflightInputs,
+  decodeProviderGenerationSettings,
+  decodeMemoryGenerationSettings,
   GenerationInputValidationError,
 } from '../src/prompt/generationInputDecoder.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
@@ -25,9 +37,84 @@ function selectedDatabaseWithMessage(message: unknown) {
 }
 
 describe('selected generation persistence decoder', () => {
-  it('keeps its runtime schema synchronized with the finite server contract', () => {
-    expect(JSON.parse(fs.readFileSync(generationInputSchemaPath, 'utf8'))).toEqual(generateGenerationInputSchema())
+  it('keeps its standalone code, declaration and schema synchronized with the finite contract', async () => {
+    const artifacts = await generateGenerationInputArtifacts()
+    expect(JSON.parse(fs.readFileSync(generationInputSchemaPath, 'utf8'))).toEqual(artifacts.schema)
+    expect(fs.readFileSync(generationInputValidatorsPath, 'utf8')).toBe(artifacts.javascript)
+    expect(fs.readFileSync(generationInputValidatorTypesPath, 'utf8')).toBe(artifacts.declarations)
   }, 60_000)
+
+  it('matches runtime Ajv acceptance and complete errors for all five roots', () => {
+    const schema: Record<string, unknown> = JSON.parse(fs.readFileSync(generationInputSchemaPath, 'utf8'))
+    const compiler = new Ajv(generationInputValidationOptions)
+    compiler.addSchema({ $id: generationInputSchemaId, $defs: schema.$defs })
+    const valid: Record<keyof typeof generationInputValidatorRoots, unknown> = {
+      validateGenerationSettings: { temperature: 50, extension: { untouched: true } },
+      validateFastifyDatabase: selectedDatabaseWithMessage({
+        role: 'char',
+        data: 'reply',
+        name: null,
+        time: null,
+        translation: null,
+      }),
+      validateGenerationPreflightInputs: {
+        database: { modules: [{ id: 'module' }] },
+        currentChar: { chaId: 'character' },
+        currentChat: { id: 'chat' },
+      },
+      validateProviderGenerationSettings: { characters: [{ name: 'Character' }], hordeConfig: { apiKey: 'key' } },
+      validateMemoryGenerationSettings: {
+        characters: [{ chaId: 'character', chats: [{ id: 'chat', generationSettings: { modelPresetId: 'model' } }] }],
+      },
+    }
+    for (const name of Object.keys(generationInputValidatorRoots) as Array<
+      keyof typeof generationInputValidatorRoots
+    >) {
+      const root = schema[generationInputValidatorRoots[name]]
+      if (!root || typeof root !== 'object' || !('$ref' in root) || typeof root.$ref !== 'string')
+        throw Error('Invalid root')
+      const runtime = compiler.compile({ $ref: `${generationInputSchemaId}${root.$ref}` })
+      const cases = [
+        valid[name],
+        null,
+        [],
+        { temperature: 'bad', characters: [] },
+        { temperature: Infinity, characters: [] },
+        { temperature: NaN, characters: [] },
+      ]
+      if (name === 'validateFastifyDatabase') cases.push(selectedDatabaseWithMessage({ role: 'char', data: 42 }))
+      if (name === 'validateGenerationPreflightInputs')
+        cases.push({
+          database: { temperature: 'bad' },
+          currentChar: { chaId: 'character' },
+          currentChat: { id: 'chat' },
+        })
+      for (const input of cases) {
+        const expected = runtime(input)
+        const expectedErrors = structuredClone(runtime.errors)
+        expect(standalone[name](input), name).toBe(expected)
+        expect(standalone[name].errors, name).toEqual(expectedErrors)
+      }
+    }
+  })
+
+  it('preserves domain and instance-path errors for each public boundary', () => {
+    expect(() => decodeGenerationSettings({ temperature: 'private-value' })).toThrow(
+      'Invalid settings generation input at /temperature',
+    )
+    expect(() => decodeGenerationDatabase(selectedDatabaseWithMessage({ role: 'char', data: 42 }))).toThrow(
+      'Invalid database generation input at /characters/0/chats/0/message/0/data',
+    )
+    expect(() =>
+      decodeGenerationPreflightInputs({ database: {}, currentChar: { chaId: 42 }, currentChat: { id: 'chat' } }),
+    ).toThrow('Invalid preflight generation input at /currentChar/chaId')
+    expect(() => decodeProviderGenerationSettings({ characters: [{ name: 42 }] })).toThrow(
+      'Invalid provider generation input at /characters/0/name',
+    )
+    expect(() =>
+      decodeMemoryGenerationSettings({ characters: [{ chats: [{ generationSettings: { modelPresetId: 42 } }] }] }),
+    ).toThrow('Invalid memory generation input at /characters/0/chats/0/generationSettings/modelPresetId')
+  })
 
   it('preserves sparse supported settings, imported extensions, and source identity without defaults or copies', () => {
     const input = {

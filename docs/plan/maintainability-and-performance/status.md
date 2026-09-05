@@ -4,12 +4,12 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phases 0–2 accepted; closing Phase 3 timing and implementing independent Phase 4a backup scheduling.
+- State: Phases 0–3 accepted; implementing Phase 4 server maintenance scheduling.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md), final acceptance.
-- Next task: finish native-browser parity and isolated preparation measurements,
-  then accept the checked views/selected-route cutover and proceed to Phase 4.
+- Next phase: [4. Server maintenance scheduling](phases/phase-4-server-maintenance.md).
+- Next task: finish backup ownership/consistency verification, then share bounded
+  reference discovery between backup verification and asynchronous asset GC.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -24,7 +24,7 @@ selected [phase](phases/README.md) for implementation detail.
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
-| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Final acceptance | Selected loaders, checked views and immutable working ownership; final measurements pending |
+| [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Executing 4a under sequencing amendment | Backup consistency design accepted; phase acceptance still waits for Phase 3 |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
@@ -34,7 +34,7 @@ selected [phase](phases/README.md) for implementation detail.
 | Finding | Disposition | Missing completion evidence |
 | --- | --- | --- |
 | F01 | Fixed; targeted creation and pre-normalization receipt fingerprint | Final combined aggregate remains pending |
-| F02 | Open; preparation baseline accepted | Narrowed reads/clones and behavior parity |
+| F02 | Fixed within recorded configuration-row/legacy exceptions; selected reads and bounded query programs | Final combined aggregate pending |
 | F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
@@ -65,9 +65,9 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 ## Decisions and Exceptions
 
-- The ten audited findings remain the scope. F01 and F03–F06 are fixed; the
-  other findings have accepted baselines and remain open until their owning
-  implementation/decision phases. No finding has been silently deferred or added.
+- The ten audited findings remain the scope. F01–F06 and F09 are fixed with the
+  explicit F02 configuration/legacy exceptions below. F07, F08 and F10 retain
+  their implementation/decision gates. No finding is silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
 - F08 retains an implementation decision gate. A measured decision to keep
@@ -91,6 +91,20 @@ needed to reproduce them here or in the owning phase's bounded slice record.
   concurrent performance runs are allowed. Phase 4 acceptance and all later
   phase gates still require Phase 3 timing accepted; this is no finding deferral
   or budget change. Revisit sequencing if either owner exposes a dependency.
+
+- 2026-09-05, F02 retained-cost amendment: ordinary selection excludes unrelated
+  character/chat bodies, extracted collection bodies and assets. The existing
+  global configuration JSON row still parses embedded profiles/credentials and
+  Agent records before selection; legacy embedded-character storage keeps a
+  named compatibility read. [Separate measurements](evidence/generation-inputs.md)
+  expose both costs, while original ordinary-path budgets are unchanged and pass.
+  These are retained architectural exceptions, not new caches or a deferred
+  ordinary-reader cutover. Splitting authoritative configuration would require
+  coordinated mutation/import/credential-repair migration beyond this input
+  change. Repository/settings ownership retains that work; revisit when the
+  339,610-byte configuration fixture exceeds the original large 1.066/2.812 ms
+  preparation budgets, or when those collections move out of the settings row.
+  Remove the legacy exception when pre-extraction input support is retired.
 
 Future amendments belong here with date, affected finding, evidence, owner,
 residual cost, and revisit condition. If an amendment changes stable scope or
@@ -459,8 +473,9 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   mutations or four operations staging live assets across awaits, and one GC
   sweep. Conflicting admission returns transient HTTP 503 `maintenance_busy`.
   Successful backup HTTP responses still wait for completed publication.
-- Backup filesystem work uses two workers, at most 32 pending directory entries,
-  and 64 KiB stream buffers. An exclusive lease starts before SQLite's backup
+- Backup filesystem work uses two workers, one buffered entry per directory at
+  at most 32 directory levels, and 64 KiB stream buffers. Deeper legacy extras
+  fail closed rather than creating an unbounded traversal stack. An exclusive lease starts before SQLite's backup
   await and lasts through verification, publication or failure cleanup. Internal
   safety snapshots and retention reuse an explicit owner token. No SQLite
   transaction spans an await. Shutdown rejects admission, signals cancellation,
@@ -481,3 +496,30 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   residual; the later bounded scan must cover backup verification as well as GC
   before Phase 4 latency acceptance. Restore's existing journal/synchronous
   swap transaction remains authoritative.
+
+## Phase 3 Accepted: Standalone Validators and Final Measurement
+
+- Implementation: accompanying standalone-validator commit, following `8de501a4a`
+  (finite immutable consumers), `0afc940ca` (selected live routes), `cb914e641`
+  (bounded query programs), and the earlier repository/Agent/wire slices.
+- [Complete source, measurements and verification](evidence/generation-inputs.md)
+  retains the original baseline, every failed intermediate comparison, all final
+  paired samples, the settings-row and named legacy axes, and native import cost.
+  Three alternating fresh processes per source retain one warmup/three measured
+  repetitions per fixture. All nine samples contribute to each final median.
+- Original small preflight/assembly limits 0.453/2.409 ms are met at 0.379/2.327 ms;
+  large unrelated limits 1.066/2.812 ms are met at 0.262/1.608 ms. All original
+  row/clone/snapshot budgets pass, including zero aggregate database clones and
+  zero unrelated asset rows. No numeric budget was raised or sample discarded.
+- Standalone validators use the unchanged schema/options and remove runtime
+  schema compilation. Three alternating native processes measure median decoder
+  import 541.0 to 97.1 ms; first validation stays similar and module parsing is
+  still accounted. Observed post-import heap falls from 60.2 to 9.46 MB without
+  forced GC; this is not a retained-heap guarantee.
+- Final decoder 23 and compiler-contract 1 tests pass. The final native-browser
+  accepted-send suite passes all 11 cases with the generated runtime. Other exact
+  route/prompt/provider/memory/script checks and the original structural budgets
+  pass as listed in evidence. Prettier, whitespace and both documentation
+  validators pass. Phase 3 is accepted; final aggregate remains pending until
+  all implementation phases finish. Phase 4's temporary sequencing exception
+  no longer carries an open dependency.

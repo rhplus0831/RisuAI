@@ -19,6 +19,29 @@ describe('generation input concrete contracts', () => {
     const fixture = `import type {FastifyDatabase, FastifyCharacter, FastifyChat, FastifyMessage, FastifyLoreBook, FastifyCustomScript, FastifyMessagePresetInfo, ResolvedGenerationSettings} from './serverTypes.js';
       import {runLuaEditTrigger, type ServerLuaEditTriggerContext} from './luaRuntime.js';
       import type {PromptMessage} from './promptMessage.js';
+      import {validateGenerationSettings,validateFastifyDatabase,validateGenerationPreflightInputs,validateProviderGenerationSettings,validateMemoryGenerationSettings} from './generationInputValidators.js';
+      declare let raw:unknown;
+      if (validateGenerationSettings(raw)) {
+        raw.temperature = 50;
+        // @ts-expect-error generated declaration retains concrete settings values
+        raw.temperature = 'hot';
+      }
+      if (validateFastifyDatabase(raw)) {
+        // @ts-expect-error generated declaration retains deep configuration immutability
+        raw.modules![0].name = 'changed';
+      }
+      if (validateGenerationPreflightInputs(raw)) {
+        // @ts-expect-error preflight declaration cannot invent executable module bodies
+        raw.database.modules![0].trigger;
+      }
+      if (validateProviderGenerationSettings(raw)) {
+        // @ts-expect-error provider view contains display names, not transcripts
+        raw.characters![0].chats;
+      }
+      if (validateMemoryGenerationSettings(raw)) {
+        // @ts-expect-error memory metadata view contains bindings, not transcripts
+        raw.characters![0].chats![0].message;
+      }
       declare let editContext: ServerLuaEditTriggerContext;
       declare let database: FastifyDatabase;
       declare let character: FastifyCharacter;

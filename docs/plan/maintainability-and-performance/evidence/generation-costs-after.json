@@ -1,0 +1,2372 @@
+{
+  "runtime": "v24.19.0",
+  "architecture": "x64",
+  "logicalCpus": 10,
+  "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+  "samples": [
+    {
+      "axis": "unrelated",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.3415599999998449,
+          0.3052210000000741,
+          0.47482300000001487
+        ],
+        "assemblyMs": [
+          2.326814999999897,
+          2.3162139999999454,
+          3.572534999999789
+        ]
+      }
+    },
+    {
+      "axis": "unrelated",
+      "dimensions": {
+        "unrelatedCharacters": 12,
+        "unrelatedChats": 36,
+        "unrelatedHistoryRows": 288,
+        "unusedRowsPerCollection": 12,
+        "unrelatedAssets": 96,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.2822270000001481,
+          0.2895920000000842,
+          0.22509900000022753
+        ],
+        "assemblyMs": [
+          1.5730419999999867,
+          1.8750549999999748,
+          1.9671400000001995
+        ]
+      }
+    },
+    {
+      "axis": "unrelated",
+      "dimensions": {
+        "unrelatedCharacters": 48,
+        "unrelatedChats": 144,
+        "unrelatedHistoryRows": 1152,
+        "unusedRowsPerCollection": 48,
+        "unrelatedAssets": 384,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.27544399999987945,
+          0.26201899999978195,
+          0.21958799999993062
+        ],
+        "assemblyMs": [
+          1.6992209999998522,
+          1.604772000000139,
+          2.0330660000004173
+        ]
+      }
+    },
+    {
+      "axis": "history",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.21229300000004514,
+          0.21002999999973326,
+          0.23842400000012276
+        ],
+        "assemblyMs": [
+          1.5997929999998632,
+          1.5709569999999076,
+          1.411804999999731
+        ]
+      }
+    },
+    {
+      "axis": "history",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 40,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 7239,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 40,
+            "returnedBytes": 6021,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 11117,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 21225,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 40,
+            "returnedBytes": 6021,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.3991299999997864,
+          0.3496350000000348,
+          0.341921000000184
+        ],
+        "assemblyMs": [
+          5.714908999999807,
+          4.534483999999793,
+          4.357304999999997
+        ]
+      }
+    },
+    {
+      "axis": "history",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 160,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 22479,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 160,
+            "returnedBytes": 24261,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 41597,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 82185,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 160,
+            "returnedBytes": 24261,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.6885200000001532,
+          0.4444340000000011,
+          0.40534999999999854
+        ],
+        "assemblyMs": [
+          16.0891059999999,
+          13.224207000000206,
+          12.628132999999707
+        ]
+      }
+    },
+    {
+      "axis": "configuration-row",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 1028,
+            "jsonColumnBytes": 886
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.23727099999996426,
+          0.20840599999974074,
+          0.20492000000012922
+        ],
+        "assemblyMs": [
+          1.2784609999998793,
+          1.1813970000002882,
+          1.1570910000000367
+        ]
+      }
+    },
+    {
+      "axis": "configuration-row",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 12,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 86328,
+            "jsonColumnBytes": 85558
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 86328,
+            "jsonColumnBytes": 85558
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 86328,
+            "jsonColumnBytes": 85558
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.26673799999980474,
+          0.36127799999985655,
+          0.2581119999999828
+        ],
+        "assemblyMs": [
+          1.1900220000002264,
+          1.2744330000000446,
+          1.4054519999999684
+        ]
+      }
+    },
+    {
+      "axis": "configuration-row",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 48,
+        "legacyEmbedded": false
+      },
+      "snapshotBytes": 2715,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 342252,
+            "jsonColumnBytes": 339610
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 657,
+            "jsonColumnBytes": 429
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 342252,
+            "jsonColumnBytes": 339610
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 342252,
+            "jsonColumnBytes": 339610
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 1216,
+            "jsonColumnBytes": 898
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 189,
+            "jsonColumnBytes": 149
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 1,
+            "returnedBytes": 130,
+            "jsonColumnBytes": 92
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 4,
+            "returnedBytes": 597,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.8168029999997088,
+          0.5167830000000322,
+          0.6780699999999342
+        ],
+        "assemblyMs": [
+          1.5473419999998441,
+          1.557111999999961,
+          1.340910000000349
+        ]
+      }
+    },
+    {
+      "axis": "legacy-embedded",
+      "dimensions": {
+        "unrelatedCharacters": 0,
+        "unrelatedChats": 0,
+        "unrelatedHistoryRows": 0,
+        "unusedRowsPerCollection": 0,
+        "unrelatedAssets": 0,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": true
+      },
+      "snapshotBytes": 2277,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 4846,
+            "jsonColumnBytes": 4222
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 4846,
+            "jsonColumnBytes": 4222
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 4846,
+            "jsonColumnBytes": 4222
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.28298799999993207,
+          0.2528109999998378,
+          0.25644699999975273
+        ],
+        "assemblyMs": [
+          1.2713069999999789,
+          1.1728699999998753,
+          1.1351380000000972
+        ]
+      }
+    },
+    {
+      "axis": "legacy-embedded",
+      "dimensions": {
+        "unrelatedCharacters": 12,
+        "unrelatedChats": 36,
+        "unrelatedHistoryRows": 288,
+        "unusedRowsPerCollection": 12,
+        "unrelatedAssets": 96,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": true
+      },
+      "snapshotBytes": 140134,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 615944,
+            "jsonColumnBytes": 600872
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 615944,
+            "jsonColumnBytes": 600872
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 615944,
+            "jsonColumnBytes": 600872
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          1.0098809999999503,
+          0.8525109999995948,
+          0.9655459999999039
+        ],
+        "assemblyMs": [
+          2.6038430000003245,
+          2.4304030000002967,
+          2.2151119999998627
+        ]
+      }
+    },
+    {
+      "axis": "legacy-embedded",
+      "dimensions": {
+        "unrelatedCharacters": 48,
+        "unrelatedChats": 144,
+        "unrelatedHistoryRows": 1152,
+        "unusedRowsPerCollection": 48,
+        "unrelatedAssets": 384,
+        "targetHistory": 4,
+        "unusedConfigurationRecords": 0,
+        "legacyEmbedded": true
+      },
+      "snapshotBytes": 553918,
+      "assetSnapshotBytes": 2,
+      "preflight": {
+        "cloneCalls": 1,
+        "cloneBytes": 2,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 2451584,
+            "jsonColumnBytes": 2393168
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "load": {
+        "cloneCalls": 0,
+        "cloneBytes": 0,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 2451584,
+            "jsonColumnBytes": 2393168
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "effective": {
+        "cloneCalls": 4,
+        "cloneBytes": 2069,
+        "databaseAggregateClones": 0,
+        "reads": {}
+      },
+      "assembly": {
+        "cloneCalls": 17,
+        "cloneBytes": 3129,
+        "databaseAggregateClones": 0,
+        "reads": {
+          "settings": {
+            "calls": 2,
+            "rows": 2,
+            "returnedBytes": 2451584,
+            "jsonColumnBytes": 2393168
+          },
+          "model_presets": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "characters": {
+            "calls": 2,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "modules": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugins": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "bot_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "prompt_templates": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "personas": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "loadouts": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "lore_books": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "translator_presets": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "plugin_custom_storage": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "messages": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 2,
+            "jsonColumnBytes": 0
+          },
+          "chat_hypa_v": {
+            "calls": 1,
+            "rows": 0,
+            "returnedBytes": 0,
+            "jsonColumnBytes": 0
+          }
+        }
+      },
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          3.3055159999998978,
+          3.0202540000000226,
+          3.901879999999892
+        ],
+        "assemblyMs": [
+          5.361966999999822,
+          4.846918000000187,
+          4.548680000000331
+        ]
+      }
+    }
+  ]
+}

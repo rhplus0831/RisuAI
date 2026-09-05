@@ -1,0 +1,95 @@
+[
+  {
+    "mode": "before",
+    "node": "v24.19.0",
+    "importMs": 609.824485,
+    "firstDecodeMs": 4.141517000000022,
+    "heapAfterImport": 82936656,
+    "heapDelta": 73003496,
+    "luaImportSmokeMs": 1944.4704,
+    "metadata": {
+      "durationMs": 517.512609,
+      "schemaDefinitions": 447,
+      "roots": 5
+    },
+    "cycle": 1
+  },
+  {
+    "mode": "after",
+    "node": "v24.19.0",
+    "importMs": 125.57825599999998,
+    "firstDecodeMs": 3.619944000000004,
+    "heapAfterImport": 9617320,
+    "heapDelta": 1146920,
+    "luaImportSmokeMs": 1687.386257,
+    "metadata": {
+      "schemaDefinitions": 447,
+      "roots": 5,
+      "compiledAtBuildTime": true,
+      "runtimeCompilationMs": 0
+    },
+    "cycle": 1
+  },
+  {
+    "mode": "before",
+    "node": "v24.19.0",
+    "importMs": 541.000556,
+    "firstDecodeMs": 3.3862480000000232,
+    "heapAfterImport": 60213272,
+    "heapDelta": 50278320,
+    "luaImportSmokeMs": 1742.6524620000002,
+    "metadata": {
+      "durationMs": 480.879297,
+      "schemaDefinitions": 447,
+      "roots": 5
+    },
+    "cycle": 2
+  },
+  {
+    "mode": "after",
+    "node": "v24.19.0",
+    "importMs": 88.696069,
+    "firstDecodeMs": 3.1786140000000103,
+    "heapAfterImport": 9454568,
+    "heapDelta": -484344,
+    "luaImportSmokeMs": 1558.243591,
+    "metadata": {
+      "schemaDefinitions": 447,
+      "roots": 5,
+      "compiledAtBuildTime": true,
+      "runtimeCompilationMs": 0
+    },
+    "cycle": 2
+  },
+  {
+    "mode": "before",
+    "node": "v24.19.0",
+    "importMs": 516.482403,
+    "firstDecodeMs": 3.692882000000054,
+    "heapAfterImport": 52422904,
+    "heapDelta": 42483952,
+    "luaImportSmokeMs": 1797.309812,
+    "metadata": {
+      "durationMs": 460.11937800000004,
+      "schemaDefinitions": 447,
+      "roots": 5
+    },
+    "cycle": 3
+  },
+  {
+    "mode": "after",
+    "node": "v24.19.0",
+    "importMs": 97.12467800000002,
+    "firstDecodeMs": 3.5578560000000152,
+    "heapAfterImport": 9457520,
+    "heapDelta": 976224,
+    "luaImportSmokeMs": 1601.015969,
+    "metadata": {
+      "schemaDefinitions": 447,
+      "roots": 5,
+      "compiledAtBuildTime": true,
+      "runtimeCompilationMs": 0
+    },
+    "cycle": 3
+  }
+]

@@ -78,8 +78,11 @@ consumers as unresolved F09 work rather than marking the finding fixed.
 
 - With a fixed target chat and selected configuration, ordinary preflight and
   assembly read/clone work no longer grows with unrelated character/chat bodies,
-  unused collection bodies, or unrelated asset metadata. Explicit dynamic-script
-  exceptions are measured separately and cannot become the default path.
+  unused extracted collection bodies, or unrelated asset metadata. The existing
+  single configuration JSON row and named pre-extraction embedded-character
+  path remain measured exceptions recorded in status, with an owner and revisit
+  trigger. They do not justify broader ordinary library reads. Explicit
+  dynamic-script exceptions are measured separately and cannot become the default path.
 - Known prompt input field mistakes fail strict compilation; schema/legacy
   extension validation occurs at a named boundary. No new unchecked aggregate
   alias or broad type suppression replaces the old one.

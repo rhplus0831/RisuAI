@@ -1,5 +1,12 @@
-import Ajv, { type ValidateFunction } from 'ajv'
-import schema from './generationInputSchema.json' with { type: 'json' }
+import {
+  validateGenerationSettings as settings,
+  validateFastifyDatabase as database,
+  validateGenerationPreflightInputs as preflight,
+  validateProviderGenerationSettings as provider,
+  validateMemoryGenerationSettings as memory,
+  generationInputValidatorMetadata,
+  type GenerationInputValidator,
+} from './generationInputValidators.js'
 import type {
   FastifyDatabase,
   GenerationSettings,
@@ -16,29 +23,15 @@ export class GenerationInputValidationError extends Error {
   }
 }
 
-// Compile once. Validation neither coerces, supplies defaults, strips imported
-// extensions, nor copies a selected transcript/configuration graph.
-const initializationStartedAt = performance.now()
-const ajv = new Ajv({ allErrors: false, strict: false, strictNumbers: true, inlineRefs: false })
-const schemaId = 'risu-generation-inputs-v1'
-ajv.addSchema({ $id: schemaId, $defs: schema.$defs })
-function compiled<T>(root: { $ref: string }): ValidateFunction<T> {
-  return ajv.compile<T>({ $ref: `${schemaId}${root.$ref}` })
-}
-const settings = compiled<GenerationSettings>(schema.GenerationSettings)
-const database = compiled<FastifyDatabase>(schema.FastifyDatabase)
-const preflight = compiled<GenerationPreflightInputs>(schema.GenerationPreflightInputs)
-const provider = compiled<ProviderGenerationSettings>(schema.ProviderGenerationSettings)
-const memory = compiled<MemoryGenerationSettings>(schema.MemoryGenerationSettings)
+// Validation neither coerces, supplies defaults, strips imported extensions,
+// nor copies the selected graph. Its checked implementation is generated at build time.
 
-const initializationDurationMs = performance.now() - initializationStartedAt
-
-/** Diagnostic-only, once-per-process validator initialization; no request data. */
+/** Compilation is absent at runtime; module import/parsing is measured separately. */
 export function generationInputDecoderInitializationMetrics() {
-  return { durationMs: initializationDurationMs, schemaDefinitions: Object.keys(schema.$defs).length, roots: 5 }
+  return { ...generationInputValidatorMetadata, runtimeCompilationMs: 0 }
 }
 
-function checked<T>(value: unknown, validate: ValidateFunction<T>, domain: string): T {
+function checked<T>(value: unknown, validate: GenerationInputValidator<T>, domain: string): T {
   if (!validate(value)) throw new GenerationInputValidationError(domain, validate.errors?.[0]?.instancePath ?? '')
   return value
 }

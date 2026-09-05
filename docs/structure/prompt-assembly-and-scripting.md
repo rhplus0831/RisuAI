@@ -93,8 +93,10 @@ bodies, and asset metadata. Legacy embedded-character storage has an explicit
 `server/fastify/src/prompt/serverTypes.ts` owns finite generation, provider,
 memory, preflight, and nested record views. `generationInputDecoder.ts` validates
 unknown persisted inputs without coercion, defaults, field stripping, or graph
-cloning. Its checked-in schema is generated from those types by
-`util/generation-input-schema.ts`; the decoder regression checks synchronization.
+cloning. Its checked-in schema and standalone validators are generated from those types
+by `util/generation-input-schema.ts`; the decoder regression checks schema,
+JavaScript and finite declaration synchronization plus runtime-Ajv parity.
+Production does not compile the schema during startup.
 Imported extension data survives but is absent from ordinary consumer types.
 Invalid known fields identify the domain/path without echoing values. Sparse
 supported legacy fields and nullable message metadata remain supported.
