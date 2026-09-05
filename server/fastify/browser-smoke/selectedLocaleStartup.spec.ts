@@ -13,7 +13,10 @@ import {
 // below includes the selected chat route and smoke instrumentation.
 test('selected locale is usable on cold startup and refresh', async ({ browser }, testInfo) => {
   test.setTimeout(180_000)
-  const results: unknown[] = []
+  const results: Array<{
+    scripts: Array<{ path: string; transferBytes: number; encodedBodyBytes: number }>
+    [key: string]: unknown
+  }> = []
   for (const locale of ['en', 'ko'] as const) {
     const label = locale === 'ko' ? '메시지 입력' : 'Message input'
     const database = smallFastBootstrapFixture()
@@ -78,7 +81,28 @@ test('selected locale is usable on cold startup and refresh', async ({ browser }
       await closeFastBootstrapHarness(harness)
     }
   }
-  const artifact = JSON.stringify({ browserVersion: browser.version(), cpuThrottle: 1, results }, null, 2)
+  // Keep every readiness/transfer sample while storing identical script paths
+  // once, so retained before/after evidence stays small and reviewable.
+  const closures: string[][] = []
+  const samples = results.map(({ scripts, ...sample }) => {
+    const paths = [...new Set(scripts.map((script) => script.path))].sort()
+    let closure = closures.findIndex((candidate) => JSON.stringify(candidate) === JSON.stringify(paths))
+    if (closure < 0) closure = closures.push(paths) - 1
+    return {
+      ...sample,
+      scripts: {
+        closure,
+        fileCount: paths.length,
+        transferBytes: scripts.reduce((total, script) => total + script.transferBytes, 0),
+        encodedBodyBytes: scripts.reduce((total, script) => total + script.encodedBodyBytes, 0),
+      },
+    }
+  })
+  const artifact = JSON.stringify(
+    { browserVersion: browser.version(), cpuThrottle: 1, closures, results: samples },
+    null,
+    2,
+  )
   const outputDir = path.resolve('fast-bootstrap-results/maintainability')
   fs.mkdirSync(outputDir, { recursive: true })
   fs.writeFileSync(path.join(outputDir, 'locale-startup.json'), `${artifact}\n`)

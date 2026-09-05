@@ -4,15 +4,15 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phase 0 accepted; collecting Phase 1 baselines and acceptance budgets.
+- State: Phases 0 and 1 accepted; executing Phase 2a browser rollback narrowing.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md).
-- Next task: preserve reproducible small/intermediate/large work counters and
-  isolated bundle, maintenance, and transcript measurements before optimization.
+- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2a.
+- Next task: narrow sidebar folder/chat metadata capture, then organization
+  rollback; preserve newer edits and authoritative projection fences.
 - Blockers: none.
-- Implementation commit: Phase 0 is the accompanying targeted-creation commit;
-  its exact hash will be recorded by the following evidence slice.
+- Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
+  acceptance evidence are recorded below; Phase 2 implementation is next.
 
 Read [PLAN.md](PLAN.md) for stable scope, evidence, and invariants; read only the
 selected [phase](phases/README.md) for implementation detail.
@@ -22,8 +22,8 @@ selected [phase](phases/README.md) for implementation detail.
 | Phase | Findings | State | Accepted implementation/evidence |
 | --- | --- | --- | --- |
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
-| [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | In progress | Structural and measured baseline fixtures next |
-| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Pending Phase 1 | None |
+| [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
+| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Executing 2a; 2b–2d queued | Phase 1 budgets accepted |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Pending Phase 2 | None |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
@@ -65,8 +65,9 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 ## Decisions and Exceptions
 
-- The ten audited findings are the initial scope. No implementation has been
-  deferred, accepted as fixed, or added beyond that scope.
+- The ten audited findings remain the scope. F01 is fixed; F02–F10 have accepted
+  baselines but remain open until their implementation/decision phases. No
+  finding has been silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
 - F08 retains an implementation decision gate. A measured decision to keep
@@ -134,3 +135,41 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   is rejected for explicit import/recovery rather than shadowed by an append.
   This prevents future deletion; recovery of historical production loss remains
   outside this local change.
+
+## Phase 1 Accepted Evidence
+
+- Browser structural probes and budgets: `f1fa4753b`,
+  [F03/F04/F05 baseline](evidence/browser-work-baseline.md). Twelve focused
+  cases pass; fixed-folder snapshot grows to 9,916,585 bytes, mutable outbox
+  bodies normalize twice, and ten resource reads cause ten prune passes.
+- Generation preparation/type inventory: `c5f58918f`,
+  [F02/F09 baseline](evidence/generation-baseline.md). Two focused cases and the
+  opt-in isolated timing run pass. Fixed target history with 48 unrelated owners
+  loads 1,049,413 database bytes and 826 SQL result rows per preparation pass.
+- Server maintenance: `dfb2d4db1`,
+  [F07 baseline](evidence/maintenance-baseline.md). Isolated 20/200/2,000-asset
+  matrix passes; zero API/heartbeat progress during GC or post-snapshot backup
+  copying. Three measured repetitions plus one warmup per size are retained.
+- Locale startup: `c25343989`, [F06 baseline](evidence/locale-baseline.md).
+  Production initial preload repeats 389,721 gzip bytes; all twelve English/
+  Korean cold/refresh cases show the requested first composer label and reach
+  background readiness. Browser trace/readiness and production closure evidence
+  remain separate. Repeated script closure lists are being deduplicated in the
+  retained evidence without discarding individual timings or transfer totals.
+- F10 source digests match and its four policy ownership/behavior tests pass.
+- F08 probe: `c4cbb74ec`; [accepted isolated matrix and decision rule](evidence/transcript-baseline.md).
+  All ten cases pass in 6.7 minutes. Corrected synthetic image bytes and excluded
+  expensive trace recording before measurement. The nine profile/size cases use
+  one journey each, 48-frame scroll samples and repeated 15-row page loads;
+  screenshot capture/restoration is separate. Full cost matrix is opt-in.
+- The large transcript fixtures pass scroll budgets but exceed the chosen
+  incremental-page layout and post-GC heap comparison budgets. Deep jumps also
+  issue 570 display-source requests; their full wall time cannot be attributed
+  to DOM layout. F08's implementation/retention decision remains Phase 5 work.
+- F06 retained script paths are deduplicated without changing individual
+  milestone, first-label, gzip, encoded-body, or transfer measurements.
+- Standard current-document and explicit workstream link/path validation passed.
+  All phase-specific focused/browser/performance evidence is recorded in its
+  owner. The final combined `pnpm test:agent` remains pending until implementation
+  is complete, as required by current project guidance. User/CI compatibility
+  and `pnpm test:all` have not been run or implied by these passes.
