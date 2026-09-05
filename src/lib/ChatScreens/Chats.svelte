@@ -8,11 +8,13 @@
   import { ReloadChatPointer, popupStore } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import {
+    advanceTranscriptResidents,
     buildTranscriptResidency,
     TranscriptHeightCache,
     transcriptRowAtOffset,
     transcriptRowOffsets,
     TRANSCRIPT_WORKING_ROWS,
+    TRANSCRIPT_MAX_RESIDENT_ROWS,
   } from './transcriptResidency'
   import { TRANSCRIPT_INTERACTION_CONTEXT } from './transcriptInteraction'
   import { createTranscriptReservations } from './transcriptReservations'
@@ -468,6 +470,8 @@
   let heightRevision = $state(0)
   let reservationRevision = $state(0)
   let residentStart = $state(0)
+  let admittedResidents = $state<string[] | null>(null)
+  let residencyPending = $state(false)
   let singletonPins = $state<string[]>([])
   let jumpMessageId = $state<string | null>(null)
   let residencyFrame: number | null = null
@@ -481,6 +485,7 @@
   let pressedLogicalEnd = $state<number | null>(null)
   let pressedPointerId: number | null = null
   let pressReleaseTimer: ReturnType<typeof setTimeout> | null = null
+  let pressedRowSizes: Array<{ element: HTMLElement; height: string }> = []
   const legacyPaging = (() => {
     try {
       return localStorage.getItem('risu-transcript-legacy-paging') === '1'
@@ -519,7 +524,21 @@
     return ids
   })
   const residentEntries = $derived(
-    buildTranscriptResidency(chatRows, residencyIds, rowOffsets, residentStart, pinnedIds, fullResidency),
+    buildTranscriptResidency(
+      chatRows,
+      residencyIds,
+      rowOffsets,
+      residentStart,
+      pinnedIds,
+      fullResidency,
+      admittedResidents === null || chatRows.length <= TRANSCRIPT_WORKING_ROWS
+        ? undefined
+        : new Set(
+            admittedResidents
+              .filter((id) => !pinnedIds.has(id))
+              .slice(0, Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinnedIds.size))),
+          ),
+    ),
   )
   const residentRowCount = $derived(residentEntries.filter((entry) => entry.kind === 'row').length)
 
@@ -566,6 +585,24 @@
     pressedPointerId = event.pointerId
     pressedLogicalEnd = chatRows.at(-1)?.idx ?? null
     residencyNavigationEpoch++
+    restorePressedRowSizes()
+    if (!fullResidency) {
+      // A background body can finish parsing between pointerdown and click.
+      // Keep every resident wrapper's size until that gesture is delivered,
+      // so a neighboring body cannot move the pressed button under the pointer.
+      const sizes = [...rowElements.values()].map((element) => ({
+        element,
+        height: element.style.height,
+        measured: element.getBoundingClientRect().height,
+      }))
+      pressedRowSizes = sizes
+      for (const { element, measured } of sizes) element.style.height = `${measured}px`
+    }
+  }
+
+  function restorePressedRowSizes(): void {
+    for (const { element, height } of pressedRowSizes) element.style.height = height
+    pressedRowSizes = []
   }
 
   function endResidencyPress(event: PointerEvent): void {
@@ -581,6 +618,7 @@
     pressReleaseTimer = null
     pressedPointerId = null
     pressedLogicalEnd = null
+    restorePressedRowSizes()
     scheduleResidency()
   }
 
@@ -623,11 +661,28 @@
       }
       if (changed) heightRevision++
       const focusedSpacer = document.activeElement?.closest('[data-transcript-spacer]')
+      let center = jumpMessageId ? residencyIds.indexOf(jumpMessageId) : residentStart + TRANSCRIPT_WORKING_ROWS / 2
       if (!fullResidency && !jumpMessageId && !(focusedSpacer && chatBody.contains(focusedSpacer))) {
         const viewport = container.getBoundingClientRect()
         const origin = chatBody.getBoundingClientRect().bottom - appliedLatestMessageSpacerHeight()
-        const center = transcriptRowAtOffset(rowOffsets, origin - (viewport.top + viewport.bottom) / 2)
+        center = transcriptRowAtOffset(rowOffsets, origin - (viewport.top + viewport.bottom) / 2)
         residentStart = Math.max(0, center - Math.floor(TRANSCRIPT_WORKING_ROWS / 2))
+      }
+      if (!fullResidency && !(focusedSpacer && chatBody.contains(focusedSpacer))) {
+        const previous = residentEntries.filter((entry) => entry.kind === 'row').map((entry) => entry.id)
+        const next = advanceTranscriptResidents(residencyIds, previous, residentStart, center, pinnedIds)
+        // A released pin transfers to ordinary residency without destroying its
+        // component between frames (including a just-highlighted jump target).
+        const nextResidents = [...pinnedIds, ...next.ids]
+        if (
+          admittedResidents === null ||
+          nextResidents.length !== admittedResidents.length ||
+          nextResidents.some((id, index) => id !== admittedResidents![index])
+        ) {
+          admittedResidents = nextResidents
+        }
+        residencyPending = next.pending
+        if (next.pending) residencyAgain = true
       }
       await tick()
       if (chatsComponentDestroyed || scope !== chatId || container !== scrollContainer) return
@@ -702,6 +757,12 @@
     const run = ++residencyJumpRun
     const id = residencyIds[position]
     jumpMessageId = id
+    if (admittedResidents !== null) {
+      admittedResidents = [id, ...admittedResidents.filter((resident) => resident !== id)].slice(
+        0,
+        TRANSCRIPT_MAX_RESIDENT_ROWS,
+      )
+    }
     residentStart = Math.max(0, position - Math.floor(TRANSCRIPT_WORKING_ROWS / 2))
     await tick()
     return (preservedTop?: number) => {
@@ -741,19 +802,22 @@
       heights.clear()
       heightRevision++
       residentStart = 0
+      admittedResidents = null
+      residencyPending = false
       singletonPins = []
       jumpMessageId = null
       residencyAnchor = null
       measuredWidth = 0
       pressedLogicalEnd = null
       pressedPointerId = null
+      restorePressedRowSizes()
       if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
       pressReleaseTimer = null
     })
   })
   $effect(() => {
     void chatRows
-    void fullResidency
+    if (fullResidency) untrack(releaseResidencyPress)
     void popupStore.trigger
     void popupStore.children
     scheduleResidency()
@@ -1186,6 +1250,7 @@
     chatsComponentDestroyed = true
     if (residencyFrame !== null) cancelAnimationFrame(residencyFrame)
     if (pressReleaseTimer !== null) clearTimeout(pressReleaseTimer)
+    restorePressedRowSizes()
     displayScheduler.destroy()
     releaseDisplaySourceChat(getCurrentChatRoomId())
     initialDisplayReadiness.destroy()
@@ -1335,6 +1400,7 @@
   data-transcript-window-rows={chatRows.length}
   data-transcript-resident-rows={residentRowCount}
   data-transcript-residency-mode={residencyMode}
+  aria-busy={!fullResidency && residencyPending}
   style:overflow-anchor={legacyPaging ? 'auto' : 'none'}>
   {#if chatRows.length > 0}
     <div

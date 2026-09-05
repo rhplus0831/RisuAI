@@ -154,3 +154,47 @@ Markdown already uses a serial idle scheduler; the entire Chat subtree still
 mounts synchronously. A diagnostic CPU profile will distinguish that work before
 the next implementation. No phase acceptance, latency-budget amendment or
 fixture change is authorized by these failed measurements.
+
+### Profile-guided admission correction
+
+[The separate CPU profile summary](transcript-scroll-profile.json) attributes
+49.5% inclusive sampled time to row construction, 16.33% to sanitization and
+12.58% to residency reconciliation; these inclusive stacks overlap. The
+profiled sweep is diagnostic and cannot substitute for an unprofiled budget
+comparison. Existing parse memoization and background scheduling already exist;
+the new cost comes from replacing many complete row components each frame.
+
+The correction retains the original 60-working/76-hard limits and admits the
+nearest missing ordinary row per animation frame, replacing at most one old
+ordinary row. Interaction/navigation pins remain immediate. The current target
+supersedes intermediate unmounted windows; no growing work queue or display
+cache is added. Admission preserves existing stable IDs and stops once all
+desired rows are present. Review supplied an asymmetric 58-row/18-pin window
+counterexample; eviction now removes outside-window rows first and computes
+pending state from final membership. Eight geometry/admission tests pass.
+
+The first functional attempt exposed jump release dropping its highlighted
+component before ordinary admission; bounded admission state now retains pins
+ahead of ordinary rows so release transfers the same component. A second native
+Save6 failure retained every draft but showed pointerdown on Save and pointerup
+on the textarea 22 ms later: a neighboring pending body changed height. The
+ordinary pointer hold now snapshots at most 76 wrapper sizes through the click
+sequence; cancellation/blur/full capture/chat change/destruction restore them.
+These failures remain distinct from timing acceptance and do not retry saves.
+
+The cost probe retains the same 48 input frames and separately measures complete
+post-scroll settlement before forced GC, including readable visible content and
+spacer coverage. This makes any shifted work visible. Native interaction and
+unprofiled cost verification remain required before accepting the correction.
+
+The corrected eleven-case normal browser lane passes without profiling/traces.
+All eight single-click saves are accepted exactly once and preserve authoritative
+draft text. The independent rapid-motion case records 22 newly visible message
+IDs and 32 readable samples while admission is pending, retaining 40 transient
+placeholder samples as well. Final coverage is 784/784 pixels with source-correct
+rows 141/142, zero visible spacer pixels, and 61 mounted/180 logical rows.
+[Complete rapid-motion samples](transcript-rapid-movement.json) remain separate
+from unprofiled cost acceptance. Focused transcript-window 105, startup 4 and
+geometry/admission 8 tests pass. The rapid-motion report records parent HEAD
+`4154dade9` plus this progressive-admission worktree; the next isolated cost
+report must use its clean implementation commit.

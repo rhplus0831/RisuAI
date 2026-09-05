@@ -30,6 +30,16 @@ const ORDINARY_ROW_LIMIT = 76
 const LEGACY_PAGING = process.env.RISU_TRANSCRIPT_LEGACY_PAGING === '1'
 const MEASURE_COSTS = process.env.RISU_TRANSCRIPT_COSTS === '1'
 const DIAGNOSTICS = !MEASURE_COSTS && process.env.RISU_TRANSCRIPT_DIAGNOSTICS === '1'
+// CPU profiling changes scheduling costs. These opt-in diagnostic artifacts
+// never replace the unprofiled acceptance report or change its normal matrix.
+const CPU_PROFILE = process.env.RISU_TRANSCRIPT_CPU_PROFILE === '1'
+const PROFILE_CASE = process.env.RISU_TRANSCRIPT_PROFILE_CASE
+if (PROFILE_CASE && (!CPU_PROFILE || !MEASURE_COSTS)) {
+  throw new Error('RISU_TRANSCRIPT_PROFILE_CASE requires RISU_TRANSCRIPT_CPU_PROFILE=1 and RISU_TRANSCRIPT_COSTS=1')
+}
+if (PROFILE_CASE && !/^(desktop|mobile|mobile-cpu4x):(30|180|600)$/.test(PROFILE_CASE)) {
+  throw new Error('RISU_TRANSCRIPT_PROFILE_CASE must be a profile and size, for example mobile-cpu4x:600')
+}
 // An isolated one-worker run remains sequential. Functional cases are
 // independent, so one product failure should not suppress all other evidence.
 test.describe.configure({ mode: MEASURE_COSTS ? 'serial' : 'default' })
@@ -73,6 +83,7 @@ interface Stage {
 for (let repetition = 0; repetition < REPETITIONS; repetition++) {
   for (const profile of PROFILES) {
     for (const messageCount of SIZES) {
+      if (PROFILE_CASE && PROFILE_CASE !== `${profile.name}:${messageCount}`) continue
       test(`transcript residency ${profile.name} ${messageCount} rows repetition ${repetition}`, async ({
         browser,
       }, testInfo) => {
@@ -130,7 +141,7 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
             expect(loaded).toBe(Math.min(messageCount, previousLoaded + RESIDENCY_ADDITIONAL_ROWS))
           }
           expect(loaded).toBe(messageCount)
-          const accumulatedScroll = await sampleScrolling(page, cdp)
+          const accumulatedScroll = await sampleScrolling(page, cdp, 'accumulated')
           const retainedAccumulated = await retainedHeap(cdp)
 
           // Navigation reload resets the ordinary mount window; storage/HTTP caches
@@ -221,7 +232,7 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
               ).toHaveCount(0)
             }),
           )
-          const finalScroll = await sampleScrolling(page, cdp)
+          const finalScroll = await sampleScrolling(page, cdp, 'final')
           const retainedAfterStream = await retainedHeap(cdp)
           expect(errors).toEqual([])
           await attachReport(testInfo, {
@@ -263,7 +274,7 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
               streamChunks: RESIDENCY_STREAM_CHUNKS.length,
             },
             attribution:
-              'Resource durations measure hydration/display-source request delivery. responseEndToSettledMs includes scheduling, parser, mounting and image decoding; it is NOT isolated parser CPU. CDP scriptMs also includes other JavaScript. CDP layout/style are reported independently. Browser polling, CDP sampling, and three settling animation frames are included in stage wall times. Provider release is manually gated; first-chunk time can include remaining generation preparation after projected-row admission. Actual mounted and logical window counts expose any window reset on send. The cost journey has no continuous DOM observer; separate functional cases check transient row bounds.',
+              'Resource durations measure hydration/display-source request delivery. responseEndToSettledMs includes scheduling, parser, mounting and image decoding; it is NOT isolated parser CPU. CDP scriptMs also includes other JavaScript. CDP layout/style are reported independently. Browser polling, CDP sampling, and three settling animation frames are included in stage wall times. Each unchanged 48-frame scroll sweep has a separately measured settlement stage before retained-heap collection, including admission completion, rendered text/images, and visible message coverage. Provider release is manually gated; first-chunk time can include remaining generation preparation after projected-row admission. Actual mounted and logical window counts expose any window reset on send. The cost journey has no continuous DOM observer; separate functional cases check transient row bounds.',
             workflows: {
               interactive: ['ordinary older-page traversal', 'bookmark jump', 'streaming', 'late image resize'],
               fullDataOnly:
@@ -288,6 +299,7 @@ for (let repetition = 0; repetition < REPETITIONS; repetition++) {
 }
 
 test('transcript residency screenshot is temporary full materialization', async ({ page, browser }, testInfo) => {
+  test.skip(Boolean(PROFILE_CASE))
   test.setTimeout(180_000)
   const messageCount = 36
   const harness = await startTranscriptResidencyHarness(messageCount)
@@ -908,6 +920,93 @@ test('transcript legacy paging rollback traverses 180 mounted rows without space
   }
 })
 
+test('transcript residency promotes readable visible messages during rapid movement and settles', async ({
+  browser,
+}, testInfo) => {
+  test.skip(MEASURE_COSTS || LEGACY_PAGING)
+  test.setTimeout(180_000)
+  const harness = await startTranscriptResidencyHarness(180)
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+  const page = await context.newPage()
+  const cdp = await context.newCDPSession(page)
+  await cdp.send('Performance.enable')
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  try {
+    await page.goto(`${harness.baseUrl}/character/${RESIDENCY_CHARACTER_ID}/${RESIDENCY_CHAT_ID}`)
+    await waitForReady(page)
+    await waitForRenderedRows(page)
+    for (let loaded = RESIDENCY_INITIAL_ROWS; loaded < 180; loaded += RESIDENCY_ADDITIONAL_ROWS) {
+      await scrollToOlderEdge(page)
+      await expect.poll(() => windowRows(page)).toBe(loaded + RESIDENCY_ADDITIONAL_ROWS)
+      await waitForRenderedRows(page)
+    }
+    await page.locator(TRANSCRIPT).evaluate((transcript) => {
+      transcript.scrollTop = -(transcript.scrollHeight - transcript.clientHeight) * 0.8
+    })
+    await settleFrames(page)
+    await measureScrollSettlement(page, cdp, 'before-rapid-movement')
+    await observeOrdinaryRowBound(page)
+    const movement = await page.locator(TRANSCRIPT).evaluate(async (transcript) => {
+      const initial = new Set(
+        Array.from(transcript.querySelectorAll<HTMLElement>('.risu-chat[data-risu-message-id]')).map(
+          (row) => row.dataset.risuMessageId,
+        ),
+      )
+      const samples: Array<{ frame: number; index: number; id: string; text: string; busy: boolean }> = []
+      transcript.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true }))
+      const range = transcript.scrollHeight - transcript.clientHeight
+      for (let frame = 0; frame < 48; frame++) {
+        transcript.scrollTop = -range * (0.35 + 0.2 * Math.sin(frame / 4))
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        const viewport = transcript.getBoundingClientRect()
+        for (const row of transcript.querySelectorAll<HTMLElement>('.risu-chat[data-risu-message-id]')) {
+          const bounds = row.getBoundingClientRect()
+          const text = row.querySelector('.chat-message-body')?.textContent ?? ''
+          const id = row.dataset.risuMessageId!
+          if (initial.has(id) || bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue
+          samples.push({
+            frame,
+            index: Number(row.dataset.chatIndex),
+            id,
+            text,
+            busy: transcript.querySelector('[data-transcript-window-rows]')?.getAttribute('aria-busy') === 'true',
+          })
+        }
+      }
+      return samples
+    })
+    const settlement = await measureScrollSettlement(page, cdp, 'rapid-movement')
+    const movementReport = { source: sourceAnchor(), movement, settlement }
+    const directory = path.resolve('fast-bootstrap-results/maintainability')
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      path.join(directory, 'transcript-rapid-movement.json'),
+      `${JSON.stringify(movementReport, null, 2)}\n`,
+    )
+    await testInfo.attach('rapid-movement-visible-messages', {
+      body: Buffer.from(JSON.stringify(movementReport, null, 2)),
+      contentType: 'application/json',
+    })
+    const readableMovement = movement.filter((sample) => sample.text.trim())
+    expect(
+      readableMovement.some((sample) => sample.busy),
+      'promoted readable rows appear before admission finishes',
+    ).toBe(true)
+    for (const sample of readableMovement) {
+      expect(sample.id).toBe(`residency-message-${sample.index}`)
+      expect(sample.text).toContain(`Residency row ${sample.index}.`)
+    }
+    expect(settlement.windowRows).toBe(180)
+    await assertObservedOrdinaryRowBound(page)
+    expect(errors).toEqual([])
+  } finally {
+    harness.releaseAll()
+    await context.close()
+    await closeFastBootstrapHarness(harness)
+  }
+})
+
 async function readFoldGeometry(page: Page) {
   return page.locator(`${ROWS}[data-chat-index="5"]`).evaluate((row) => {
     const transcript = row.closest('[data-default-chat-transcript]')!
@@ -1257,34 +1356,112 @@ async function retainedHeap(cdp: CDPSession): Promise<{ usedSize: number; totalS
   return (await cdp.send('Runtime.getHeapUsage')) as { usedSize: number; totalSize: number }
 }
 
-async function sampleScrolling(page: Page, cdp: CDPSession) {
+async function sampleScrolling(page: Page, cdp: CDPSession, phase: 'accumulated' | 'final') {
   const before = await readMetrics(cdp)
-  const frames = await page.locator(TRANSCRIPT).evaluate(async (transcript) => {
-    transcript.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }))
-    const range = transcript.scrollHeight - transcript.clientHeight
-    const samples: number[] = []
-    let previous = performance.now()
-    // Stay away from the older-page trigger. A fixed 48-frame sweep compares the
-    // same geometry operation at every residency size without timing ceilings.
-    for (let index = 0; index < 48; index++) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-      transcript.scrollTop = -range * (0.35 + 0.2 * Math.sin(index / 4))
-      const now = performance.now()
-      samples.push(now - previous)
-      previous = now
+  let cpuProfilePath: string | undefined
+  if (CPU_PROFILE) {
+    await cdp.send('Profiler.enable')
+    await cdp.send('Profiler.start')
+  }
+  let frames: number[]
+  try {
+    frames = await page.locator(TRANSCRIPT).evaluate(async (transcript) => {
+      transcript.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true }))
+      const range = transcript.scrollHeight - transcript.clientHeight
+      const samples: number[] = []
+      let previous = performance.now()
+      // Stay away from the older-page trigger. A fixed 48-frame sweep compares the
+      // same geometry operation at every residency size without timing ceilings.
+      for (let index = 0; index < 48; index++) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        transcript.scrollTop = -range * (0.35 + 0.2 * Math.sin(index / 4))
+        const now = performance.now()
+        samples.push(now - previous)
+        previous = now
+      }
+      return samples
+    })
+  } finally {
+    if (CPU_PROFILE) {
+      const { profile } = await cdp.send('Profiler.stop')
+      await cdp.send('Profiler.disable')
+      const directory = path.resolve('fast-bootstrap-results/maintainability/transcript-cpu-profiles')
+      mkdirSync(directory, { recursive: true })
+      cpuProfilePath = path.join(directory, `${test.info().title.replace(/[^a-zA-Z0-9-]+/g, '-')}-${phase}.cpuprofile`)
+      writeFileSync(cpuProfilePath, `${JSON.stringify(profile)}\n`)
+      await test.info().attach(`scroll-${phase}-diagnostic-cpu-profile`, {
+        path: cpuProfilePath,
+        contentType: 'application/json',
+      })
     }
-    return samples
-  })
+  }
   const after = await readMetrics(cdp)
   const sorted = [...frames].sort((a, b) => a - b)
+  const settlement = await measureScrollSettlement(page, cdp, phase)
   return {
+    ...(cpuProfilePath ? { diagnosticCpuProfile: cpuProfilePath } : {}),
     frameIntervalsMs: frames,
     p50Ms: sorted[Math.floor(sorted.length * 0.5)],
     p95Ms: sorted[Math.floor(sorted.length * 0.95)],
     maxMs: sorted.at(-1),
     layoutMs: ((after.LayoutDuration ?? 0) - (before.LayoutDuration ?? 0)) * 1000,
     styleMs: ((after.RecalcStyleDuration ?? 0) - (before.RecalcStyleDuration ?? 0)) * 1000,
+    settlement,
   }
+}
+
+async function measureScrollSettlement(page: Page, cdp: CDPSession, phase: string) {
+  let viewport: Awaited<ReturnType<typeof visibleTranscriptCoverage>> | undefined
+  const stage = await measure(page, cdp, `${phase}-scroll-settlement`, async () => {
+    await expect(page.locator(WINDOW)).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 })
+    await waitForRenderedRows(page)
+    await expect(page.locator(WINDOW)).toHaveAttribute('aria-busy', 'false', { timeout: 30_000 })
+    viewport = await visibleTranscriptCoverage(page)
+    expect(viewport.visibleRows.length, 'settled viewport has readable message rows').toBeGreaterThan(0)
+    expect(viewport.spacerPixels, 'settled viewport contains no unmounted message gap').toBeLessThanOrEqual(1)
+    expect(viewport.coveredPixels, 'settled row wrappers cover the viewport').toBeGreaterThanOrEqual(
+      viewport.height - 1,
+    )
+    for (const row of viewport.visibleRows) {
+      expect(row.text.trim(), `settled visible message ${row.id} has rendered text`).not.toBe('')
+      if (row.id?.startsWith('residency-message-')) {
+        expect(row.id).toBe(`residency-message-${row.index}`)
+        expect(row.text).toContain(`Residency row ${row.index}.`)
+      }
+    }
+  })
+  return { ...stage, viewport: viewport! }
+}
+
+async function visibleTranscriptCoverage(page: Page) {
+  return page.locator(TRANSCRIPT).evaluate((transcript) => {
+    const viewport = transcript.getBoundingClientRect()
+    const visibleRows = Array.from(transcript.querySelectorAll<HTMLElement>('[data-transcript-row-id]'))
+      .map((wrapper) => {
+        const row = wrapper.querySelector<HTMLElement>('.risu-chat[data-chat-index]')
+        const bounds = wrapper.getBoundingClientRect()
+        return {
+          id: row?.dataset.risuMessageId ?? null,
+          index: Number(row?.dataset.chatIndex ?? -1),
+          text: row?.querySelector('.chat-message-body')?.textContent ?? '',
+          top: Math.max(bounds.top, viewport.top) - viewport.top,
+          bottom: Math.min(bounds.bottom, viewport.bottom) - viewport.top,
+        }
+      })
+      .filter((row) => row.index >= 0 && row.bottom > row.top)
+      .sort((left, right) => left.top - right.top)
+    let coveredPixels = 0
+    let coveredEnd = 0
+    for (const row of visibleRows) {
+      coveredPixels += Math.max(0, row.bottom - Math.max(coveredEnd, row.top))
+      coveredEnd = Math.max(coveredEnd, row.bottom)
+    }
+    const spacerPixels = Array.from(transcript.querySelectorAll('[data-transcript-spacer]')).reduce((total, spacer) => {
+      const bounds = spacer.getBoundingClientRect()
+      return total + Math.max(0, Math.min(bounds.bottom, viewport.bottom) - Math.max(bounds.top, viewport.top))
+    }, 0)
+    return { height: viewport.height, coveredPixels, spacerPixels, visibleRows }
+  })
 }
 
 async function configureGeneration(page: Page): Promise<void> {
@@ -1336,7 +1513,8 @@ async function attachReport(testInfo: TestInfo, report: unknown): Promise<void> 
   reports.push(report)
   const directory = path.resolve('fast-bootstrap-results/maintainability')
   mkdirSync(directory, { recursive: true })
-  writeFileSync(path.join(directory, 'transcript-residency.json'), `${JSON.stringify({ cases: reports }, null, 2)}\n`)
+  const reportName = CPU_PROFILE ? 'transcript-residency-cpu-profile.json' : 'transcript-residency.json'
+  writeFileSync(path.join(directory, reportName), `${JSON.stringify({ cases: reports }, null, 2)}\n`)
   await testInfo.attach('transcript-residency', {
     body: Buffer.from(JSON.stringify(report, null, 2)),
     contentType: 'application/json',

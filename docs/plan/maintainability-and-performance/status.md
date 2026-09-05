@@ -801,3 +801,15 @@ budgets, but 600-row scrolling p95 is 67.5/64.2/288.6 ms versus unchanged limits
 33.8/33.8/35.2. [Every sample is retained](evidence/transcript-residency-first-costs.json).
 Phase 5 stays open for measured scroll-cost correction; Phase 6 implementation
 still waits for its acceptance.
+
+### Phase 5 progressive admission correctness
+
+CPU profiling identified synchronous row construction as the dominant rapid
+scroll cost. The bounded admission correction replaces one ordinary component
+per frame, prioritizes the current viewport, retains released pins without
+remounting, and freezes ordinary wrapper heights during a pointer gesture.
+All eleven native cases now pass, including eight one-click accepted saves and
+readable progress during rapid motion followed by complete viewport coverage.
+The [retained profile and movement evidence](evidence/transcript-residency.md)
+separates diagnostics, pending placeholders and settled work. Original scroll,
+heap and page-layout acceptance still requires the next isolated matrix.

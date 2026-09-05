@@ -54,6 +54,40 @@ export type TranscriptResidencyEntry<T> =
   | { key: string; kind: 'row'; row: T; id: string }
   | { key: string; kind: 'spacer'; height: number; start: number; end: number }
 
+/** Replace at most one ordinary component per frame, nearest the viewport first. */
+export function advanceTranscriptResidents(
+  ids: readonly string[],
+  previous: readonly string[],
+  start: number,
+  center: number,
+  pinned: ReadonlySet<string>,
+): { ids: string[]; pending: boolean } {
+  const budget = Math.max(0, Math.min(TRANSCRIPT_WORKING_ROWS, TRANSCRIPT_MAX_RESIDENT_ROWS - pinned.size))
+  const first = Math.max(0, Math.min(start, ids.length - budget))
+  const desired = ids.slice(first, first + budget)
+  const desiredIds = new Set(desired)
+  const positions = new Map(ids.map((id, index) => [id, index]))
+  const distance = (id: string) => Math.abs((positions.get(id) ?? center) - center)
+  const next = [...new Set(previous)].filter((id) => positions.has(id) && !pinned.has(id))
+  next.sort((left, right) => distance(left) - distance(right))
+  // A changed logical window or newly protected owner can require immediate
+  // removal; ordinary scrolling admits and evicts just one row below.
+  next.length = Math.min(next.length, budget)
+  const present = new Set([...next, ...pinned])
+  const missing = desired.filter((id) => !present.has(id)).sort((left, right) => distance(left) - distance(right))
+  if (missing[0]) {
+    if (next.length === budget) {
+      // The window can be asymmetric near the history edge or when pins
+      // reduce its budget. Distance alone could evict a desired row forever.
+      const outside = next.findLastIndex((id) => !desiredIds.has(id))
+      next.splice(outside >= 0 ? outside : next.length - 1, 1)
+    }
+    next.push(missing[0])
+  }
+  const settled = new Set([...next, ...pinned])
+  return { ids: next, pending: desired.some((id) => !settled.has(id)) }
+}
+
 export function buildTranscriptResidency<T extends { key: string }>(
   rows: readonly T[],
   ids: readonly string[],
@@ -61,6 +95,7 @@ export function buildTranscriptResidency<T extends { key: string }>(
   start: number,
   pinned: ReadonlySet<string>,
   full: boolean,
+  admitted?: ReadonlySet<string>,
 ): TranscriptResidencyEntry<T>[] {
   // Transitional generation can briefly expose old/new presentation IDs
   // together. Protected owners consume the shared row budget before the
@@ -82,7 +117,11 @@ export function buildTranscriptResidency<T extends { key: string }>(
     gapStart = -1
   }
   for (let index = 0; index < rows.length; index++) {
-    if (full || (index >= windowStart && index < windowEnd) || pinned.has(ids[index])) {
+    if (
+      full ||
+      (admitted ? admitted.has(ids[index]) : index >= windowStart && index < windowEnd) ||
+      pinned.has(ids[index])
+    ) {
       flushGap(index)
       entries.push({ key: rows[index].key, kind: 'row', row: rows[index], id: ids[index] })
     } else if (gapStart < 0) gapStart = index

@@ -87,6 +87,15 @@ DOM contains at most 76 message rows. Already-hydrated pinned rows retain their
 logical range when send/streaming or a settings change reduces the page count.
 Hydration, persisted messages and pending mutations keep their existing owners.
 
+For long windows, viewport movement admits the nearest missing ordinary row
+and evicts at most one old ordinary row per animation frame. Already admitted
+rows keep their stable component identity while the working window fills;
+rapidly passed intermediate windows do not each create 60 components. Protected
+interaction/navigation rows mount immediately. Small windows, first render and
+explicit full capture retain their existing admission behavior. The transcript
+reports `aria-busy` while ordinary residency is filling; body parsing remains
+owned by the separate display scheduler.
+
 Measured reverse-flow spacers preserve omitted height; a chat-scoped cache holds
 at most 2,048 fractional-pixel measurements and resets on width changes. A visible
 stable message and offset anchor corrects free scrolling after row/media changes.
@@ -101,9 +110,10 @@ window change and restores its measured offset.
 Keyboard and screen-reader users can activate named “Show messages” buttons in
 spacers. A focused spacer keeps its range stable until activation or blur.
 A row pointer press retains its logical lower bound and defers residency
-geometry until pointerup/click completes; changing focus cannot move a Save
-button between press and release. Cancellation, blur and destruction release
-that short-lived hold.
+geometry until pointerup/click completes. Ordinary resident wrapper heights also
+stay fixed through that gesture, so a neighboring parser/image completion or
+focus change cannot move a Save button between press and release. Cancellation,
+blur, full capture and destruction restore those sizes and release the hold.
 
 Native browser text-find sees mounted messages; cross-message drag selection is
 limited by residency. Individual mounted-message selection/copy, per-message

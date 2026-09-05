@@ -1,0 +1,1179 @@
+{
+  "source": "497aa1eaf99853c5c5b13dea16175e170cce7037",
+  "kind": "Diagnostic CPU4x600 profiling; not acceptance timing",
+  "command": "RISU_TRANSCRIPT_CPU_PROFILE=1 RISU_TRANSCRIPT_PROFILE_CASE=mobile-cpu4x:600 RISU_TRANSCRIPT_COSTS=1 RISU_BROWSER_SMOKE_WORKERS=1 pnpm test -- server/fastify/browser-smoke/transcriptResidency.spec.ts",
+  "attribution": "Inclusive stacks overlap; percentages must not be summed. Source mapped by inspected bundled function bodies and callers. Raw profiles retained outside the plan; top forty ranks retained here.",
+  "mappedInclusivePercent": {
+    "Svelte flush": 66.1,
+    "Chats row construction": 49.5,
+    "Chat construction": 47.5,
+    "ChatBody renderParsedChatBody": 16.75,
+    "DOMPurify.sanitize": 16.33,
+    "reconcileResidency": 12.58,
+    "captureResidencyAnchor": 10.21
+  },
+  "phases": {
+    "accumulated": {
+      "durationMs": 9995.906,
+      "sampleDurationMs": 9994.828,
+      "sampleCount": 8394,
+      "self": [
+        {
+          "functionName": "(program)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1509.483,
+          "samplePercent": 15.102641085969665
+        },
+        {
+          "functionName": "getBoundingClientRect",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1225.778,
+          "samplePercent": 12.264123004417884
+        },
+        {
+          "functionName": "Rg",
+          "asset": "database.svelte-CQd1GJb_.js",
+          "line": 669,
+          "column": 93400,
+          "sampledMs": 1072.668,
+          "samplePercent": 10.73223070972307
+        },
+        {
+          "functionName": "before",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 528.179,
+          "samplePercent": 5.284523155375961
+        },
+        {
+          "functionName": "(garbage collector)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 345.464,
+          "samplePercent": 3.4564276643880216
+        },
+        {
+          "functionName": "parseFromString",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 277.029,
+          "samplePercent": 2.7717235354125154
+        },
+        {
+          "functionName": "remove",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 214.38,
+          "samplePercent": 2.1449093471143277
+        },
+        {
+          "functionName": "wr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 24029,
+          "sampledMs": 198.652,
+          "samplePercent": 1.987547959804811
+        },
+        {
+          "functionName": "cloneNode",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 192.801,
+          "samplePercent": 1.9290076827735303
+        },
+        {
+          "functionName": "setAttribute",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 162.073,
+          "samplePercent": 1.6215686753188752
+        },
+        {
+          "functionName": "X",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 25465,
+          "sampledMs": 137.087,
+          "samplePercent": 1.3715793808557786
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 8,
+          "column": 10610,
+          "sampledMs": 106.311,
+          "samplePercent": 1.0636601250166586
+        },
+        {
+          "functionName": "Er",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 25075,
+          "sampledMs": 100.489,
+          "samplePercent": 1.005409998050992
+        },
+        {
+          "functionName": "get",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 5871,
+          "sampledMs": 83.858,
+          "samplePercent": 0.8390139380087381
+        },
+        {
+          "functionName": "Tr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 24831,
+          "sampledMs": 82.178,
+          "samplePercent": 0.8222052445524826
+        },
+        {
+          "functionName": "ownKeys",
+          "asset": "client-BIxofyuY.js",
+          "line": 2,
+          "column": 9431,
+          "sampledMs": 82.08,
+          "samplePercent": 0.821224737434201
+        },
+        {
+          "functionName": "Xr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 28486,
+          "sampledMs": 77.074,
+          "samplePercent": 0.7711388330044299
+        },
+        {
+          "functionName": "Qe",
+          "asset": "database.svelte-CQd1GJb_.js",
+          "line": 669,
+          "column": 103139,
+          "sampledMs": 76.742,
+          "samplePercent": 0.7678171150118841
+        },
+        {
+          "functionName": "Gn",
+          "asset": "client-BIxofyuY.js",
+          "line": 2,
+          "column": 3861,
+          "sampledMs": 68.889,
+          "samplePercent": 0.6892464782785657
+        },
+        {
+          "functionName": "append",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 67.804,
+          "samplePercent": 0.678390863754734
+        },
+        {
+          "functionName": "V_",
+          "asset": "resourceState.svelte-BrLkbWjL.js",
+          "line": 5,
+          "column": 152151,
+          "sampledMs": 67.094,
+          "samplePercent": 0.6712871897345307
+        },
+        {
+          "functionName": "Z",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 27064,
+          "sampledMs": 66.36,
+          "samplePercent": 0.6639433915220952
+        },
+        {
+          "functionName": "s",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 20375,
+          "sampledMs": 63.074,
+          "samplePercent": 0.6310663875356335
+        },
+        {
+          "functionName": "ti",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 29420,
+          "sampledMs": 57.111,
+          "samplePercent": 0.5714055309406025
+        },
+        {
+          "functionName": "Sr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 23658,
+          "sampledMs": 55.586,
+          "samplePercent": 0.55614763955918
+        },
+        {
+          "functionName": "FK",
+          "asset": "database.svelte-CQd1GJb_.js",
+          "line": 1258,
+          "column": 227,
+          "sampledMs": 54.838,
+          "samplePercent": 0.5486637689012758
+        },
+        {
+          "functionName": "kn",
+          "asset": "client-BIxofyuY.js",
+          "line": 2,
+          "column": 1711,
+          "sampledMs": 50.96,
+          "samplePercent": 0.5098637015064191
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "Icon-BmozrW4B.js",
+          "line": 1,
+          "column": 767,
+          "sampledMs": 50.813,
+          "samplePercent": 0.5083929408289968
+        },
+        {
+          "functionName": "Wn",
+          "asset": "client-BIxofyuY.js",
+          "line": 2,
+          "column": 3608,
+          "sampledMs": 50.807,
+          "samplePercent": 0.5083329097809387
+        },
+        {
+          "functionName": "ensure",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 7003,
+          "sampledMs": 50.697,
+          "samplePercent": 0.507232340566541
+        },
+        {
+          "functionName": "capture",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 12614,
+          "sampledMs": 47.37,
+          "samplePercent": 0.47394512441834913
+        },
+        {
+          "functionName": "Dn",
+          "asset": "client-BIxofyuY.js",
+          "line": 2,
+          "column": 1265,
+          "sampledMs": 46.737,
+          "samplePercent": 0.4676118488482243
+        },
+        {
+          "functionName": "Ls",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 2390,
+          "sampledMs": 44.674,
+          "samplePercent": 0.4469711734909295
+        },
+        {
+          "functionName": "get nextSibling",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 43.558,
+          "samplePercent": 0.4358053985521312
+        },
+        {
+          "functionName": "or",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 22434,
+          "sampledMs": 43.326,
+          "samplePercent": 0.43348419802721966
+        },
+        {
+          "functionName": "qn",
+          "asset": "client-BIxofyuY.js",
+          "line": 2,
+          "column": 5918,
+          "sampledMs": 40.54,
+          "samplePercent": 0.40560978137892917
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 7194,
+          "sampledMs": 39.694,
+          "samplePercent": 0.39714540360274336
+        },
+        {
+          "functionName": "createTextNode",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 39.548,
+          "samplePercent": 0.3956846480999973
+        },
+        {
+          "functionName": "dn",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 10264,
+          "sampledMs": 39.096,
+          "samplePercent": 0.39116230914629047
+        },
+        {
+          "functionName": "createElementNS",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 36.106,
+          "samplePercent": 0.3612468368640261
+        }
+      ],
+      "inclusive": [
+        {
+          "functionName": "(root)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 9994.828,
+          "samplePercent": 100.0
+        },
+        {
+          "functionName": "gt",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 4538,
+          "sampledMs": 6602.203,
+          "samplePercent": 66.05619426367318
+        },
+        {
+          "functionName": "wr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 24029,
+          "sampledMs": 6566.041,
+          "samplePercent": 65.69438713702726
+        },
+        {
+          "functionName": "#m",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 11489,
+          "sampledMs": 6545.11,
+          "samplePercent": 65.48496882587675
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 14315,
+          "sampledMs": 6544.311,
+          "samplePercent": 65.47697469131035
+        },
+        {
+          "functionName": "flush",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 12785,
+          "sampledMs": 6544.059,
+          "samplePercent": 65.4744533872919
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 4623,
+          "sampledMs": 6543.012,
+          "samplePercent": 65.46397796940578
+        },
+        {
+          "functionName": "#h",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 12239,
+          "sampledMs": 5999.363,
+          "samplePercent": 60.0246747617868
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 10214,
+          "sampledMs": 5892.586,
+          "samplePercent": 58.95635222537096
+        },
+        {
+          "functionName": "Z",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 27064,
+          "sampledMs": 5088.02,
+          "samplePercent": 50.9065288567247
+        },
+        {
+          "functionName": "ensure",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 7003,
+          "sampledMs": 5045.787,
+          "samplePercent": 50.48398031461873
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 7194,
+          "sampledMs": 5012.092,
+          "samplePercent": 50.14685595389936
+        },
+        {
+          "functionName": "Jt",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 8704,
+          "sampledMs": 4963.535,
+          "samplePercent": 49.66103468714019
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 8901,
+          "sampledMs": 4959.934,
+          "samplePercent": 49.625006053130676
+        },
+        {
+          "functionName": "rn",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 12556,
+          "sampledMs": 4953.555,
+          "samplePercent": 49.56118304387029
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 12645,
+          "sampledMs": 4947.602,
+          "samplePercent": 49.50162223902202
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 20109,
+          "sampledMs": 4944.251,
+          "samplePercent": 49.4680948986816
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 23349,
+          "sampledMs": 4919.045,
+          "samplePercent": 49.215904465789706
+        },
+        {
+          "functionName": "s",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 20375,
+          "sampledMs": 4882.67,
+          "samplePercent": 48.85196623693774
+        },
+        {
+          "functionName": "Ls",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 2390,
+          "sampledMs": 4744.615,
+          "samplePercent": 47.47070184699527
+        },
+        {
+          "functionName": "o",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 8768,
+          "sampledMs": 4191.406,
+          "samplePercent": 41.93574916947045
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 65,
+          "column": 2625,
+          "sampledMs": 4167.0,
+          "samplePercent": 41.69156287631963
+        },
+        {
+          "functionName": "oc",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 65,
+          "column": 1757,
+          "sampledMs": 4141.245,
+          "samplePercent": 41.433879602530425
+        },
+        {
+          "functionName": "Q",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 28343,
+          "sampledMs": 3620.007,
+          "samplePercent": 36.21880236458296
+        },
+        {
+          "functionName": "Ln",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 19040,
+          "sampledMs": 2666.576,
+          "samplePercent": 26.67955866774296
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 8917,
+          "sampledMs": 2618.178,
+          "samplePercent": 26.195328223757326
+        },
+        {
+          "functionName": "ot",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 4785,
+          "sampledMs": 2175.517,
+          "samplePercent": 21.766427596352834
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 9007,
+          "sampledMs": 2135.892,
+          "samplePercent": 21.369972549802757
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 28231,
+          "sampledMs": 2114.952,
+          "samplePercent": 21.160464192080145
+        },
+        {
+          "functionName": "f",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 5753,
+          "sampledMs": 2111.734,
+          "samplePercent": 21.128267539971674
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 28239,
+          "sampledMs": 2096.217,
+          "samplePercent": 20.973017244518864
+        },
+        {
+          "functionName": "Xt",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 8991,
+          "sampledMs": 1919.945,
+          "samplePercent": 19.209385093970603
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 9030,
+          "sampledMs": 1914.4,
+          "samplePercent": 19.153906400390284
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 5951,
+          "sampledMs": 1882.777,
+          "samplePercent": 18.8375127616003
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 7828,
+          "sampledMs": 1849.317,
+          "samplePercent": 18.502739616929876
+        },
+        {
+          "functionName": "c",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 42,
+          "column": 6818,
+          "sampledMs": 1830.822,
+          "samplePercent": 18.31769391129092
+        },
+        {
+          "functionName": "si",
+          "asset": "Chat-BrdJiCfP.js",
+          "line": 8,
+          "column": 9836,
+          "sampledMs": 1809.647,
+          "samplePercent": 18.105834337519365
+        },
+        {
+          "functionName": "jr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 26333,
+          "sampledMs": 1711.254,
+          "samplePercent": 17.12139518558999
+        },
+        {
+          "functionName": "an",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 12946,
+          "sampledMs": 1702.982,
+          "samplePercent": 17.03863238066728
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 13017,
+          "sampledMs": 1684.525,
+          "samplePercent": 16.853966871666024
+        }
+      ]
+    },
+    "final": {
+      "durationMs": 1836.549,
+      "sampleDurationMs": 1835.759,
+      "sampleCount": 745,
+      "self": [
+        {
+          "functionName": "(program)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1262.288,
+          "samplePercent": 68.76109554685556
+        },
+        {
+          "functionName": "(idle)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 504.154,
+          "samplePercent": 27.462973080889157
+        },
+        {
+          "functionName": "getBoundingClientRect",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 18.945,
+          "samplePercent": 1.0319982089152226
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 1,
+          "column": 1,
+          "sampledMs": 10.932,
+          "samplePercent": 0.5955030044793461
+        },
+        {
+          "functionName": "requestAnimationFrame",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 6.216,
+          "samplePercent": 0.3386065382220651
+        },
+        {
+          "functionName": "It",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 12698,
+          "sampledMs": 4.887,
+          "samplePercent": 0.26621141446126645
+        },
+        {
+          "functionName": "Yt",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 15134,
+          "sampledMs": 3.864,
+          "samplePercent": 0.2104851453812837
+        },
+        {
+          "functionName": "querySelector",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 3.106,
+          "samplePercent": 0.16919432234841283
+        },
+        {
+          "functionName": "lt",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 1452,
+          "sampledMs": 2.823,
+          "samplePercent": 0.15377835543772359
+        },
+        {
+          "functionName": "Dt",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 11734,
+          "sampledMs": 2.61,
+          "samplePercent": 0.14217552521872426
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 12,
+          "column": 60,
+          "sampledMs": 2.093,
+          "samplePercent": 0.11401278708152868
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1.962,
+          "samplePercent": 0.10687677412993754
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 27,
+          "column": 4308,
+          "sampledMs": 1.689,
+          "samplePercent": 0.09200554103234684
+        },
+        {
+          "functionName": "Ut",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 14763,
+          "sampledMs": 1.403,
+          "samplePercent": 0.07642615397772802
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 984,
+          "sampledMs": 1.232,
+          "samplePercent": 0.06711120577374263
+        },
+        {
+          "functionName": "query",
+          "asset": "",
+          "line": 5607,
+          "column": 21,
+          "sampledMs": 1.117,
+          "samplePercent": 0.06084676692310919
+        },
+        {
+          "functionName": "get",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 5871,
+          "sampledMs": 1.073,
+          "samplePercent": 0.05844993814547552
+        },
+        {
+          "functionName": "querySelectorAll",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1.037,
+          "samplePercent": 0.05648889641832071
+        },
+        {
+          "functionName": "evaluate",
+          "asset": "",
+          "line": 305,
+          "column": 11,
+          "sampledMs": 1.018,
+          "samplePercent": 0.05545390217343344
+        },
+        {
+          "functionName": "vn",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 17280,
+          "sampledMs": 0.976,
+          "samplePercent": 0.05316602015841949
+        },
+        {
+          "functionName": "i",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 927,
+          "sampledMs": 0.924,
+          "samplePercent": 0.050333404330306974
+        },
+        {
+          "functionName": "innerSerialize",
+          "asset": "",
+          "line": 186,
+          "column": 24,
+          "sampledMs": 0.737,
+          "samplePercent": 0.0401468820253639
+        },
+        {
+          "functionName": "getComputedStyle",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 0.673,
+          "samplePercent": 0.03666058562153311
+        }
+      ],
+      "inclusive": [
+        {
+          "functionName": "(root)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1835.759,
+          "samplePercent": 100.0
+        },
+        {
+          "functionName": "(program)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1262.288,
+          "samplePercent": 68.76109554685556
+        },
+        {
+          "functionName": "(idle)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 504.154,
+          "samplePercent": 27.462973080889157
+        },
+        {
+          "functionName": "It",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 12698,
+          "sampledMs": 31.01,
+          "samplePercent": 1.6892195544186355
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 12659,
+          "sampledMs": 29.939,
+          "samplePercent": 1.6308785630357796
+        },
+        {
+          "functionName": "getBoundingClientRect",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 18.945,
+          "samplePercent": 1.0319982089152226
+        },
+        {
+          "functionName": "i",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 927,
+          "sampledMs": 17.916,
+          "samplePercent": 0.9759450995473807
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 984,
+          "sampledMs": 14.169,
+          "samplePercent": 0.7718333397793501
+        },
+        {
+          "functionName": "pr",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 23185,
+          "sampledMs": 14.169,
+          "samplePercent": 0.7718333397793501
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 27,
+          "column": 4308,
+          "sampledMs": 11.961,
+          "samplePercent": 0.651556113847188
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 1,
+          "column": 1,
+          "sampledMs": 11.754,
+          "samplePercent": 0.6402801239160478
+        },
+        {
+          "functionName": "vn",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 17280,
+          "sampledMs": 7.773,
+          "samplePercent": 0.423421592921511
+        },
+        {
+          "functionName": "requestAnimationFrame",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 6.216,
+          "samplePercent": 0.3386065382220651
+        },
+        {
+          "functionName": "Ft",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 12543,
+          "sampledMs": 5.394,
+          "samplePercent": 0.29382941878536345
+        },
+        {
+          "functionName": "Yt",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 15134,
+          "sampledMs": 5.32,
+          "samplePercent": 0.2897983885684341
+        },
+        {
+          "functionName": "Ot",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 12007,
+          "sampledMs": 5.068,
+          "samplePercent": 0.2760710964783504
+        },
+        {
+          "functionName": "evaluate",
+          "asset": "",
+          "line": 305,
+          "column": 11,
+          "sampledMs": 4.667,
+          "samplePercent": 0.2542272705730981
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 1,
+          "column": 2,
+          "sampledMs": 4.667,
+          "samplePercent": 0.2542272705730981
+        },
+        {
+          "functionName": "Dt",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 11734,
+          "sampledMs": 3.683,
+          "samplePercent": 0.20062546336419976
+        },
+        {
+          "functionName": "querySelector",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 3.106,
+          "samplePercent": 0.16919432234841283
+        },
+        {
+          "functionName": "callMatchedElements",
+          "asset": "",
+          "line": 1,
+          "column": 30,
+          "sampledMs": 2.827,
+          "samplePercent": 0.153996248962963
+        },
+        {
+          "functionName": "lt",
+          "asset": "client-BIxofyuY.js",
+          "line": 1,
+          "column": 1452,
+          "sampledMs": 2.823,
+          "samplePercent": 0.15377835543772359
+        },
+        {
+          "functionName": "query",
+          "asset": "",
+          "line": 5607,
+          "column": 21,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 5605,
+          "column": 113,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "_cached",
+          "asset": "",
+          "line": 5388,
+          "column": 10,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "_queryCSS",
+          "asset": "",
+          "line": 5604,
+          "column": 12,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "_querySimple",
+          "asset": "",
+          "line": 5483,
+          "column": 15,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 5426,
+          "column": 117,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "query",
+          "asset": "",
+          "line": 5422,
+          "column": 8,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "query",
+          "asset": "",
+          "line": 5635,
+          "column": 8,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 5597,
+          "column": 126,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "_callQuery",
+          "asset": "",
+          "line": 5596,
+          "column": 13,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "_queryEngine",
+          "asset": "",
+          "line": 5584,
+          "column": 15,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "queryAll",
+          "asset": "",
+          "line": 6989,
+          "column": 17,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "_queryEngineAll",
+          "asset": "",
+          "line": 6968,
+          "column": 18,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "querySelectorAll",
+          "asset": "",
+          "line": 6920,
+          "column": 19,
+          "sampledMs": 2.154,
+          "samplePercent": 0.11733566334142989
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 12,
+          "column": 60,
+          "sampledMs": 2.093,
+          "samplePercent": 0.11401278708152868
+        },
+        {
+          "functionName": "(anonymous)",
+          "asset": "",
+          "line": 0,
+          "column": 0,
+          "sampledMs": 1.962,
+          "samplePercent": 0.10687677412993754
+        },
+        {
+          "functionName": "Ut",
+          "asset": "appStartup-BxtZ7YWr.js",
+          "line": 26,
+          "column": 14763,
+          "sampledMs": 1.403,
+          "samplePercent": 0.07642615397772802
+        },
+        {
+          "functionName": "get",
+          "asset": "effects-BptdLNRv.js",
+          "line": 1,
+          "column": 5871,
+          "sampledMs": 1.073,
+          "samplePercent": 0.05844993814547552
+        }
+      ]
+    }
+  }
+}

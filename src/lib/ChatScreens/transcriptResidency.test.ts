@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  advanceTranscriptResidents,
   buildTranscriptResidency,
   TranscriptHeightCache,
   TRANSCRIPT_HEIGHT_ENTRIES,
@@ -9,6 +10,60 @@ import {
 } from './transcriptResidency'
 
 describe('transcript residency geometry', () => {
+  it('admits the nearest missing row every frame without reconstructing intermediate windows', () => {
+    const ids = Array.from({ length: 600 }, (_, index) => `id-${index}`)
+    const pins = new Set([ids[0], ids[500]])
+    let previous = ids.slice(0, 60)
+    for (let frame = 0; frame < 60; frame++) {
+      const center = frame < 10 ? 100 + frame * 20 : 400
+      const next = advanceTranscriptResidents(ids, previous, center - 30, center, pins)
+      expect(next.ids.filter((id) => !previous.includes(id))).toHaveLength(1)
+      expect(previous.filter((id) => !next.ids.includes(id) && !pins.has(id)).length).toBeLessThanOrEqual(1)
+      expect(next.ids).toContain(ids[center])
+      expect(next.ids.length + pins.size).toBeLessThanOrEqual(76)
+      previous = next.ids
+    }
+    let settled = advanceTranscriptResidents(ids, previous, 370, 400, pins)
+    for (let frame = 0; settled.pending && frame < 60; frame++) {
+      settled = advanceTranscriptResidents(ids, settled.ids, 370, 400, pins)
+    }
+    expect(settled.pending).toBe(false)
+    for (const id of ids.slice(370, 430)) expect(settled.ids).toContain(id)
+  })
+
+  it('drops obsolete chat rows and makes room for new protected owners before admission', () => {
+    const ids = Array.from({ length: 600 }, (_, index) => `id-${index}`)
+    const pins = new Set(ids.slice(0, 18))
+    const previous = [...ids.slice(100, 160), 'deleted-message']
+    const next = advanceTranscriptResidents(ids, previous, 300, 330, pins)
+    expect(next.ids).toHaveLength(58)
+    expect(next.ids).not.toContain('deleted-message')
+    const rows = ids.map((key) => ({ key }))
+    const entries = buildTranscriptResidency(
+      rows,
+      ids,
+      transcriptRowOffsets(ids, new TranscriptHeightCache()),
+      300,
+      pins,
+      false,
+      new Set(next.ids),
+    )
+    expect(entries.filter((entry) => entry.kind === 'row')).toHaveLength(76)
+    for (const id of pins) expect(entries.some((entry) => entry.kind === 'row' && entry.id === id)).toBe(true)
+    expect(previous).toHaveLength(61)
+  })
+
+  it('settles an asymmetric pin-reduced window without alternating its boundary rows', () => {
+    const ids = Array.from({ length: 200 }, (_, index) => `id-${index}`)
+    const pins = new Set(ids.slice(0, 18))
+    const next = advanceTranscriptResidents(ids, ids.slice(71, 129), 70, 100, pins)
+    expect(next.pending).toBe(false)
+    expect(new Set(next.ids)).toEqual(new Set(ids.slice(70, 128)))
+    const repeated = advanceTranscriptResidents(ids, next.ids, 70, 100, pins)
+    expect(repeated.pending).toBe(false)
+    expect(new Set(repeated.ids)).toEqual(new Set(next.ids))
+  })
+
   it('bounds ordinary traversal independently of history and accounts for every omitted pixel', () => {
     for (const count of [30, 180, 600, 10000]) {
       const rows = Array.from({ length: count }, (_, index) => ({ key: `row-${index}` }))
