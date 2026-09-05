@@ -612,6 +612,12 @@ export const PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG = [
     examplePath: '/bardwiki/chats/chat-a/confirmations',
   },
   {
+    id: 'bardwiki-chat-rebuild-create',
+    method: 'POST',
+    path: /^\/bardwiki\/chats\/[^/?#]+\/rebuilds$/,
+    examplePath: '/bardwiki/chats/chat-a/rebuilds',
+  },
+  {
     id: 'resource-lorebook-replace',
     method: 'PUT',
     path: /^\/(?:characters|chats|modules)\/[^/?#]+\/lorebooks$/,

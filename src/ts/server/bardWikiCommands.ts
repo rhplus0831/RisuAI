@@ -68,7 +68,15 @@ function replayFailure(
 async function dispatchBardWikiMutation<T extends Record<string, unknown>>(
   input: DurableBardWikiMutationInput<T>,
 ): Promise<BardWikiMutationOutcome<T>> {
-  const outbox = stagePendingMutation(input.key, input.intent)
+  let outbox: ReturnType<typeof stagePendingMutation>
+  try {
+    outbox = stagePendingMutation(input.key, input.intent)
+  } catch (error) {
+    return {
+      status: 'failed',
+      result: { status: 'error', error: error instanceof Error ? error.message : String(error) },
+    }
+  }
   let resolveSettlement!: (outcome: BardWikiMutationFinalOutcome) => void
   const settlement = new Promise<BardWikiMutationFinalOutcome>((resolve) => {
     resolveSettlement = resolve

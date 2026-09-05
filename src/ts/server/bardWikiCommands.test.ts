@@ -169,6 +169,20 @@ describe('BardWiki durable commands', () => {
     expect(mocks.confirm).toHaveBeenCalledWith({ baseRevision: 7, chatId: 'chat-a', ...source }, undefined)
   })
 
+  it('reports a staging failure without dispatching or registering a settlement listener', async () => {
+    mocks.stage.mockImplementationOnce(() => {
+      throw new TypeError('Pending mutation command path is not allowlisted')
+    })
+
+    await expect(queueBardWikiRebuild('chat-a', 'full', 4)).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: 'Pending mutation command path is not allowlisted' },
+    })
+    expect(mocks.dispatch).not.toHaveBeenCalled()
+    expect(mocks.register).not.toHaveBeenCalled()
+    expect(mocks.rebuildQueue).not.toHaveBeenCalled()
+  })
+
   it('previews rebuild scope without an outbox and durably queues the confirmed scope', async () => {
     const preview = {
       chatId: 'chat-a',

@@ -119,7 +119,7 @@
       "id": "shared-durable-command-operation-catalog",
       "owner": "Browser-safe retained-intent operation catalog; never a security authority",
       "path": "packages/protocol/src/durableCommandOperation.ts#PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG",
-      "count": 133,
+      "count": 134,
       "authority": "Browser-safe retained-intent operation catalog; never a security authority",
       "migrationPhase": "Workstream 1 Phase 2 exact operation/policy catalog",
       "driftRule": "Count and owner changes require a reviewed baseline update; policy parity is established in Phase 2.",

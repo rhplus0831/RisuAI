@@ -9,17 +9,17 @@ import {
   protocolDurableGenerationOperationMatches,
 } from '@risuai/protocol/durable-command-operation'
 
-const OPENING_ALLOWLIST_SHA256 = '57839af7209199273e4c17169939f71ee29874ad7917860ee46670671adb327a'
+const ALLOWLIST_SHA256 = '2c49696fc287bf20c381d29f7ea6d528e4f926625c7c0dde64c8908d0949e2e1'
 
 describe('durable-command operation catalog', () => {
-  it('preserves all 133 opening method/path patterns behind unique stable identifiers', () => {
-    expect(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG).toHaveLength(133)
-    expect(new Set(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(133)
+  it('preserves all 134 reviewed method/path patterns behind unique stable identifiers', () => {
+    expect(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG).toHaveLength(134)
+    expect(new Set(PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG.map(({ id }) => id)).size).toBe(134)
 
     const matcherFingerprint = PROTOCOL_DURABLE_COMMAND_OPERATION_CATALOG.map(
       ({ method, path }) => `${method}:${path.source}`,
     ).join('\n')
-    expect(createHash('sha256').update(matcherFingerprint).digest('hex')).toBe(OPENING_ALLOWLIST_SHA256)
+    expect(createHash('sha256').update(matcherFingerprint).digest('hex')).toBe(ALLOWLIST_SHA256)
   })
 
   it('resolves every reviewed example to exactly its stable operation', () => {
@@ -44,6 +44,9 @@ describe('durable-command operation catalog', () => {
     ['DELETE', '/lorebooks/lorebook-a/entries'],
     ['PUT', '/characters/character-a/lorebooks/entries'],
     ['POST', '/chats/chat-a/lorebooks/entries/reorder/extra'],
+    ['PATCH', '/bardwiki/chats/chat-a/rebuilds'],
+    ['POST', '/bardwiki/chats/chat-a/rebuilds/extra'],
+    ['POST', '/bardwiki/chats/chat-a/rebuilds?preview=true'],
   ] as const)('rejects the adversarial near miss %s %s', (method, path) => {
     expect(findProtocolDurableCommandOperation(method, path)).toBeUndefined()
   })

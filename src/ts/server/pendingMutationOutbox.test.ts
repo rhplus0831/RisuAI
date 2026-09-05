@@ -1208,6 +1208,25 @@ describe('pending mutation outbox', () => {
     await expect(discardPendingMutation(handle)).resolves.toBe('deleted')
   })
 
+  it.each(['full', 'missing'] as const)('persists and restores a confirmed %s BardWiki rebuild', async (policy) => {
+    const intent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'POST',
+          path: '/bardwiki/chats/chat-a/rebuilds',
+          body: { preview: false, confirm: true, policy, expectedSourceCount: 4 },
+        },
+      ],
+    }
+
+    const handle = stagePendingMutation('bardwiki-rebuild:chat-a', intent)
+
+    await expect(handle.ready).resolves.toBe('persisted')
+    expect((await listPendingMutations())[0]?.intent).toEqual(intent)
+    await expect(discardPendingMutation(handle)).resolves.toBe('deleted')
+  })
+
   it('keeps similar nested resource routes outside the durable allowlist', () => {
     expect(() =>
       stagePendingMutation('unsafe-nested-route', {

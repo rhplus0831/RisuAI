@@ -612,6 +612,36 @@ describe('BardWiki workspace', () => {
     expect(target.textContent).toContain('The rebuild was queued')
   })
 
+  it('retains the preview and allows retry after a rebuild staging failure', async () => {
+    mutations.rebuildQueue.mockResolvedValueOnce({
+      status: 'failed',
+      result: { status: 'error', error: 'Pending mutation command path is not allowlisted' },
+    })
+    component = mount(BardWikiWorkspace, { target, props: { chatId: 'chat-a' } })
+    await settle()
+
+    const preview = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Preview rebuild',
+    )!
+    preview.click()
+    await settle()
+    const start = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'Start rebuild',
+    )!
+    start.click()
+    await settle()
+
+    expect(target.textContent).toContain('Pending mutation command path is not allowlisted')
+    expect(target.querySelector('[data-testid="bardwiki-rebuild-preview"]')).not.toBeNull()
+    expect(start.disabled).toBe(false)
+    start.click()
+    await settle()
+
+    expect(mutations.rebuildQueue).toHaveBeenCalledTimes(2)
+    expect(target.textContent).toContain('The rebuild was queued')
+    expect(target.textContent).not.toContain('Pending mutation command path is not allowlisted')
+  })
+
   it('dry-runs a selected vault before enabling one revisioned import', async () => {
     const plan = {
       format: 'risu-bardwiki-vault' as const,
