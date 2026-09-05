@@ -2151,8 +2151,8 @@ function selectDatabaseFields(
 
 // `loadPersistedWithMessages` is the message-aware read boundary used by
 // full-corpus readers that need every chat hydrated (migration/backfill,
-// export/save, and explicit broad fallbacks). Prompt assembly uses the
-// scoped `loadPersistedForAssembly` path below. Messages live in the SQLite
+// export/save, and explicit broad fallbacks). Prompt assembly uses the selected
+// `loadPersistedForGenerationAssembly` path below. Messages live in the SQLite
 // `messages` table; `loadPersisted` returns message-free chats.
 
 type JsonRecord = Record<string, unknown>
@@ -2312,14 +2312,14 @@ export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, 
 }
 
 /**
- * `loadPersisted` + join ONLY the target chat's messages/hypaV3.
- * Prompt assembly reads exactly one chat's transcript, so it must not pay the
- * whole-table `getAllChatMessagesGrouped` / `getAllChatHypaV3Grouped` parse.
+ * Legacy broad display-source fallback: `loadPersisted` plus ONLY the target
+ * chat's messages/hypaV3. Ordinary generation uses selected configuration and
+ * owners through `loadPersistedForGenerationAssembly` instead.
  * Every non-target chat gets `message = []` (downstream `eachChat`-style
  * iteration still sees an array); the target chat keeps
  * `loadPersistedWithMessages`'s exact semantics, including the embedded-array
- * fallback for a chat that is not extracted. The broad loader stays for the
- * genuine full-corpus consumers (assetGc / export / save / boot backfill).
+ * fallback for a chat that is not extracted. Display-source reads retain this
+ * path for pre-extraction or malformed storage.
  */
 export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chatId: string): Persisted {
   const persisted = loadPersisted(db, dataDir)
