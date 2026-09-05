@@ -421,6 +421,7 @@ describe('ChatList DOM contract harness', () => {
   })
 
   afterEach(() => {
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
     if (component) {
       unmount(component)
       component = undefined
@@ -915,7 +916,11 @@ describe('ChatList DOM contract harness', () => {
   })
 
   it('rolls back a failed optimistic modal chat create in state and DOM', async () => {
-    seedModalDatabase()
+    const chara = seedModalDatabase()
+    const backgroundChat = chara.chats[0]
+    backgroundChat.message.push({ role: 'char', data: 'before request', chatId: 'background-before' })
+    const backgroundMessages = backgroundChat.message
+    const backgroundMessage = backgroundMessages[0]
     chatListMocks.setServerCommandsEnabled(true)
     const command = chatListMocks.createDeferredCreateCommand()
     const close = vi.fn()
@@ -936,6 +941,7 @@ describe('ChatList DOM contract harness', () => {
     ])
     expect(close).not.toHaveBeenCalled()
 
+    backgroundMessages.push({ role: 'char', data: 'arrived while pending', chatId: 'background-pending' })
     command.resolve({ error: 'create failed', status: 'error' })
     await flushCommandWork()
 
@@ -946,6 +952,10 @@ describe('ChatList DOM contract harness', () => {
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
     expect(close).not.toHaveBeenCalled()
     expect(modalRoot().querySelector('[data-risu-chat-mutation-status="failed"]')).toBeTruthy()
+    expect(chara.chats[0]).toBe(backgroundChat)
+    expect(backgroundChat.message).toBe(backgroundMessages)
+    expect(backgroundMessages[0]).toBe(backgroundMessage)
+    expect(backgroundMessages.map((message) => message.data)).toEqual(['before request', 'arrived while pending'])
   })
 
   it('labels a retained modal create as provisional before navigating', async () => {
@@ -1088,7 +1098,11 @@ describe('ChatList DOM contract harness', () => {
   })
 
   it('removes a confirmed modal chat before the command resolves and restores on failure', async () => {
-    seedModalDatabase()
+    const chara = seedModalDatabase()
+    const backgroundChat = chara.chats[0]
+    backgroundChat.message.push({ role: 'char', data: 'before request', chatId: 'background-before' })
+    const backgroundMessages = backgroundChat.message
+    const backgroundMessage = backgroundMessages[0]
     chatListMocks.setServerCommandsEnabled(true)
     chatListMocks.alertConfirm.mockResolvedValueOnce(true)
     const command = chatListMocks.createDeferredDeleteCommand()
@@ -1109,6 +1123,7 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-c', true)
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
 
+    backgroundMessages.push({ role: 'char', data: 'arrived while pending', chatId: 'background-pending' })
     command.resolve({ error: 'delete failed', status: 'error' })
     await flushCommandWork()
 
@@ -1117,55 +1132,78 @@ describe('ChatList DOM contract harness', () => {
     expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     expectRowSelected('chat-b', true)
     expect(chatListMocks.navigate).not.toHaveBeenCalled()
+    expect(chara.chats[0]).toBe(backgroundChat)
+    expect(backgroundChat.message).toBe(backgroundMessages)
+    expect(backgroundMessages[0]).toBe(backgroundMessage)
+    expect(backgroundMessages.map((message) => message.data)).toEqual(['before request', 'arrived while pending'])
   })
 
-  it('deletes the originally targeted modal chat when selection changes during confirm', async () => {
-    const charA = seedModalDatabase()
-    const charB = {
-      ...charA,
-      chaId: 'char-b',
-      name: 'Other Character',
-      chatPage: 0,
-      chats: [makeChat('other-chat-a', 'Other Chat A'), makeChat('other-chat-b', 'Other Chat B')],
-      chatFolders: [],
-    } as character
-    getDatabase().characters.push(charB)
-    chatListMocks.setServerCommandsEnabled(true)
-    let resolveConfirm!: (confirmed: boolean) => void
-    chatListMocks.alertConfirm.mockReturnValueOnce(
-      new Promise<boolean>((resolve) => {
-        resolveConfirm = resolve
-      }),
-    )
-    const command = chatListMocks.createDeferredDeleteCommand()
-    const close = vi.fn()
+  it.each(['accepted', 'failed'] as const)(
+    'keeps the original modal delete owner after selection changes through a %s settlement',
+    async (settlement) => {
+      const charA = seedModalDatabase()
+      const charB = {
+        ...charA,
+        chaId: 'char-b',
+        name: 'Other Character',
+        chatPage: 0,
+        chats: [makeChat('other-chat-a', 'Other Chat A'), makeChat('other-chat-b', 'Other Chat B')],
+        chatFolders: [],
+      } as character
+      getDatabase().characters.push(charB)
+      const selectedOwnerChat = getDatabase().characters[1].chats[0]
+      const selectedOwnerMessages = selectedOwnerChat.message
+      chatListMocks.setServerCommandsEnabled(true)
+      let resolveConfirm!: (confirmed: boolean) => void
+      chatListMocks.alertConfirm.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          resolveConfirm = resolve
+        }),
+      )
+      const command = chatListMocks.createDeferredDeleteCommand()
+      const close = vi.fn()
 
-    component = mount(ChatList, { target, props: { close } })
-    await tick()
+      component = mount(ChatList, { target, props: { close } })
+      await tick()
 
-    deleteButtonForRow(rowByChatId('chat-b')).click()
-    await tick()
+      deleteButtonForRow(rowByChatId('chat-b')).click()
+      await tick()
 
-    charactersResourceState.currentChar = 1
-    selectedCharID.set(1)
-    await tick()
-    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
-    expect(close).toHaveBeenCalledOnce()
+      charactersResourceState.currentChar = 1
+      selectedCharID.set(1)
+      await tick()
+      expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+      expect(close).toHaveBeenCalledOnce()
 
-    resolveConfirm(true)
-    await flushCommandWork()
+      resolveConfirm(true)
+      await flushCommandWork()
 
-    expect(command.settled).toBe(false)
-    expect(command.input).toMatchObject({ chatId: 'chat-b' })
-    expect(charA.chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-c'])
-    expect(charB.chats.map((chat) => chat.id)).toEqual(['other-chat-a', 'other-chat-b'])
-    expect(get(selectedCharID)).toBe(1)
-    expect(chatListMocks.navigate).not.toHaveBeenCalled()
-    expect(chatListMocks.changeChatTo).not.toHaveBeenCalled()
+      expect(command.settled).toBe(false)
+      expect(command.input).toMatchObject({ chatId: 'chat-b' })
+      expect(charA.chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-c'])
+      expect(charB.chats.map((chat) => chat.id)).toEqual(['other-chat-a', 'other-chat-b'])
+      expect(get(selectedCharID)).toBe(1)
+      expect(chatListMocks.navigate).not.toHaveBeenCalled()
+      expect(chatListMocks.changeChatTo).not.toHaveBeenCalled()
 
-    command.resolve({ revision: 11, status: 'ok' })
-    await flushCommandWork()
-  })
+      selectedOwnerMessages.push({ role: 'char', data: 'newly selected owner reply', chatId: 'other-owner-message' })
+      command.resolve(
+        settlement === 'accepted' ? { revision: 11, status: 'ok' } : { error: 'delete failed', status: 'error' },
+      )
+      await flushCommandWork()
+
+      expect(charA.chats.map((chat) => chat.id)).toEqual(
+        settlement === 'accepted' ? ['chat-a', 'chat-c'] : ['chat-a', 'chat-b', 'chat-c'],
+      )
+      expect(getDatabase().characters[1].chats[0]).toBe(selectedOwnerChat)
+      expect(selectedOwnerChat.message).toBe(selectedOwnerMessages)
+      expect(selectedOwnerMessages[0].data).toBe('newly selected owner reply')
+      expect(get(selectedCharID)).toBe(1)
+      expect(charB.chatPage).toBe(0)
+      expect(chatListMocks.navigate).not.toHaveBeenCalled()
+      expect(chatListMocks.changeChatTo).not.toHaveBeenCalled()
+    },
+  )
 
   it('navigates a selected modal delete only after acceptance and ignores a newer route', async () => {
     const chara = seedModalDatabase()

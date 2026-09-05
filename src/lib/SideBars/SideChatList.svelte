@@ -44,10 +44,16 @@
     applyOptimisticCreatedChatFolder,
     applyOptimisticDeletedChat,
     applyOptimisticResetChats,
+    captureChatCreateSnapshot,
+    captureChatDeleteSnapshot,
+    captureChatFolderCreateSnapshot,
+    captureChatFolderDeleteSnapshot,
+    captureChatForkSnapshot,
+    captureChatOrderSnapshot,
+    captureChatResetSnapshot,
     captureChatMetadataPatch,
     captureChatFolderMetadataPatch,
     currentChatSelectionSnapshot,
-    currentChatStateSnapshot,
     dispatchCreateChatFolderWithOutcome,
     dispatchCreateChatWithOutcome,
     dispatchDeleteChatFolderWithOutcome,
@@ -545,9 +551,10 @@
     assignments: Record<string, string | null>,
   ): Promise<void> {
     if (!chara.chaId) return
-    const previous = currentChatStateSnapshot()
     const selectedChatId = chara.chats[chara.chatPage]?.id
     if (canUseServerCommands()) {
+      const previous = captureChatOrderSnapshot(chara.chaId)
+      if (!previous) return
       const conflictKeys = [chatOrderConflictKey(), chatConflictKey(targetChatId)]
       if (hasConflictingStructureMutation(conflictKeys)) return
       await settleStructureMutation(
@@ -725,11 +732,12 @@
     ;[folderIds[currentFolderIndex], folderIds[targetIndex]] = [folderIds[targetIndex], folderIds[currentFolderIndex]]
     const assignments = chatFolderAssignments()
     const chatIds = flattenChatGroups(groupedChatIds(assignments), folderIds)
-    const previous = currentChatStateSnapshot()
     const selectedChatId = chara.chats[chara.chatPage]?.id
     const usingServerCommands = canUseServerCommands()
     if (usingServerCommands && !chara.chaId) return
     if (usingServerCommands) {
+      const previous = captureChatOrderSnapshot(chara.chaId)
+      if (!previous) return
       const conflictKeys = [
         chatOrderConflictKey(chara.chaId),
         folderOrderConflictKey(chara.chaId),
@@ -769,7 +777,6 @@
   async function createChat(): Promise<void> {
     if (!sidebarCharacter) return
     if (hasConflictingStructureMutation([chatOrderConflictKey()])) return
-    const previous = currentChatStateSnapshot()
     const len = chara.chats.length
     const chat = {
       message: [],
@@ -781,6 +788,8 @@
     }
     if (canUseServerCommands()) {
       const characterId = chara.chaId
+      const previous = captureChatCreateSnapshot(characterId, chat)
+      if (!previous) return
       const originRoute = currentRouteIdentity()
       const applied = applyOptimisticCreatedChat(characterId, chat, previous)
       if (!applied || !characterId || !chat.id) return
@@ -832,12 +841,13 @@
       liveSourceChat = hydratedSourceChat
     }
 
-    const previous = currentChatStateSnapshot()
     const newChat = $state.snapshot(liveSourceChat)
     newChat.name = createChatCopyName(newChat.name, 'Copy')
     rekeyClonedChat(newChat)
     if (canUseServerCommands()) {
       if (!sourceChatId || !newChat.id) return
+      const previous = captureChatForkSnapshot(sourceChatId, { chat: newChat })
+      if (!previous) return
       const conflictKeys = [
         chatOrderConflictKey(characterId),
         chatConflictKey(sourceChatId),
@@ -1020,10 +1030,11 @@
     const confirmed = await alertConfirm(`${language.removeConfirm}${ownerChat.name}`)
     if (!confirmed || isChatStructuralActionPending(chat.id) || !uniqueSidebarChat(chat.id)) return
 
-    const previous = currentChatStateSnapshot()
     const deletedSelectedChat = chara.chats[chara.chatPage]?.id === chat.id
     if (canUseServerCommands()) {
       const characterId = chara.chaId
+      const previous = captureChatDeleteSnapshot(chat.id, characterId)
+      if (!previous) return
       const originRoute = currentRouteIdentity()
       const result = applyOptimisticDeletedChat(characterId, chat.id, previous)
       if (!result.applied) return
@@ -1073,7 +1084,6 @@
       return
     }
     const previousChatIds = liveCharacter.chats.map((candidate) => candidate.id)
-    const previous = currentChatStateSnapshot()
     const chat: Chat = {
       message: [],
       note: '',
@@ -1082,6 +1092,8 @@
       fmIndex: -1,
       id: v4(),
     }
+    const previous = captureChatResetSnapshot(characterId)
+    if (!previous) return
     const originRoute = currentRouteIdentity()
     if (!applyOptimisticResetChats(characterId, chat, previous)) return
 
@@ -1130,8 +1142,9 @@
     if (isFolderStructuralActionPending(folder.id)) return
     const confirmed = await alertConfirm(`${language.removeConfirm}${ownerFolder.name}`)
     if (!confirmed || isFolderStructuralActionPending(folder.id) || !uniqueSidebarFolder(folder.id)) return
-    const previous = currentChatStateSnapshot()
     if (canUseServerCommands()) {
+      const previous = captureChatFolderDeleteSnapshot(folder.id, chara.chaId)
+      if (!previous) return
       await settleStructureMutation(
         structureMutationKey('delete-folder', folder.id),
         'folder',
@@ -1155,7 +1168,6 @@
   async function createChatFolder(): Promise<void> {
     if (!sidebarCharacter) return
     if (hasConflictingStructureMutation([folderOrderConflictKey()])) return
-    const previous = currentChatStateSnapshot()
     const length = chara.chatFolders?.length ?? 0
     const folder = {
       id: v4(),
@@ -1163,6 +1175,8 @@
       folded: false,
     }
     if (canUseServerCommands()) {
+      const previous = captureChatFolderCreateSnapshot(chara.chaId, folder)
+      if (!previous) return
       if (!applyOptimisticCreatedChatFolder(chara.chaId, folder, previous)) return
       await settleStructureMutation(
         structureMutationKey('create-folder', folder.id),
@@ -1338,7 +1352,6 @@
               await resetSortableProjection()
               return
             }
-            const previous = currentChatStateSnapshot()
             const currentChatPage = chara.chatPage
             const usingServerCommands = canUseServerCommands()
             const chatOrder = buildChatDomOrder()
@@ -1352,6 +1365,11 @@
             const selectedChatId = selectedChatIdFromDom(chatOrder.chatsById, chara.chats[currentChatPage]?.id)
             if (usingServerCommands) {
               const characterId = chara.chaId
+              const previous = captureChatOrderSnapshot(characterId)
+              if (!previous) {
+                await resetSortableProjection()
+                return
+              }
               await settleStructureMutation(
                 structureMutationKey('drag-chats', characterId),
                 'order',
@@ -1389,7 +1407,6 @@
           await resetSortableProjection()
           return
         }
-        const previous = currentChatStateSnapshot()
         const currentChatPage = chara.chatPage
         const usingServerCommands = canUseServerCommands()
         const folderOrder = buildFolderDomOrder(event.to)
@@ -1403,6 +1420,11 @@
         const selectedChatId = selectedChatIdFromDom(folderOrder.chatsById, chara.chats[currentChatPage]?.id)
         if (usingServerCommands) {
           const characterId = chara.chaId
+          const previous = captureChatOrderSnapshot(characterId)
+          if (!previous) {
+            await resetSortableProjection()
+            return
+          }
           await settleStructureMutation(
             structureMutationKey('drag-folders', characterId),
             'order',

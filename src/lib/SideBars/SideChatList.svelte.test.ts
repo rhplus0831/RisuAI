@@ -764,6 +764,7 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   afterEach(() => {
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
     if (component) {
       unmount(component)
       component = undefined
@@ -1380,11 +1381,9 @@ describe('SideChatList DOM contract harness', () => {
     const [characterId, replacementChat, previous] = sidebarMocks.dispatchResetChatsWithOutcome.mock.calls[0]
     expect(characterId).toBe('char-a')
     expect(replacementChat).toMatchObject({ name: 'Chat 1', message: [], note: '', localLore: [], fmIndex: -1 })
-    expect(previous.characters[0].chats.map((chat: Chat) => chat.name)).toEqual([
-      'Root Chat A',
-      'Foldered Chat',
-      'Root Chat B',
-    ])
+    expect(previous).toMatchObject({ kind: 'chat-reset', characterId: 'char-a', chatPage: 1 })
+    expect(previous).not.toHaveProperty('characters')
+    expect(previous.chats.map((chat: Chat) => chat.name)).toEqual(['Root Chat A', 'Foldered Chat', 'Root Chat B'])
     expect(chara.chats).toEqual([replacementChat])
     expect(chara.chatPage).toBe(0)
     expect(chara.chatFolders).toEqual([{ id: 'folder-a', name: 'Pinned Folder', folded: false }])
@@ -1601,20 +1600,18 @@ describe('SideChatList DOM contract harness', () => {
       'chat-root-b': null,
       'chat-second-foldered': 'folder-b',
     })
-    expect(previous).toMatchObject({
+    expect(previous).toEqual({
+      kind: 'chat-order',
       selectedCharID: 0,
-      characters: [
-        {
-          chaId: 'char-a',
-          chatFolders: [{ id: 'folder-a' }, { id: 'folder-b' }],
-          chats: [
-            { id: 'chat-root-a' },
-            { id: 'chat-foldered' },
-            { id: 'chat-root-b' },
-            { id: 'chat-second-foldered' },
-          ],
-        },
-      ],
+      characterId: 'char-a',
+      previousFolderIds: ['folder-a', 'folder-b'],
+      previousIds: ['chat-root-a', 'chat-foldered', 'chat-root-b', 'chat-second-foldered'],
+      previousFolderByChatId: {
+        'chat-root-a': { previous: null, previousHadValue: true },
+        'chat-foldered': { previous: 'folder-a', previousHadValue: true },
+        'chat-root-b': { previous: null, previousHadValue: true },
+        'chat-second-foldered': { previous: 'folder-b', previousHadValue: true },
+      },
     })
     expect(selectedChatId).toBe('chat-foldered')
     expect(sidebarMocks.reorderChatFoldersCommand).not.toHaveBeenCalled()
@@ -1654,12 +1651,11 @@ describe('SideChatList DOM contract harness', () => {
       'chat-root-b': null,
     })
     expect(previous).toMatchObject({
-      characters: [
-        {
-          chats: [{ id: 'chat-root-b' }, { id: 'chat-foldered' }, { id: 'chat-root-a' }],
-        },
-      ],
+      kind: 'chat-order',
+      characterId: 'char-a',
+      previousIds: ['chat-root-b', 'chat-foldered', 'chat-root-a'],
     })
+    expect(previous).not.toHaveProperty('characters')
     expect(selectedChatId).toBe('chat-foldered')
   })
 
@@ -1704,18 +1700,12 @@ describe('SideChatList DOM contract harness', () => {
       'chat-second-foldered': 'folder-b',
     })
     expect(previous).toMatchObject({
-      characters: [
-        {
-          chatFolders: [{ id: 'folder-b' }, { id: 'folder-a' }],
-          chats: [
-            { id: 'chat-root-b' },
-            { id: 'chat-second-foldered' },
-            { id: 'chat-foldered' },
-            { id: 'chat-root-a' },
-          ],
-        },
-      ],
+      kind: 'chat-order',
+      characterId: 'char-a',
+      previousFolderIds: ['folder-b', 'folder-a'],
+      previousIds: ['chat-root-b', 'chat-second-foldered', 'chat-foldered', 'chat-root-a'],
     })
+    expect(previous).not.toHaveProperty('characters')
     expect(selectedChatId).toBe('chat-foldered')
   })
 
@@ -2351,7 +2341,11 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   it('rolls back a failed optimistic sidebar chat create in state and DOM', async () => {
-    seedSidebarDatabase()
+    const chara = seedSidebarDatabase()
+    const backgroundChat = chara.chats[0]
+    backgroundChat.message.push({ role: 'char', data: 'before request', chatId: 'background-before' })
+    const backgroundMessages = backgroundChat.message
+    const backgroundMessage = backgroundMessages[0]
     sidebarMocks.setServerCommandsEnabled(true)
     const command = sidebarMocks.createDeferredCreateCommand()
 
@@ -2370,6 +2364,7 @@ describe('SideChatList DOM contract harness', () => {
       'Root Chat B',
     ])
 
+    backgroundMessages.push({ role: 'char', data: 'arrived while pending', chatId: 'background-pending' })
     command.resolve({ error: 'create failed', status: 'error' })
     await flushCommandWork()
 
@@ -2379,6 +2374,10 @@ describe('SideChatList DOM contract harness', () => {
     expectRowSelected('chat-foldered', true)
     expect(sidebarMocks.navigate).not.toHaveBeenCalled()
     expect(sidebarRoot().querySelector('[data-risu-chat-mutation-status="failed"]')).toBeTruthy()
+    expect(chara.chats[0]).toBe(backgroundChat)
+    expect(backgroundChat.message).toBe(backgroundMessages)
+    expect(backgroundMessages[0]).toBe(backgroundMessage)
+    expect(backgroundMessages.map((message) => message.data)).toEqual(['before request', 'arrived while pending'])
   })
 
   it('labels a retained sidebar create as provisional before navigating', async () => {
@@ -2599,7 +2598,11 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   it('restores a failed optimistic foldered sidebar chat delete in state and DOM', async () => {
-    seedSidebarDatabase()
+    const chara = seedSidebarDatabase()
+    const backgroundChat = chara.chats[0]
+    backgroundChat.message.push({ role: 'char', data: 'before request', chatId: 'background-before' })
+    const backgroundMessages = backgroundChat.message
+    const backgroundMessage = backgroundMessages[0]
     sidebarMocks.setServerCommandsEnabled(true)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
     const command = sidebarMocks.createDeferredDeleteCommand()
@@ -2619,6 +2622,7 @@ describe('SideChatList DOM contract harness', () => {
     expect(chatRows().map((row) => row.dataset.risuChatId)).not.toContain('chat-foldered')
     expectRowSelected('chat-root-b', true)
 
+    backgroundMessages.push({ role: 'char', data: 'arrived while pending', chatId: 'background-pending' })
     command.resolve({ error: 'delete failed', status: 'error' })
     await flushCommandWork()
 
@@ -2627,6 +2631,10 @@ describe('SideChatList DOM contract harness', () => {
     expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-foldered', 'chat-root-a', 'chat-root-b'])
     expectRowSelected('chat-foldered', true)
     expect(sidebarMocks.navigate).not.toHaveBeenCalled()
+    expect(chara.chats[0]).toBe(backgroundChat)
+    expect(backgroundChat.message).toBe(backgroundMessages)
+    expect(backgroundMessages[0]).toBe(backgroundMessage)
+    expect(backgroundMessages.map((message) => message.data)).toEqual(['before request', 'arrived while pending'])
   })
 
   it('reports the one-chat sidebar delete guard and leaves the row unchanged', async () => {

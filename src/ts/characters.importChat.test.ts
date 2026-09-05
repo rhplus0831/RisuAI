@@ -71,6 +71,18 @@ vi.mock('./alert', async (importActual) => {
   }
 })
 
+vi.mock('./chatCommands', async (importActual) => {
+  const actual = await importActual<typeof import('./chatCommands')>()
+  return {
+    ...actual,
+    captureChatImportSnapshot: vi.fn(actual.captureChatImportSnapshot),
+    currentChatStateSnapshot: vi.fn(() => {
+      throw new Error('Importing must not capture existing character transcripts')
+    }),
+  }
+})
+
+import { captureChatImportSnapshot, currentChatStateSnapshot } from './chatCommands'
 import { clearCachedServerCommandRevision } from './server/commands'
 
 import { replaceResourceDatabase } from './server/resourceState.svelte'
@@ -290,6 +302,37 @@ afterEach(() => {
 })
 
 describe('chat import projection helpers', () => {
+  it('captures only target identities and leaves existing transcript objects unread during import', async () => {
+    const calls = stubCommandFetch()
+    const character = testDatabaseState.db.characters[0]
+    const existingChat = character.chats[0]
+    const unreadMessage = { role: 'user' as const, data: 'existing transcript', chatId: 'existing-message' }
+    const readExistingText = vi.fn(() => {
+      throw new Error('The import must not read an existing transcript')
+    })
+    Object.defineProperty(unreadMessage, 'data', {
+      configurable: true,
+      enumerable: true,
+      get: readExistingText,
+    })
+    existingChat.message = [unreadMessage]
+    const existingMessages = existingChat.message
+    const existingMessage = existingMessages[0]
+    selectJsonFile('chat.json', { type: 'risuChat', ver: 1, data: importedChat() })
+
+    await importChat()
+
+    expect(createChatCalls(calls)).toHaveLength(1)
+    expect(captureChatImportSnapshot).toHaveBeenCalledOnce()
+    expect(captureChatImportSnapshot).toHaveBeenCalledWith('char-a')
+    expect(currentChatStateSnapshot).not.toHaveBeenCalled()
+    expect(readExistingText).not.toHaveBeenCalled()
+    expect(character.chats.find((chat) => chat.id === 'chat-a')).toBe(existingChat)
+    expect(existingChat.message).toBe(existingMessages)
+    expect(existingChat.message[0]).toBe(existingMessage)
+    expect(alertError).not.toHaveBeenCalled()
+  })
+
   it('imports a chat through the character owner projection and create-chat command', async () => {
     const calls = stubCommandFetch()
     selectJsonFile('chat.json', {

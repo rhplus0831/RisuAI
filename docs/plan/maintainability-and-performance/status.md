@@ -4,12 +4,12 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phases 0 and 1 accepted; executing Phase 2a browser rollback narrowing.
+- State: Phases 0, 1 and 2a accepted; executing Phase 2b outbox normalization.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2a.
-- Next task: narrow create/delete/folder/reorder/fork/reset/import organization
-  capture; metadata-only capture is accepted and preserves newer edits/fences.
+- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2b.
+- Next task: normalize each staged durable intent once and derive target metadata
+  from the owned normalized snapshot, preserving public-helper validation.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence are recorded below; Phase 2 implementation is next.
@@ -23,7 +23,7 @@ selected [phase](phases/README.md) for implementation detail.
 | --- | --- | --- | --- |
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
-| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Executing 2a; 2b–2d queued | Phase 1 budgets accepted |
+| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | 2a accepted; executing 2b; 2c–2d queued | Scoped metadata and organization capture |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Pending Phase 2 | None |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
@@ -35,7 +35,7 @@ selected [phase](phases/README.md) for implementation detail.
 | --- | --- | --- |
 | F01 | Fixed; targeted creation and pre-normalization receipt fingerprint | Final combined aggregate remains pending |
 | F02 | Open; source-confirmed work | Preparation baseline, narrowed reads/clones, behavior parity |
-| F03 | Open; source-confirmed work | Scoped rollback and clone-scope proof |
+| F03 | Fixed; scoped metadata and organization captures | Final combined aggregate and recovery browser closeout pending |
 | F04 | Open; source-confirmed work | Resource progress independent of pruning; cache lifecycle proof |
 | F05 | Open; source-confirmed work | Single-normalization proof and durable-intent parity |
 | F06 | Open; measured bundle cost | Selected-locale loading and fresh preload comparison |
@@ -176,8 +176,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 2a: Metadata Capture Accepted; Organization Next
 
-- Implementation: accompanying metadata-capture commit; exact SHA is recorded by
-  the next slice. `captureChatMetadataPatch` / `captureChatFolderMetadataPatch`
+- Implementation: `1dff5c13f`. `captureChatMetadataPatch` / `captureChatFolderMetadataPatch`
   capture only allowed supplied fields plus stable owner IDs. Direct outcome
   dispatchers reuse durable pending-attempt/rebase and projection fencing.
 - Live callers migrated: sidebar fold/color/folder rename/chat rename and compact
@@ -201,3 +200,47 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   F03 stays open until their capture scopes are narrowed and verified. Required
   removed/attempted transcript ownership must remain explicit and bounded by
   the operation's affected rows.
+
+## Phase 2a: Organization Capture Accepted (F03 Closed)
+
+- Implementation: accompanying organization-capture commit; metadata precursor
+  is `1dff5c13f`. Eight distinct typed captures now serve every live sidebar,
+  compact list, branch and import caller. The legacy full-state declaration
+  remains solely for compatibility inputs/tests; no live caller invokes it.
+- Scoped reorder/fork also bypass old optimistic whole-chat-list cloning,
+  preserving surviving chat/folder/message identities. Delete/reset retain only
+  removed row references so detached message/note edits survive failed rollback;
+  capture-time epochs fence authoritative replacements across awaited flushing.
+- [Supplemental before](evidence/sidebar-organization-before.json) and
+  [after](evidence/sidebar-organization-after.json) use fixed two-chat structure
+  with a growing surviving sibling and unrelated histories: broad capture
+  10,524 / 291,740 / 10,365,561 bytes. New create/folder-create/folder-delete/
+  order/import representations are 326/234/257/298/196 bytes at all sizes.
+  Target delete is 958 bytes (two required messages, zero capture copies), fork
+  1,501 bytes (two new messages); reset retains only its removed owner's chats,
+  up to 313,842 representation bytes/1,002 messages, with zero capture copies.
+  These representation sizes are not heap-allocation claims for retained rows.
+- The additional fixture is a Phase 1 budget cross-check before the organization
+  cutover: fixed captures and maximum copied payloads stay under 4 KiB; reset is
+  bounded by required owner chats plus 2 KiB metadata. Zero unrelated bodies are
+  retained/copied; an unreadable existing import transcript proves no hidden
+  serialization. Required new/removed transcript ownership remains explicit.
+- Focused verification: `pnpm test -- src/ts/chatCommands.test.ts` (223 passed),
+  `pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts` (67),
+  `pnpm test -- src/lib/Others/ChatList.svelte.test.ts` (26),
+  `pnpm test -- src/lib/ChatScreens/Chat.customHtml.test.ts` (60),
+  `pnpm test -- src/ts/characters.importChat.test.ts` (21), metadata cost probe
+  (3), and `pnpm test -- src/ts/chatOrganization.workCosts.dom.test.ts`
+  (25 passed, three baseline-only cases skipped). Legacy baseline mode separately
+  passed three cases. Added guards keep the four live entrypoints off broad
+  capture; tests cover both legacy and scoped structural semantics.
+- Navigation/recovery guides updated; standard and explicit plan documentation,
+  Prettier and whitespace checks pass. F03 meets its structural budget; no
+  latency claim is made. New/forked transcripts and rollback restoration of
+  removed rows retain their necessary operation-owned work.
+
+- Final review reproduced a deletion-selection race during awaited note flushing:
+  after selecting surviving chat C, failed deletion restored old chat A. Scoped
+  deletion now predicts/binds its selection effect at capture/optimistic write
+  and freezes scalar ownership before awaiting. Both helper and direct-projection
+  regressions pass; core 223, sidebar 67 and compact-list 26 were rerun.

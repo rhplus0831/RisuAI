@@ -658,7 +658,7 @@ export function restoreChatState(snapshot: ChatStateSnapshot): void {
 export function applyOptimisticCreatedChat(
   characterId: string | undefined,
   chat: Chat,
-  snapshot: ChatStateSnapshot,
+  snapshot: ChatCreateBaseline,
 ): boolean {
   let applied = false
   withChatOwnerProjectionWrite(() => {
@@ -681,7 +681,7 @@ export function applyOptimisticCreatedChat(
 export function applyOptimisticResetChats(
   characterId: string | undefined,
   chat: Chat,
-  snapshot: ChatStateSnapshot,
+  snapshot: ChatResetBaseline,
 ): boolean {
   if (!chat.id) return false
   let applied = false
@@ -699,7 +699,7 @@ export function applyOptimisticResetChats(
 export function applyOptimisticCreatedChatFolder(
   characterId: string | undefined,
   folder: ChatFolder,
-  snapshot: ChatStateSnapshot,
+  snapshot: ChatFolderCreateBaseline,
 ): boolean {
   let applied = false
   withChatOwnerProjectionWrite(() => {
@@ -726,7 +726,7 @@ export interface OptimisticDeletedChatResult {
 export function applyOptimisticDeletedChat(
   characterId: string | undefined,
   chatId: string | undefined,
-  snapshot: ChatStateSnapshot,
+  snapshot: ChatDeleteBaseline,
 ): OptimisticDeletedChatResult {
   const result: OptimisticDeletedChatResult = {
     applied: false,
@@ -751,6 +751,12 @@ export function applyOptimisticDeletedChat(
     else character.chatPage = normalizeChatPageIndex(character.chatPage, character.chats?.length ?? 0)
     result.applied = true
     result.selectedChatId = chats[character.chatPage]?.id
+    if ('kind' in snapshot && snapshot.characterId === character.chaId && snapshot.chatId === chatId) {
+      // Bind selection ownership to this optimistic write, before any note
+      // flushing or other async work can admit a newer user selection.
+      snapshot.previousSelectedChatId = previouslySelectedChatId
+      snapshot.attemptedSelectedChatId = result.selectedChatId
+    }
   })
   if (result.applied) reloadGuiDisplay()
   return result
@@ -1427,16 +1433,8 @@ export function captureChatFolderMetadataPatch(
   patch: ChatFolderSnapshot,
   characterId?: string,
 ): ChatFolderMetadataPatchSnapshot | null {
-  // Resolve stable ownership without inspecting or copying any chat bodies.
-  let match: { character: character; folder: ChatFolder } | undefined
-  for (const owner of charactersResourceState.characters) {
-    for (const folder of owner.chatFolders ?? []) {
-      if (folder.id !== folderId) continue
-      if (match || !owner.chaId || !getCharacterResourceOwner(owner.chaId)) return null
-      match = { character: owner, folder }
-    }
-  }
-  if (!match?.character.chaId || (characterId && match.character.chaId !== characterId)) return null
+  const match = locateLiveChatFolder(folderId, characterId)
+  if (!match?.character.chaId) return null
   const snapshot = chatFolderMetadataRollbackFromPrevious(
     folderId,
     patch,
@@ -1445,6 +1443,23 @@ export function captureChatFolderMetadataPatch(
     match.folder,
   )
   return snapshot ? { ...snapshot, characterId: match.character.chaId, attempted: snapshot.attempted! } : null
+}
+
+function locateLiveChatFolder(
+  folderId: string,
+  characterId?: string,
+): { character: character; folder: ChatFolder } | null {
+  // Resolve stable ownership without inspecting or copying any chat bodies.
+  let match: { character: character; folder: ChatFolder } | null = null
+  for (const owner of charactersResourceState.characters) {
+    for (const folder of owner.chatFolders ?? []) {
+      if (folder.id !== folderId) continue
+      if (match || !owner.chaId || !getCharacterResourceOwner(owner.chaId)) return null
+      match = { character: owner, folder }
+    }
+  }
+  if (!match?.character.chaId || (characterId && match.character.chaId !== characterId)) return null
+  return match
 }
 
 export type ChatFolderRowMetadataRollback = (snapshot: ChatFolderRowMetadataSnapshot) => void
@@ -1584,6 +1599,237 @@ interface ChatReorderRollback {
   attemptedFolderByChatId: Record<string, string | null>
 }
 
+/** Operation baselines contain only the affected structure and owned rows. */
+export interface ChatCreateSnapshot extends ChatCreateRollback {
+  kind: 'chat-create'
+  characterId: string
+  previousIds: string[]
+}
+
+export interface ChatFolderCreateSnapshot extends ChatCreatedFolderRollback {
+  kind: 'chat-folder-create'
+  characterId: string
+  previousIds: string[]
+  existed: boolean
+}
+
+export interface ChatDeleteSnapshot extends ChatDeleteRollback {
+  kind: 'chat-delete'
+  characterId: string
+  projectionEpoch: number
+}
+
+export interface ChatFolderDeleteSnapshot extends ChatFolderDeleteRollback {
+  kind: 'chat-folder-delete'
+  characterId: string
+}
+
+export interface ChatOrderSnapshot {
+  kind: 'chat-order'
+  selectedCharID: number
+  characterId: string
+  previousIds: string[]
+  previousFolderIds: string[]
+  previousFolderByChatId: Record<string, ChatFolderAssignmentRollback>
+}
+
+export interface ChatForkSnapshot {
+  kind: 'chat-fork'
+  selectedCharID: number
+  characterId: string
+  sourceChatId: string
+  previousSelectedChatId: string | undefined
+  rollback: ChatForkRollback
+}
+
+export interface ChatResetSnapshot {
+  kind: 'chat-reset'
+  projectionEpoch: number
+  selectedCharID: number
+  characterId: string
+  chats: Chat[]
+  chatPage: number
+}
+
+export interface ChatImportSnapshot {
+  kind: 'chat-import'
+  selectedCharID: number
+  characterId: string
+  previousSelectedChatId: string | undefined
+  previousChatIds: string[]
+  previousFolderIds: string[]
+}
+
+type ChatCreateBaseline = ChatStateSnapshot | ChatCreateSnapshot | ChatImportSnapshot
+type ChatFolderCreateBaseline = ChatStateSnapshot | ChatFolderCreateSnapshot | ChatImportSnapshot
+type ChatDeleteBaseline = ChatStateSnapshot | ChatDeleteSnapshot
+type ChatFolderDeleteBaseline = ChatStateSnapshot | ChatFolderDeleteSnapshot
+type ChatOrderBaseline = ChatStateSnapshot | ChatOrderSnapshot
+type ChatForkBaseline = ChatStateSnapshot | ChatForkSnapshot
+type ChatResetBaseline = ChatStateSnapshot | ChatResetSnapshot
+
+export function captureChatCreateSnapshot(characterId: string, chat: Chat, select = true): ChatCreateSnapshot | null {
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner || !chat.id) return null
+  const previousChats = (owner.chats ?? []).filter((candidate) => candidate.id === chat.id)
+  if (previousChats.length > 1) return null
+  const previousChat = previousChats[0] ? cloneJsonValue(previousChats[0]) : null
+  return {
+    kind: 'chat-create',
+    selectedCharID: get(selectedCharID),
+    characterId,
+    chatId: chat.id,
+    previousIds: chatRowIds(owner.chats),
+    previousChat,
+    attemptedChat: previousChat ?? cloneJsonValue(chat),
+    previousSelectedChatId: selectedChatIdForCharacter(owner),
+    attemptedSelectedChatId: select ? chat.id : undefined,
+  }
+}
+
+export function captureChatFolderCreateSnapshot(
+  characterId: string,
+  folder: ChatFolder,
+): ChatFolderCreateSnapshot | null {
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner || !folder.id) return null
+  const previousIds = chatFolderIds(owner.chatFolders)
+  if (previousIds.filter((id) => id === folder.id).length > 1) return null
+  return {
+    kind: 'chat-folder-create',
+    selectedCharID: get(selectedCharID),
+    characterId,
+    folderId: folder.id,
+    attemptedFolder: cloneJsonValue(folder),
+    previousIds,
+    existed: previousIds.includes(folder.id),
+  }
+}
+
+export function captureChatDeleteSnapshot(chatId: string, characterId?: string): ChatDeleteSnapshot | null {
+  const location = locateChatById(chatId, characterId)
+  if (!location?.character.chaId) return null
+  const selectedChatId = selectedChatIdForCharacter(location.character)
+  const previousIndex = location.character.chats.indexOf(location.chat)
+  const nextPage = normalizeChatPageIndex(location.character.chatPage, location.character.chats.length - 1)
+  const attemptedSelectedChatId =
+    selectedChatId && selectedChatId !== chatId
+      ? selectedChatId
+      : location.character.chats[nextPage >= previousIndex ? nextPage + 1 : nextPage]?.id
+  return {
+    kind: 'chat-delete',
+    projectionEpoch: captureCharacterRowProjectionEpoch(location.character.chaId),
+    selectedCharID: get(selectedCharID),
+    characterId: location.character.chaId,
+    chatId,
+    // Keep the removed row reachable so an already-running owner edit can
+    // finish while deletion is pending; restoration reads its latest body.
+    chat: location.chat,
+    previousIndex,
+    previousSelectedChatId: selectedChatId,
+    // Direct projection callers use the same default post-delete selection.
+    // The optimistic helper records its actual result at the write boundary.
+    attemptedSelectedChatId,
+  }
+}
+
+export function captureChatFolderDeleteSnapshot(
+  folderId: string,
+  characterId?: string,
+): ChatFolderDeleteSnapshot | null {
+  const location = locateLiveChatFolder(folderId, characterId)
+  if (!location?.character.chaId) return null
+  return {
+    kind: 'chat-folder-delete',
+    selectedCharID: get(selectedCharID),
+    characterId: location.character.chaId,
+    folderId,
+    folder: cloneJsonValue(location.folder),
+    previousIndex: location.character.chatFolders.indexOf(location.folder),
+    affectedChats: location.character.chats.flatMap((chat) =>
+      chat.id && chat.folderId === folderId
+        ? [{ chatId: chat.id, previousFolderId: chat.folderId, attemptedFolderId: null }]
+        : [],
+    ),
+  }
+}
+
+export function captureChatOrderSnapshot(characterId: string): ChatOrderSnapshot | null {
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner) return null
+  const previousFolderByChatId: Record<string, ChatFolderAssignmentRollback> = {}
+  for (const chat of owner.chats ?? []) {
+    if (!chat.id) return null
+    if (Object.prototype.hasOwnProperty.call(previousFolderByChatId, chat.id)) return null
+    previousFolderByChatId[chat.id] = {
+      previous: chat.folderId,
+      previousHadValue: Object.prototype.hasOwnProperty.call(chat, 'folderId'),
+    }
+  }
+  const previousFolderIds = chatFolderIds(owner.chatFolders)
+  if (new Set(previousFolderIds).size !== previousFolderIds.length) return null
+  return {
+    kind: 'chat-order',
+    selectedCharID: get(selectedCharID),
+    characterId,
+    previousIds: chatRowIds(owner.chats),
+    previousFolderIds,
+    previousFolderByChatId,
+  }
+}
+
+export function captureChatForkSnapshot(
+  sourceChatId: string,
+  input: { chat: Chat; sourcePatch?: ChatSnapshot; folder?: ChatFolder; select?: boolean },
+): ChatForkSnapshot | null {
+  const location = locateChatById(sourceChatId)
+  if (!location?.character.chaId) return null
+  const characterId = location.character.chaId
+  const createdChat = captureChatCreateSnapshot(characterId, input.chat, input.select !== false)
+  if (!createdChat) return null
+  const folder = input.folder ? captureChatFolderCreateSnapshot(characterId, input.folder) : null
+  if (input.folder && !folder) return null
+  return {
+    kind: 'chat-fork',
+    selectedCharID: get(selectedCharID),
+    characterId,
+    sourceChatId,
+    previousSelectedChatId: selectedChatIdForCharacter(location.character),
+    rollback: {
+      createdChat,
+      sourcePatch: input.sourcePatch ? captureChatMetadataPatch(sourceChatId, input.sourcePatch, characterId) : null,
+      createdFolder: folder && !folder.existed ? folder : null,
+    },
+  }
+}
+
+export function captureChatResetSnapshot(characterId: string): ChatResetSnapshot | null {
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner) return null
+  return {
+    kind: 'chat-reset',
+    projectionEpoch: captureCharacterRowProjectionEpoch(characterId),
+    selectedCharID: get(selectedCharID),
+    characterId,
+    // Snapshot membership, while retaining the removed rows for pending edits.
+    chats: [...(owner.chats ?? [])],
+    chatPage: owner.chatPage ?? 0,
+  }
+}
+
+export function captureChatImportSnapshot(characterId: string): ChatImportSnapshot | null {
+  const owner = getCharacterResourceOwner(characterId)
+  if (!owner) return null
+  return {
+    kind: 'chat-import',
+    selectedCharID: get(selectedCharID),
+    characterId,
+    previousSelectedChatId: selectedChatIdForCharacter(owner),
+    previousChatIds: chatRowIds(owner.chats),
+    previousFolderIds: chatFolderIds(owner.chatFolders),
+  }
+}
+
 function locateSnapshotCharacterInState(
   snapshot: ChatStateSnapshot,
   characterId: string | undefined,
@@ -1700,10 +1946,26 @@ function chatScopedSnapshotForMessageInState(
 function chatCreateRollbackFromState(
   characterId: string,
   attemptedChat: Chat,
-  previous: ChatStateSnapshot,
+  previous: ChatCreateBaseline,
   select: boolean,
 ): ChatCreateRollback | null {
   if (!attemptedChat.id) return null
+  if ('kind' in previous) {
+    if (previous.characterId !== characterId) return null
+    if (previous.kind === 'chat-create') return previous.chatId === attemptedChat.id ? previous : null
+    // Import rekeys incoming identities before applying them. A collision is not
+    // a newly imported row and must never be removed by its rollback.
+    if (previous.previousChatIds.includes(attemptedChat.id)) return null
+    return {
+      selectedCharID: previous.selectedCharID,
+      characterId,
+      chatId: attemptedChat.id,
+      previousChat: null,
+      attemptedChat: cloneJsonValue(attemptedChat),
+      previousSelectedChatId: previous.previousSelectedChatId,
+      attemptedSelectedChatId: select ? attemptedChat.id : undefined,
+    }
+  }
   const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
   const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === attemptedChat.id)
   const previousChatSnapshot = previousChat ? cloneJsonValue(previousChat) : null
@@ -1721,7 +1983,7 @@ function chatCreateRollbackFromState(
 function importedChatCreateRollbackFromState(
   characterId: string,
   attemptedChat: Chat,
-  previous: ChatStateSnapshot,
+  previous: ChatStateSnapshot | ChatImportSnapshot,
   usedIndexes: Set<number>,
 ): ChatImportedCreateRollback | null {
   if (!attemptedChat.id) return null
@@ -1729,19 +1991,22 @@ function importedChatCreateRollbackFromState(
   const attemptedSnapshot = snapshotJson(attemptedChat)
   const attemptedIndex =
     character?.chats?.findIndex((candidate, index) => {
-      if (usedIndexes.has(index)) return false
+      if (usedIndexes.has(index) || candidate.id !== attemptedChat.id) return false
       return snapshotJson(candidate) === attemptedSnapshot
     }) ?? -1
   if (attemptedIndex < 0) return null
 
   usedIndexes.add(attemptedIndex)
-  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  const previousSelectedChatId =
+    'kind' in previous
+      ? previous.previousSelectedChatId
+      : selectedChatIdForCharacter(locateSnapshotCharacterInState(previous, characterId))
   return {
     selectedCharID: previous.selectedCharID,
     characterId,
     chatId: attemptedChat.id,
     attemptedChat: cloneJsonValue(attemptedChat),
-    previousSelectedChatId: selectedChatIdForCharacter(previousCharacter),
+    previousSelectedChatId,
   }
 }
 
@@ -1795,10 +2060,10 @@ function restoreFailedCreatedChatAttempt(rollback: ChatCreateRollback | null): v
   })
 }
 
-function restoreResetChatsAttempt(characterId: string, attemptedChat: Chat, previous: ChatStateSnapshot): void {
-  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
-  if (!previousCharacter) return
-  const previousChats = cloneJsonValue(previousCharacter.chats ?? [])
+function restoreResetChatsAttempt(characterId: string, attemptedChat: Chat, previous: ChatResetBaseline): void {
+  const previousCharacter = 'kind' in previous ? previous : locateSnapshotCharacterInState(previous, characterId)
+  if (!previousCharacter || ('kind' in previous && previous.characterId !== characterId)) return
+  const previousChats = previousCharacter.chats ?? []
   const previousChatPage = previousCharacter.chatPage ?? 0
   const attemptedSnapshot = snapshotJson(attemptedChat)
   let restored = false
@@ -1964,9 +2229,22 @@ function restoreCreatedChatFolderAttempt(characterId: string, folder: ChatFolder
 function chatCreatedFolderRollbackFromState(
   characterId: string | undefined,
   folder: ChatFolder | undefined,
-  previous: ChatStateSnapshot,
+  previous: ChatFolderCreateBaseline,
 ): ChatCreatedFolderRollback | null {
   if (!folder?.id) return null
+  if ('kind' in previous) {
+    if (previous.characterId !== characterId) return null
+    if (previous.kind === 'chat-folder-create') {
+      return previous.folderId === folder.id && !previous.existed ? previous : null
+    }
+    if (previous.previousFolderIds.includes(folder.id)) return null
+    return {
+      selectedCharID: previous.selectedCharID,
+      characterId,
+      folderId: folder.id,
+      attemptedFolder: cloneJsonValue(folder),
+    }
+  }
   const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
   if (previousCharacter?.chatFolders?.some((candidate) => candidate.id === folder.id)) return null
   return {
@@ -2002,7 +2280,7 @@ function restoreCreatedChatFolderAttemptIfUnreferenced(rollback: ChatCreatedFold
 
 function chatForkRollbackFromState(
   sourceChatId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatForkBaseline,
   input: {
     chat: Chat
     sourcePatch?: ChatSnapshot
@@ -2010,6 +2288,7 @@ function chatForkRollbackFromState(
     select?: boolean
   },
 ): ChatForkRollback | null {
+  if ('kind' in previous) return previous.sourceChatId === sourceChatId ? previous.rollback : null
   const sourceLocation = locateChatInState(previous, sourceChatId)
   if (!sourceLocation) return null
   const characterId = sourceLocation.character.chaId
@@ -2037,7 +2316,11 @@ function restoreImportedChatBatchAttempt(rollback: ChatImportBatchRollback): voi
   }
 }
 
-function chatDeleteRollbackFromState(chatId: string, previous: ChatStateSnapshot): ChatDeleteRollback | null {
+function chatDeleteRollbackFromState(chatId: string, previous: ChatDeleteBaseline): ChatDeleteRollback | null {
+  if ('kind' in previous) {
+    if (previous.chatId !== chatId) return null
+    return { ...previous }
+  }
   const location = locateChatInState(previous, chatId)
   if (!location) return null
 
@@ -2084,8 +2367,9 @@ function restoreDeletedChatAttempt(rollback: ChatDeleteRollback | null): void {
 
 function chatFolderDeleteRollbackFromState(
   folderId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatFolderDeleteBaseline,
 ): ChatFolderDeleteRollback | null {
+  if ('kind' in previous) return previous.folderId === folderId ? previous : null
   const location = locateChatFolderInState(previous, folderId)
   if (!location) return null
 
@@ -2145,6 +2429,12 @@ function chatFolderIds(folders: readonly ChatFolder[] | undefined): string[] {
   return (folders ?? []).map((folder) => folder.id)
 }
 
+function chatFolderOrderFromBaseline(characterId: string, previous: ChatOrderBaseline): string[] | null {
+  if ('kind' in previous) return previous.characterId === characterId ? previous.previousFolderIds : null
+  const owner = locateSnapshotCharacterInState(previous, characterId)
+  return owner ? chatFolderIds(owner.chatFolders) : null
+}
+
 function chatRowIds(chats: readonly Chat[] | undefined): string[] {
   return (chats ?? []).map((chat) => chat.id).filter(Boolean) as string[]
 }
@@ -2160,8 +2450,16 @@ function chatFolderAssignmentValue(chat: Chat): string | null {
 function changedChatFolderAssignmentsFromState(
   characterId: string,
   attemptedFolderByChatId: Record<string, string | null>,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
 ): Record<string, string | null> | undefined {
+  if ('kind' in previous) {
+    const changed: Record<string, string | null> = {}
+    for (const [chatId, folderId] of Object.entries(attemptedFolderByChatId)) {
+      const baseline = previous.previousFolderByChatId[chatId]
+      if (!baseline || (baseline.previous ?? null) !== folderId) changed[chatId] = folderId
+    }
+    return Object.keys(changed).length > 0 ? changed : undefined
+  }
   const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
   if (!previousCharacter?.chats) {
     return Object.keys(attemptedFolderByChatId).length > 0 ? cloneJsonValue(attemptedFolderByChatId) : undefined
@@ -2184,8 +2482,19 @@ function chatReorderRollbackFromState(
   characterId: string,
   chatIds: string[],
   folderByChatId: Record<string, string | null>,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
 ): ChatReorderRollback | null {
+  if ('kind' in previous) {
+    if (previous.characterId !== characterId) return null
+    return {
+      selectedCharID: previous.selectedCharID,
+      characterId,
+      previousIds: previous.previousIds,
+      previousFolderByChatId: previous.previousFolderByChatId,
+      attemptedIds: cloneJsonValue(chatIds),
+      attemptedFolderByChatId: cloneJsonValue(folderByChatId),
+    }
+  }
   const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
   if (!previousCharacter?.chats) return null
 
@@ -2252,7 +2561,7 @@ function restoreChatFolderOrderAttempt(
   characterId: string,
   previousIds: string[],
   attemptedIds: string[],
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
 ): void {
   withChatOwnerProjectionWrite(() => {
     const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
@@ -2345,7 +2654,7 @@ function rollbackChatStructureUnlessCharacterRowChanged(
 
 function applyOptimisticForkAttempt(
   sourceChatId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatForkBaseline,
   input: {
     chat: Chat
     sourcePatch?: ChatSnapshot
@@ -2353,18 +2662,23 @@ function applyOptimisticForkAttempt(
     select?: boolean
   },
 ): boolean {
-  const sourceLocation = locateChatInState(previous, sourceChatId)
+  const sourceLocation = 'kind' in previous ? null : locateChatInState(previous, sourceChatId)
+  const sourceCharacterId = 'kind' in previous ? previous.characterId : sourceLocation?.character.chaId
+  const previousSelectedChatId =
+    'kind' in previous ? previous.previousSelectedChatId : selectedChatIdForCharacter(sourceLocation?.character)
   const createdChatId = input.chat.id
-  if (!sourceLocation || !createdChatId) return false
+  if (('kind' in previous ? previous.sourceChatId !== sourceChatId : !sourceLocation) || !createdChatId) return false
 
   let applied = false
   withChatOwnerProjectionWrite(() => {
-    const character = locateSnapshotCharacter(sourceLocation.character.chaId, previous.selectedCharID)
+    const character = locateSnapshotCharacter(sourceCharacterId, previous.selectedCharID)
     if (!character) return
     // Detach any compatibility-facade proxies a legacy caller may have placed
     // back into the owner arrays before applying the stable-owner fork.
-    character.chats = cloneJsonValue(character.chats ?? [])
-    character.chatFolders = cloneJsonValue(character.chatFolders ?? [])
+    if (!('kind' in previous)) {
+      character.chats = cloneJsonValue(character.chats ?? [])
+      character.chatFolders = cloneJsonValue(character.chatFolders ?? [])
+    }
     const sourceChat = character.chats.find((candidate) => candidate.id === sourceChatId)
     if (!sourceChat) return
 
@@ -2385,7 +2699,6 @@ function applyOptimisticForkAttempt(
       character.chats.unshift(cloneJsonValue(input.chat))
     }
 
-    const previousSelectedChatId = selectedChatIdForCharacter(sourceLocation.character)
     if (input.select !== false && selectedBefore === previousSelectedChatId) {
       selectChatById(character, createdChatId)
     } else {
@@ -2402,7 +2715,7 @@ function applyOptimisticChatOrderAttempt(
   chatIds: readonly string[],
   folderByChatId: Readonly<Record<string, string | null>>,
   selectedChatId: string | undefined,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
 ): boolean {
   let applied = false
   withChatOwnerProjectionWrite(() => {
@@ -2419,7 +2732,9 @@ function applyOptimisticChatOrderAttempt(
     if (chatsById.size !== character.chats.length || chatIds.some((chatId) => !chatsById.has(chatId))) return
 
     const selectedBefore = selectedChatIdForCharacter(character)
-    character.chats = chatIds.map((chatId) => cloneJsonValue(chatsById.get(chatId)) as Chat)
+    character.chats = chatIds.map((chatId) =>
+      'kind' in previous ? chatsById.get(chatId)! : cloneJsonValue(chatsById.get(chatId))!,
+    )
     for (const chat of character.chats) {
       if (chat.id && Object.prototype.hasOwnProperty.call(folderByChatId, chat.id)) {
         chat.folderId = folderByChatId[chat.id]
@@ -2442,7 +2757,7 @@ function applyOptimisticChatFolderOrderAttempt(
   characterId: string,
   folderIds: readonly string[],
   selectedChatId: string | undefined,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
 ): boolean {
   let applied = false
   withChatOwnerProjectionWrite(() => {
@@ -2460,7 +2775,9 @@ function applyOptimisticChatFolderOrderAttempt(
     if (foldersById.size !== folders.length || folderIds.some((folderId) => !foldersById.has(folderId))) return
 
     const selectedBefore = selectedChatIdForCharacter(character)
-    character.chatFolders = folderIds.map((folderId) => cloneJsonValue(foldersById.get(folderId)) as ChatFolder)
+    character.chatFolders = folderIds.map((folderId) =>
+      'kind' in previous ? foldersById.get(folderId)! : cloneJsonValue(foldersById.get(folderId))!,
+    )
     preserveOrRestoreChatSelection(character, selectedChatId ?? selectedBefore, selectedBefore)
     applied = true
   })
@@ -2468,13 +2785,14 @@ function applyOptimisticChatFolderOrderAttempt(
   return applied
 }
 
-function applyOptimisticDeletedChatFolderAttempt(folderId: string, previous: ChatStateSnapshot): boolean {
-  const location = locateChatFolderInState(previous, folderId)
-  if (!location) return false
+function applyOptimisticDeletedChatFolderAttempt(folderId: string, previous: ChatFolderDeleteBaseline): boolean {
+  const location = 'kind' in previous ? null : locateChatFolderInState(previous, folderId)
+  if ('kind' in previous ? previous.folderId !== folderId : !location) return false
+  const characterId = 'kind' in previous ? previous.characterId : location?.character.chaId
 
   let applied = false
   withChatOwnerProjectionWrite(() => {
-    const character = locateSnapshotCharacter(location.character.chaId, previous.selectedCharID)
+    const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
     const folderIndex = character?.chatFolders?.findIndex((folder) => folder.id === folderId) ?? -1
     if (!character || folderIndex < 0) return
     character.chatFolders.splice(folderIndex, 1)
@@ -2523,14 +2841,14 @@ function hasOneLiveChatFolder(characterId: string, folderId: string): boolean {
   return character?.chatFolders?.filter((folder) => folder.id === folderId).length === 1
 }
 
-export function dispatchCreateChat(characterId: string, chat: Chat, previous: ChatStateSnapshot, select = true): void {
+export function dispatchCreateChat(characterId: string, chat: Chat, previous: ChatCreateBaseline, select = true): void {
   void dispatchCreateChatWithOutcome(characterId, chat, previous, select)
 }
 
 export function dispatchCreateChatWithOutcome(
   characterId: string,
   chat: Chat,
-  previous: ChatStateSnapshot,
+  previous: ChatCreateBaseline,
   select = true,
 ): Promise<ChatMutationOutcome> {
   // Explicit create seam: the existing compact create certificate still uses
@@ -2578,14 +2896,19 @@ export function dispatchCreateChatWithOutcome(
 export async function dispatchResetChatsWithOutcome(
   characterId: string,
   chat: Chat,
-  previous: ChatStateSnapshot,
+  previous: ChatResetBaseline,
 ): Promise<ChatMutationOutcome> {
   flushRegisteredPendingOwnerMutation('chat-metadata', {})
   await flushPendingCharacterChatNoteOwnerMutations(characterId)
   const attemptedChat = cloneJsonValue(chat)
   const body = freezeDurableChatRequestBody({ chat: toChatSnapshot(attemptedChat) })
   const intent = durableChatMutationIntent('PUT', `/characters/${encodeURIComponent(characterId)}/chats`, body)
-  const rollbackAttempt = () => restoreResetChatsAttempt(characterId, attemptedChat, previous)
+  const rollbackAttempt = () =>
+    rollbackChatStructureUnlessCharacterRowChanged(
+      characterId,
+      'kind' in previous ? previous.projectionEpoch : undefined,
+      () => restoreResetChatsAttempt(characterId, attemptedChat, previous),
+    )
   const outcome = dispatchCharacterOwnedDurableMutationWithOutcome(characterId, intent, (transport) =>
     runServerCommand({
       command: (baseRevision) =>
@@ -2695,7 +3018,7 @@ function importedChatDurableSteps(input: {
 export async function dispatchCreateChatForImport(
   characterId: string,
   chat: Chat,
-  previous: ChatStateSnapshot,
+  previous: ChatStateSnapshot | ChatImportSnapshot,
   select = true,
 ): Promise<ChatImportDispatchResult> {
   for (const message of chat.message ?? []) ensureMessageId(message)
@@ -2723,7 +3046,7 @@ export async function dispatchCreateImportedChats(
   characterId: string | undefined,
   folders: ChatFolder[],
   chats: Chat[],
-  previous: ChatStateSnapshot,
+  previous: ChatStateSnapshot | ChatImportSnapshot,
 ): Promise<ChatImportDispatchResult> {
   if (!characterId) return { status: 'error', error: 'server_command_unavailable' }
 
@@ -4363,21 +4686,24 @@ function chatScriptstateSnapshotFromScoped(previous: ChatScopedSnapshot, chatId:
   }
 }
 
-export function dispatchDeleteChat(chatId: string, previous: ChatStateSnapshot): void {
+export function dispatchDeleteChat(chatId: string, previous: ChatDeleteBaseline): void {
   void dispatchDeleteChatWithOutcome(chatId, previous)
 }
 
 export async function dispatchDeleteChatWithOutcome(
   chatId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatDeleteBaseline,
 ): Promise<ChatMutationOutcome | undefined> {
   if (!canUseServerCommands()) return
+  const rollback = chatDeleteRollbackFromState(chatId, previous)
+  const optimisticRowEpoch =
+    'kind' in previous
+      ? previous.projectionEpoch
+      : rollback?.characterId
+        ? captureCharacterRowProjectionEpoch(rollback.characterId)
+        : undefined
   flushRegisteredPendingOwnerMutation('chat-metadata', {})
   await flushPendingChatNoteOwnerMutation(chatId)
-  const rollback = chatDeleteRollbackFromState(chatId, previous)
-  const optimisticRowEpoch = rollback?.characterId
-    ? captureCharacterRowProjectionEpoch(rollback.characterId)
-    : undefined
   const intent: DurableMutationIntent = {
     version: 1,
     requests: [
@@ -4415,7 +4741,7 @@ export async function dispatchDeleteChatWithOutcome(
 
 export function dispatchForkChat(
   sourceChatId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatForkBaseline,
   input: {
     chat: Chat
     sourcePatch?: ChatSnapshot
@@ -4428,7 +4754,7 @@ export function dispatchForkChat(
 
 export function dispatchForkChatWithOutcome(
   sourceChatId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatForkBaseline,
   input: {
     chat: Chat
     sourcePatch?: ChatSnapshot
@@ -4464,7 +4790,9 @@ export function dispatchForkChatWithOutcome(
   if (acknowledgeOptimistic && attemptedChat.id) {
     acknowledgeOptimistic = markOptimisticCreatedChatTranscript(attemptedChat.id)
   }
-  const characterId = rollback?.createdChat?.characterId ?? locateChatInState(previous, sourceChatId)?.character.chaId
+  const characterId =
+    rollback?.createdChat?.characterId ??
+    ('kind' in previous ? previous.characterId : locateChatInState(previous, sourceChatId)?.character.chaId)
   const body = freezeDurableChatRequestBody({
     chat: toChatSnapshot(attemptedChat),
     ...(attemptedSourcePatch ? { sourcePatch: attemptedSourcePatch } : {}),
@@ -4499,13 +4827,13 @@ export function dispatchForkChatWithOutcome(
   return normalizedChatMutationOutcome(outcome, rollbackAttempt)
 }
 
-export function dispatchReorderChats(characterId: string, previous: ChatStateSnapshot, selectedChatId?: string): void {
+export function dispatchReorderChats(characterId: string, previous: ChatOrderBaseline, selectedChatId?: string): void {
   void dispatchReorderChatsWithOutcome(characterId, previous, selectedChatId)
 }
 
 export function dispatchReorderChatsWithOutcome(
   characterId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): Promise<ChatMutationOutcome> | undefined {
   const character = getCharacterResourceOwner(characterId)
@@ -4528,7 +4856,7 @@ export function dispatchReorderChatsByIds(
   characterId: string,
   chatIds: string[],
   folderByChatId: Record<string, string | null>,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): void {
   void dispatchReorderChatsByIdsWithOutcome(characterId, chatIds, folderByChatId, previous, selectedChatId)
@@ -4538,7 +4866,7 @@ export function dispatchReorderChatsByIdsWithOutcome(
   characterId: string,
   chatIds: string[],
   folderByChatId: Record<string, string | null>,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): Promise<ChatMutationOutcome> {
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
@@ -4579,7 +4907,7 @@ export function dispatchReorderChatFoldersAndChatsByIds(
   folderIds: string[],
   chatIds: string[],
   folderByChatId: Record<string, string | null>,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): void {
   void dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
@@ -4597,15 +4925,14 @@ export function dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
   folderIds: string[],
   chatIds: string[],
   folderByChatId: Record<string, string | null>,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): Promise<ChatMutationOutcome> {
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   const attemptedFolderIds = cloneJsonValue(folderIds)
   const attemptedChatIds = cloneJsonValue(chatIds)
   const attemptedFolderByChatId = cloneJsonValue(folderByChatId)
-  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
-  const previousFolderIds = previousCharacter ? chatFolderIds(previousCharacter.chatFolders) : null
+  const previousFolderIds = chatFolderOrderFromBaseline(characterId, previous)
   const chatRollback = chatReorderRollbackFromState(characterId, attemptedChatIds, attemptedFolderByChatId, previous)
   const changedFolderByChatId = changedChatFolderAssignmentsFromState(characterId, attemptedFolderByChatId, previous)
   applyOptimisticChatFolderOrderAttempt(characterId, attemptedFolderIds, selectedChatId, previous)
@@ -4661,14 +4988,18 @@ export function dispatchReorderChatFoldersAndChatsByIdsWithOutcome(
   )
 }
 
-export function dispatchCreateChatFolder(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
+export function dispatchCreateChatFolder(
+  characterId: string,
+  folder: ChatFolder,
+  previous: ChatFolderCreateBaseline,
+): void {
   void dispatchCreateChatFolderWithOutcome(characterId, folder, previous)
 }
 
 export function dispatchCreateChatFolderWithOutcome(
   characterId: string,
   folder: ChatFolder,
-  previous: ChatStateSnapshot,
+  previous: ChatFolderCreateBaseline,
 ): Promise<ChatMutationOutcome> {
   // Explicit create seam retained for the compact folder-create certificate.
   const optimisticEpoch = captureDestructiveRefreshEpoch()
@@ -4930,13 +5261,13 @@ function clearChatFolderMetadataAttempt(attempt: PendingChatFolderMetadataAttemp
   }
 }
 
-export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSnapshot): void {
+export function dispatchDeleteChatFolder(folderId: string, previous: ChatFolderDeleteBaseline): void {
   void dispatchDeleteChatFolderWithOutcome(folderId, previous)
 }
 
 export function dispatchDeleteChatFolderWithOutcome(
   folderId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatFolderDeleteBaseline,
 ): Promise<ChatMutationOutcome> | undefined {
   if (!canUseServerCommands()) return
   flushRegisteredPendingOwnerMutation('chat-metadata', {})
@@ -4982,7 +5313,7 @@ export function dispatchDeleteChatFolderWithOutcome(
 
 export function dispatchReorderChatFolders(
   characterId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): void {
   void dispatchReorderChatFoldersWithOutcome(characterId, previous, selectedChatId)
@@ -4990,7 +5321,7 @@ export function dispatchReorderChatFolders(
 
 export function dispatchReorderChatFoldersWithOutcome(
   characterId: string,
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): Promise<ChatMutationOutcome> | undefined {
   const character = getCharacterResourceOwner(characterId)
@@ -5006,7 +5337,7 @@ export function dispatchReorderChatFoldersWithOutcome(
 export function dispatchReorderChatFoldersByIds(
   characterId: string,
   folderIds: string[],
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): void {
   void dispatchReorderChatFoldersByIdsWithOutcome(characterId, folderIds, previous, selectedChatId)
@@ -5015,12 +5346,11 @@ export function dispatchReorderChatFoldersByIds(
 export function dispatchReorderChatFoldersByIdsWithOutcome(
   characterId: string,
   folderIds: string[],
-  previous: ChatStateSnapshot,
+  previous: ChatOrderBaseline,
   selectedChatId?: string,
 ): Promise<ChatMutationOutcome> {
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
-  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
-  const previousIds = previousCharacter ? chatFolderIds(previousCharacter.chatFolders) : null
+  const previousIds = chatFolderOrderFromBaseline(characterId, previous)
   const attemptedIds = cloneJsonValue(folderIds)
   applyOptimisticChatFolderOrderAttempt(characterId, attemptedIds, selectedChatId, previous)
   const body = freezeDurableChatRequestBody({

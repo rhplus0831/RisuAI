@@ -18,8 +18,9 @@
   import {
     applyOptimisticCreatedChat,
     applyOptimisticDeletedChat,
+    captureChatCreateSnapshot,
+    captureChatDeleteSnapshot,
     captureChatMetadataPatch,
-    currentChatStateSnapshot,
     dispatchCreateChatWithOutcome,
     dispatchDeleteChatWithOutcome,
     dispatchChatMetadataPatchWithOutcome,
@@ -392,16 +393,12 @@
     const liveChatIndex = resolvedOriginCharacter?.chats?.findIndex((candidate) => candidate.id === targetChatId) ?? -1
     if (!resolvedOriginCharacter || liveChatIndex < 0 || resolvedOriginCharacter.chats.length <= 1) return
 
-    const previous = currentChatStateSnapshot()
-    const previousOwnerIndex = originCharacterId
-      ? previous.characters.findIndex((candidate) => candidate.chaId === originCharacterId)
-      : originSelectedCharIndex
-    if (previousOwnerIndex < 0) return
-    previous.selectedCharID = previousOwnerIndex
     const originStillSelected = isOriginCharacterSelected(resolvedOriginCharacter, originCharacterId)
     const originRoute = currentRouteIdentity()
 
     if (canUseServerCommands()) {
+      const previous = captureChatDeleteSnapshot(targetChatId, originCharacterId)
+      if (!previous) return
       const result = applyOptimisticDeletedChat(originCharacterId, targetChatId, previous)
       if (!result.applied) return
       const action = `${language.remove}: ${targetChatName}`
@@ -446,7 +443,6 @@
     const character = resolveActiveOwnerCharacter()
     if (!character || isOrderMutationPending()) return
 
-    const previous = currentChatStateSnapshot()
     const chat = {
       message: [],
       note: '',
@@ -462,6 +458,8 @@
       return
     }
 
+    const previous = captureChatCreateSnapshot(character.chaId, chat)
+    if (!previous) return
     const applied = applyOptimisticCreatedChat(character.chaId, chat, previous)
     if (!applied || !character.chaId || !chat.id) return
     const originRoute = currentRouteIdentity()

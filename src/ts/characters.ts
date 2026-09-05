@@ -24,7 +24,7 @@ import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
 import {
   CHAT_IMPORT_TOO_LARGE_ERROR,
-  currentChatStateSnapshot,
+  captureChatImportSnapshot,
   dispatchCreateChatForImport,
   dispatchCreateImportedChats,
 } from './chatCommands'
@@ -737,10 +737,11 @@ export async function importChat() {
       return
     }
     const selectedID = target.selectedIndex
-    const previous = currentChatStateSnapshot()
     const characterId = target.characterId
     const selectedCharacter = characterOwnerById(characterId)
     if (!selectedCharacter || characterOwnerAt(selectedID) !== selectedCharacter) return
+    const previous = captureChatImportSnapshot(characterId)
+    if (!previous) return
 
     if (dat.name.endsWith('jsonl')) {
       const lines = Buffer.from(dat.data)

@@ -108,8 +108,8 @@
   } from './messageEditPopup'
   import { renderCustomHtmlTemplate } from './ChatCustomHtmlTemplate'
   import {
+    captureChatForkSnapshot,
     currentChatScopedSnapshot,
-    currentChatStateSnapshot,
     cloneJsonValue,
     dispatchCompatibleChatUpdateScoped,
     dispatchDeleteMessageScoped,
@@ -753,7 +753,6 @@
       return
     }
 
-    const previous = currentChatStateSnapshot()
     let folder
     let sourcePatch: { folderId?: string | null } = {}
     if (sidebarSettings.createFolderOnBranch && !currentChat.folderId) {
@@ -764,11 +763,6 @@
         folded: false,
       }
       sourcePatch = { folderId }
-      localChatMutation(() => {
-        currentCharacter.chatFolders ??= []
-        currentCharacter.chatFolders.unshift(folder)
-        currentChat.folderId = folderId
-      })
     }
 
     const newChat = cloneJsonValue(currentChat)
@@ -790,21 +784,33 @@
       chatId: v4(),
     })
 
+    const existingFolder =
+      folder ??
+      currentCharacter.chatFolders?.find(
+        (item) => item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
+      )
+    const forkInput = {
+      chat: newChat,
+      sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
+      folder: existingFolder,
+    }
+    const previous = captureChatForkSnapshot(sourceChatId, forkInput)
+    if (!previous) {
+      alertError(language.chatDataLoadFailed)
+      return
+    }
+
     localChatMutation(() => {
+      if (folder) {
+        currentCharacter.chatFolders ??= []
+        currentCharacter.chatFolders.unshift(folder)
+        currentChat.folderId = sourcePatch.folderId
+      }
       currentCharacter.chats.unshift(newChat)
       changeChatTo(0)
     })
     if (currentChat.id) {
-      const existingFolder =
-        folder ??
-        currentCharacter.chatFolders?.find(
-          (item) => item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
-        )
-      const outcome = dispatchForkChatWithOutcome(currentChat.id, previous, {
-        chat: newChat,
-        sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
-        folder: existingFolder,
-      })
+      const outcome = dispatchForkChatWithOutcome(currentChat.id, previous, forkInput)
       if (currentCharacter.chaId && newChat.id) {
         observeChatBranchMutation(outcome, currentCharacter.chaId, currentChat.id, newChat.id)
       }

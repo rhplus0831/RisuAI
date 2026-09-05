@@ -23,6 +23,7 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
+    captureChatForkSnapshot: vi.fn(),
     changeChatTo: vi.fn(),
     dispatchForkChatWithOutcome: vi.fn(),
     foldChatToMessage: vi.fn(),
@@ -278,6 +279,7 @@ vi.mock('../../ts/translator/translator', () => ({
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
+  captureChatForkSnapshot: customHtmlMocks.captureChatForkSnapshot,
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
   currentChatScopedSnapshot: vi.fn(() => {
     const character = customHtmlMocks.getDatabase().characters[0]
@@ -289,7 +291,9 @@ vi.mock('src/ts/chatCommands', () => ({
       chat: JSON.parse(JSON.stringify(chat)),
     }
   }),
-  currentChatStateSnapshot: vi.fn(() => ({})),
+  currentChatStateSnapshot: vi.fn(() => {
+    throw new Error('Branching must not capture every character transcript')
+  }),
   dispatchCompatibleChatUpdateScoped: vi.fn(),
   dispatchDeleteMessageScoped: vi.fn(),
   dispatchForkChatWithOutcome: customHtmlMocks.dispatchForkChatWithOutcome,
@@ -434,6 +438,8 @@ import {
   settingsResourceState,
 } from '../../ts/server/resourceState.svelte'
 import {
+  captureChatForkSnapshot,
+  currentChatStateSnapshot,
   dispatchCompatibleChatUpdateScoped,
   dispatchDeleteMessageScoped,
   dispatchForkChatWithOutcome,
@@ -667,6 +673,7 @@ beforeEach(() => {
   customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.getFileSrc.mockResolvedValue('')
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
+  customHtmlMocks.captureChatForkSnapshot.mockReturnValue({ kind: 'chat-fork' })
   customHtmlMocks.getChatMessageOwnerState.mockImplementation((chatId: string) => {
     const matches = testDatabaseState.db.characters.flatMap((character) =>
       character.chats.filter((chat) => chat.id === chatId),
@@ -1403,6 +1410,73 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.changeChatTo).toHaveBeenCalledWith(0)
     expect(character.chats[character.chatPage].id).toBe(branchedChat?.id)
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
+  })
+
+  it.each([false, true])(
+    'captures branch intent before changing source folder or membership (existing folder: %s)',
+    async (hasExistingFolder) => {
+      seedDatabase(1, null as unknown as string)
+      testDatabaseState.db.createFolderOnBranch = true
+      const character = testDatabaseState.db.characters[0]
+      const sourceChat = character.chats[0]
+      const sourceMessage = sourceChat.message[0]
+      const originalChatIds = character.chats.map((chat) => chat.id)
+      character.chatFolders = hasExistingFolder
+        ? [{ id: 'branches-folder', name: `Branches of ${sourceChat.name}`, folded: true }]
+        : []
+      if (hasExistingFolder) sourceChat.folderId = 'branches-folder'
+      const snapshot = { kind: 'chat-fork' }
+      customHtmlMocks.captureChatForkSnapshot.mockImplementationOnce((sourceChatId, input) => {
+        expect(sourceChatId).toBe(sourceChat.id)
+        expect(character.chats.map((chat) => chat.id)).toEqual(originalChatIds)
+        expect(character.chatFolders).toHaveLength(hasExistingFolder ? 1 : 0)
+        expect(sourceChat.folderId).toBe(hasExistingFolder ? 'branches-folder' : undefined)
+        expect(sourceChat.message[0]).toBe(sourceMessage)
+        expect(input.chat.folderId).toBe(input.folder.id)
+        expect(input.sourcePatch).toEqual({ folderId: input.folder.id })
+        expect(input.chat.message.at(-1)?.data).toContain('{{specialcomment::branchedfrom::')
+        return snapshot
+      })
+      mountPopupList()
+      mountCustomHtmlRows(1)
+      await settle()
+
+      await openMessageActions()
+      buttonByText('branch')?.click()
+      await settle()
+
+      expect(captureChatForkSnapshot).toHaveBeenCalledOnce()
+      const forkInput = vi.mocked(captureChatForkSnapshot).mock.calls[0]?.[1]
+      expect(dispatchForkChatWithOutcome).toHaveBeenCalledWith(sourceChat.id, snapshot, forkInput)
+      expect(character.chatFolders).toHaveLength(1)
+      expect(sourceChat.folderId).toBe(forkInput?.folder?.id)
+      expect(character.chats[0].folderId).toBe(forkInput?.folder?.id)
+      expect(sourceChat.message[0]).toBe(sourceMessage)
+      expect(currentChatStateSnapshot).not.toHaveBeenCalled()
+    },
+  )
+
+  it('leaves the source unchanged when branch intent cannot resolve its owner', async () => {
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.createFolderOnBranch = true
+    const character = testDatabaseState.db.characters[0]
+    const sourceChat = character.chats[0]
+    const originalChatIds = character.chats.map((chat) => chat.id)
+    customHtmlMocks.captureChatForkSnapshot.mockReturnValueOnce(null)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    await settle()
+
+    expect(character.chats.map((chat) => chat.id)).toEqual(originalChatIds)
+    expect(sourceChat.folderId).toBeUndefined()
+    expect(character.chatFolders).toBeUndefined()
+    expect(dispatchForkChatWithOutcome).not.toHaveBeenCalled()
+    expect(customHtmlMocks.navigate).not.toHaveBeenCalled()
+    expect(customHtmlMocks.alertError).toHaveBeenCalled()
   })
 
   it('recovers the source route when a queued branch finally fails and rolls back', async () => {

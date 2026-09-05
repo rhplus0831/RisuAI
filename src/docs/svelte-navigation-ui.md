@@ -97,6 +97,16 @@ path uses the same contract. Direct outcome dispatchers reuse the existing
 pending-attempt, writer-loss, and projection-epoch rollback fences, preserving
 newer edits and authoritative refreshes without copying resident histories.
 
+Create/delete/folder/order/fork/reset/import actions use distinct typed captures
+from the same command owner. Reorders keep IDs and assignments and preserve
+surviving row/message identities. Delete/reset retain only removed rows, so
+pending changes to detached rows survive rejection; capture-time projection
+epochs fence rollback across awaited note flushing and authoritative refreshes.
+Deletion binds its selected-chat effect before flushing, preserving navigation
+that occurs during the wait.
+Forks own the new transcript and supplied source metadata. Import baselines hold
+identities/selection while failed suffix rollback preserves accepted prefixes.
+
 Its derived grouping preserves source order and each chat's original array
 position. Selection normally navigates to the stable character/chat route. A
 provisional create/delete flow repairs the route only if the captured route and

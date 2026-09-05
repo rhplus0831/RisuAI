@@ -95,6 +95,14 @@ therefore reconciles through the authoritative
 outcome/rollback path and `src/ts/server/commands.test.ts` guards the wire
 contract.
 
+Chat organization capture is operation-scoped: identities/order/assignments for
+reordering, attempted rows for creation/fork, and removed target rows for
+delete/reset. Surviving row objects and histories are not copied. Removed rows
+are retained by reference until owned rollback, preserving detached pending
+edits; reset/delete capture the character projection epoch before any awaited
+owner flush. Import capture never reads existing transcripts and retains the
+accepted-prefix/failed-suffix settlement boundary.
+
 Mutation-facing UI must distinguish `accepted`, `queued`, and `failed` helper
 outcomes. `queued` means recoverable local intent was retained, not that the
 server accepted it; callers should keep newer drafts, surface the outcome, and
