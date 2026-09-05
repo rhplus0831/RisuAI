@@ -5,7 +5,12 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../src/app.js'
-import { ASSET_GC_RECLAIM_BATCH, ASSET_GC_RESULT_LIMIT, runAssetGc } from '../src/assetGc.js'
+import {
+  ASSET_GC_FILE_READ_CONCURRENCY,
+  ASSET_GC_RECLAIM_BATCH,
+  ASSET_GC_RESULT_LIMIT,
+  runAssetGc,
+} from '../src/assetGc.js'
 import { rotateDatabaseLineage } from '../src/databaseLineage.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
 import { closeMaintenance, getMaintenanceCoordinator, MaintenanceBusyError } from '../src/maintenanceCoordinator.js'
@@ -114,6 +119,46 @@ afterEach(async () => {
 })
 
 describe('asset GC scheduling and reclamation fences', () => {
+  it('bounds concurrent file-age reads and drains all started reads before releasing a cancelled sweep', async () => {
+    const ids = Array.from({ length: 9 }, (_, index) => index.toString(16).padStart(64, '0'))
+    seedOrphans(ids)
+    const started = deferred()
+    const release = deferred()
+    const abort = new AbortController()
+    const originalStat = fs.promises.stat
+    let active = 0
+    let peak = 0
+    let calls = 0
+    vi.spyOn(fs.promises, 'stat').mockImplementation(async (...args) => {
+      calls++
+      active++
+      peak = Math.max(peak, active)
+      if (active === ASSET_GC_FILE_READ_CONCURRENCY) started.resolve()
+      try {
+        await release.promise
+        return await originalStat(...args)
+      } finally {
+        active--
+      }
+    })
+    const sweep = runAssetGc(dataDir, { db, now: () => NOW, signal: abort.signal })
+    try {
+      await bounded(started.promise)
+      abort.abort()
+      expect(active).toBe(ASSET_GC_FILE_READ_CONCURRENCY)
+      expect(() => getMaintenanceCoordinator(dataDir).beginExclusive('backup')).toThrow(MaintenanceBusyError)
+    } finally {
+      release.resolve()
+    }
+    expect((await bounded(sweep)).status).toBe('cancelled')
+    expect(active).toBe(0)
+    expect(calls).toBe(ASSET_GC_FILE_READ_CONCURRENCY)
+    expect(peak).toBe(ASSET_GC_FILE_READ_CONCURRENCY)
+    expectRetained(ids)
+    expectScratchRemoved()
+    getMaintenanceCoordinator(dataDir).beginExclusive('backup').release()
+  })
+
   it.each(['discovered', 'before-reclaim'] as const)(
     'retains candidates when a reference is inserted at %s',
     async (interleaveAt) => {

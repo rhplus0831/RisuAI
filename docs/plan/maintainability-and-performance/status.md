@@ -671,3 +671,16 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 - The cost harness's supported sparse-input rejections are fixed in
   `ee9d61213`; decoder 26, strict compiler 1, templates 72 and all 38 load harness
   cases now pass without changing the imported hydration fixture.
+
+## Phase 4 GC File-Age Batch Bound
+
+The first asynchronous GC makes one filesystem round trip per asset during its
+global upload-grace pass. Before tuning this scan, set a bound of four concurrent
+file-age reads, retaining only four names/results in addition to the 64-entry
+directory buffer. Every started read settles before the authoritative fence is
+checked again or the lease is released. Candidate deletion remains synchronous
+in 16-entry transactions. This reduces scheduling overhead without weakening
+new-upload detection, grace semantics or stale-scan cancellation.
+The batched implementation passes the 19 existing GC cases and 17 scheduling
+cases, including a held four-read batch that drains completely on cancellation
+before backup admission resumes. Final timing acceptance remains pending.

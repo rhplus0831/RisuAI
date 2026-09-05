@@ -113,6 +113,8 @@ turn, with no asynchronous unlink tail. Failed commits retain bytes, and failed
 unlinks remain retryable strays. Deduplicated uploads also advance the activity
 fence even when only file mtime changes. Results retain at most 1,024 deleted
 IDs/names plus full counts and a completed/skipped/stale/cancelled status.
+The upload-grace pass performs at most four asynchronous file-age reads at
+once. All started reads settle before cancellation can release the lease.
 
 ### Inlay Catalog
 

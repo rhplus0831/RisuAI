@@ -25,6 +25,7 @@ export const ASSET_GC_INTERVAL_MS = 15 * 60_000
 export const ASSET_GC_GRACE_MS = 60 * 60_000
 export const ASSET_GC_RECLAIM_BATCH = 16
 export const ASSET_GC_RESULT_LIMIT = 1024
+export const ASSET_GC_FILE_READ_CONCURRENCY = 4
 const ASSET_GC_SCAN_PAGE = 64
 
 export interface AssetGcOptions {
@@ -434,17 +435,28 @@ export async function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): Pr
     // Preserve the global upload/import grace policy without retaining a
     // directory-sized array. Recent activity defers all orphan/stray removal.
     let uploadActive = false
+    let ageFiles: string[] = []
+    const checkFileAges = async (): Promise<void> => {
+      if (ageFiles.length === 0) return
+      const files = ageFiles
+      ageFiles = []
+      // stat errors retain their previous unreadable/missing policy. All four
+      // reads settle before cancellation or a changed authority fence is used.
+      const ages = await Promise.all(files.map((file) => asyncFileAgeMs(file, now)))
+      assertCurrent()
+      uploadActive = ages.some((age) => age !== null && age < graceMs)
+    }
     for await (const name of assetFiles(directory)) {
       assertCurrent()
       const id = name.replace(/\.[^.]+$/, '')
       if (!isValidAssetId(id)) continue
-      const age = await asyncFileAgeMs(path.join(directory, name), now)
-      assertCurrent()
-      if (age !== null && age < graceMs) {
-        uploadActive = true
-        break
+      ageFiles.push(path.join(directory, name))
+      if (ageFiles.length >= ASSET_GC_FILE_READ_CONCURRENCY) {
+        await checkFileAges()
+        if (uploadActive) break
       }
     }
+    await checkFileAges()
     await phase('discovered')
     const assetPage = db.prepare(
       'SELECT id, ext, size, content_type AS contentType FROM assets WHERE id > ? ORDER BY id LIMIT 64',
