@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–4 accepted; beginning Phase 5 transcript residency decision.
+- State: Phases 0–4 accepted; Phase 5 viewport residency implementation authorized by remeasurement.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
-- Next task: repeat the transcript matrix after the earlier browser changes,
-  then record the residency decision before implementation.
+- Next task: implement the recorded viewport residency design, then verify the unchanged
+  transcript cost matrix and native browser interactions.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -26,7 +26,7 @@ selected [phase](phases/README.md) for implementation detail.
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Accepted | [Bounded discovery/workers, guarded GC and original latency limits](evidence/maintenance-scheduling.md) |
-| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Executing decision gate | Remeasurement next |
+| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Implementing measured viewport bound | [Decision and repeated baseline](evidence/transcript-residency.md) |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
 
 ## Finding Dispositions
@@ -750,3 +750,14 @@ and exact tests must exercise that entry rather than only a fake executor.
   projection and uncancellable native copies are recorded with their owners.
   Final aggregate remains pending until all implementation is finished.
   Phase 5 may now remeasure transcript residency and record its decision.
+
+## Phase 5 decision before implementation
+
+At `47aa4d7da`, the repeated ten-case transcript matrix passes functional checks
+but the 600-row cases still exceed the original heap and incremental-page
+layout budgets. [The recorded decision](evidence/transcript-residency.md) selects
+viewport residency: 60 working rows, at most 8 distinct user-interaction owners
+and at most 8 singleton navigation/presentation pins (76 total). Measured
+height/spacers remain separate from hydrated data. Full screenshot capture is
+a temporary explicit exception; the existing paging path remains a diagnostic
+rollback. Acceptance is pending implementation and real-browser evidence.
