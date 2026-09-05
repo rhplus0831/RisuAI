@@ -14,7 +14,7 @@ import {
   fetchServerLegacyPreset,
   fetchServerPromptPresetTemplate,
 } from './hydrationReads'
-import { clearResourceCache, sha256JsonValue } from './resourceCache'
+import { clearResourceCache, flushResourceCacheMaintenanceForTests, sha256JsonValue } from './resourceCache'
 
 interface CapturedFetch {
   url: string
@@ -179,6 +179,7 @@ describe('server hydration read clients', () => {
         status: 'ok',
         globalLore,
       })
+      await flushResourceCacheMaintenanceForTests()
       await expect(fetchServerLegacyPreset('legacy-a')).resolves.toMatchObject({
         status: 'ok',
         preset: legacyPreset,
@@ -265,6 +266,7 @@ describe('server hydration read clients', () => {
         promptTemplate: null,
         selectedFallbackPromptTemplate: fallback,
       })
+      await flushResourceCacheMaintenanceForTests()
       await expect(fetchServerPromptPresetTemplate('default-prompt-preset')).resolves.toMatchObject({
         status: 'ok',
         promptTemplate: null,

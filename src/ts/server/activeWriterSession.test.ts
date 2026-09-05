@@ -10,7 +10,10 @@ const takeoverMocks = vi.hoisted(() => ({
   stopReattach: vi.fn(),
   stopPersistenceRefresh: vi.fn(),
   stopHydration: vi.fn(),
+  invalidateResourceCacheWork: vi.fn(),
 }))
+
+vi.mock('./resourceCache', () => ({ invalidateResourceCacheWork: takeoverMocks.invalidateResourceCacheWork }))
 
 vi.mock('../alert', () => ({
   alertError: takeoverMocks.alertError,
@@ -104,6 +107,7 @@ beforeEach(() => {
   takeoverMocks.stopTranslations.mockReset()
   takeoverMocks.stopReattach.mockReset()
   takeoverMocks.stopHydration.mockReset()
+  takeoverMocks.invalidateResourceCacheWork.mockReset()
   document.body.innerHTML = ''
 })
 
@@ -183,6 +187,7 @@ describe('active writer browser session', () => {
       }),
     ).toBe(true)
     expect(activeWriterSession.isWriterAccessLost()).toBe(true)
+    expect(takeoverMocks.invalidateResourceCacheWork).toHaveBeenCalledOnce()
     expect(startupReadiness.canRenderShell()).toBe(true)
     expect(startupReadiness.canMutate()).toBe(false)
     expect(startupReadiness.canGenerate()).toBe(false)
@@ -209,10 +214,12 @@ describe('active writer browser session', () => {
     activeWriterSession.enterWriterTakeoverFlow()
 
     expect(activeWriterSession.beginWriterAccessRecovery()).toBe(true)
+    expect(takeoverMocks.invalidateResourceCacheWork).toHaveBeenCalledTimes(2)
     expect(activeWriterSession.isWriterAccessLost()).toBe(false)
     expect(startupReadiness.canMutate()).toBe(false)
 
     activeWriterSession.completeWriterAccessRecovery(false)
+    expect(takeoverMocks.invalidateResourceCacheWork).toHaveBeenCalledTimes(3)
     expect(activeWriterSession.isWriterAccessLost()).toBe(true)
     expect(startupReadiness.canMutate()).toBe(false)
 

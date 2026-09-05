@@ -13,6 +13,13 @@ const RESOURCE_CACHE_MAX_VALUE_BYTES = 32 * 1024 * 1024
 const RESOURCE_CACHE_HASH_PATTERN = /^[a-f0-9]{64}$/
 const HASH_BATCH_SIZE = 32
 const RESOURCE_CACHE_MANIFEST_VERSION = 1 as const
+// Admission and growth budgets are independent of the retained cache budget.
+const RESOURCE_CACHE_MAX_KEY_LENGTH = 2_048
+const RESOURCE_CACHE_MAX_PENDING_JOBS = 64
+const RESOURCE_CACHE_MAX_PENDING_BYTES = 32 * 1024 * 1024
+const RESOURCE_CACHE_MAX_PENDING_VALUES = 8_192
+const RESOURCE_CACHE_MAX_PENDING_MANIFESTS = 1_024
+const RESOURCE_CACHE_MAINTENANCE_DELAY_MS = 50
 
 interface StoredResourceCacheManifest {
   version: 1
@@ -54,7 +61,23 @@ export interface PreparedResourceCacheRequest {
 }
 
 let resourceCacheDatabasePromise: Promise<IDBDatabase | null> | null = null
+let resourceCacheDatabase: IDBDatabase | null = null
+let resourceCacheGeneration = 0
+let resourceCacheVerificationEpoch = 0
 let resourceCacheWriteChain: Promise<void> = Promise.resolve()
+let resourceCacheClearPromise: Promise<void> | null = null
+let resourceCacheDeletePending = false
+let resourceCacheMaintenanceTimer: ReturnType<typeof setTimeout> | null = null
+let resourceCacheMaintenanceQueued = false
+let resourceCacheNeedsInitialPrune = true
+let pendingJobs = 0
+let pendingBytes = 0
+let pendingValues = 0
+let pendingManifests = 0
+let unprunedBytes = 0
+let unprunedValues = 0
+let unprunedManifests = 0
+const resourceCacheTransactions = new Set<IDBTransaction>()
 const verifiedResourceCacheValues = new Map<string, unknown>()
 
 /**
@@ -65,14 +88,15 @@ const verifiedResourceCacheValues = new Map<string, unknown>()
 export async function readResourceCacheSnapshots(
   keys: readonly string[],
 ): Promise<Map<string, ResourceCacheSnapshot> | null> {
+  const generation = captureResourceCacheGeneration()
+  const verificationEpoch = resourceCacheVerificationEpoch
   let database: IDBDatabase | null
   try {
-    database = await openResourceCacheDatabase()
+    database = await openResourceCacheDatabase(generation)
   } catch {
-    resourceCacheDatabasePromise = null
     return null
   }
-  if (!database) return null
+  if (!database || generation !== resourceCacheGeneration) return null
 
   const uniqueKeys = [...new Set(keys.filter(nonEmptyString))]
   try {
@@ -83,6 +107,7 @@ export async function readResourceCacheSnapshots(
       uniqueKeys.map(async (key) => [key, await requestResult(manifestStore.get(key))] as const),
     )
     await manifestDone
+    if (!isCurrentResourceCacheDatabase(database, generation)) return null
 
     const manifests = new Map<string, string[]>()
     const allHashes = new Set<string>()
@@ -109,6 +134,7 @@ export async function readResourceCacheSnapshots(
         hashesToRead.map(async (hash) => [hash, await requestResult(entryStore.get(hash))] as const),
       )
       await entryDone
+      if (!isCurrentResourceCacheDatabase(database, generation)) return null
 
       for (let offset = 0; offset < storedEntries.length; offset += HASH_BATCH_SIZE) {
         const batch = storedEntries.slice(offset, offset + HASH_BATCH_SIZE)
@@ -122,10 +148,13 @@ export async function readResourceCacheSnapshots(
             }
           }),
         )
+        if (!isCurrentResourceCacheDatabase(database, generation)) return null
         for (const entry of verified) {
           if (!entry) continue
           valuesByHash.set(entry[0], entry[1])
-          verifiedResourceCacheValues.set(entry[0], cloneResourceCacheValue(entry[1]))
+          if (verificationEpoch === resourceCacheVerificationEpoch) {
+            verifiedResourceCacheValues.set(entry[0], cloneResourceCacheValue(entry[1]))
+          }
         }
       }
     }
@@ -141,7 +170,7 @@ export async function readResourceCacheSnapshots(
       }),
     )
   } catch {
-    discardResourceCacheDatabase(database)
+    discardResourceCacheDatabase(database, generation)
     return null
   }
 }
@@ -247,21 +276,132 @@ export async function resolveResourceCacheValue<T = unknown>(
   }
 }
 
+/** Capture before an authenticated read starts, so a later response keeps its original scope. */
+export function captureResourceCacheGeneration(): number {
+  return resourceCacheGeneration
+}
+
 /**
  * Persist only validated, fully reconstructed authoritative responses. Cache
  * failures are deliberately swallowed because IndexedDB is never the source of
- * truth and must not block a resource read.
+ * truth. Resource delivery must not await this background lane.
  */
-export function persistResourceCache(updates: readonly ResourceCacheUpdate[]): Promise<void> {
-  const validUpdates = updates.filter(isValidResourceCacheUpdate)
-  if (validUpdates.length === 0) return Promise.resolve()
+export function persistResourceCache(
+  updates: readonly ResourceCacheUpdate[],
+  generation = captureResourceCacheGeneration(),
+): Promise<void> {
+  if (
+    generation !== resourceCacheGeneration ||
+    resourceCacheDeletePending ||
+    pendingJobs >= RESOURCE_CACHE_MAX_PENDING_JOBS ||
+    pendingBytes >= RESOURCE_CACHE_MAX_PENDING_BYTES ||
+    pendingValues >= RESOURCE_CACHE_MAX_PENDING_VALUES ||
+    pendingManifests >= RESOURCE_CACHE_MAX_PENDING_MANIFESTS
+  ) {
+    return Promise.resolve()
+  }
+  // Own response bytes before the caller can mutate its returned projection.
+  // Under pressure this optional cache drops updates instead of retaining callers.
+  let prepared: PreparedResourceCacheUpdate[]
+  try {
+    prepared = prepareResourceCacheUpdates(updates, {
+      bytes: RESOURCE_CACHE_MAX_PENDING_BYTES - pendingBytes,
+      values: RESOURCE_CACHE_MAX_PENDING_VALUES - pendingValues,
+      manifests: RESOURCE_CACHE_MAX_PENDING_MANIFESTS - pendingManifests,
+    })
+  } catch {
+    return Promise.resolve()
+  }
+  if (prepared.length === 0 || generation !== resourceCacheGeneration) return Promise.resolve()
+  const bytes = prepared.reduce((total, update) => total + update.sizes.reduce((sum, size) => sum + size, 0), 0)
+  const values = prepared.reduce((total, update) => total + update.hashes.length, 0)
+  pendingJobs += 1
+  pendingBytes += bytes
+  pendingValues += values
+  pendingManifests += prepared.length
+  const operation = enqueueResourceCacheWork(async () => {
+    try {
+      await persistResourceCacheInternal(prepared, generation, { bytes, values, manifests: prepared.length })
+    } finally {
+      pendingJobs -= 1
+      pendingBytes -= bytes
+      pendingValues -= values
+      pendingManifests -= prepared.length
+    }
+  })
+  return operation
+}
 
-  const operation = resourceCacheWriteChain
-    .catch(() => undefined)
-    .then(() => persistResourceCacheInternal(validUpdates))
-    .catch(() => undefined)
+/** Fence asynchronous work when authentication, writer, or database ownership changes. */
+export function invalidateResourceCacheWork(): void {
+  resourceCacheGeneration += 1
+  if (resourceCacheMaintenanceTimer !== null) clearTimeout(resourceCacheMaintenanceTimer)
+  resourceCacheMaintenanceTimer = null
+  resourceCacheMaintenanceQueued = false
+  resourceCacheNeedsInitialPrune = true
+  unprunedBytes = 0
+  unprunedValues = 0
+  unprunedManifests = 0
+  verifiedResourceCacheValues.clear()
+  for (const transaction of resourceCacheTransactions) {
+    try {
+      transaction.abort()
+    } catch {}
+  }
+  resourceCacheDatabase?.close()
+  resourceCacheDatabase = null
+  resourceCacheDatabasePromise = null
+  // Do not reset the lane or pending counters: suspended old closures still own memory.
+}
+
+/** Wait for eventual maintenance without making resource delivery depend on it. */
+export async function flushResourceCacheMaintenanceForTests(): Promise<void> {
+  for (;;) {
+    if (resourceCacheMaintenanceTimer !== null) {
+      clearTimeout(resourceCacheMaintenanceTimer)
+      resourceCacheMaintenanceTimer = null
+      enqueueResourceCacheMaintenance(resourceCacheGeneration)
+    }
+    const chain = resourceCacheWriteChain
+    await chain
+    if (chain === resourceCacheWriteChain && resourceCacheMaintenanceTimer === null) return
+  }
+}
+
+function enqueueResourceCacheWork(work: () => Promise<void>): Promise<void> {
+  const operation = resourceCacheWriteChain.then(work).catch(() => undefined)
   resourceCacheWriteChain = operation
   return operation
+}
+
+function scheduleResourceCacheMaintenance(generation: number): void {
+  if (
+    generation !== resourceCacheGeneration ||
+    resourceCacheMaintenanceTimer !== null ||
+    resourceCacheMaintenanceQueued
+  )
+    return
+  resourceCacheMaintenanceTimer = setTimeout(() => {
+    resourceCacheMaintenanceTimer = null
+    enqueueResourceCacheMaintenance(generation)
+  }, RESOURCE_CACHE_MAINTENANCE_DELAY_MS)
+}
+
+function enqueueResourceCacheMaintenance(generation: number): void {
+  if (generation !== resourceCacheGeneration || resourceCacheMaintenanceQueued) return
+  resourceCacheMaintenanceQueued = true
+  void enqueueResourceCacheWork(async () => {
+    const database = resourceCacheDatabase
+    try {
+      if (database && isCurrentResourceCacheDatabase(database, generation) && unprunedManifests > 0) {
+        await pruneResourceCache(database, generation)
+      }
+    } catch {
+      if (database) discardResourceCacheDatabase(database, generation)
+    } finally {
+      if (generation === resourceCacheGeneration) resourceCacheMaintenanceQueued = false
+    }
+  })
 }
 
 export function isResourceCacheMetadata(value: unknown): boolean {
@@ -281,87 +421,152 @@ export async function sha256JsonValue(value: unknown): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-/** Clear the disposable cache, including a cached failed/open connection. */
-export async function clearResourceCache(): Promise<void> {
-  const database = await resourceCacheDatabasePromise?.catch(() => null)
-  database?.close()
-  resourceCacheDatabasePromise = null
-  resourceCacheWriteChain = Promise.resolve()
-  verifiedResourceCacheValues.clear()
-  if (typeof globalThis.indexedDB === 'undefined') return
-  await new Promise<void>((resolve) => {
-    const request = globalThis.indexedDB.deleteDatabase(RESOURCE_CACHE_DATABASE)
-    request.onsuccess = () => resolve()
-    request.onerror = () => resolve()
-    request.onblocked = () => resolve()
+/** Clear immediately fences old work; an unavailable/blocked cache never hangs recovery. */
+export function clearResourceCache(): Promise<void> {
+  invalidateResourceCacheWork()
+  if (resourceCacheClearPromise) return resourceCacheClearPromise
+  if (typeof globalThis.indexedDB === 'undefined') return Promise.resolve()
+  resourceCacheDeletePending = true
+  const operation = new Promise<void>((resolve) => {
+    const finish = () => {
+      resourceCacheDeletePending = false
+      resourceCacheClearPromise = null
+      resolve()
+    }
+    try {
+      const request = globalThis.indexedDB.deleteDatabase(RESOURCE_CACHE_DATABASE)
+      request.onsuccess = finish
+      request.onerror = finish
+      // Keep cache admission disabled until the blocked deletion actually finishes.
+      request.onblocked = () => resolve()
+    } catch {
+      finish()
+    }
   })
+  if (resourceCacheDeletePending) resourceCacheClearPromise = operation
+  return operation
 }
 
-async function openResourceCacheDatabase(): Promise<IDBDatabase | null> {
-  if (typeof globalThis.indexedDB === 'undefined' || !globalThis.crypto?.subtle) return null
+async function openResourceCacheDatabase(generation: number): Promise<IDBDatabase | null> {
+  if (
+    generation !== resourceCacheGeneration ||
+    resourceCacheDeletePending ||
+    typeof globalThis.indexedDB === 'undefined' ||
+    !globalThis.crypto?.subtle
+  )
+    return null
   if (resourceCacheDatabasePromise) return resourceCacheDatabasePromise
 
-  resourceCacheDatabasePromise = new Promise<IDBDatabase | null>((resolve) => {
-    const request = globalThis.indexedDB.open(RESOURCE_CACHE_DATABASE, RESOURCE_CACHE_DATABASE_VERSION)
+  const operation = new Promise<IDBDatabase | null>((resolve) => {
+    let abandoned = false
+    let request: IDBOpenDBRequest
+    try {
+      request = globalThis.indexedDB.open(RESOURCE_CACHE_DATABASE, RESOURCE_CACHE_DATABASE_VERSION)
+    } catch {
+      resolve(null)
+      return
+    }
     request.onupgradeneeded = () => {
+      if (generation !== resourceCacheGeneration || resourceCacheDeletePending || abandoned) {
+        request.transaction?.abort()
+        return
+      }
       const database = request.result
-      if (!database.objectStoreNames.contains(RESOURCE_CACHE_ENTRY_STORE)) {
+      if (!database.objectStoreNames.contains(RESOURCE_CACHE_ENTRY_STORE))
         database.createObjectStore(RESOURCE_CACHE_ENTRY_STORE)
-      }
-      if (!database.objectStoreNames.contains(RESOURCE_CACHE_MANIFEST_STORE)) {
+      if (!database.objectStoreNames.contains(RESOURCE_CACHE_MANIFEST_STORE))
         database.createObjectStore(RESOURCE_CACHE_MANIFEST_STORE)
-      }
     }
     request.onsuccess = () => {
       const database = request.result
-      database.onversionchange = () => {
+      if (generation !== resourceCacheGeneration || resourceCacheDeletePending || abandoned) {
         database.close()
-        if (resourceCacheDatabasePromise) resourceCacheDatabasePromise = null
+        resolve(null)
+        return
+      }
+      resourceCacheDatabase = database
+      database.onclose = () => {
+        if (isCurrentResourceCacheDatabase(database, generation)) invalidateResourceCacheWork()
+      }
+      database.onversionchange = () => {
+        if (isCurrentResourceCacheDatabase(database, generation)) invalidateResourceCacheWork()
+        else database.close()
       }
       resolve(database)
     }
     request.onerror = () => resolve(null)
+    request.onblocked = () => {
+      abandoned = true
+      resolve(null)
+    }
   })
-  return resourceCacheDatabasePromise
+  resourceCacheDatabasePromise = operation
+  const database = await operation
+  if (!database && generation === resourceCacheGeneration && resourceCacheDatabasePromise === operation)
+    resourceCacheDatabasePromise = null
+  return database
 }
 
-async function persistResourceCacheInternal(updates: readonly ResourceCacheUpdate[]): Promise<void> {
-  const preparedUpdates = prepareResourceCacheUpdates(updates)
-  const database = await openResourceCacheDatabase()
-  if (!database) return
+async function persistResourceCacheInternal(
+  preparedUpdates: readonly PreparedResourceCacheUpdate[],
+  generation: number,
+  growth: { bytes: number; values: number; manifests: number },
+): Promise<void> {
+  if (generation !== resourceCacheGeneration) return
+  let database: IDBDatabase | null = null
+  try {
+    database = await openResourceCacheDatabase(generation)
+    if (!database || !isCurrentResourceCacheDatabase(database, generation)) return
+    if (
+      resourceCacheNeedsInitialPrune ||
+      unprunedBytes + growth.bytes > RESOURCE_CACHE_MAX_PENDING_BYTES ||
+      unprunedValues + growth.values > RESOURCE_CACHE_MAX_PENDING_VALUES ||
+      unprunedManifests + growth.manifests > RESOURCE_CACHE_MAX_PENDING_MANIFESTS
+    ) {
+      await pruneResourceCache(database, generation)
+    }
+    if (!isCurrentResourceCacheDatabase(database, generation)) return
 
-  const transaction = database.transaction([RESOURCE_CACHE_ENTRY_STORE, RESOURCE_CACHE_MANIFEST_STORE], 'readwrite')
-  const done = transactionComplete(transaction)
-  const entries = transaction.objectStore(RESOURCE_CACHE_ENTRY_STORE)
-  const manifests = transaction.objectStore(RESOURCE_CACHE_MANIFEST_STORE)
-  const now = Date.now()
+    const transaction = database.transaction([RESOURCE_CACHE_ENTRY_STORE, RESOURCE_CACHE_MANIFEST_STORE], 'readwrite')
+    const done = transactionComplete(transaction)
+    const entries = transaction.objectStore(RESOURCE_CACHE_ENTRY_STORE)
+    const manifests = transaction.objectStore(RESOURCE_CACHE_MANIFEST_STORE)
+    const now = Date.now()
 
-  const writtenHashes = new Set<string>()
-  for (const update of preparedUpdates) {
-    for (let index = 0; index < update.hashes.length; index += 1) {
-      const hash = update.hashes[index]
-      if (!hash || writtenHashes.has(hash)) continue
-      entries.put(update.values[index], hash)
-      writtenHashes.add(hash)
+    const writtenHashes = new Set<string>()
+    for (const update of preparedUpdates) {
+      for (let index = 0; index < update.hashes.length; index += 1) {
+        const hash = update.hashes[index]
+        if (!hash || writtenHashes.has(hash)) continue
+        entries.put(update.values[index], hash)
+        writtenHashes.add(hash)
+      }
+      const manifest: StoredResourceCacheManifest = {
+        version: RESOURCE_CACHE_MANIFEST_VERSION,
+        hashes: [...update.hashes],
+        sizes: [...update.sizes],
+        updatedAt: now,
+      }
+      manifests.put(manifest, update.key)
     }
-    const manifest: StoredResourceCacheManifest = {
-      version: RESOURCE_CACHE_MANIFEST_VERSION,
-      hashes: [...update.hashes],
-      sizes: [...update.sizes],
-      updatedAt: now,
+    await done
+    if (!isCurrentResourceCacheDatabase(database, generation)) return
+    unprunedBytes += growth.bytes
+    unprunedValues += growth.values
+    unprunedManifests += growth.manifests
+    for (const update of preparedUpdates) {
+      for (let index = 0; index < update.hashes.length; index += 1) {
+        verifiedResourceCacheValues.set(update.hashes[index] as string, update.values[index])
+      }
     }
-    manifests.put(manifest, update.key)
+    scheduleResourceCacheMaintenance(generation)
+  } catch {
+    if (database) discardResourceCacheDatabase(database, generation)
   }
-  await done
-  for (const update of preparedUpdates) {
-    for (let index = 0; index < update.hashes.length; index += 1) {
-      verifiedResourceCacheValues.set(update.hashes[index] as string, cloneResourceCacheValue(update.values[index]))
-    }
-  }
-  await pruneResourceCache(database)
 }
 
-async function pruneResourceCache(database: IDBDatabase): Promise<void> {
+async function pruneResourceCache(database: IDBDatabase, generation: number): Promise<void> {
+  if (!isCurrentResourceCacheDatabase(database, generation)) return
   const readTransaction = database.transaction([RESOURCE_CACHE_ENTRY_STORE, RESOURCE_CACHE_MANIFEST_STORE], 'readonly')
   const readDone = transactionComplete(readTransaction)
   const manifests = readTransaction.objectStore(RESOURCE_CACHE_MANIFEST_STORE)
@@ -372,6 +577,7 @@ async function pruneResourceCache(database: IDBDatabase): Promise<void> {
     requestResult(entries.getAllKeys()),
   ])
   await readDone
+  if (!isCurrentResourceCacheDatabase(database, generation)) return
 
   const candidates = manifestKeys
     .map((key, index) => ({ key, manifest: readStoredManifest(storedManifests[index]) }))
@@ -421,10 +627,16 @@ async function pruneResourceCache(database: IDBDatabase): Promise<void> {
       !sameArray(candidate.manifest.sizes, manifest.sizes)
     )
   })
+  // A read may still be hashing rows from before this prune. It can return its
+  // confirmed snapshot, but must not restore evicted values to verified memory.
+  resourceCacheVerificationEpoch += 1
   for (const hash of verifiedResourceCacheValues.keys()) {
     if (!referencedHashes.has(hash)) verifiedResourceCacheValues.delete(hash)
   }
-  if (manifestDeletes.length === 0 && entryDeletes.length === 0 && manifestPuts.length === 0) return
+  if (manifestDeletes.length === 0 && entryDeletes.length === 0 && manifestPuts.length === 0) {
+    resetResourceCacheGrowth()
+    return
+  }
 
   const deleteTransaction = database.transaction(
     [RESOURCE_CACHE_ENTRY_STORE, RESOURCE_CACHE_MANIFEST_STORE],
@@ -437,6 +649,14 @@ async function pruneResourceCache(database: IDBDatabase): Promise<void> {
   for (const { key, manifest } of manifestPuts) deleteManifests.put(manifest, key)
   for (const key of entryDeletes) deleteEntries.delete(key)
   await deleteDone
+  if (isCurrentResourceCacheDatabase(database, generation)) resetResourceCacheGrowth()
+}
+
+function resetResourceCacheGrowth(): void {
+  resourceCacheNeedsInitialPrune = false
+  unprunedBytes = 0
+  unprunedValues = 0
+  unprunedManifests = 0
 }
 
 function readStoredManifest(value: unknown): StoredResourceCacheManifest | null {
@@ -466,37 +686,46 @@ function readStoredManifestHashes(value: unknown): string[] {
 }
 
 function isValidResourceCacheUpdate(update: ResourceCacheUpdate): boolean {
-  return nonEmptyString(update.key) && update.hashes.length === update.values.length && update.hashes.every(isSha256Hex)
+  return (
+    nonEmptyString(update.key) &&
+    update.key.length <= RESOURCE_CACHE_MAX_KEY_LENGTH &&
+    update.hashes.length === update.values.length &&
+    update.hashes.every(isSha256Hex)
+  )
 }
 
-function prepareResourceCacheUpdates(updates: readonly ResourceCacheUpdate[]): PreparedResourceCacheUpdate[] {
-  const retainedHashes = new Set<string>()
+function prepareResourceCacheUpdates(
+  updates: readonly ResourceCacheUpdate[],
+  available: { bytes: number; values: number; manifests: number },
+): PreparedResourceCacheUpdate[] {
+  const prepared: PreparedResourceCacheUpdate[] = []
   let retainedBytes = 0
-  return updates.map((update) => {
+  let retainedValues = 0
+  for (const update of updates) {
+    if (prepared.length >= available.manifests) break
+    if (!isValidResourceCacheUpdate(update)) continue
     const hashes: string[] = []
     const values: unknown[] = []
     const sizes: number[] = []
     const manifestHashes = new Set<string>()
     for (let index = 0; index < update.hashes.length; index += 1) {
-      if (hashes.length >= RESOURCE_CACHE_MAX_REQUEST_HASHES) break
+      if (hashes.length >= RESOURCE_CACHE_MAX_REQUEST_HASHES || retainedValues >= available.values) break
       const hash = update.hashes[index]
       if (!hash || manifestHashes.has(hash)) continue
       const serialized = serializeResourceCacheValue(update.values[index])
       const size = new TextEncoder().encode(serialized).byteLength
-      if (size > RESOURCE_CACHE_MAX_VALUE_BYTES) continue
-      if (!retainedHashes.has(hash)) {
-        if (retainedHashes.size >= RESOURCE_CACHE_MAX_ENTRIES) continue
-        if (retainedBytes + size > RESOURCE_CACHE_MAX_STORED_BYTES) continue
-        retainedHashes.add(hash)
-        retainedBytes += size
-      }
+      if (size > RESOURCE_CACHE_MAX_VALUE_BYTES || retainedBytes + size > available.bytes) continue
       hashes.push(hash)
       values.push(JSON.parse(serialized) as unknown)
       sizes.push(size)
+      retainedBytes += size
+      retainedValues += 1
       manifestHashes.add(hash)
     }
-    return { key: update.key, hashes, values, sizes }
-  })
+    // Empty manifests have no reusable values and need no write or maintenance.
+    if (hashes.length > 0) prepared.push({ key: update.key, hashes, values, sizes })
+  }
+  return prepared
 }
 
 function readResourceCacheArrayEntry(
@@ -526,9 +755,13 @@ function sameArray<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
-function discardResourceCacheDatabase(database: IDBDatabase): void {
-  database.close()
-  resourceCacheDatabasePromise = null
+function isCurrentResourceCacheDatabase(database: IDBDatabase, generation: number): boolean {
+  return generation === resourceCacheGeneration && database === resourceCacheDatabase && !resourceCacheDeletePending
+}
+
+function discardResourceCacheDatabase(database: IDBDatabase, generation: number): void {
+  if (isCurrentResourceCacheDatabase(database, generation)) invalidateResourceCacheWork()
+  else database.close()
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
@@ -539,11 +772,14 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
 }
 
 function transactionComplete(transaction: IDBTransaction): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+  resourceCacheTransactions.add(transaction)
+  const done = new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve()
     transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB transaction aborted'))
     transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB transaction failed'))
-  })
+  }).finally(() => resourceCacheTransactions.delete(transaction))
+  void done.catch(() => undefined)
+  return done
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -15,6 +15,7 @@ import {
 import { isServerChatMetadataResource } from '@risuai/protocol/chat-metadata'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
+  captureResourceCacheGeneration,
   isResourceCacheMetadata,
   persistResourceCache,
   prepareResourceCacheRequest,
@@ -494,6 +495,7 @@ async function requestCachedSingularResource(
   signal: AbortSignal | null | undefined,
   validate: (value: unknown, record: Record<string, unknown>) => boolean,
 ): Promise<ServerResourceJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const prepared = await prepareResourceCacheRequest([{ name: resourceName, key: cacheKey }])
   if (!prepared) return requestServerResourceJson(endpoint, signal)
 
@@ -526,13 +528,16 @@ async function requestCachedSingularResource(
     if (!validate(resolved.value, record)) {
       return requestServerResourceJson(endpoint, signal)
     }
-    await persistResourceCache([
-      {
-        key: cacheKey,
-        hashes: resolved.hashes,
-        values: [resolved.value],
-      },
-    ])
+    void persistResourceCache(
+      [
+        {
+          key: cacheKey,
+          hashes: resolved.hashes,
+          values: [resolved.value],
+        },
+      ],
+      cacheGeneration,
+    )
     return {
       status: 'ok',
       body: { ...record, [resourceName]: resolved.value },
@@ -547,6 +552,7 @@ async function requestCachedCollections(
   requestedName: ServerCollectionName | undefined,
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const names: readonly ServerCollectionName[] = requestedName ? [requestedName] : SERVER_COLLECTION_NAMES
   const descriptors = names.map((name) => ({
     name,
@@ -601,7 +607,7 @@ async function requestCachedCollections(
     ) {
       return requestServerResourceJson(endpoint, signal)
     }
-    await persistResourceCache(updates)
+    void persistResourceCache(updates, cacheGeneration)
     return {
       status: 'ok',
       body: { ...record, collections },
@@ -614,6 +620,7 @@ async function requestCachedCollections(
 async function requestCachedCharacters(
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const prepared = await prepareResourceCacheRequest([{ name: 'characters', key: CHARACTERS_CACHE_KEY }])
   if (!prepared) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
 
@@ -638,13 +645,16 @@ async function requestCachedCharacters(
     const { cache: _cache, ...responsePayload } = record
     const payload = readCharactersSummaryEnvelope({ ...responsePayload, characters: resolved.value })
     if (!payload) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-    await persistResourceCache([
-      {
-        key: CHARACTERS_CACHE_KEY,
-        hashes: resolved.hashes,
-        values: resolved.value,
-      },
-    ])
+    void persistResourceCache(
+      [
+        {
+          key: CHARACTERS_CACHE_KEY,
+          hashes: resolved.hashes,
+          values: resolved.value,
+        },
+      ],
+      cacheGeneration,
+    )
     return {
       status: 'ok',
       body: payload,

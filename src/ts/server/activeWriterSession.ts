@@ -1,6 +1,7 @@
 import { getChatHydrationRuntime } from '../process/generationRuntimeBridge'
 import { setObserverShellLifecycleMode } from '../observerShellLifecycle.svelte'
 import { revokeStartupWriterCapabilities } from '../startupReadiness'
+import { invalidateResourceCacheWork } from './resourceCache'
 
 export const ACTIVE_WRITER_SESSION_HEADER = 'risu-writer-session'
 
@@ -72,6 +73,7 @@ export function resetWriterAccessLostForTests(): void {
 export function enterWriterTakeoverFlow(): void {
   if (writerAccessLost) return
   writerAccessLost = true
+  invalidateResourceCacheWork()
   revokeStartupWriterCapabilities()
   setObserverShellLifecycleMode('writer-lost')
   setWriterTakeoverInteractionBlocked(true)
@@ -81,6 +83,7 @@ export function enterWriterTakeoverFlow(): void {
 /** Temporarily admit bootstrap/replay transports while ordinary UI mutation remains revoked. */
 export function beginWriterAccessRecovery(): boolean {
   if (!writerAccessLost) return false
+  invalidateResourceCacheWork()
   writerAccessLost = false
   setWriterTakeoverInteractionBlocked(true)
   return true
@@ -98,6 +101,7 @@ export function completeWriterAccessRecovery(success: boolean): void {
   }
 
   writerAccessLost = true
+  invalidateResourceCacheWork()
   setWriterTakeoverInteractionBlocked(false)
 }
 
@@ -128,6 +132,7 @@ export function reportWriterAccessLostMutation(): boolean {
 }
 
 export function scheduleServerOwnershipReload(): void {
+  invalidateResourceCacheWork()
   scheduleForcedServerStateReload('stale-session')
 }
 

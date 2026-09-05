@@ -2,6 +2,7 @@ import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { canUseServerResourceReads } from './resourceReads'
 import { isServerBulkChatMessagesResource, isServerChatMessagesResource } from '@risuai/protocol/chat-messages-resource'
 import {
+  captureResourceCacheGeneration,
   isResourceCacheMetadata,
   persistResourceCache,
   prepareResourceCacheRequest,
@@ -277,6 +278,7 @@ async function fetchServerChatMessagesFromEndpoint(
   }
 
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
   if (!body || typeof body !== 'object') {
@@ -352,6 +354,7 @@ export async function fetchServerBulkChatMessages(
   }
 
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
   if (!body || typeof body !== 'object') {
@@ -497,6 +500,7 @@ export async function fetchServerBulkCharacterLorebooks(
   }
 
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
   if (!body || typeof body !== 'object') {
@@ -555,6 +559,7 @@ async function requestCacheNegotiatedHydrationJson(
     prepared: PreparedResourceCacheRequest,
   ) => Promise<ReconstructedHydrationCacheResponse | null>,
 ): Promise<HydrationJsonRequestResult> {
+  const cacheGeneration = captureResourceCacheGeneration()
   const auth = await getNodeServerProxyAuth()
   const prepared = await prepareResourceCacheRequest(descriptors)
   if (!prepared) return requestHydrationJson(url, auth, signal)
@@ -571,7 +576,7 @@ async function requestCacheNegotiatedHydrationJson(
   try {
     const reconstructed = await reconstruct(result.body, prepared)
     if (!reconstructed) return requestHydrationJson(url, auth, signal)
-    await persistResourceCache(reconstructed.updates)
+    void persistResourceCache(reconstructed.updates, cacheGeneration)
     return { status: 'ok', body: reconstructed.body }
   } catch {
     return requestHydrationJson(url, auth, signal)
@@ -608,6 +613,7 @@ async function requestHydrationJson(
     // Reported via HTTP status or response validation by the caller.
   }
   if (!response.ok) {
+    await discardHydrationAuthLoss(response.status)
     return {
       status: 'error',
       error: errorMessageFromBody(body, `HTTP ${response.status}`),
@@ -615,6 +621,12 @@ async function requestHydrationJson(
     }
   }
   return { status: 'ok', body }
+}
+
+async function discardHydrationAuthLoss(status: number): Promise<void> {
+  if (status !== 401) return
+  const { discardObserverProjectionState } = await import('../observerProjectionLifecycle')
+  await discardObserverProjectionState('auth-loss')
 }
 
 function shouldFallbackHydrationCachePost(result: HydrationJsonRequestResult): boolean {

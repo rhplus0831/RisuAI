@@ -10,7 +10,13 @@ vi.mock('../observerProjectionLifecycle', () => ({
 }))
 
 import { fetchServerSettings } from './resourceReads'
-import { clearResourceCache, persistResourceCache, readResourceCacheSnapshots, sha256JsonValue } from './resourceCache'
+import {
+  clearResourceCache,
+  flushResourceCacheMaintenanceForTests,
+  persistResourceCache,
+  readResourceCacheSnapshots,
+  sha256JsonValue,
+} from './resourceCache'
 
 const fixtures = [
   { name: 'small', unrelatedManifests: 0 },
@@ -66,6 +72,8 @@ describe('F04 resource-cache work probe', () => {
         })),
       )
 
+      await flushResourceCacheMaintenanceForTests()
+
       const settings = { language: 'en', username: 'Fixed response', note: 's'.repeat(256) }
       const settingsHash = await sha256JsonValue(settings)
       const advertised: string[][] = []
@@ -86,6 +94,16 @@ describe('F04 resource-cache work probe', () => {
         }),
       )
 
+      const ownershipCapture = { count: 0, bytes: 0 }
+      const stringify = JSON.stringify
+      vi.spyOn(JSON, 'stringify').mockImplementation((...args) => {
+        const serialized = stringify(...args)
+        if (serialized !== undefined && new Error().stack?.includes('prepareResourceCacheUpdates')) {
+          ownershipCapture.count += 1
+          ownershipCapture.bytes += new TextEncoder().encode(serialized).byteLength
+        }
+        return serialized
+      })
       const events: string[] = []
       const enumerations = { manifestKeys: 0, manifestValues: 0, entryKeys: 0, returnedRows: 0 }
       const originalGetAllKeys = FakeIDBObjectStore.prototype.getAllKeys
@@ -126,17 +144,31 @@ describe('F04 resource-cache work probe', () => {
         const snapshot = (await readResourceCacheSnapshots(['settings:all']))!.get('settings:all')!
         expect(snapshot.hashes).toEqual([settingsHash])
       })
+      await flushResourceCacheMaintenanceForTests()
       await read('warm')
       const atWarmCompletion = { ...enumerations }
       expect(advertised[0]).toEqual([])
       expect(advertised[1]).toEqual([settingsHash])
+      await flushResourceCacheMaintenanceForTests()
+      const beforeBurst = { ...enumerations }
       await Promise.all(Array.from({ length: 8 }, (_, index) => read(`burst-${index}`)))
       const atBurstCompletion = { ...enumerations }
+      await flushResourceCacheMaintenanceForTests()
+      const burstMaintenance = {
+        manifestKeys: enumerations.manifestKeys - beforeBurst.manifestKeys,
+        manifestValues: enumerations.manifestValues - beforeBurst.manifestValues,
+        entryKeys: enumerations.entryKeys - beforeBurst.entryKeys,
+        returnedRows: enumerations.returnedRows - beforeBurst.returnedRows,
+      }
+      expect(burstMaintenance.manifestKeys).toBeLessThanOrEqual(1)
+      expect(burstMaintenance.manifestValues).toBeLessThanOrEqual(1)
+      expect(burstMaintenance.entryKeys).toBeLessThanOrEqual(1)
       await vi.waitFor(async () => {
         const counts = await rawCacheCounts()
         expect(counts.manifests).toBeLessThanOrEqual(512)
         expect(counts.entries).toBeLessThanOrEqual(32_768)
       })
+      expect(ownershipCapture).toEqual({ count: 10, bytes: 10 * 311 })
       reportBrowserWork('F04', {
         ...fixture,
         unrelatedValueTextBytes: 256,
@@ -145,6 +177,8 @@ describe('F04 resource-cache work probe', () => {
         atColdCompletion,
         atWarmCompletion,
         atBurstCompletion,
+        burstMaintenance,
+        ownershipCapture,
         afterCacheVisible: { ...enumerations },
         retained: await rawCacheCounts(),
         events,

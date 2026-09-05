@@ -172,6 +172,29 @@ cached data is never used offline or without an authenticated server response
 confirming its hash. It is separate from the mutation outbox, whose retained
 encrypted intents represent unsent local work and must not be cleared as a cache.
 
+Validated root and hydration responses return independently of optional cache
+persistence. Each response captures its cache generation before asynchronous
+reads/authentication and transfers an owned JSON snapshot to the background
+write lane. Delayed writes cannot observe later edits to the returned projection.
+Cache clear, authentication/lineage invalidation, writer takeover/recovery, and
+connection loss fence old reads, writes, opens, and pruning; stale responses cannot
+populate a newer generation. Writer fencing retains disposable persistent rows
+for authenticated reuse; clear also requests database deletion. Blocked deletion
+disables cache admission until it completes without holding application recovery.
+
+The single background lane admits at most 64 queued jobs, 32 MiB of serialized
+value bodies, 8,192 value references and 1,024 manifests; keys are capped at
+2,048 UTF-16 code units. Admission may skip
+optional values under pressure. A fixed 50 ms timer coalesces maintenance and
+queues it behind current work, so continuous arrivals cannot postpone it. A new
+connection prunes before its first write; growth of 32 MiB / 8,192 values /
+1,024 manifests forces another prune before the next write would exceed a bound.
+Thus ordinary stored growth is bounded above the retained 64 MiB / 32,768 entry /
+512 manifest limits and eventually converges to them. Each value remains capped
+at 32 MiB. Byte counts describe serialized bodies, not JavaScript heap usage.
+Queue accounting survives generation changes because suspended old work may
+still own memory. No IndexedDB schema or cache wire-protocol version changes.
+
 Display appearance has separate synchronous paint caches in `localStorage`:
 `risu-custom-css-v1` for Custom CSS and `risu-display-settings-v1` for allowlisted
 theme/layout, font, sizing, and motion settings plus resolved root CSS

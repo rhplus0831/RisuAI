@@ -13,7 +13,7 @@ vi.mock('../observerProjectionLifecycle', () => ({
 }))
 
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
-import { clearResourceCache, sha256JsonValue } from './resourceCache'
+import { clearResourceCache, flushResourceCacheMaintenanceForTests, sha256JsonValue } from './resourceCache'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
 import {
   SERVER_CHARACTER_SHELL_MARKER,
@@ -505,6 +505,7 @@ describe('server resource read clients', () => {
         revision: 8,
         collections: { modules: [module], pluginCustomStorage: storage },
       })
+      await flushResourceCacheMaintenanceForTests()
       await expect(fetchServerCollections()).resolves.toMatchObject({
         status: 'ok',
         revision: 9,
@@ -640,6 +641,7 @@ describe('server resource read clients', () => {
     )
 
     try {
+      await flushResourceCacheMaintenanceForTests()
       await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', settings })
       await expect(fetchServerCharacters()).resolves.toMatchObject({
         status: 'ok',
@@ -657,6 +659,7 @@ describe('server resource read clients', () => {
           },
         ],
       })
+      await flushResourceCacheMaintenanceForTests()
       await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', settings })
       await expect(fetchServerCharacters()).resolves.toMatchObject({
         status: 'ok',

@@ -1,0 +1,924 @@
+{
+  "evidenceKind": "synthetic-built-browser-cache-and-recovery",
+  "sourceBase": "9690cd25d",
+  "implementation": "accompanying Phase 2c commit",
+  "cachePopulation": [
+    {
+      "fixture": "small",
+      "cacheState": "cold",
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 576,
+          "observer-ready": 620.2000000476837,
+          "writer-ready": 630.5,
+          "plugins-ready": 702,
+          "chat-ready": 740.5,
+          "background-ready": 741.3999999761581
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 576,
+          "observer-ready": 620.2000000476837,
+          "writer-ready": 630.5,
+          "plugins-ready": 702,
+          "chat-ready": 740.5,
+          "background-ready": 741.3999999761581
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 576.3999999761581,
+            "completedAtMs": 741.5
+          }
+        ]
+      },
+      "browserJavaScript": {
+        "fileCount": 111,
+        "transferBytes": 1430840,
+        "encodedBodyBytes": 1397540,
+        "decodedBodyBytes": 4633304
+      },
+      "server": {
+        "bootstrapPayloadBytes": 567,
+        "resourcePayloadBytes": 23859,
+        "resourceDurationMs": 72.27000000000001,
+        "cacheHits": 0,
+        "cacheMisses": 15
+      },
+      "earlyRequests": {
+        "mutationsBeforeWriterReady": 0,
+        "generationsBeforeChatReady": 0
+      }
+    },
+    {
+      "fixture": "small",
+      "cacheState": "warm",
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 180.89999997615814,
+          "observer-ready": 225,
+          "writer-ready": 229.89999997615814,
+          "plugins-ready": 266.39999997615814,
+          "chat-ready": 298.2999999523163,
+          "background-ready": 299.1999999284744
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 180.89999997615814,
+          "observer-ready": 225,
+          "writer-ready": 229.89999997615814,
+          "plugins-ready": 266.39999997615814,
+          "chat-ready": 298.2999999523163,
+          "background-ready": 299.1999999284744
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 181.10000002384186,
+            "completedAtMs": 299.2999999523163
+          }
+        ]
+      },
+      "browserJavaScript": {
+        "fileCount": 111,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1397540,
+        "decodedBodyBytes": 4633304
+      },
+      "server": {
+        "bootstrapPayloadBytes": 566,
+        "resourcePayloadBytes": 4727,
+        "resourceDurationMs": 57.69999999999999,
+        "cacheHits": 15,
+        "cacheMisses": 0
+      },
+      "earlyRequests": {
+        "mutationsBeforeWriterReady": 0,
+        "generationsBeforeChatReady": 0
+      }
+    },
+    {
+      "fixture": "large",
+      "cacheState": "cold",
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 464,
+          "observer-ready": 512.2999999523163,
+          "writer-ready": 518.7999999523163,
+          "plugins-ready": 600.6000000238419,
+          "chat-ready": 636.1000000238419,
+          "background-ready": 638.1000000238419
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 464,
+          "observer-ready": 512.2999999523163,
+          "writer-ready": 518.7999999523163,
+          "plugins-ready": 600.6000000238419,
+          "chat-ready": 636.1000000238419,
+          "background-ready": 638.1000000238419
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 464.39999997615814,
+            "completedAtMs": 638.2999999523163
+          }
+        ]
+      },
+      "browserJavaScript": {
+        "fileCount": 111,
+        "transferBytes": 1430840,
+        "encodedBodyBytes": 1397540,
+        "decodedBodyBytes": 4633304
+      },
+      "server": {
+        "bootstrapPayloadBytes": 567,
+        "resourcePayloadBytes": 42186,
+        "resourceDurationMs": 59.74999999999999,
+        "cacheHits": 0,
+        "cacheMisses": 42
+      },
+      "earlyRequests": {
+        "mutationsBeforeWriterReady": 0,
+        "generationsBeforeChatReady": 0
+      }
+    },
+    {
+      "fixture": "large",
+      "cacheState": "warm",
+      "startup": {
+        "schemaVersion": 1,
+        "phase": "background-ready",
+        "timestamps": {
+          "entry": 0,
+          "shell-mounted": 85.39999997615814,
+          "observer-ready": 239.09999990463257,
+          "writer-ready": 243.59999990463257,
+          "plugins-ready": 299.39999997615814,
+          "chat-ready": 327.1999999284744,
+          "background-ready": 329.2999999523163
+        },
+        "durationsFromEntry": {
+          "entry": 0,
+          "shell-mounted": 85.39999997615814,
+          "observer-ready": 239.09999990463257,
+          "writer-ready": 243.59999990463257,
+          "plugins-ready": 299.39999997615814,
+          "chat-ready": 327.1999999284744,
+          "background-ready": 329.2999999523163
+        },
+        "attempts": [
+          {
+            "attemptId": 1,
+            "startedAtMs": 85.59999990463257,
+            "completedAtMs": 329.59999990463257
+          }
+        ]
+      },
+      "browserJavaScript": {
+        "fileCount": 111,
+        "transferBytes": 0,
+        "encodedBodyBytes": 1397540,
+        "decodedBodyBytes": 4633304
+      },
+      "server": {
+        "bootstrapPayloadBytes": 566,
+        "resourcePayloadBytes": 28605,
+        "resourceDurationMs": 57.55000000000001,
+        "cacheHits": 42,
+        "cacheMisses": 0
+      },
+      "earlyRequests": {
+        "mutationsBeforeWriterReady": 0,
+        "generationsBeforeChatReady": 0
+      }
+    }
+  ],
+  "recovery": {
+    "schemaVersion": 1,
+    "startupRollout": [
+      {
+        "fixture": "small",
+        "observerMode": "disabled",
+        "observerVisibleBeforeWriter": false,
+        "startup": {
+          "schemaVersion": 1,
+          "phase": "background-ready",
+          "timestamps": {
+            "entry": 0,
+            "shell-mounted": 936.6999999284744,
+            "observer-ready": 1117.5999999046326,
+            "writer-ready": 1129.7999999523163,
+            "plugins-ready": 1274.6999999284744,
+            "chat-ready": 1350.5999999046326,
+            "background-ready": 1352.3999999761581
+          },
+          "durationsFromEntry": {
+            "entry": 0,
+            "shell-mounted": 936.6999999284744,
+            "observer-ready": 1117.5999999046326,
+            "writer-ready": 1129.7999999523163,
+            "plugins-ready": 1274.6999999284744,
+            "chat-ready": 1350.5999999046326,
+            "background-ready": 1352.3999999761581
+          },
+          "attempts": [
+            {
+              "attemptId": 1,
+              "startedAtMs": 937.2999999523163,
+              "completedAtMs": 1352.5999999046326
+            }
+          ]
+        },
+        "coordinator": {
+          "schemaVersion": 1,
+          "capabilities": {
+            "canRenderShell": true,
+            "canApplyRoutes": true,
+            "canMutate": true,
+            "pluginsReady": true,
+            "canGenerate": false
+          },
+          "observerShellEnabled": false,
+          "writerCapabilitiesRevoked": false,
+          "failures": {
+            "canGenerate": {
+              "attemptId": 1,
+              "failureCode": "selected-character-hydration-failed",
+              "failureMilestone": "chat-ready",
+              "failedAtMs": 1350.0999999046326
+            }
+          },
+          "completedSteps": [
+            "writer-owner-adoption",
+            "writer-bootstrap",
+            "writer-initialize",
+            "writer-outbox-prepare",
+            "writer-receipt-flush",
+            "writer-pending-replay",
+            "writer-resource-hydration",
+            "writer-projection-install",
+            "writer-runtime-services",
+            "writer-event-subscription",
+            "writer-shell",
+            "chat-hydration-runtime",
+            "plugin-runtime",
+            "generation-recovery",
+            "push-runtime",
+            "background-runtime",
+            "background-readiness"
+          ]
+        },
+        "earlyRequests": {
+          "mutationsBeforeWriterReady": 0,
+          "generationsBeforeChatReady": 0
+        },
+        "telemetry": [
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": false,
+            "milestone": "entry",
+            "entryDurationMs": 0,
+            "requestUid": "5794453af9514a0b2766011726d5563e7592956a64e551a268cfae7833135ea1"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": false,
+            "milestone": "shell-mounted",
+            "entryDurationMs": 936.6999999284744,
+            "requestUid": "5794453af9514a0b2766011726d5563e7592956a64e551a268cfae7833135ea1"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "observer-ready",
+            "entryDurationMs": 1117.5999999046326,
+            "requestUid": "62d4c76921dfe6e080239b09acd659b5e660f38de7a366004ce200cb76ac9634"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "writer-ready",
+            "entryDurationMs": 1129.7999999523163,
+            "requestUid": "92f9bca5b2fa642a3fbf2edc6179426a76ae10e06b06e64b855b4d0117aa4ed5"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "plugins-ready",
+            "entryDurationMs": 1274.6999999284744,
+            "requestUid": "c27015fcd54816700490059851632e187cb27304e96ca40dcbb164551c52af48"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "diagnostic-failure",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "failureCode": "selected-character-hydration-failed",
+            "failureMilestone": "chat-ready",
+            "requestUid": "07380b603a94be4c0bb105b397dc87fda36e51fc2eb52678335196313b5f5af2"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "chat-ready",
+            "entryDurationMs": 1350.5999999046326,
+            "requestUid": "07380b603a94be4c0bb105b397dc87fda36e51fc2eb52678335196313b5f5af2"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "background-ready",
+            "entryDurationMs": 1352.3999999761581,
+            "requestUid": "474094705a9914ada335bead0f2f65e338f6451996847baaf5d5f2937b96d734"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "attempt-completed",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "attemptDurationMs": 415.2999999523163,
+            "requestUid": "474094705a9914ada335bead0f2f65e338f6451996847baaf5d5f2937b96d734"
+          }
+        ]
+      },
+      {
+        "fixture": "small",
+        "observerMode": "enabled",
+        "observerVisibleBeforeWriter": true,
+        "startup": {
+          "schemaVersion": 1,
+          "phase": "background-ready",
+          "timestamps": {
+            "entry": 0,
+            "shell-mounted": 525.3999999761581,
+            "observer-ready": 572.8000000715256,
+            "writer-ready": 682,
+            "plugins-ready": 765.8000000715256,
+            "chat-ready": 803.8999999761581,
+            "background-ready": 805.8000000715256
+          },
+          "durationsFromEntry": {
+            "entry": 0,
+            "shell-mounted": 525.3999999761581,
+            "observer-ready": 572.8000000715256,
+            "writer-ready": 682,
+            "plugins-ready": 765.8000000715256,
+            "chat-ready": 803.8999999761581,
+            "background-ready": 805.8000000715256
+          },
+          "attempts": [
+            {
+              "attemptId": 1,
+              "startedAtMs": 525.8999999761581,
+              "completedAtMs": 806
+            }
+          ]
+        },
+        "coordinator": {
+          "schemaVersion": 1,
+          "capabilities": {
+            "canRenderShell": true,
+            "canApplyRoutes": true,
+            "canMutate": true,
+            "pluginsReady": true,
+            "canGenerate": false
+          },
+          "observerShellEnabled": true,
+          "writerCapabilitiesRevoked": false,
+          "failures": {
+            "canGenerate": {
+              "attemptId": 1,
+              "failureCode": "selected-character-hydration-failed",
+              "failureMilestone": "chat-ready",
+              "failedAtMs": 803.6000000238419
+            }
+          },
+          "completedSteps": [
+            "observer-shell",
+            "writer-owner-adoption",
+            "writer-bootstrap",
+            "writer-initialize",
+            "writer-outbox-prepare",
+            "writer-receipt-flush",
+            "writer-pending-replay",
+            "writer-resource-hydration",
+            "writer-projection-install",
+            "writer-runtime-services",
+            "writer-event-subscription",
+            "writer-shell",
+            "chat-hydration-runtime",
+            "plugin-runtime",
+            "generation-recovery",
+            "background-runtime",
+            "push-runtime",
+            "background-readiness"
+          ]
+        },
+        "earlyRequests": {
+          "mutationsBeforeWriterReady": 0,
+          "generationsBeforeChatReady": 0
+        },
+        "telemetry": [
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": true,
+            "milestone": "entry",
+            "entryDurationMs": 0,
+            "requestUid": "b819473a5f0508bc979ed2069f34c3d4b586578256ffec48dba0a747628b7ee6"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": true,
+            "milestone": "shell-mounted",
+            "entryDurationMs": 525.3999999761581,
+            "requestUid": "b819473a5f0508bc979ed2069f34c3d4b586578256ffec48dba0a747628b7ee6"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "observer-ready",
+            "entryDurationMs": 572.8000000715256,
+            "requestUid": "46c9672f7398c8b51b7e714a4e9de0a8b8e7b673c55dcbb1685b18f1fd4afd05"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "writer-ready",
+            "entryDurationMs": 682,
+            "requestUid": "df8b74696d6bb7b2c989caf0f488238a35e9206dfa26386509db413286d64468"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "plugins-ready",
+            "entryDurationMs": 765.8000000715256,
+            "requestUid": "d918f1582ce6879d467f93c086987e646a4840b2ff1dd181b9934b36a13dbd38"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "diagnostic-failure",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "failureCode": "selected-character-hydration-failed",
+            "failureMilestone": "chat-ready",
+            "requestUid": "e8ee48540abcfbc3b5f633b97c3d77e5ac29d1a0493a3bad610c1715143de2ff"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "chat-ready",
+            "entryDurationMs": 803.8999999761581,
+            "requestUid": "e8ee48540abcfbc3b5f633b97c3d77e5ac29d1a0493a3bad610c1715143de2ff"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "background-ready",
+            "entryDurationMs": 805.8000000715256,
+            "requestUid": "bc5840798308c4e4a2806e40188c01ef6a42f4634410aa5ae6b3b365843a89b7"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "attempt-completed",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "attemptDurationMs": 280.10000002384186,
+            "requestUid": "bc5840798308c4e4a2806e40188c01ef6a42f4634410aa5ae6b3b365843a89b7"
+          }
+        ]
+      },
+      {
+        "fixture": "large",
+        "observerMode": "disabled",
+        "observerVisibleBeforeWriter": false,
+        "startup": {
+          "schemaVersion": 1,
+          "phase": "background-ready",
+          "timestamps": {
+            "entry": 0,
+            "shell-mounted": 622.1999999284744,
+            "observer-ready": 849.5,
+            "writer-ready": 858.8999999761581,
+            "plugins-ready": 963.2999999523163,
+            "chat-ready": 1016.8999999761581,
+            "background-ready": 1019.2999999523163
+          },
+          "durationsFromEntry": {
+            "entry": 0,
+            "shell-mounted": 622.1999999284744,
+            "observer-ready": 849.5,
+            "writer-ready": 858.8999999761581,
+            "plugins-ready": 963.2999999523163,
+            "chat-ready": 1016.8999999761581,
+            "background-ready": 1019.2999999523163
+          },
+          "attempts": [
+            {
+              "attemptId": 1,
+              "startedAtMs": 622.7999999523163,
+              "completedAtMs": 1019.6000000238419
+            }
+          ]
+        },
+        "coordinator": {
+          "schemaVersion": 1,
+          "capabilities": {
+            "canRenderShell": true,
+            "canApplyRoutes": true,
+            "canMutate": true,
+            "pluginsReady": true,
+            "canGenerate": false
+          },
+          "observerShellEnabled": false,
+          "writerCapabilitiesRevoked": false,
+          "failures": {
+            "canGenerate": {
+              "attemptId": 1,
+              "failureCode": "selected-character-hydration-failed",
+              "failureMilestone": "chat-ready",
+              "failedAtMs": 1016.6999999284744
+            }
+          },
+          "completedSteps": [
+            "writer-owner-adoption",
+            "writer-bootstrap",
+            "writer-initialize",
+            "writer-outbox-prepare",
+            "writer-receipt-flush",
+            "writer-pending-replay",
+            "writer-resource-hydration",
+            "writer-projection-install",
+            "writer-runtime-services",
+            "writer-event-subscription",
+            "writer-shell",
+            "chat-hydration-runtime",
+            "plugin-runtime",
+            "generation-recovery",
+            "background-runtime",
+            "push-runtime",
+            "background-readiness"
+          ]
+        },
+        "earlyRequests": {
+          "mutationsBeforeWriterReady": 0,
+          "generationsBeforeChatReady": 0
+        },
+        "telemetry": [
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": false,
+            "milestone": "entry",
+            "entryDurationMs": 0,
+            "requestUid": "25d38c3fa754317c4b5ac509c9a1f3b6cbfb3b9cc5318f83212e4cb68e42f1e2"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": false,
+            "milestone": "shell-mounted",
+            "entryDurationMs": 622.1999999284744,
+            "requestUid": "25d38c3fa754317c4b5ac509c9a1f3b6cbfb3b9cc5318f83212e4cb68e42f1e2"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "observer-ready",
+            "entryDurationMs": 849.5,
+            "requestUid": "848f34a82766fd29c4d03f9fe26811a8fc5edff897455a6a6a7c2304cf3974b0"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "writer-ready",
+            "entryDurationMs": 858.8999999761581,
+            "requestUid": "f7d8f1ce32c96a9cbb04e8a459329d0dcde57b34d424c336c006749ef3368be4"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "plugins-ready",
+            "entryDurationMs": 963.2999999523163,
+            "requestUid": "31837937109558b67a70a4985a8bd941d6a297afffd1c6754d2ea43c399e0a35"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "diagnostic-failure",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "failureCode": "selected-character-hydration-failed",
+            "failureMilestone": "chat-ready",
+            "requestUid": "a81a2e42c7281d75bfdd5dc5887258d6759237a0e4dc15ca7d5f41cffe471d47"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "chat-ready",
+            "entryDurationMs": 1016.8999999761581,
+            "requestUid": "a81a2e42c7281d75bfdd5dc5887258d6759237a0e4dc15ca7d5f41cffe471d47"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "milestone": "background-ready",
+            "entryDurationMs": 1019.2999999523163,
+            "requestUid": "70111f2e51cb3c7eb044c0293fe1b4a34a6c43048887658ed9064c2f8094a62c"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "attempt-completed",
+            "attemptCount": 1,
+            "observerShellEnabled": false,
+            "attemptDurationMs": 396.8000000715256,
+            "requestUid": "70111f2e51cb3c7eb044c0293fe1b4a34a6c43048887658ed9064c2f8094a62c"
+          }
+        ]
+      },
+      {
+        "fixture": "large",
+        "observerMode": "enabled",
+        "observerVisibleBeforeWriter": true,
+        "startup": {
+          "schemaVersion": 1,
+          "phase": "background-ready",
+          "timestamps": {
+            "entry": 0,
+            "shell-mounted": 695.1000000238419,
+            "observer-ready": 754,
+            "writer-ready": 827,
+            "plugins-ready": 929.3000000715256,
+            "chat-ready": 989.1000000238419,
+            "background-ready": 990.3000000715256
+          },
+          "durationsFromEntry": {
+            "entry": 0,
+            "shell-mounted": 695.1000000238419,
+            "observer-ready": 754,
+            "writer-ready": 827,
+            "plugins-ready": 929.3000000715256,
+            "chat-ready": 989.1000000238419,
+            "background-ready": 990.3000000715256
+          },
+          "attempts": [
+            {
+              "attemptId": 1,
+              "startedAtMs": 695.6000000238419,
+              "completedAtMs": 990.6000000238419
+            }
+          ]
+        },
+        "coordinator": {
+          "schemaVersion": 1,
+          "capabilities": {
+            "canRenderShell": true,
+            "canApplyRoutes": true,
+            "canMutate": true,
+            "pluginsReady": true,
+            "canGenerate": false
+          },
+          "observerShellEnabled": true,
+          "writerCapabilitiesRevoked": false,
+          "failures": {
+            "canGenerate": {
+              "attemptId": 1,
+              "failureCode": "selected-character-hydration-failed",
+              "failureMilestone": "chat-ready",
+              "failedAtMs": 988.7000000476837
+            }
+          },
+          "completedSteps": [
+            "observer-shell",
+            "writer-owner-adoption",
+            "writer-bootstrap",
+            "writer-initialize",
+            "writer-outbox-prepare",
+            "writer-receipt-flush",
+            "writer-pending-replay",
+            "writer-resource-hydration",
+            "writer-projection-install",
+            "writer-runtime-services",
+            "writer-event-subscription",
+            "writer-shell",
+            "chat-hydration-runtime",
+            "plugin-runtime",
+            "generation-recovery",
+            "background-runtime",
+            "push-runtime",
+            "background-readiness"
+          ]
+        },
+        "earlyRequests": {
+          "mutationsBeforeWriterReady": 0,
+          "generationsBeforeChatReady": 0
+        },
+        "telemetry": [
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": true,
+            "milestone": "entry",
+            "entryDurationMs": 0,
+            "requestUid": "6b6db76f84cc5b59f037466a041dee896f9acc9ddbf6d6a7db60a98344473cc8"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 0,
+            "observerShellEnabled": true,
+            "milestone": "shell-mounted",
+            "entryDurationMs": 695.1000000238419,
+            "requestUid": "6b6db76f84cc5b59f037466a041dee896f9acc9ddbf6d6a7db60a98344473cc8"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "observer-ready",
+            "entryDurationMs": 754,
+            "requestUid": "98a48cd3a37aae424115298d0ac88764e3e7eef654b4d1f973b4e4a28e9cb7f5"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "writer-ready",
+            "entryDurationMs": 827,
+            "requestUid": "62fbc78677a127951c0ad522dcd3b2639f14f5ffbcb8ac3b2b83ba7dd36dd5c4"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "plugins-ready",
+            "entryDurationMs": 929.3000000715256,
+            "requestUid": "10f0b8771348d6ecdbe10154e200fa8e39dba3032442fe7d4c57edc7fe54dc76"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "diagnostic-failure",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "failureCode": "selected-character-hydration-failed",
+            "failureMilestone": "chat-ready",
+            "requestUid": "8ad4ff54df75310727b83dc4c6b27ea6782c49a415bc400ef97787505b06aa3e"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "chat-ready",
+            "entryDurationMs": 989.1000000238419,
+            "requestUid": "8ad4ff54df75310727b83dc4c6b27ea6782c49a415bc400ef97787505b06aa3e"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "phase-ready",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "milestone": "background-ready",
+            "entryDurationMs": 990.3000000715256,
+            "requestUid": "5a28c0b7c7d0c8b6e88adb360708fcae0d3af62f272265370b918db7e359a023"
+          },
+          {
+            "schemaVersion": 1,
+            "kind": "attempt-completed",
+            "attemptCount": 1,
+            "observerShellEnabled": true,
+            "attemptDurationMs": 295,
+            "requestUid": "5a28c0b7c7d0c8b6e88adb360708fcae0d3af62f272265370b918db7e359a023"
+          }
+        ]
+      }
+    ],
+    "recoveryJourneys": [
+      {
+        "scenario": "offline-before-send",
+        "initialRevision": 1,
+        "finalRevision": 2,
+        "retainedMutationId": "e8573a68-b656-4218-9f52-5d7d70c6bc0f",
+        "commandAttempts": 2,
+        "receiptAcknowledgements": 1,
+        "resourceRefreshes": 0
+      },
+      {
+        "scenario": "response-lost-after-commit",
+        "initialRevision": 1,
+        "finalRevision": 2,
+        "retainedMutationId": "1e2a9b70-b684-4b48-ad4a-31dbc4138b7c",
+        "commandAttempts": 2,
+        "receiptAcknowledgements": 1,
+        "resourceRefreshes": 0
+      },
+      {
+        "scenario": "event-gap",
+        "initialRevision": 1,
+        "finalRevision": 2,
+        "commandAttempts": 1,
+        "receiptAcknowledgements": 0,
+        "resourceRefreshes": 4
+      }
+    ],
+    "writerJourneys": [
+      {
+        "scenario": "denial-then-takeover",
+        "observerCommandsBeforePromotion": 0,
+        "oldWriterCommandsAfterTakeover": 0,
+        "newWriterMutationAccepted": true
+      }
+    ],
+    "optionalRuntimeJourneys": [
+      {
+        "runtime": "background-resources",
+        "mode": "slow",
+        "canRenderShell": true,
+        "canMutate": true,
+        "canGenerate": true,
+        "localizedFailure": false,
+        "retrySucceeded": true
+      },
+      {
+        "runtime": "background-resources",
+        "mode": "failed",
+        "canRenderShell": true,
+        "canMutate": true,
+        "canGenerate": true,
+        "localizedFailure": true,
+        "retrySucceeded": false
+      },
+      {
+        "runtime": "inlay-catalog",
+        "mode": "slow",
+        "canRenderShell": true,
+        "canMutate": true,
+        "canGenerate": false,
+        "localizedFailure": false,
+        "retrySucceeded": true
+      },
+      {
+        "runtime": "inlay-catalog",
+        "mode": "failed",
+        "canRenderShell": true,
+        "canMutate": true,
+        "canGenerate": false,
+        "localizedFailure": true,
+        "retrySucceeded": true
+      }
+    ]
+  }
+}

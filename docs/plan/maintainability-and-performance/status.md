@@ -4,15 +4,15 @@ Updated: 2026-09-05
 
 ## Execution Cursor
 
-- State: Phases 0, 1, 2a and 2b accepted; executing Phase 2c cache maintenance.
+- State: Phases 0, 1 and 2a–2c accepted; executing Phase 2d selected-locale loading.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2c.
-- Next task: detach optional cache writes and coalesce bounded maintenance with
-  generation fences across invalidation and asynchronous storage boundaries.
+- Next phase: [2. Browser work](phases/phase-2-browser-work.md), slice 2d.
+- Next task: load only the fallback and selected locale, preserving synchronous
+  resource application, readiness, selection ordering, and retry after load failure.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
-  acceptance evidence are recorded below; Phase 2 implementation is next.
+  acceptance evidence and completed Phase 2 slices are recorded below.
 
 Read [PLAN.md](PLAN.md) for stable scope, evidence, and invariants; read only the
 selected [phase](phases/README.md) for implementation detail.
@@ -23,7 +23,7 @@ selected [phase](phases/README.md) for implementation detail.
 | --- | --- | --- | --- |
 | [0. Character creation safety](phases/phase-0-character-creation-safety.md) | F01 | Accepted | Targeted append; 18 HTTP preservation/replay/rollback cases |
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
-| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | 2a–2b accepted; executing 2c; 2d queued | Scoped metadata/organization capture and single outbox normalization |
+| [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | 2a–2c accepted; executing 2d | Scoped rollback, single outbox normalization, bounded background cache |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Pending Phase 2 | None |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Pending Phase 3 | None |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
@@ -34,13 +34,13 @@ selected [phase](phases/README.md) for implementation detail.
 | Finding | Disposition | Missing completion evidence |
 | --- | --- | --- |
 | F01 | Fixed; targeted creation and pre-normalization receipt fingerprint | Final combined aggregate remains pending |
-| F02 | Open; source-confirmed work | Preparation baseline, narrowed reads/clones, behavior parity |
-| F03 | Fixed; scoped metadata and organization captures | Final combined aggregate and recovery browser closeout pending |
-| F04 | Open; source-confirmed work | Resource progress independent of pruning; cache lifecycle proof |
-| F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate and recovery browser closeout pending |
+| F02 | Open; preparation baseline accepted | Narrowed reads/clones and behavior parity |
+| F03 | Fixed; scoped metadata and organization captures | Final combined aggregate pending |
+| F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
+| F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
 | F06 | Open; measured bundle cost | Selected-locale loading and fresh preload comparison |
 | F07 | Open; source-confirmed work | Stall baseline, API progress, backup/GC consistency |
-| F08 | Open; measurement required | Residency baseline and recorded implementation/retention decision |
+| F08 | Open; large baseline exceeds heap/page-layout budgets | Recorded implementation/retention decision and after evidence |
 | F09 | Open; source-confirmed type gap | Explicit prompt views and compiler-enforced boundary coverage |
 | F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
 
@@ -65,9 +65,9 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 ## Decisions and Exceptions
 
-- The ten audited findings remain the scope. F01 is fixed; F02–F10 have accepted
-  baselines but remain open until their implementation/decision phases. No
-  finding has been silently deferred or added.
+- The ten audited findings remain the scope. F01 and F03–F05 are fixed; the
+  other findings have accepted baselines and remain open until their owning
+  implementation/decision phases. No finding has been silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
 - F08 retains an implementation decision gate. A measured decision to keep
@@ -247,7 +247,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 2b: Single Outbox Normalization Accepted
 
-- Implementation: accompanying outbox-normalization commit. Public staging and
+- Implementation: `9690cd25d`. Public staging and
   exact replacement capture external intent once. A private continuation derives
   projection targets and stages any required successor from that owned snapshot;
   the public target helper still validates external input. No storage format or
@@ -271,3 +271,27 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 - Current recovery guide updated. Prettier, whitespace, current-document and
   explicit plan link/path checks pass. These counters meet F05's structural
   budget and make no latency claim; encryption and required body ownership remain.
+
+## Phase 2c: Background Cache Maintenance Accepted
+
+- Implementation: accompanying cache-maintenance commit.
+  [Ownership, numeric bounds, lifecycle and verification record](evidence/cache-maintenance.md)
+  includes structural counters and retained built-browser journeys.
+- Cold/warm/eight-read scenarios now perform 4/3/3 prunes versus ten before;
+  each isolated eight-read burst performs one prune at every cache size. Valid
+  responses resolve while actual pruning is held. One 311-byte response-owned
+  capture per read remains explicit. No transport or latency savings are claimed.
+- Pending jobs/body bytes/values/manifests and temporary stored growth have fixed
+  admission bounds; entry, byte and manifest pressure converge to the original
+  retention limits even while scheduled timers are held. Clear and ownership/
+  connection changes fence suspended reads/writes/prunes without resetting the
+  old queue's memory accounting.
+- Focused checks: cache 37, delivery/auth-loss 23, cost 3, root reads 20, hydration
+  13, writer session 11, observer lifecycle 3. Negative controls reproduced held-
+  maintenance blocking and stale response repopulation. Review also reproduced
+  a missing hydration-401 cleanup, now fixed across all hydration transports.
+- Browser checks: cache population 1, startup recovery 7 (rerun after auth fix),
+  visible state recovery 3. These also provide the pending Phase 2a/2b offline,
+  lost-response, writer/lineage and sidebar recovery evidence. Current guides,
+  Prettier, whitespace and both documentation validators pass. Final aggregate
+  remains the combined gate after all implementation phases.
