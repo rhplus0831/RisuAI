@@ -47,6 +47,15 @@ bounded. If evidence is insufficient to decide, keep F08 open.
 - Document browser text-find, copying, search, and export behavior before choosing
   virtualization. If required interactions cannot be preserved, choose a different
   resident-bound strategy or retain paging; do not silently remove user behavior.
+  - Product decision: full-transcript browser text-find (Ctrl+F) and cross-message
+      drag selection/copying are not required within the ordinary interactive
+      residency envelope. The user explicitly accepts that unmounted messages may
+      be unavailable to browser text-find and that selection/copying across message
+      boundaries may be limited or unavailable. These limitations do not block
+      virtualization or another resident-bound strategy.
+  - Preserve selection/copying within an individual mounted message, existing
+    per-message copy actions, in-app search, jump-to-message, and data export.
+    Document the resulting behavior and any limitations.
 - Preserve full-chat screenshots. If capture still requires full materialization,
   declare it as a user-triggered temporary mode with a separate measured cost and
   restore ordinary residency on success, failure, or cancellation. Do not let a
