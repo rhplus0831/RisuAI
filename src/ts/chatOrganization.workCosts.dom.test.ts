@@ -126,7 +126,7 @@ describe('F03 organization capture scope', () => {
         const sibling = owner.chats[1]
         const messages = sibling.message
         const message = messages[0]
-        const captured = withCloneInstrumentation(capture.run)
+        const captured = withCloneInstrumentation(() => capture.run())
         expect(captured.result).not.toBeNull()
         const ids = messageIds(captured.result)
         const expectedIds =

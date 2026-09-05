@@ -95,7 +95,7 @@ function deferred() {
   return { promise, resolve }
 }
 
-async function within<T>(promise: Promise<T>): Promise<T> {
+async function within(promise: Promise<unknown>): Promise<unknown> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([

@@ -1027,7 +1027,7 @@ export function loadCharacterAppendState(db: DatabaseSync): {
     if (row.trash_time !== null && typeof row.trash_time !== 'number') {
       throw new ValidationError('character.trashTime must be a number')
     }
-    return { chaId: row.id, ...(row.trash_time === null ? {} : { trashTime: row.trash_time }) }
+    return { chaId: row.id, ...(typeof row.trash_time === 'number' ? { trashTime: row.trash_time } : {}) }
   })
   // Legacy embedded characters require the explicit import/recovery boundary;
   // an append must never hide them behind the first normalized SQLite row.
