@@ -381,16 +381,18 @@ describe('multipart .risu import route', () => {
     })
     expect(baseline.statusCode).toBe(200)
 
-    const originalWriteFileSync = fs.writeFileSync.bind(fs)
-    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+    const originalWriteFile = fs.promises.writeFile.bind(fs.promises)
+    let rejectedManifests = 0
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
       if (
-        String(file).endsWith(`${path.sep}manifest.json`) &&
+        String(file).endsWith(`${path.sep}.manifest.json`) &&
         String(file).includes(`${path.sep}backups${path.sep}`) &&
         String(data).includes('"kind":"automatic"')
       ) {
+        rejectedManifests++
         throw new Error('injected automatic backup manifest failure')
       }
-      return originalWriteFileSync(file, data, options)
+      return originalWriteFile(file, data, options)
     })
 
     const imported = await authedInject({
@@ -398,9 +400,11 @@ describe('multipart .risu import route', () => {
       url: '/api/v1/import/risusave',
       payload: { database: { version: 1, tag: 'must-not-be-imported' } },
     })
+    expect(rejectedManifests).toBe(1)
     expect(imported.statusCode).toBe(500)
     expect(imported.json()).toEqual({ error: 'automatic_backup_failed' })
     expect(listBackups(harness.dataDir)).toEqual([])
+    expect(fs.readdirSync(path.join(harness.dataDir, 'backups'))).toEqual([])
 
     const after = await authedComposedResourceDatabase({ method: 'GET', url: '/api/v1/bootstrap' })
     expect(after.resourceDatabase).toMatchObject({ tag: 'preserved-after-snapshot-failure' })
