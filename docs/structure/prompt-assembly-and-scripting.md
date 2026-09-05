@@ -111,6 +111,8 @@ Invalid known fields identify the domain/path without echoing values. Sparse
 supported legacy fields and nullable message metadata remain supported. Unfiled
 chats retain `folderId: null`; plain prompt cards may omit `type2`, passing an
 undefined location through the existing position parser without a new default.
+Custom models may omit `params`, preserving the existing behavior of sending no
+extra request parameters.
 
 Resolved configuration is deeply readonly by type. Effective request settings
 use a writable scalar overlay and owned global variables; selected nested

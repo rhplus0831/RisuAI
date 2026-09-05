@@ -40,14 +40,21 @@ describe('module descriptor server type ownership', () => {
     }
   })
 
-  it('keeps module, regex, and lorebook records aligned with browser descriptors', () => {
+  it('matches browser descriptors with audited sparse and readonly field differences', () => {
     const server = typeDeclarations('server/fastify/src/prompt/moduleDescriptors.ts')
     const browserModules = typeDeclarations('src/ts/process/modules.ts')
     const browserDatabase = typeDeclarations('src/ts/storage/database.svelte.ts')
 
     expect(server.get('MCPModule')).toBe(browserModules.get('MCPModule'))
     expect(server.get('RisuModule')).toBe(browserModules.get('RisuModule'))
-    expect(server.get('customscript')).toBe(browserDatabase.get('customscript'))
-    expect(server.get('loreBook')).toBe(browserDatabase.get('loreBook'))
+    // Persisted regex comments may be absent; the runtime keeps that absence.
+    // Compare the complete declaration after accounting for only this field.
+    const regex = server.get('customscript')
+    expect(regex).toContain('comment?: string;')
+    expect(regex?.replace('comment?: string;', 'comment: string;')).toBe(browserDatabase.get('customscript'))
+    // Lore cache values are borrowed by the selected generation snapshot.
+    const lore = server.get('loreBook')
+    expect(lore).toContain('data: readonly string[];')
+    expect(lore?.replace('data: readonly string[];', 'data: string[];')).toBe(browserDatabase.get('loreBook'))
   })
 })

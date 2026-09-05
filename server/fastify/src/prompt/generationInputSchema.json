@@ -2122,7 +2122,7 @@
           }
         }
       },
-      "required": ["id", "internalId", "url", "format", "tokenizer", "key", "name", "params", "flags"]
+      "required": ["id", "internalId", "url", "format", "tokenizer", "key", "name", "flags"]
     },
     "record16": {
       "type": "object",
@@ -13481,7 +13481,7 @@
           }
         }
       },
-      "required": ["id", "internalId", "url", "format", "tokenizer", "key", "name", "params", "flags"]
+      "required": ["id", "internalId", "url", "format", "tokenizer", "key", "name", "flags"]
     },
     "record252": {
       "type": "object",

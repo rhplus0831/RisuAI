@@ -14,9 +14,11 @@ const formatHost: ts.FormatDiagnosticsHost = {
 }
 
 describe('generation input concrete contracts', () => {
-  it('rejects misspelled fields and values on every participating record', () => {
-    const fixtureName = path.join(root, 'server/fastify/src/prompt/__generation_contract_fixture.ts')
-    const fixture = `import type {FastifyDatabase, FastifyCharacter, FastifyChat, FastifyMessage, FastifyLoreBook, FastifyCustomScript, FastifyMessagePresetInfo, ResolvedGenerationSettings} from './serverTypes.js';
+  it.each([true, false])(
+    'keeps concrete contracts with strict=%s',
+    (strict) => {
+      const fixtureName = path.join(root, 'server/fastify/src/prompt/__generation_contract_fixture.ts')
+      const fixture = `import type {FastifyDatabase, FastifyCharacter, FastifyChat, FastifyMessage, FastifyLoreBook, FastifyCustomScript, FastifyMessagePresetInfo, ResolvedGenerationSettings} from './serverTypes.js';
       import {runLuaEditTrigger, type ServerLuaEditTriggerContext} from './luaRuntime.js';
       import type {PromptMessage} from './promptMessage.js';
       import {validateGenerationSettings,validateFastifyDatabase,validateGenerationPreflightInputs,validateProviderGenerationSettings,validateMemoryGenerationSettings} from './generationInputValidators.js';
@@ -96,14 +98,17 @@ describe('generation input concrete contracts', () => {
       // @ts-expect-error unknown message preset property
       info.promptNames = 'x';
     `
-    const host = ts.createCompilerHost(parsed.options)
-    const originalGetSourceFile = host.getSourceFile.bind(host)
-    host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) =>
-      name === fixtureName
-        ? ts.createSourceFile(name, fixture, languageVersion, true)
-        : originalGetSourceFile(name, languageVersion, onError, shouldCreateNewSourceFile)
-    const program = ts.createProgram([fixtureName], parsed.options, host)
-    const diagnostics = ts.getPreEmitDiagnostics(program)
-    expect(ts.formatDiagnostics(diagnostics, formatHost)).toBe('')
-  }, 60_000)
+      const options = { ...parsed.options, strict }
+      const host = ts.createCompilerHost(options)
+      const originalGetSourceFile = host.getSourceFile.bind(host)
+      host.getSourceFile = (name, languageVersion, onError, shouldCreateNewSourceFile) =>
+        name === fixtureName
+          ? ts.createSourceFile(name, fixture, languageVersion, true)
+          : originalGetSourceFile(name, languageVersion, onError, shouldCreateNewSourceFile)
+      const program = ts.createProgram([fixtureName], options, host)
+      const diagnostics = ts.getPreEmitDiagnostics(program)
+      expect(ts.formatDiagnostics(diagnostics, formatHost)).toBe('')
+    },
+    60_000,
+  )
 })

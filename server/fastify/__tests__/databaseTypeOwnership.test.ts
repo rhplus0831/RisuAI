@@ -36,22 +36,41 @@ describe('Fastify application-model type ownership', () => {
     expect(offenders).toEqual([])
   })
 
-  it('keeps bounded row contracts structural at the Fastify boundary', () => {
-    const owner = fs.readFileSync(path.join(repoRoot, 'server/fastify/src/prompt/serverTypes.ts'), 'utf8')
-
-    for (const typeName of [
-      'FastifyChat',
-      'FastifyMessage',
-      'FastifyCharacter',
-      'FastifyLoreBook',
-      'FastifyCustomScript',
-      'FastifyMessagePresetInfo',
-    ]) {
-      expect(owner).toContain(`export interface ${typeName}`)
-      expect(owner).not.toContain(`type ${typeName} = any`)
+  it('exports finite selected database and row contracts without aggregate escape types', () => {
+    const ownerPath = path.join(repoRoot, 'server/fastify/src/prompt/serverTypes.ts')
+    const configPath = path.join(repoRoot, 'server/fastify/tsconfig.json')
+    const config = ts.readConfigFile(configPath, ts.sys.readFile)
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(configPath))
+    const program = ts.createProgram([ownerPath], parsed.options)
+    const checker = program.getTypeChecker()
+    const owner = program.getSourceFile(ownerPath)!
+    const exports = checker.getExportsOfModule(checker.getSymbolAtLocation(owner)!)
+    const contracts = {
+      GenerationSettings: ['temperature', 'customModels', 'promptTemplate'],
+      FastifyDatabase: ['characters', 'temperature'],
+      FastifyChat: ['message', 'generationSettings'],
+      FastifyMessage: ['role', 'data'],
+      FastifyCharacter: ['chaId', 'chats'],
+      FastifyLoreBook: ['content', 'mode'],
+      FastifyCustomScript: ['in', 'out'],
+      FastifyMessagePresetInfo: ['promptText', 'promptName'],
     }
-    expect(owner).toContain('Fastify-owned structural views')
-    expect(owner).toContain('FastifyDatabase = any')
-    expect(owner).toContain('open compatibility payload')
+
+    for (const [name, requiredProperties] of Object.entries(contracts)) {
+      const symbol = exports.find((entry) => entry.name === name)
+      expect(symbol, name).toBeDefined()
+      const contract = checker.getDeclaredTypeOfSymbol(symbol!)
+      expect(contract.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never), name).toBe(0)
+      expect(checker.getIndexInfosOfType(contract), name).toEqual([])
+      const properties = checker.getPropertiesOfType(contract)
+      expect(
+        properties.map((property) => property.name),
+        name,
+      ).toEqual(expect.arrayContaining(requiredProperties))
+      for (const property of properties) {
+        const value = checker.getTypeOfSymbolAtLocation(property, owner)
+        expect(value.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown), `${name}.${property.name}`).toBe(0)
+      }
+    }
   })
 })

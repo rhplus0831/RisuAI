@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–5 accepted; Phase 6 aggregate exposed compatibility, type and stale test/inventory gaps; focused repairs in progress.
+- State: Phases 0–5 accepted; Phase 6 aggregate repairs implemented and focused checks pass; repeating combined verification.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md).
-- Next task: repair every observed aggregate failure, rerun affected focused checks,
-  then repeat the combined gate before final evidence and archival.
+- Next task: repeat the agent aggregate and affected isolated/browser measurements
+  at the repaired source, then record final evidence and archive.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -959,3 +959,36 @@ and legacy-character type gaps, stale architectural/metric ownership expectation
 and asynchronous test seams that still model former bootstrap, retry and backup
 publication paths. These require focused repairs; passing cost/native lanes do
 not waive the combined gate. No finding is archived or described as fully closed.
+
+## Phase 6 Combined-Gate Repairs
+
+- A custom model can legitimately omit `params`: both runtime dispatch parsing
+  and the shared model resolver already treat absence as no extra parameters.
+  The finite contract/schema now accept that omission while rejecting a nonstring
+  value; the multimodal byte-parity fixture remains unchanged and passes.
+- Lua excludes simple edit owners before its legacy null/missing character-tag
+  check. Runtime character/simple behavior is unchanged and now narrows under
+  both strict and non-strict null checking. Resolved-type ownership replaces the
+  obsolete test explicitly requiring an `any` database alias. Other ownership
+  assertions preserve the exact optional regex comment, readonly lore cache,
+  optional bounded-regex settings and provider-only BardWiki view.
+- Focused F09 checks: decoder 27, strict/non-strict compiler 2, Lua 64,
+  server-backed prompt fixtures 27, database ownership 2, BardWiki ownership 1,
+  module descriptors 2 and value ownership 3 pass. The current prompt guide
+  records optional custom-model parameters.
+- Other separately committed focused repairs pass: Korean locale 22;
+  organization work 25 (three baseline skips), cache delivery 23, creation
+  preservation 18; bootstrap 184, translator preset UI 71 and import safety 41;
+  architecture inventory 7, flat model inventory 1 and command ceilings 8.
+  Bootstrap holds the actual lifecycle-discard boundary, translator mocks honor
+  deferred rollback disposition, and import failure injection targets the real
+  asynchronous pending-manifest write. Assertions retain ordering, intent,
+  safety failure and cleanup guarantees. Production behavior is unchanged.
+- The maintained archived JSON inventories are live tooling inputs: reviewed
+  updates add one selected prompt projection/table occurrence and only the
+  changed test-resource access counts. No historical narrative is rewritten.
+  CBS scalar adaptation is explicitly classified, and creation metric assertions
+  now require only character/settings writes. No gate was removed or widened.
+
+All repairs are implemented; another aggregate remains required. The first
+failed aggregate and its passing cost/native evidence stay retained separately.

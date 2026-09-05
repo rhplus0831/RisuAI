@@ -26,8 +26,11 @@ describe('Fastify value type ownership', () => {
       'server/fastify/src/prompt/boundedRegex.ts',
       'BoundedRegexSettings',
       {
-        complexRegexCompatibilityMode: "'strict' | 'worker'",
-        regexOutputSizeLimitMiB: 'number',
+        'complexRegexCompatibilityMode?': "'strict' | 'worker'",
+        'complexRegexInputTimeoutMs?': 'number',
+        'complexRegexOutputTimeoutMs?': 'number',
+        'complexRegexDisplayTimeoutMs?': 'number',
+        'regexOutputSizeLimitMiB?': 'number',
       },
     ],
   ] as const)('keeps %s behind its exported server-owned value interface', (file, name, properties) => {

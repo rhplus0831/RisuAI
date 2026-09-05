@@ -856,10 +856,12 @@ export function throwServerLuaFailure(result: ServerLuaResult, context: string):
 
 function asCharacter(ctx: ServerLuaRuntimeContext): character | undefined {
   const char = ctx.char
-  if (!char) return undefined
-  const type = char.type
+  // Exclude edit-only owners before checking the nullable legacy character tag.
+  // This narrowing also holds for browser test consumers without strictNullChecks.
+  if (!char || char.type === 'simple') return undefined
+  const { type, chaId } = char
   if (type === 'character') return char
-  if ((type === undefined || type === null) && typeof char.chaId === 'string') {
+  if ((type === undefined || type === null) && typeof chaId === 'string') {
     return char
   }
   return undefined

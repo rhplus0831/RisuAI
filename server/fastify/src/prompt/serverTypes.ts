@@ -59,7 +59,7 @@ export type GenerationSettings = {
     tokenizer: LLMTokenizer
     key: string
     name: string
-    params: string
+    params?: string
     flags: LLMFlags[]
   }[]
   customProxyRequestModel?: string

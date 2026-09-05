@@ -278,6 +278,49 @@ describe('server Lua runtime — pure edit-hook dispatch', () => {
   })
 })
 
+describe('server Lua runtime — character ownership', () => {
+  it.each(['character', undefined, null])('preserves character reads and writes with legacy type %j', async (type) => {
+    const char = makeChar()
+    // Legacy fixtures can retain a null/missing tag at this runtime boundary.
+    Object.assign(char, { type })
+    const { ctx } = makeRuntime({ char })
+    const result = await runServerLua(
+      {
+        code: `function onStart(id)
+          local before = getName(id)
+          setName(id, 'Renamed')
+          return before .. '|' .. getName(id) .. '|' .. getCharacterFirstMessage(id)
+        end`,
+        mode: 'start',
+      },
+      ctx,
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.res).toBe('Tess|Renamed|Hi there.')
+    expect(char.name).toBe('Renamed')
+    expect(char.type).toBe(type)
+  })
+
+  it('does not grant character getters or setters to a simple edit owner', async () => {
+    const { ctx } = makeRuntime()
+    const simple = { type: 'simple' as const, chaId: 'simple-owner', name: 'Hidden' }
+    ctx.char = simple
+    const result = await runServerLua(
+      {
+        code: `function onStart(id)
+          setName(id, 'Renamed')
+          return getName(id) .. '|' .. getCharacterFirstMessage(id)
+        end`,
+        mode: 'start',
+      },
+      ctx,
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.res).toBe('|')
+    expect(simple.name).toBe('Hidden')
+  })
+})
+
 describe('server Lua runtime — complete chat replacement contract', () => {
   it('keeps only role/data and cannot introduce new speaker identities through setFullChat', async () => {
     const { ctx } = makeRuntime({

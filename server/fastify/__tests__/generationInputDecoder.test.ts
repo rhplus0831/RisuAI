@@ -282,6 +282,28 @@ describe('selected generation persistence decoder', () => {
     },
   )
 
+  it('preserves custom model entries without optional request parameters', () => {
+    const customModel = {
+      id: 'xcustom:::vision',
+      internalId: 'vision',
+      name: 'Vision',
+      url: 'https://vision.example/v1/chat/completions',
+      key: 'fixture-key',
+      format: 0,
+      tokenizer: 0,
+      flags: [0],
+    }
+    const input = { customModels: [customModel] }
+    const preflight = { database: input, currentChar: { chaId: 'character' }, currentChat: { id: 'chat' } }
+    expect(decodeGenerationSettings(input)).toBe(input)
+    expect(decodeGenerationPreflightInputs(preflight)).toBe(preflight)
+    expect(decodeProviderGenerationSettings(input)).toBe(input)
+    expect(Object.hasOwn(customModel, 'params')).toBe(false)
+    expect(() => decodeGenerationSettings({ customModels: [{ ...customModel, params: 42 }] })).toThrow(
+      'Invalid settings generation input at /customModels/0/params',
+    )
+  })
+
   it('accepts sparse provider settings with existing per-provider defaults', () => {
     const raw = {
       hordeConfig: { apiKey: 'horde-key' },
