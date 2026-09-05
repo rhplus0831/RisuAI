@@ -887,6 +887,9 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
   it('keeps a remotely marked PATCH ahead of an immediate total-revert correction', async () => {
     vi.useRealTimers()
+    // Hold the local debounce while IndexedDB and the simulated remote marker
+    // run. Zero polling intervals keep waitFor from advancing that debounce.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -900,42 +903,49 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     try {
       await editPrompt('marked prompt A')
       let staged = await listPendingMutations()
-      await vi.waitFor(async () => {
-        staged = await listPendingMutations()
-        expect(staged).toHaveLength(1)
-      })
+      await vi.waitFor(
+        async () => {
+          staged = await listPendingMutations()
+          expect(staged).toHaveLength(1)
+        },
+        { interval: 0 },
+      )
+      expect(commandSpies.updateInputs).toEqual([])
       await expect(beginPendingMutationDispatch(staged[0].handle)).resolves.toBe('persisted')
 
       await editPrompt('old prompt A')
-      await vi.waitFor(async () => {
-        staged = await listPendingMutations()
-        expect(staged.map((entry) => entry.intent)).toEqual([
-          {
-            version: 1,
-            dependencyKeys: ['translator-preset:selection'],
-            requests: [
-              {
-                method: 'PATCH',
-                path: '/translator-presets/preset-a',
-                body: { patch: { prompt: 'marked prompt A' } },
-              },
-            ],
-          },
-          {
-            version: 1,
-            dependencyKeys: ['translator-preset:selection'],
-            requests: [
-              {
-                method: 'PATCH',
-                path: '/translator-presets/preset-a',
-                body: { patch: { prompt: 'old prompt A' } },
-              },
-            ],
-          },
-        ])
-      })
+      await vi.waitFor(
+        async () => {
+          staged = await listPendingMutations()
+          expect(staged.map((entry) => entry.intent)).toEqual([
+            {
+              version: 1,
+              dependencyKeys: ['translator-preset:selection'],
+              requests: [
+                {
+                  method: 'PATCH',
+                  path: '/translator-presets/preset-a',
+                  body: { patch: { prompt: 'marked prompt A' } },
+                },
+              ],
+            },
+            {
+              version: 1,
+              dependencyKeys: ['translator-preset:selection'],
+              requests: [
+                {
+                  method: 'PATCH',
+                  path: '/translator-presets/preset-a',
+                  body: { patch: { prompt: 'old prompt A' } },
+                },
+              ],
+            },
+          ])
+        },
+        { interval: 0 },
+      )
       expect(staged[0].handle.mutationId).not.toBe(staged[1].handle.mutationId)
-      await vi.waitFor(() => expect(commandSpies.inlineReplayInputs).toHaveLength(1))
+      await vi.waitFor(() => expect(commandSpies.inlineReplayInputs).toHaveLength(1), { interval: 0 })
       expect(commandSpies.updateInputs).toEqual([])
     } finally {
       if (component) {
@@ -951,6 +961,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
   it('keeps reverted and net-dirty fields in the successor behind a remotely marked PATCH', async () => {
     vi.useRealTimers()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     vi.stubGlobal('indexedDB', new IDBFactory())
     resetPendingMutationOutboxForTests()
     await preparePendingMutationOutbox({
@@ -964,30 +975,53 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     try {
       await editPrompt('marked prompt A')
       let staged = await listPendingMutations()
-      await vi.waitFor(async () => {
-        staged = await listPendingMutations()
-        expect(staged).toHaveLength(1)
-      })
-      await expect(beginPendingMutationDispatch(staged[0].handle)).resolves.toBe('persisted')
+      await vi.waitFor(
+        async () => {
+          staged = await listPendingMutations()
+          expect(staged).toHaveLength(1)
+        },
+        { interval: 0 },
+      )
+      expect(commandSpies.updateInputs).toEqual([])
+      const predecessor = staged[0]
+      await expect(beginPendingMutationDispatch(predecessor.handle)).resolves.toBe('persisted')
 
       await editMaxResponse(321)
       await editPrompt('old prompt A')
-      await vi.waitFor(async () => {
-        staged = await listPendingMutations()
-        expect(staged).toHaveLength(2)
-        expect(staged[1].intent).toEqual({
-          version: 1,
-          dependencyKeys: ['translator-preset:selection'],
-          requests: [
-            {
-              method: 'PATCH',
-              path: '/translator-presets/preset-a',
-              body: { patch: { prompt: 'old prompt A', maxResponse: 321 } },
-            },
-          ],
-        })
-      })
+      await vi.waitFor(
+        async () => {
+          staged = await listPendingMutations()
+          expect(staged).toHaveLength(2)
+          expect(staged[0].handle.mutationId).toBe(predecessor.handle.mutationId)
+          expect(staged[0].intent).toEqual(predecessor.intent)
+          expect(staged[1].intent).toEqual({
+            version: 1,
+            dependencyKeys: ['translator-preset:selection'],
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/translator-presets/preset-a',
+                body: { patch: { prompt: 'old prompt A', maxResponse: 321 } },
+              },
+            ],
+          })
+        },
+        { interval: 0 },
+      )
       expect(staged[0].handle.mutationId).not.toBe(staged[1].handle.mutationId)
+      await vi.advanceTimersByTimeAsync(250)
+      await vi.waitFor(
+        () =>
+          expect(commandSpies.inlineReplayInputs).toEqual([
+            {
+              requests: predecessor.intent.requests,
+              mutationId: predecessor.handle.mutationId,
+              databaseLineage: predecessor.handle.databaseLineage,
+            },
+          ]),
+        { interval: 0 },
+      )
+      expect(commandSpies.updateInputs).toEqual([])
     } finally {
       if (component) {
         unmount(component)
