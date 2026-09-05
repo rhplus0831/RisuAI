@@ -3686,6 +3686,7 @@
     overflow-y: auto;
   }
 
+  .chat-composer-row:focus-within .text-input-area,
   .chat-composer-row:focus-within .chat-composer-attached-control {
     border-color: var(--risu-theme-textcolor);
   }
