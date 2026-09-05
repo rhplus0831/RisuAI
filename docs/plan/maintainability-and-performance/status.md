@@ -4,12 +4,12 @@ Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–5 accepted; Phase 6 shared policy and final verification in progress.
+- State: Phases 0–5 accepted; Phase 6 implementation complete; final combined verification in progress.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
 - Next phase: [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md).
-- Next task: move the unchanged trigger compatibility catalog and diagnostics into
-  shared-core, then verify all findings together and archive the completed workstream.
+- Next task: run final deterministic costs, isolated measurements, native recovery
+  and agent aggregate; record final dispositions and archive the completed workstream.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -27,7 +27,7 @@ selected [phase](phases/README.md) for implementation detail.
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
 | [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Accepted | [Bounded discovery/workers, guarded GC and original latency limits](evidence/maintenance-scheduling.md) |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Accepted | [Original budgets and final native checks](evidence/transcript-residency.md#accepted-working-window-costs-and-final-native-verification) |
-| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Implementing shared owner | Final combined verification pending |
+| [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Implementation complete; verifying closeout | Shared owner and seven focused invocations pass |
 
 ## Finding Dispositions
 
@@ -42,7 +42,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | Final combined aggregate pending |
 | F08 | Fixed; bounded adaptive residency meets original costs and native interaction gates | Final combined aggregate pending |
 | F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
-| F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
+| F10 | Fixed; one neutral shared owner and forwarding runtime facades | Final combined aggregate pending |
 
 ## Verification Ledger
 
@@ -917,3 +917,25 @@ show 40 visible source rows with 46 mounted, complete coverage and zero spacer.
 Large post-scroll settlement remains 1.440/1.273/3.380 seconds, measured before
 forced GC, with source-correct readable content. All earlier failures remain
 visible; no original budget or workload was relaxed. Phase 6 is now authorized.
+
+## Phase 6a: Shared Trigger Policy Implemented
+
+`packages/shared-core/src/triggerCompatibility.ts` is the byte-identical 98-line
+move of the previous browser/server policy (SHA-256
+`84e4b4d9d2213d2906cf22d165e0eab3107954276435758a72336209a16077e7`). Both old
+runtime paths now forward every export from
+`@risuai/shared-core/trigger-compatibility`. The 41-effect catalog, exact trailing
+space regex classifier, empty CBS exclusions, sorted deduplicated diagnostics,
+cycle/array handling and input ownership are unchanged. Actual execution and
+warning collection remain in Fastify. The package export and both facade/consumer
+edges are checked by the existing AST ownership inventory.
+
+Seven separate `pnpm test -- <one exact file>` invocations pass:
+shared `triggerCompatibility.test.ts` 23, `ownership.test.ts` 84,
+`importBoundary.test.ts` 2; server `triggerCompatibilityOwnership.test.ts` 4,
+`triggers.test.ts` 143, `phase9CompatibilityStructure.test.ts` 4; browser
+`src/lib/SideBars/Scripts/triggerV2Import.test.ts` 17. Shared tests exercise
+browser/server/package identity and immutable cyclic behavior. Current prompt,
+domain and package guides are updated; current docs (49), explicit plan docs
+(22), Prettier and whitespace checks pass. All planned implementation is now
+complete. Final cost, recovery and agent aggregate checks are next.

@@ -36,6 +36,12 @@ export const requiredImports: Record<string, readonly string[]> = {
   './providerCapability.js': ['packages/shared-core/src/modelProfileResolver.ts'],
   './providerCredentialRecords.js': ['packages/shared-core/src/modelProfileResolver.ts'],
   './providerSecretMask.js': ['packages/shared-core/src/providerCapability.ts'],
+  './triggerCompatibility.js': ['server/fastify/src/prompt/scripts.ts', 'server/fastify/src/prompt/triggers.ts'],
+  '../src/prompt/triggerCompatibility.js': [
+    'server/fastify/__tests__/phase9CompatibilityStructure.test.ts',
+    'server/fastify/__tests__/triggerCompatibilityOwnership.test.ts',
+    'server/fastify/__tests__/triggers.test.ts',
+  ],
   '@risuai/shared-core/': [
     'server/fastify/src/prompt/cbsAdapter.ts',
     'server/fastify/src/prompt/promptVariablesBoot.ts',
@@ -353,11 +359,23 @@ export const requiredImports: Record<string, readonly string[]> = {
     'server/fastify/src/databaseDefaults.ts',
     'src/ts/translator/presets.ts',
   ],
+  '@risuai/shared-core/trigger-compatibility': [
+    'server/fastify/src/prompt/triggerCompatibility.ts',
+    'server/fastify/__tests__/triggerCompatibilityOwnership.test.ts',
+    'src/ts/process/triggerServerSupport.ts',
+  ],
+  'src/ts/process/triggerServerSupport': [
+    'src/lib/SideBars/Scripts/RegexData.svelte',
+    'src/lib/SideBars/Scripts/TriggerList.svelte',
+    'src/lib/SideBars/Scripts/TriggerV2List.svelte',
+    'src/lib/SideBars/Scripts/triggerV2Import.test.ts',
+  ],
   fflate: ['src/ts/translator/presets.ts'],
   'msgpackr/index-no-eval': ['src/ts/translator/presets.ts'],
 }
 
 export const forwardingFacades: Record<string, readonly [module: string, exports: readonly string[]]> = {
+  'server/fastify/src/prompt/triggerCompatibility.ts': ['@risuai/shared-core/trigger-compatibility', ['*']],
   'src/ts/agentPresetResolver.ts': ['@risuai/shared-core/agent-preset-resolver', ['*']],
   'src/ts/chatGenerationSettings.ts': ['@risuai/shared-core/chat-generation-settings', ['*']],
   'src/ts/model/modelProfileResolver.ts': ['@risuai/shared-core/model-profile-resolver', ['*']],
@@ -367,6 +385,7 @@ export const forwardingFacades: Record<string, readonly [module: string, exports
   'src/ts/presetSplit.ts': ['@risuai/shared-core/preset-split', ['*']],
   'src/ts/process/promptBlockRole.ts': ['@risuai/shared-core/prompt-block-role', ['*']],
   'src/ts/process/request/providerCapability.ts': ['@risuai/shared-core/provider-capability', ['*']],
+  'src/ts/process/triggerServerSupport.ts': ['@risuai/shared-core/trigger-compatibility', ['*']],
   'src/ts/translator/pipeline.ts': ['@risuai/shared-core/translator-pipeline', ['*']],
 }
 
@@ -387,6 +406,7 @@ export const packageExports: Record<string, string> = {
   './provider-capability': './src/providerCapability.ts',
   './translator-pipeline': './src/translatorPipeline.ts',
   './translator-presets': './src/translatorPresets.ts',
+  './trigger-compatibility': './src/triggerCompatibility.ts',
 }
 
 export const retiredPaths = [

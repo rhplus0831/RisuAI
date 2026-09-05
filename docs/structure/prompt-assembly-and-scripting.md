@@ -539,9 +539,14 @@ eligible for persistence, while transient chat/output changes from the aborted
 run are discarded.
 
 Unsupported V2 effects are preserved for round-trip compatibility and skipped,
-not partially executed. `src/ts/process/triggerServerSupport.ts` is the source
-of truth; categories include commands, alerts, privileged LLM/image/similarity
-work, legacy browser JavaScript, GUI/update/wait operations, and the V2
+not partially executed. `packages/shared-core/src/triggerCompatibility.ts`,
+exported as `@risuai/shared-core/trigger-compatibility`, owns the neutral catalog
+and diagnostic traversal. `src/ts/process/triggerServerSupport.ts` and
+`server/fastify/src/prompt/triggerCompatibility.ts` only forward its exports.
+Execution, privileged actions, and per-run warning collection remain in
+`server/fastify/src/prompt/triggers.ts` and `server/fastify/src/prompt/scripts.ts`.
+Categories include commands, alerts, privileged LLM/image/similarity work,
+legacy browser JavaScript, GUI/update/wait operations, and the V2
 character/persona/note/lorebook state arms. Generation emits one warning per
 distinct unsupported effect type, even when recursion or a loop encounters it
 multiple times. The trigger editors mark configured unsupported definitions,
@@ -549,9 +554,18 @@ dedicated V2 JSON import reports them without changing the imported rows, and
 the browser presents runtime compatibility warnings visibly as well as retaining
 them in the generation result.
 
-The same catalog includes regex-script `@@emo` output. Matching scripts preserve
-their rows and leave text unchanged, add one `@@emo` warning per generation,
-and show an annotation beside the regex output editor.
+The shared diagnostic traversal inspects nested objects and arrays, tolerates
+cycles, and returns sorted, deduplicated effect names without changing imported
+definitions. The unsupported CBS callback set remains empty. The same catalog
+includes regex-script `@@emo` output, classified only when the string starts
+with `@@emo` followed by a literal space. Matching scripts preserve their rows
+and leave text unchanged, add one `@@emo` warning per generation, and show an
+annotation beside the regex output editor. Shared behavior and facade identity
+are covered by `packages/shared-core/src/triggerCompatibility.test.ts`;
+`packages/shared-core/src/ownership.test.ts` verifies the package export and
+forwarding boundaries, and
+`server/fastify/__tests__/triggerCompatibilityOwnership.test.ts` verifies the
+Fastify consumer imports and diagnostic parity.
 
 This boundary is specific to V2 trigger effects. It does not make the durable
 Lua setters above unsupported. Keep the two compatibility surfaces distinct in

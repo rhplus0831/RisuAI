@@ -20,7 +20,8 @@ entrypoints. The complete public surface is declared in
   `providerCredentialRecords.ts`, and `translatorPresets.ts`.
 - Prompt and generation policy: `cbsContracts.ts`, `cbsRegistry.ts`,
   `chatGenerationSettings.ts`, `effectivePromptTemplate.ts`,
-  `promptBlockRole.ts`, `promptSettings.ts`, and `providerCapability.ts`.
+  `promptBlockRole.ts`, `promptSettings.ts`, `providerCapability.ts`, and
+  `triggerCompatibility.ts`.
 - Cross-runtime value helpers: `historySlots.ts`, `moduleActivation.ts`,
   `moduleIntegration.ts`, `resourceManifest.ts`, and `settingsGroups.ts`.
 - Public package entrypoints are declared in `package.json`; add or update the
@@ -28,6 +29,12 @@ entrypoints. The complete public surface is declared in
 
 Keep runtime adapters in `src/` or `server/fastify/`. A compatibility re-export
 there is an import seam, not the implementation owner.
+
+`@risuai/shared-core/trigger-compatibility` owns the unsupported-effect catalog,
+exact regex-output classification, and non-mutating, cycle-safe diagnostics.
+The browser and Fastify trigger compatibility facades forward every export;
+trigger execution and enforcement remain in Fastify. See
+[trigger compatibility](../../docs/structure/prompt-assembly-and-scripting.md#v2-triggers-and-unsupported-effects).
 
 ## Focused Checks
 
