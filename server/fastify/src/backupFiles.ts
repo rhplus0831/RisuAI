@@ -4,9 +4,9 @@ import path from 'node:path'
 import type { PersistedAsset } from './repository.js'
 
 export const BACKUP_COPY_CONCURRENCY = 2
-// At most 32 open directory levels, each buffering one Dirent: the traversal
+// At most 32 open directory levels, each buffering 64 Dirents: the traversal
 // never retains a corpus-sized directory array or an unbounded directory stack.
-export const BACKUP_DIRECTORY_BUFFER_SIZE = 1
+export const BACKUP_DIRECTORY_BUFFER_SIZE = 64
 export const BACKUP_DIRECTORY_DEPTH_LIMIT = 32
 export const BACKUP_HASH_BUFFER_BYTES = 64 * 1024
 
@@ -57,8 +57,15 @@ async function verifyAsset(file: string, asset: PersistedAsset, signal: AbortSig
   const stat = await fs.promises.stat(file)
   if (!stat.isFile() || stat.size !== asset.size) throw new BackupAssetError(`Backup asset size mismatch: ${asset.id}`)
   const hash = createHash('sha256')
-  for await (const chunk of fs.createReadStream(file, { highWaterMark: BACKUP_HASH_BUFFER_BYTES, signal })) {
-    hash.update(chunk)
+  // The destination is private to this lease and no writer can change it.
+  // Small verified-size files need one bounded buffer, avoiding stream/event
+  // machinery for the common icon/inlay case. Large files stay streamed.
+  if (stat.size <= BACKUP_HASH_BUFFER_BYTES) {
+    hash.update(await fs.promises.readFile(file, { signal }))
+  } else {
+    for await (const chunk of fs.createReadStream(file, { highWaterMark: BACKUP_HASH_BUFFER_BYTES, signal })) {
+      hash.update(chunk)
+    }
   }
   if (hash.digest('hex') !== asset.id) throw new BackupAssetError(`Backup asset hash mismatch: ${asset.id}`)
 }

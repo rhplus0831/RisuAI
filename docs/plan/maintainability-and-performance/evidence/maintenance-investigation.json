@@ -698,6 +698,2827 @@
           "maxApiResponseMs": 16.576
         }
       }
+    },
+    {
+      "label": "V8 pause diagnostic before copy traversal tuning",
+      "source": "731fc0a24 with optional PerformanceObserver instrumentation",
+      "outcome": "Every >5ms backup gap aligns with V8 collection; retain all samples. Diagnostic instrumentation is not final timing acceptance.",
+      "environment": {
+        "sourceAnchor": "731fc0a2436338d7445fd132959b941d26a3a2f5",
+        "node": "v24.19.0",
+        "platform": "linux",
+        "release": "7.0.0-30-generic",
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "logicalCpus": 10,
+        "hostMemoryBytes": 50509873152,
+        "repetitions": 3,
+        "warmupPerSize": 1,
+        "cacheState": "Fresh temporary files each repetition; OS page cache is not flushed",
+        "concurrency": "One injected authenticated GET plus one setImmediate heartbeat",
+        "memoryMethod": "Samples at operation boundaries, recursive-copy completion, and heartbeat; process maxRSS is lifetime high-water, not per-operation peak",
+        "phaseMethod": "Real node:sqlite backup marks; post-snapshot includes reference scanning, all file copying, cleanup, and manifest; directoryCopy timings/counts cover recursive cp calls only, so bounded copyFile work is included in post-snapshot time even when directoryCopy is zero; createBackup does not run retention"
+      },
+      "samples": [
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 25.142397000000074,
+            "beforeSnapshotMs": 0.6381430000001274,
+            "sqliteSnapshotMs": 1.0752049999996416,
+            "afterSnapshotMs": 23.429049000000305,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 85,
+            "eventLoopTurnsAfterSnapshot": 82,
+            "maxEventLoopGapMs": 2.1840440000000854,
+            "apiResponsesDuringWork": 41,
+            "apiResponsesAfterSnapshot": 40,
+            "apiRequests": 42,
+            "maxApiResponseMs": 2.4589459999997416,
+            "heapAtStartBytes": 179084520,
+            "sampledPeakHeapBytes": 182393120,
+            "rssAtStartBytes": 385519616,
+            "sampledPeakRssBytes": 386699264,
+            "processLifetimePeakRssBytes": 386699264,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 11.90643399999999,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 37,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.0576240000000325,
+            "apiResponsesDuringWork": 17,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 18,
+            "maxApiResponseMs": 0.8734110000000328,
+            "heapAtStartBytes": 185245280,
+            "sampledPeakHeapBytes": 187271640,
+            "rssAtStartBytes": 386961408,
+            "sampledPeakRssBytes": 386961408,
+            "processLifetimePeakRssBytes": 386961408,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 24.158144999999877,
+            "beforeSnapshotMs": 0.575354999999945,
+            "sqliteSnapshotMs": 0.9544550000000527,
+            "afterSnapshotMs": 22.62833499999988,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 86,
+            "eventLoopTurnsAfterSnapshot": 82,
+            "maxEventLoopGapMs": 1.9486950000000434,
+            "apiResponsesDuringWork": 39,
+            "apiResponsesAfterSnapshot": 38,
+            "apiRequests": 40,
+            "maxApiResponseMs": 2.2675930000000335,
+            "heapAtStartBytes": 200324808,
+            "sampledPeakHeapBytes": 203491008,
+            "rssAtStartBytes": 388534272,
+            "sampledPeakRssBytes": 389189632,
+            "processLifetimePeakRssBytes": 389189632,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 12.113668000000416,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 43,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.1696060000003854,
+            "apiResponsesDuringWork": 18,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 19,
+            "maxApiResponseMs": 0.7048600000002807,
+            "heapAtStartBytes": 206221464,
+            "sampledPeakHeapBytes": 208066048,
+            "rssAtStartBytes": 389320704,
+            "sampledPeakRssBytes": 389582848,
+            "processLifetimePeakRssBytes": 389582848,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 23.580887000000075,
+            "beforeSnapshotMs": 0.5768570000000182,
+            "sqliteSnapshotMs": 0.9384150000000773,
+            "afterSnapshotMs": 22.06561499999998,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 86,
+            "eventLoopTurnsAfterSnapshot": 82,
+            "maxEventLoopGapMs": 2.0906270000000404,
+            "apiResponsesDuringWork": 39,
+            "apiResponsesAfterSnapshot": 38,
+            "apiRequests": 40,
+            "maxApiResponseMs": 2.337616000000253,
+            "heapAtStartBytes": 221186152,
+            "sampledPeakHeapBytes": 224323368,
+            "rssAtStartBytes": 389976064,
+            "sampledPeakRssBytes": 390238208,
+            "processLifetimePeakRssBytes": 390238208,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 18.87385499999982,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 39,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 7.047701999999845,
+            "apiResponsesDuringWork": 16,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 17,
+            "maxApiResponseMs": 1.0103110000000015,
+            "heapAtStartBytes": 227115448,
+            "sampledPeakHeapBytes": 228583840,
+            "rssAtStartBytes": 390369280,
+            "sampledPeakRssBytes": 396136448,
+            "processLifetimePeakRssBytes": 396136448,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 10.377626999999848,
+                  "durationMs": 6.646520018577576,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 10.085943000000043,
+                  "durationMs": 7.047701999999845
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 140.6212999999998,
+            "beforeSnapshotMs": 0.5180749999999534,
+            "sqliteSnapshotMs": 1.5073370000000068,
+            "afterSnapshotMs": 138.59588799999983,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 778,
+            "eventLoopTurnsAfterSnapshot": 752,
+            "maxEventLoopGapMs": 3.429653000000144,
+            "apiResponsesDuringWork": 280,
+            "apiResponsesAfterSnapshot": 278,
+            "apiRequests": 281,
+            "maxApiResponseMs": 4.459410999999818,
+            "heapAtStartBytes": 217964392,
+            "sampledPeakHeapBytes": 239303080,
+            "rssAtStartBytes": 414486528,
+            "sampledPeakRssBytes": 416452608,
+            "processLifetimePeakRssBytes": 416452608,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 75.52377500000057,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 311,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 10.62335400000029,
+            "apiResponsesDuringWork": 118,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 119,
+            "maxApiResponseMs": 1.8604790000008506,
+            "heapAtStartBytes": 244535288,
+            "sampledPeakHeapBytes": 244612592,
+            "rssAtStartBytes": 416452608,
+            "sampledPeakRssBytes": 422481920,
+            "processLifetimePeakRssBytes": 422481920,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 3.195658999999978,
+                  "durationMs": 7.836634039878845,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 0.5829590000003009,
+                  "durationMs": 10.62335400000029
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 126.98685999999998,
+            "beforeSnapshotMs": 0.5315510000000359,
+            "sqliteSnapshotMs": 1.3339370000003328,
+            "afterSnapshotMs": 125.12137199999961,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 635,
+            "eventLoopTurnsAfterSnapshot": 616,
+            "maxEventLoopGapMs": 2.5378670000000056,
+            "apiResponsesDuringWork": 264,
+            "apiResponsesAfterSnapshot": 262,
+            "apiRequests": 265,
+            "maxApiResponseMs": 3.4550010000002658,
+            "heapAtStartBytes": 230846808,
+            "sampledPeakHeapBytes": 251115952,
+            "rssAtStartBytes": 423268352,
+            "sampledPeakRssBytes": 425103360,
+            "processLifetimePeakRssBytes": 425103360,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 69.1152060000004,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 244,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 9.158999000000222,
+            "apiResponsesDuringWork": 119,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 120,
+            "maxApiResponseMs": 9.600368999999773,
+            "heapAtStartBytes": 256222672,
+            "sampledPeakHeapBytes": 256222672,
+            "rssAtStartBytes": 425758720,
+            "sampledPeakRssBytes": 432312320,
+            "processLifetimePeakRssBytes": 432312320,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 0.4182840000003125,
+                  "durationMs": 8.609946012496948,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 0,
+                  "durationMs": 9.158999000000222
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 9,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 138.51778900000045,
+            "beforeSnapshotMs": 0.4180140000007668,
+            "sqliteSnapshotMs": 1.202817999999752,
+            "afterSnapshotMs": 136.89695699999993,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 792,
+            "eventLoopTurnsAfterSnapshot": 776,
+            "maxEventLoopGapMs": 2.3554599999997663,
+            "apiResponsesDuringWork": 269,
+            "apiResponsesAfterSnapshot": 267,
+            "apiRequests": 270,
+            "maxApiResponseMs": 3.253898000000845,
+            "heapAtStartBytes": 239650416,
+            "sampledPeakHeapBytes": 260438952,
+            "rssAtStartBytes": 433360896,
+            "sampledPeakRssBytes": 434540544,
+            "processLifetimePeakRssBytes": 434540544,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 70.56699800000024,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 253,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 9.941307000000052,
+            "apiResponsesDuringWork": 121,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 122,
+            "maxApiResponseMs": 10.317982999999913,
+            "heapAtStartBytes": 265128800,
+            "sampledPeakHeapBytes": 265128800,
+            "rssAtStartBytes": 438210560,
+            "sampledPeakRssBytes": 445157376,
+            "processLifetimePeakRssBytes": 445157376,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 0.5173539999996137,
+                  "durationMs": 9.296669960021973,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 0,
+                  "durationMs": 9.941307000000052
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 9,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 1123.840491,
+            "beforeSnapshotMs": 0.46402300000045216,
+            "sqliteSnapshotMs": 6.129706999999144,
+            "afterSnapshotMs": 1117.2467610000003,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 7182,
+            "eventLoopTurnsAfterSnapshot": 6990,
+            "maxEventLoopGapMs": 17.536150999999336,
+            "apiResponsesDuringWork": 2543,
+            "apiResponsesAfterSnapshot": 2530,
+            "apiRequests": 2544,
+            "maxApiResponseMs": 18.38022599999931,
+            "heapAtStartBytes": 233284856,
+            "sampledPeakHeapBytes": 278476456,
+            "rssAtStartBytes": 504139776,
+            "sampledPeakRssBytes": 513708032,
+            "processLifetimePeakRssBytes": 513708032,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 149.46944799999983,
+                  "durationMs": 5.866477012634277,
+                  "kind": 1
+                },
+                {
+                  "startMs": 436.2822020000003,
+                  "durationMs": 0.5287959575653076,
+                  "kind": 8
+                },
+                {
+                  "startMs": 452.65418800000043,
+                  "durationMs": 15.527010083198547,
+                  "kind": 4
+                },
+                {
+                  "startMs": 843.8370770000001,
+                  "durationMs": 17.253424048423767,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 149.24104400000033,
+                  "durationMs": 6.19419999999991
+                },
+                {
+                  "startMs": 452.349929,
+                  "durationMs": 15.979551000000356
+                },
+                {
+                  "startMs": 843.7900090000003,
+                  "durationMs": 17.536150999999336
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 608.5774700000002,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2623,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 19.77251400000023,
+            "apiResponsesDuringWork": 1140,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1141,
+            "maxApiResponseMs": 20.060993000000963,
+            "heapAtStartBytes": 212842000,
+            "sampledPeakHeapBytes": 268978520,
+            "rssAtStartBytes": 522620928,
+            "sampledPeakRssBytes": 528650240,
+            "processLifetimePeakRssBytes": 528650240,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 166.09202199999982,
+                  "durationMs": 6.762209057807922,
+                  "kind": 1
+                },
+                {
+                  "startMs": 559.6163230000002,
+                  "durationMs": 19.10025691986084,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 165.85884799999985,
+                  "durationMs": 7.116554999999607
+                },
+                {
+                  "startMs": 559.1062839999995,
+                  "durationMs": 19.77251400000023
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 1115.190831,
+            "beforeSnapshotMs": 0.4690630000004603,
+            "sqliteSnapshotMs": 5.628343999998833,
+            "afterSnapshotMs": 1109.0934240000006,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 7940,
+            "eventLoopTurnsAfterSnapshot": 7732,
+            "maxEventLoopGapMs": 20.546777999999904,
+            "apiResponsesDuringWork": 2505,
+            "apiResponsesAfterSnapshot": 2491,
+            "apiRequests": 2506,
+            "maxApiResponseMs": 14.772175000000061,
+            "heapAtStartBytes": 236512992,
+            "sampledPeakHeapBytes": 281831680,
+            "rssAtStartBytes": 529829888,
+            "sampledPeakRssBytes": 536514560,
+            "processLifetimePeakRssBytes": 536514560,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 154.1286289999989,
+                  "durationMs": 6.063542008399963,
+                  "kind": 1
+                },
+                {
+                  "startMs": 251.29777999999897,
+                  "durationMs": 0.6280549764633179,
+                  "kind": 8
+                },
+                {
+                  "startMs": 268.30754999999954,
+                  "durationMs": 9.073966979980469,
+                  "kind": 4
+                },
+                {
+                  "startMs": 569.0002509999995,
+                  "durationMs": 0.6136070489883423,
+                  "kind": 8
+                },
+                {
+                  "startMs": 585.9564989999999,
+                  "durationMs": 20.18198299407959,
+                  "kind": 4
+                },
+                {
+                  "startMs": 990.1154270000006,
+                  "durationMs": 13.962054014205933,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 153.92696599999908,
+                  "durationMs": 6.364815000000817
+                },
+                {
+                  "startMs": 268.0672020000002,
+                  "durationMs": 9.429674999999406
+                },
+                {
+                  "startMs": 585.7344460000004,
+                  "durationMs": 20.546777999999904
+                },
+                {
+                  "startMs": 989.9272999999994,
+                  "durationMs": 14.293843999999808
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 570.1003039999996,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2705,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 12.909943000000567,
+            "apiResponsesDuringWork": 1146,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1147,
+            "maxApiResponseMs": 2.078793000000587,
+            "heapAtStartBytes": 241943744,
+            "sampledPeakHeapBytes": 260291672,
+            "rssAtStartBytes": 537169920,
+            "sampledPeakRssBytes": 537825280,
+            "processLifetimePeakRssBytes": 537825280,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 24.80907400000069,
+                  "durationMs": 7.061800956726074,
+                  "kind": 1
+                },
+                {
+                  "startMs": 284.5480069999994,
+                  "durationMs": 12.596186995506287,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 22.88612699999976,
+                  "durationMs": 9.118983000000298
+                },
+                {
+                  "startMs": 284.36173299999973,
+                  "durationMs": 12.909943000000567
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 1105.2699039999989,
+            "beforeSnapshotMs": 0.47884999999951106,
+            "sqliteSnapshotMs": 6.03911700000026,
+            "afterSnapshotMs": 1098.751936999999,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 6815,
+            "eventLoopTurnsAfterSnapshot": 6642,
+            "maxEventLoopGapMs": 25.307920999999624,
+            "apiResponsesDuringWork": 2512,
+            "apiResponsesAfterSnapshot": 2498,
+            "apiRequests": 2513,
+            "maxApiResponseMs": 5.325387999999293,
+            "heapAtStartBytes": 248789368,
+            "sampledPeakHeapBytes": 277123880,
+            "rssAtStartBytes": 537956352,
+            "sampledPeakRssBytes": 540213248,
+            "processLifetimePeakRssBytes": 540839936,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 68.75524199999927,
+                  "durationMs": 4.202332019805908,
+                  "kind": 1
+                },
+                {
+                  "startMs": 362.0094259999987,
+                  "durationMs": 0.6080169677734375,
+                  "kind": 8
+                },
+                {
+                  "startMs": 377.0233909999988,
+                  "durationMs": 18.911396026611328,
+                  "kind": 4
+                },
+                {
+                  "startMs": 767.0168979999999,
+                  "durationMs": 0.578218936920166,
+                  "kind": 8
+                },
+                {
+                  "startMs": 782.0108540000001,
+                  "durationMs": 24.875229001045227,
+                  "kind": 4
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 68.02001399999972,
+                  "durationMs": 5.005379000000175
+                },
+                {
+                  "startMs": 376.7569449999992,
+                  "durationMs": 19.339719999999943
+                },
+                {
+                  "startMs": 781.7492069999989,
+                  "durationMs": 25.307920999999624
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 613.6857349999991,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2531,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 11.944295999999667,
+            "apiResponsesDuringWork": 1132,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1133,
+            "maxApiResponseMs": 12.438175000001138,
+            "heapAtStartBytes": 254231152,
+            "sampledPeakHeapBytes": 255976056,
+            "rssAtStartBytes": 540213248,
+            "sampledPeakRssBytes": 540475392,
+            "processLifetimePeakRssBytes": 540839936,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 0.7705850000002101,
+                  "durationMs": 11.0015629529953,
+                  "kind": 1
+                },
+                {
+                  "startMs": 238.44509499999913,
+                  "durationMs": 10.015879034996033,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 0,
+                  "durationMs": 11.944295999999667
+                },
+                {
+                  "startMs": 238.29349699999875,
+                  "durationMs": 10.301672000001417
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 79,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        }
+      ],
+      "largeMediansMs": {
+        "backup": {
+          "maxEventLoopGapMs": 20.546777999999904,
+          "maxApiResponseMs": 14.772175000000061
+        },
+        "gc": {
+          "maxEventLoopGapMs": 12.909943000000567,
+          "maxApiResponseMs": 12.438175000001138
+        }
+      },
+      "largeBudgetsMs": {
+        "backup": {
+          "maxEventLoopGapMs": 7.924,
+          "maxApiResponseMs": 8.142
+        },
+        "gc": {
+          "maxEventLoopGapMs": 16.117,
+          "maxApiResponseMs": 16.576
+        }
+      }
+    },
+    {
+      "label": "64-entry directories and small-file buffers",
+      "source": "731fc0a24 plus bounded copy/hash tuning and V8 observer",
+      "outcome": "Large median total backup832.159ms improves from1181.697ms, but pauses still coincide with V8 minor collection and exceed budgets. All samples retained.",
+      "environment": {
+        "sourceAnchor": "731fc0a2436338d7445fd132959b941d26a3a2f5",
+        "node": "v24.19.0",
+        "platform": "linux",
+        "release": "7.0.0-30-generic",
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "logicalCpus": 10,
+        "hostMemoryBytes": 50509873152,
+        "repetitions": 3,
+        "warmupPerSize": 1,
+        "cacheState": "Fresh temporary files each repetition; OS page cache is not flushed",
+        "concurrency": "One injected authenticated GET plus one setImmediate heartbeat",
+        "memoryMethod": "Samples at operation boundaries, recursive-copy completion, and heartbeat; process maxRSS is lifetime high-water, not per-operation peak",
+        "phaseMethod": "Real node:sqlite backup marks; post-snapshot includes reference scanning, all file copying, cleanup, and manifest; directoryCopy timings/counts cover recursive cp calls only, so bounded copyFile work is included in post-snapshot time even when directoryCopy is zero; createBackup does not run retention"
+      },
+      "samples": [
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 21.192643999999746,
+            "beforeSnapshotMs": 0.7321819999997388,
+            "sqliteSnapshotMs": 1.170777000000271,
+            "afterSnapshotMs": 19.289684999999736,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 73,
+            "eventLoopTurnsAfterSnapshot": 64,
+            "maxEventLoopGapMs": 2.303019999999833,
+            "apiResponsesDuringWork": 30,
+            "apiResponsesAfterSnapshot": 29,
+            "apiRequests": 31,
+            "maxApiResponseMs": 2.6030809999997473,
+            "heapAtStartBytes": 178622520,
+            "sampledPeakHeapBytes": 181261192,
+            "rssAtStartBytes": 411951104,
+            "sampledPeakRssBytes": 412213248,
+            "processLifetimePeakRssBytes": 412213248,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 12.797528000000057,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 37,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.29893200000015,
+            "apiResponsesDuringWork": 18,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 18,
+            "maxApiResponseMs": 1.0830389999996441,
+            "heapAtStartBytes": 184117488,
+            "sampledPeakHeapBytes": 185892432,
+            "rssAtStartBytes": 412344320,
+            "sampledPeakRssBytes": 412475392,
+            "processLifetimePeakRssBytes": 412475392,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 20.71677899999986,
+            "beforeSnapshotMs": 0.5695219999997789,
+            "sqliteSnapshotMs": 1.0067760000001726,
+            "afterSnapshotMs": 19.14048099999991,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 70,
+            "eventLoopTurnsAfterSnapshot": 63,
+            "maxEventLoopGapMs": 2.207017999999607,
+            "apiResponsesDuringWork": 30,
+            "apiResponsesAfterSnapshot": 29,
+            "apiRequests": 31,
+            "maxApiResponseMs": 2.5493999999998778,
+            "heapAtStartBytes": 199169200,
+            "sampledPeakHeapBytes": 201759856,
+            "rssAtStartBytes": 413392896,
+            "sampledPeakRssBytes": 413523968,
+            "processLifetimePeakRssBytes": 413523968,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 12.8201210000002,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 37,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.296346999999969,
+            "apiResponsesDuringWork": 17,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 18,
+            "maxApiResponseMs": 1.072349000000031,
+            "heapAtStartBytes": 204502392,
+            "sampledPeakHeapBytes": 206296520,
+            "rssAtStartBytes": 413655040,
+            "sampledPeakRssBytes": 413917184,
+            "processLifetimePeakRssBytes": 413917184,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 20.512401999999838,
+            "beforeSnapshotMs": 0.682336999999734,
+            "sqliteSnapshotMs": 1.150119000000359,
+            "afterSnapshotMs": 18.679945999999745,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 67,
+            "eventLoopTurnsAfterSnapshot": 64,
+            "maxEventLoopGapMs": 2.1098120000001472,
+            "apiResponsesDuringWork": 32,
+            "apiResponsesAfterSnapshot": 31,
+            "apiRequests": 32,
+            "maxApiResponseMs": 2.3607090000000426,
+            "heapAtStartBytes": 219493712,
+            "sampledPeakHeapBytes": 222114504,
+            "rssAtStartBytes": 414441472,
+            "sampledPeakRssBytes": 414834688,
+            "processLifetimePeakRssBytes": 414834688,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 14.994156000000203,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 36,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.7571230000003197,
+            "apiResponsesDuringWork": 18,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 19,
+            "maxApiResponseMs": 0.9650750000000698,
+            "heapAtStartBytes": 224906080,
+            "sampledPeakHeapBytes": 226730152,
+            "rssAtStartBytes": 414965760,
+            "sampledPeakRssBytes": 414965760,
+            "processLifetimePeakRssBytes": 414965760,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 103.26046099999985,
+            "beforeSnapshotMs": 0.5911030000002029,
+            "sqliteSnapshotMs": 1.6426440000000184,
+            "afterSnapshotMs": 101.02671399999963,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 451,
+            "eventLoopTurnsAfterSnapshot": 411,
+            "maxEventLoopGapMs": 2.5404200000002675,
+            "apiResponsesDuringWork": 197,
+            "apiResponsesAfterSnapshot": 195,
+            "apiRequests": 198,
+            "maxApiResponseMs": 3.7881529999999657,
+            "heapAtStartBytes": 203160768,
+            "sampledPeakHeapBytes": 219807752,
+            "rssAtStartBytes": 440918016,
+            "sampledPeakRssBytes": 441573376,
+            "processLifetimePeakRssBytes": 441573376,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 68.01066399999945,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 252,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.5049840000001495,
+            "apiResponsesDuringWork": 119,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 120,
+            "maxApiResponseMs": 1.789813000000322,
+            "heapAtStartBytes": 225044232,
+            "sampledPeakHeapBytes": 236934104,
+            "rssAtStartBytes": 441704448,
+            "sampledPeakRssBytes": 442753024,
+            "processLifetimePeakRssBytes": 442753024,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 96.8780829999996,
+            "beforeSnapshotMs": 0.5813539999999193,
+            "sqliteSnapshotMs": 1.8869000000004235,
+            "afterSnapshotMs": 94.40982899999926,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 473,
+            "eventLoopTurnsAfterSnapshot": 440,
+            "maxEventLoopGapMs": 2.4580940000005285,
+            "apiResponsesDuringWork": 196,
+            "apiResponsesAfterSnapshot": 193,
+            "apiRequests": 197,
+            "maxApiResponseMs": 3.426003999999921,
+            "heapAtStartBytes": 209840872,
+            "sampledPeakHeapBytes": 226089368,
+            "rssAtStartBytes": 448389120,
+            "sampledPeakRssBytes": 449306624,
+            "processLifetimePeakRssBytes": 449306624,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 66.19078300000001,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 251,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 3.072172000000137,
+            "apiResponsesDuringWork": 119,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 120,
+            "maxApiResponseMs": 1.4481750000004467,
+            "heapAtStartBytes": 231212040,
+            "sampledPeakHeapBytes": 243000944,
+            "rssAtStartBytes": 449306624,
+            "sampledPeakRssBytes": 449961984,
+            "processLifetimePeakRssBytes": 449961984,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 94.57620599999973,
+            "beforeSnapshotMs": 0.5851119999997536,
+            "sqliteSnapshotMs": 1.5265140000001338,
+            "afterSnapshotMs": 92.46457999999984,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 451,
+            "eventLoopTurnsAfterSnapshot": 432,
+            "maxEventLoopGapMs": 2.4397600000002058,
+            "apiResponsesDuringWork": 193,
+            "apiResponsesAfterSnapshot": 191,
+            "apiRequests": 194,
+            "maxApiResponseMs": 3.5499409999993077,
+            "heapAtStartBytes": 217010088,
+            "sampledPeakHeapBytes": 233167528,
+            "rssAtStartBytes": 456122368,
+            "sampledPeakRssBytes": 456908800,
+            "processLifetimePeakRssBytes": 456908800,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 64.52864099999988,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 263,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.808270999999877,
+            "apiResponsesDuringWork": 121,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 122,
+            "maxApiResponseMs": 1.4328660000001037,
+            "heapAtStartBytes": 238252928,
+            "sampledPeakHeapBytes": 250106440,
+            "rssAtStartBytes": 456908800,
+            "sampledPeakRssBytes": 457302016,
+            "processLifetimePeakRssBytes": 457302016,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 832.1591230000004,
+            "beforeSnapshotMs": 0.48952099999951315,
+            "sqliteSnapshotMs": 5.802564999999959,
+            "afterSnapshotMs": 825.8670370000009,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 4312,
+            "eventLoopTurnsAfterSnapshot": 4111,
+            "maxEventLoopGapMs": 20.259900000000016,
+            "apiResponsesDuringWork": 1756,
+            "apiResponsesAfterSnapshot": 1742,
+            "apiRequests": 1757,
+            "maxApiResponseMs": 16.596503000000666,
+            "heapAtStartBytes": 275417728,
+            "sampledPeakHeapBytes": 314989360,
+            "rssAtStartBytes": 515235840,
+            "sampledPeakRssBytes": 533716992,
+            "processLifetimePeakRssBytes": 533716992,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 83.32659200000035,
+                  "durationMs": 5.051877021789551,
+                  "kind": 1
+                },
+                {
+                  "startMs": 430.7282749999995,
+                  "durationMs": 15.75360095500946,
+                  "kind": 1
+                },
+                {
+                  "startMs": 767.7215749999996,
+                  "durationMs": 19.857685089111328,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 82.42362400000002,
+                  "durationMs": 6.0650439999999435
+                },
+                {
+                  "startMs": 430.5439239999996,
+                  "durationMs": 16.093928000000233
+                },
+                {
+                  "startMs": 767.5639549999996,
+                  "durationMs": 20.259900000000016
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 561.4171609999994,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2479,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 13.988913999999568,
+            "apiResponsesDuringWork": 1109,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1110,
+            "maxApiResponseMs": 14.440193000000363,
+            "heapAtStartBytes": 309151104,
+            "sampledPeakHeapBytes": 331935848,
+            "rssAtStartBytes": 533979136,
+            "sampledPeakRssBytes": 549052416,
+            "processLifetimePeakRssBytes": 549052416,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 46.62092399999983,
+                  "durationMs": 5.115759015083313,
+                  "kind": 1
+                },
+                {
+                  "startMs": 326.3180769999999,
+                  "durationMs": 13.645951986312866,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 45.83399699999973,
+                  "durationMs": 6.007524999999987
+                },
+                {
+                  "startMs": 326.10521100000005,
+                  "durationMs": 13.988913999999568
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 820.9075240000002,
+            "beforeSnapshotMs": 0.4499650000007023,
+            "sqliteSnapshotMs": 5.405851999999868,
+            "afterSnapshotMs": 815.0517069999996,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 4235,
+            "eventLoopTurnsAfterSnapshot": 4071,
+            "maxEventLoopGapMs": 24.17390400000113,
+            "apiResponsesDuringWork": 1776,
+            "apiResponsesAfterSnapshot": 1762,
+            "apiRequests": 1777,
+            "maxApiResponseMs": 24.625302999998894,
+            "heapAtStartBytes": 314123920,
+            "sampledPeakHeapBytes": 353386096,
+            "rssAtStartBytes": 555606016,
+            "sampledPeakRssBytes": 576708608,
+            "processLifetimePeakRssBytes": 576708608,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 77.49509100000068,
+                  "durationMs": 4.221969962120056,
+                  "kind": 1
+                },
+                {
+                  "startMs": 431.4642650000005,
+                  "durationMs": 23.835601091384888,
+                  "kind": 1
+                },
+                {
+                  "startMs": 777.490874000001,
+                  "durationMs": 20.973166942596436,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 76.47965999999997,
+                  "durationMs": 5.345736000000215
+                },
+                {
+                  "startMs": 431.2488059999996,
+                  "durationMs": 24.17390400000113
+                },
+                {
+                  "startMs": 777.3062730000001,
+                  "durationMs": 21.284247999999934
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 574.851842,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2413,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 17.039645999999266,
+            "apiResponsesDuringWork": 1129,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1130,
+            "maxApiResponseMs": 2.2908079999997426,
+            "heapAtStartBytes": 344327712,
+            "sampledPeakHeapBytes": 371020048,
+            "rssAtStartBytes": 576970752,
+            "sampledPeakRssBytes": 588898304,
+            "processLifetimePeakRssBytes": 588898304,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 59.6811519999992,
+                  "durationMs": 4.258057951927185,
+                  "kind": 1
+                },
+                {
+                  "startMs": 369.7548449999995,
+                  "durationMs": 16.72934591770172,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 58.90845300000001,
+                  "durationMs": 5.101941999999326
+                },
+                {
+                  "startMs": 369.5973759999997,
+                  "durationMs": 17.039645999999266
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 852.0420560000002,
+            "beforeSnapshotMs": 0.4657360000001063,
+            "sqliteSnapshotMs": 5.930938999999853,
+            "afterSnapshotMs": 845.6453810000003,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 4190,
+            "eventLoopTurnsAfterSnapshot": 3987,
+            "maxEventLoopGapMs": 26.296109999999317,
+            "apiResponsesDuringWork": 1810,
+            "apiResponsesAfterSnapshot": 1796,
+            "apiRequests": 1811,
+            "maxApiResponseMs": 21.89879699999983,
+            "heapAtStartBytes": 348446512,
+            "sampledPeakHeapBytes": 394008560,
+            "rssAtStartBytes": 596762624,
+            "sampledPeakRssBytes": 620093440,
+            "processLifetimePeakRssBytes": 620093440,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 96.24524100000053,
+                  "durationMs": 4.301220059394836,
+                  "kind": 1
+                },
+                {
+                  "startMs": 479.9575610000011,
+                  "durationMs": 25.977424025535583,
+                  "kind": 1
+                },
+                {
+                  "startMs": 824.3357340000002,
+                  "durationMs": 20.734713912010193,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 479.7931180000014,
+                  "durationMs": 26.296109999999317
+                },
+                {
+                  "startMs": 824.0216270000001,
+                  "durationMs": 21.248732000000018
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 587.9811520000003,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2552,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 21.570644000001266,
+            "apiResponsesDuringWork": 1115,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1116,
+            "maxApiResponseMs": 22.16762000000017,
+            "heapAtStartBytes": 379355720,
+            "sampledPeakHeapBytes": 412109472,
+            "rssAtStartBytes": 620355584,
+            "sampledPeakRssBytes": 636215296,
+            "processLifetimePeakRssBytes": 636215296,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 73.36845399999947,
+                  "durationMs": 5.486844062805176,
+                  "kind": 1
+                },
+                {
+                  "startMs": 452.5644739999989,
+                  "durationMs": 21.17420995235443,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 72.49764700000014,
+                  "durationMs": 6.487047999999049
+                },
+                {
+                  "startMs": 452.3516989999989,
+                  "durationMs": 21.570644000001266
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        }
+      ],
+      "largeMediansMs": {
+        "backup": {
+          "maxEventLoopGapMs": 24.17390400000113,
+          "maxApiResponseMs": 21.89879699999983
+        },
+        "gc": {
+          "maxEventLoopGapMs": 17.039645999999266,
+          "maxApiResponseMs": 14.440193000000363
+        }
+      },
+      "largeBudgetsMs": {
+        "backup": {
+          "maxEventLoopGapMs": 7.924,
+          "maxApiResponseMs": 8.142
+        },
+        "gc": {
+          "maxEventLoopGapMs": 16.117,
+          "maxApiResponseMs": 16.576
+        }
+      }
+    },
+    {
+      "label": "Successful-request assertion allocation diagnostic",
+      "source": "731fc0a24 plus bounded copy/hash tuning and conditional successful-status assertion",
+      "outcome": "Removing successful Vitest matcher setup does not resolve pauses (backup median19.446ms). Revert the diagnostic status-assertion change; keep all samples.",
+      "environment": {
+        "sourceAnchor": "731fc0a2436338d7445fd132959b941d26a3a2f5",
+        "node": "v24.19.0",
+        "platform": "linux",
+        "release": "7.0.0-30-generic",
+        "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
+        "logicalCpus": 10,
+        "hostMemoryBytes": 50509873152,
+        "repetitions": 3,
+        "warmupPerSize": 1,
+        "cacheState": "Fresh temporary files each repetition; OS page cache is not flushed",
+        "concurrency": "One injected authenticated GET plus one setImmediate heartbeat",
+        "memoryMethod": "Samples at operation boundaries, recursive-copy completion, and heartbeat; process maxRSS is lifetime high-water, not per-operation peak",
+        "phaseMethod": "Real node:sqlite backup marks; post-snapshot includes reference scanning, all file copying, cleanup, and manifest; directoryCopy timings/counts cover recursive cp calls only, so bounded copyFile work is included in post-snapshot time even when directoryCopy is zero; createBackup does not run retention"
+      },
+      "samples": [
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 20.860192000000097,
+            "beforeSnapshotMs": 0.6483229999998912,
+            "sqliteSnapshotMs": 1.2035900000000765,
+            "afterSnapshotMs": 19.00827900000013,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 68,
+            "eventLoopTurnsAfterSnapshot": 65,
+            "maxEventLoopGapMs": 2.3491189999999733,
+            "apiResponsesDuringWork": 31,
+            "apiResponsesAfterSnapshot": 30,
+            "apiRequests": 32,
+            "maxApiResponseMs": 2.6017580000002454,
+            "heapAtStartBytes": 178595160,
+            "sampledPeakHeapBytes": 181256440,
+            "rssAtStartBytes": 383516672,
+            "sampledPeakRssBytes": 383647744,
+            "processLifetimePeakRssBytes": 383647744,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 11.975045000000136,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 36,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.051861999999801,
+            "apiResponsesDuringWork": 17,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 18,
+            "maxApiResponseMs": 0.9515910000000076,
+            "heapAtStartBytes": 183964776,
+            "sampledPeakHeapBytes": 185630512,
+            "rssAtStartBytes": 383909888,
+            "sampledPeakRssBytes": 384040960,
+            "processLifetimePeakRssBytes": 384040960,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 20.130454999999984,
+            "beforeSnapshotMs": 0.5142679999999018,
+            "sqliteSnapshotMs": 1.0305299999999988,
+            "afterSnapshotMs": 18.585657000000083,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 68,
+            "eventLoopTurnsAfterSnapshot": 64,
+            "maxEventLoopGapMs": 1.8875899999998182,
+            "apiResponsesDuringWork": 32,
+            "apiResponsesAfterSnapshot": 31,
+            "apiRequests": 33,
+            "maxApiResponseMs": 2.200553000000127,
+            "heapAtStartBytes": 198924696,
+            "sampledPeakHeapBytes": 201460880,
+            "rssAtStartBytes": 384958464,
+            "sampledPeakRssBytes": 384958464,
+            "processLifetimePeakRssBytes": 384958464,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 12.191566000000421,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 37,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.007147999999688,
+            "apiResponsesDuringWork": 17,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 18,
+            "maxApiResponseMs": 0.8427820000001702,
+            "heapAtStartBytes": 204234904,
+            "sampledPeakHeapBytes": 205955344,
+            "rssAtStartBytes": 385220608,
+            "sampledPeakRssBytes": 385351680,
+            "processLifetimePeakRssBytes": 385351680,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 20,
+            "assetBytes": 1024,
+            "totalAssetBytes": 20480,
+            "referencedAssetCount": 10,
+            "orphanAssetCount": 10,
+            "characterCount": 2,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 40,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 19.84947000000011,
+            "beforeSnapshotMs": 0.7049409999999625,
+            "sqliteSnapshotMs": 1.1001030000002174,
+            "afterSnapshotMs": 18.04442599999993,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 67,
+            "eventLoopTurnsAfterSnapshot": 64,
+            "maxEventLoopGapMs": 2.1091309999997065,
+            "apiResponsesDuringWork": 31,
+            "apiResponsesAfterSnapshot": 30,
+            "apiRequests": 32,
+            "maxApiResponseMs": 2.4308829999999944,
+            "heapAtStartBytes": 219184536,
+            "sampledPeakHeapBytes": 221660776,
+            "rssAtStartBytes": 386662400,
+            "sampledPeakRssBytes": 386793472,
+            "processLifetimePeakRssBytes": 386793472,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 13.752745000000232,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 37,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.7011779999998,
+            "apiResponsesDuringWork": 18,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 19,
+            "maxApiResponseMs": 0.9561290000001463,
+            "heapAtStartBytes": 224510960,
+            "sampledPeakHeapBytes": 226267512,
+            "rssAtStartBytes": 386793472,
+            "sampledPeakRssBytes": 387055616,
+            "processLifetimePeakRssBytes": 387055616,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 10,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 10,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 10,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 48,
+              "bytes": 13924,
+              "yields": 1,
+              "largestRowBytes": 333,
+              "referenceCount": 10
+            }
+          }
+        },
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 98.91937599999983,
+            "beforeSnapshotMs": 0.5859839999998258,
+            "sqliteSnapshotMs": 1.5482139999999163,
+            "afterSnapshotMs": 96.78517800000009,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 437,
+            "eventLoopTurnsAfterSnapshot": 416,
+            "maxEventLoopGapMs": 2.6947150000000875,
+            "apiResponsesDuringWork": 198,
+            "apiResponsesAfterSnapshot": 196,
+            "apiRequests": 199,
+            "maxApiResponseMs": 3.8575660000001335,
+            "heapAtStartBytes": 203108216,
+            "sampledPeakHeapBytes": 219091832,
+            "rssAtStartBytes": 413532160,
+            "sampledPeakRssBytes": 414318592,
+            "processLifetimePeakRssBytes": 414318592,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 66.72494800000004,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 250,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.7768009999999776,
+            "apiResponsesDuringWork": 118,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 119,
+            "maxApiResponseMs": 2.0896640000000843,
+            "heapAtStartBytes": 224320848,
+            "sampledPeakHeapBytes": 235736896,
+            "rssAtStartBytes": 414449664,
+            "sampledPeakRssBytes": 414973952,
+            "processLifetimePeakRssBytes": 414973952,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 89.39014399999996,
+            "beforeSnapshotMs": 0.5821070000001782,
+            "sqliteSnapshotMs": 2.0029389999999694,
+            "afterSnapshotMs": 86.80509799999982,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 488,
+            "eventLoopTurnsAfterSnapshot": 424,
+            "maxEventLoopGapMs": 2.363976000000548,
+            "apiResponsesDuringWork": 196,
+            "apiResponsesAfterSnapshot": 192,
+            "apiRequests": 197,
+            "maxApiResponseMs": 3.5535879999997633,
+            "heapAtStartBytes": 203894792,
+            "sampledPeakHeapBytes": 219421400,
+            "rssAtStartBytes": 422313984,
+            "sampledPeakRssBytes": 423493632,
+            "processLifetimePeakRssBytes": 423493632,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            }
+          },
+          "gc": {
+            "durationMs": 58.755051000000094,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 297,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.2320660000004864,
+            "apiResponsesDuringWork": 119,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 120,
+            "maxApiResponseMs": 1.2620090000000346,
+            "heapAtStartBytes": 224543392,
+            "sampledPeakHeapBytes": 235924888,
+            "rssAtStartBytes": 423493632,
+            "sampledPeakRssBytes": 424017920,
+            "processLifetimePeakRssBytes": 424017920,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 200,
+            "assetBytes": 1024,
+            "totalAssetBytes": 204800,
+            "referencedAssetCount": 100,
+            "orphanAssetCount": 100,
+            "characterCount": 20,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 400,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 98.52228999999988,
+            "beforeSnapshotMs": 0.5633909999996831,
+            "sqliteSnapshotMs": 1.5609690000001137,
+            "afterSnapshotMs": 96.39793000000009,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 448,
+            "eventLoopTurnsAfterSnapshot": 421,
+            "maxEventLoopGapMs": 7.979425000000447,
+            "apiResponsesDuringWork": 197,
+            "apiResponsesAfterSnapshot": 195,
+            "apiRequests": 198,
+            "maxApiResponseMs": 2.982872000000498,
+            "heapAtStartBytes": 253136328,
+            "sampledPeakHeapBytes": 253336328,
+            "rssAtStartBytes": 425328640,
+            "sampledPeakRssBytes": 431882240,
+            "processLifetimePeakRssBytes": 431882240,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 2.9570340000000215,
+                  "durationMs": 7.611324906349182,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 2.7020179999999527,
+                  "durationMs": 7.979425000000447
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 60.40282500000012,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 266,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 2.6865899999993417,
+            "apiResponsesDuringWork": 120,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 121,
+            "maxApiResponseMs": 1.276057000000037,
+            "heapAtStartBytes": 231576568,
+            "sampledPeakHeapBytes": 242957880,
+            "rssAtStartBytes": 431882240,
+            "sampledPeakRssBytes": 432537600,
+            "processLifetimePeakRssBytes": 432537600,
+            "diagnostics": {
+              "gc": [],
+              "gaps": []
+            },
+            "status": "completed",
+            "scannedOrphans": 100,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 100,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 100,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 462,
+              "bytes": 139044,
+              "yields": 8,
+              "largestRowBytes": 333,
+              "referenceCount": 100
+            }
+          }
+        },
+        {
+          "repetition": 1,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 805.1640339999994,
+            "beforeSnapshotMs": 0.472168999999667,
+            "sqliteSnapshotMs": 5.389799999999923,
+            "afterSnapshotMs": 799.3020649999999,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 4132,
+            "eventLoopTurnsAfterSnapshot": 3965,
+            "maxEventLoopGapMs": 19.445662000000084,
+            "apiResponsesDuringWork": 1790,
+            "apiResponsesAfterSnapshot": 1778,
+            "apiRequests": 1791,
+            "maxApiResponseMs": 19.958426999999574,
+            "heapAtStartBytes": 263507872,
+            "sampledPeakHeapBytes": 313148400,
+            "rssAtStartBytes": 521404416,
+            "sampledPeakRssBytes": 531365888,
+            "processLifetimePeakRssBytes": 531365888,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 156.16541899999993,
+                  "durationMs": 5.453341007232666,
+                  "kind": 1
+                },
+                {
+                  "startMs": 532.2037739999996,
+                  "durationMs": 19.0555100440979,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 155.93889799999943,
+                  "durationMs": 5.787796999999955
+                },
+                {
+                  "startMs": 531.9910499999996,
+                  "durationMs": 19.445662000000084
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 568.7305610000003,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2360,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 17.572379000000183,
+            "apiResponsesDuringWork": 1122,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1122,
+            "maxApiResponseMs": 1.9249200000003839,
+            "heapAtStartBytes": 281799736,
+            "sampledPeakHeapBytes": 335448888,
+            "rssAtStartBytes": 540016640,
+            "sampledPeakRssBytes": 556793856,
+            "processLifetimePeakRssBytes": 556793856,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 170.3541409999998,
+                  "durationMs": 6.503979921340942,
+                  "kind": 1
+                },
+                {
+                  "startMs": 544.1330909999997,
+                  "durationMs": 16.589339017868042,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 170.1769349999995,
+                  "durationMs": 6.872841000000335
+                },
+                {
+                  "startMs": 543.3269380000002,
+                  "durationMs": 17.572379000000183
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        },
+        {
+          "repetition": 2,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 791.9939380000005,
+            "beforeSnapshotMs": 0.5231960000000981,
+            "sqliteSnapshotMs": 4.570352000000639,
+            "afterSnapshotMs": 786.9003899999998,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 4095,
+            "eventLoopTurnsAfterSnapshot": 3944,
+            "maxEventLoopGapMs": 18.64168299999983,
+            "apiResponsesDuringWork": 1831,
+            "apiResponsesAfterSnapshot": 1818,
+            "apiRequests": 1831,
+            "maxApiResponseMs": 9.038769999999204,
+            "heapAtStartBytes": 295790928,
+            "sampledPeakHeapBytes": 352640792,
+            "rssAtStartBytes": 565444608,
+            "sampledPeakRssBytes": 577110016,
+            "processLifetimePeakRssBytes": 577110016,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 232.07668700000067,
+                  "durationMs": 8.454270005226135,
+                  "kind": 1
+                },
+                {
+                  "startMs": 598.5797990000001,
+                  "durationMs": 18.343806982040405,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 231.86943400000018,
+                  "durationMs": 8.775158000000374
+                },
+                {
+                  "startMs": 598.4322780000011,
+                  "durationMs": 18.64168299999983
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 538.8342940000002,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2312,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 11.197705999999016,
+            "apiResponsesDuringWork": 1130,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1131,
+            "maxApiResponseMs": 11.490703999999823,
+            "heapAtStartBytes": 363394896,
+            "sampledPeakHeapBytes": 368622520,
+            "rssAtStartBytes": 577372160,
+            "sampledPeakRssBytes": 593756160,
+            "processLifetimePeakRssBytes": 593756160,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 1.058311999999205,
+                  "durationMs": 9.976463913917542,
+                  "kind": 1
+                },
+                {
+                  "startMs": 230.99724400000014,
+                  "durationMs": 8.6285799741745,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 0,
+                  "durationMs": 11.197705999999016
+                },
+                {
+                  "startMs": 230.8468780000003,
+                  "durationMs": 8.874526999999944
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 79,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        },
+        {
+          "repetition": 3,
+          "fixture": {
+            "assetCount": 2000,
+            "assetBytes": 1024,
+            "totalAssetBytes": 2048000,
+            "referencedAssetCount": 1000,
+            "orphanAssetCount": 1000,
+            "characterCount": 200,
+            "chatsPerCharacter": 2,
+            "messagesPerChat": 10,
+            "messageCount": 4000,
+            "messagePrefixBytes": 256,
+            "compatibilitySaveFiles": 1,
+            "compatibilitySaveBytes": 928
+          },
+          "backup": {
+            "durationMs": 793.6548340000008,
+            "beforeSnapshotMs": 0.38932000000022526,
+            "sqliteSnapshotMs": 4.991643000001204,
+            "afterSnapshotMs": 788.2738709999994,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 4063,
+            "eventLoopTurnsAfterSnapshot": 3920,
+            "maxEventLoopGapMs": 19.550892999999633,
+            "apiResponsesDuringWork": 1826,
+            "apiResponsesAfterSnapshot": 1812,
+            "apiRequests": 1827,
+            "maxApiResponseMs": 19.977983000000677,
+            "heapAtStartBytes": 360225432,
+            "sampledPeakHeapBytes": 392567304,
+            "rssAtStartBytes": 598867968,
+            "sampledPeakRssBytes": 622854144,
+            "processLifetimePeakRssBytes": 622854144,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 59.53744800000095,
+                  "durationMs": 5.887969017028809,
+                  "kind": 1
+                },
+                {
+                  "startMs": 381.03429600000163,
+                  "durationMs": 16.051838994026184,
+                  "kind": 1
+                },
+                {
+                  "startMs": 728.0565890000016,
+                  "durationMs": 19.156522035598755,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 58.703543000001446,
+                  "durationMs": 6.830529999999271
+                },
+                {
+                  "startMs": 380.8326130000005,
+                  "durationMs": 16.410931000000346
+                },
+                {
+                  "startMs": 727.8240460000015,
+                  "durationMs": 19.550892999999633
+                }
+              ]
+            }
+          },
+          "gc": {
+            "durationMs": 537.900979,
+            "beforeSnapshotMs": null,
+            "sqliteSnapshotMs": null,
+            "afterSnapshotMs": null,
+            "directoryCopyMs": 0,
+            "directoryCopyCalls": 0,
+            "eventLoopTurns": 2336,
+            "eventLoopTurnsAfterSnapshot": 0,
+            "maxEventLoopGapMs": 14.619855000000825,
+            "apiResponsesDuringWork": 1129,
+            "apiResponsesAfterSnapshot": 0,
+            "apiRequests": 1130,
+            "maxApiResponseMs": 7.623757999999725,
+            "heapAtStartBytes": 386801360,
+            "sampledPeakHeapBytes": 410178648,
+            "rssAtStartBytes": 624164864,
+            "sampledPeakRssBytes": 638058496,
+            "processLifetimePeakRssBytes": 638058496,
+            "diagnostics": {
+              "gc": [
+                {
+                  "startMs": 49.18488999999863,
+                  "durationMs": 5.989300966262817,
+                  "kind": 1
+                },
+                {
+                  "startMs": 347.2499549999993,
+                  "durationMs": 14.295437932014465,
+                  "kind": 1
+                }
+              ],
+              "gaps": [
+                {
+                  "startMs": 48.35486299999866,
+                  "durationMs": 6.943224000000555
+                },
+                {
+                  "startMs": 347.10692299999937,
+                  "durationMs": 14.619855000000825
+                }
+              ]
+            },
+            "status": "completed",
+            "scannedOrphans": 1000,
+            "skippedByGrace": 0,
+            "deletedAssetCount": 1000,
+            "deletedStrayFileCount": 0,
+            "retainedDeletedAssetIds": 1000,
+            "retainedDeletedStrayFiles": 0,
+            "resultLimit": 1024,
+            "resultsTruncated": false,
+            "referenceScan": {
+              "rows": 4602,
+              "bytes": 1391666,
+              "yields": 78,
+              "largestRowBytes": 333,
+              "referenceCount": 1000
+            }
+          }
+        }
+      ],
+      "largeMediansMs": {
+        "backup": {
+          "maxEventLoopGapMs": 19.445662000000084,
+          "maxApiResponseMs": 19.958426999999574
+        },
+        "gc": {
+          "maxEventLoopGapMs": 14.619855000000825,
+          "maxApiResponseMs": 7.623757999999725
+        }
+      },
+      "largeBudgetsMs": {
+        "backup": {
+          "maxEventLoopGapMs": 7.924,
+          "maxApiResponseMs": 8.142
+        },
+        "gc": {
+          "maxEventLoopGapMs": 16.117,
+          "maxApiResponseMs": 16.576
+        }
+      }
     }
   ]
 }

@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import { cpus, platform, release, tmpdir, totalmem } from 'node:os'
 import path from 'node:path'
-import { performance } from 'node:perf_hooks'
+import { performance, PerformanceObserver } from 'node:perf_hooks'
 import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
@@ -125,6 +125,10 @@ interface Observation {
   rssAtStartBytes: number
   sampledPeakRssBytes: number
   processLifetimePeakRssBytes: number
+  diagnostics?: {
+    gc: Array<{ startMs: number; durationMs: number; kind: number }>
+    gaps: Array<{ startMs: number; durationMs: number }>
+  }
 }
 
 async function observe<T>(
@@ -159,6 +163,21 @@ async function observe<T>(
     sampledPeakRssBytes: initialMemory.rss,
     processLifetimePeakRssBytes: 0,
   }
+  const diagnostics =
+    process.env.RISU_MAINTENANCE_DIAGNOSTICS === '1' ? (observation.diagnostics = { gc: [], gaps: [] }) : undefined
+  const gcObserver = diagnostics
+    ? new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (entry.startTime < startedAt || diagnostics.gc.length >= 64) continue
+          diagnostics.gc.push({
+            startMs: entry.startTime - startedAt,
+            durationMs: entry.duration,
+            kind: (entry as unknown as { detail: { kind: number } }).detail.kind,
+          })
+        }
+      })
+    : undefined
+  gcObserver?.observe({ entryTypes: ['gc'] })
   const sampleMemory = () => {
     const memory = process.memoryUsage()
     observation.sampledPeakHeapBytes = Math.max(observation.sampledPeakHeapBytes, memory.heapUsed)
@@ -192,6 +211,10 @@ async function observe<T>(
   const heartbeat = new Promise<void>((resolve) => {
     const tick = () => {
       const now = performance.now()
+      const durationMs = (active ? now : finishedAt) - lastTurn
+      if (diagnostics && durationMs >= 5 && diagnostics.gaps.length < 64) {
+        diagnostics.gaps.push({ startMs: lastTurn - startedAt, durationMs })
+      }
       // The final callback captures a wholly synchronous operation's stall.
       observation.maxEventLoopGapMs = Math.max(observation.maxEventLoopGapMs, (active ? now : finishedAt) - lastTurn)
       lastTurn = now
@@ -241,6 +264,7 @@ async function observe<T>(
     copySyncSpy.mockRestore()
     copyAsyncSpy.mockRestore()
     await Promise.all([heartbeat, requests])
+    gcObserver?.disconnect()
   }
 }
 

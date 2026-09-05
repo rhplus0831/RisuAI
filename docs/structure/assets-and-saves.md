@@ -410,7 +410,7 @@ and plugin-storage owners. Missing required metadata/bytes, wrong size or wrong
 hash prevents publication. A temporary manifest is renamed only after completion.
 The captured SQLite database uses the same bounded reference scanner as GC;
 metadata is streamed in 64-row pages while scratch membership remains open.
-Directory traversal buffers one entry at each of at most 32 levels, and hash
+Directory traversal buffers 64 entries at each of at most 32 levels, and hash
 streams use 64 KiB buffers. Deeper legacy extras fail closed. Existing optional
 orphan bytes are copied when present; missing orphan files retain their missing
 state. Concurrent synchronous uploads may add harmless unindexed extras, which

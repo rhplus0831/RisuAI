@@ -647,3 +647,27 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 - A separate exact `serverLoadCostHarness.test.ts` run exposed a Phase 3 prompt
   fixture returning HTTP 400; diagnosis is pending. This does not invalidate
   the dedicated maintenance cases, and no final aggregate has been run.
+
+## Phase 4 Timing Investigation and Directory Bound Revision
+
+- An opt-in V8 performance observer attributes the backup's >5 ms event-loop
+  gaps to minor/major garbage collection during the continuous authenticated
+  request probe. Both diagnostic samples and the original uninstrumented failure
+  remain in the investigation artifact; no sample or original budget is removed.
+- The first copy traversal's one-entry directory buffer causes an asynchronous
+  filesystem refill for every already-copied asset name. Before tuning it, revise
+  the explicit traversal bound to 64 entries per level at at most 32 levels
+  (2,048 buffered Dirents maximum). The file-worker bound stays two and hash
+  buffers stay 64 KiB. This trades bounded directory metadata for fewer filesystem
+  round trips; it does not increase concurrent copies or retain a corpus array.
+- With the revised directory buffer and bounded small-file hash buffer, large
+  median total backup time improves to 832.159 ms from 1,181.697 ms, but median
+  max-gap remains 24.174 ms in the diagnostic run. Every large >5 ms gap still
+  aligns with V8 collection. The 22 backup interleaving cases pass. Small files
+  use at most one 64 KiB buffer per worker; large files retain streaming hashes.
+- A diagnostic removing successful-request Vitest matcher allocation still
+  records 19.446 ms backup gaps, so that probe change is reverted. Original
+  comparison budgets and continuous-request concurrency remain unchanged.
+- The cost harness's supported sparse-input rejections are fixed in
+  `ee9d61213`; decoder 26, strict compiler 1, templates 72 and all 38 load harness
+  cases now pass without changing the imported hydration fixture.
