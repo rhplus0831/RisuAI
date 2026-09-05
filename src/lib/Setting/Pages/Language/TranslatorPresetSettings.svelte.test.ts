@@ -90,19 +90,45 @@ const commandSpies = vi.hoisted(() => {
       signal?: AbortSignal | null
       keepalive?: boolean
       executionWrapper?: (execute: () => Promise<Record<string, unknown>>) => Promise<Record<string, unknown>>
+      failureRollbackDisposition?: (result: Record<string, unknown>) => 'retain' | 'rollback'
     }) => {
       spies.runInputs.push({ rollback: input.rollback, signal: input.signal, keepalive: input.keepalive })
+      const rollback = () => {
+        if (spies.skipNextRollback) spies.skipNextRollback = false
+        else input.rollback?.()
+      }
+      let executionStarted = false
       const execute = async () => {
+        executionStarted = true
         const result = (await input.command(spies.nextBaseRevision++)) as Record<string, unknown> & {
           status?: string
         }
-        if (result.status !== 'ok') {
-          if (spies.skipNextRollback) spies.skipNextRollback = false
-          else input.rollback?.()
-        }
+        if (result.status !== 'ok' && !input.failureRollbackDisposition) rollback()
         return result
       }
-      return input.executionWrapper ? input.executionWrapper(execute) : execute()
+      let result: Record<string, unknown>
+      try {
+        result = input.executionWrapper ? await input.executionWrapper(execute) : await execute()
+      } catch (error) {
+        if (
+          (input.failureRollbackDisposition &&
+            input.failureRollbackDisposition({ status: 'unavailable' }) !== 'retain') ||
+          (!input.failureRollbackDisposition && !executionStarted)
+        ) {
+          rollback()
+        }
+        throw error
+      }
+      // Match runServerCommand: durable settlement chooses retention before
+      // a failed request can roll back its optimistic owner projection.
+      if (
+        result.status !== 'ok' &&
+        (input.failureRollbackDisposition?.(result) === 'rollback' ||
+          (!input.failureRollbackDisposition && !executionStarted))
+      ) {
+        rollback()
+      }
+      return result
     },
   )
   spies.updateTranslatorPresetCommand.mockImplementation(
@@ -2206,6 +2232,10 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         expect(commandSpies.deleteInputs).toEqual([
           { baseRevision: 101, presetId: 'preset-a', selectPresetId: 'preset-b' },
         ])
+        // Both the preceding patch and delete have reached retained feedback;
+        // observing the delete request alone does not await durable settlement.
+        expect(alertNormal).toHaveBeenCalledTimes(2)
+        expect(alertNormal).toHaveBeenLastCalledWith(language.translatorPresetPersistence.queued)
       })
       expect(commandSpies.inlineReplayInputs.map(({ requests }) => requests[0])).toEqual([
         {
