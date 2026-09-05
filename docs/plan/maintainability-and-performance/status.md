@@ -1,15 +1,15 @@
 # Maintainability and Performance Status
 
-Updated: 2026-09-05
+Updated: 2026-09-06
 
 ## Execution Cursor
 
-- State: Phases 0–3 accepted; implementing Phase 4 server maintenance scheduling.
+- State: Phases 0–4 accepted; beginning Phase 5 transcript residency decision.
 - Opening source: `2a1abfbf937895d598b92dfd3724ef6a501dd7fd`.
 - Execution source: `2d9290bfc` (opening implementation plus plan), clean at task start.
-- Next phase: [4. Server maintenance scheduling](phases/phase-4-server-maintenance.md).
-- Next task: finish backup ownership/consistency verification, then share bounded
-  reference discovery between backup verification and asynchronous asset GC.
+- Next phase: [5. Transcript residency decision](phases/phase-5-transcript-residency.md).
+- Next task: repeat the transcript matrix after the earlier browser changes,
+  then record the residency decision before implementation.
 - Blockers: none.
 - Implementation commit: `491cc1820` fixes F01. Phase 1 probe commits and
   acceptance evidence and completed Phase 2 slices are recorded below.
@@ -25,8 +25,8 @@ selected [phase](phases/README.md) for implementation detail.
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
-| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Executing 4b | Backup ownership/copy slice implemented; bounded reference discovery and GC next |
-| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
+| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Accepted | [Bounded discovery/workers, guarded GC and original latency limits](evidence/maintenance-scheduling.md) |
+| [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Executing decision gate | Remeasurement next |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
 
 ## Finding Dispositions
@@ -39,7 +39,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
 | F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
-| F07 | Open; backup copy/ownership implemented | Shared bounded reference scan, safe asynchronous GC and final stall comparison |
+| F07 | Fixed; bounded native backup workers and cooperative fenced GC meet original latency budgets | Final combined aggregate pending |
 | F08 | Open; large baseline exceeds heap/page-layout budgets | Recorded implementation/retention decision and after evidence |
 | F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
 | F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
@@ -67,7 +67,7 @@ needed to reproduce them here or in the owning phase's bounded slice record.
 
 - The ten audited findings remain the scope. F02–F06 and F09 are fixed with the
   explicit F02 configuration/legacy exceptions below. F01 creation is fixed and
-  its confirmed deletion follow-up is fixed; F07, F08 and F10 retain their
+  its confirmed deletion follow-up and F07 are fixed; F08 and F10 retain their
   implementation/decision gates. No finding is silently deferred or added.
 - Phase 0 precedes broad benchmarking because F01 is a reproduced correctness
   failure. Performance measurement must not delay its repair.
@@ -731,3 +731,22 @@ and exact tests must exercise that entry rather than only a fake executor.
   including worker memory. The old baseline prose's 896-byte save size was a
   transcription error: its raw artifact and unchanged fixture both use 928 bytes.
   All original latency budgets and nine-sample matrix remain the acceptance gate.
+
+## Phase 4 Accepted
+
+- Final implementation/measurement: `864441bfe`; supporting bounded scanner,
+  GC cutover, copy tuning and four-read grace batches are separately committed.
+  [Complete evidence](evidence/maintenance-scheduling.md) retains the original
+  fixture/budgets, all failed diagnostics and all nine final measured samples.
+- Original large max-gap/API budgets are met: backup 4.865/4.475 ms versus
+  limits 7.924/8.142, and GC 4.370/4.630 ms versus 16.117/16.576. Every size
+  permits API/turn progress during unfinished GC and after SQLite snapshot.
+  Real HTTP/SSE interleavings and correctness/drain/batch gates pass.
+- Total completion is slower than the synchronous baseline: large medians
+  197.021 ms backup and 306.965 ms GC versus 23.690/32.234. Small overhead,
+  worker-inclusive RSS and API-only heap are explicit in evidence. No numeric
+  limit was raised, request load changed, or sample discarded for acceptance.
+- Remaining synchronous public listing/restore phases, one oversized/native
+  projection and uncancellable native copies are recorded with their owners.
+  Final aggregate remains pending until all implementation is finished.
+  Phase 5 may now remeasure transcript residency and record its decision.
