@@ -25,7 +25,7 @@ selected [phase](phases/README.md) for implementation detail.
 | [1. Baselines and budgets](phases/phase-1-baselines-and-budgets.md) | F02–F10 | Accepted | [Baselines and numeric budgets](evidence/baselines.md) |
 | [2. Browser work](phases/phase-2-browser-work.md) | F03, F05, F04, F06 | Accepted | Scoped rollback, single normalization, background cache, selected locale |
 | [3. Generation inputs and types](phases/phase-3-generation-inputs-and-types.md) | F02, F09 | Accepted | [Selected inputs, concrete contracts and final costs](evidence/generation-inputs.md) |
-| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Executing 4a under sequencing amendment | Backup consistency design accepted; phase acceptance still waits for Phase 3 |
+| [4. Server maintenance](phases/phase-4-server-maintenance.md) | F07 | Executing 4b | Backup ownership/copy slice implemented; bounded reference discovery and GC next |
 | [5. Transcript residency](phases/phase-5-transcript-residency.md) | F08 | Pending Phase 4; implementation decision open | None |
 | [6. Shared policy and closeout](phases/phase-6-shared-policy-and-closeout.md) | F10; all closeout evidence | Pending prior phases | None |
 
@@ -39,7 +39,7 @@ selected [phase](phases/README.md) for implementation detail.
 | F04 | Fixed; bounded background writes/pruning and lifecycle fences | Final combined aggregate pending |
 | F05 | Fixed; one owned normalization per staged/replaced intent | Final combined aggregate pending |
 | F06 | Fixed; selected loading, readiness and real-browser chunk retry | Final combined aggregate pending |
-| F07 | Open; source-confirmed work | Stall baseline, API progress, backup/GC consistency |
+| F07 | Open; backup copy/ownership implemented | Shared bounded reference scan, safe asynchronous GC and final stall comparison |
 | F08 | Open; large baseline exceeds heap/page-layout budgets | Recorded implementation/retention decision and after evidence |
 | F09 | Fixed; finite checked views and explicit mutable ownership | Final combined aggregate pending |
 | F10 | Open; source-confirmed duplication | Shared owner and unchanged consumer behavior |
@@ -499,7 +499,7 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
 
 ## Phase 3 Accepted: Standalone Validators and Final Measurement
 
-- Implementation: accompanying standalone-validator commit, following `8de501a4a`
+- Implementation: `e4fc41def`, following `8de501a4a`
   (finite immutable consumers), `0afc940ca` (selected live routes), `cb914e641`
   (bounded query programs), and the earlier repository/Agent/wire slices.
 - [Complete source, measurements and verification](evidence/generation-inputs.md)
@@ -523,3 +523,54 @@ phase dependencies, update `PLAN.md` and the affected phase at the same time.
   validators pass. Phase 3 is accepted; final aggregate remains pending until
   all implementation phases finish. Phase 4's temporary sequencing exception
   no longer carries an open dependency.
+
+## Phase 4a: Backup Copy and Ownership Slice Implemented
+
+- Implementation: accompanying backup slice. Exclusive protection spans SQLite's
+  await, required-byte verification, asynchronous copying, publication or cleanup.
+  Shared save/staging leases close the races around mutable compatibility files
+  and multi-await live asset conversion. Same-hash/size restore fallback preserves
+  recovery of missing live bytes. Pre-snapshot write fences reject destructive
+  replacement when accepted ordinary or revision-free writes arrive meanwhile.
+- Independent review found a post-commit retention await that delayed restored
+  generation reconciliation/event publication. The fixed synchronous callback
+  runs those effects before retention yields. A controlled held-retention test
+  proves later settings events stay ordered and newly accepted current-instance
+  generation work is not marked abandoned.
+- Retention now traverses manifests asynchronously and retains only the configured
+  newest automatic selection plus at most two protected IDs. It ignores manual/
+  malformed records without collecting them. Created-time/id tie selection and
+  protected manual-versus-automatic capacity retain their prior outcomes.
+- `preClose` starts cancellation/admission closure; `onClose` drains before closing
+  SQLite. A held real HTTP backup exposed keep-alive drain after cancellation;
+  cancelled backup responses now close the connection. The shutdown regression
+  verifies cleanup and lease release before close completes.
+- Exact focused tests: maintenance coordinator 10, staging 7, backup maintenance
+  22, backups 53, local backup database 4, GC 19, save codec 46, legacy storage 13,
+  local file import 3, Realm 30: 207 passed. Maintenance cases use real SSE,
+  authenticated GET/command/upload progress during held copies, conflicts,
+  missing/corrupt/fallback bytes, stale safety captures, cancellation and shutdown.
+  Prettier, whitespace and documentation validators pass. No cost matrix or
+  aggregate is claimed for this intermediate slice.
+- The complete reference report and captured asset metadata array are still
+  synchronous/unbounded by batch. Shared bounded discovery must replace them in
+  backup and GC before Phase 4 acceptance. Public backup listing and journaled
+  restore staging/swap/recovery retain their existing synchronous costs.
+
+## Phase 4b: Bounds Before Implementation
+
+- Discovery pages read at most 64 source rows, yielding after 256 KiB or 4 ms of
+  work. A single projected owner/scalar can exceed the byte/time slice; expose
+  its largest-row measurement instead of adding an incompatible storage limit.
+  Distinct reference/chat IDs spill to one caller-owned scratch SQLite file with
+  a 2 MiB cache, rather than full-corpus JavaScript report arrays. Backup and GC
+  share this vocabulary and scanner; scratch cleanup precedes lease release.
+- Reclamation processes at most 16 candidates synchronously per transaction,
+  rechecking authoritative write/lineage, external-connection, protection and
+  upload-activity fences. Metadata and canonical-file deletion have no await
+  between them; asynchronous work never unlinks a canonical path later.
+  New writes/staging or stale discovery conservatively stop the sweep.
+- One sweep may run per directory. Results retain at most 1,024 deleted IDs/file
+  names plus complete counts, and candidate/file traversal remains paged.
+  Existing grace/staging protection remains. These bounds complement the original
+  unchanged API/event-loop latency targets; final isolated comparison is pending.

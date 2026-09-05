@@ -14,6 +14,9 @@ import {
   repairStoredChatGenerationSettings,
 } from './chatGenerationSettingsStorage.js'
 import { DEFAULT_AUTOMATIC_BACKUP_RETENTION } from './config.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from './maintenanceCoordinator.js'
+import { BackupAssetError, copyBackupAssets, copyBackupDirectory } from './backupFiles.js'
+import { buildAssetGcRisuSaveAssetReport } from './assetGc.js'
 import { getSchemaState } from './db.js'
 import { assessDatabaseInitialization, InitializeConflictError } from './databaseInitialization.js'
 import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEvent } from './commands/events.js'
@@ -3424,70 +3427,80 @@ export async function applyImport(
     automaticBackupRetention?: number
     greetingTranslations?: readonly GreetingTranslationRow[]
     signal?: AbortSignal
+    maintenanceLease?: MaintenanceLease
   } = {},
 ): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
   if (database === null || database === undefined) {
     throw new ValidationError('database payload missing')
   }
-  throwIfImportAborted(options.signal)
-  await createAutomaticSafetyBackup(db, dataDir, options.automaticBackupRetention)
-  // Creating the safety snapshot can yield to the event loop. Do not begin the
-  // destructive transaction if the requesting client disconnected meanwhile.
-  throwIfImportAborted(options.signal)
-  // The imported payload carries embedded `message[]`; split them into the
-  // messages table and persist the message-free domain tables. By default we
-  // persist a *clone* so the caller's `database` object is left fully hydrated —
-  // downstream consumers (e.g. the legacy hypaV3 memory backfill in
-  // routes/save.ts) read chat.message after this returns, and splitting mutates
-  // its argument in place. SQLite writes commit atomically so table families
-  // never land ahead of the message rows.
-  const cloneBeforeMessageSplit = options.cloneBeforeMessageSplit ?? true
-  const current = loadPersisted(db, dataDir)
-  let transactionOpen = false
-  db.exec('BEGIN IMMEDIATE')
-  transactionOpen = true
+  const coordinator = getMaintenanceCoordinator(dataDir)
+  const lease = options.maintenanceLease ?? coordinator.beginExclusive('import', options.signal)
   try {
-    // A caller may pass an already-normalized throwaway object and opt out of
-    // the repository clone. In that path, run the pre-revision hook before the
-    // destructive message split so legacy memory backfill can still read
-    // `message[]` and `hypaV3Data` from the import object.
-    if (!cloneBeforeMessageSplit) {
-      options.beforeRevision?.(db)
+    coordinator.assertExclusive(lease)
+    throwIfImportAborted(lease.signal)
+    const safetyFence = captureMaintenanceWriteFence(db)
+    await createAutomaticSafetyBackup(db, dataDir, lease, options.automaticBackupRetention)
+    // Creating the safety snapshot can yield to the event loop. Do not begin the
+    // destructive transaction if the requesting client disconnected meanwhile.
+    throwIfImportAborted(lease.signal)
+    assertMaintenanceWriteFence(db, safetyFence)
+    // The imported payload carries embedded `message[]`; split them into the
+    // messages table and persist the message-free domain tables. By default we
+    // persist a *clone* so the caller's `database` object is left fully hydrated —
+    // downstream consumers (e.g. the legacy hypaV3 memory backfill in
+    // routes/save.ts) read chat.message after this returns, and splitting mutates
+    // its argument in place. SQLite writes commit atomically so table families
+    // never land ahead of the message rows.
+    const cloneBeforeMessageSplit = options.cloneBeforeMessageSplit ?? true
+    const current = loadPersisted(db, dataDir)
+    let transactionOpen = false
+    db.exec('BEGIN IMMEDIATE')
+    transactionOpen = true
+    try {
+      // A caller may pass an already-normalized throwaway object and opt out of
+      // the repository clone. In that path, run the pre-revision hook before the
+      // destructive message split so legacy memory backfill can still read
+      // `message[]` and `hypaV3Data` from the import object.
+      if (!cloneBeforeMessageSplit) {
+        options.beforeRevision?.(db)
+      }
+      const importedDatabase = cloneBeforeMessageSplit ? structuredClone(database) : database
+      if (isRecord(importedDatabase)) {
+        migrateLegacyFlatModelConfiguration(importedDatabase)
+        repairPersistedPersonaSelectionIdentity(importedDatabase)
+        repairPersistedHypaV3PresetSelectionIdentity(importedDatabase)
+      }
+      const messageFree = splitChatMessagesIntoTable(db, {
+        ...current,
+        database: importedDatabase,
+      })
+      replaceAllCharactersInTable(db, messageFree.database)
+      replaceGreetingTranslationsForImport(db, options.greetingTranslations ?? [])
+      replaceAllCollectionsInTable(db, messageFree.database)
+      replaceAllSettingsInTable(db, messageFree.database)
+      if (cloneBeforeMessageSplit) {
+        options.beforeRevision?.(db)
+      }
+      // Portable imports never own the live accepted-send ledger. Remove the
+      // replaced database lifetime's operations before rotating lineage; any
+      // historical assistant metadata remains ordinary transcript metadata.
+      db.exec('DELETE FROM generation_effects')
+      db.exec('DELETE FROM generation_operation_attempts')
+      db.exec('DELETE FROM generation_operations')
+      bumpGenerationOperationProjectionEpoch(db)
+      const databaseLineage = rotateDatabaseLineage(db)
+      const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
+      db.exec('COMMIT')
+      transactionOpen = false
+      return { revision: event.revision, event, databaseLineage, writerEpoch: getDatabaseWriterMetadata(db).epoch }
+    } catch (err) {
+      if (transactionOpen) {
+        db.exec('ROLLBACK')
+      }
+      throw err
     }
-    const importedDatabase = cloneBeforeMessageSplit ? structuredClone(database) : database
-    if (isRecord(importedDatabase)) {
-      migrateLegacyFlatModelConfiguration(importedDatabase)
-      repairPersistedPersonaSelectionIdentity(importedDatabase)
-      repairPersistedHypaV3PresetSelectionIdentity(importedDatabase)
-    }
-    const messageFree = splitChatMessagesIntoTable(db, {
-      ...current,
-      database: importedDatabase,
-    })
-    replaceAllCharactersInTable(db, messageFree.database)
-    replaceGreetingTranslationsForImport(db, options.greetingTranslations ?? [])
-    replaceAllCollectionsInTable(db, messageFree.database)
-    replaceAllSettingsInTable(db, messageFree.database)
-    if (cloneBeforeMessageSplit) {
-      options.beforeRevision?.(db)
-    }
-    // Portable imports never own the live accepted-send ledger. Remove the
-    // replaced database lifetime's operations before rotating lineage; any
-    // historical assistant metadata remains ordinary transcript metadata.
-    db.exec('DELETE FROM generation_effects')
-    db.exec('DELETE FROM generation_operation_attempts')
-    db.exec('DELETE FROM generation_operations')
-    bumpGenerationOperationProjectionEpoch(db)
-    const databaseLineage = rotateDatabaseLineage(db)
-    const event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateImported)
-    db.exec('COMMIT')
-    transactionOpen = false
-    return { revision: event.revision, event, databaseLineage, writerEpoch: getDatabaseWriterMetadata(db).epoch }
-  } catch (err) {
-    if (transactionOpen) {
-      db.exec('ROLLBACK')
-    }
-    throw err
+  } finally {
+    if (!options.maintenanceLease) lease.release()
   }
 }
 
@@ -3998,40 +4011,97 @@ function checkpointWal(db: DatabaseSync): void {
   )
 }
 
+/** Ordinary requests remain responsive during a safety snapshot. Refuse a
+ * replacement if any accepted write could be absent from its captured DB.
+ * Capture before SQLite starts, since promise completion is not the snapshot's
+ * transaction boundary; include revision-free assets and other connections. */
+function captureMaintenanceWriteFence(db: DatabaseSync) {
+  return {
+    changes: (db.prepare('SELECT total_changes() AS value').get() as { value: number }).value,
+    dataVersion: (db.prepare('PRAGMA data_version').get() as { data_version: number }).data_version,
+    lineage: getDatabaseLineage(db),
+    revision: getSchemaState(db).revision,
+  }
+}
+
+function assertMaintenanceWriteFence(
+  db: DatabaseSync,
+  expected: ReturnType<typeof captureMaintenanceWriteFence>,
+): void {
+  const actual = captureMaintenanceWriteFence(db)
+  if (
+    actual.changes !== expected.changes ||
+    actual.dataVersion !== expected.dataVersion ||
+    actual.lineage !== expected.lineage ||
+    actual.revision !== expected.revision
+  ) {
+    throw new MaintenanceBusyError()
+  }
+}
+
 export const AUTOMATIC_BACKUP_LABEL = 'Automatic safety snapshot'
 
 export async function createBackup(
   db: DatabaseSync,
   dataDir: string,
   label: string | null = null,
-  options: { kind?: 'manual' | 'automatic' } = {},
+  options: { kind?: 'manual' | 'automatic'; signal?: AbortSignal } = {},
 ): Promise<BackupManifest> {
+  const lease = getMaintenanceCoordinator(dataDir).beginExclusive('backup', options.signal)
+  try {
+    return await createBackupUnderLease(db, dataDir, lease, label, options)
+  } finally {
+    lease.release()
+  }
+}
+
+async function createBackupUnderLease(
+  db: DatabaseSync,
+  dataDir: string,
+  lease: MaintenanceLease,
+  label: string | null,
+  options: { kind?: 'manual' | 'automatic'; restoreFallbackDir?: string } = {},
+): Promise<BackupManifest> {
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
+  lease.signal.throwIfAborted()
   const id = generateBackupId()
   const dir = backupDir(dataDir, id)
   try {
     fs.mkdirSync(dir, { recursive: true })
-
-    // Fail before copying any payload when a reader prevents committed WAL
-    // frames from reaching the main database. Node's online backup API then
-    // produces a transactionally consistent SQLite destination even if another
-    // connection writes after this preflight checkpoint.
+    // The lease protects every asset before SQLite first yields, including
+    // uploads incorporated by the online snapshot while it is in progress.
     checkpointWal(db)
     const backupSqlite = path.join(dir, 'risu.db')
     await backupSqliteDatabase(db, backupSqlite)
-
-    copyDirectoryIfPresent(assetsDir(dataDir), path.join(dir, 'assets'))
-    copyDirectoryIfPresent(saveDir(dataDir), path.join(dir, 'save'))
+    lease.signal.throwIfAborted()
 
     let revision: number
-    let assetCount: number
+    let assets: PersistedAsset[]
+    let requiredIds: Set<string>
     const snapshotDb = new DatabaseSync(backupSqlite, { readOnly: true })
     try {
       revision = getSchemaState(snapshotDb).revision
-      assetCount = getAssetMetadataCount(snapshotDb)
+      assets = getAllAssetMetadata(snapshotDb)
+      // This synchronous reference projection is the same complete source used
+      // by GC, including operational pending finalizations and catalog entries.
+      // It is intentionally separate from the bounded file-copy protocol.
+      const report = buildAssetGcRisuSaveAssetReport(snapshotDb, assets)
+      if (report.missing.length > 0) {
+        throw new BackupAssetError(`Required backup asset metadata is missing: ${report.missing[0].id}`)
+      }
+      requiredIds = new Set(report.referenced.map((reference) => reference.id))
     } finally {
       snapshotDb.close()
     }
-
+    await copyBackupAssets({
+      from: assetsDir(dataDir),
+      to: path.join(dir, 'assets'),
+      assets,
+      requiredIds,
+      signal: lease.signal,
+      restoreFallbackDir: options.restoreFallbackDir,
+    })
+    await copyBackupDirectory(saveDir(dataDir), path.join(dir, 'save'), lease.signal)
     const manifest: BackupManifest = {
       _version: BACKUP_MANIFEST_VERSION,
       id,
@@ -4039,17 +4109,19 @@ export async function createBackup(
       kind: options.kind ?? 'manual',
       createdAt: new Date().toISOString(),
       revision,
-      assetCount,
+      assetCount: assets.length,
     }
-    fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(manifest))
+    const pendingManifest = path.join(dir, '.manifest.json')
+    await fs.promises.writeFile(pendingManifest, JSON.stringify(manifest), { signal: lease.signal })
+    lease.signal.throwIfAborted()
+    // Atomic publication has no await/cancellation window after the last check.
+    fs.renameSync(pendingManifest, path.join(dir, 'manifest.json'))
     return manifest
   } catch (err) {
-    // A manifest is written last, but remove partial payloads too so failed
-    // snapshots never accumulate as hidden, unusable backup directories.
     try {
-      fs.rmSync(dir, { recursive: true, force: true })
+      await fs.promises.rm(dir, { recursive: true, force: true })
     } catch {
-      // Preserve the creation failure; callers fail closed on that cause.
+      // Preserve the creation failure; a manifest was never published.
     }
     throw err
   }
@@ -4085,45 +4157,110 @@ function liveDatabaseIsInitialized(db: DatabaseSync): boolean {
   return db.prepare('SELECT 1 FROM settings WHERE id = 1').get() !== undefined
 }
 
-function pruneAutomaticBackups(dataDir: string, retention: number, protectedIds: ReadonlySet<string>): void {
+type AutomaticBackupCandidate = Pick<BackupManifest, 'id' | 'createdAt'>
+
+async function readAutomaticBackupCandidate(dataDir: string, id: string): Promise<AutomaticBackupCandidate | null> {
+  if (!isValidBackupId(id)) return null
+  try {
+    const manifest = JSON.parse(
+      await fs.promises.readFile(path.join(backupDir(dataDir, id), 'manifest.json'), 'utf8'),
+    ) as BackupManifest
+    if (
+      !manifest ||
+      typeof manifest !== 'object' ||
+      manifest.id !== id ||
+      typeof manifest.createdAt !== 'string' ||
+      manifest.kind !== 'automatic'
+    )
+      return null
+    return { id, createdAt: manifest.createdAt }
+  } catch {
+    // Match public listing: one missing, corrupt, or unreadable manifest is
+    // ignored, and must never make an ordinary/manual directory collectible.
+    return null
+  }
+}
+
+function compareAutomaticBackups(a: AutomaticBackupCandidate, b: AutomaticBackupCandidate): number {
+  return a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)
+}
+
+async function pruneAutomaticBackups(
+  dataDir: string,
+  lease: MaintenanceLease,
+  retention: number,
+  protectedIds: ReadonlySet<string>,
+): Promise<void> {
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
   if (!Number.isInteger(retention) || retention <= 0) {
     throw new Error('automatic backup retention must be a positive integer')
   }
 
-  const automatic = listBackups(dataDir)
-    .filter((manifest) => manifest.kind === 'automatic')
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-  let excess = automatic.length - retention
-  for (const manifest of automatic) {
-    if (excess <= 0) break
-    if (protectedIds.has(manifest.id)) continue
-    deleteBackup(dataDir, manifest.id)
-    excess -= 1
+  // Callers protect only the new safety snapshot and (during restore) its
+  // source. A protected manual backup must not consume automatic capacity.
+  let protectedAutomaticCount = 0
+  for (const id of protectedIds) {
+    lease.signal.throwIfAborted()
+    if (await readAutomaticBackupCandidate(dataDir, id)) protectedAutomaticCount++
+  }
+  const capacity = Math.max(0, retention - protectedAutomaticCount)
+  const selected: AutomaticBackupCandidate[] = []
+  let directory: fs.Dir
+  try {
+    directory = await fs.promises.opendir(backupsDir(dataDir), { bufferSize: 32 })
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return
+    throw error
+  }
+  // Retain at most `capacity` small candidates, plus the one being read and
+  // at most two protected IDs. Manual manifests are never accumulated. An
+  // evicted candidate cannot become necessary when more entries are seen.
+  for await (const entry of directory) {
+    lease.signal.throwIfAborted()
+    if (protectedIds.has(entry.name)) continue
+    const candidate = await readAutomaticBackupCandidate(dataDir, entry.name)
+    lease.signal.throwIfAborted()
+    if (!candidate) continue
+    if (capacity === 0 || (selected.length === capacity && compareAutomaticBackups(candidate, selected[0]) <= 0)) {
+      await deleteBackupUnderLease(dataDir, candidate.id, lease)
+      continue
+    }
+    if (selected.length === capacity) {
+      await deleteBackupUnderLease(dataDir, selected[0].id, lease)
+      selected.shift()
+    }
+    let lower = 0
+    let upper = selected.length
+    while (lower < upper) {
+      const middle = (lower + upper) >>> 1
+      if (compareAutomaticBackups(selected[middle], candidate) < 0) lower = middle + 1
+      else upper = middle
+    }
+    selected.splice(lower, 0, candidate)
   }
 }
 
-/**
- * Capture initialized live state before a whole-database replacement. The
- * online SQLite copy may yield, but mutations through the same DatabaseSync are
- * incorporated by node:sqlite; after it resolves, retention and the destructive
- * transaction continue in the same microtask. A restore target can be protected
- * from retention until its payload is no longer in use.
- */
+/** Capture safety state and retain its source under the caller's exclusive
+ * lease. Explicit nesting keeps import/restore ownership across every await. */
 async function createAutomaticSafetyBackup(
   db: DatabaseSync,
   dataDir: string,
+  lease: MaintenanceLease,
   retention = DEFAULT_AUTOMATIC_BACKUP_RETENTION,
   protectedBackupIds: readonly string[] = [],
+  restoreFallbackDir?: string,
 ): Promise<BackupManifest | null> {
-  // First-run imports intentionally do not snapshot the empty schema. The
-  // settings row is the same initialization authority used by loadPersisted.
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
   if (!liveDatabaseIsInitialized(db)) return null
-
   try {
-    const manifest = await createBackup(db, dataDir, AUTOMATIC_BACKUP_LABEL, { kind: 'automatic' })
-    pruneAutomaticBackups(dataDir, retention, new Set([...protectedBackupIds, manifest.id]))
+    const manifest = await createBackupUnderLease(db, dataDir, lease, AUTOMATIC_BACKUP_LABEL, {
+      kind: 'automatic',
+      restoreFallbackDir,
+    })
+    await pruneAutomaticBackups(dataDir, lease, retention, new Set([...protectedBackupIds, manifest.id]))
     return manifest
   } catch (err) {
+    if (lease.signal.aborted) lease.signal.throwIfAborted()
     throw new AutomaticBackupError(err)
   }
 }
@@ -4711,170 +4848,198 @@ function restoreSqliteFromBackup(
   return databaseLineage
 }
 
+export interface RestoreBackupResult {
+  revision: number
+  event: CommandEvent
+  databaseLineage: string
+  writerEpoch: number
+}
+
 export async function restoreBackup(
   db: DatabaseSync,
   dataDir: string,
   id: string,
-  options: { automaticBackupRetention?: number } = {},
-): Promise<{ revision: number; event: CommandEvent; databaseLineage: string; writerEpoch: number }> {
-  if (!isValidBackupId(id)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
-  }
-  const manifestPath = path.join(backupDir(dataDir, id), 'manifest.json')
-  const legacySnapshot = path.join(backupDir(dataDir, id), 'db.json')
-  if (!fs.existsSync(manifestPath) && !fs.existsSync(legacySnapshot)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
-  }
-
-  const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
-  const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
-
-  // A prior failed attempt is recovered before a safety snapshot or new
-  // staging work. Validation intentionally remains the first mutating guard.
-  recoverInterruptedRestoreSwaps(db, dataDir)
-  const journal = createRestoreSwapJournal(dataDir, id)
-  const journalFile = restoreJournalPath(dataDir, id)
-  assertRestoreScratchIsUnused(journal)
-
-  const automaticBackup = await createAutomaticSafetyBackup(
-    db,
-    dataDir,
-    options.automaticBackupRetention,
-    // Retention must not delete an automatic snapshot while it is the active
-    // restore source. The newly created snapshot is protected by the helper.
-    [id],
-  )
-
-  writeRestoreSwapJournal(journalFile, journal, true)
+  options: {
+    automaticBackupRetention?: number
+    signal?: AbortSignal
+    /** Synchronous route effects must precede post-commit retention awaits. */
+    onCommitted?: (result: RestoreBackupResult) => void
+  } = {},
+): Promise<RestoreBackupResult> {
+  const lease = getMaintenanceCoordinator(dataDir).beginExclusive('restore', options.signal)
   try {
-    stageRestoreSwapComponent(journal.assets)
-    stageRestoreSwapComponent(journal.save)
-  } catch (error) {
-    try {
-      completeRestoreSwapBackward(journalFile, journal)
-    } catch (recoveryError) {
-      throw new AggregateError([error, recoveryError], 'Restore staging failed and cleanup is incomplete')
+    if (!isValidBackupId(id)) {
+      throw new EntityNotFoundError(`Backup not found: ${id}`)
     }
-    throw error
-  }
+    const manifestPath = path.join(backupDir(dataDir, id), 'manifest.json')
+    const legacySnapshot = path.join(backupDir(dataDir, id), 'db.json')
+    if (!fs.existsSync(manifestPath) && !fs.existsSync(legacySnapshot)) {
+      throw new EntityNotFoundError(`Backup not found: ${id}`)
+    }
 
-  let event: CommandEvent | undefined
-  let databaseLineage: string | undefined
-  let sqliteCommitted = false
-  try {
-    if (journal.assets.hadLiveDirectory) fs.renameSync(journal.assets.livePath, journal.assets.oldPath)
-    updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-parked' })
-    if (journal.save.hadLiveDirectory) fs.renameSync(journal.save.livePath, journal.save.oldPath)
-    updateRestoreSwapJournal(journalFile, journal, { phase: 'save-parked' })
+    const backupSqlite = path.join(backupDir(dataDir, id), 'risu.db')
+    const usableDatabasePayloads = validateBackupDatabasePayloads(backupSqlite, legacySnapshot)
 
-    databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, {
-      beforeCommit: (nextDatabaseLineage) => {
-        // Retain the transaction's lineage in memory too, so an ambiguous COMMIT
-        // error that is resolved as committed can still return the correct
-        // replacement ownership after finishing forward.
-        databaseLineage = nextDatabaseLineage
-        // If the backup carries a legacy db.json, import it into SQLite inside
-        // the restore transaction so a failed re-import rolls everything back.
-        if (usableDatabasePayloads.legacyJson) importLegacyDatabaseSnapshot(db, legacySnapshot)
-        event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
+    // A prior failed attempt is recovered before a safety snapshot or new
+    // staging work. Validation intentionally remains the first mutating guard.
+    recoverInterruptedRestoreSwaps(db, dataDir)
+    const journal = createRestoreSwapJournal(dataDir, id)
+    const journalFile = restoreJournalPath(dataDir, id)
+    assertRestoreScratchIsUnused(journal)
 
-        fs.renameSync(journal.assets.tmpPath, journal.assets.livePath)
-        updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-installed' })
-        fs.renameSync(journal.save.tmpPath, journal.save.livePath)
-        updateRestoreSwapJournal(journalFile, journal, { phase: 'save-installed' })
-        // This lineage is transactionally visible iff COMMIT succeeds. Boot can
-        // therefore resolve a crash before the post-COMMIT phase write.
-        updateRestoreSwapJournal(journalFile, journal, {
-          phase: 'committing',
-          expectedDatabaseLineage: nextDatabaseLineage,
-        })
-      },
-      afterCommit: () => {
-        sqliteCommitted = true
-        updateRestoreSwapJournal(journalFile, journal, { phase: 'committed' })
-      },
-      onPostCommitError: (error) => {
-        sqliteCommitted = true
-        logRestoreRecovery(
-          undefined,
-          'error',
-          { err: error, restoreId: id },
-          'Backup restore committed; finishing the directory swap forward after a post-commit error',
-        )
-      },
-    })
-    sqliteCommitted = true
-    completeRestoreSwapForward(journalFile, journal)
-  } catch (err) {
-    const committed = sqliteCommitted || restoreJournalDatabaseCommitted(db, journal)
-    if (committed) {
-      logRestoreRecovery(
-        undefined,
-        'error',
-        { err, restoreId: id },
-        'Backup restore committed; completing the directory swap forward',
-      )
-      completeRestoreSwapForward(journalFile, journal)
-    } else {
+    const safetyFence = captureMaintenanceWriteFence(db)
+    const automaticBackup = await createAutomaticSafetyBackup(
+      db,
+      dataDir,
+      lease,
+      options.automaticBackupRetention,
+      // Retention must not delete an automatic snapshot while it is the active
+      // restore source. The newly created snapshot is protected by the helper.
+      [id],
+      path.join(backupDir(dataDir, id), 'assets'),
+    )
+    lease.signal.throwIfAborted()
+    assertMaintenanceWriteFence(db, safetyFence)
+
+    writeRestoreSwapJournal(journalFile, journal, true)
+    try {
+      stageRestoreSwapComponent(journal.assets)
+      stageRestoreSwapComponent(journal.save)
+    } catch (error) {
       try {
         completeRestoreSwapBackward(journalFile, journal)
       } catch (recoveryError) {
+        throw new AggregateError([error, recoveryError], 'Restore staging failed and cleanup is incomplete')
+      }
+      throw error
+    }
+
+    let event: CommandEvent | undefined
+    let databaseLineage: string | undefined
+    let sqliteCommitted = false
+    try {
+      if (journal.assets.hadLiveDirectory) fs.renameSync(journal.assets.livePath, journal.assets.oldPath)
+      updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-parked' })
+      if (journal.save.hadLiveDirectory) fs.renameSync(journal.save.livePath, journal.save.oldPath)
+      updateRestoreSwapJournal(journalFile, journal, { phase: 'save-parked' })
+
+      databaseLineage = restoreSqliteFromBackup(db, usableDatabasePayloads.sqlite ? backupSqlite : null, {
+        beforeCommit: (nextDatabaseLineage) => {
+          // Retain the transaction's lineage in memory too, so an ambiguous COMMIT
+          // error that is resolved as committed can still return the correct
+          // replacement ownership after finishing forward.
+          databaseLineage = nextDatabaseLineage
+          // If the backup carries a legacy db.json, import it into SQLite inside
+          // the restore transaction so a failed re-import rolls everything back.
+          if (usableDatabasePayloads.legacyJson) importLegacyDatabaseSnapshot(db, legacySnapshot)
+          event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
+
+          fs.renameSync(journal.assets.tmpPath, journal.assets.livePath)
+          updateRestoreSwapJournal(journalFile, journal, { phase: 'assets-installed' })
+          fs.renameSync(journal.save.tmpPath, journal.save.livePath)
+          updateRestoreSwapJournal(journalFile, journal, { phase: 'save-installed' })
+          // This lineage is transactionally visible iff COMMIT succeeds. Boot can
+          // therefore resolve a crash before the post-COMMIT phase write.
+          updateRestoreSwapJournal(journalFile, journal, {
+            phase: 'committing',
+            expectedDatabaseLineage: nextDatabaseLineage,
+          })
+        },
+        afterCommit: () => {
+          sqliteCommitted = true
+          updateRestoreSwapJournal(journalFile, journal, { phase: 'committed' })
+        },
+        onPostCommitError: (error) => {
+          sqliteCommitted = true
+          logRestoreRecovery(
+            undefined,
+            'error',
+            { err: error, restoreId: id },
+            'Backup restore committed; finishing the directory swap forward after a post-commit error',
+          )
+        },
+      })
+      sqliteCommitted = true
+      completeRestoreSwapForward(journalFile, journal)
+    } catch (err) {
+      const committed = sqliteCommitted || restoreJournalDatabaseCommitted(db, journal)
+      if (committed) {
         logRestoreRecovery(
           undefined,
           'error',
-          { err: recoveryError, restoreId: id },
-          'Backup restore rollback is incomplete and will be retried on boot',
+          { err, restoreId: id },
+          'Backup restore committed; completing the directory swap forward',
         )
-        throw new AggregateError([err, recoveryError], 'Backup restore failed and directory rollback is incomplete')
+        completeRestoreSwapForward(journalFile, journal)
+      } else {
+        try {
+          completeRestoreSwapBackward(journalFile, journal)
+        } catch (recoveryError) {
+          logRestoreRecovery(
+            undefined,
+            'error',
+            { err: recoveryError, restoreId: id },
+            'Backup restore rollback is incomplete and will be retried on boot',
+          )
+          throw new AggregateError([err, recoveryError], 'Backup restore failed and directory rollback is incomplete')
+        }
+        throw err
       }
-      throw err
     }
-  }
 
-  if (!event) {
-    throw new Error('restore did not produce a command event')
-  }
-  if (!databaseLineage) {
-    throw new Error('restore did not return database lineage')
-  }
-  if (automaticBackup) {
-    try {
-      // A retention cap of one temporarily needs both the restore source and
-      // its safety snapshot. Once restore is complete, the old source may be
-      // pruned without racing the operation; always retain the new snapshot.
-      pruneAutomaticBackups(
-        dataDir,
-        options.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
-        new Set([automaticBackup.id]),
-      )
-    } catch {
-      // The safety snapshot already exists and the restore has committed. Do
-      // not report a false restore failure for post-operation housekeeping;
-      // the next safety snapshot will retry bounded retention.
+    if (!event) {
+      throw new Error('restore did not produce a command event')
     }
-  }
-  return {
-    revision: event.revision,
-    event,
-    databaseLineage,
-    writerEpoch: getDatabaseWriterMetadata(db).epoch,
+    if (!databaseLineage) {
+      throw new Error('restore did not return database lineage')
+    }
+    const result: RestoreBackupResult = {
+      revision: event.revision,
+      event,
+      databaseLineage,
+      writerEpoch: getDatabaseWriterMetadata(db).epoch,
+    }
+    // Reconcile the restored ledger and publish state.restored before another
+    // request can accept work in the replacement lineage during retention.
+    options.onCommitted?.(result)
+    if (automaticBackup) {
+      try {
+        // A retention cap of one temporarily needs both the restore source and
+        // its safety snapshot. Once restore is complete, the old source may be
+        // pruned without racing the operation; always retain the new snapshot.
+        await pruneAutomaticBackups(
+          dataDir,
+          lease,
+          options.automaticBackupRetention ?? DEFAULT_AUTOMATIC_BACKUP_RETENTION,
+          new Set([automaticBackup.id]),
+        )
+      } catch {
+        // The safety snapshot already exists and the restore has committed. Do
+        // not report a false restore failure for post-operation housekeeping;
+        // the next safety snapshot will retry bounded retention.
+      }
+    }
+    return result
+  } finally {
+    lease.release()
   }
 }
 
-export function deleteBackup(dataDir: string, id: string): void {
-  if (!isValidBackupId(id)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
+export async function deleteBackup(dataDir: string, id: string): Promise<void> {
+  const lease = getMaintenanceCoordinator(dataDir).beginExclusive('delete-backup')
+  try {
+    await deleteBackupUnderLease(dataDir, id, lease)
+  } finally {
+    lease.release()
   }
+}
+
+async function deleteBackupUnderLease(dataDir: string, id: string, lease: MaintenanceLease): Promise<void> {
+  getMaintenanceCoordinator(dataDir).assertExclusive(lease)
+  if (!isValidBackupId(id)) throw new EntityNotFoundError(`Backup not found: ${id}`)
   const dir = backupDir(dataDir, id)
-  if (!fs.existsSync(dir)) {
-    throw new EntityNotFoundError(`Backup not found: ${id}`)
-  }
-  fs.rmSync(dir, { recursive: true, force: true })
-}
-
-function copyDirectoryIfPresent(from: string, to: string): void {
-  if (!fs.existsSync(from)) return
-  fs.cpSync(from, to, { recursive: true })
+  if (!fs.existsSync(dir)) throw new EntityNotFoundError(`Backup not found: ${id}`)
+  await fs.promises.rm(dir, { recursive: true, force: true })
 }
 
 function rmDirectoryIfPresent(dir: string): void {

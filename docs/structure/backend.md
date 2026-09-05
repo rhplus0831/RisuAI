@@ -1,7 +1,7 @@
 # Backend Map
 
 Last audited: 2026-08-30.
-Targeted source check: 2026-09-05 (client diagnostics composition and lifecycle).
+Targeted source check: 2026-09-05 (maintenance cancellation/drain and client diagnostics lifecycle).
 
 The backend is the Fastify server under `server/fastify`. This guide owns its
 composition root, route policy, request-path boundaries, process-local jobs,
@@ -366,8 +366,14 @@ history, are retained instead of being age-pruned.
 own interrupted running jobs, perform immediate terminal-retention sweeps, poll
 on independent idle intervals, and later sweep terminal retention. The
 BardWiki lane is chat-fair and cannot occupy the Hypa single-flight lane.
-Shutdown stops both workers and timers, removes registry jobs, settles
-generation runners, and only then closes SQLite.
+Shutdown first closes maintenance admission and signals cooperative cancellation
+in `preClose`, while active HTTP requests can still clean up. `onClose` drains
+maintenance leases before stopping workers/timers, removing registry jobs,
+settling generation runners, and closing SQLite. An aborted copy keeps ownership
+until every started filesystem operation and cleanup finishes. Cancelled backup
+HTTP responses close their connection so keep-alive does not hold server drain
+open. The data-directory coordinator is reopened only after the previous owner
+has drained; see [Backups](assets-and-saves.md#backups).
 
 Compatibility job-stream use is measured by the opt-in
 `generation_compatibility_stream_attach` protocol metric, including whether the

@@ -6,6 +6,8 @@ import type { FastifyInstance } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { authCryptoRateLimit } from '../routeRateLimits.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError } from '../maintenanceCoordinator.js'
+import { attachMaintenanceAbort } from '../maintenanceRequest.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
 const LEGACY_STORAGE_TEMP_PREFIX = '.legacy-storage-'
@@ -83,15 +85,23 @@ async function syncDirectoryIfAvailable(dirPath: string): Promise<void> {
   }
 }
 
-async function writeLegacyStorageFileAtomic(savePath: string, filePath: string, body: Buffer): Promise<void> {
+async function writeLegacyStorageFileAtomic(
+  savePath: string,
+  filePath: string,
+  body: Buffer,
+  signal: AbortSignal,
+): Promise<void> {
   const finalPath = path.join(savePath, filePath)
   const tempPath = legacyStorageTempPath(savePath)
   let renamed = false
   try {
-    await fs.promises.writeFile(tempPath, body, { flag: 'wx' })
+    await fs.promises.writeFile(tempPath, body, { flag: 'wx', signal })
     await syncFile(tempPath)
+    signal.throwIfAborted()
     await fs.promises.rename(tempPath, finalPath)
     renamed = true
+    // Once the replacement is visible, finish its durability work even if the
+    // request or shutdown signal is cancelled while rename is in flight.
     await syncDirectoryIfAvailable(savePath)
   } finally {
     if (!renamed) {
@@ -175,9 +185,25 @@ export function registerLegacyStorageRoutes(app: FastifyInstance, authState: Aut
         reply.code(400)
         return { error: 'Body required' }
       }
-      const savePath = ensureSaveDir(dataDir)
-      await writeLegacyStorageFileAtomic(savePath, filePath, req.body)
-      return { success: true }
+      const requestAbort = attachMaintenanceAbort(req, reply)
+      try {
+        const lease = getMaintenanceCoordinator(dataDir).beginSaveMutation(requestAbort.signal)
+        try {
+          const savePath = ensureSaveDir(dataDir)
+          await writeLegacyStorageFileAtomic(savePath, filePath, req.body, lease.signal)
+          return { success: true }
+        } finally {
+          lease.release()
+        }
+      } catch (error) {
+        if (error instanceof MaintenanceBusyError) {
+          reply.code(503)
+          return { error: error.code, code: error.code }
+        }
+        throw error
+      } finally {
+        requestAbort.cleanup()
+      }
     })
 
     instance.post('/api/v1/storage/remove', async (req, reply) => {
@@ -195,16 +221,33 @@ export function registerLegacyStorageRoutes(app: FastifyInstance, authState: Aut
           return { error: 'Invalid path' }
         }
       }
-      const savePath = ensureSaveDir(dataDir)
-      for (const filePath of filePaths) {
-        const onDisk = path.join(savePath, filePath)
+      const requestAbort = attachMaintenanceAbort(req, reply)
+      try {
+        const lease = getMaintenanceCoordinator(dataDir).beginSaveMutation(requestAbort.signal)
         try {
-          await fs.promises.rm(onDisk, { force: true })
-        } catch (err) {
-          req.log.warn({ err, filePath }, 'storage remove failed')
+          const savePath = ensureSaveDir(dataDir)
+          for (const filePath of filePaths) {
+            lease.signal.throwIfAborted()
+            const onDisk = path.join(savePath, filePath)
+            try {
+              await fs.promises.rm(onDisk, { force: true })
+            } catch (err) {
+              req.log.warn({ err, filePath }, 'storage remove failed')
+            }
+          }
+          return { success: true }
+        } finally {
+          lease.release()
         }
+      } catch (error) {
+        if (error instanceof MaintenanceBusyError) {
+          reply.code(503)
+          return { error: error.code, code: error.code }
+        }
+        throw error
+      } finally {
+        requestAbort.cleanup()
       }
-      return { success: true }
     })
   })
 

@@ -1,6 +1,7 @@
 # Assets And Saves
 
 Last audited: 2026-08-30.
+Targeted source check: 2026-09-05 (backup copying, maintenance ownership and restore publication).
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -366,6 +367,7 @@ store.
 | --- | --- |
 | `server/fastify/src/routes/backups.ts` | Create/list/restore/delete backup routes. |
 | `server/fastify/src/repository.ts` | Snapshot creation, manifest writing, SQLite table restore, file swaps. |
+| `server/fastify/src/backupFiles.ts`, `maintenanceCoordinator.ts`, `maintenanceRequest.ts` | Bounded copy/verification, maintenance and live-staging leases, request cancellation. |
 | `src/ts/server/backups.ts` | Browser adapter for backup/import/export routes and progress headers. |
 | `src/ts/server/replacementDatabaseOwnership.ts` | Adopts replacement lineage/writer ownership before refreshing state. |
 | `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows. |
@@ -381,6 +383,49 @@ delete are authenticated and active-writer guarded; list is authenticated
 read-only. The durable route-policy owners are the `backup-mutations` and
 `backup-list` entries in `server/fastify/src/routeManifest.ts`; behavior is
 guarded by `server/fastify/__tests__/backups.test.ts`.
+
+Backup creation holds a data-directory maintenance lease from before the SQLite
+backup await through file verification and publication or failure cleanup.
+Two asynchronous file workers copy captured asset metadata and legacy directory
+extras; required references include operational pending-finalization, catalog
+and plugin-storage owners. Missing required metadata/bytes, wrong size or wrong
+hash prevents publication. A temporary manifest is renamed only after completion.
+Directory traversal buffers one entry at each of at most 32 levels, and hash
+streams use 64 KiB buffers. Deeper legacy extras fail closed. Existing optional
+orphan bytes are copied when present; missing orphan files retain their missing
+state. Concurrent synchronous uploads may add harmless unindexed extras, which
+are not claimed to share the SQLite snapshot's precise instant.
+
+The coordinator admits one exclusive backup/import/restore/delete operation and
+no queued operations. Up to four compatibility-save mutations or four operations
+staging live assets across awaits may run when no exclusive operation owns the
+directory. Conflicts return transient `503 maintenance_busy`. Save writes/removes
+hold their lease through filesystem cleanup; local/Realm live asset conversion
+holds staging ownership through commit or rollback. Temporary multipart intake
+does not hold a live-state lease while waiting for network bytes. Ordinary
+commands and immutable synchronous uploads remain responsive; GC defers while
+backup or staging protection is active.
+
+Import/restore owns one lease across its nested safety snapshot and destructive
+transaction. A write fence captured before safety copying checks revision,
+lineage, SQLite total changes and external-connection data version immediately
+before replacement. A concurrent accepted write causes `maintenance_busy`,
+preserving live state and the completed safety snapshot. No SQLite transaction
+spans a copy await. Automatic retention reads manifests asynchronously, discards
+manual/corrupt entries as it goes, and retains only the configured newest
+selection plus protected source IDs; public backup listing remains unchanged.
+
+Only restore's safety snapshot may recover missing captured-live asset bytes
+from its validated, pinned restore source. The same captured hash and size must
+match, and capture does not repair live files. Missing bytes in both locations
+or invalid fallback bytes fail closed. This preserves recovery after live-file
+loss without treating an incomplete safety snapshot as successful.
+
+Restore reconciles the restored generation ledger and publishes `state.restored`
+synchronously after commit and before post-commit retention can yield. This
+prevents later commands from overtaking the restore event and prevents a late
+startup reconciliation from abandoning newly accepted generation work. Existing
+journaled staging/swaps and their synchronous recovery policy remain unchanged.
 
 Before an initialized database is replaced by a `.risu`, bundle, legacy local
 backup, or server-backup restore, the repository creates a fail-closed automatic

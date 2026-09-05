@@ -20,6 +20,7 @@ import {
 import { createAuthState } from './auth.js'
 import { createCommandEventSink, type CommandEventSink } from './commands/events.js'
 import { openDatabase } from './db.js'
+import { closeMaintenance, openMaintenance } from './maintenanceCoordinator.js'
 import { ASSET_BULK_BINARY_CONTENT_TYPE, registerAssetsRoutes } from './routes/assets.js'
 import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
@@ -219,6 +220,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
     },
   })
 
+  openMaintenance(config.dataDir)
   const db = openDatabase(config.dataDir, { allowMissingDatabase: config.allowMissingDatabase })
   const serverInstanceId = randomUUID()
   // Directory swaps are journaled around the SQLite restore transaction. Finish
@@ -360,7 +362,18 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   assetGcTimer?.unref()
   let generationFinalizationRetryTimer: ReturnType<typeof setInterval> | null = null
 
+  // preClose precedes Fastify's HTTP drain: active backup requests must receive
+  // shutdown cancellation while they still own their copy leases.
+  app.addHook('preClose', () => {
+    // Start cancellation immediately; HTTP connection drain and maintenance
+    // cleanup proceed together. onClose awaits the same drain before SQLite.
+    void closeMaintenance(config.dataDir)
+  })
+
   app.addHook('onClose', async () => {
+    // Abort cooperative copies/staging, reject admission, and drain every
+    // started filesystem operation before any continuation can use closed DB.
+    await closeMaintenance(config.dataDir)
     await bardWikiWorker?.stop()
     await memoryWorker?.stop()
     clearInterval(gcTimer)

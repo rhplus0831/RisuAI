@@ -51,6 +51,7 @@ import {
   type RealmAssetSource,
 } from '../realmImport/characterCard.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from '../maintenanceCoordinator.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -204,7 +205,13 @@ export function registerRealmImportRoutes(
     if (!(await requireAuth(authState, req, reply))) return
 
     const abort = createRealmImportAbort(req, reply, deadlineMs)
+    const coordinator = getMaintenanceCoordinator(dataDir)
+    let lease: MaintenanceLease | undefined
     try {
+      // Admission must precede the SSE response headers so a busy maintenance
+      // owner is reported as an ordinary retryable HTTP 503.
+      lease = coordinator.beginAssetStaging(abort.signal)
+      const signal = lease.signal
       const body = (req.body ?? {}) as RealmImportBody
       const writerSessionId = readActiveWriterSessionId(req)
       const eventOrigin = writerSessionId ? { writerSessionId } : undefined
@@ -225,7 +232,7 @@ export function registerRealmImportRoutes(
               maxFetchedAssetBytes: options.maxFetchedAssetBytes,
               maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
               pendingCharxImports,
-              signal: abort.signal,
+              signal,
               reportProgress,
             }),
           body.clientCapabilities?.realmProgressDelta === true,
@@ -245,9 +252,13 @@ export function registerRealmImportRoutes(
         maxFetchedAssetBytes: options.maxFetchedAssetBytes,
         maxFetchedAssetTotalBytes: options.maxFetchedAssetTotalBytes,
         pendingCharxImports,
-        signal: abort.signal,
+        signal,
       })
     } catch (err) {
+      if (err instanceof MaintenanceBusyError) {
+        reply.code(503)
+        return { error: err.code, code: err.code }
+      }
       if (err instanceof RevisionConflictError) {
         reply.code(409)
         return { error: err.message, currentRevision: err.currentRevision }
@@ -270,6 +281,7 @@ export function registerRealmImportRoutes(
       }
       throw err
     } finally {
+      lease?.release()
       abort.cleanup()
     }
   })
@@ -330,6 +342,7 @@ async function runRealmImport(args: {
   signal: AbortSignal
   reportProgress?: RealmImportProgressReporter
 }): Promise<{ revision: number; event: unknown; characterId: string }> {
+  throwIfRealmImportAborted(args.signal)
   const reportProgress = createMonotonicProgressReporter(args.reportProgress)
   reportProgress({ phase: 'validate', message: 'Preparing Realm import', percent: 1 })
 
@@ -532,6 +545,7 @@ async function importRealmJsonCard(args: {
       },
     })
 
+    throwIfRealmImportAborted(args.signal)
     args.reportProgress({ phase: 'assets', message: 'Saving card assets', percent: 82 })
     const assetResults = persistStagedFetchedAssets({
       db: args.db,
@@ -945,6 +959,7 @@ async function importRealmCharx(args: {
     maxExpandedBytes: args.maxExpandedImportBytes,
     onAssetStaged: extractProgress,
   })
+  throwIfRealmImportAborted(args.signal)
   emitProtocolMetric('realm_import_staged_assets', {
     stagedAssetCount: stagedAssets.length,
     stagedAssetBytes: stagedAssets.reduce((sum, asset) => sum + asset.byteLength, 0),
@@ -988,6 +1003,7 @@ async function importRealmCharx(args: {
           },
         }),
     })
+    throwIfRealmImportAborted(args.signal)
     if (moduleMetadata?.lorebook) {
       character.globalLore = repairLorebookEntries(
         cloneJson(moduleMetadata.lorebook),

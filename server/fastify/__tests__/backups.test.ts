@@ -1573,16 +1573,16 @@ describe('backups', () => {
     expect(manual.statusCode).toBe(201)
     await importDb(harness.app, assertion, { tag: 'B' })
 
-    const originalWriteFileSync = fs.writeFileSync.bind(fs)
-    vi.spyOn(fs, 'writeFileSync').mockImplementation((file, data, options) => {
+    const originalWriteFile = fs.promises.writeFile.bind(fs.promises)
+    vi.spyOn(fs.promises, 'writeFile').mockImplementation(async (file, data, options) => {
       if (
-        String(file).endsWith(`${path.sep}manifest.json`) &&
+        String(file).endsWith(`${path.sep}.manifest.json`) &&
         String(file).includes(`${path.sep}backups${path.sep}`) &&
         String(data).includes('"kind":"automatic"')
       ) {
         throw new Error('injected automatic backup manifest failure')
       }
-      return originalWriteFileSync(file, data, options)
+      return originalWriteFile(file, data, options)
     })
 
     const automaticBefore = listBackups(harness.dataDir).filter((backup) => backup.kind === 'automatic')
@@ -2441,9 +2441,13 @@ describe('backups', () => {
     let concurrentAssetId = ''
     let injected = false
     const liveAssets = assetsDir(harness.dataDir)
-    const originalCpSync = fs.cpSync.bind(fs)
-    const copySpy = vi.spyOn(fs, 'cpSync').mockImplementation((source, destination, options) => {
-      if (!injected && String(source) === liveAssets && String(destination).includes(`${path.sep}backups${path.sep}`)) {
+    const originalCopyFile = fs.promises.copyFile.bind(fs.promises)
+    const copySpy = vi.spyOn(fs.promises, 'copyFile').mockImplementation(async (source, destination, options) => {
+      if (
+        !injected &&
+        String(source).startsWith(`${liveAssets}${path.sep}`) &&
+        String(destination).includes(`${path.sep}backups${path.sep}`)
+      ) {
         injected = true
         const concurrentDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
         try {
@@ -2455,7 +2459,7 @@ describe('backups', () => {
           concurrentDb.close()
         }
       }
-      return originalCpSync(source, destination, options)
+      return originalCopyFile(source, destination, options)
     })
 
     const backup = await harness.app.inject({

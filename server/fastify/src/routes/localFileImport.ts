@@ -24,6 +24,8 @@ import {
 import { LowLevelAccessImportError } from '../realmImport/characterCard.js'
 import { appendRealmCharacter } from './realmImport.js'
 import { importRateLimit } from '../routeRateLimits.js'
+import { getMaintenanceCoordinator, MaintenanceBusyError, type MaintenanceLease } from '../maintenanceCoordinator.js'
+import { attachMaintenanceAbort } from '../maintenanceRequest.js'
 
 type ImportKind = 'character' | 'module'
 
@@ -129,6 +131,9 @@ async function handleLocalFileImport(args: {
 }): Promise<unknown> {
   let pending: PendingLocalFileImport | null = null
   let ownsUpload = false
+  const requestAbort = attachMaintenanceAbort(args.req, args.reply)
+  const coordinator = getMaintenanceCoordinator(args.dataDir)
+  let lease: MaintenanceLease | undefined
   try {
     const retry = args.req.isMultipart() ? null : readPendingImportBody(args.req.body)
     const baseRevision = args.req.isMultipart()
@@ -137,13 +142,26 @@ async function handleLocalFileImport(args: {
     let allowLowLevelAccess = retry?.allowLowLevelAccess === true
     const password = typeof retry?.password === 'string' ? retry.password : undefined
 
+    // Reject an already busy owner before receiving the upload. Temporary bytes
+    // need no live-asset protection; recheck admission after intake completes.
+    coordinator.beginAssetStaging(requestAbort.signal).release()
     if (retry) {
       pending = takePendingImport(args.pendingImports, retry.pendingImportToken, args.kind, false)
     } else {
-      pending = await receivePendingImport(args.req, args.kind, args.options.maxUploadBytes, args.ttlMs)
+      pending = await receivePendingImport(
+        args.req,
+        args.kind,
+        args.options.maxUploadBytes,
+        args.ttlMs,
+        requestAbort.signal,
+      )
       ownsUpload = true
     }
 
+    // Conversion writes live assets across awaits, so retain this lease through
+    // the final command (or failed conversion) and release before confirmation.
+    lease = coordinator.beginAssetStaging(requestAbort.signal)
+    lease.signal.throwIfAborted()
     const eventOrigin = commandEventOrigin(args.req)
     if (args.kind === 'character') {
       const imported = await importLocalCharacterFile({
@@ -155,6 +173,7 @@ async function handleLocalFileImport(args: {
         password,
         maxExpandedBytes: args.options.maxExpandedBytes,
       })
+      lease.signal.throwIfAborted()
       const result = appendRealmCharacter({
         db: args.db,
         dataDir: args.dataDir,
@@ -180,6 +199,7 @@ async function handleLocalFileImport(args: {
       allowLowLevelAccess,
       maxExpandedBytes: args.options.maxExpandedBytes,
     })
+    lease.signal.throwIfAborted()
     const module = createModuleRecord(imported.module, 'module', { allowMcp: true }, { assetDb: args.db })
     const result = applyTargetedCommandMutation<{ moduleId: string }>({
       db: args.db,
@@ -209,6 +229,11 @@ async function handleLocalFileImport(args: {
     consumePendingImport(args.pendingImports, pending)
     return { revision: result.revision, event: result.event, ...result.extra }
   } catch (error) {
+    if (error instanceof MaintenanceBusyError) {
+      if (ownsUpload && pending) consumePendingImport(args.pendingImports, pending)
+      args.reply.code(503)
+      return { error: error.code, code: error.code }
+    }
     if (error instanceof LowLevelAccessImportError && pending) {
       const token = retainPendingImport(args.pendingImports, pending, args.ttlMs)
       args.reply.code(409)
@@ -240,6 +265,9 @@ async function handleLocalFileImport(args: {
     }
     if (ownsUpload && pending) consumePendingImport(args.pendingImports, pending)
     throw error
+  } finally {
+    lease?.release()
+    requestAbort.cleanup()
   }
 }
 
@@ -248,6 +276,7 @@ async function receivePendingImport(
   kind: ImportKind,
   maxUploadBytes: number,
   ttlMs: number,
+  signal: AbortSignal,
 ): Promise<PendingLocalFileImport> {
   if (!req.isMultipart()) throw new ValidationError(`${kind} import requires a multipart file upload`)
   const file = await req.file({ limits: { fileSize: maxUploadBytes } })
@@ -255,7 +284,7 @@ async function receivePendingImport(
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `risu-${kind}-import-`))
   const filePath = path.join(tempDir, 'upload')
   try {
-    await pipeline(file.file, fs.createWriteStream(filePath))
+    await pipeline(file.file, fs.createWriteStream(filePath), { signal })
     if (file.file.truncated) throw new ValidationError(`${kind} import upload exceeds size limit`)
     if ((await fs.promises.stat(filePath)).size === 0) throw new ValidationError(`${kind} import file is empty`)
     const pending: PendingLocalFileImport = {

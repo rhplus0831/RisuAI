@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { getMaintenanceCoordinator } from './maintenanceCoordinator.js'
 import type { DatabaseSync } from 'node:sqlite'
 import {
   assetPath,
@@ -363,6 +364,9 @@ export function runAssetGc(dataDir: string, opts: AssetGcOptions = {}): AssetGcR
   }
 
   if (!opts.db) return result
+  // Backup ownership starts before the SQLite snapshot first awaits; staging
+  // remains protected through its final reference commit or rollback cleanup.
+  if (getMaintenanceCoordinator(dataDir).isReclamationBlocked()) return result
 
   // Message and pending-finalization inlays come from column-only SQL token
   // scans — no whole-corpus message hydrate / per-row body JSON.parse on this
