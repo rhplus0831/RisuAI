@@ -1,0 +1,5647 @@
+{
+  "status": "diagnostic-only-not-acceptance",
+  "source": "d9aa51d687a996406091d632141123f7b31685e8",
+  "sourceState": "This commit plus an uncommitted diagnostic CPU-profiling addition in the generation preparation cost probe. This is not a clean-source unprofiled acceptance measurement.",
+  "command": {
+    "argv": [
+      "pnpm",
+      "test",
+      "--",
+      "server/fastify/__tests__/generationPreparationCosts.test.ts"
+    ],
+    "environment": {
+      "RISU_GENERATION_COST_TIMING": "1",
+      "RISU_GENERATION_COST_CPU_PROFILE": "1",
+      "RISU_GENERATION_COST_CPU_PROFILE_PATH": "/tmp/phase6-generation-small.cpuprofile"
+    },
+    "log": "/tmp/phase6-generation-cpu-profile.log",
+    "result": "Four tests passed; the opt-in profiler captured only the first, zero-unrelated/four-message dimension."
+  },
+  "workload": {
+    "profiledDimension": {
+      "unrelatedCharacters": 0,
+      "targetHistory": 4
+    },
+    "warmup": 1,
+    "measuredRepetitions": 3,
+    "samplingIntervalUs": 100,
+    "unchangedWorkload": "The existing one warmup and three recorded preparation/assembly repetitions remain unchanged. Profiling overhead makes their observed timings diagnostic only."
+  },
+  "attribution": {
+    "method": "Weight CPU samples by their corresponding timeDeltas. For the diagnostic attribution only, exclude the first inspector post sample of 51.353 ms; retain that sample and all nodes/deltas in the raw profile. The remaining 103 samples cover 18.062 ms. Inclusive ownership includes descendants, can overlap between categories and is not a new latency gate.",
+    "rawProfileDurationMs": 69.48,
+    "rawWeightedSampleDurationMs": 69.415,
+    "rawSampleCount": 104,
+    "excludedInspectorStart": {
+      "sampleIndex": 0,
+      "nodeId": 5,
+      "durationMs": 51.353,
+      "callFrame": {
+        "functionName": "post",
+        "scriptId": "827",
+        "url": "node:inspector",
+        "lineNumber": 114,
+        "columnNumber": 6
+      }
+    },
+    "analyzedSampleCount": 103,
+    "analyzedDurationMs": 18.062,
+    "owners": [
+      {
+        "owner": "token encode and descendants",
+        "selector": "Any ancestor functionName equals encode",
+        "sampledInclusiveMs": 6.152,
+        "percentOfAnalyzedTime": 34.06045842099435
+      },
+      {
+        "owner": "selected SQL read path and descendants",
+        "selector": "Any ancestor functionName equals loadGenerationSelectedRows; includes repository JavaScript as well as synchronous SQLite calls",
+        "sampledInclusiveMs": 2.12,
+        "percentOfAnalyzedTime": 11.737349130771786
+      },
+      {
+        "owner": "generated input validators and descendants",
+        "selector": "Any ancestor URL contains generationInputValidators.js",
+        "sampledInclusiveMs": 1.141,
+        "percentOfAnalyzedTime": 6.3171298859483995
+      }
+    ],
+    "top40Self": [
+      {
+        "nodeId": 99,
+        "sampledMs": 0.691,
+        "percentOfAnalyzedTime": 3.8257114383789164,
+        "callFrame": {
+          "functionName": "wasm-function[1072]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 676821
+        }
+      },
+      {
+        "nodeId": 88,
+        "sampledMs": 0.503,
+        "percentOfAnalyzedTime": 2.784852175838777,
+        "callFrame": {
+          "functionName": "buildHistoryWindow",
+          "scriptId": "635",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/history.ts",
+          "lineNumber": 228,
+          "columnNumber": 33
+        }
+      },
+      {
+        "nodeId": 42,
+        "sampledMs": 0.501,
+        "percentOfAnalyzedTime": 2.7737792049606904,
+        "callFrame": {
+          "functionName": "all",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "nodeId": 101,
+        "sampledMs": 0.352,
+        "percentOfAnalyzedTime": 1.9488428745432398,
+        "callFrame": {
+          "functionName": "wasm-function[588]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 627043
+        }
+      },
+      {
+        "nodeId": 50,
+        "sampledMs": 0.334,
+        "percentOfAnalyzedTime": 1.8491861366404607,
+        "callFrame": {
+          "functionName": "resolveGenerationConfiguration",
+          "scriptId": "770",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/effectiveGenerationConfig.ts",
+          "lineNumber": 61,
+          "columnNumber": 39
+        }
+      },
+      {
+        "nodeId": 30,
+        "sampledMs": 0.332,
+        "percentOfAnalyzedTime": 1.838113165762374,
+        "callFrame": {
+          "functionName": "get waitForDebugger",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "nodeId": 18,
+        "sampledMs": 0.329,
+        "percentOfAnalyzedTime": 1.8215037094452442,
+        "callFrame": {
+          "functionName": "validate1052",
+          "scriptId": "772",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+          "lineNumber": 7897,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 67,
+        "sampledMs": 0.329,
+        "percentOfAnalyzedTime": 1.8215037094452442,
+        "callFrame": {
+          "functionName": "",
+          "scriptId": "624",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+          "lineNumber": 128,
+          "columnNumber": 34
+        }
+      },
+      {
+        "nodeId": 38,
+        "sampledMs": 0.327,
+        "percentOfAnalyzedTime": 1.8104307385671574,
+        "callFrame": {
+          "functionName": "loadGenerationSelectedRows",
+          "scriptId": "481",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+          "lineNumber": 2035,
+          "columnNumber": 35
+        }
+      },
+      {
+        "nodeId": 247,
+        "sampledMs": 0.327,
+        "percentOfAnalyzedTime": 1.8104307385671574,
+        "callFrame": {
+          "functionName": "resolveServerSafeModelInfo",
+          "scriptId": "533",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+          "lineNumber": 495,
+          "columnNumber": 35
+        }
+      },
+      {
+        "nodeId": 10,
+        "sampledMs": 0.318,
+        "percentOfAnalyzedTime": 1.7606023696157678,
+        "callFrame": {
+          "functionName": "get",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "nodeId": 148,
+        "sampledMs": 0.179,
+        "percentOfAnalyzedTime": 0.9910308935887497,
+        "callFrame": {
+          "functionName": "assert",
+          "scriptId": "122",
+          "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/chai@6.2.2/node_modules/chai/index.js",
+          "lineNumber": 1497,
+          "columnNumber": 8
+        }
+      },
+      {
+        "nodeId": 22,
+        "sampledMs": 0.176,
+        "percentOfAnalyzedTime": 0.9744214372716199,
+        "callFrame": {
+          "functionName": "applyMappedPresetFields",
+          "scriptId": "490",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/presetSplit.ts",
+          "lineNumber": 398,
+          "columnNumber": 32
+        }
+      },
+      {
+        "nodeId": 214,
+        "sampledMs": 0.176,
+        "percentOfAnalyzedTime": 0.9744214372716199,
+        "callFrame": {
+          "functionName": "cloneScriptstate",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 303,
+          "columnNumber": 25
+        }
+      },
+      {
+        "nodeId": 116,
+        "sampledMs": 0.175,
+        "percentOfAnalyzedTime": 0.9688849518325765,
+        "callFrame": {
+          "functionName": "",
+          "scriptId": "487",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelTypes.ts",
+          "lineNumber": 3,
+          "columnNumber": 40
+        }
+      },
+      {
+        "nodeId": 183,
+        "sampledMs": 0.175,
+        "percentOfAnalyzedTime": 0.9688849518325765,
+        "callFrame": {
+          "functionName": "resolveProfileBoundRuntimeSource",
+          "scriptId": "533",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+          "lineNumber": 1168,
+          "columnNumber": 41
+        }
+      },
+      {
+        "nodeId": 194,
+        "sampledMs": 0.175,
+        "percentOfAnalyzedTime": 0.9688849518325765,
+        "callFrame": {
+          "functionName": "digest",
+          "scriptId": "217",
+          "url": "node:internal/crypto/hash",
+          "lineNumber": 162,
+          "columnNumber": 39
+        }
+      },
+      {
+        "nodeId": 222,
+        "sampledMs": 0.175,
+        "percentOfAnalyzedTime": 0.9688849518325765,
+        "callFrame": {
+          "functionName": "wasm-function[13]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 61024
+        }
+      },
+      {
+        "nodeId": 263,
+        "sampledMs": 0.174,
+        "percentOfAnalyzedTime": 0.9633484663935333,
+        "callFrame": {
+          "functionName": "resolveServerActiveModuleIdentifiers",
+          "scriptId": "618",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+          "lineNumber": 46,
+          "columnNumber": 45
+        }
+      },
+      {
+        "nodeId": 23,
+        "sampledMs": 0.173,
+        "percentOfAnalyzedTime": 0.9578119809544899,
+        "callFrame": {
+          "functionName": "cloneJsonValue",
+          "scriptId": "490",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/presetSplit.ts",
+          "lineNumber": 454,
+          "columnNumber": 23
+        }
+      },
+      {
+        "nodeId": 63,
+        "sampledMs": 0.173,
+        "percentOfAnalyzedTime": 0.9578119809544899,
+        "callFrame": {
+          "functionName": "expandVariables",
+          "scriptId": "608",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/variables.ts",
+          "lineNumber": 17,
+          "columnNumber": 24
+        }
+      },
+      {
+        "nodeId": 106,
+        "sampledMs": 0.173,
+        "percentOfAnalyzedTime": 0.9578119809544899,
+        "callFrame": {
+          "functionName": "wasm-function[763]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 653000
+        }
+      },
+      {
+        "nodeId": 35,
+        "sampledMs": 0.172,
+        "percentOfAnalyzedTime": 0.9522754955154468,
+        "callFrame": {
+          "functionName": "resolveScope",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 169,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 75,
+        "sampledMs": 0.172,
+        "percentOfAnalyzedTime": 0.9522754955154468,
+        "callFrame": {
+          "functionName": "tokenizeAll",
+          "scriptId": "634",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/preflight.ts",
+          "lineNumber": 23,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 261,
+        "sampledMs": 0.172,
+        "percentOfAnalyzedTime": 0.9522754955154468,
+        "callFrame": {
+          "functionName": "resolveModelProfileStatus",
+          "scriptId": "533",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+          "lineNumber": 1063,
+          "columnNumber": 34
+        }
+      },
+      {
+        "nodeId": 87,
+        "sampledMs": 0.171,
+        "percentOfAnalyzedTime": 0.9467390100764035,
+        "callFrame": {
+          "functionName": "wasm-function[849]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 661848
+        }
+      },
+      {
+        "nodeId": 141,
+        "sampledMs": 0.171,
+        "percentOfAnalyzedTime": 0.9467390100764035,
+        "callFrame": {
+          "functionName": "wasm-function[167]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 460895
+        }
+      },
+      {
+        "nodeId": 153,
+        "sampledMs": 0.171,
+        "percentOfAnalyzedTime": 0.9467390100764035,
+        "callFrame": {
+          "functionName": "structuredClone",
+          "scriptId": "28",
+          "url": "node:internal/worker/js_transferable",
+          "lineNumber": 112,
+          "columnNumber": 24
+        }
+      },
+      {
+        "nodeId": 206,
+        "sampledMs": 0.171,
+        "percentOfAnalyzedTime": 0.9467390100764035,
+        "callFrame": {
+          "functionName": "resolveServerSafeModelInfo",
+          "scriptId": "533",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+          "lineNumber": 495,
+          "columnNumber": 35
+        }
+      },
+      {
+        "nodeId": 192,
+        "sampledMs": 0.171,
+        "percentOfAnalyzedTime": 0.9467390100764035,
+        "callFrame": {
+          "functionName": "summarizeOptionalString",
+          "scriptId": "744",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+          "lineNumber": 51,
+          "columnNumber": 32
+        }
+      },
+      {
+        "nodeId": 257,
+        "sampledMs": 0.171,
+        "percentOfAnalyzedTime": 0.9467390100764035,
+        "callFrame": {
+          "functionName": "wasm-function[971]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 671150
+        }
+      },
+      {
+        "nodeId": 86,
+        "sampledMs": 0.17,
+        "percentOfAnalyzedTime": 0.9412025246373601,
+        "callFrame": {
+          "functionName": "wasm-function[11]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 45814
+        }
+      },
+      {
+        "nodeId": 208,
+        "sampledMs": 0.17,
+        "percentOfAnalyzedTime": 0.9412025246373601,
+        "callFrame": {
+          "functionName": "wasm-function[350]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 563893
+        }
+      },
+      {
+        "nodeId": 223,
+        "sampledMs": 0.17,
+        "percentOfAnalyzedTime": 0.9412025246373601,
+        "callFrame": {
+          "functionName": "fillHistoryAndBias",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1181,
+          "columnNumber": 33
+        }
+      },
+      {
+        "nodeId": 281,
+        "sampledMs": 0.17,
+        "percentOfAnalyzedTime": 0.9412025246373601,
+        "callFrame": {
+          "functionName": "dispatch",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "nodeId": 56,
+        "sampledMs": 0.169,
+        "percentOfAnalyzedTime": 0.9356660391983169,
+        "callFrame": {
+          "functionName": "structuredClone",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "nodeId": 13,
+        "sampledMs": 0.168,
+        "percentOfAnalyzedTime": 0.9301295537592735,
+        "callFrame": {
+          "functionName": "readGenerationCollectionSelection",
+          "scriptId": "481",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+          "lineNumber": 2149,
+          "columnNumber": 42
+        }
+      },
+      {
+        "nodeId": 236,
+        "sampledMs": 0.167,
+        "percentOfAnalyzedTime": 0.9245930683202304,
+        "callFrame": {
+          "functionName": "wasm-function[821]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 659332
+        }
+      },
+      {
+        "nodeId": 53,
+        "sampledMs": 0.166,
+        "percentOfAnalyzedTime": 0.919056582881187,
+        "callFrame": {
+          "functionName": "resolveLegacyModelSelection",
+          "scriptId": "533",
+          "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+          "lineNumber": 1281,
+          "columnNumber": 36
+        }
+      },
+      {
+        "nodeId": 227,
+        "sampledMs": 0.166,
+        "percentOfAnalyzedTime": 0.919056582881187,
+        "callFrame": {
+          "functionName": "resolveServerActiveModuleIdentifiers",
+          "scriptId": "618",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+          "lineNumber": 46,
+          "columnNumber": 45
+        }
+      }
+    ],
+    "top40Inclusive": [
+      {
+        "nodeId": 1,
+        "sampledMs": 18.062,
+        "percentOfAnalyzedTime": 100.0,
+        "callFrame": {
+          "functionName": "(root)",
+          "scriptId": "0",
+          "url": "",
+          "lineNumber": -1,
+          "columnNumber": -1
+        }
+      },
+      {
+        "nodeId": 2,
+        "sampledMs": 6.266,
+        "percentOfAnalyzedTime": 34.691617761045286,
+        "callFrame": {
+          "functionName": "timings",
+          "scriptId": "198",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/__tests__/generationPreparationCosts.test.ts",
+          "lineNumber": 249,
+          "columnNumber": 22
+        }
+      },
+      {
+        "nodeId": 117,
+        "sampledMs": 3.623,
+        "percentOfAnalyzedTime": 20.05868674565386,
+        "callFrame": {
+          "functionName": "renderAndBudget",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1676,
+          "columnNumber": 30
+        }
+      },
+      {
+        "nodeId": 88,
+        "sampledMs": 3.531,
+        "percentOfAnalyzedTime": 19.549330085261875,
+        "callFrame": {
+          "functionName": "buildHistoryWindow",
+          "scriptId": "635",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/history.ts",
+          "lineNumber": 228,
+          "columnNumber": 33
+        }
+      },
+      {
+        "nodeId": 34,
+        "sampledMs": 3.136,
+        "percentOfAnalyzedTime": 17.362418336839774,
+        "callFrame": {
+          "functionName": "beginAssembly",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 207,
+          "columnNumber": 22
+        }
+      },
+      {
+        "nodeId": 33,
+        "sampledMs": 3.136,
+        "percentOfAnalyzedTime": 17.362418336839774,
+        "callFrame": {
+          "functionName": "",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1768,
+          "columnNumber": 119
+        }
+      },
+      {
+        "nodeId": 32,
+        "sampledMs": 3.136,
+        "percentOfAnalyzedTime": 17.362418336839774,
+        "callFrame": {
+          "functionName": "measureAssemblyStage",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1744,
+          "columnNumber": 29
+        }
+      },
+      {
+        "nodeId": 31,
+        "sampledMs": 3.136,
+        "percentOfAnalyzedTime": 17.362418336839774,
+        "callFrame": {
+          "functionName": "assemblePrompt",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1767,
+          "columnNumber": 29
+        }
+      },
+      {
+        "nodeId": 120,
+        "sampledMs": 2.625,
+        "percentOfAnalyzedTime": 14.533274277488651,
+        "callFrame": {
+          "functionName": "finalizeRequestBudget",
+          "scriptId": "763",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/budgetFinalize.ts",
+          "lineNumber": 5,
+          "columnNumber": 30
+        }
+      },
+      {
+        "nodeId": 119,
+        "sampledMs": 2.625,
+        "percentOfAnalyzedTime": 14.533274277488651,
+        "callFrame": {
+          "functionName": "",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1709,
+          "columnNumber": 54
+        }
+      },
+      {
+        "nodeId": 118,
+        "sampledMs": 2.625,
+        "percentOfAnalyzedTime": 14.533274277488651,
+        "callFrame": {
+          "functionName": "measureAssemblyStage",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1744,
+          "columnNumber": 29
+        }
+      },
+      {
+        "nodeId": 35,
+        "sampledMs": 2.478,
+        "percentOfAnalyzedTime": 13.719410917949288,
+        "callFrame": {
+          "functionName": "resolveScope",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 169,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 94,
+        "sampledMs": 2.361,
+        "percentOfAnalyzedTime": 13.07164212158122,
+        "callFrame": {
+          "functionName": "wasm-function[227]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 499421
+        }
+      },
+      {
+        "nodeId": 93,
+        "sampledMs": 2.361,
+        "percentOfAnalyzedTime": 13.07164212158122,
+        "callFrame": {
+          "functionName": "js-to-wasm:iii:",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 679701
+        }
+      },
+      {
+        "nodeId": 92,
+        "sampledMs": 2.361,
+        "percentOfAnalyzedTime": 13.07164212158122,
+        "callFrame": {
+          "functionName": "encode",
+          "scriptId": "630",
+          "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+          "lineNumber": 294,
+          "columnNumber": 10
+        }
+      },
+      {
+        "nodeId": 91,
+        "sampledMs": 2.361,
+        "percentOfAnalyzedTime": 13.07164212158122,
+        "callFrame": {
+          "functionName": "encodeWithLoadedTokenizer",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 171,
+          "columnNumber": 34
+        }
+      },
+      {
+        "nodeId": 90,
+        "sampledMs": 2.361,
+        "percentOfAnalyzedTime": 13.07164212158122,
+        "callFrame": {
+          "functionName": "tokenize",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 193,
+          "columnNumber": 17
+        }
+      },
+      {
+        "nodeId": 89,
+        "sampledMs": 2.361,
+        "percentOfAnalyzedTime": 13.07164212158122,
+        "callFrame": {
+          "functionName": "tokenizeChat",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 237,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 68,
+        "sampledMs": 2.335,
+        "percentOfAnalyzedTime": 12.927693500166093,
+        "callFrame": {
+          "functionName": "fillLorebookSlotsAsync",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1139,
+          "columnNumber": 37
+        }
+      },
+      {
+        "nodeId": 7,
+        "sampledMs": 2.288,
+        "percentOfAnalyzedTime": 12.667478684531059,
+        "callFrame": {
+          "functionName": "inspectChatGenerationSettings",
+          "scriptId": "780",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/routes/generationChat.ts",
+          "lineNumber": 838,
+          "columnNumber": 38
+        }
+      },
+      {
+        "nodeId": 6,
+        "sampledMs": 2.288,
+        "percentOfAnalyzedTime": 12.667478684531059,
+        "callFrame": {
+          "functionName": "preflightGenerationOperationSettings",
+          "scriptId": "780",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/routes/generationChat.ts",
+          "lineNumber": 891,
+          "columnNumber": 45
+        }
+      },
+      {
+        "nodeId": 69,
+        "sampledMs": 2.164,
+        "percentOfAnalyzedTime": 11.980954490089692,
+        "callFrame": {
+          "functionName": "applyLorebookReport",
+          "scriptId": "592",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+          "lineNumber": 1084,
+          "columnNumber": 28
+        }
+      },
+      {
+        "nodeId": 129,
+        "sampledMs": 2.137,
+        "percentOfAnalyzedTime": 11.831469383235522,
+        "callFrame": {
+          "functionName": "js-to-wasm:iii:",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 679701
+        }
+      },
+      {
+        "nodeId": 128,
+        "sampledMs": 2.137,
+        "percentOfAnalyzedTime": 11.831469383235522,
+        "callFrame": {
+          "functionName": "encode",
+          "scriptId": "630",
+          "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+          "lineNumber": 294,
+          "columnNumber": 10
+        }
+      },
+      {
+        "nodeId": 127,
+        "sampledMs": 2.137,
+        "percentOfAnalyzedTime": 11.831469383235522,
+        "callFrame": {
+          "functionName": "encodeWithLoadedTokenizer",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 171,
+          "columnNumber": 34
+        }
+      },
+      {
+        "nodeId": 126,
+        "sampledMs": 2.137,
+        "percentOfAnalyzedTime": 11.831469383235522,
+        "callFrame": {
+          "functionName": "tokenize",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 193,
+          "columnNumber": 17
+        }
+      },
+      {
+        "nodeId": 125,
+        "sampledMs": 2.137,
+        "percentOfAnalyzedTime": 11.831469383235522,
+        "callFrame": {
+          "functionName": "tokenizeChat",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 237,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 95,
+        "sampledMs": 2.024,
+        "percentOfAnalyzedTime": 11.20584652862363,
+        "callFrame": {
+          "functionName": "wasm-function[36]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 166052
+        }
+      },
+      {
+        "nodeId": 70,
+        "sampledMs": 1.988,
+        "percentOfAnalyzedTime": 11.00653305281807,
+        "callFrame": {
+          "functionName": "preflightTemplateTokens",
+          "scriptId": "634",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/preflight.ts",
+          "lineNumber": 15,
+          "columnNumber": 32
+        }
+      },
+      {
+        "nodeId": 130,
+        "sampledMs": 1.972,
+        "percentOfAnalyzedTime": 10.917949285793377,
+        "callFrame": {
+          "functionName": "wasm-function[227]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 499421
+        }
+      },
+      {
+        "nodeId": 96,
+        "sampledMs": 1.862,
+        "percentOfAnalyzedTime": 10.308935887498617,
+        "callFrame": {
+          "functionName": "wasm-function[48]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 207991
+        }
+      },
+      {
+        "nodeId": 75,
+        "sampledMs": 1.826,
+        "percentOfAnalyzedTime": 10.109622411693058,
+        "callFrame": {
+          "functionName": "tokenizeAll",
+          "scriptId": "634",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/preflight.ts",
+          "lineNumber": 23,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 97,
+        "sampledMs": 1.7,
+        "percentOfAnalyzedTime": 9.4120252463736,
+        "callFrame": {
+          "functionName": "wasm-function[126]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 334232
+        }
+      },
+      {
+        "nodeId": 79,
+        "sampledMs": 1.654,
+        "percentOfAnalyzedTime": 9.157346916177609,
+        "callFrame": {
+          "functionName": "encode",
+          "scriptId": "630",
+          "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+          "lineNumber": 294,
+          "columnNumber": 10
+        }
+      },
+      {
+        "nodeId": 78,
+        "sampledMs": 1.654,
+        "percentOfAnalyzedTime": 9.157346916177609,
+        "callFrame": {
+          "functionName": "encodeWithLoadedTokenizer",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 171,
+          "columnNumber": 34
+        }
+      },
+      {
+        "nodeId": 77,
+        "sampledMs": 1.654,
+        "percentOfAnalyzedTime": 9.157346916177609,
+        "callFrame": {
+          "functionName": "tokenize",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 193,
+          "columnNumber": 17
+        }
+      },
+      {
+        "nodeId": 76,
+        "sampledMs": 1.654,
+        "percentOfAnalyzedTime": 9.157346916177609,
+        "callFrame": {
+          "functionName": "tokenizeChat",
+          "scriptId": "628",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+          "lineNumber": 237,
+          "columnNumber": 21
+        }
+      },
+      {
+        "nodeId": 80,
+        "sampledMs": 1.493,
+        "percentOfAnalyzedTime": 8.265972760491639,
+        "callFrame": {
+          "functionName": "js-to-wasm:iii:",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 679701
+        }
+      },
+      {
+        "nodeId": 131,
+        "sampledMs": 1.484,
+        "percentOfAnalyzedTime": 8.216144391540249,
+        "callFrame": {
+          "functionName": "wasm-function[36]",
+          "scriptId": "631",
+          "url": "wasm://wasm/0155631e",
+          "lineNumber": 0,
+          "columnNumber": 166052
+        }
+      },
+      {
+        "nodeId": 36,
+        "sampledMs": 1.479,
+        "percentOfAnalyzedTime": 8.188461964345034,
+        "callFrame": {
+          "functionName": "loadDatabase",
+          "scriptId": "780",
+          "url": "file:///home/codex/risuai-fastify/server/fastify/src/routes/generationChat.ts",
+          "lineNumber": 708,
+          "columnNumber": 14
+        }
+      }
+    ]
+  },
+  "interpretation": "Token encoding accounts for 6.152 ms, about 34.1 percent of analyzed sampled time; the selected SQL read path accounts for 2.120 ms and generated validators 1.141 ms. This identifies work for investigation and does not show that any production optimization or original timing budget has passed.",
+  "raw": {
+    "metadata": {
+      "diagnosticOnly": true,
+      "note": "CPU sampling adds overhead; these timings are not acceptance evidence.",
+      "samplingIntervalUs": 100,
+      "profileSetupMs": 52.35882300000003,
+      "profileStopMs": 4.07326699999976,
+      "sampledDurationMs": 69.48,
+      "sampleCount": 104,
+      "timing": {
+        "warmup": 1,
+        "repetitions": 3,
+        "preflightMs": [
+          0.6106819999999971,
+          0.4537529999997787,
+          0.4633819999999105
+        ],
+        "assemblyMs": [
+          3.4539089999998396,
+          3.4251939999999195,
+          2.9658210000002327
+        ]
+      }
+    },
+    "cpuProfile": {
+      "nodes": [
+        {
+          "id": 1,
+          "callFrame": {
+            "functionName": "(root)",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 0,
+          "children": [
+            2,
+            57,
+            64,
+            68,
+            88,
+            102,
+            117,
+            219,
+            223,
+            245
+          ]
+        },
+        {
+          "id": 2,
+          "callFrame": {
+            "functionName": "timings",
+            "scriptId": "198",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/__tests__/generationPreparationCosts.test.ts",
+            "lineNumber": 249,
+            "columnNumber": 22
+          },
+          "hitCount": 0,
+          "children": [
+            3,
+            6,
+            29,
+            31,
+            145,
+            195
+          ]
+        },
+        {
+          "id": 3,
+          "callFrame": {
+            "functionName": "fn",
+            "scriptId": "13",
+            "url": "node:internal/util",
+            "lineNumber": 476,
+            "columnNumber": 13
+          },
+          "hitCount": 0,
+          "children": [
+            4
+          ]
+        },
+        {
+          "id": 4,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "13",
+            "url": "node:internal/util",
+            "lineNumber": 477,
+            "columnNumber": 23
+          },
+          "hitCount": 0,
+          "children": [
+            5
+          ]
+        },
+        {
+          "id": 5,
+          "callFrame": {
+            "functionName": "post",
+            "scriptId": "827",
+            "url": "node:inspector",
+            "lineNumber": 114,
+            "columnNumber": 6
+          },
+          "hitCount": 0,
+          "children": [
+            281
+          ]
+        },
+        {
+          "id": 281,
+          "callFrame": {
+            "functionName": "dispatch",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 139,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "callFrame": {
+            "functionName": "preflightGenerationOperationSettings",
+            "scriptId": "780",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/routes/generationChat.ts",
+            "lineNumber": 891,
+            "columnNumber": 45
+          },
+          "hitCount": 0,
+          "children": [
+            7
+          ]
+        },
+        {
+          "id": 7,
+          "callFrame": {
+            "functionName": "inspectChatGenerationSettings",
+            "scriptId": "780",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/routes/generationChat.ts",
+            "lineNumber": 838,
+            "columnNumber": 38
+          },
+          "hitCount": 0,
+          "children": [
+            8,
+            14,
+            19
+          ]
+        },
+        {
+          "id": 8,
+          "callFrame": {
+            "functionName": "loadPersistedForGenerationPreflight",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 1970,
+            "columnNumber": 44
+          },
+          "hitCount": 0,
+          "children": [
+            9
+          ]
+        },
+        {
+          "id": 9,
+          "callFrame": {
+            "functionName": "loadGenerationSelectedRows",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2035,
+            "columnNumber": 35
+          },
+          "hitCount": 0,
+          "children": [
+            10,
+            11,
+            149,
+            243
+          ]
+        },
+        {
+          "id": 10,
+          "callFrame": {
+            "functionName": "get",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 2039,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "callFrame": {
+            "functionName": "selectGenerationConfiguration",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2102,
+            "columnNumber": 38
+          },
+          "hitCount": 0,
+          "children": [
+            12
+          ]
+        },
+        {
+          "id": 12,
+          "callFrame": {
+            "functionName": "read",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2104,
+            "columnNumber": 14
+          },
+          "hitCount": 1,
+          "children": [
+            13
+          ],
+          "positionTicks": [
+            {
+              "line": 2105,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "callFrame": {
+            "functionName": "readGenerationCollectionSelection",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2149,
+            "columnNumber": 42
+          },
+          "hitCount": 1,
+          "children": [
+            199
+          ],
+          "positionTicks": [
+            {
+              "line": 2155,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 199,
+          "callFrame": {
+            "functionName": "prepareGenerationRead",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 1954,
+            "columnNumber": 30
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1956,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 149,
+          "callFrame": {
+            "functionName": "removeNullGenerationMetadata",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2099,
+            "columnNumber": 37
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 2101,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 243,
+          "callFrame": {
+            "functionName": "parseAndRepairSettingsRow",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 683,
+            "columnNumber": 34
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 686,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "callFrame": {
+            "functionName": "decodeGenerationPreflightInputs",
+            "scriptId": "771",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputDecoder.ts",
+            "lineNumber": 48,
+            "columnNumber": 40
+          },
+          "hitCount": 0,
+          "children": [
+            15
+          ]
+        },
+        {
+          "id": 15,
+          "callFrame": {
+            "functionName": "checked",
+            "scriptId": "771",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputDecoder.ts",
+            "lineNumber": 25,
+            "columnNumber": 16
+          },
+          "hitCount": 0,
+          "children": [
+            16
+          ]
+        },
+        {
+          "id": 16,
+          "callFrame": {
+            "functionName": "validate1050",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7923,
+            "columnNumber": 21
+          },
+          "hitCount": 0,
+          "children": [
+            17
+          ]
+        },
+        {
+          "id": 17,
+          "callFrame": {
+            "functionName": "validate1051",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7921,
+            "columnNumber": 21
+          },
+          "hitCount": 0,
+          "children": [
+            18
+          ]
+        },
+        {
+          "id": 18,
+          "callFrame": {
+            "functionName": "validate1052",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7897,
+            "columnNumber": 21
+          },
+          "hitCount": 2,
+          "children": [
+            200,
+            244
+          ],
+          "positionTicks": [
+            {
+              "line": 7898,
+              "ticks": 2
+            }
+          ]
+        },
+        {
+          "id": 200,
+          "callFrame": {
+            "functionName": "validate951",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7067,
+            "columnNumber": 20
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 7068,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 244,
+          "callFrame": {
+            "functionName": "validate545",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 4303,
+            "columnNumber": 20
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 4304,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "callFrame": {
+            "functionName": "resolveGenerationPreflightConfiguration",
+            "scriptId": "770",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/effectiveGenerationConfig.ts",
+            "lineNumber": 58,
+            "columnNumber": 48
+          },
+          "hitCount": 0,
+          "children": [
+            20
+          ]
+        },
+        {
+          "id": 20,
+          "callFrame": {
+            "functionName": "resolveGenerationConfiguration",
+            "scriptId": "770",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/effectiveGenerationConfig.ts",
+            "lineNumber": 61,
+            "columnNumber": 39
+          },
+          "hitCount": 0,
+          "children": [
+            21,
+            24
+          ]
+        },
+        {
+          "id": 21,
+          "callFrame": {
+            "functionName": "applyEffectivePresetComposition",
+            "scriptId": "490",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/presetSplit.ts",
+            "lineNumber": 371,
+            "columnNumber": 40
+          },
+          "hitCount": 0,
+          "children": [
+            22
+          ]
+        },
+        {
+          "id": 22,
+          "callFrame": {
+            "functionName": "applyMappedPresetFields",
+            "scriptId": "490",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/presetSplit.ts",
+            "lineNumber": 398,
+            "columnNumber": 32
+          },
+          "hitCount": 1,
+          "children": [
+            23
+          ],
+          "positionTicks": [
+            {
+              "line": 401,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 23,
+          "callFrame": {
+            "functionName": "cloneJsonValue",
+            "scriptId": "490",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/presetSplit.ts",
+            "lineNumber": 454,
+            "columnNumber": 23
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 456,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 24,
+          "callFrame": {
+            "functionName": "resolveModelProfileWithLegacyCompatibility",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 313,
+            "columnNumber": 51
+          },
+          "hitCount": 0,
+          "children": [
+            25
+          ]
+        },
+        {
+          "id": 25,
+          "callFrame": {
+            "functionName": "resolveModelProfileInternal",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 316,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            26
+          ]
+        },
+        {
+          "id": 26,
+          "callFrame": {
+            "functionName": "resolveModelProfileSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 394,
+            "columnNumber": 37
+          },
+          "hitCount": 0,
+          "children": [
+            27
+          ]
+        },
+        {
+          "id": 27,
+          "callFrame": {
+            "functionName": "resolveServerSafeModelInfo",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 495,
+            "columnNumber": 35
+          },
+          "hitCount": 0,
+          "children": [
+            28
+          ]
+        },
+        {
+          "id": 28,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 538,
+            "columnNumber": 45
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 539,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 29,
+          "callFrame": {
+            "functionName": "get",
+            "scriptId": "160",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/vitest@5.0.0-rc.3_@types+node@22.19.3_@vitest+coverage-v8@5.0.0-rc.3_happy-dom@20.1.0_v_45c831650f5fccdf8f21f8f3766921ca/node_modules/vitest/dist/module-evaluator.js",
+            "lineNumber": 106,
+            "columnNumber": 6
+          },
+          "hitCount": 0,
+          "children": [
+            30
+          ]
+        },
+        {
+          "id": 30,
+          "callFrame": {
+            "functionName": "get waitForDebugger",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 2,
+          "positionTicks": [
+            {
+              "line": 109,
+              "ticks": 2
+            }
+          ]
+        },
+        {
+          "id": 31,
+          "callFrame": {
+            "functionName": "assemblePrompt",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1767,
+            "columnNumber": 29
+          },
+          "hitCount": 0,
+          "children": [
+            32
+          ]
+        },
+        {
+          "id": 32,
+          "callFrame": {
+            "functionName": "measureAssemblyStage",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1744,
+            "columnNumber": 29
+          },
+          "hitCount": 0,
+          "children": [
+            33
+          ]
+        },
+        {
+          "id": 33,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1768,
+            "columnNumber": 119
+          },
+          "hitCount": 0,
+          "children": [
+            34
+          ]
+        },
+        {
+          "id": 34,
+          "callFrame": {
+            "functionName": "beginAssembly",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 207,
+            "columnNumber": 22
+          },
+          "hitCount": 1,
+          "children": [
+            35,
+            54,
+            152,
+            201
+          ],
+          "positionTicks": [
+            {
+              "line": 259,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 35,
+          "callFrame": {
+            "functionName": "resolveScope",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 169,
+            "columnNumber": 21
+          },
+          "hitCount": 1,
+          "children": [
+            36,
+            49
+          ],
+          "positionTicks": [
+            {
+              "line": 187,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 36,
+          "callFrame": {
+            "functionName": "loadDatabase",
+            "scriptId": "780",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/routes/generationChat.ts",
+            "lineNumber": 708,
+            "columnNumber": 14
+          },
+          "hitCount": 0,
+          "children": [
+            37,
+            43
+          ]
+        },
+        {
+          "id": 37,
+          "callFrame": {
+            "functionName": "loadPersistedForGenerationAssembly",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 1984,
+            "columnNumber": 43
+          },
+          "hitCount": 0,
+          "children": [
+            38
+          ]
+        },
+        {
+          "id": 38,
+          "callFrame": {
+            "functionName": "loadGenerationSelectedRows",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2035,
+            "columnNumber": 35
+          },
+          "hitCount": 2,
+          "children": [
+            39,
+            150
+          ],
+          "positionTicks": [
+            {
+              "line": 2096,
+              "ticks": 1
+            },
+            {
+              "line": 2090,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 39,
+          "callFrame": {
+            "functionName": "selectGenerationConfiguration",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2102,
+            "columnNumber": 38
+          },
+          "hitCount": 0,
+          "children": [
+            40
+          ]
+        },
+        {
+          "id": 40,
+          "callFrame": {
+            "functionName": "read",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2104,
+            "columnNumber": 14
+          },
+          "hitCount": 0,
+          "children": [
+            41
+          ]
+        },
+        {
+          "id": 41,
+          "callFrame": {
+            "functionName": "readGenerationCollectionSelection",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 2149,
+            "columnNumber": 42
+          },
+          "hitCount": 0,
+          "children": [
+            42
+          ]
+        },
+        {
+          "id": 42,
+          "callFrame": {
+            "functionName": "all",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 2,
+          "positionTicks": [
+            {
+              "line": 2154,
+              "ticks": 2
+            }
+          ]
+        },
+        {
+          "id": 150,
+          "callFrame": {
+            "functionName": "prepareGenerationRead",
+            "scriptId": "481",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/repository.ts",
+            "lineNumber": 1954,
+            "columnNumber": 30
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1960,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 43,
+          "callFrame": {
+            "functionName": "decodeGenerationDatabase",
+            "scriptId": "771",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputDecoder.ts",
+            "lineNumber": 45,
+            "columnNumber": 33
+          },
+          "hitCount": 0,
+          "children": [
+            44
+          ]
+        },
+        {
+          "id": 44,
+          "callFrame": {
+            "functionName": "checked",
+            "scriptId": "771",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputDecoder.ts",
+            "lineNumber": 25,
+            "columnNumber": 16
+          },
+          "hitCount": 0,
+          "children": [
+            45
+          ]
+        },
+        {
+          "id": 45,
+          "callFrame": {
+            "functionName": "validate509",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7550,
+            "columnNumber": 20
+          },
+          "hitCount": 0,
+          "children": [
+            46
+          ]
+        },
+        {
+          "id": 46,
+          "callFrame": {
+            "functionName": "validate510",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7548,
+            "columnNumber": 20
+          },
+          "hitCount": 1,
+          "children": [
+            47,
+            151
+          ],
+          "positionTicks": [
+            {
+              "line": 7549,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 47,
+          "callFrame": {
+            "functionName": "validate545",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 4303,
+            "columnNumber": 20
+          },
+          "hitCount": 0,
+          "children": [
+            48
+          ]
+        },
+        {
+          "id": 48,
+          "callFrame": {
+            "functionName": "validate548",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 4294,
+            "columnNumber": 20
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 4295,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 151,
+          "callFrame": {
+            "functionName": "validate994",
+            "scriptId": "772",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/generationInputValidators.js",
+            "lineNumber": 7546,
+            "columnNumber": 20
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 7547,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 49,
+          "callFrame": {
+            "functionName": "buildEffectiveGenerationConfig",
+            "scriptId": "770",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/effectiveGenerationConfig.ts",
+            "lineNumber": 151,
+            "columnNumber": 39
+          },
+          "hitCount": 0,
+          "children": [
+            50
+          ]
+        },
+        {
+          "id": 50,
+          "callFrame": {
+            "functionName": "resolveGenerationConfiguration",
+            "scriptId": "770",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/effectiveGenerationConfig.ts",
+            "lineNumber": 61,
+            "columnNumber": 39
+          },
+          "hitCount": 2,
+          "children": [
+            51
+          ],
+          "positionTicks": [
+            {
+              "line": 129,
+              "ticks": 1
+            },
+            {
+              "line": 69,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 51,
+          "callFrame": {
+            "functionName": "resolveModelProfileWithLegacyCompatibility",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 313,
+            "columnNumber": 51
+          },
+          "hitCount": 0,
+          "children": [
+            52
+          ]
+        },
+        {
+          "id": 52,
+          "callFrame": {
+            "functionName": "resolveModelProfileInternal",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 316,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            53,
+            246
+          ]
+        },
+        {
+          "id": 53,
+          "callFrame": {
+            "functionName": "resolveLegacyModelSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 1281,
+            "columnNumber": 36
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1300,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 246,
+          "callFrame": {
+            "functionName": "resolveModelProfileSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 394,
+            "columnNumber": 37
+          },
+          "hitCount": 0,
+          "children": [
+            247
+          ]
+        },
+        {
+          "id": 247,
+          "callFrame": {
+            "functionName": "resolveServerSafeModelInfo",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 495,
+            "columnNumber": 35
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 539,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 54,
+          "callFrame": {
+            "functionName": "buildFormatOrder",
+            "scriptId": "605",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/templates.ts",
+            "lineNumber": 74,
+            "columnNumber": 25
+          },
+          "hitCount": 0,
+          "children": [
+            55
+          ]
+        },
+        {
+          "id": 55,
+          "callFrame": {
+            "functionName": "structuredClone",
+            "scriptId": "28",
+            "url": "node:internal/worker/js_transferable",
+            "lineNumber": 112,
+            "columnNumber": 24
+          },
+          "hitCount": 0,
+          "children": [
+            56
+          ]
+        },
+        {
+          "id": 56,
+          "callFrame": {
+            "functionName": "structuredClone",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 127,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 152,
+          "callFrame": {
+            "functionName": "cloneMessages",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 299,
+            "columnNumber": 22
+          },
+          "hitCount": 0,
+          "children": [
+            153
+          ]
+        },
+        {
+          "id": 153,
+          "callFrame": {
+            "functionName": "structuredClone",
+            "scriptId": "28",
+            "url": "node:internal/worker/js_transferable",
+            "lineNumber": 112,
+            "columnNumber": 24
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 127,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 201,
+          "callFrame": {
+            "functionName": "getActiveModules",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 65,
+            "columnNumber": 25
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 67,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 145,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "122",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/chai@6.2.2/node_modules/chai/index.js",
+            "lineNumber": 1695,
+            "columnNumber": 53
+          },
+          "hitCount": 0,
+          "children": [
+            146
+          ]
+        },
+        {
+          "id": 146,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "136",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/vitest@5.0.0-rc.3_@types+node@22.19.3_@vitest+coverage-v8@5.0.0-rc.3_happy-dom@20.1.0_v_45c831650f5fccdf8f21f8f3766921ca/node_modules/vitest/dist/chunks/index.CSoBZWW_.js",
+            "lineNumber": 1926,
+            "columnNumber": 16
+          },
+          "hitCount": 0,
+          "children": [
+            147
+          ]
+        },
+        {
+          "id": 147,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "136",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/vitest@5.0.0-rc.3_@types+node@22.19.3_@vitest+coverage-v8@5.0.0-rc.3_happy-dom@20.1.0_v_45c831650f5fccdf8f21f8f3766921ca/node_modules/vitest/dist/chunks/index.CSoBZWW_.js",
+            "lineNumber": 2004,
+            "columnNumber": 21
+          },
+          "hitCount": 0,
+          "children": [
+            148
+          ]
+        },
+        {
+          "id": 148,
+          "callFrame": {
+            "functionName": "assert",
+            "scriptId": "122",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/chai@6.2.2/node_modules/chai/index.js",
+            "lineNumber": 1497,
+            "columnNumber": 8
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1515,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 195,
+          "callFrame": {
+            "functionName": "expect",
+            "scriptId": "136",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/vitest@5.0.0-rc.3_@types+node@22.19.3_@vitest+coverage-v8@5.0.0-rc.3_happy-dom@20.1.0_v_45c831650f5fccdf8f21f8f3766921ca/node_modules/vitest/dist/chunks/index.CSoBZWW_.js",
+            "lineNumber": 7990,
+            "columnNumber": 17
+          },
+          "hitCount": 0,
+          "children": [
+            196
+          ]
+        },
+        {
+          "id": 196,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "122",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/chai@6.2.2/node_modules/chai/index.js",
+            "lineNumber": 1695,
+            "columnNumber": 53
+          },
+          "hitCount": 0,
+          "children": [
+            197
+          ]
+        },
+        {
+          "id": 197,
+          "callFrame": {
+            "functionName": "flag",
+            "scriptId": "122",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/chai@6.2.2/node_modules/chai/index.js",
+            "lineNumber": 111,
+            "columnNumber": 13
+          },
+          "hitCount": 0,
+          "children": [
+            198
+          ]
+        },
+        {
+          "id": 198,
+          "callFrame": {
+            "functionName": "proxyGetter",
+            "scriptId": "122",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/chai@6.2.2/node_modules/chai/index.js",
+            "lineNumber": 1625,
+            "columnNumber": 52
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1656,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 57,
+          "callFrame": {
+            "functionName": "assemblePrompt",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1767,
+            "columnNumber": 29
+          },
+          "hitCount": 1,
+          "children": [
+            58,
+            113
+          ],
+          "positionTicks": [
+            {
+              "line": 1814,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 58,
+          "callFrame": {
+            "functionName": "measureAssemblyStage",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1744,
+            "columnNumber": 29
+          },
+          "hitCount": 0,
+          "children": [
+            59,
+            107
+          ]
+        },
+        {
+          "id": 59,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1785,
+            "columnNumber": 51
+          },
+          "hitCount": 0,
+          "children": [
+            60
+          ]
+        },
+        {
+          "id": 60,
+          "callFrame": {
+            "functionName": "fillStaticSlots",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 881,
+            "columnNumber": 24
+          },
+          "hitCount": 0,
+          "children": [
+            61,
+            154
+          ]
+        },
+        {
+          "id": 61,
+          "callFrame": {
+            "functionName": "buildPlainPromptSections",
+            "scriptId": "623",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/plainSections.ts",
+            "lineNumber": 42,
+            "columnNumber": 33
+          },
+          "hitCount": 0,
+          "children": [
+            62
+          ]
+        },
+        {
+          "id": 62,
+          "callFrame": {
+            "functionName": "expand",
+            "scriptId": "623",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/plainSections.ts",
+            "lineNumber": 39,
+            "columnNumber": 15
+          },
+          "hitCount": 0,
+          "children": [
+            63
+          ]
+        },
+        {
+          "id": 63,
+          "callFrame": {
+            "functionName": "expandVariables",
+            "scriptId": "608",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/variables.ts",
+            "lineNumber": 17,
+            "columnNumber": 24
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 51,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 154,
+          "callFrame": {
+            "functionName": "buildAuthorNote",
+            "scriptId": "622",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/staticSections.ts",
+            "lineNumber": 54,
+            "columnNumber": 24
+          },
+          "hitCount": 0,
+          "children": [
+            155
+          ]
+        },
+        {
+          "id": 155,
+          "callFrame": {
+            "functionName": "authorNoteDefaultText",
+            "scriptId": "622",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/staticSections.ts",
+            "lineNumber": 28,
+            "columnNumber": 30
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 30,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 107,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1788,
+            "columnNumber": 46
+          },
+          "hitCount": 0,
+          "children": [
+            108
+          ]
+        },
+        {
+          "id": 108,
+          "callFrame": {
+            "functionName": "fillMemoryAndPostHistory",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1278,
+            "columnNumber": 33
+          },
+          "hitCount": 0,
+          "children": [
+            109
+          ]
+        },
+        {
+          "id": 109,
+          "callFrame": {
+            "functionName": "buildMemoryWindow",
+            "scriptId": "757",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/memory.ts",
+            "lineNumber": 13,
+            "columnNumber": 26
+          },
+          "hitCount": 0,
+          "children": [
+            110
+          ]
+        },
+        {
+          "id": 110,
+          "callFrame": {
+            "functionName": "tokenizerOptionsFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 141,
+            "columnNumber": 31
+          },
+          "hitCount": 0,
+          "children": [
+            111,
+            268
+          ]
+        },
+        {
+          "id": 111,
+          "callFrame": {
+            "functionName": "tokenizerEncodingFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 91,
+            "columnNumber": 32
+          },
+          "hitCount": 0,
+          "children": [
+            112
+          ]
+        },
+        {
+          "id": 112,
+          "callFrame": {
+            "functionName": "serverTokenizerUnsupportedReason",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 68,
+            "columnNumber": 41
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 84,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 268,
+          "callFrame": {
+            "functionName": "resolveModelProfile",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 300,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            269
+          ]
+        },
+        {
+          "id": 269,
+          "callFrame": {
+            "functionName": "resolveModelProfileInternal",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 316,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            270
+          ]
+        },
+        {
+          "id": 270,
+          "callFrame": {
+            "functionName": "resolveModelProfileSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 394,
+            "columnNumber": 37
+          },
+          "hitCount": 0,
+          "children": [
+            271
+          ]
+        },
+        {
+          "id": 271,
+          "callFrame": {
+            "functionName": "resolveModelProfileStatus",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 1063,
+            "columnNumber": 34
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1078,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 113,
+          "callFrame": {
+            "functionName": "renderAndBudget",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1676,
+            "columnNumber": 30
+          },
+          "hitCount": 0,
+          "children": [
+            114
+          ]
+        },
+        {
+          "id": 114,
+          "callFrame": {
+            "functionName": "ensureTokenizerLoadedForDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 127,
+            "columnNumber": 41
+          },
+          "hitCount": 0,
+          "children": [
+            115
+          ]
+        },
+        {
+          "id": 115,
+          "callFrame": {
+            "functionName": "tokenizerEncodingFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 91,
+            "columnNumber": 32
+          },
+          "hitCount": 0,
+          "children": [
+            116
+          ]
+        },
+        {
+          "id": 116,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "487",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelTypes.ts",
+            "lineNumber": 3,
+            "columnNumber": 40
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 4,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 64,
+          "callFrame": {
+            "functionName": "activateLorebookAsync",
+            "scriptId": "624",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+            "lineNumber": 778,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            65
+          ]
+        },
+        {
+          "id": 65,
+          "callFrame": {
+            "functionName": "activateLorebook",
+            "scriptId": "624",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+            "lineNumber": 390,
+            "columnNumber": 25
+          },
+          "hitCount": 0,
+          "children": [
+            66,
+            248
+          ]
+        },
+        {
+          "id": 66,
+          "callFrame": {
+            "functionName": "buildSearchableCorpus",
+            "scriptId": "624",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+            "lineNumber": 126,
+            "columnNumber": 30
+          },
+          "hitCount": 0,
+          "children": [
+            67
+          ]
+        },
+        {
+          "id": 67,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "624",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+            "lineNumber": 128,
+            "columnNumber": 34
+          },
+          "hitCount": 2,
+          "positionTicks": [
+            {
+              "line": 130,
+              "ticks": 1
+            },
+            {
+              "line": 138,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 248,
+          "callFrame": {
+            "functionName": "collectEntries",
+            "scriptId": "624",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+            "lineNumber": 36,
+            "columnNumber": 23
+          },
+          "hitCount": 0,
+          "children": [
+            249
+          ]
+        },
+        {
+          "id": 249,
+          "callFrame": {
+            "functionName": "getActiveModules",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 65,
+            "columnNumber": 25
+          },
+          "hitCount": 0,
+          "children": [
+            250
+          ]
+        },
+        {
+          "id": 250,
+          "callFrame": {
+            "functionName": "resolveServerActiveModuleIdentifiers",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 46,
+            "columnNumber": 45
+          },
+          "hitCount": 0,
+          "children": [
+            251
+          ]
+        },
+        {
+          "id": 251,
+          "callFrame": {
+            "functionName": "parseModuleIntegration",
+            "scriptId": "509",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/moduleIntegration.ts",
+            "lineNumber": 3,
+            "columnNumber": 31
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 5,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 68,
+          "callFrame": {
+            "functionName": "fillLorebookSlotsAsync",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1139,
+            "columnNumber": 37
+          },
+          "hitCount": 0,
+          "children": [
+            69,
+            202
+          ]
+        },
+        {
+          "id": 69,
+          "callFrame": {
+            "functionName": "applyLorebookReport",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1084,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            70,
+            212
+          ]
+        },
+        {
+          "id": 70,
+          "callFrame": {
+            "functionName": "preflightTemplateTokens",
+            "scriptId": "634",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/preflight.ts",
+            "lineNumber": 15,
+            "columnNumber": 32
+          },
+          "hitCount": 0,
+          "children": [
+            71,
+            75
+          ]
+        },
+        {
+          "id": 71,
+          "callFrame": {
+            "functionName": "tokenizerOptionsFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 141,
+            "columnNumber": 31
+          },
+          "hitCount": 0,
+          "children": [
+            72
+          ]
+        },
+        {
+          "id": 72,
+          "callFrame": {
+            "functionName": "resolveModelProfile",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 300,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            73
+          ]
+        },
+        {
+          "id": 73,
+          "callFrame": {
+            "functionName": "resolveModelProfileInternal",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 316,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            74
+          ]
+        },
+        {
+          "id": 74,
+          "callFrame": {
+            "functionName": "resolveModelProfileSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 394,
+            "columnNumber": 37
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 416,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 75,
+          "callFrame": {
+            "functionName": "tokenizeAll",
+            "scriptId": "634",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/preflight.ts",
+            "lineNumber": 23,
+            "columnNumber": 21
+          },
+          "hitCount": 1,
+          "children": [
+            76
+          ],
+          "positionTicks": [
+            {
+              "line": 25,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 76,
+          "callFrame": {
+            "functionName": "tokenizeChat",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 237,
+            "columnNumber": 21
+          },
+          "hitCount": 0,
+          "children": [
+            77
+          ]
+        },
+        {
+          "id": 77,
+          "callFrame": {
+            "functionName": "tokenize",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 193,
+            "columnNumber": 17
+          },
+          "hitCount": 0,
+          "children": [
+            78
+          ]
+        },
+        {
+          "id": 78,
+          "callFrame": {
+            "functionName": "encodeWithLoadedTokenizer",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 171,
+            "columnNumber": 34
+          },
+          "hitCount": 0,
+          "children": [
+            79
+          ]
+        },
+        {
+          "id": 79,
+          "callFrame": {
+            "functionName": "encode",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 294,
+            "columnNumber": 10
+          },
+          "hitCount": 0,
+          "children": [
+            80,
+            164
+          ]
+        },
+        {
+          "id": 80,
+          "callFrame": {
+            "functionName": "js-to-wasm:iii:",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 679701
+          },
+          "hitCount": 0,
+          "children": [
+            81,
+            207
+          ]
+        },
+        {
+          "id": 81,
+          "callFrame": {
+            "functionName": "wasm-function[227]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 499421
+          },
+          "hitCount": 0,
+          "children": [
+            82,
+            209
+          ]
+        },
+        {
+          "id": 82,
+          "callFrame": {
+            "functionName": "wasm-function[36]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 166052
+          },
+          "hitCount": 0,
+          "children": [
+            83
+          ]
+        },
+        {
+          "id": 83,
+          "callFrame": {
+            "functionName": "wasm-function[48]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 207991
+          },
+          "hitCount": 0,
+          "children": [
+            84,
+            252
+          ]
+        },
+        {
+          "id": 84,
+          "callFrame": {
+            "functionName": "wasm-function[126]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 334232
+          },
+          "hitCount": 0,
+          "children": [
+            85,
+            86,
+            208
+          ]
+        },
+        {
+          "id": 85,
+          "callFrame": {
+            "functionName": "wasm-function[9]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 27888
+          },
+          "hitCount": 1,
+          "children": [
+            158
+          ],
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 158,
+          "callFrame": {
+            "functionName": "wasm-function[172]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 464164
+          },
+          "hitCount": 0,
+          "children": [
+            159
+          ]
+        },
+        {
+          "id": 159,
+          "callFrame": {
+            "functionName": "wasm-function[101]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 302076
+          },
+          "hitCount": 0,
+          "children": [
+            160
+          ]
+        },
+        {
+          "id": 160,
+          "callFrame": {
+            "functionName": "wasm-function[7]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 3550
+          },
+          "hitCount": 0,
+          "children": [
+            161
+          ]
+        },
+        {
+          "id": 161,
+          "callFrame": {
+            "functionName": "wasm-function[101]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 302076
+          },
+          "hitCount": 0,
+          "children": [
+            162
+          ]
+        },
+        {
+          "id": 162,
+          "callFrame": {
+            "functionName": "wasm-function[7]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 3550
+          },
+          "hitCount": 0,
+          "children": [
+            163
+          ]
+        },
+        {
+          "id": 163,
+          "callFrame": {
+            "functionName": "wasm-function[537]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 616422
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 86,
+          "callFrame": {
+            "functionName": "wasm-function[11]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 45814
+          },
+          "hitCount": 1,
+          "children": [
+            87,
+            156
+          ],
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 87,
+          "callFrame": {
+            "functionName": "wasm-function[849]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 661848
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 156,
+          "callFrame": {
+            "functionName": "wasm-function[391]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 576870
+          },
+          "hitCount": 0,
+          "children": [
+            157
+          ]
+        },
+        {
+          "id": 157,
+          "callFrame": {
+            "functionName": "wasm-function[136]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 435695
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 208,
+          "callFrame": {
+            "functionName": "wasm-function[350]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 563893
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 252,
+          "callFrame": {
+            "functionName": "wasm-function[971]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 671150
+          },
+          "hitCount": 0,
+          "children": [
+            253
+          ]
+        },
+        {
+          "id": 253,
+          "callFrame": {
+            "functionName": "wasm-function[971]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 671150
+          },
+          "hitCount": 0,
+          "children": [
+            254
+          ]
+        },
+        {
+          "id": 254,
+          "callFrame": {
+            "functionName": "wasm-function[971]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 671150
+          },
+          "hitCount": 0,
+          "children": [
+            255
+          ]
+        },
+        {
+          "id": 255,
+          "callFrame": {
+            "functionName": "wasm-function[971]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 671150
+          },
+          "hitCount": 0,
+          "children": [
+            256
+          ]
+        },
+        {
+          "id": 256,
+          "callFrame": {
+            "functionName": "wasm-function[971]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 671150
+          },
+          "hitCount": 0,
+          "children": [
+            257
+          ]
+        },
+        {
+          "id": 257,
+          "callFrame": {
+            "functionName": "wasm-function[971]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 671150
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 209,
+          "callFrame": {
+            "functionName": "wasm-function[52]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 217650
+          },
+          "hitCount": 0,
+          "children": [
+            210
+          ]
+        },
+        {
+          "id": 210,
+          "callFrame": {
+            "functionName": "wasm-function[13]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 61024
+          },
+          "hitCount": 0,
+          "children": [
+            211
+          ]
+        },
+        {
+          "id": 211,
+          "callFrame": {
+            "functionName": "wasm-function[213]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 490302
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 207,
+          "callFrame": {
+            "functionName": "wasm-function[1204]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 688711
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 164,
+          "callFrame": {
+            "functionName": "getDataViewMemory0",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 125,
+            "columnNumber": 27
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 127,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 212,
+          "callFrame": {
+            "functionName": "finishStableCardPreflight",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 398,
+            "columnNumber": 34
+          },
+          "hitCount": 0,
+          "children": [
+            213
+          ]
+        },
+        {
+          "id": 213,
+          "callFrame": {
+            "functionName": "currentPersistedScriptstateSnapshot",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 335,
+            "columnNumber": 44
+          },
+          "hitCount": 0,
+          "children": [
+            214
+          ]
+        },
+        {
+          "id": 214,
+          "callFrame": {
+            "functionName": "cloneScriptstate",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 303,
+            "columnNumber": 25
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 305,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 202,
+          "callFrame": {
+            "functionName": "activateLorebookAsync",
+            "scriptId": "624",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/lorebook.ts",
+            "lineNumber": 778,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            203
+          ]
+        },
+        {
+          "id": 203,
+          "callFrame": {
+            "functionName": "ensureTokenizerLoadedForDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 127,
+            "columnNumber": 41
+          },
+          "hitCount": 0,
+          "children": [
+            204
+          ]
+        },
+        {
+          "id": 204,
+          "callFrame": {
+            "functionName": "tokenizerEncodingFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 91,
+            "columnNumber": 32
+          },
+          "hitCount": 0,
+          "children": [
+            205
+          ]
+        },
+        {
+          "id": 205,
+          "callFrame": {
+            "functionName": "resolveServerSafeTokenizerFamily",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 774,
+            "columnNumber": 41
+          },
+          "hitCount": 0,
+          "children": [
+            206
+          ]
+        },
+        {
+          "id": 206,
+          "callFrame": {
+            "functionName": "resolveServerSafeModelInfo",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 495,
+            "columnNumber": 35
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 539,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 88,
+          "callFrame": {
+            "functionName": "buildHistoryWindow",
+            "scriptId": "635",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/history.ts",
+            "lineNumber": 228,
+            "columnNumber": 33
+          },
+          "hitCount": 3,
+          "children": [
+            89,
+            165,
+            166
+          ],
+          "positionTicks": [
+            {
+              "line": 337,
+              "ticks": 1
+            },
+            {
+              "line": 346,
+              "ticks": 1
+            },
+            {
+              "line": 229,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 89,
+          "callFrame": {
+            "functionName": "tokenizeChat",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 237,
+            "columnNumber": 21
+          },
+          "hitCount": 0,
+          "children": [
+            90
+          ]
+        },
+        {
+          "id": 90,
+          "callFrame": {
+            "functionName": "tokenize",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 193,
+            "columnNumber": 17
+          },
+          "hitCount": 0,
+          "children": [
+            91
+          ]
+        },
+        {
+          "id": 91,
+          "callFrame": {
+            "functionName": "encodeWithLoadedTokenizer",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 171,
+            "columnNumber": 34
+          },
+          "hitCount": 0,
+          "children": [
+            92
+          ]
+        },
+        {
+          "id": 92,
+          "callFrame": {
+            "functionName": "encode",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 294,
+            "columnNumber": 10
+          },
+          "hitCount": 0,
+          "children": [
+            93
+          ]
+        },
+        {
+          "id": 93,
+          "callFrame": {
+            "functionName": "js-to-wasm:iii:",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 679701
+          },
+          "hitCount": 0,
+          "children": [
+            94
+          ]
+        },
+        {
+          "id": 94,
+          "callFrame": {
+            "functionName": "wasm-function[227]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 499421
+          },
+          "hitCount": 0,
+          "children": [
+            95,
+            217,
+            220
+          ]
+        },
+        {
+          "id": 95,
+          "callFrame": {
+            "functionName": "wasm-function[36]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 166052
+          },
+          "hitCount": 0,
+          "children": [
+            96,
+            170
+          ]
+        },
+        {
+          "id": 96,
+          "callFrame": {
+            "functionName": "wasm-function[48]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 207991
+          },
+          "hitCount": 1,
+          "children": [
+            97
+          ],
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 97,
+          "callFrame": {
+            "functionName": "wasm-function[126]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 334232
+          },
+          "hitCount": 0,
+          "children": [
+            98,
+            100,
+            177
+          ]
+        },
+        {
+          "id": 98,
+          "callFrame": {
+            "functionName": "wasm-function[363]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 568170
+          },
+          "hitCount": 0,
+          "children": [
+            99,
+            105
+          ]
+        },
+        {
+          "id": 99,
+          "callFrame": {
+            "functionName": "wasm-function[1072]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 676821
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 105,
+          "callFrame": {
+            "functionName": "wasm-function[1020]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 674033
+          },
+          "hitCount": 0,
+          "children": [
+            106
+          ]
+        },
+        {
+          "id": 106,
+          "callFrame": {
+            "functionName": "wasm-function[763]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 653000
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 100,
+          "callFrame": {
+            "functionName": "wasm-function[62]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 238355
+          },
+          "hitCount": 0,
+          "children": [
+            101
+          ]
+        },
+        {
+          "id": 101,
+          "callFrame": {
+            "functionName": "wasm-function[588]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 627043
+          },
+          "hitCount": 2,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 2
+            }
+          ]
+        },
+        {
+          "id": 177,
+          "callFrame": {
+            "functionName": "wasm-function[9]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 27888
+          },
+          "hitCount": 0,
+          "children": [
+            178,
+            215
+          ]
+        },
+        {
+          "id": 178,
+          "callFrame": {
+            "functionName": "wasm-function[172]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 464164
+          },
+          "hitCount": 0,
+          "children": [
+            179
+          ]
+        },
+        {
+          "id": 179,
+          "callFrame": {
+            "functionName": "wasm-function[101]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 302076
+          },
+          "hitCount": 1,
+          "children": [
+            264
+          ],
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 264,
+          "callFrame": {
+            "functionName": "wasm-function[7]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 3550
+          },
+          "hitCount": 0,
+          "children": [
+            265
+          ]
+        },
+        {
+          "id": 265,
+          "callFrame": {
+            "functionName": "wasm-function[101]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 302076
+          },
+          "hitCount": 0,
+          "children": [
+            266
+          ]
+        },
+        {
+          "id": 266,
+          "callFrame": {
+            "functionName": "wasm-function[7]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 3550
+          },
+          "hitCount": 0,
+          "children": [
+            267
+          ]
+        },
+        {
+          "id": 267,
+          "callFrame": {
+            "functionName": "wasm-function[391]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 576870
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 215,
+          "callFrame": {
+            "functionName": "wasm-function[187]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 474437
+          },
+          "hitCount": 0,
+          "children": [
+            216
+          ]
+        },
+        {
+          "id": 216,
+          "callFrame": {
+            "functionName": "wasm-function[623]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 633450
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 170,
+          "callFrame": {
+            "functionName": "wasm-function[13]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 61024
+          },
+          "hitCount": 0,
+          "children": [
+            171
+          ]
+        },
+        {
+          "id": 171,
+          "callFrame": {
+            "functionName": "wasm-function[213]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 490302
+          },
+          "hitCount": 0,
+          "children": [
+            172
+          ]
+        },
+        {
+          "id": 172,
+          "callFrame": {
+            "functionName": "wasm-function[637]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 635820
+          },
+          "hitCount": 0,
+          "children": [
+            173
+          ]
+        },
+        {
+          "id": 173,
+          "callFrame": {
+            "functionName": "wasm-function[141]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 440160
+          },
+          "hitCount": 0,
+          "children": [
+            174
+          ]
+        },
+        {
+          "id": 174,
+          "callFrame": {
+            "functionName": "wasm-function[8]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 16863
+          },
+          "hitCount": 0,
+          "children": [
+            175
+          ]
+        },
+        {
+          "id": 175,
+          "callFrame": {
+            "functionName": "wasm-function[28]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 137859
+          },
+          "hitCount": 0,
+          "children": [
+            176
+          ]
+        },
+        {
+          "id": 176,
+          "callFrame": {
+            "functionName": "wasm-function[253]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 517397
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 217,
+          "callFrame": {
+            "functionName": "wasm-to-js",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 0,
+          "children": [
+            218
+          ]
+        },
+        {
+          "id": 218,
+          "callFrame": {
+            "functionName": "module.exports.__wbindgen_object_drop_ref",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 444,
+            "columnNumber": 52
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 446,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 220,
+          "callFrame": {
+            "functionName": "wasm-function[52]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 217650
+          },
+          "hitCount": 0,
+          "children": [
+            221
+          ]
+        },
+        {
+          "id": 221,
+          "callFrame": {
+            "functionName": "wasm-function[330]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 556685
+          },
+          "hitCount": 0,
+          "children": [
+            222
+          ]
+        },
+        {
+          "id": 222,
+          "callFrame": {
+            "functionName": "wasm-function[13]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 61024
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 165,
+          "callFrame": {
+            "functionName": "tokenizerOptionsFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 141,
+            "columnNumber": 31
+          },
+          "hitCount": 1,
+          "children": [
+            258
+          ],
+          "positionTicks": [
+            {
+              "line": 149,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 258,
+          "callFrame": {
+            "functionName": "resolveModelProfile",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 300,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            259
+          ]
+        },
+        {
+          "id": 259,
+          "callFrame": {
+            "functionName": "resolveModelProfileInternal",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 316,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            260
+          ]
+        },
+        {
+          "id": 260,
+          "callFrame": {
+            "functionName": "resolveModelProfileSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 394,
+            "columnNumber": 37
+          },
+          "hitCount": 0,
+          "children": [
+            261
+          ]
+        },
+        {
+          "id": 261,
+          "callFrame": {
+            "functionName": "resolveModelProfileStatus",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 1063,
+            "columnNumber": 34
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1079,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 166,
+          "callFrame": {
+            "functionName": "processScriptAsync",
+            "scriptId": "636",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/scripts.ts",
+            "lineNumber": 428,
+            "columnNumber": 33
+          },
+          "hitCount": 0,
+          "children": [
+            167
+          ]
+        },
+        {
+          "id": 167,
+          "callFrame": {
+            "functionName": "getPreparedScripts",
+            "scriptId": "636",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/scripts.ts",
+            "lineNumber": 385,
+            "columnNumber": 27
+          },
+          "hitCount": 1,
+          "children": [
+            262
+          ],
+          "positionTicks": [
+            {
+              "line": 395,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 262,
+          "callFrame": {
+            "functionName": "getActiveModules",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 65,
+            "columnNumber": 25
+          },
+          "hitCount": 0,
+          "children": [
+            263
+          ]
+        },
+        {
+          "id": 263,
+          "callFrame": {
+            "functionName": "resolveServerActiveModuleIdentifiers",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 46,
+            "columnNumber": 45
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 61,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 102,
+          "callFrame": {
+            "functionName": "formatHistoryMessage",
+            "scriptId": "635",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/history.ts",
+            "lineNumber": 174,
+            "columnNumber": 35
+          },
+          "hitCount": 0,
+          "children": [
+            103
+          ]
+        },
+        {
+          "id": 103,
+          "callFrame": {
+            "functionName": "processScriptAsync",
+            "scriptId": "636",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/scripts.ts",
+            "lineNumber": 428,
+            "columnNumber": 33
+          },
+          "hitCount": 0,
+          "children": [
+            104,
+            168
+          ]
+        },
+        {
+          "id": 104,
+          "callFrame": {
+            "functionName": "getPreparedScripts",
+            "scriptId": "636",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/scripts.ts",
+            "lineNumber": 385,
+            "columnNumber": 27
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 389,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 168,
+          "callFrame": {
+            "functionName": "complexRegexCompatibilityOptions",
+            "scriptId": "627",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/boundedRegex.ts",
+            "lineNumber": 337,
+            "columnNumber": 41
+          },
+          "hitCount": 0,
+          "children": [
+            169
+          ]
+        },
+        {
+          "id": 169,
+          "callFrame": {
+            "functionName": "regexOutputSizeLimitCodeUnits",
+            "scriptId": "497",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/regexOutputSizeLimit.ts",
+            "lineNumber": 15,
+            "columnNumber": 38
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 17,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 117,
+          "callFrame": {
+            "functionName": "renderAndBudget",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1676,
+            "columnNumber": 30
+          },
+          "hitCount": 0,
+          "children": [
+            118,
+            143,
+            180,
+            224
+          ]
+        },
+        {
+          "id": 118,
+          "callFrame": {
+            "functionName": "measureAssemblyStage",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1744,
+            "columnNumber": 29
+          },
+          "hitCount": 0,
+          "children": [
+            119
+          ]
+        },
+        {
+          "id": 119,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1709,
+            "columnNumber": 54
+          },
+          "hitCount": 0,
+          "children": [
+            120
+          ]
+        },
+        {
+          "id": 120,
+          "callFrame": {
+            "functionName": "finalizeRequestBudget",
+            "scriptId": "763",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/budgetFinalize.ts",
+            "lineNumber": 5,
+            "columnNumber": 30
+          },
+          "hitCount": 1,
+          "children": [
+            121,
+            125
+          ],
+          "positionTicks": [
+            {
+              "line": 8,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 121,
+          "callFrame": {
+            "functionName": "tokenizerOptionsFromDb",
+            "scriptId": "632",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokenizerConfig.ts",
+            "lineNumber": 141,
+            "columnNumber": 31
+          },
+          "hitCount": 0,
+          "children": [
+            122
+          ]
+        },
+        {
+          "id": 122,
+          "callFrame": {
+            "functionName": "resolveModelProfile",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 300,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            123
+          ]
+        },
+        {
+          "id": 123,
+          "callFrame": {
+            "functionName": "resolveModelProfileInternal",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 316,
+            "columnNumber": 36
+          },
+          "hitCount": 0,
+          "children": [
+            124,
+            182
+          ]
+        },
+        {
+          "id": 124,
+          "callFrame": {
+            "functionName": "missingDurableModelSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 1219,
+            "columnNumber": 37
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1222,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 182,
+          "callFrame": {
+            "functionName": "resolveModelProfileSelection",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 394,
+            "columnNumber": 37
+          },
+          "hitCount": 0,
+          "children": [
+            183
+          ]
+        },
+        {
+          "id": 183,
+          "callFrame": {
+            "functionName": "resolveProfileBoundRuntimeSource",
+            "scriptId": "533",
+            "url": "file:///home/codex/risuai-fastify/packages/shared-core/src/modelProfileResolver.ts",
+            "lineNumber": 1168,
+            "columnNumber": 41
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1170,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 125,
+          "callFrame": {
+            "functionName": "tokenizeChat",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 237,
+            "columnNumber": 21
+          },
+          "hitCount": 0,
+          "children": [
+            126
+          ]
+        },
+        {
+          "id": 126,
+          "callFrame": {
+            "functionName": "tokenize",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 193,
+            "columnNumber": 17
+          },
+          "hitCount": 0,
+          "children": [
+            127
+          ]
+        },
+        {
+          "id": 127,
+          "callFrame": {
+            "functionName": "encodeWithLoadedTokenizer",
+            "scriptId": "628",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/tokens.ts",
+            "lineNumber": 171,
+            "columnNumber": 34
+          },
+          "hitCount": 0,
+          "children": [
+            128
+          ]
+        },
+        {
+          "id": 128,
+          "callFrame": {
+            "functionName": "encode",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 294,
+            "columnNumber": 10
+          },
+          "hitCount": 0,
+          "children": [
+            129
+          ]
+        },
+        {
+          "id": 129,
+          "callFrame": {
+            "functionName": "js-to-wasm:iii:",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 679701
+          },
+          "hitCount": 0,
+          "children": [
+            130,
+            142
+          ]
+        },
+        {
+          "id": 130,
+          "callFrame": {
+            "functionName": "wasm-function[227]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 499421
+          },
+          "hitCount": 0,
+          "children": [
+            131,
+            184,
+            273
+          ]
+        },
+        {
+          "id": 131,
+          "callFrame": {
+            "functionName": "wasm-function[36]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 166052
+          },
+          "hitCount": 0,
+          "children": [
+            132,
+            228
+          ]
+        },
+        {
+          "id": 132,
+          "callFrame": {
+            "functionName": "wasm-function[48]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 207991
+          },
+          "hitCount": 0,
+          "children": [
+            133
+          ]
+        },
+        {
+          "id": 133,
+          "callFrame": {
+            "functionName": "wasm-function[126]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 334232
+          },
+          "hitCount": 1,
+          "children": [
+            134,
+            140,
+            186,
+            188
+          ],
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 134,
+          "callFrame": {
+            "functionName": "wasm-function[122]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 329828
+          },
+          "hitCount": 0,
+          "children": [
+            135
+          ]
+        },
+        {
+          "id": 135,
+          "callFrame": {
+            "functionName": "wasm-function[122]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 329828
+          },
+          "hitCount": 0,
+          "children": [
+            136
+          ]
+        },
+        {
+          "id": 136,
+          "callFrame": {
+            "functionName": "wasm-function[793]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 656160
+          },
+          "hitCount": 0,
+          "children": [
+            137
+          ]
+        },
+        {
+          "id": 137,
+          "callFrame": {
+            "functionName": "wasm-function[167]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 460895
+          },
+          "hitCount": 0,
+          "children": [
+            138
+          ]
+        },
+        {
+          "id": 138,
+          "callFrame": {
+            "functionName": "wasm-function[310]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 549146
+          },
+          "hitCount": 0,
+          "children": [
+            139
+          ]
+        },
+        {
+          "id": 139,
+          "callFrame": {
+            "functionName": "wasm-function[310]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 549146
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 140,
+          "callFrame": {
+            "functionName": "wasm-function[763]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 653000
+          },
+          "hitCount": 0,
+          "children": [
+            141
+          ]
+        },
+        {
+          "id": 141,
+          "callFrame": {
+            "functionName": "wasm-function[167]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 460895
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 186,
+          "callFrame": {
+            "functionName": "wasm-function[62]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 238355
+          },
+          "hitCount": 0,
+          "children": [
+            187
+          ]
+        },
+        {
+          "id": 187,
+          "callFrame": {
+            "functionName": "wasm-function[882]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 664603
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 188,
+          "callFrame": {
+            "functionName": "wasm-function[9]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 27888
+          },
+          "hitCount": 0,
+          "children": [
+            189
+          ]
+        },
+        {
+          "id": 189,
+          "callFrame": {
+            "functionName": "wasm-function[172]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 464164
+          },
+          "hitCount": 0,
+          "children": [
+            190
+          ]
+        },
+        {
+          "id": 190,
+          "callFrame": {
+            "functionName": "wasm-function[101]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 302076
+          },
+          "hitCount": 0,
+          "children": [
+            191,
+            237
+          ]
+        },
+        {
+          "id": 191,
+          "callFrame": {
+            "functionName": "wasm-function[924]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 667820
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 237,
+          "callFrame": {
+            "functionName": "wasm-function[7]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 3550
+          },
+          "hitCount": 0,
+          "children": [
+            238
+          ]
+        },
+        {
+          "id": 238,
+          "callFrame": {
+            "functionName": "wasm-function[101]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 302076
+          },
+          "hitCount": 0,
+          "children": [
+            239
+          ]
+        },
+        {
+          "id": 239,
+          "callFrame": {
+            "functionName": "wasm-function[7]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 3550
+          },
+          "hitCount": 0,
+          "children": [
+            240,
+            272
+          ]
+        },
+        {
+          "id": 240,
+          "callFrame": {
+            "functionName": "wasm-function[537]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 616422
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 272,
+          "callFrame": {
+            "functionName": "wasm-function[763]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 653000
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 228,
+          "callFrame": {
+            "functionName": "wasm-function[13]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 61024
+          },
+          "hitCount": 0,
+          "children": [
+            229
+          ]
+        },
+        {
+          "id": 229,
+          "callFrame": {
+            "functionName": "wasm-function[213]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 490302
+          },
+          "hitCount": 0,
+          "children": [
+            230
+          ]
+        },
+        {
+          "id": 230,
+          "callFrame": {
+            "functionName": "wasm-function[290]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 534357
+          },
+          "hitCount": 0,
+          "children": [
+            231
+          ]
+        },
+        {
+          "id": 231,
+          "callFrame": {
+            "functionName": "wasm-function[1085]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 677395
+          },
+          "hitCount": 0,
+          "children": [
+            232
+          ]
+        },
+        {
+          "id": 232,
+          "callFrame": {
+            "functionName": "wasm-function[703]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 645617
+          },
+          "hitCount": 0,
+          "children": [
+            233
+          ]
+        },
+        {
+          "id": 233,
+          "callFrame": {
+            "functionName": "wasm-function[612]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 631458
+          },
+          "hitCount": 0,
+          "children": [
+            234
+          ]
+        },
+        {
+          "id": 234,
+          "callFrame": {
+            "functionName": "wasm-function[160]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 455785
+          },
+          "hitCount": 0,
+          "children": [
+            235
+          ]
+        },
+        {
+          "id": 235,
+          "callFrame": {
+            "functionName": "wasm-function[73]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 258233
+          },
+          "hitCount": 0,
+          "children": [
+            236
+          ]
+        },
+        {
+          "id": 236,
+          "callFrame": {
+            "functionName": "wasm-function[821]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 659332
+          },
+          "hitCount": 1,
+          "children": [
+            276
+          ],
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 276,
+          "callFrame": {
+            "functionName": "wasm-function[441]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 592373
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 184,
+          "callFrame": {
+            "functionName": "wasm-function[52]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 217650
+          },
+          "hitCount": 0,
+          "children": [
+            185,
+            241
+          ]
+        },
+        {
+          "id": 185,
+          "callFrame": {
+            "functionName": "wasm-function[47]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 205388
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 241,
+          "callFrame": {
+            "functionName": "wasm-function[330]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 556685
+          },
+          "hitCount": 0,
+          "children": [
+            242
+          ]
+        },
+        {
+          "id": 242,
+          "callFrame": {
+            "functionName": "wasm-function[13]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 61024
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 273,
+          "callFrame": {
+            "functionName": "wasm-to-js",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 0,
+          "children": [
+            274
+          ]
+        },
+        {
+          "id": 274,
+          "callFrame": {
+            "functionName": "module.exports.__wbindgen_object_drop_ref",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 444,
+            "columnNumber": 52
+          },
+          "hitCount": 0,
+          "children": [
+            275
+          ]
+        },
+        {
+          "id": 275,
+          "callFrame": {
+            "functionName": "takeObject",
+            "scriptId": "630",
+            "url": "file:///home/codex/risuai-fastify/node_modules/.pnpm/@dqbd+tiktoken@1.0.22/node_modules/@dqbd/tiktoken/tiktoken_bg.cjs",
+            "lineNumber": 55,
+            "columnNumber": 19
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 58,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 142,
+          "callFrame": {
+            "functionName": "wasm-function[1204]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 688711
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 143,
+          "callFrame": {
+            "functionName": "summarizePromptRows",
+            "scriptId": "744",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+            "lineNumber": 84,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            144
+          ]
+        },
+        {
+          "id": 144,
+          "callFrame": {
+            "functionName": "",
+            "scriptId": "744",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+            "lineNumber": 85,
+            "columnNumber": 32
+          },
+          "hitCount": 1,
+          "children": [
+            192,
+            277
+          ],
+          "positionTicks": [
+            {
+              "line": 90,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 192,
+          "callFrame": {
+            "functionName": "summarizeOptionalString",
+            "scriptId": "744",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+            "lineNumber": 51,
+            "columnNumber": 32
+          },
+          "hitCount": 1,
+          "children": [
+            193
+          ],
+          "positionTicks": [
+            {
+              "line": 54,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 193,
+          "callFrame": {
+            "functionName": "sha256",
+            "scriptId": "744",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+            "lineNumber": 5,
+            "columnNumber": 15
+          },
+          "hitCount": 0,
+          "children": [
+            194
+          ]
+        },
+        {
+          "id": 194,
+          "callFrame": {
+            "functionName": "digest",
+            "scriptId": "217",
+            "url": "node:internal/crypto/hash",
+            "lineNumber": 162,
+            "columnNumber": 39
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 164,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 277,
+          "callFrame": {
+            "functionName": "summarizeContent",
+            "scriptId": "744",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+            "lineNumber": 35,
+            "columnNumber": 25
+          },
+          "hitCount": 0,
+          "children": [
+            278
+          ]
+        },
+        {
+          "id": 278,
+          "callFrame": {
+            "functionName": "sha256",
+            "scriptId": "744",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/promptSummary.ts",
+            "lineNumber": 5,
+            "columnNumber": 15
+          },
+          "hitCount": 0,
+          "children": [
+            279
+          ]
+        },
+        {
+          "id": 279,
+          "callFrame": {
+            "functionName": "digest",
+            "scriptId": "217",
+            "url": "node:internal/crypto/hash",
+            "lineNumber": 162,
+            "columnNumber": 39
+          },
+          "hitCount": 0,
+          "children": [
+            280
+          ]
+        },
+        {
+          "id": 280,
+          "callFrame": {
+            "functionName": "digest",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 169,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 180,
+          "callFrame": {
+            "functionName": "prepareStableCardsForFinalRender",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 412,
+            "columnNumber": 41
+          },
+          "hitCount": 0,
+          "children": [
+            181
+          ]
+        },
+        {
+          "id": 181,
+          "callFrame": {
+            "functionName": "currentPersistedScriptstateSnapshot",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 335,
+            "columnNumber": 44
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 337,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 224,
+          "callFrame": {
+            "functionName": "buildLuaEditRequest",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1644,
+            "columnNumber": 28
+          },
+          "hitCount": 0,
+          "children": [
+            225
+          ]
+        },
+        {
+          "id": 225,
+          "callFrame": {
+            "functionName": "buildLuaEditTriggerContext",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1605,
+            "columnNumber": 35
+          },
+          "hitCount": 0,
+          "children": [
+            226
+          ]
+        },
+        {
+          "id": 226,
+          "callFrame": {
+            "functionName": "getActiveModules",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 65,
+            "columnNumber": 25
+          },
+          "hitCount": 0,
+          "children": [
+            227
+          ]
+        },
+        {
+          "id": 227,
+          "callFrame": {
+            "functionName": "resolveServerActiveModuleIdentifiers",
+            "scriptId": "618",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/modules.ts",
+            "lineNumber": 46,
+            "columnNumber": 45
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 61,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 219,
+          "callFrame": {
+            "functionName": "wasm-function[789]",
+            "scriptId": "631",
+            "url": "wasm://wasm/0155631e",
+            "lineNumber": 0,
+            "columnNumber": 655782
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 223,
+          "callFrame": {
+            "functionName": "fillHistoryAndBias",
+            "scriptId": "592",
+            "url": "file:///home/codex/risuai-fastify/server/fastify/src/prompt/assemble.ts",
+            "lineNumber": 1181,
+            "columnNumber": 33
+          },
+          "hitCount": 1,
+          "positionTicks": [
+            {
+              "line": 1228,
+              "ticks": 1
+            }
+          ]
+        },
+        {
+          "id": 245,
+          "callFrame": {
+            "functionName": "(program)",
+            "scriptId": "0",
+            "url": "",
+            "lineNumber": -1,
+            "columnNumber": -1
+          },
+          "hitCount": 3
+        }
+      ],
+      "startTime": 727915085491,
+      "endTime": 727915154971,
+      "samples": [
+        5,
+        10,
+        12,
+        13,
+        18,
+        23,
+        28,
+        30,
+        42,
+        48,
+        50,
+        53,
+        56,
+        63,
+        67,
+        74,
+        85,
+        87,
+        86,
+        99,
+        88,
+        101,
+        96,
+        104,
+        101,
+        106,
+        112,
+        116,
+        124,
+        133,
+        139,
+        141,
+        142,
+        144,
+        57,
+        148,
+        149,
+        18,
+        22,
+        150,
+        38,
+        151,
+        153,
+        155,
+        67,
+        157,
+        163,
+        164,
+        165,
+        167,
+        169,
+        88,
+        176,
+        179,
+        181,
+        183,
+        185,
+        187,
+        191,
+        194,
+        198,
+        199,
+        200,
+        30,
+        38,
+        46,
+        35,
+        50,
+        201,
+        206,
+        207,
+        208,
+        211,
+        214,
+        216,
+        218,
+        219,
+        222,
+        223,
+        227,
+        236,
+        240,
+        242,
+        192,
+        243,
+        244,
+        42,
+        247,
+        34,
+        251,
+        75,
+        257,
+        261,
+        263,
+        245,
+        88,
+        267,
+        271,
+        120,
+        272,
+        275,
+        276,
+        280,
+        281
+      ],
+      "timeDeltas": [
+        51353,
+        318,
+        155,
+        168,
+        165,
+        173,
+        157,
+        171,
+        163,
+        161,
+        164,
+        166,
+        169,
+        173,
+        163,
+        162,
+        163,
+        171,
+        170,
+        691,
+        165,
+        186,
+        162,
+        163,
+        166,
+        173,
+        161,
+        175,
+        149,
+        162,
+        163,
+        171,
+        165,
+        162,
+        165,
+        179,
+        160,
+        164,
+        176,
+        162,
+        163,
+        163,
+        171,
+        161,
+        166,
+        158,
+        165,
+        161,
+        161,
+        160,
+        162,
+        176,
+        162,
+        161,
+        162,
+        175,
+        162,
+        165,
+        164,
+        175,
+        161,
+        164,
+        162,
+        161,
+        164,
+        165,
+        172,
+        170,
+        157,
+        171,
+        164,
+        170,
+        161,
+        176,
+        160,
+        162,
+        161,
+        175,
+        170,
+        166,
+        167,
+        166,
+        163,
+        171,
+        165,
+        161,
+        338,
+        327,
+        161,
+        162,
+        172,
+        171,
+        172,
+        174,
+        162,
+        162,
+        163,
+        163,
+        164,
+        166,
+        163,
+        160,
+        162,
+        170
+      ]
+    }
+  }
+}
